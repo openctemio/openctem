@@ -5,6 +5,20 @@ fail-closed gate before a command exists. The gate is
 `scan.Service.ResolveDispatchTargets` (`internal/app/scan/dispatch_gate.go`),
 the same checks a scan trigger applies.
 
+## Scope patterns
+
+A domain scope target or exclusion `x` covers exactly `x`; `*.x` (and `**.x`)
+covers `x` **and** every name below it (RFC-054 §4.1, owner decision S1). For
+the subdomains without the apex, add the wildcard plus an exclusion of exactly
+`x`. Seeds, verified domains and the ownership gate use the same "this domain
+and everything under it" meaning, so `vndirect.com.vn` is in scope under
+`*.vndirect.com.vn`. Matching is case-insensitive, ignores one trailing dot and
+compares IDNA ASCII forms (`pkg/domain/scope.matchDomain`).
+
+The sensor-local policy still reads `*.x` as names below `x` (the stricter
+reading on its allow list); aligning it is a follow-up in sdk-go and the
+sensor.
+
 ## What the gate checks
 
 For each target, in order:

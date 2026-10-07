@@ -1,7 +1,7 @@
 'use client'
 
 import type { SensorGrantSummary } from '@/lib/api/sensor-grant-hooks'
-import { AlertTriangle, CheckCircle2, Circle, MinusCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -457,62 +457,24 @@ function SensorKeyExpiry({
   }
 }
 
-/**
- * The first tools, then "+N" (all of them on hover), a "not installed" tag
- * for tools set on the sensor that it reports missing, and a quiet "not
- * allowed" tag for installed tools its narrowed tool list leaves out.
- */
+/** The first tools, then "+N" (all of them on hover). */
 export function SensorToolsCell({
   tools,
-  missing,
-  notAllowed,
   max = 2,
 }: {
   tools: string[] | null | undefined
-  /** Set on the sensor but reported as not installed. */
-  missing?: string[]
-  /** Installed, but the sensor's tool list leaves them out (installed later). */
-  notAllowed?: string[]
   max?: number
 }) {
-  const { t } = useTranslation()
   const list = tools ?? []
-  const gone = missing ?? []
-  const left = notAllowed ?? []
-  const tag = gone.length > 0 && (
-    <SensorTag tone="warning" title={`Set on the sensor but not installed: ${gone.join(', ')}`}>
-      {gone.length} not installed
-    </SensorTag>
-  )
-  const leftTag = left.length > 0 && (
-    <SensorTag
-      tone="info"
-      title={t('sensors.tools.notAllowedTitle', 'Installed but not allowed: {list}', {
-        list: left.join(', '),
-      })}
-    >
-      {t('sensors.tools.notAllowedTag', '{count} not allowed', { count: left.length })}
-    </SensorTag>
-  )
   if (list.length === 0) {
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        <span className={cn('text-sm', muted)}>none</span>
-        {tag}
-        {leftTag}
-      </span>
-    )
+    return <span className={cn('text-sm', muted)}>none</span>
   }
   const shown = list.slice(0, max).join(', ')
   const more = list.length - max
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={cn('text-sm', muted)} title={list.join(', ')}>
-        {shown}
-        {more > 0 ? ` +${more}` : ''}
-      </span>
-      {tag}
-      {leftTag}
+    <span className={cn('text-sm', muted)} title={list.join(', ')}>
+      {shown}
+      {more > 0 ? ` +${more}` : ''}
     </span>
   )
 }
@@ -522,9 +484,7 @@ const TOOL_STATUS: Record<
   { icon: typeof CheckCircle2; className: string; label: string }
 > = {
   ready: { icon: CheckCircle2, className: 'text-success', label: 'installed' },
-  declared: { icon: Circle, className: muted, label: 'not reported by the sensor' },
   not_installed: { icon: AlertTriangle, className: 'text-warning', label: 'not installed' },
-  excluded: { icon: MinusCircle, className: muted, label: 'left out by the tool limit' },
 }
 
 /**
@@ -544,7 +504,7 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
           iconClassName: st.className,
           iconLabel: st.label,
           label: r.name,
-          muted: !(r.status === 'ready' || r.status === 'declared'),
+          muted: r.status !== 'ready',
           meta: (
             <>
               {r.version && <span className={cn('text-xs tabular-nums', muted)}>{r.version}</span>}
@@ -562,10 +522,6 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
           tag:
             r.status === 'not_installed' ? (
               <SensorTag tone="warning">not installed</SensorTag>
-            ) : r.status === 'excluded' ? (
-              <SensorTag title="Installed, but the sensor's tool limit leaves it out">
-                not allowed
-              </SensorTag>
             ) : undefined,
         }
       })}

@@ -42,18 +42,19 @@ func (h *ctlHarness) getManifestState(s ctlSensor) (*http.Response, protov2.Mani
 	return resp, out, raw
 }
 
-// O2: the answer and GET carry the effective policy, narrowed by the
-// administrator, and GET follows a change of the administrator's settings.
+// O2: the answer and GET carry the effective policy (every installed tool
+// the manifest reports; the administrator's concurrency limit narrows), and
+// GET follows a change of the administrator's settings.
 func TestSensorManifestPhase2_PolicyEcho(t *testing.T) {
 	h := newCtlHarness(t)
-	s := h.newLimitedSensor(h.tenantID, "policy", []string{"nuclei"}, nil, 5)
+	s := h.newLimitedSensor(h.tenantID, "policy", nil, nil, 5)
 
 	resp, _, raw := h.getManifestState(s)
 	h.want(resp, raw, http.StatusNotFound, protov2.ProblemManifestNotFound.URI())
 
 	ack := h.putManifest(s, phase2Manifest("v3.11.1", []string{"sast"}))
-	if !slices.Equal(ack.Policy.AllowedTools, []string{"nuclei"}) {
-		t.Fatalf("policy tools %v, want the admin's narrowing [nuclei]", ack.Policy.AllowedTools)
+	if !slices.Equal(ack.Policy.AllowedTools, []string{"nuclei", "semgrep"}) {
+		t.Fatalf("policy tools %v, want the reported tools [nuclei semgrep]", ack.Policy.AllowedTools)
 	}
 	if ack.Policy.MaxJobs != 3 || !ack.Heartbeat.OmitInventory {
 		t.Fatalf("policy max_jobs %d (ceiling 3 < admin 5), omit %v", ack.Policy.MaxJobs, ack.Heartbeat.OmitInventory)
@@ -61,17 +62,17 @@ func TestSensorManifestPhase2_PolicyEcho(t *testing.T) {
 
 	resp, st, raw := h.getManifestState(s)
 	h.want(resp, raw, http.StatusOK, "")
-	if st.ManifestDigest != ack.ManifestDigest || !slices.Equal(st.Policy.AllowedTools, []string{"nuclei"}) {
+	if st.ManifestDigest != ack.ManifestDigest || !slices.Equal(st.Policy.AllowedTools, []string{"nuclei", "semgrep"}) {
 		t.Fatalf("GET %s", raw)
 	}
 
-	// The administrator lifts the tool limit: GET follows.
-	if _, err := h.db.ExecContext(context.Background(), `UPDATE sensors SET tools = '{}' WHERE id = $1`, s.id); err != nil {
+	// The administrator lowers the concurrency limit: GET follows.
+	if _, err := h.db.ExecContext(context.Background(), `UPDATE sensors SET max_concurrent_jobs = 2 WHERE id = $1`, s.id); err != nil {
 		t.Fatal(err)
 	}
 	_, st, raw = h.getManifestState(s)
-	if !slices.Equal(st.Policy.AllowedTools, []string{"nuclei", "semgrep"}) {
-		t.Fatalf("GET after lifting the limit: %s", raw)
+	if st.Policy.MaxJobs != 2 {
+		t.Fatalf("GET after lowering the limit: %s", raw)
 	}
 }
 

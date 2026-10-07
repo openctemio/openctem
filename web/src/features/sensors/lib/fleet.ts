@@ -259,7 +259,6 @@ function searchText(s: Sensor): string {
     s.ip_address,
     normalizeSensorVersion(s.version),
     sensorSdkVersion(s),
-    ...(s.tools ?? []),
     ...dispatchTools(s),
   ]
     .filter(Boolean)
