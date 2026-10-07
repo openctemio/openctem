@@ -277,7 +277,7 @@ func (h *WebEndpointHandler) Events(w http.ResponseWriter, r *http.Request) {
 
 // Catalog handles GET /api/v1/web-path-catalog
 // @Summary      Sensitive-path catalog
-// @Description  The platform-curated list of sensitive web paths endpoints are labelled with (admin consoles, debug and
+// @Description  The platform-curated list of sensitive web paths endpoints are labeled with (admin consoles, debug and
 // @Description  configuration endpoints, VCS and backup files). Platform data: the same for every tenant, never learned
 // @Description  from tenant data.
 // @Tags         Web Surface
