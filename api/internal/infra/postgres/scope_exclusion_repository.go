@@ -28,7 +28,7 @@ func NewScopeExclusionRepository(db *DB) *ScopeExclusionRepository {
 const scopeExclusionSelectQuery = `
 	SELECT id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
 	       approved_by, approved_at, created_by, created_at, updated_at,
-	       rejected_by, rejected_at
+	       rejected_by, rejected_at, origin
 	FROM scope_exclusions
 `
 
@@ -48,12 +48,13 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		updatedAt     sql.NullTime
 		rejectedBy    sql.NullString
 		rejectedAt    sql.NullTime
+		origin        string
 	)
 
 	err := row.Scan(
 		&id, &tenantID, &exclusionType, &pattern, &reason, &status, &expiresAt,
 		&approvedBy, &approvedAt, &createdBy, &createdAt, &updatedAt,
-		&rejectedBy, &rejectedAt,
+		&rejectedBy, &rejectedAt, &origin,
 	)
 	if err != nil {
 		return nil, err
@@ -93,6 +94,7 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		}
 		e.SetRejection(rejectedBy.String, rejAt)
 	}
+	e.SetOrigin(scope.Origin(origin))
 	return e, nil
 }
 
@@ -102,8 +104,8 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		INSERT INTO scope_exclusions (
 			id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
 			approved_by, approved_at, created_by, created_at, updated_at,
-			rejected_by, rejected_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			rejected_by, rejected_at, origin
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -121,6 +123,7 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		exclusion.UpdatedAt(),
 		nullString(exclusion.RejectedBy()),
 		nullTime(exclusion.RejectedAt()),
+		string(exclusion.Origin()),
 	)
 
 	if err != nil {
