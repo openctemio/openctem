@@ -169,7 +169,7 @@
   "settings.item.source-credentials": "Source credentials",
   "settings.desc.source-credentials": "Encrypted credentials that template sources use to fetch.",
   "settings.item.tools": "Tools",
-  "settings.desc.tools": "The scanners that sensors can run.",
+  "settings.desc.tools": "The tools your sensors have, and whether a scan can run with each.",
   "settings.item.capabilities": "Capabilities",
   "settings.item.ci-pipelines": "CI/CD integration",
   "settings.desc.ci-pipelines": "Which CI/CD pipelines may send results, and what fails them.",
