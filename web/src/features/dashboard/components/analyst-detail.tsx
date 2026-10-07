@@ -17,10 +17,11 @@ import {
   PieChart,
   Pie,
 } from '@/components/charts'
-import { SEVERITY_CHART_COLORS as SEVERITY_COLORS } from '@/lib/severity-colors'
+import { SEVERITY_CHART_COLORS as SEVERITY_COLORS, severityChartData } from '@/lib/severity-colors'
 import { CHART_TOOLTIP_PROPS } from '../lib/ctem-colors'
 import { ActivityItem } from './activity-item'
 import type { DashboardStats } from '../hooks/use-dashboard-stats'
+import { INFORMATIONAL_LABEL, SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
 
 interface AnalystDetailProps {
   stats: DashboardStats
@@ -36,11 +37,8 @@ export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
   const findingsBySeverity = stats.findings.bySeverity || {}
   const assetsByType = stats.assets.byType || {}
 
-  const severityData = Object.entries(findingsBySeverity).map(([name, value]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1),
-    value,
-    color: (SEVERITY_COLORS as Record<string, string>)[name.toLowerCase()] || SEVERITY_COLORS.info,
-  }))
+  // Scale order, Informational as its own slice (none folds into it).
+  const severityData = severityChartData(findingsBySeverity)
 
   const assetDistribution = Object.entries(assetsByType)
     .map(([name, count]) => ({
@@ -77,42 +75,18 @@ export function AnalystDetail({ stats, isLoading }: AnalystDetailProps) {
                   <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                   <Tooltip {...CHART_TOOLTIP_PROPS} />
                   <Legend />
-                  <Area
-                    type="monotone"
-                    dataKey="critical"
-                    stackId="1"
-                    stroke={SEVERITY_COLORS.critical}
-                    fill={SEVERITY_COLORS.critical}
-                    fillOpacity={0.8}
-                    name="Critical"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="high"
-                    stackId="1"
-                    stroke={SEVERITY_COLORS.high}
-                    fill={SEVERITY_COLORS.high}
-                    fillOpacity={0.8}
-                    name="High"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="medium"
-                    stackId="1"
-                    stroke={SEVERITY_COLORS.medium}
-                    fill={SEVERITY_COLORS.medium}
-                    fillOpacity={0.8}
-                    name="Medium"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="low"
-                    stackId="1"
-                    stroke={SEVERITY_COLORS.low}
-                    fill={SEVERITY_COLORS.low}
-                    fillOpacity={0.8}
-                    name="Low"
-                  />
+                  {SEVERITY_LEVELS.map((s) => (
+                    <Area
+                      key={s}
+                      type="monotone"
+                      dataKey={s}
+                      stackId="1"
+                      stroke={SEVERITY_COLORS[s]}
+                      fill={SEVERITY_COLORS[s]}
+                      fillOpacity={0.8}
+                      name={s === 'info' ? INFORMATIONAL_LABEL : SEVERITY_LABELS[s]}
+                    />
+                  ))}
                 </AreaChart>
               </ResponsiveContainer>
             ) : (

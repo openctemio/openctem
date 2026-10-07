@@ -171,7 +171,7 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 				Targets: []string{"api_endpoint", "service", "api"},
 			},
 			{
-				Sources: []string{"domain"},
+				Sources: []string{"domain", "subdomain"},
 				Targets: []string{"website", "api", "service"},
 			},
 			{

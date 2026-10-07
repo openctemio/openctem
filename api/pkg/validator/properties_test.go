@@ -64,7 +64,7 @@ func TestPropertiesValidator_ValidateProperties(t *testing.T) {
 			name:      "invalid subdomain IP",
 			assetType: "subdomain",
 			properties: map[string]any{
-				"resolved_ips": []any{"not-an-ip"},
+				"ip_addresses": []any{"not-an-ip"},
 			},
 			wantErrors: 1,
 		},
