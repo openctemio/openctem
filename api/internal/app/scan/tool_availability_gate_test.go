@@ -89,7 +89,7 @@ func TestCheckScanToolsDispatchable(t *testing.T) {
 		t.Errorf("semgrep refusal = %+v (%s)", tu, tu.Domain.Message)
 	}
 	tu = asToolUnavailable(t, svc.checkScanToolsDispatchable(ctx, single("zap")))
-	if tu.SensorsExcluded != 1 || !strings.Contains(tu.Domain.Message, "grant, local policy or tool list") {
+	if tu.SensorsExcluded != 1 || !strings.Contains(tu.Domain.Message, "grant or local policy") {
 		t.Errorf("zap refusal = %+v (%s)", tu, tu.Domain.Message)
 	}
 

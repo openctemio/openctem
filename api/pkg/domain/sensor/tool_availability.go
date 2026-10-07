@@ -43,9 +43,6 @@ func AllToolStatuses() []ToolStatus {
 
 // Why a sensor that reports a tool installed still cannot run it.
 const (
-	// ToolExcludedSensorSettings: the sensor's tool list (set by an
-	// administrator on the sensor) leaves the tool out.
-	ToolExcludedSensorSettings = "sensor_settings"
 	// ToolExcludedGrant: the sensor's grant refuses a scan with the tool
 	// (job types, tools, or the tool's tier above the ceiling).
 	ToolExcludedGrant = "grant"
@@ -134,15 +131,12 @@ type ToolAvailability struct {
 }
 
 // toolExclusion is why the sensor may not run a scan with a tool it reports
-// installed, and the detail: the same rules dispatch applies to a scan job
-// for the tool (the sensor's tool list, the grant's Admit, the local
-// policy's Accepts), asked for a job without targets in zoneID (nil:
-// unzoned).
+// installed, and the detail: the same rules admission applies to a scan job
+// for the tool (the grant's Admit, the local policy's Accepts), asked for a
+// job without targets in zoneID (nil: unzoned). The administrator narrows a
+// sensor's tools through its grant.
 func toolExclusion(inv SensorInventory, name string, zoneID *shared.ID) (reason, detail string) {
 	a := inv.Sensor
-	if !slices.Contains(a.EffectiveTools(), name) {
-		return ToolExcludedSensorSettings, "the sensor's tool list leaves " + name + " out"
-	}
 	payload, _ := json.Marshal(map[string]string{"scanner": name})
 	if inv.Grant != nil {
 		if r := inv.Grant.Admit(scanJobType, payload, zoneID); r != nil {

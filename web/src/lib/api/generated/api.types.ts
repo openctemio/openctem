@@ -43046,10 +43046,10 @@ export interface components {
       content?: components['schemas']['internal_infra_http_handler.ToolAvailabilityContent'][]
       /**
        * @description Excluded is why the sensor may not run the tool although it has it:
-       *     sensor_settings, grant or local_policy; empty when it may.
+       *     grant or local_policy; empty when it may.
        * @enum {string}
        */
-      excluded?: 'sensor_settings' | 'grant' | 'local_policy'
+      excluded?: 'grant' | 'local_policy'
       excluded_detail?: string
       id?: string
       name?: string

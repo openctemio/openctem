@@ -14,7 +14,6 @@ func availSensor(name string, lastSeen *time.Time, tools map[string]string) *Sen
 	a := daemon(lastSeen)
 	a.ID = shared.NewID()
 	a.Name = name
-	a.Tools = nil
 	reported := testNow.Add(-time.Minute)
 	a.Reported = CapabilityReport{Tools: []ReportedTool{}, ReportedAt: &reported}
 	names := make([]string, 0, len(tools))
@@ -102,22 +101,19 @@ func TestComputeToolAvailability_SensorAdvertisedToolOutsideCatalog(t *testing.T
 }
 
 func TestComputeToolAvailability_Exclusions(t *testing.T) {
-	admin := availSensor("narrowed", ago(5*time.Second), map[string]string{"nuclei": "3.4.2"})
-	admin.Tools = []string{"trivy"} // the administrator's list leaves nuclei out
 	granted := availSensor("granted", ago(5*time.Second), map[string]string{"nuclei": "3.4.2"})
 	local := availSensor("local", ago(5*time.Second), map[string]string{"nuclei": "3.4.2"})
 	local.LocalPolicy = &LocalPolicyReport{State: LocalPolicyEnforced, Summary: &LocalPolicySummary{Tools: []string{"semgrep"}}}
 
 	got := ComputeToolAvailability([]CatalogTool{{Name: "nuclei", Enabled: true}}, []SensorInventory{
-		{Sensor: admin},
 		{Sensor: granted, Grant: &Grant{TrustLevel: TrustTrusted, TierCeiling: TierIntrusive, Tools: []string{"trivy"}}},
 		{Sensor: local},
 	}, nil, testNow)
 	n := findTool(t, got, "nuclei")
-	if n.SensorsTotal != 0 || n.SensorsExcluded != 3 || n.Status != ToolNoSensor {
-		t.Fatalf("nuclei = total %d excluded %d status %s, want 0 3 no_sensor", n.SensorsTotal, n.SensorsExcluded, n.Status)
+	if n.SensorsTotal != 0 || n.SensorsExcluded != 2 || n.Status != ToolNoSensor {
+		t.Fatalf("nuclei = total %d excluded %d status %s, want 0 2 no_sensor", n.SensorsTotal, n.SensorsExcluded, n.Status)
 	}
-	want := map[string]string{"narrowed": ToolExcludedSensorSettings, "granted": ToolExcludedGrant, "local": ToolExcludedLocalPolicy}
+	want := map[string]string{"granted": ToolExcludedGrant, "local": ToolExcludedLocalPolicy}
 	for _, s := range n.Sensors {
 		if s.Excluded != want[s.Name] || s.ExcludedDetail == "" {
 			t.Errorf("%s excluded %q (%q), want %q with a detail", s.Name, s.Excluded, s.ExcludedDetail, want[s.Name])
@@ -148,7 +144,6 @@ func TestComputeToolAvailability_ZoneFilterAndSkippedSensors(t *testing.T) {
 	inB := availSensor("in-b", ago(5*time.Second), map[string]string{"nuclei": "3.4.2"})
 	never := availSensor("never-reported", ago(5*time.Second), nil)
 	never.Reported.Tools = nil
-	never.Tools = []string{"nuclei"} // declared only: not an inventory
 	disabled := availSensor("disabled", ago(5*time.Second), map[string]string{"nuclei": "3.4.2"})
 	disabled.Status = SensorStatusDisabled
 	notInstalled := availSensor("not-installed", ago(5*time.Second), map[string]string{"nuclei": ""})
@@ -165,7 +160,7 @@ func TestComputeToolAvailability_ZoneFilterAndSkippedSensors(t *testing.T) {
 
 	all := findTool(t, ComputeToolAvailability(catalog, inv, nil, testNow), "nuclei")
 	if all.SensorsTotal != 2 {
-		t.Errorf("unfiltered total %d, want 2 (declared-only, disabled and not-installed skipped)", all.SensorsTotal)
+		t.Errorf("unfiltered total %d, want 2 (never-reported, disabled and not-installed skipped)", all.SensorsTotal)
 	}
 	inZone := findTool(t, ComputeToolAvailability(catalog, inv, &zoneA, testNow), "nuclei")
 	if inZone.SensorsTotal != 1 || inZone.Sensors[0].Name != "in-a" {

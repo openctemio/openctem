@@ -15739,9 +15739,8 @@ definitions:
       excluded:
         description: |-
           Excluded is why the sensor may not run the tool although it has it:
-          sensor_settings, grant or local_policy; empty when it may.
+          grant or local_policy; empty when it may.
         enum:
-        - sensor_settings
         - grant
         - local_policy
         type: string
