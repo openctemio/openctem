@@ -176,7 +176,6 @@
 "POST /api/v1/attachments": {"permissions":["pentest:findings:write"]},
 "POST /api/v1/attachments/link": {"permissions":["pentest:findings:write"]},
 "POST /api/v1/attacker-profiles": {"permissions":["ctem:attacker_profiles:write"]},
-"POST /api/v1/audit-logs/rebaseline": {"min_role":"owner"},
 "POST /api/v1/auth/backchannel-logout": {},
 "POST /api/v1/auth/create-first-team": {},
 "POST /api/v1/auth/forgot-password": {},

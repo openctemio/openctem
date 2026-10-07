@@ -127,44 +127,6 @@ func (h *DashboardHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
-// GetGlobalStats returns dashboard statistics filtered by user's accessible tenants.
-// @Summary      Get global dashboard stats
-// @Description  Returns dashboard statistics filtered by user's accessible tenants
-// @Tags         Dashboard
-// @Produce      json
-// @Security     BearerAuth
-// @Success      200  {object}  DashboardStatsResponse
-// @Failure      401  {object}  map[string]string
-// @Failure      500  {object}  map[string]string
-// @Router       /dashboard/stats/global [get]
-func (h *DashboardHandler) GetGlobalStats(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	// Get accessible tenant IDs from JWT claims
-	accessibleTenants := middleware.GetAccessibleTenants(ctx)
-
-	// Log for debugging
-	h.logger.Debug("fetching dashboard stats",
-		"user_id", middleware.GetUserID(ctx),
-		"accessible_tenants", accessibleTenants,
-	)
-
-	// Get stats filtered by accessible tenants
-	stats, err := h.dashboardService.GetStatsForTenants(ctx, accessibleTenants)
-	if err != nil {
-		h.logger.Error("failed to get dashboard stats", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	// Convert to response
-	response := buildDashboardResponse(stats)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
-}
-
 // buildDashboardResponse converts internal stats to API response.
 func buildDashboardResponse(stats *module.DashboardStats) DashboardStatsResponse {
 	return DashboardStatsResponse{
