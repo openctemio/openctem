@@ -123,11 +123,8 @@ function ScanRunsTable() {
   const runs = data?.data ?? []
   const counts = overview?.scan_runs
 
-  const setStatus = useCallback(
-    (v: RunStatusFilterValue) => list.setFilter('status', v),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [list.setFilter]
-  )
+  const { setFilter } = list
+  const setStatus = useCallback((v: RunStatusFilterValue) => setFilter('status', v), [setFilter])
   const toggleStatus = (v: RunStatusFilterValue) => setStatus(statusFilter === v ? 'all' : v)
 
   const columns: ColumnDef<ScanRun>[] = useMemo(
