@@ -264,7 +264,7 @@ func newTestSensorService(repo *mockSensorRepo) *sensorapp.SensorService {
 
 func createTestSensor(t *testing.T, tenantID shared.ID, name string) *sensor.Sensor {
 	t.Helper()
-	a, err := sensor.NewSensor(tenantID, name, sensor.SensorTypeWorker, "test sensor", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeDaemon)
+	a, err := sensor.NewSensor(tenantID, name, sensor.SensorTypeWorker, "test sensor", []string{"sast"}, sensor.ExecutionModeDaemon)
 	if err != nil {
 		t.Fatalf("failed to create test sensor: %v", err)
 	}
@@ -286,7 +286,6 @@ func TestCreateSensor_Success(t *testing.T) {
 		Type:          "worker",
 		Description:   "A test worker sensor",
 		Capabilities:  []string{"sast", "sca"},
-		Tools:         []string{"semgrep", "trivy"},
 		ExecutionMode: "daemon",
 	}
 
@@ -1043,7 +1042,8 @@ func TestSensor_AvailableSlots(t *testing.T) {
 func TestSensor_MatchesRequirements(t *testing.T) {
 	tenantID := shared.NewID()
 	a := createTestSensor(t, tenantID, "Requirements Test")
-	// Has capabilities: ["sast"], tools: ["semgrep"]
+	// Has capabilities: ["sast"]; reports semgrep installed.
+	a.Reported = sensor.ReportOf("semgrep")
 
 	if !a.MatchesRequirements([]string{"sast"}, "semgrep") {
 		t.Error("Sensor should match sast + semgrep requirements")

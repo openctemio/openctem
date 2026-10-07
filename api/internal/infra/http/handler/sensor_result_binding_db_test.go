@@ -95,7 +95,7 @@ func newBindingRig(t *testing.T, mode sensorresult.Mode) *bindingRig {
 	} {
 		out, err := sensorSvc.CreateSensor(ctx, sensor.CreateSensorInput{
 			TenantID: rig.tenant.String(), Name: s.name, Type: s.typ, ExecutionMode: s.mode,
-			Tools: []string{"nmap", "nuclei"}, Capabilities: []string{"infra"},
+			Capabilities: []string{"infra"},
 		})
 		if err != nil {
 			t.Fatalf("create sensor %s: %v", s.name, err)

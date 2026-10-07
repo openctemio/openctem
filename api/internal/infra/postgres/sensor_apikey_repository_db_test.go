@@ -46,7 +46,7 @@ func TestSensorAPIKeyRepository_RoundTrip(t *testing.T) {
 	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
 
 	sensorRepo := NewSensorRepository(&DB{DB: db})
-	a, err := sensordom.NewSensor(tenantID, "aak-sensor", sensordom.SensorTypeWorker, "", nil, nil, sensordom.ExecutionModeStandalone)
+	a, err := sensordom.NewSensor(tenantID, "aak-sensor", sensordom.SensorTypeWorker, "", nil, sensordom.ExecutionModeStandalone)
 	if err != nil {
 		t.Fatalf("new sensor: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestSensorAPIKeyRepository_RotateKey(t *testing.T) {
 
 	sensorRepo := NewSensorRepository(&DB{DB: db})
 	newSensor := func(name, hash string) shared.ID {
-		s, err := sensordom.NewSensor(tenantID, name, sensordom.SensorTypeWorker, "", nil, nil, sensordom.ExecutionModeStandalone)
+		s, err := sensordom.NewSensor(tenantID, name, sensordom.SensorTypeWorker, "", nil, sensordom.ExecutionModeStandalone)
 		if err != nil {
 			t.Fatalf("new sensor: %v", err)
 		}
@@ -313,7 +313,7 @@ func TestSensorAPIKeyRepository_RenewalRechecksPresentedKey(t *testing.T) {
 	defer func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID.String()) }()
 
 	sensorRepo := NewSensorRepository(&DB{DB: db})
-	s, err := sensordom.NewSensor(tenantID, "src-a", sensordom.SensorTypeWorker, "", nil, nil, sensordom.ExecutionModeStandalone)
+	s, err := sensordom.NewSensor(tenantID, "src-a", sensordom.SensorTypeWorker, "", nil, sensordom.ExecutionModeStandalone)
 	if err != nil {
 		t.Fatal(err)
 	}
