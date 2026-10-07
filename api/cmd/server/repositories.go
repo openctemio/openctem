@@ -128,7 +128,6 @@ type Repositories struct {
 
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
-	ScanSession      *postgres.ScanSessionRepository
 	Tool             *postgres.ToolRepository
 	ToolCategory     *postgres.ToolCategoryRepository
 	Capability       *postgres.CapabilityRepository
@@ -369,7 +368,6 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),
-		ScanSession:      postgres.NewScanSessionRepository(db),
 		Tool:             postgres.NewToolRepository(db),
 		ToolCategory:     postgres.NewToolCategoryRepository(db),
 		Capability:       postgres.NewCapabilityRepository(db),

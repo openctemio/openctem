@@ -111,7 +111,6 @@ scan_freeze_windows
 scan_profiles
 scan_run_stage_plans
 scan_run_targets
-scan_sessions
 scan_step_outputs
 scan_zone_sensors
 scan_zones

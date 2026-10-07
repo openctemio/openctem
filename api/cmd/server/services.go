@@ -591,7 +591,6 @@ type Services struct {
 
 	// Scanning & Pipelines
 	ScanProfile     *scan.ScanProfileService
-	ScanSession     *scan.ScanSessionService
 	Tool            *tool.Service
 	ToolCategory    *tool.CategoryService
 	Capability      *capability.CapabilityService
@@ -1602,7 +1601,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize scanning services
 	s.ScanProfile = scan.NewScanProfileService(repos.ScanProfile, log)
-	s.ScanSession = scan.NewScanSessionService(repos.ScanSession, repos.Sensor, log)
 	s.ScannerTemplate = app.NewScannerTemplateService(repos.ScannerTemplate, cfg.Encryption.Key, log)
 	s.ScannerTemplate.SetSigningKeys(s.TemplateKeys)
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
