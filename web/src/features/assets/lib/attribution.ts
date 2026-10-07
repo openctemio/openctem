@@ -11,6 +11,8 @@ export interface AttributionEvidence {
   rule: string
   technique: string
   source: string
+  /** A person-readable source: the sensor's name for "sensor:<id>" (review queue). */
+  source_label?: string
   weight: number
   observed?: Record<string, unknown>
   first_observed_at: string
@@ -34,6 +36,16 @@ export interface AssetAttribution {
   active_checks_blocked_by?: AttributionState | 'unattributed' | 'out_of_scope'
   decided_at?: string
   evidence: AttributionEvidence[]
+  /**
+   * May scans reach it (RFC-054 §6.6): in_scope, out_of_scope, internal
+   * (routed by a scan zone) or not_applicable (repositories, cloud
+   * resources). Older API responses leave it out.
+   */
+  scope_status?: 'in_scope' | 'out_of_scope' | 'internal' | 'not_applicable' | string
+  /** The organization's scope entry, seed or verified domain that covers it. */
+  covered_by?: { kind?: string; id?: string; pattern?: string; proof?: string }
+  /** The refusal code (RFC-054 §6.5) when active checks are blocked. */
+  blocked_code?: string
 }
 
 /** The decisions a person can take (PUT /assets/{id}/attribution). */
@@ -94,10 +106,49 @@ export function describeEvidence(e: AttributionEvidence): string {
       what = e.rule.replace(/_/g, ' ')
   }
   const technique = TECHNIQUE_LABEL[e.technique] ?? e.technique.replace(/_/g, ' ')
-  const source = SOURCE_LABEL[e.source] ?? e.source
+  const source = evidenceSourceText(e)
   const first = typeof e.observed?.first_seen === 'string' ? e.observed.first_seen : ''
   const since = first ? ` since ${formatDay(first)}` : ''
   return `${what} — seen in ${technique} (${source})${since}`
+}
+
+/**
+ * Where a piece of evidence came from, in words. A sensor is named by the
+ * server (`source_label`: the organization's own sensor by name, or
+ * "platform sensor"); a sensor id is never shown, so one the server could
+ * not name reads "a removed sensor".
+ */
+export function evidenceSourceText(
+  e: Pick<AttributionEvidence, 'source' | 'source_label'>
+): string {
+  if (e.source_label) return e.source_label
+  if (e.source.startsWith('sensor:')) return 'a removed sensor'
+  return SOURCE_LABEL[e.source] ?? e.source
+}
+
+/** The review hint of an address row (RFC-054 §4.3, §6.6). */
+export const REVIEW_HINT_TEXT: Record<string, string> = {
+  ip_needs_ip_entry: 'Names never grant their addresses; this IP needs its own scope entry.',
+}
+
+export interface ReviewNetworkFacts {
+  asn?: string
+  org?: string
+  shared?: boolean
+  shared_provider?: string
+  org_matches?: boolean
+}
+
+/** One line about the network an address sits in, for the review queue. */
+export function reviewNetworkText(n: ReviewNetworkFacts | null | undefined): string | null {
+  if (!n) return null
+  const who = [n.asn, n.org].filter(Boolean).join(' ')
+  if (n.shared) {
+    const provider = n.shared_provider ? ` (${n.shared_provider})` : ''
+    return `${who ? `${who}: ` : ''}shared provider space${provider}; it cannot be added, because these addresses serve other organizations.`
+  }
+  if (!who) return null
+  return n.org_matches ? `${who}, which matches your organization.` : `${who}.`
 }
 
 function formatDay(iso: string): string {
@@ -111,15 +162,59 @@ function formatDay(iso: string): string {
   })
 }
 
+/**
+ * Whether scans may reach the asset, from the scope side (RFC-054 §4.2):
+ * covered by what, or not covered. `ok` is true when a scope entry, seed or
+ * verified domain covers it; `canAdd` when adding a scope entry would help.
+ */
+export function scopeStandingText(
+  a: Pick<AssetAttribution, 'scope_status' | 'covered_by'>
+): { text: string; ok: boolean; canAdd: boolean } | null {
+  const via = a.covered_by
+  switch (a.scope_status) {
+    case 'in_scope': {
+      const pattern = via?.pattern
+      const proof = via?.proof === 'verified' ? ' (verified)' : ''
+      const kind =
+        via?.kind === 'seed'
+          ? 'seed'
+          : via?.kind === 'verified_domain'
+            ? 'verified domain'
+            : 'scope entry'
+      return {
+        text: pattern ? `In scope through the ${kind} ${pattern}${proof}.` : 'In scope.',
+        ok: true,
+        canAdd: false,
+      }
+    }
+    case 'out_of_scope':
+      return {
+        text: 'Out of scope: no scope entry covers this name.',
+        ok: false,
+        canAdd: true,
+      }
+    case 'internal':
+      return { text: 'A private target: its scan zone decides.', ok: true, canAdd: false }
+    case 'not_applicable':
+      return {
+        text: 'Scope entries do not apply to this kind of asset.',
+        ok: true,
+        canAdd: false,
+      }
+    default:
+      return null
+  }
+}
+
 /** What a scan does with this asset, in words. */
 export function scanStanding(
   a: Pick<AssetAttribution, 'active_checks_allowed' | 'state' | 'active_checks_blocked_by'>
 ): string {
   if (a.active_checks_allowed) return 'Scans can reach this asset.'
   if (a.active_checks_blocked_by === 'unattributed')
-    return 'Scans skip this asset: no scope target, seed or verified domain covers it. Add it to Scoping › Targets.'
+    return 'Scans skip this asset: no scope target, seed or verified domain covers it. Add it to Scoping › Scope.'
   if (a.active_checks_blocked_by === 'out_of_scope')
-    return 'Scans skip this asset: it is confirmed as yours, but no scope target, seed or verified domain covers it. Add it to Scoping › Targets to scan it.'
+    return 'Scans skip this asset: it is confirmed as yours, but no scope target, seed or verified domain covers it. Add it to Scoping › Scope to scan it.'
   if (a.active_checks_blocked_by === 'rejected' && a.state !== 'rejected')
     return 'Scans skip this asset: a name it sits under was marked not yours.'
   if (a.state === 'needs_review' || a.state === 'candidate')

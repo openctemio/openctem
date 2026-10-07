@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
@@ -733,4 +734,64 @@ func scanNodeRun(rows *sql.Rows) (*workflow.NodeRun, error) {
 	}
 
 	return nr, nil
+}
+
+// HasRecentSubjectRun implements workflow.RecentSubjectRunChecker.
+func (r *WorkflowRunRepository) HasRecentSubjectRun(ctx context.Context, tenantID, workflowID, subjectID shared.ID, triggerType workflow.TriggerType, since time.Time) (bool, error) {
+	var found bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM workflow_runs
+		 WHERE tenant_id = $1 AND workflow_id = $2 AND subject_id = $3
+		   AND trigger_type = $4 AND created_at > $5)`,
+		tenantID.String(), workflowID.String(), subjectID.String(), string(triggerType), since).Scan(&found)
+	if err != nil {
+		return false, fmt.Errorf("failed to check recent subject run: %w", err)
+	}
+	return found, nil
+}
+
+// LatestOutcomes implements workflow.RunOutcomeReader.
+func (r *WorkflowRunRepository) LatestOutcomes(ctx context.Context, tenantID, workflowID shared.ID, n int) ([]workflow.RunStatus, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT status FROM workflow_runs
+		 WHERE tenant_id = $1 AND workflow_id = $2 AND status IN ('completed', 'failed')
+		   AND COALESCE(error_message, '') NOT LIKE $3
+		 ORDER BY created_at DESC
+		 LIMIT $4`,
+		tenantID.String(), workflowID.String(), workflow.ThrottledRunPrefix+"%", n)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read latest run outcomes: %w", err)
+	}
+	defer rows.Close()
+	out := make([]workflow.RunStatus, 0, n)
+	for rows.Next() {
+		var st string
+		if err := rows.Scan(&st); err != nil {
+			return nil, fmt.Errorf("failed to scan run outcome: %w", err)
+		}
+		out = append(out, workflow.RunStatus(st))
+	}
+	return out, rows.Err()
+}
+
+// FailStaleRuns implements workflow.StaleRunReaper. The open steps of the
+// runs it ends fail with them, in the same statement.
+func (r *WorkflowRunRepository) FailStaleRuns(ctx context.Context, before time.Time, reason string) (int64, error) {
+	var n int64
+	err := r.db.QueryRowContext(ctx, `
+		WITH stale AS (
+			UPDATE workflow_runs
+			   SET status = 'failed', error_message = $2, completed_at = NOW()
+			 WHERE status IN ('pending', 'running') AND created_at < $1
+			RETURNING id
+		), steps AS (
+			UPDATE workflow_node_runs
+			   SET status = 'failed', error_message = $2, error_code = 'RUN_INTERRUPTED', completed_at = NOW()
+			 WHERE workflow_run_id IN (SELECT id FROM stale) AND status IN ('pending', 'running')
+		)
+		SELECT COUNT(*) FROM stale`, before, reason).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("failed to end stale workflow runs: %w", err)
+	}
+	return n, nil
 }
