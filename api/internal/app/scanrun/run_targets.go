@@ -55,6 +55,8 @@ func (s *Service) gateRunContext(ctx context.Context, tenantID shared.ID, trigge
 		return nil, nil
 	}
 	delete(out, scanrun.RunContextKeyScanZoneID)
+	// The platform routing decision is the scan trigger's, never a caller's.
+	delete(out, scanrun.RunContextKeySensorRouting)
 
 	targets, err := runContextTargets(out)
 	if err != nil {
