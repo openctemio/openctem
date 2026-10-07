@@ -87,7 +87,7 @@ import { EASMSeedsPanel } from '@/features/attack-surface/components/easm-seeds'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
-import { useUser } from '@/stores/auth-store'
+import { useDisplayUser } from '@/hooks/use-display-user'
 
 // Use shared validation from scope feature types
 const validatePattern = (
@@ -136,7 +136,8 @@ export default function ScopeConfigPage() {
   // Permission check for write operations
   const canApproveScope = useHasPermission(Permission.ScopeApprove)
   const { t } = useTranslation()
-  const user = useUser()
+  // The profile API, not the auth store: the store is empty after a reload.
+  const user = useDisplayUser()
   // Entries waiting for approval (RFC-054 §6.1): approvers see the count
   // and approve or reject from the row menu.
   const { data: pendingData } = useScopeTargetsApi({ status: 'pending', per_page: 1 })
