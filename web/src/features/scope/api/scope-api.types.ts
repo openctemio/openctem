@@ -67,17 +67,49 @@ export interface CreateScopeTargetInput {
   description?: string
   priority?: number
   tags?: string[]
+  /** Authority statement; required for one-off entries, requests and t2. */
+  reason?: string
+  /** 1..one_off_max_days: makes the entry a one-off that expires. */
+  expires_in_days?: number
+  /** Probe ceiling; the organization's default_max_tier when omitted. */
+  max_tier?: ScopeTier
 }
 
+/** Probe tiers (RFC-036): t0 passive, t1 safe active, t2 intrusive. */
+export type ScopeTier = 't0' | 't1' | 't2'
+
 /**
- * Input for updating a scope target
+ * Input for updating a scope target. A later or removed expiry, or a higher
+ * tier, widens the entry (approver + step-up; it may go back to pending).
  */
 export interface UpdateScopeTargetInput {
   description?: string
-  status?: string
   priority?: number
   tags?: string[]
+  reason?: string
+  expires_in_days?: number
+  clear_expiry?: boolean
+  max_tier?: ScopeTier
 }
+
+/** GET/PUT /scope/settings (RFC-054 §6.3). */
+export type ApiScopeSettings = Schemas['internal_infra_http_handler.ScopeSettingsResponse']
+
+export type ScopeOneOffPolicy = 'admins' | 'admins_and_requests' | 'disabled'
+
+export interface UpdateScopeSettingsInput {
+  auto_join_discovered: boolean
+  one_off_targets: ScopeOneOffPolicy
+  one_off_max_days: number
+  /** null: the default min(1, admins - 1). */
+  widening_approvals: number | null
+  default_max_tier: 't0' | 't1'
+}
+
+/** One result of POST /scope/check. */
+export type ApiScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckResult']
+/** A fix the API offers for a refused target (RFC-054 §6.5). */
+export type ApiScopeFix = Schemas['github_com_openctemio_openctem_api_pkg_domain_scope.Fix']
 
 /**
  * Input for creating a scope exclusion
