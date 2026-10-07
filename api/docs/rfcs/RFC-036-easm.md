@@ -125,7 +125,7 @@ source research. Items marked *needs runtime check* were read in code, not run.
 | `/assets/changes` | Real | State-history endpoints |
 | `/attack-paths`, `/exposure-chains`, `/exposures` | Real | |
 | `/exposures/{vulnerabilities,secrets,code,misconfigurations}` | Partial | Side cards show tenant-wide numbers under type titles; none covers nuclei/`easm` sources |
-| `/scoping`, `/scope-config` | Real | |
+| `/scoping`, `/scope` | Real | |
 
 **No EASM page is a scaffold.** Discovery and EASM have no `useDashboardStats`-only
 pages. Every new page in this RFC gets its own endpoint, and

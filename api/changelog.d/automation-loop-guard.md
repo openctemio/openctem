@@ -20,3 +20,4 @@
   `consecutive_failures`).
 - When a run finishes, it no longer switches back on an automation that was
   switched off while the run was executing.
+- A manual automation run now records the finding or asset it was started on as its subject.
