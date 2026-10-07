@@ -1,3 +1,4 @@
+-- expand-contract-ok: additive only; the check reads the column name "truncated" as TRUNCATE
 -- Finding evidence (docs/architecture/finding-evidence.md): the typed proof a
 -- tool attached to a detection or a retest attempt (an HTTP exchange, text,
 -- a file excerpt, ...), masked, with its secret values split out and
