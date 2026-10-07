@@ -21,12 +21,13 @@ import (
 // answered 403, or hidden although the API allowed the action (settings audit
 // 23a B24).
 //
-// The test fails when the committed file differs from the route table; run
+// The file is generated, not committed: `make contract` here (or `make
+// generate` at the repository root) runs
 //
-//	UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run TestRoutePermissionMapIsCurrent
+//	UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run TestRoutePermissionMap
 //
-// to regenerate it. It is a UX map, not a security boundary: the API gates
-// stay authoritative.
+// to write it. Without the variable the test only checks the walker. It is a
+// UX map, not a security boundary: the API gates stay authoritative.
 
 // routeGate is what a route requires, as the web console checks it.
 type routeGate struct {
@@ -304,7 +305,7 @@ func renderRoutePermissionMap(m map[string]routeGate) []byte {
 	return buf.Bytes()
 }
 
-func TestRoutePermissionMapIsCurrent(t *testing.T) {
+func TestRoutePermissionMap(t *testing.T) {
 	m := buildRoutePermissionMap(t)
 	if len(m) < 100 {
 		t.Fatalf("only %d mutating routes parsed; the walker is broken", len(m))
@@ -327,19 +328,14 @@ func TestRoutePermissionMapIsCurrent(t *testing.T) {
 		}
 	}
 
-	rendered := renderRoutePermissionMap(m)
-	path := filepath.Join(repoRoot(t), routePermissionMapPath)
-	if os.Getenv("UPDATE_ROUTE_PERMISSIONS") == "1" {
-		if err := os.WriteFile(path, rendered, 0o600); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
+	if os.Getenv("UPDATE_ROUTE_PERMISSIONS") != "1" {
 		return
 	}
-	current, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v (generate it with UPDATE_ROUTE_PERMISSIONS=1)", path, err)
+	path := filepath.Join(repoRoot(t), routePermissionMapPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("create %s: %v", filepath.Dir(path), err)
 	}
-	if !bytes.Equal(current, rendered) {
-		t.Fatalf("%s is stale: a route gate changed. Regenerate with UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run TestRoutePermissionMapIsCurrent", routePermissionMapPath)
+	if err := os.WriteFile(path, renderRoutePermissionMap(m), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }

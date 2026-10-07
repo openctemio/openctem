@@ -89,6 +89,16 @@ GRANT=$(jq -c '.trust_level = "trusted" | .allow_push_ingest = true
 call PUT "/api/v1/sensors/$SENSOR_ID/grant" "$GRANT"
 call POST /api/v1/sensors '{"name":"e2e-sensor-b","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'
 
+# A heartbeat brings e2e-sensor online and reports nuclei as installed. Ingest
+# accepts a report only from a tool the sensor has reported (sensors.tools was
+# dropped, #1254), and dispatch counts only reported tools too (#824). Nothing
+# claims the scan's job below, so its run stays in progress for
+# 10-scan-detail-runs.
+code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v2/sensor/heartbeat" \
+  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"status":"online","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}]}')
+[[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
+
 findings=$(for i in $(seq 1 15); do
   printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"}\n' \
     "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))"
@@ -113,14 +123,6 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X PUT "$API/api/v2/sensor/res
 [[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
 log "a scan with a run in progress"
-# A heartbeat brings e2e-sensor online so the trigger is accepted. It reports
-# nuclei as installed: dispatch only counts tools a sensor has reported, not
-# the ones declared on it (#824). Nothing claims the job, so the run stays in
-# progress for 10-scan-detail-runs.
-code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v2/sensor/heartbeat" \
-  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
-  -d '{"status":"online","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}]}')
-[[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
 call POST "/api/v1/scans/$(jq -r .id <<<"$BODY")/trigger" '{}'
 
