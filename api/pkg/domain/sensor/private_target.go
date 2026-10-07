@@ -11,6 +11,8 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
 // HasPrivateTarget reports whether a command payload names a private,
@@ -109,7 +111,9 @@ func isPrivateAddressLiteral(target string) bool {
 		}
 		return false
 	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
+	if h, _, _, ok := asset.SplitServiceName(host); ok {
+		host = h // a service in any name form: its host
+	} else if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
 	a, err := netip.ParseAddr(strings.Trim(host, "[]"))
@@ -155,7 +159,9 @@ func isPrivateTarget(target string) bool {
 		}
 		return false
 	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
+	if h, _, _, ok := asset.SplitServiceName(host); ok {
+		host = h // a service in any name form: its host
+	} else if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	} else if i := strings.IndexByte(host, '/'); i >= 0 {
 		host = host[:i] // registry/path of an image reference
