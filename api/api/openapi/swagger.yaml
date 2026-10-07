@@ -15565,8 +15565,15 @@ definitions:
       status:
         type: string
       step_id:
+        description: |-
+          StepID is empty once the step was removed from the pipeline; the step
+          run keeps its key, name and tool.
         type: string
       step_key:
+        type: string
+      step_name:
+        type: string
+      tool:
         type: string
     type: object
   internal_infra_http_handler.StepUpRequest:
