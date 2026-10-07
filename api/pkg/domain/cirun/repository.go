@@ -52,6 +52,12 @@ type Repository interface {
 	// RotateRunToken replaces a running run's upload token (the old one
 	// stops working).
 	RotateRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, expiresAt time.Time) error
+	// OpenAggregateRun returns the open aggregate run of the run's pipeline
+	// run (pipeline, external run id, attempt, commit), creating it from
+	// the given run when there is none; created says which.
+	OpenAggregateRun(ctx context.Context, r *Run) (open *Run, created bool, err error)
+	// AddRunToken adds a job's upload token to a running aggregate run.
+	AddRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, jobID string, expiresAt time.Time) error
 	ListRuns(ctx context.Context, tenantID shared.ID, f RunFilter) ([]Run, int, error)
 	// RecordRunReport adds the fingerprints a report sighted (capped at
 	// MaxRunFindings per run) and counts the report.

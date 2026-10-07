@@ -4,57 +4,33 @@ import (
 	"context"
 	"net/http"
 
+	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/workflow"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// actionNodePermission returns the platform permission a user must hold to use
-// a given workflow action type, mirroring the authZ of the equivalent direct
-// API route (e.g. update_status ⇄ PATCH /findings/{id}/status requires
-// FindingsWrite; trigger_scan ⇄ ScansWrite; trigger_pipeline ⇄ PipelinesWrite).
+// authorizeActionConfigs checks the caller holds the permission of every
+// action and notification node in the supplied configs (see
+// workflowsvc.NodePermission: the permission of the equivalent direct API
+// route). It returns the first permission the caller lacks and false when
+// unauthorized; ("", true) means the caller may build these nodes.
+// Owners/admins bypass via middleware.HasPermission. nil configs and trigger
+// or condition nodes are ignored.
 //
 // Without this gate a user granted only WorkflowsWrite
-// ("findings:workflows:write") could build a workflow whose action nodes
-// execute finding mutations, scans and pipeline runs they were never granted —
-// an intra-tenant privilege escalation, since permission matching is exact (no
-// wildcard implies WorkflowsWrite ⊃ FindingsWrite). The bool is false when the
-// action needs nothing beyond WorkflowsWrite: disabled run_script, and outbound
-// http_request which mutates no platform resource.
-func actionNodePermission(actionType string) (permission.Permission, bool) {
-	switch workflow.ActionType(actionType) {
-	case workflow.ActionTypeAssignUser, workflow.ActionTypeAssignTeam,
-		workflow.ActionTypeUpdatePriority, workflow.ActionTypeUpdateStatus,
-		workflow.ActionTypeAddTags, workflow.ActionTypeRemoveTags,
-		workflow.ActionTypeCreateTicket, workflow.ActionTypeUpdateTicket,
-		workflow.ActionTypeTriggerAITriage:
-		return permission.FindingsWrite, true
-	case workflow.ActionTypeTriggerScan:
-		return permission.ScansWrite, true
-	case workflow.ActionTypeTriggerPipeline:
-		return permission.PipelinesWrite, true
-	}
-	return "", false
-}
-
-// authorizeActionConfigs checks the caller holds the per-resource permission
-// for every action node in the supplied node configs. It returns the first
-// permission the caller lacks and false when unauthorized; ("", true) means the
-// caller may create/update these nodes. Owners/admins bypass via
-// middleware.HasPermission. nil configs and non-action nodes (empty ActionType)
-// are ignored.
-//
-// Enforced at workflow create/graph-update/add-node/update-node so that the
-// authority needed to *build* a privileged action is checked once by an
-// authenticated user — covering both manual (POST /runs) and event-dispatched
-// executions, which run with no actor context.
+// ("findings:workflows:write") could build a workflow whose nodes change
+// findings, start scans or send data out, which they were never granted (an
+// intra-tenant privilege escalation: permission matching is exact). The same
+// permissions are checked again, on the person a run acts as, before every
+// step runs (workflowsvc.StepAuthorizer).
 func authorizeActionConfigs(ctx context.Context, configs ...*NodeConfigRequest) (permission.Permission, bool) {
 	for _, c := range configs {
-		if c == nil || c.ActionType == "" {
+		if c == nil {
 			continue
 		}
-		if perm, required := actionNodePermission(c.ActionType); required && !middleware.HasPermission(ctx, string(perm)) {
+		if perm, required := workflowsvc.NodePermission(toNodeConfig(c)); required && !middleware.HasPermission(ctx, string(perm)) {
 			return perm, false
 		}
 	}
@@ -73,4 +49,32 @@ func (h *WorkflowHandler) requireActionPermissions(w http.ResponseWriter, r *htt
 		return false
 	}
 	return true
+}
+
+// requireWorkflowPermissions is requireActionPermissions over every node the
+// stored workflow has, plus extra (the configs the request adds). Any change
+// to what a workflow does (an edge, a deleted node, a trigger filter, switching
+// it on) needs the permissions of all its steps: removing a condition in front
+// of an action, or widening its trigger, changes what that action runs on as
+// much as adding the action does. It writes the error and returns false when
+// the caller may not.
+func (h *WorkflowHandler) requireWorkflowPermissions(w http.ResponseWriter, r *http.Request, tenantID, workflowID shared.ID, extra ...*NodeConfigRequest) bool {
+	wf, err := h.service.GetWorkflow(r.Context(), tenantID, workflowID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return false
+	}
+	configs := make([]*NodeConfigRequest, 0, len(wf.Nodes)+len(extra))
+	for _, n := range wf.Nodes {
+		if n == nil {
+			continue
+		}
+		c := n.Config
+		configs = append(configs, &NodeConfigRequest{
+			ActionType:       string(c.ActionType),
+			NotificationType: string(c.NotificationType),
+		})
+	}
+	configs = append(configs, extra...)
+	return h.requireActionPermissions(w, r, configs...)
 }

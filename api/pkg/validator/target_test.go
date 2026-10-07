@@ -579,3 +579,20 @@ func TestValidateSingleTarget_IPv6CIDRSize(t *testing.T) {
 		}
 	}
 }
+
+// Service names are host:port targets, and the host rules still apply
+// (research/63 PR0).
+func TestValidateSingleTarget_ServiceNames(t *testing.T) {
+	v := NewTargetValidator()
+	for _, in := range []string{"vndirect.com.vn:443:tcp", "vndirect.com.vn:443/tcp", "198.51.100.7:22:tcp", "[2001:db8::1]:443/tcp"} {
+		r := v.ValidateSingleTarget(in)
+		if !r.IsValid || r.Port == 0 {
+			t.Errorf("%q: %+v", in, r)
+		}
+	}
+	for _, in := range []string{"10.0.0.5:22:tcp", "127.0.0.1:22/tcp", "169.254.169.254:80:tcp", "localhost:22:tcp"} {
+		if r := v.ValidateSingleTarget(in); r.IsValid {
+			t.Errorf("%q accepted: %+v", in, r)
+		}
+	}
+}

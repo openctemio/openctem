@@ -969,8 +969,11 @@ func (s *TenantService) SearchMembersWithUserInfo(ctx context.Context, tenantID 
 		return nil, fmt.Errorf("%w: search string exceeds maximum of %d characters", shared.ErrValidation, maxSearchLength)
 	}
 
+	// The same statuses the members handler accepts and the repository
+	// filters on: empty (active and suspended), one status, or all.
 	switch filters.Status {
-	case "", string(tenantdom.MemberStatusActive), string(tenantdom.MemberStatusSuspended):
+	case "", string(tenantdom.MemberStatusActive), string(tenantdom.MemberStatusSuspended),
+		string(tenantdom.MemberStatusOffboarded), tenantdom.MemberFilterAll:
 	default:
 		return nil, fmt.Errorf("%w: unknown member status filter", shared.ErrValidation)
 	}
@@ -1970,10 +1973,56 @@ func (s *TenantService) UpdateRetestSettings(
 		WithMetadata("interval_hours_before", before.IntervalHours).
 		WithMetadata("interval_hours_after", rs.IntervalHours).
 		WithMetadata("daily_cap_before", before.DailyCap).
-		WithMetadata("daily_cap_after", rs.DailyCap)
+		WithMetadata("daily_cap_after", rs.DailyCap).
+		WithMetadata("auto_resolve_before", before.AutoResolve).
+		WithMetadata("auto_resolve_after", rs.AutoResolve)
 	s.logAudit(ctx, actx, event)
 
 	out := t.TypedSettings().Retest
+	return &out, nil
+}
+
+// GetEvidenceSettings returns the tenant's finding-evidence settings. The
+// zero value means the defaults.
+func (s *TenantService) GetEvidenceSettings(ctx context.Context, tenantID string) (*tenantdom.EvidenceSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	es := t.TypedSettings().Evidence
+	return &es, nil
+}
+
+// UpdateEvidenceSettings replaces the tenant's finding-evidence settings and
+// audits the before/after values.
+func (s *TenantService) UpdateEvidenceSettings(
+	ctx context.Context,
+	tenantID string,
+	es tenantdom.EvidenceSettings,
+	actx auditapp.AuditContext,
+) (*tenantdom.EvidenceSettings, error) {
+	var before tenantdom.EvidenceSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionEvidence, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Evidence
+		return t.UpdateEvidenceSettings(es)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantEvidenceUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Evidence)).
+		WithMessage("Evidence settings updated").
+		WithMetadata("secret_retention_days_before", before.EffectiveSecretRetentionDays()).
+		WithMetadata("secret_retention_days_after", es.EffectiveSecretRetentionDays())
+	s.logAudit(ctx, actx, event)
+
+	out := t.TypedSettings().Evidence
 	return &out, nil
 }
 
