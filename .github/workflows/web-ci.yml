@@ -154,8 +154,12 @@ jobs:
             (cd api && GOWORK=off go run ./tools/openapidiff -base "$c/base" -head "$c/head" \
               -base-label "${BASE_SHA:0:9}" -head-label "${HEAD_SHA:0:9}") > "$c/report/report.md"
           else
-            printf '%s\n## API contract changes\n\nThe base contract (`%s`) could not be generated, so the change could not be compared; the web checks run against the new contract.\n' \
-              '<!-- openctem-contract-diff -->' "${BASE_SHA:-none}" > "$c/report/report.md"
+            {
+              echo "<!-- openctem-contract-diff -->"
+              echo "## API contract changes"
+              echo
+              echo "The base contract (${BASE_SHA:-none}) could not be generated, so the change could not be compared; the web checks run against the new contract."
+            } > "$c/report/report.md"
           fi
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
           echo "contract changed: $changed"
