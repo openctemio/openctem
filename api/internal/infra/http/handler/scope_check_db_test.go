@@ -114,3 +114,77 @@ func TestScopeCheck_DryRunResponse_DB(t *testing.T) {
 		t.Errorf("a member was offered to approve: %+v", mem["pend.example"].Fixes)
 	}
 }
+
+type recordingDryRun struct {
+	got     []scansvc.DryRunInput
+	results []scansvc.DryRunResult
+}
+
+func (f *recordingDryRun) DryRunTargets(_ context.Context, in scansvc.DryRunInput) ([]scansvc.DryRunResult, error) {
+	f.got = append(f.got, in)
+	return f.results, nil
+}
+
+// asset_ids reach the dry run as ids; an asset the caller may not see comes
+// back by its id only, with no fixes, and the request is bounded
+// (RFC-054 §6.4).
+func TestScopeCheck_AssetIDs_DB(t *testing.T) {
+	db, ctx := openScopingTestDB(t)
+	tenantID := seedHandlerTenant(ctx, t, db)
+	pg := &postgres.DB{DB: db}
+	svc := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg), postgres.NewAssetRepository(pg), logger.NewNop())
+	h := NewScopeHandler(svc, validator.New(), logger.NewNop())
+	mine, hidden := shared.NewID().String(), shared.NewID().String()
+	dry := &recordingDryRun{results: []scansvc.DryRunResult{
+		{Target: "app.ok.example", AssetID: mine, Allowed: true},
+		{Target: hidden, AssetID: hidden, Code: scopedom.RefusalOutOfDataScope, Reason: "outside"},
+	}}
+	h.SetDryRun(dry, fakeCoverage{})
+
+	call := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scope/check", strings.NewReader(body))
+		c := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+		c = context.WithValue(c, middleware.IsAdminKey, true)
+		rec := httptest.NewRecorder()
+		h.CheckScope(rec, req.WithContext(c))
+		return rec
+	}
+
+	rec := call(`{"asset_ids":["` + mine + `","` + hidden + `"]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(dry.got) != 1 || len(dry.got[0].AssetIDs) != 2 || len(dry.got[0].Targets) != 0 || dry.got[0].Tier != 1 {
+		t.Fatalf("dry-run input = %+v", dry.got)
+	}
+	var out CheckScopeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if r := out.Results[0]; !r.Allowed || r.AssetID != mine || r.Via == nil {
+		t.Fatalf("own asset = %+v", r)
+	}
+	if r := out.Results[1]; r.Allowed || r.Target != hidden || r.AssetID != hidden || r.Code != scopedom.RefusalOutOfDataScope || len(r.Fixes) != 0 || r.Rule != nil {
+		t.Fatalf("hidden asset = %+v", r)
+	}
+
+	many := make([]string, 0, 201)
+	for range 201 {
+		many = append(many, `"`+shared.NewID().String()+`"`)
+	}
+	for name, body := range map[string]string{
+		"empty":             `{}`,
+		"not a uuid":        `{"asset_ids":["nope"]}`,
+		"too many assets":   `{"asset_ids":[` + strings.Join(many, ",") + `]}`,
+		"too many together": `{"targets":["a.example"],"asset_ids":[` + strings.Join(many[:200], ",") + `]}`,
+	} {
+		// 400 for the size rule, 422 for a field validation error.
+		if rec := call(body); rec.Code != http.StatusBadRequest && rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s: status %d, want 400 or 422", name, rec.Code)
+		}
+	}
+	if len(dry.got) != 1 {
+		t.Fatalf("a refused request reached the dry run: %d calls", len(dry.got))
+	}
+}
