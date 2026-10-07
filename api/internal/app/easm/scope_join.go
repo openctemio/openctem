@@ -135,6 +135,11 @@ func (j *ScopeJoin) loadRoots(ctx context.Context, tenantID shared.ID) (*joinRoo
 	if err != nil {
 		return nil, fmt.Errorf("list scope targets: %w", err)
 	}
+	return rootsOf(targets), nil
+}
+
+// rootsOf keeps the permanent active domain and IP entries.
+func rootsOf(targets []*scopedom.Target) *joinRoots {
 	r := &joinRoots{}
 	for _, t := range targets {
 		if t == nil || !t.IsActive() || !permanent(t) {
@@ -147,7 +152,7 @@ func (j *ScopeJoin) loadRoots(ctx context.Context, tenantID shared.ID) (*joinRoo
 			r.ipTargets = append(r.ipTargets, t)
 		}
 	}
-	return r, nil
+	return r
 }
 
 // permanent reports whether a scope target confirms inventory: one-off
@@ -193,11 +198,28 @@ func itemAddress(it JoinItem) string {
 	return ""
 }
 
-// Covered returns, for the items a permanent scope entry or seed covers and
-// nothing keeps out (exclusion, tombstone, rejected name), the evidence
-// source that covers each (asset id -> "scope_target:<id>" or
-// "easm_seed:<root>"). With auto-join off it returns nothing.
+// Covered returns, for the items a permanent scope entry covers and nothing
+// keeps out (exclusion, tombstone, rejected name), the evidence source that
+// covers each (asset id -> "scope_target:<id>"). With auto-join off it
+// returns nothing.
 func (j *ScopeJoin) Covered(ctx context.Context, tenantID shared.ID, items []JoinItem) (map[string]string, error) {
+	return j.covered(ctx, tenantID, items, nil)
+}
+
+// autoJoinOff reports whether the tenant switched auto-join off.
+func (j *ScopeJoin) autoJoinOff(ctx context.Context, tenantID shared.ID) (bool, error) {
+	if j.settings == nil {
+		return false, nil
+	}
+	st, err := j.settings.GetScopeSettings(ctx, tenantID.String())
+	if err != nil {
+		return false, fmt.Errorf("read scope settings: %w", err)
+	}
+	return st != nil && st.AutoJoinDisabled, nil
+}
+
+// covered is Covered against roots (nil: the tenant's active entries).
+func (j *ScopeJoin) covered(ctx context.Context, tenantID shared.ID, items []JoinItem, roots *joinRoots) (map[string]string, error) {
 	if err := j.ready(); err != nil {
 		return nil, err
 	}
@@ -205,18 +227,14 @@ func (j *ScopeJoin) Covered(ctx context.Context, tenantID shared.ID, items []Joi
 	if len(items) == 0 {
 		return out, nil
 	}
-	if j.settings != nil {
-		st, err := j.settings.GetScopeSettings(ctx, tenantID.String())
-		if err != nil {
-			return nil, fmt.Errorf("read scope settings: %w", err)
-		}
-		if st != nil && st.AutoJoinDisabled {
-			return out, nil
-		}
+	off, err := j.autoJoinOff(ctx, tenantID)
+	if err != nil || off {
+		return out, err
 	}
-	roots, err := j.loadRoots(ctx, tenantID)
-	if err != nil {
-		return nil, err
+	if roots == nil {
+		if roots, err = j.loadRoots(ctx, tenantID); err != nil {
+			return nil, err
+		}
 	}
 	matched := map[string]string{}
 	cands := make([]scope.ExclusionCandidate, 0, len(items))
@@ -347,12 +365,23 @@ func joinEvidence(covered map[string]string) []attribution.Evidence {
 // maxReevaluate bounds one tenant's re-evaluation per call.
 const maxReevaluate = 5000
 
-// Reevaluate confirms the tenant's pending automatic records (needs_review,
-// candidate) that a permanent scope entry or seed now covers. It is the
-// backfill when the rule ships and runs again whenever an entry becomes
-// active. Idempotent: evidence is upserted per (asset, rule, source), and a
-// confirmed record is not pending any more. It returns the confirmed names.
+// Reevaluate is Run, returning the confirmed names.
 func (j *ScopeJoin) Reevaluate(ctx context.Context, tenantID shared.ID) ([]string, error) {
+	done, err := j.Run(ctx, tenantID)
+	names := make([]string, 0, len(done))
+	for _, d := range done {
+		names = append(names, d.Name)
+	}
+	return names, err
+}
+
+// Run confirms the tenant's pending automatic records (needs_review,
+// candidate) that a permanent scope entry now covers, and returns them with
+// the entry that covers each. It is the backfill when the rule ships and runs
+// again after every scope change that can confirm something (JoinScheduler).
+// Idempotent: evidence is upserted per (asset, rule, source), and a confirmed
+// record is not pending any more. One system audit event lists the run.
+func (j *ScopeJoin) Run(ctx context.Context, tenantID shared.ID) ([]scope.JoinedAsset, error) {
 	if err := j.ready(); err != nil {
 		return nil, err
 	}
@@ -390,7 +419,8 @@ func (j *ScopeJoin) Reevaluate(ctx context.Context, tenantID shared.ID) ([]strin
 	for _, it := range pending {
 		nameOf[it.ID] = it.Name
 	}
-	var confirmed []string
+	var confirmed []scope.JoinedAsset
+	defer func() { j.auditConfirmed(ctx, tenantID, confirmed) }()
 	for _, id := range ids {
 		rec, has := records[id]
 		if !has || rec.HumanDecided {
@@ -405,19 +435,51 @@ func (j *ScopeJoin) Reevaluate(ctx context.Context, tenantID shared.ID) ([]strin
 			return confirmed, err
 		}
 		if merged.State == attribution.StateConfirmed && rec.State != attribution.StateConfirmed {
-			confirmed = append(confirmed, nameOf[id])
+			confirmed = append(confirmed, scope.JoinedAsset{AssetID: id, Name: nameOf[id], CoveredBy: covered[id]})
 		}
 	}
-	j.auditConfirmed(ctx, tenantID, confirmed)
 	return confirmed, nil
+}
+
+// Preview lists the pending automatic records the candidate entry would
+// confirm if it were in effect (the change preview): only a permanent
+// domain or IP entry confirms, and exclusions, tombstones, rejected names and
+// a person's decision still win. Nothing is written.
+func (j *ScopeJoin) Preview(ctx context.Context, tenantID shared.ID, candidate *scopedom.Target) ([]scope.JoinedAsset, error) {
+	if err := j.ready(); err != nil {
+		return nil, err
+	}
+	roots := rootsOf([]*scopedom.Target{candidate})
+	if len(roots.domainTargets)+len(roots.ipTargets) == 0 {
+		return nil, nil
+	}
+	pending, err := j.store.PendingAutomatic(ctx, tenantID, maxReevaluate)
+	if err != nil {
+		return nil, fmt.Errorf("list pending attribution: %w", err)
+	}
+	covered, err := j.covered(ctx, tenantID, pending, roots)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]scope.JoinedAsset, 0, len(covered))
+	for _, it := range pending {
+		if src, ok := covered[it.ID]; ok {
+			out = append(out, scope.JoinedAsset{AssetID: it.ID, Name: it.Name, CoveredBy: src})
+		}
+	}
+	return out, nil
 }
 
 // maxAuditedNames bounds the names one audit event lists.
 const maxAuditedNames = 50
 
-func (j *ScopeJoin) auditConfirmed(ctx context.Context, tenantID shared.ID, names []string) {
-	if len(names) == 0 {
+func (j *ScopeJoin) auditConfirmed(ctx context.Context, tenantID shared.ID, done []scope.JoinedAsset) {
+	if len(done) == 0 {
 		return
+	}
+	names := make([]string, 0, len(done))
+	for _, d := range done {
+		names = append(names, d.Name)
 	}
 	j.log.Info("scope join confirmed pending names", "tenant_id", tenantID.String(), "count", len(names))
 	if j.audit == nil {
@@ -428,7 +490,7 @@ func (j *ScopeJoin) auditConfirmed(ctx context.Context, tenantID shared.ID, name
 		listed = listed[:maxAuditedNames]
 	}
 	event := auditapp.NewSuccessEvent(auditdom.ActionAssetAttributionAutoConfirmed, auditdom.ResourceTypeTenant, tenantID.String()).
-		WithMessage(fmt.Sprintf("%d discovered name(s) confirmed: a scope target or seed of the organization covers them", len(names))).
+		WithMessage(fmt.Sprintf("%d discovered name(s) confirmed: a permanent scope entry of the organization covers them", len(names))).
 		WithMetadata("rule", string(attribution.RuleMatchesScopeTarget)).
 		WithMetadata("count", len(names)).
 		WithMetadata("names", listed).
@@ -439,7 +501,7 @@ func (j *ScopeJoin) auditConfirmed(ctx context.Context, tenantID shared.ID, name
 	}
 }
 
-// ReevaluateAll runs Reevaluate for every tenant with pending automatic
+// ReevaluateAll runs Run for every tenant with pending automatic
 // records (the backfill). One tenant's failure is logged and does not stop
 // the others.
 func (j *ScopeJoin) ReevaluateAll(ctx context.Context) (int, error) {
@@ -455,7 +517,7 @@ func (j *ScopeJoin) ReevaluateAll(ctx context.Context) (int, error) {
 		if ctx.Err() != nil {
 			return total, ctx.Err()
 		}
-		names, err := j.Reevaluate(ctx, t)
+		names, err := j.Run(ctx, t)
 		if err != nil {
 			j.log.Warn("scope join re-evaluation failed", "tenant_id", t.String(), "error", logger.SanitizeError(err))
 			continue

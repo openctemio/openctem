@@ -1243,6 +1243,16 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
 	}
 
+	// Assets the scope join confirmed through one scope entry (RFC-054
+	// §4.3): matches_scope_target evidence from it, pinned to the tenant.
+	if filter.CoveredByScopeTarget != nil {
+		conditions = append(conditions, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM easm_evidence sje WHERE sje.asset_id = a.id AND sje.tenant_id = a.tenant_id AND sje.rule = 'matches_scope_target' AND sje.source = $%d)",
+			argIndex))
+		args = append(args, "scope_target:"+filter.CoveredByScopeTarget.String())
+		argIndex++
+	}
+
 	// Data classification filter.
 	if len(filter.DataClassifications) > 0 {
 		placeholders := make([]string, len(filter.DataClassifications))
