@@ -5,7 +5,7 @@
  * workflow. The starter workflows (system templates tagged "starter":
  * Discover, Discover + Vuln, Web app, Network, Code / CI) are offered first;
  * any other active workflow is one choice away. Every list comes from the
- * API: the tool registry's active scanners and the active pipeline templates.
+ * API: the tool registry's active scanners and the active workflow templates.
  */
 
 'use client'
@@ -36,7 +36,7 @@ import {
 import { useMemo, useState } from 'react'
 import type { SensorPreference, NewScanFormData } from '../../types'
 import { SENSOR_PREFERENCE_CONFIG } from '../../types'
-import { usePipelines } from '@/lib/api/pipeline-hooks'
+import { useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
 import { ScannerSelect } from '../scanner-select'
 import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
 import { TENABLE_SC_TOOL } from '@/features/integrations/lib/tenable-sc'
@@ -56,16 +56,16 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
   const [advancedOpen, setAdvancedOpen] = useState(false)
   // The workflows are needed to offer the starters, unless the mode is
   // locked to a single scan (Edit).
-  const { data: pipelinesData, isLoading: isLoadingPipelines } = usePipelines(
+  const { data: workflowsData, isLoading: isLoadingWorkflows } = useScanWorkflows(
     lockMode && data.mode === 'single' ? undefined : { is_active: true, per_page: 100 },
     { revalidateOnFocus: false }
   )
-  const pipelines = useMemo(() => pipelinesData?.items ?? [], [pipelinesData?.items])
+  const workflows = useMemo(() => workflowsData?.data ?? [], [workflowsData?.data])
   const starters = useMemo(
-    () => pipelines.filter((p) => p.is_system_template && (p.tags ?? []).includes('starter')),
-    [pipelines]
+    () => workflows.filter((p) => p.is_system_template && (p.tags ?? []).includes('starter')),
+    [workflows]
   )
-  const selectedWorkflow = pipelines.find((w) => w.id === data.workflowId)
+  const selectedWorkflow = workflows.find((w) => w.id === data.workflowId)
   const selectedStarter = starters.find((w) => w.id === data.workflowId)
   // What the "what to run" choice shows as selected
   const choice = data.mode === 'single' ? 'single' : selectedStarter ? selectedStarter.id : 'other'
@@ -174,19 +174,19 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
             <SelectTrigger aria-label="Workflow">
               <SelectValue
                 placeholder={
-                  isLoadingPipelines
-                    ? 'Loading pipelines…'
-                    : pipelines.length === 0
-                      ? 'No active pipelines'
-                      : 'Choose a pipeline'
+                  isLoadingWorkflows
+                    ? 'Loading workflows…'
+                    : workflows.length === 0
+                      ? 'No active workflows'
+                      : 'Choose a workflow'
                 }
               />
             </SelectTrigger>
             <SelectContent>
-              {data.workflowId && !selectedWorkflow && !isLoadingPipelines && (
-                <SelectItem value={data.workflowId}>Current pipeline (not active)</SelectItem>
+              {data.workflowId && !selectedWorkflow && !isLoadingWorkflows && (
+                <SelectItem value={data.workflowId}>Current workflow (not active)</SelectItem>
               )}
-              {pipelines.map((workflow) => (
+              {workflows.map((workflow) => (
                 <SelectItem key={workflow.id} value={workflow.id}>
                   <div className="flex items-center gap-2">
                     <span>{workflow.name}</span>
@@ -200,17 +200,17 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
               ))}
             </SelectContent>
           </Select>
-          {!isLoadingPipelines && pipelines.length === 0 && (
+          {!isLoadingWorkflows && workflows.length === 0 && (
             <p className="text-muted-foreground text-xs">
               Create one under{' '}
-              <Link href="/pipelines" className="underline">
-                Pipelines
+              <Link href="/scans/workflows" className="underline">
+                Workflows
               </Link>
               .
             </p>
           )}
 
-          {/* Selected pipeline: its steps, in order */}
+          {/* Selected workflow: its steps, in order */}
           {selectedWorkflow && (
             <div className="rounded-lg border bg-card p-4 space-y-3">
               <div className="min-w-0">

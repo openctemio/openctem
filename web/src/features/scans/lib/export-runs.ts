@@ -12,10 +12,10 @@
 import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type {
-  PipelineRun,
-  PipelineRunListFilters,
-  PipelineRunListResponse,
-} from '@/lib/api/pipeline-types'
+  ScanRun,
+  ScanRunListFilters,
+  ScanRunListResponse,
+} from '@/lib/api/scan-workflow-types'
 import type { ExportFieldConfig } from '@/hooks/use-csv-export'
 import { elapsedMs } from './run-display'
 
@@ -24,7 +24,7 @@ export const RUN_EXPORT_CAP = 5000
 const EXPORT_PAGE_SIZE = 100
 
 export interface RunExport {
-  runs: PipelineRun[]
+  runs: ScanRun[]
   /** Runs the list holds (the server's total for the filter). */
   total: number
   /** True when the list holds more runs than the export read. */
@@ -33,18 +33,17 @@ export interface RunExport {
 
 /** Every run of the list for `filters` (status and sort), up to `cap`. */
 export async function fetchRunsForExport(
-  filters: Pick<PipelineRunListFilters, 'status' | 'sort'>,
+  filters: Pick<ScanRunListFilters, 'status' | 'scan_id' | 'sort'>,
   cap: number = RUN_EXPORT_CAP,
-  fetchPage: (url: string) => Promise<PipelineRunListResponse> = (url) =>
-    get<PipelineRunListResponse>(url)
+  fetchPage: (url: string) => Promise<ScanRunListResponse> = (url) => get<ScanRunListResponse>(url)
 ): Promise<RunExport> {
-  const runs: PipelineRun[] = []
+  const runs: ScanRun[] = []
   let total = 0
   for (let page = 1; runs.length < cap; page++) {
     const res = await fetchPage(
       scanRunEndpoints.list({ ...filters, page, per_page: EXPORT_PAGE_SIZE })
     )
-    const items = res?.items ?? []
+    const items = res?.data ?? []
     total = res?.total ?? runs.length + items.length
     runs.push(...items)
     if (items.length < EXPORT_PAGE_SIZE || runs.length >= total) break
@@ -53,11 +52,11 @@ export async function fetchRunsForExport(
 }
 
 /** The columns of the export. */
-export const RUN_EXPORT_FIELDS: ExportFieldConfig<PipelineRun>[] = [
+export const RUN_EXPORT_FIELDS: ExportFieldConfig<ScanRun>[] = [
   { header: 'Run ID', accessor: (r) => r.id },
   {
     header: 'Scan',
-    accessor: (r) => (r.scan_id ? (r.scan_name ?? 'Deleted scan') : 'Pipeline run'),
+    accessor: (r) => (r.scan_id ? (r.scan_name ?? 'Deleted scan') : 'Scan run'),
   },
   { header: 'Scan ID', accessor: (r) => r.scan_id ?? '' },
   { header: 'Status', accessor: (r) => r.status },

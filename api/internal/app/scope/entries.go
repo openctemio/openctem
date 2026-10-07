@@ -314,6 +314,7 @@ func (s *Service) ApproveTarget(ctx context.Context, targetID, tenantID string, 
 	}
 	if effective {
 		s.notifyWidened(ctx, t, "Scope entry approved and in effect")
+		s.scheduleJoin(t.TenantID())
 	}
 	s.logger.Info("scope target approved", "id", logSafe(targetID), "effective", effective)
 	return t, effective, nil

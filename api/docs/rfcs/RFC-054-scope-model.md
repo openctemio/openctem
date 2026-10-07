@@ -166,6 +166,33 @@ step-up and approval (§6.1, §7). So:
 The rule is applied wherever discovered names are attributed: CT promotion
 and the scan stamper (names a tenant scan found).
 
+**When the join runs.** After every committed change that can confirm a
+waiting name, from the scope service (so the API, review rules and later
+automations all get it):
+
+- an entry comes into effect: created in effect, **approved** (the usual path
+  for a new wildcard, since widening needs approval), activated;
+- an entry in effect changes (pattern, type, expiry, tier, discovery);
+- an exclusion goes away or shrinks: deleted, taken out of effect, shortened,
+  or its testing mode changed.
+
+A pending entry or request, a rejection and a new exclusion confirm nothing
+and ask for nothing. The runs are debounced per tenant (2 s) and serialized
+(never two joins of one tenant at once; a change during a run gets one more
+run). The `scope-join` controller repeats every tenant every 6 h as the
+safety net (it also picks up exclusions that expire).
+
+**Feedback.** `POST /scope/targets/preview` `{target_type, pattern}` answers
+`{would_confirm}`: the names waiting for review the entry would confirm if it
+were permanent and in effect. A change that put an entry into effect or
+changed one in effect (create, approve, activate, update) runs the join at
+once and answers `join: {confirmed_count, assets_filter: {covered_by}}`;
+`GET /assets?covered_by=<entry id>` lists the assets the join confirmed
+through that entry. Both counts cover only the assets the caller may see
+(Layer 2 data scope); without the data scope the count is refused. Each run
+that confirms names writes one system audit event
+`asset.attribution_auto_confirmed` (count and up to 50 names).
+
 **When the entry goes away** (deleted, deactivated, narrowed or expired): the
 asset, its history and findings stay; nothing is deleted. Active scanning stops
 at once, because the authority check (§4.2 step 6) no longer finds a cover;
@@ -368,6 +395,32 @@ Unchanged, except that the widening exclusion routes require **step-up**:
 `DELETE /exclusions/{id}`, `POST /exclusions/{id}/deactivate`,
 `POST /exclusions/bulk/delete`, and `PUT /exclusions/{id}` when it shortens
 the window. The approval rule (approver ≠ requester) stays.
+
+**Path exclusions (RFC-056 §5, migration `001290`).** An exclusion of type
+`path` is a web rule, not an asset exclusion:
+
+- `POST /exclusions` with `exclusion_type: "path"` takes `pattern` as a host
+  pattern (`*`, `*.example.com` covering the apex as in S1, a host, or an
+  origin URL), `path_prefix` (required; segment-aware, `*` only as a whole
+  segment, no dot segments or encoded slashes) and `methods` (optional; the
+  methods it blocks, empty = every method). The UI suggests a method-scoped
+  rule (POST, PUT, PATCH, DELETE) for sensitive paths, so read-only checks
+  still run there. The rule cannot be edited later; replace it instead.
+- Each path exclusion has a **testing mode**:
+  `PUT /exclusions/{id}/testing` `{"testing": "blocked"|"read_only"|"allowed",
+  "testing_until": RFC 3339}`. New exclusions are `blocked`; `read_only` lets
+  GET and HEAD through; `allowed` treats the path as in scope until
+  `testing_until` (at most 90 days), then it is `blocked` again. The route
+  needs `attack_surface:scope:exclusions:approve` and step-up, is audited
+  (`scope_exclusion.updated` with before and after) and notifies every
+  administrator. There is no switch that lifts every exclusion at once (S5).
+- Lifting an exclusion never widens scope: a target must still pass the one
+  authority check (§4.2) and the tier ceilings, guardrails and deny list
+  (§8). A host the exclusion's pattern covers that is not the organization's
+  asset stays refused.
+- Responses carry `path_prefix`, `methods`, `testing`, `testing_effective`
+  (the mode in force now), `testing_until`, `testing_changed_by` and
+  `testing_changed_at`.
 
 ### 6.3 Settings (S5)
 

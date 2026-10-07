@@ -237,6 +237,12 @@ type LogsResponse struct {
 // FailRequest is the body of POST /commands/{id}/fail.
 type FailRequest struct {
 	ErrorMessage string `json:"error_message"`
+	// ErrorCode, when set, names the failure in the platform's vocabulary
+	// (SCANNER_NOT_FOUND, TARGET_REFUSED, NO_TARGETS, POLICY_REFUSED,
+	// TOOL_EXIT, PARSE_ERROR, TIMEOUT). Optional: without it the platform
+	// classifies the message. A code outside that list is recorded as
+	// COMMAND_FAILED.
+	ErrorCode string `json:"error_code,omitempty"`
 	// Refusal, when set, says the sensor refused the job under a policy
 	// (research/25 §3.6, feature "refusal"): the platform re-queues routed
 	// work to another eligible sensor and excludes this one. Optional:

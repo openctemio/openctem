@@ -315,7 +315,7 @@ export type {
   ScanConfigListResponse,
   ScanConfigListFilters,
   ScanConfigStatsData,
-  ScanRunStatus,
+  ScanLastRunStatus,
 } from './scan-types'
 
 // ============================================
@@ -357,62 +357,62 @@ export type {
 export { getActionLabel, getSeverityColor, getResultColor, getActionCategory } from './audit-types'
 
 // ============================================
-// PIPELINE HOOKS & TYPES
+// SCAN_WORKFLOW HOOKS & TYPES
 // ============================================
 
 export {
-  // Pipeline template hooks
-  usePipelines,
-  usePipeline,
-  useCreatePipeline,
-  useUpdatePipeline,
-  useDeletePipeline,
-  useActivatePipeline,
-  useDeactivatePipeline,
-  useClonePipeline,
+  // Workflow template hooks
+  useScanWorkflows,
+  useScanWorkflow,
+  useCreateScanWorkflow,
+  useUpdateScanWorkflow,
+  useDeleteScanWorkflow,
+  useActivateScanWorkflow,
+  useDeactivateScanWorkflow,
+  useCloneScanWorkflow,
 
-  // Pipeline step hooks
+  // Workflow step hooks
   useAddStep,
   useUpdateStep,
   useDeleteStep,
 
-  // Pipeline run hooks
-  usePipelineRuns,
-  usePipelineRun,
-  useCancelPipelineRun,
+  // Workflow run hooks
+  useScanRuns,
+  useScanRun,
+  useCancelScanRun,
 
   // Scan management hooks
   useScanManagementStats,
   useQuickScan,
 
   // Cache utilities
-  pipelineKeys,
-  pipelineRunKeys,
+  scanWorkflowKeys,
+  scanRunKeys,
   scanManagementKeys,
-  invalidatePipelinesCache,
-  invalidatePipelineRunsCache,
+  invalidateScanWorkflowsCache,
+  invalidateScanRunsCache,
   invalidateScanManagementStatsCache,
-  invalidateAllPipelineCaches,
-} from './pipeline-hooks'
+  invalidateAllScanWorkflowCaches,
+} from './scan-workflow-hooks'
 
 export type {
-  // Pipeline types
-  PipelineTemplate,
-  PipelineStep,
-  PipelineTrigger,
-  PipelineSettings,
-  PipelineListFilters,
-  PipelineListResponse,
+  // Workflow types
+  ScanWorkflow,
+  ScanWorkflowStep,
+  ScanWorkflowTrigger,
+  ScanWorkflowSettings,
+  ScanWorkflowListFilters,
+  ScanWorkflowListResponse,
 
-  // Pipeline run types
-  PipelineRun,
+  // Workflow run types
+  ScanRun,
   StepRun,
-  PipelineRunListFilters,
-  PipelineRunListResponse,
+  ScanRunListFilters,
+  ScanRunListResponse,
 
   // Request types
-  CreatePipelineRequest,
-  UpdatePipelineRequest,
+  CreateScanWorkflowRequest,
+  UpdateScanWorkflowRequest,
   CreateStepRequest,
   UpdateStepRequest,
   QuickScanRequest,
@@ -426,29 +426,29 @@ export type {
   StatusCounts,
 
   // Enum types
-  PipelineTriggerType,
+  ScanWorkflowTriggerType,
   StepConditionType,
-  PipelineRunStatus,
+  ScanRunStatus,
   StepRunStatus,
-  PipelineSensorPreference,
-} from './pipeline-types'
+  ScanWorkflowSensorPreference,
+} from './scan-workflow-types'
 
 export {
-  PIPELINE_TRIGGERS,
-  PIPELINE_TRIGGER_LABELS,
+  SCAN_RUN_TRIGGERS,
+  SCAN_RUN_TRIGGER_LABELS,
   STEP_CONDITION_TYPES,
   STEP_CONDITION_LABELS,
-  PIPELINE_RUN_STATUSES,
-  PIPELINE_RUN_STATUS_LABELS,
+  SCAN_RUN_STATUSES,
+  SCAN_RUN_STATUS_LABELS,
   STEP_RUN_STATUSES,
-  DEFAULT_PIPELINE_SETTINGS,
-  PIPELINE_SENSOR_PREFERENCES,
-  PIPELINE_SENSOR_PREFERENCE_LABELS,
-  PIPELINE_SENSOR_PREFERENCE_DESCRIPTIONS,
-} from './pipeline-types'
+  DEFAULT_SCAN_WORKFLOW_SETTINGS,
+  SCAN_WORKFLOW_SENSOR_PREFERENCES,
+  SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
+  SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS,
+} from './scan-workflow-types'
 
 // ============================================
-// PIPELINE & SCAN MANAGEMENT ENDPOINTS
+// SCAN_WORKFLOW & SCAN MANAGEMENT ENDPOINTS
 // ============================================
 
 export { scanWorkflowEndpoints, scanRunEndpoints, scanManagementEndpoints } from './endpoints'

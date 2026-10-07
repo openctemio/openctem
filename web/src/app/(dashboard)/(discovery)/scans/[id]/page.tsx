@@ -47,18 +47,21 @@ import {
   runTriggeredByLabel,
   scanRunCounts,
 } from '@/features/scans/lib/run-display'
-import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { del, post } from '@/lib/api/client'
 import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { PIPELINE_TRIGGER_LABELS, type PipelineTriggerType } from '@/lib/api/pipeline-types'
+import {
+  SCAN_RUN_TRIGGER_LABELS,
+  type ScanWorkflowTriggerType,
+} from '@/lib/api/scan-workflow-types'
 import { useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
 import {
   SCAN_CONFIG_STATUS_LABELS,
   SCAN_TYPE_LABELS,
   SCHEDULE_TYPE_LABELS,
   SENSOR_PREFERENCE_LABELS,
-  type PipelineRun,
+  type ScanRun,
 } from '@/lib/api/scan-types'
 import { useAssetGroup } from '@/lib/api/security-hooks'
 import { Can, Permission } from '@/lib/permissions'
@@ -72,7 +75,7 @@ type Tab = (typeof TABS)[number]
 const RUN_PAGE_SIZES = [25, 50, 100]
 
 /** A run's duration, "so far" while it is still going. */
-function runDuration(run: PipelineRun): string {
+function runDuration(run: ScanRun): string {
   const ms = elapsedMs(run)
   if (ms === undefined) return run.status === 'pending' ? 'Not started' : '-'
   const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
@@ -122,10 +125,11 @@ export default function ScanDetailPage() {
 
   const [tabParam, setTabParam] = useUrlFilter('tab', 'runs')
   const tab: Tab = (TABS as readonly string[]).includes(tabParam) ? (tabParam as Tab) : 'runs'
-  // The run history is paged on the server; the page lives in the URL.
-  const [runPage, setRunPage] = useUrlFilterNumber('run_page', 1)
-  const [runPerPageParam, setRunPerPage] = useUrlFilterNumber('run_per_page', 25)
-  const runPerPage = RUN_PAGE_SIZES.includes(runPerPageParam) ? runPerPageParam : 25
+  // The run history is an embedded list: its paging is local state, and
+  // "View all runs" opens the Runs list filtered to this scan (a linkable,
+  // plain page / per_page URL).
+  const [runPage, setRunPage] = useState(1)
+  const [runPerPage, setRunPerPage] = useState(25)
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -155,7 +159,7 @@ export default function ScanDetailPage() {
   )
   const activeRun = (latestRuns?.data ?? []).find(isRunInProgress)
 
-  const handleStopRun = async (run: PipelineRun) => {
+  const handleStopRun = async (run: ScanRun) => {
     setStoppingRunId(run.id)
     try {
       await post(scanRunEndpoints.cancel(run.id), {})
@@ -186,7 +190,7 @@ export default function ScanDetailPage() {
   // Rebuilt each render: the cancel action reads the in-flight run id. No
   // column sorts: this endpoint lists newest first, and sorting one page of
   // the history would misrepresent the rest.
-  const runColumns: ColumnDef<PipelineRun>[] = [
+  const runColumns: ColumnDef<ScanRun>[] = [
     {
       id: 'started',
       header: 'Started',
@@ -221,7 +225,7 @@ export default function ScanDetailPage() {
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span>
-            {PIPELINE_TRIGGER_LABELS[row.original.trigger_type as PipelineTriggerType] ??
+            {SCAN_RUN_TRIGGER_LABELS[row.original.trigger_type as ScanWorkflowTriggerType] ??
               row.original.trigger_type}
           </span>
           {runTriggeredByLabel(row.original) && (
@@ -439,6 +443,13 @@ export default function ScanDetailPage() {
             paginationNoun="runs"
             emptyMessage="No runs yet"
             emptyDescription="Trigger this scan to see its first run here."
+            toolbarEnd={
+              <Button variant="outline" size="sm" className="h-9" asChild>
+                <Link href={`/scans/runs?scan_id=${encodeURIComponent(scanId)}`}>
+                  View all runs
+                </Link>
+              </Button>
+            }
           />
         </TabsContent>
 
@@ -548,7 +559,7 @@ export default function ScanDetailPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Can permission={Permission.ScanWorkflowsRead}>
                         <Link
-                          href={`/pipelines/${encodeURIComponent(config.scan_workflow_id)}/builder`}
+                          href={`/scans/workflows/${encodeURIComponent(config.scan_workflow_id)}`}
                           className="text-primary text-sm font-medium hover:underline"
                         >
                           Open scan workflow
