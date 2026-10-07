@@ -8,3 +8,7 @@
 
 - A trigger (manual, scheduled or quick scan) is refused with `NO_SENSOR_FOR_TOOL` when its scanner, or the tool of one of its workflow steps, has no online sensor that may run it. A zone-pinned scan is judged on that zone's sensors. These jobs used to be queued and expire unclaimed. The error body's `details` name the tool, the step and the sensor counts.
 - The trigger refusal codes `NO_SENSOR_FOR_TOOL`, `NO_SENSOR_AVAILABLE`, `TOOL_NOT_FOUND`, `TOOL_DISABLED` and `TOOL_NOT_SCANNER` are now returned in the error `code` instead of `BAD_REQUEST`.
+
+### Fixed: switching off a tool the organization never configured
+
+- `POST /api/v1/tenant-tools/bulk/disable` (and `bulk/enable`) did nothing for a tool without a tenant config row, and a tool without a row counts as enabled, so such a tool could never be switched off. The switch now creates the row. Only platform tools and the organization's own custom tools get one; any other id is ignored.
