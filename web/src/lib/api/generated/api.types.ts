@@ -25015,8 +25015,8 @@ export interface paths {
       cookie?: never
     }
     /**
-     * List scan stages
-     * @description The scan stage catalog: each capability with the asset types it consumes and produces, its intrusiveness tier and the tools that implement it.
+     * List scan capabilities
+     * @description The scan capability catalog: each capability with its contract (typed ports, standard params, required output fields, version), its intrusiveness tier and the tools that implement it; the port types and the adapter table.
      */
     get: {
       parameters: {
@@ -41827,6 +41827,11 @@ export interface components {
       page?: string
       updated_at?: string
     }
+    'internal_infra_http_handler.ScanAdapterResponse': {
+      capability?: string
+      from?: string
+      to?: string
+    }
     'internal_infra_http_handler.ScanDetailResponse': {
       /** @description AdHoc: an unsaved quick scan (not listed as a configuration until saved). */
       ad_hoc?: boolean
@@ -41914,6 +41919,12 @@ export interface components {
       timezone?: string
       updated_at?: string
     }
+    'internal_infra_http_handler.ScanPortTypeResponse': {
+      /** @description Carries are the stored type labels a stream of this type holds. */
+      carries?: string[]
+      label?: string
+      type?: string
+    }
     'internal_infra_http_handler.ScanProfileResponse': {
       created_at?: string
       created_by?: string
@@ -41943,21 +41954,55 @@ export interface components {
       success?: boolean
     }
     'internal_infra_http_handler.ScanStageImplementationResponse': {
+      /** @description Batch: the tool takes a list of targets per task. */
+      batch?: boolean
       default?: boolean
+      /**
+       * @description Params maps the standard params this tool accepts to its own config
+       *     key.
+       */
+      params?: {
+        [key: string]: string
+      }
       tool?: string
     }
     'internal_infra_http_handler.ScanStageListResponse': {
+      adapters?: components['schemas']['internal_infra_http_handler.ScanAdapterResponse'][]
       /**
        * @description MaxHops is how many discovery hops a derived target may be from the
        *     run's seeds.
        */
       max_hops?: number
+      port_types?: components['schemas']['internal_infra_http_handler.ScanPortTypeResponse'][]
       stages?: components['schemas']['internal_infra_http_handler.ScanStageResponse'][]
     }
+    'internal_infra_http_handler.ScanStageParamResponse': {
+      description?: string
+      enum?: string[]
+      max?: number
+      min?: number
+      name?: string
+      /** @enum {string} */
+      type?: 'string' | 'string_list' | 'integer' | 'boolean' | 'port_list'
+    }
     'internal_infra_http_handler.ScanStageResponse': {
+      /**
+       * @description Available: the platform routes the capability today. A planned one
+       *     has a contract and no implementation yet.
+       */
+      available?: boolean
+      /** @description CrossCutting capabilities (verify.finding) are not workflow nodes. */
+      cross_cutting?: boolean
       description?: string
       findings?: boolean
+      /** @description ID is the versioned capability id ("scan.ports@1"). */
+      id?: string
       implementations?: components['schemas']['internal_infra_http_handler.ScanStageImplementationResponse'][]
+      /**
+       * @description InPorts and OutPorts are port types (port_types[].type): an edge
+       *     connects an output port to an input port of the same type.
+       */
+      in_ports?: string[]
       /**
        * @description Inputs and Outputs are stored type labels: "type" or
        *     "type/sub_type" (service/http is an HTTP service).
@@ -41966,10 +42011,14 @@ export interface components {
       key?: string
       max_fanout?: number
       name?: string
+      out_ports?: string[]
       outputs?: string[]
+      params?: components['schemas']['internal_infra_http_handler.ScanStageParamResponse'][]
       relations?: string[]
+      required_output_fields?: string[]
       /** @enum {string} */
       tier?: 'T0' | 'T1' | 'T2'
+      version?: number
     }
     'internal_infra_http_handler.ScanStatsResponse': {
       active?: number
