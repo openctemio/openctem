@@ -175,7 +175,6 @@ export const Permission = {
   // Tenant Tools (scans:tenant_tools:*)
   TenantToolsRead: 'scans:tenant_tools:read',
   TenantToolsWrite: 'scans:tenant_tools:write',
-  TenantToolsDelete: 'scans:tenant_tools:delete',
 
   // Scanner Templates (scans:templates:*)
   ScannerTemplatesRead: 'scans:templates:read',
@@ -525,7 +524,6 @@ export const PermissionGroups = {
     Permission.ScanProfilesDelete,
     Permission.SourcesDelete,
     Permission.ToolsDelete,
-    Permission.TenantToolsDelete,
     Permission.ScannerTemplatesDelete,
     Permission.TemplateSourcesDelete,
     Permission.SecretStoreDelete,
@@ -647,7 +645,6 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ToolsDelete]: 'Delete Tools',
   [Permission.TenantToolsRead]: 'View Tool Configs',
   [Permission.TenantToolsWrite]: 'Manage Tool Configs',
-  [Permission.TenantToolsDelete]: 'Delete Tool Configs',
   [Permission.ScannerTemplatesRead]: 'View Scanner Templates',
   [Permission.ScannerTemplatesWrite]: 'Manage Scanner Templates',
   [Permission.ScannerTemplatesDelete]: 'Delete Scanner Templates',
@@ -847,7 +844,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ToolsDelete,
     Permission.TenantToolsRead,
     Permission.TenantToolsWrite,
-    Permission.TenantToolsDelete,
     Permission.ScannerTemplatesRead,
     Permission.ScannerTemplatesWrite,
     Permission.ScannerTemplatesDelete,
@@ -1008,7 +1004,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ToolsDelete,
     Permission.TenantToolsRead,
     Permission.TenantToolsWrite,
-    Permission.TenantToolsDelete,
     Permission.ScannerTemplatesRead,
     Permission.ScannerTemplatesWrite,
     Permission.ScannerTemplatesDelete,

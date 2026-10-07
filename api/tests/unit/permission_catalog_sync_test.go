@@ -40,6 +40,7 @@ var permRenameMigrations = []string{}
 // one-column VALUES rows ('id'), which tupleID parses; they are applied, in
 // order, after the renames.
 var permRemoveMigrations = []string{
+	"001179_drop_tenant_tools_delete_permission.up.sql",
 	"001184_drop_vulnerability_write_permissions.up.sql",
 }
 

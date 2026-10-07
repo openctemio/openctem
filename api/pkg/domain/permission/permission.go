@@ -154,9 +154,8 @@ const (
 	ToolsDelete Permission = "scans:tools:delete"
 
 	// Tenant Tool Config permissions (scans:tenant_tools:*)
-	TenantToolsRead   Permission = "scans:tenant_tools:read"
-	TenantToolsWrite  Permission = "scans:tenant_tools:write"
-	TenantToolsDelete Permission = "scans:tenant_tools:delete"
+	TenantToolsRead  Permission = "scans:tenant_tools:read"
+	TenantToolsWrite Permission = "scans:tenant_tools:write"
 
 	// Scanner Template permissions (scans:templates:*)
 	ScannerTemplatesRead   Permission = "scans:templates:read"
@@ -434,7 +433,7 @@ func AllPermissions() []Permission {
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
 		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,
-		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
+		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIOverride,
