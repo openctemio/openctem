@@ -41,6 +41,12 @@ type Repository interface {
 	// Delete deletes a template.
 	Delete(ctx context.Context, id shared.ID) error
 
+	// Remove deletes the tenant's workflow, or retires it when it has runs
+	// (their history is kept). It refuses with ErrScanWorkflowRunActive while
+	// a run is pending or running; a workflow outside the tenant is
+	// ErrNotFound. retired reports which of the two happened.
+	Remove(ctx context.Context, tenantID, id shared.ID) (retired bool, err error)
+
 	// DeleteInTx deletes a template within a transaction.
 	DeleteInTx(ctx context.Context, tx *sql.Tx, id shared.ID) error
 
@@ -102,6 +108,10 @@ type StepRepository interface {
 	// ErrNotFound.
 	MutateSteps(ctx context.Context, tenantID, scanWorkflowID shared.ID, mutate func(current []*Step) ([]*Step, error)) ([]*Step, error)
 }
+
+// ErrScanWorkflowRetired refuses a change to, or a run of, a retired workflow.
+var ErrScanWorkflowRetired = shared.NewDomainError("WORKFLOW_RETIRED",
+	"this scan workflow was deleted; its runs are kept for history, but it cannot be changed or run", shared.ErrConflict)
 
 // ErrScanWorkflowRunActive refuses a change to a scan workflow's steps while a run of
 // the scan workflow is pending or running. A running run reads the step
