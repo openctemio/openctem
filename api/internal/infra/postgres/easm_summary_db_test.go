@@ -89,8 +89,13 @@ func TestEASMSummaryRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.AssetsByType["domain"] != 1 || d.AssetsByType["subdomain"] != 2 || d.AssetsByType["ip_address"] != 1 || d.AssetsByType["host"] != 0 {
+	// The surface is the inventory (RFC-054 §4.4): api.acme.com waits for
+	// review and is not counted; it shows in the attribution counts.
+	if d.AssetsByType["domain"] != 1 || d.AssetsByType["subdomain"] != 1 || d.AssetsByType["ip_address"] != 1 || d.AssetsByType["host"] != 0 {
 		t.Errorf("by type = %v", d.AssetsByType)
+	}
+	if d.ReviewByReason["fqdn_under_asserted_root"] != 1 || len(d.ReviewByReason) != 1 {
+		t.Errorf("review by reason = %v", d.ReviewByReason)
 	}
 	if d.AttributionByState[""] != 2 || d.AttributionByState["needs_review"] != 1 || d.AttributionByState["confirmed"] != 1 || d.AttributionByState["rejected"] != 1 {
 		t.Errorf("attribution = %v", d.AttributionByState)
@@ -98,7 +103,7 @@ func TestEASMSummaryRepository(t *testing.T) {
 	if d.OldestReviewSince == nil || now.Sub(*d.OldestReviewSince) < 70*time.Hour {
 		t.Errorf("review age = %v", d.OldestReviewSince)
 	}
-	if d.NewSince7d != 1 || d.NewSince30d != 2 || d.NewSinceCycle != 1 || d.CycleStart == nil {
+	if d.NewSince7d != 1 || d.NewSince30d != 1 || d.NewSinceCycle != 1 || d.CycleStart == nil {
 		t.Errorf("new = 7d %d 30d %d cycle %d (%v)", d.NewSince7d, d.NewSince30d, d.NewSinceCycle, d.CycleStart)
 	}
 	if d.OpenBySeverity["high"] != 1 || d.OpenBySeverity["info"] != 2 || d.OpenBySeverity["critical"] != 0 || d.OpenBySeverity["medium"] != 0 {
