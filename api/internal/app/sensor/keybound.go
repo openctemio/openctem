@@ -181,13 +181,29 @@ func (s *SensorService) BearerKeysAllowed(ctx context.Context, tenantID shared.I
 	return s.identityPolicy.BearerKeysAllowed(ctx, tenantID)
 }
 
+// SetStepUpGate wires step-up re-authentication for widening the identity
+// policy (docs/architecture/step-up-reauth.md).
+func (s *SensorService) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
+
 // SetBearerKeysAllowed changes the policy and audits a change at high
 // severity. The caller checked the permission: requiring key-bound identity
 // narrows (sensors:grant:narrow), allowing bearer keys widens
-// (sensors:grant:widen).
+// (sensors:grant:widen). Widening also needs the acting user's recent
+// re-authentication (step-up); narrowing stays one click.
 func (s *SensorService) SetBearerKeysAllowed(ctx context.Context, actx auditapp.AuditContext, tenantID shared.ID, allowed bool) error {
 	if s.identityPolicy == nil {
 		return shared.NewDomainError("UNAVAILABLE", "identity policy not available", shared.ErrValidation)
+	}
+	if allowed && s.stepUp != nil {
+		current, err := s.identityPolicy.BearerKeysAllowed(ctx, tenantID)
+		if err != nil {
+			return err
+		}
+		if !current {
+			if err := s.stepUp.RequireRecentAuth(ctx, actx.ActorID); err != nil {
+				return err
+			}
+		}
 	}
 	changed, err := s.identityPolicy.SetBearerKeysAllowed(ctx, tenantID, allowed)
 	if err != nil || !changed {

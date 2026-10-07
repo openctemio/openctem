@@ -234,7 +234,13 @@ type ScanDetailResponse struct {
 	PartialRuns int `json:"partial_runs"`
 	// BlockedRuns: triggers refused before anything was dispatched; each
 	// is a run with status blocked and its refusal_code.
-	BlockedRuns   int     `json:"blocked_runs"`
+	BlockedRuns int `json:"blocked_runs"`
+	// LastRun is the scan's latest run: its real state (running with
+	// progress, completed, partial, failed, blocked with the reason, ...).
+	// Absent before the first run.
+	LastRun *ScanLastRunResponse `json:"last_run,omitempty"`
+	// PipelineName names the workflow a workflow scan runs.
+	PipelineName  string  `json:"pipeline_name,omitempty"`
 	CreatedBy     *string `json:"created_by,omitempty"`
 	CreatedByName *string `json:"created_by_name,omitempty"`
 	CreatedAt     string  `json:"created_at"`
@@ -479,6 +485,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 		}
 		items[i] = buildScanResponse(s, name, reveal)
 	}
+	h.enrichScanResponses(ctx, tenantID, result.Data, items)
 
 	resp := map[string]any{
 		// "items" is the historical key the UI (scans/page.tsx) reads; "data" is
@@ -845,6 +852,8 @@ func (h *ScanHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 		TriggeredBy:    userID,
 		Context:        req.Context,
 		FreezeOverride: req.OverrideFreeze,
+		// A member's own "Run now": allowed on a paused scan (schedule off).
+		Interactive: true,
 	}
 
 	run, err := h.service.TriggerScan(r.Context(), input)
@@ -1137,6 +1146,69 @@ func (h *ScanHandler) GetScanRun(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(withTriggerName(toRunResponse(run), h.resolveRunTriggerNames(r.Context(), run)))
 }
 
+// ScanLastRunResponse is a scan's latest run, as the scan list shows it.
+type ScanLastRunResponse struct {
+	ID          string  `json:"id"`
+	Status      string  `json:"status"`
+	TriggerType string  `json:"trigger_type"`
+	CreatedAt   string  `json:"created_at"`
+	StartedAt   *string `json:"started_at,omitempty"`
+	CompletedAt *string `json:"completed_at,omitempty"`
+	// Progress is 0-100 for a live run: finished tasks of all tasks.
+	Progress int `json:"progress"`
+	// RefusalCode and ErrorMessage say why a blocked or failed run ended.
+	RefusalCode  string                  `json:"refusal_code,omitempty"`
+	ErrorMessage string                  `json:"error_message,omitempty"`
+	TaskSummary  *RunTaskSummaryResponse `json:"task_summary,omitempty"`
+}
+
+func toScanLastRunResponse(lr scansvc.LastRun) *ScanLastRunResponse {
+	r := lr.Run
+	if r == nil {
+		return nil
+	}
+	out := &ScanLastRunResponse{
+		ID:           r.ID.String(),
+		Status:       string(r.Status),
+		TriggerType:  string(r.TriggerType),
+		CreatedAt:    r.CreatedAt.Format(time.RFC3339),
+		Progress:     lr.Progress(),
+		RefusalCode:  r.RefusalCode,
+		ErrorMessage: r.ErrorMessage,
+	}
+	if r.StartedAt != nil {
+		v := r.StartedAt.Format(time.RFC3339)
+		out.StartedAt = &v
+	}
+	if r.CompletedAt != nil {
+		v := r.CompletedAt.Format(time.RFC3339)
+		out.CompletedAt = &v
+	}
+	if lr.Tasks != nil {
+		out.TaskSummary = toRunTaskSummaryResponse(*lr.Tasks)
+	}
+	return out
+}
+
+// enrichScanResponses adds each scan's latest run and workflow name: two
+// batch reads for the whole page, scoped to the caller's tenant.
+func (h *ScanHandler) enrichScanResponses(ctx context.Context, tenantID string, scans []*scan.Scan, items []*ScanDetailResponse) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil || len(scans) == 0 {
+		return
+	}
+	lastRuns := h.service.LastRuns(ctx, tid, scans)
+	names := h.service.PipelineNames(ctx, tid, scans)
+	for i, s := range scans {
+		if lr, ok := lastRuns[s.ID]; ok {
+			items[i].LastRun = toScanLastRunResponse(lr)
+		}
+		if s.PipelineID != nil {
+			items[i].PipelineName = names[*s.PipelineID]
+		}
+	}
+}
+
 // --- Conversion Helpers ---
 
 // toScanResponse converts a domain scan to API response, enriching with the
@@ -1151,7 +1223,9 @@ func (h *ScanHandler) toScanResponse(ctx context.Context, s *scan.Scan) *ScanDet
 			createdByName = &name
 		}
 	}
-	return buildScanResponse(s, createdByName, canSeeScanConfigSecrets(ctx))
+	resp := buildScanResponse(s, createdByName, canSeeScanConfigSecrets(ctx))
+	h.enrichScanResponses(ctx, s.TenantID.String(), []*scan.Scan{s}, []*ScanDetailResponse{resp})
+	return resp
 }
 
 // scannerConfigFor returns the stored config, or its redacted copy.

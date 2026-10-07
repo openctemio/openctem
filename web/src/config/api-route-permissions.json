@@ -80,7 +80,6 @@
 "DELETE /api/v1/tenant-tools/{toolId}": {"permissions":["scans:tenant_tools:delete"]},
 "DELETE /api/v1/tenants/{tenant}": {"permissions":["team:delete"],"min_role":"owner"},
 "DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}": {"permissions":["team:members:invite"],"min_role":"admin"},
-"DELETE /api/v1/tenants/{tenant}/members/{userId}": {"permissions":["team:members:write"],"min_role":"admin"},
 "DELETE /api/v1/threat-actors/{id}": {"permissions":["threat_intel:write"]},
 "DELETE /api/v1/tools/{id}": {"permissions":["scans:tools:delete"]},
 "DELETE /api/v1/users/me/sessions": {},
