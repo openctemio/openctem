@@ -193,6 +193,42 @@ func (s *Service) ListForRunTask(ctx context.Context, tenantID, runID, commandID
 	return p, nil
 }
 
+// ListForCommand returns any command's logs (scan, retest, validate,
+// system). The caller checks who may read them (CommandSubject).
+func (s *Service) ListForCommand(ctx context.Context, tenantID, commandID shared.ID) (Page, error) {
+	if tenantID.IsZero() || commandID.IsZero() {
+		return Page{}, ErrNotFound
+	}
+	r, ok := s.store.(commandReader)
+	if !ok {
+		return Page{}, ErrNotFound
+	}
+	p, err := r.ListForCommand(ctx, tenantID, commandID, MaxReadLines)
+	if err != nil {
+		return Page{}, err
+	}
+	if p.Lines == nil {
+		p.Lines = []Line{}
+	}
+	return p, nil
+}
+
+// CommandSubject is the finding a command is about (a retest or a
+// validate job), nil for any other command.
+func (s *Service) CommandSubject(ctx context.Context, tenantID, commandID shared.ID) (*shared.ID, error) {
+	r, ok := s.store.(commandReader)
+	if !ok {
+		return nil, nil
+	}
+	return r.SubjectFinding(ctx, tenantID, commandID)
+}
+
+// commandReader reads a command's logs and subject by command id.
+type commandReader interface {
+	ListForCommand(ctx context.Context, tenantID, commandID shared.ID, maxLines int) (Page, error)
+	SubjectFinding(ctx context.Context, tenantID, commandID shared.ID) (*shared.ID, error)
+}
+
 // sanitize makes one line safe to store and show: bounded, plain, redacted.
 // A timestamp that is missing, unreadable or in the future is the receive
 // time.

@@ -28,10 +28,12 @@ import (
 	"unicode"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/evidence"
 	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -109,6 +111,18 @@ type Dispatcher interface {
 	DispatchToolRetest(ctx context.Context, job validation.ToolRetestJob) (shared.ID, error)
 }
 
+// Policy answers the tenant's retest policy: whether a confirmed fix
+// resolves a finding (true) or moves it to validated_fixed for a person to
+// confirm (false, the default).
+type Policy interface {
+	AutoResolve(ctx context.Context, tenantID shared.ID) bool
+}
+
+// EvidenceStore keeps a retest attempt's proof (internal/app/evidence).
+type EvidenceStore interface {
+	StoreRetest(ctx context.Context, tenantID, findingID, retestID shared.ID, items []evidence.Item, meta evidenceapp.Meta)
+}
+
 // AuditLogger writes audit-log events.
 type AuditLogger interface {
 	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
@@ -126,6 +140,8 @@ type Service struct {
 	// regressionSLA and announcer run after a retest moved a finding.
 	regressionSLA RegressionSLA
 	announcer     Announcer
+	policy        Policy
+	evidence      EvidenceStore
 	now           func() time.Time
 	logger        *logger.Logger
 }
@@ -146,6 +162,13 @@ func (s *Service) SetRegressionSLA(r RegressionSLA) { s.regressionSLA = r }
 
 // SetAnnouncer wires the ticket comment + notification on a fix or regression.
 func (s *Service) SetAnnouncer(a Announcer) { s.announcer = a }
+
+// SetPolicy wires the tenant retest policy. Nil: a confirmed fix never
+// resolves on its own.
+func (s *Service) SetPolicy(p Policy) { s.policy = p }
+
+// SetEvidenceStore wires storage of each attempt's proof. Nil: none is kept.
+func (s *Service) SetEvidenceStore(e EvidenceStore) { s.evidence = e }
 
 // SetAuditLogger wires the audit log for "Retest now" requests.
 func (s *Service) SetAuditLogger(a AuditLogger) { s.audit = a }
@@ -217,7 +240,7 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 	if dispatchErr != nil {
 		s.logger.Warn("retest dispatch failed; settling as unknown",
 			"retest_id", rt.ID.String(), "finding_id", rt.FindingID.String(), "error", dispatchErr)
-		if _, err := s.settle(ctx, rt, retestdom.OutcomeUnknown, "dispatch failed: the checks could not be queued"); err != nil {
+		if _, err := s.settle(ctx, rt, retestdom.Inconclusive(retestdom.ReasonError, "dispatch failed: the checks could not be queued")); err != nil {
 			s.logger.Error("failed to settle undispatched retest", "retest_id", rt.ID.String(), "error", err)
 		}
 		return nil, fmt.Errorf("queue retest: %w", dispatchErr)
@@ -474,21 +497,30 @@ func (s *Service) Sweep(ctx context.Context, limit int) (int, error) {
 // trySettle reads both checks; when both are terminal (or force — the deadline
 // passed), it decides and settles. Returns whether it settled.
 func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force bool) (bool, error) {
+	matchedAt := s.matchedAt(ctx, rt)
 	if cmd, done, ok := s.readToolRetest(ctx, rt); ok {
 		rt.Method = retestdom.MethodTool
 		if !done && !force {
 			return false, nil
 		}
-		outcome, reason := retestdom.OutcomeUnknown, "no sensor result before the deadline"
+		v := retestdom.Inconclusive(retestdom.ReasonNoResult, "no sensor result before the deadline")
+		var tr retestdom.ToolResult
 		switch {
 		case cmd == nil:
-			reason = "no result from the tool's retest"
+			v = retestdom.Inconclusive(retestdom.ReasonNoResult, "no result from the tool's retest")
 		case cmd.Status == commanddom.CommandStatusCompleted:
-			outcome, reason = retestdom.DecideToolVerdict(cmd.Result, rt.FindingID.String())
+			tr = retestdom.DecideToolVerdict(cmd.Result, rt.FindingID.String(), matchedAt)
+			v = tr.Verdict
 		case done:
-			reason = "the tool's retest did not complete: " + nonEmptyStr(retestdom.CleanDetail(cmd.ErrorMessage), string(cmd.Status))
+			v = retestdom.Inconclusive(retestdom.ReasonError, "the tool's retest did not complete: "+
+				nonEmptyStr(evidence.RedactText(retestdom.CleanDetail(cmd.ErrorMessage)), string(cmd.Status)))
 		}
-		return s.settle(ctx, rt, outcome, reason)
+		v = s.applyDrift(ctx, rt, v, tr.TemplateDigest, false)
+		s.storeAttempt(ctx, rt, tr.Evidence, tr.TemplateDigest)
+		if cmd != nil {
+			rt.SensorID = cmd.SensorID
+		}
+		return s.settle(ctx, rt, v)
 	}
 	rt.Method = retestdom.MethodValidate
 	check, checkDone := s.readCheck(ctx, rt.TenantID, rt.CheckCommandID)
@@ -496,18 +528,68 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 	if !(checkDone && reachDone) && !force {
 		return false, nil
 	}
-	outcome, reason := retestdom.Decide(check, reach)
-	if !(checkDone && reachDone) && outcome == retestdom.OutcomeUnknown {
-		reason = "no sensor result before the deadline"
+	v := retestdom.Decide(check, reach, matchedAt)
+	if !(checkDone && reachDone) && v.Outcome == retestdom.OutcomeInconclusive && v.Code == retestdom.ReasonNoResult {
+		v.Reason = "no sensor result before the deadline"
+	}
+	v = s.applyDrift(ctx, rt, v, check.TemplateDigest, true)
+	s.storeAttempt(ctx, rt, check.Evidence, check.TemplateDigest)
+	rt.SensorID = s.checkSensor(ctx, rt)
+	return s.settle(ctx, rt, v)
+}
+
+// checkSensor is the sensor that claimed the retest's check command (nil when
+// none did, or it cannot be read).
+func (s *Service) checkSensor(ctx context.Context, rt *retestdom.Retest) *shared.ID {
+	if rt.CheckCommandID == nil {
+		return nil
+	}
+	c, err := s.commands.GetByTenantAndID(ctx, rt.TenantID, *rt.CheckCommandID)
+	if err != nil || c == nil {
+		return nil
+	}
+	return c.SensorID
+}
+
+// applyDrift makes a conclusive verdict inconclusive when the re-run cannot
+// be tied to the template the finding was last seen with. A baseline that
+// cannot be read fails closed.
+func (s *Service) applyDrift(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict, digest string, requireDigest bool) retestdom.Verdict {
+	if !v.Outcome.Conclusive() {
+		return v
 	}
 	baseline, err := s.templateBaseline(ctx, rt)
-	if err != nil && (outcome == retestdom.OutcomeFixed || outcome == retestdom.OutcomeStillPresent) {
-		// Fail closed: without the baseline nothing says the re-run used
-		// the template the finding was seen with.
-		outcome, reason = retestdom.OutcomeUnknown, "inconclusive: the finding's template baseline could not be read"
+	if err != nil {
+		return retestdom.Inconclusive(retestdom.ReasonTemplateChanged, "the finding's template baseline could not be read")
 	}
-	outcome, reason = retestdom.ApplyTemplateDrift(outcome, reason, baseline, check)
-	return s.settle(ctx, rt, outcome, reason)
+	return retestdom.ApplyTemplateDrift(v, baseline, digest, requireDigest)
+}
+
+// matchedAt is the finding's recorded endpoint (its matched-at URL), "" when
+// it has none or cannot be read: then no attempt can prove the endpoint.
+func (s *Service) matchedAt(ctx context.Context, rt *retestdom.Retest) string {
+	f, err := s.findings.GetByID(ctx, rt.TenantID, rt.FindingID)
+	if err != nil || f == nil {
+		return ""
+	}
+	return f.FilePath()
+}
+
+// storeAttempt keeps what the re-run reported it sent and received.
+func (s *Service) storeAttempt(ctx context.Context, rt *retestdom.Retest, items []evidence.Item, digest string) {
+	if s.evidence == nil || len(items) == 0 {
+		return
+	}
+	tool := "nuclei"
+	if rt.Method == retestdom.MethodTool {
+		tool = ""
+		if f, err := s.findings.GetByID(ctx, rt.TenantID, rt.FindingID); err == nil && f != nil {
+			tool = f.ToolName()
+		}
+	}
+	s.evidence.StoreRetest(ctx, rt.TenantID, rt.FindingID, rt.ID, items, evidenceapp.Meta{
+		ToolName: tool, RuleID: rt.TemplateID, TemplateDigest: digest,
+	})
 }
 
 // readToolRetest reads a retest's check command when it is a tool retest (ok;
@@ -562,11 +644,11 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 	}
 	switch cmd.Status {
 	case commanddom.CommandStatusCompleted:
-		outcome, summary, digest := commandOutcome(cmd.Result)
+		outcome, summary, digest, items := commandOutcome(cmd.Result)
 		if outcome == "" {
 			return retestdom.CheckResult{Missing: true}, true
 		}
-		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest}, true
+		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items}, true
 	case commanddom.CommandStatusFailed, commanddom.CommandStatusExpired, commanddom.CommandStatusCanceled:
 		return retestdom.CheckResult{Missing: true, Summary: cmd.ErrorMessage}, true
 	default:
@@ -577,17 +659,18 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 // commandOutcome extracts outcome/summary from a validate command's result. The
 // SDK poller nests an executor's metadata under "metadata"; a client completing
 // the command directly may put it at the top level. Same rule as the
-// validation completion hook.
-func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest string) {
+// validation completion hook. The attempt's proof is evidence.evidence_items
+// (CTIS 1.6 items), normalized.
+func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest string, items []evidence.Item) {
 	if len(raw) == 0 {
-		return "", "", ""
+		return "", "", "", nil
 	}
 	var result struct {
 		validation.ValidateResultPayload
 		Metadata validation.ValidateResultPayload `json:"metadata"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", "", ""
+		return "", "", "", nil
 	}
 	v := result.ValidateResultPayload
 	if v.Outcome == "" {
@@ -598,7 +681,16 @@ func commandOutcome(raw json.RawMessage) (outcome, summary, templateDigest strin
 	if d, ok := v.Evidence["template_digest"].(string); ok {
 		templateDigest = vulnerability.SanitizeTemplateDigest(d)
 	}
-	return v.Outcome, v.Summary, templateDigest
+	if rawItems, ok := v.Evidence["evidence_items"]; ok {
+		if b, err := json.Marshal(rawItems); err == nil {
+			for _, it := range evidence.DecodeList(b, evidence.MaxItemsPerRetest) {
+				if n, ok := evidence.Normalize(it); ok {
+					items = append(items, n)
+				}
+			}
+		}
+	}
+	return v.Outcome, v.Summary, templateDigest, items
 }
 
 // templateBaseline is the template digest recorded at the finding's last
@@ -620,7 +712,9 @@ func (s *Service) templateBaseline(ctx context.Context, rt *retestdom.Retest) (s
 // settle completes the retest: the finding moves per the outcome (decided under
 // the row lock from its current status) and the completion is written with the
 // actor "system: retest".
-func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, outcome retestdom.Outcome, reason string) (bool, error) {
+func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict) (bool, error) {
+	outcome, reason := v.Outcome, evidence.RedactText(v.Reason)
+	autoResolve := s.policy != nil && s.policy.AutoResolve(ctx, rt.TenantID)
 	var resolvedBy *shared.ID
 	if rt.Trigger == retestdom.TriggerManual {
 		resolvedBy = rt.RequestedBy
@@ -629,6 +723,7 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, outcome rete
 		"retest_id":   rt.ID.String(),
 		"trigger":     string(rt.Trigger),
 		"outcome":     string(outcome),
+		"reason_code": string(v.Code),
 		"reason":      reason,
 		"template_id": rt.TemplateID,
 		"target":      rt.Target,
@@ -646,13 +741,16 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, outcome rete
 	if rt.ReachCommandID != nil {
 		changes["reach_command_id"] = rt.ReachCommandID.String()
 	}
+	if rt.SensorID != nil {
+		changes["sensor_id"] = rt.SensorID.String()
+	}
 	source := activitySource(rt.Trigger)
 	var regression bool
 	res, err := s.store.Settle(ctx, retestdom.SettleInput{
 		TenantID: rt.TenantID, RetestID: rt.ID, FindingID: rt.FindingID,
-		Outcome: outcome, Reason: reason, ResolvedBy: resolvedBy, TemplateID: rt.TemplateID,
+		Outcome: outcome, ReasonCode: v.Code, Reason: reason, SensorID: rt.SensorID, ResolvedBy: resolvedBy, TemplateID: rt.TemplateID,
 		Decide: func(current vulnerability.FindingStatus) retestdom.SettleDecision {
-			next, change := retestdom.NextStatus(current, outcome)
+			next, change := retestdom.NextStatus(current, outcome, autoResolve)
 			regression = change && retestdom.IsRegression(current, next)
 			if regression {
 				changes["regression"] = true
@@ -753,17 +851,4 @@ func ResolveTarget(matchedAt, assetName string) string {
 }
 
 // hostOf returns the host part of an asset name (a bare host, host:port or URL).
-func hostOf(name string) string {
-	if strings.Contains(name, "://") {
-		if u, err := url.Parse(name); err == nil {
-			return u.Hostname()
-		}
-	}
-	if h, _, ok := strings.Cut(name, "/"); ok {
-		name = h
-	}
-	if strings.Count(name, ":") == 1 {
-		name, _, _ = strings.Cut(name, ":")
-	}
-	return strings.Trim(name, "[]")
-}
+func hostOf(name string) string { return asset.HostOf(name) }

@@ -8,7 +8,7 @@
 
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useEffectEvent } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -39,6 +39,10 @@ import { useAssets, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/features/asse
 import type { Asset } from '@/features/assets'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { COVERAGE_LEVELS, type CoverageLevel } from '../../lib/coverage-expansion'
+import { useCoverageExpansion } from '../../hooks/use-coverage-expansion'
+import { ScopePreview } from './scope-preview'
 import { firstWildcard, scannerTakesWildcard } from '../../lib/wildcard-targets'
 import { WildcardTargetHint } from './wildcard-target-hint'
 
@@ -202,9 +206,11 @@ function validateTarget(target: string): ValidatedTarget {
 interface TargetsStepProps {
   data: NewScanFormData
   onChange: (data: Partial<NewScanFormData>) => void
+  /** Offer the coverage level (new scans; an edit keeps the stored targets). */
+  showCoverage?: boolean
 }
 
-export function TargetsStep({ data, onChange }: TargetsStepProps) {
+export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStepProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [assetPage, setAssetPage] = useState(1)
@@ -355,6 +361,9 @@ export function TargetsStep({ data, onChange }: TargetsStepProps) {
     // Custom targets
     total += data.targets.customTargets.length
 
+    // Added by the coverage level
+    if (coverage !== 'host') total += expansion.added.length
+
     return total
   }
 
@@ -368,6 +377,38 @@ export function TargetsStep({ data, onChange }: TargetsStepProps) {
   const hasAssetGroups = data.targets.assetGroupIds.length > 0
   const hasIndividualAssets = data.targets.assetIds.length > 0
   const hasCustomTargets = data.targets.customTargets.length > 0
+
+  // Typed and picked names: what the coverage level expands and the scope
+  // preview checks. Asset groups resolve on the server at run time.
+  const typedTargets = useMemo(
+    () => [
+      ...data.targets.assetIds.map((id) => data.targets.assetNames[id]).filter(Boolean),
+      ...data.targets.customTargets,
+    ],
+    [data.targets.assetIds, data.targets.assetNames, data.targets.customTargets]
+  )
+  const coverage: CoverageLevel = data.targets.coverage ?? 'host'
+  const expansion = useCoverageExpansion(typedTargets, coverage)
+  const expandedKey = expansion.added.join('\n')
+  const storedKey = (data.targets.expandedTargets ?? []).join('\n')
+  // Store the expansion in the form (sent on submit) when it changes; the
+  // latest form is read as an effect event, not a dependency.
+  const syncExpansion = useEffectEvent((key: string) => {
+    if (key !== storedKey) {
+      onChange({ targets: { ...data.targets, expandedTargets: expansion.added } })
+    }
+  })
+  useEffect(() => {
+    syncExpansion(expandedKey)
+  }, [expandedKey])
+  const previewTargets = useMemo(
+    () => [...typedTargets, ...(coverage === 'host' ? [] : expansion.added)],
+    [typedTargets, coverage, expansion.added]
+  )
+  const sensorPreference =
+    data.sensorPreference === 'tenant' || data.sensorPreference === 'platform'
+      ? data.sensorPreference
+      : 'auto'
 
   return (
     <div className="space-y-4 p-4">
@@ -833,6 +874,46 @@ export function TargetsStep({ data, onChange }: TargetsStepProps) {
           </CollapsibleContent>
         </div>
       </Collapsible>
+
+      {/* Coverage level (research/48 §6.7) */}
+      {showCoverage && typedTargets.length > 0 && (
+        <fieldset className="space-y-2 rounded-lg border p-3">
+          <legend className="px-1 text-sm font-medium">Coverage</legend>
+          <RadioGroup
+            value={coverage}
+            onValueChange={(v) =>
+              onChange({ targets: { ...data.targets, coverage: v as CoverageLevel } })
+            }
+            className="gap-2"
+          >
+            {COVERAGE_LEVELS.map((lvl) => (
+              <label
+                key={lvl.id}
+                className="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-muted/50"
+              >
+                <RadioGroupItem value={lvl.id} className="mt-0.5" aria-label={lvl.label} />
+                <span className="min-w-0">
+                  <span className="block text-sm">{lvl.label}</span>
+                  <span className="block text-xs text-muted-foreground">{lvl.hint}</span>
+                </span>
+              </label>
+            ))}
+          </RadioGroup>
+          {coverage !== 'host' && (
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {expansion.isLoading
+                ? 'Looking up your inventory…'
+                : expansion.roots.length === 0
+                  ? 'No domain names to expand: enter or pick a domain.'
+                  : expansion.added.length === 0
+                    ? `Nothing in your inventory below ${expansion.roots.join(', ')} yet.`
+                    : `Adds ${expansion.added.length} ${expansion.added.length === 1 ? 'target' : 'targets'} from your inventory below ${expansion.roots.join(', ')}.`}
+            </p>
+          )}
+        </fieldset>
+      )}
+
+      <ScopePreview targets={previewTargets} sensorPreference={sensorPreference} />
 
       {/* Selected count summary */}
       <div className="bg-muted/50 rounded-lg border p-3">

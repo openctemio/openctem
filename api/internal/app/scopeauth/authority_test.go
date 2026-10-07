@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -80,6 +81,10 @@ func TestCovers(t *testing.T) {
 		{"https://app.scoped.com:8443/x", KindScopeTarget, ProofAsserted},
 		{"198.51.100.9", KindScopeTarget, ProofAsserted},
 		{"198.51.100.9:443", KindScopeTarget, ProofAsserted},
+		{"app.scoped.com:443:tcp", KindScopeTarget, ProofAsserted},
+		{"app.scoped.com:443/tcp", KindScopeTarget, ProofAsserted},
+		{"198.51.100.9:443:tcp", KindScopeTarget, ProofAsserted},
+		{"www.verified.com:443:tcp", KindVerifiedDomain, ProofVerified},
 		{"github.com/org/repo", KindScopeTarget, ProofAsserted},
 		{"seeded.com", KindSeed, ProofAsserted},
 		{"a.b.seeded.com", KindSeed, ProofAsserted},
@@ -92,7 +97,7 @@ func TestCovers(t *testing.T) {
 			t.Errorf("Covers(%q) = %+v, %v; want kind %s proof %s", c.name, via, ok, c.kind, c.proof)
 		}
 	}
-	for _, n := range []string{"notseeded.com", "seeded.com.evil.net", "203.0.113.5", "198.51.100.0/23", "github.com/other/repo", ""} {
+	for _, n := range []string{"notseeded.com", "notseeded.com:443:tcp", "203.0.113.5:443:tcp", "seeded.com.evil.net", "203.0.113.5", "198.51.100.0/23", "github.com/other/repo", ""} {
 		if via, ok := a.Covers(n); ok {
 			t.Errorf("Covers(%q) = %+v, want not covered", n, via)
 		}
@@ -134,6 +139,65 @@ func TestLoad_FailsClosed(t *testing.T) {
 	var nilAuth *Authority
 	if _, ok := nilAuth.Covers("app.scoped.com"); ok {
 		t.Error("a nil authority covers nothing")
+	}
+}
+
+// RFC-054 §4.2 step 6: an entry covers up to its max_tier, a seed or verified
+// domain up to t1. Another tenant's higher entry lifts nothing.
+func TestCoversAt(t *testing.T) {
+	f := newSources(t)
+	now := time.Now()
+	low, _ := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "low.example", "", "")
+	low.SetMaxTier(scopedom.TierPassive, now)
+	high, _ := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "*.intrusive.example", "", "")
+	high.SetMaxTier(scopedom.TierIntrusive, now)
+	f.targets = append(f.targets, low, high)
+	a, err := Load(context.Background(), f.tenant, f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		tier scopedom.Tier
+		want bool
+	}{
+		{"low.example", scopedom.TierPassive, true},
+		{"low.example", scopedom.TierActive, false},
+		{"app.scoped.com", scopedom.TierActive, true}, // default t1
+		{"app.scoped.com", scopedom.TierIntrusive, false},
+		{"www.seeded.com", scopedom.TierActive, true},
+		{"www.seeded.com", scopedom.TierIntrusive, false},
+		{"www.verified.com", scopedom.TierIntrusive, false},
+		{"a.intrusive.example", scopedom.TierIntrusive, true},
+		{"nothing.example", scopedom.TierPassive, false},
+	}
+	for _, c := range cases {
+		if _, ok := a.CoversAt(c.name, c.tier); ok != c.want {
+			t.Errorf("CoversAt(%q, %s) = %v, want %v", c.name, c.tier, ok, c.want)
+		}
+	}
+	if c := a.Ceiling("low.example"); c == nil || c.ID() != low.ID() {
+		t.Errorf("Ceiling(low.example) = %v", c)
+	}
+	if c := a.Ceiling("www.seeded.com"); c != nil {
+		t.Errorf("a seed has no entry to raise: %v", c)
+	}
+
+	other, err := Load(context.Background(), shared.NewID(), f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := other.CoversAt("a.intrusive.example", scopedom.TierPassive); ok {
+		t.Error("another tenant's entry covered a name")
+	}
+	// A domain verified for SSO sign-in authorizes no tier.
+	f.sso = []string{"signin.example"}
+	sso, err := Load(context.Background(), f.tenant, f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if via, ok := sso.CoversAt("www.signin.example", scopedom.TierPassive); ok {
+		t.Errorf("an SSO-verified domain authorized at t0: %+v", via)
 	}
 }
 

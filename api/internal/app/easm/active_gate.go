@@ -26,12 +26,11 @@ package easm
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/netip"
-	"net/url"
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
@@ -113,6 +112,86 @@ func (g *ActiveGate) CoverOf(ctx context.Context, tenantID shared.ID, targets []
 	return out, nil
 }
 
+// AssetTargets names what a probe of each asset targets (the dry run's
+// asset_ids, RFC-054 §6.4): the asset name first, then the other values an
+// exclusion of the asset also matches. Only the tenant's live assets are
+// answered; another tenant's, a deleted or an unknown id is absent.
+// Implements scan.AssetTargetResolver.
+func (g *ActiveGate) AssetTargets(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID][]string, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	out := make(map[shared.ID][]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	if len(ids) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many assets for one lookup", shared.ErrValidation)
+	}
+	found, err := g.assets.GetByIDs(ctx, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load assets: %w", err)
+	}
+	for _, id := range ids {
+		a := found[id.String()]
+		if a == nil || !a.TenantID().Equals(tenantID) || strings.TrimSpace(a.Name()) == "" {
+			continue
+		}
+		values := []string{a.Name()}
+		for _, v := range scopeapp.AssetExclusionValues(string(a.Type()), a.Name(), a.Properties()) {
+			if v = strings.TrimSpace(v); v != "" && !strings.EqualFold(v, a.Name()) {
+				values = append(values, v)
+			}
+		}
+		out[id] = values
+	}
+	return out, nil
+}
+
+// Scope statuses of an asset (RFC-054 §6.6).
+const (
+	ScopeStatusInScope       = "in_scope"
+	ScopeStatusOutOfScope    = "out_of_scope"
+	ScopeStatusInternal      = "internal"
+	ScopeStatusNotApplicable = "not_applicable"
+)
+
+// ScopeOfAsset answers whether the tenant's scope covers one asset and what
+// covers it: in_scope (with the authority), out_of_scope, internal (a
+// private or internal name, gated by scan zones) or not_applicable (a type
+// the scope authority does not judge). An unknown asset is out_of_scope.
+func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, assetID string) (string, *scopeauth.Via, error) {
+	if err := g.ready(); err != nil {
+		return "", nil, err
+	}
+	id, err := shared.IDFromString(assetID)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: invalid asset id", shared.ErrValidation)
+	}
+	assets, err := g.assets.GetByIDs(ctx, tenantID, []shared.ID{id})
+	if err != nil {
+		return "", nil, err
+	}
+	a := assets[assetID]
+	if a == nil {
+		return ScopeStatusOutOfScope, nil, nil
+	}
+	if isInternalName(a.Name()) {
+		return ScopeStatusInternal, nil, nil
+	}
+	if !internetFacing(a.Type(), a.SubType()) {
+		return ScopeStatusNotApplicable, nil, nil
+	}
+	cover, err := g.CoverOf(ctx, tenantID, []string{a.Name()})
+	if err != nil {
+		return "", nil, err
+	}
+	if v, ok := cover[a.Name()]; ok {
+		return ScopeStatusInScope, &v, nil
+	}
+	return ScopeStatusOutOfScope, nil, nil
+}
+
 // UnverifiedTargets returns the targets naming an internet host or public
 // address that are not at or under a verified domain of the tenant (an
 // address never is: there is no address proof yet). Implements
@@ -136,6 +215,50 @@ func (g *ActiveGate) UnverifiedTargets(ctx context.Context, tenantID shared.ID, 
 		if !auth.Verified(t) {
 			out = append(out, t)
 		}
+	}
+	return out, nil
+}
+
+// TierExceeded returns the targets the tenant's scope authority covers, but
+// not at tier (RFC-054 §4.2 step 6, refusal tier_exceeds): every covering
+// scope target has a lower max_tier, or only a seed or verified domain
+// covers it and tier is above t1. Each is mapped to the covering entry with
+// the highest ceiling (nil for a seed or verified domain). Targets nothing
+// covers, and private or internal targets (scan zones gate them), are not
+// listed: the ownership gate answers for them. Part of scan.AttributionGate.
+func (g *ActiveGate) TierExceeded(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	out := map[string]*scopedom.RuleRef{}
+	if tier <= scopedom.TierPassive || len(targets) == 0 {
+		return out, nil
+	}
+	if len(targets) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many targets for one tier check", shared.ErrValidation)
+	}
+	var auth *scopeauth.Authority
+	for _, t := range targets {
+		if !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		if _, covered := auth.Covers(t); !covered {
+			continue
+		}
+		if _, ok := auth.CoversAt(t, tier); ok {
+			continue
+		}
+		var rule *scopedom.RuleRef
+		if c := auth.Ceiling(t); c != nil {
+			rule = &scopedom.RuleRef{Kind: scopedom.RuleScopeTarget, ID: c.ID().String(), Pattern: c.Pattern()}
+		}
+		out[t] = rule
 	}
 	return out, nil
 }
@@ -302,10 +425,7 @@ func needsAuthority(t string) bool {
 	if _, err := netip.ParsePrefix(h); err == nil {
 		return true
 	}
-	if host, _, err := net.SplitHostPort(h); err == nil {
-		h = strings.Trim(host, "[]")
-	}
-	_, err := netip.ParseAddr(h)
+	_, err := netip.ParseAddr(asset.HostOf(t))
 	return err == nil
 }
 
@@ -438,22 +558,10 @@ func (g *ActiveGate) rejectedNames(ctx context.Context, tenantID shared.ID, host
 // dnsHost is the lower-case DNS name a target or asset name points at ("" for
 // an address, a CIDR or something that is not a host name).
 func dnsHost(s string) string {
-	h := strings.TrimSpace(s)
-	if strings.Contains(h, "://") {
-		u, err := url.Parse(h)
-		if err != nil {
-			return ""
-		}
-		h = u.Hostname()
-	} else {
-		if i := strings.IndexAny(h, "/?#"); i >= 0 {
-			h = h[:i]
-		}
-		if host, _, err := net.SplitHostPort(h); err == nil {
-			h = host
-		}
-	}
-	h = normalizeHost(h)
+	// asset.HostOf reads every service name form ("host:443:tcp",
+	// "host:443/tcp", "[v6]:443/tcp"), URLs and host:port, so a service
+	// follows its host.
+	h := normalizeHost(asset.HostOf(s))
 	if h == "" || !strings.Contains(h, ".") {
 		return ""
 	}
@@ -512,19 +620,10 @@ func hostValues(m map[string]string) []string {
 // Those are gated by scan zones (a private address is scanned only inside a
 // zone), not by EASM attribution.
 func isInternalName(name string) bool {
-	h := strings.TrimSpace(name)
-	if strings.Contains(h, "://") {
-		if u, err := url.Parse(h); err == nil {
-			h = u.Hostname()
-		}
-	}
-	if p, err := netip.ParsePrefix(h); err == nil {
+	if p, err := netip.ParsePrefix(strings.TrimSpace(name)); err == nil {
 		return internalAddr(p.Addr())
 	}
-	if host, _, err := net.SplitHostPort(h); err == nil {
-		h = host
-	}
-	h = strings.Trim(h, "[]")
+	h := asset.HostOf(name)
 	if a, err := netip.ParseAddr(h); err == nil {
 		return internalAddr(a)
 	}

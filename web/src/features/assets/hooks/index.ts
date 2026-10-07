@@ -30,7 +30,6 @@ export { useAssetTags } from './use-asset-tags'
 
 // Shared hooks for asset page consolidation
 export { useAssetCRUD } from './use-asset-crud'
-export { useAssetScope } from './use-asset-scope'
 export { useAssetDialogs } from './use-asset-dialogs'
 export { useAssetExport } from './use-asset-export'
 export type { ExportFieldConfig } from './use-asset-export'
