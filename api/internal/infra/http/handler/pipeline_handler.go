@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -85,14 +86,17 @@ type CreateStepRequest struct {
 	// a whole pipeline (PUT): the step is updated in place and keeps its run
 	// history. Optional; an id that is not one of the pipeline's steps (for
 	// example a client-side temporary id) makes the entry a new step.
-	ID                string                 `json:"id,omitempty" validate:"max=64"`
-	StepKey           string                 `json:"step_key" validate:"required,min=1,max=100"`
-	Name              string                 `json:"name" validate:"required,min=1,max=255"`
-	Description       string                 `json:"description" validate:"max=1000"`
-	Order             int                    `json:"order"`
-	UIPosition        *UIPositionRequest     `json:"ui_position"`
-	Tool              string                 `json:"tool" validate:"max=100"`
-	Capabilities      []string               `json:"capabilities" validate:"omitempty,max=10,dive,max=50"`
+	ID           string             `json:"id,omitempty" validate:"max=64"`
+	StepKey      string             `json:"step_key" validate:"required,min=1,max=100"`
+	Name         string             `json:"name" validate:"required,min=1,max=255"`
+	Description  string             `json:"description" validate:"max=1000"`
+	Order        int                `json:"order"`
+	UIPosition   *UIPositionRequest `json:"ui_position"`
+	Tool         string             `json:"tool" validate:"max=100"`
+	Capabilities []string           `json:"capabilities" validate:"omitempty,max=10,dive,max=50"`
+	// PreferTools are the tools to try, in order, for the step's capability
+	// when no tool is pinned. Each must implement the capability.
+	PreferTools       []string               `json:"prefer_tools" validate:"omitempty,max=5,dive,max=100"`
 	Config            map[string]interface{} `json:"config"`
 	TimeoutSeconds    int                    `json:"timeout_seconds"`
 	DependsOn         []string               `json:"depends_on" validate:"max=20,dive,max=50"`
@@ -154,14 +158,19 @@ type UIPositionResponse struct {
 
 // StepResponse represents a step in the response.
 type StepResponse struct {
-	ID                string                 `json:"id"`
-	StepKey           string                 `json:"step_key"`
-	Name              string                 `json:"name"`
-	Description       string                 `json:"description,omitempty"`
-	Order             int                    `json:"order"`
-	UIPosition        UIPositionResponse     `json:"ui_position"`
-	Tool              string                 `json:"tool,omitempty"`
-	Capabilities      []string               `json:"capabilities"`
+	ID           string             `json:"id"`
+	StepKey      string             `json:"step_key"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description,omitempty"`
+	Order        int                `json:"order"`
+	UIPosition   UIPositionResponse `json:"ui_position"`
+	Tool         string             `json:"tool,omitempty"`
+	Capabilities []string           `json:"capabilities"`
+	// PreferTools are the tools to try, in order, when no tool is pinned.
+	PreferTools []string `json:"prefer_tools"`
+	// ToolSelection is how the step picks its tool: pin (tool), prefer
+	// (prefer_tools) or auto (any implementation of its capability).
+	ToolSelection     string                 `json:"tool_selection" enums:"auto,prefer,pin"`
 	Config            map[string]interface{} `json:"config,omitempty"`
 	TimeoutSeconds    int                    `json:"timeout_seconds,omitempty"`
 	DependsOn         []string               `json:"depends_on,omitempty"`
@@ -402,10 +411,12 @@ type StepRunResponse struct {
 	ID string `json:"id"`
 	// StepID is empty once the step was removed from the pipeline; the step
 	// run keeps its key, name and tool.
-	StepID        string  `json:"step_id,omitempty"`
-	StepKey       string  `json:"step_key"`
-	StepName      string  `json:"step_name,omitempty"`
-	Tool          string  `json:"tool,omitempty"`
+	StepID   string `json:"step_id,omitempty"`
+	StepKey  string `json:"step_key"`
+	StepName string `json:"step_name,omitempty"`
+	Tool     string `json:"tool,omitempty"`
+	// Capability is the versioned capability the step run ran.
+	Capability    string  `json:"capability,omitempty"`
 	Status        string  `json:"status"`
 	StartedAt     *string `json:"started_at,omitempty"`
 	CompletedAt   *string `json:"completed_at,omitempty"`
@@ -634,6 +645,95 @@ func (h *PipelineHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(toTemplateResponse(template))
 }
 
+// writeGraphInvalid writes a refused workflow graph as 422 with every
+// node- and edge-anchored issue in details; false when err is not one.
+func writeGraphInvalid(w http.ResponseWriter, err error) bool {
+	var ge *pipelinesvc.GraphInvalidError
+	if !errors.As(err, &ge) {
+		return false
+	}
+	apierror.ValidationFailed("The workflow is not valid", ge.Report).WriteJSON(w)
+	return true
+}
+
+// ValidatePipelineRequest is a draft pipeline's steps.
+type ValidatePipelineRequest struct {
+	Steps []CreateStepRequest `json:"steps" validate:"max=50,dive"`
+}
+
+// PipelineGraphIssueResponse is one problem of a workflow graph, anchored to
+// a node (step key) or an edge (from → to).
+type PipelineGraphIssueResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Node    string `json:"node,omitempty"`
+	From    string `json:"from,omitempty"`
+	To      string `json:"to,omitempty"`
+	// Adapter is the capability that would connect an incompatible edge.
+	Adapter string `json:"adapter,omitempty"`
+}
+
+// PipelineGraphValidationResponse is the outcome of a graph check. Errors
+// refuse a save; warnings do not.
+type PipelineGraphValidationResponse struct {
+	Valid    bool                         `json:"valid"`
+	Errors   []PipelineGraphIssueResponse `json:"errors"`
+	Warnings []PipelineGraphIssueResponse `json:"warnings"`
+}
+
+// ValidatePipeline handles POST /api/v1/pipelines/verify
+// @Summary      Validate a pipeline graph
+// @Description  Checks a draft pipeline's steps as a save would (step keys, tools, settings, then the graph against the capability contracts: typed connections, cycles, missing steps, intrusive steps fed derived targets, size). Stores nothing.
+// @Tags         Pipelines
+// @Accept       json
+// @Produce      json
+// @Param        body  body      ValidatePipelineRequest  true  "Draft steps"
+// @Success      200   {object}  PipelineGraphValidationResponse
+// @Failure      400   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /pipelines/verify [post]
+func (h *PipelineHandler) ValidatePipeline(w http.ResponseWriter, r *http.Request) {
+	var req ValidatePipelineRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	inputs := make([]pipelinesvc.AddStepInput, 0, len(req.Steps))
+	for _, st := range req.Steps {
+		inputs = append(inputs, toAddStepInput(tenantID, "", st))
+	}
+	rep, err := h.service.ValidateGraph(r.Context(), pipelinesvc.ValidateGraphInput{TenantID: tenantID, Steps: inputs})
+	if err != nil {
+		h.handleStepError(w, err)
+		return
+	}
+	out := PipelineGraphValidationResponse{
+		Valid:    rep.Valid(),
+		Errors:   make([]PipelineGraphIssueResponse, 0, len(rep.Errors)),
+		Warnings: make([]PipelineGraphIssueResponse, 0, len(rep.Warnings)),
+	}
+	for _, is := range rep.Errors {
+		out.Errors = append(out.Errors, toGraphIssueResponse(is))
+	}
+	for _, is := range rep.Warnings {
+		out.Warnings = append(out.Warnings, toGraphIssueResponse(is))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func toGraphIssueResponse(is stage.GraphIssue) PipelineGraphIssueResponse {
+	return PipelineGraphIssueResponse{
+		Code: is.Code, Message: is.Message, Node: is.Node,
+		From: is.From, To: is.To, Adapter: string(is.Adapter),
+	}
+}
+
 // toAddStepInput maps one step of a request to the service input.
 func toAddStepInput(tenantID, templateID string, req CreateStepRequest) pipelinesvc.AddStepInput {
 	in := pipelinesvc.AddStepInput{
@@ -646,6 +746,7 @@ func toAddStepInput(tenantID, templateID string, req CreateStepRequest) pipeline
 		Order:             req.Order,
 		Tool:              req.Tool,
 		Capabilities:      req.Capabilities,
+		PreferTools:       req.PreferTools,
 		Config:            req.Config,
 		TimeoutSeconds:    req.TimeoutSeconds,
 		DependsOn:         req.DependsOn,
@@ -1202,6 +1303,8 @@ func toStepResponse(s *pipeline.Step) *StepResponse {
 		},
 		Tool:              s.Tool,
 		Capabilities:      s.Capabilities,
+		PreferTools:       append([]string{}, s.PreferTools...),
+		ToolSelection:     string(s.Selection()),
 		Config:            s.Config,
 		TimeoutSeconds:    s.TimeoutSeconds,
 		DependsOn:         s.DependsOn,
@@ -1429,6 +1532,7 @@ func toStepRunResponse(sr *pipeline.StepRun) StepRunResponse {
 		StepKey:       sr.StepKey,
 		StepName:      sr.StepName,
 		Tool:          sr.Tool,
+		Capability:    sr.Capability,
 		Status:        string(sr.Status),
 		ErrorMessage:  sr.ErrorMessage,
 		ErrorCode:     sr.ErrorCode,
@@ -1473,6 +1577,7 @@ func (h *PipelineHandler) handleValidationError(w http.ResponseWriter, err error
 // handleServiceError converts service errors to API errors.
 func (h *PipelineHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case writeGraphInvalid(w, err):
 	case errors.Is(err, pipeline.ErrPipelineRunActive):
 		apierror.New(http.StatusConflict, apierror.Code(pipeline.ErrPipelineRunActive.Code), pipeline.ErrPipelineRunActive.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
@@ -1494,6 +1599,7 @@ func (h *PipelineHandler) handleServiceError(w http.ResponseWriter, err error) {
 // handleStepError converts step-related service errors to API errors.
 func (h *PipelineHandler) handleStepError(w http.ResponseWriter, err error) {
 	switch {
+	case writeGraphInvalid(w, err):
 	case errors.Is(err, pipeline.ErrPipelineRunActive):
 		apierror.New(http.StatusConflict, apierror.Code(pipeline.ErrPipelineRunActive.Code), pipeline.ErrPipelineRunActive.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):

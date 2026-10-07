@@ -257,40 +257,6 @@ func TestTier(t *testing.T) {
 	}
 }
 
-func TestValidateChain(t *testing.T) {
-	ok := []ChainStage{
-		{ID: "subdomains", Stage: DiscoverSubdomains, From: []string{FromSeeds}},
-		{ID: "resolve", Stage: ResolveDNS, From: []string{FromSeeds, "subdomains"}},
-		{ID: "ports", Stage: ScanPorts, From: []string{"resolve"}},
-		{ID: "http", Stage: ProbeHTTP, From: []string{"ports"}},
-		{ID: "crawl", Stage: CrawlWeb, From: []string{"http"}},
-		{ID: "vulns", Stage: VulnTemplates, From: []string{"http", "crawl"}},
-	}
-	if err := ValidateChain(ok); err != nil {
-		t.Fatalf("U2 rejected: %v", err)
-	}
-	bad := map[string][]ChainStage{
-		"empty":       nil,
-		"unknown":     {{ID: "a", Stage: "scan.everything"}},
-		"duplicate":   {{ID: "a", Stage: ScanPorts}, {ID: "a", Stage: ProbeHTTP}},
-		"forward ref": {{ID: "a", Stage: ProbeHTTP, From: []string{"b"}}, {ID: "b", Stage: ScanPorts}},
-		"self ref":    {{ID: "a", Stage: ProbeHTTP, From: []string{"a"}}},
-		"unreachable": {{ID: "v", Stage: VulnTemplates}, {ID: "c", Stage: CrawlWeb, From: []string{"v"}}},
-		"code to net": {{ID: "s", Stage: SASTCode}, {ID: "p", Stage: ScanPorts, From: []string{"s"}}},
-		"intrusive":   {{ID: "z", Stage: DASTWeb}},
-		"seeds id":    {{ID: FromSeeds, Stage: ScanPorts}},
-	}
-	for name, chain := range bad {
-		if err := ValidateChain(chain); err == nil {
-			t.Errorf("%s: accepted", name)
-		}
-	}
-	err := ValidateChain(bad["unreachable"])
-	if err == nil || !strings.Contains(err.Error(), "nothing it takes targets from produces") {
-		t.Errorf("unreachable error = %v", err)
-	}
-}
-
 func TestPassiveTools(t *testing.T) {
 	passive := PassiveTools()
 	for _, tool := range []string{"subfinder", "dnsx", "semgrep", "trivy", "gitleaks"} {
