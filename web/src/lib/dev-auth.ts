@@ -93,8 +93,8 @@ export const DEV_USER: AuthUser & {
     'integrations:notifications:write',
     'integrations:api_keys:read',
     'integrations:api_keys:write',
-    'integrations:pipelines:read',
-    'integrations:pipelines:write',
+    'scans:workflows:read',
+    'scans:workflows:write',
     // Settings
     'settings:sla:read',
     'settings:sla:write',

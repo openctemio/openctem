@@ -38,7 +38,7 @@ gap, and never overrides a known exposure).
 | Trigger | Fired from | Payload |
 |---|---|---|
 | `asset_discovered` | `ingest.AssetProcessor.ProcessBatch` via the discovered callback, wired in `cmd/server/services.go` | `asset` (first), `assets` (up to 100), `asset_count`, `internet_facing`, `internet_facing_count`, `truncated` |
-| `scan_completed` | `pipeline.Service.OnStepCompleted` when a run completes without failures | `scan.{run_id, pipeline_id, scan_id, status, trigger_type, total_findings, completed_at}` |
+| `scan_completed` | `pipeline.Service.OnStepCompleted` when a run completes without failures | `scan.{run_id, scan_workflow_id, scan_id, status, trigger_type, total_findings, completed_at}` |
 
 `asset_discovered` fires only for assets an ingest actually inserted: not for a
 re-scan merge, and not for a local asset whose insert lost a concurrent-create

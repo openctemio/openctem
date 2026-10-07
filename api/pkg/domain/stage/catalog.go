@@ -110,7 +110,7 @@ type Stage struct {
 	// wildcard); 0 means MaxFanout.
 	MaxPerParent int `json:"max_per_parent,omitempty"`
 	// Legacy are the capability words of the pre-catalog vocabulary
-	// (tools.capabilities, pipeline step capabilities) that name this stage
+	// (tools.capabilities, workflow step capabilities) that name this stage
 	// on their own.
 	Legacy []string `json:"-"`
 
@@ -572,7 +572,7 @@ func ForCapabilities(caps []string) (Stage, error) {
 	return Stage{}, ErrAmbiguousCapability
 }
 
-// ForStep is the stage a pipeline step runs: its pinned tool's stage when
+// ForStep is the stage a workflow step runs: its pinned tool's stage when
 // the tool implements exactly one, else the one its capabilities name and
 // the tool implements, else the one its capabilities name. ok is false for a
 // step the catalog cannot place (a tenant tool, a tool with several stages

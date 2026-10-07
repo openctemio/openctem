@@ -21,9 +21,9 @@ func (r *recordedOutputs) RecordStepOutputs(_ context.Context, tenantID, stepRun
 	return len(ids), nil
 }
 
-// What a command-bound report of a pipeline step wrote is recorded for the
+// What a command-bound report of a workflow step wrote is recorded for the
 // step the binding names (server-side), under the ingest's tenant; an
-// unsolicited report, a trusted ingest and a command outside a pipeline
+// unsolicited report, a trusted ingest and a command outside a scan run
 // record nothing.
 func TestRecordStepOutputs(t *testing.T) {
 	rec := &recordedOutputs{}

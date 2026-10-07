@@ -475,8 +475,8 @@ type ToolExecution struct {
 	SensorID *shared.ID
 
 	// Execution context
-	PipelineRunID *shared.ID
-	StepRunID     *shared.ID
+	ScanRunID *shared.ID
+	StepRunID *shared.ID
 
 	// Status
 	Status ExecutionStatus

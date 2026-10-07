@@ -13,7 +13,7 @@ import (
 // actionNodePermission returns the platform permission a user must hold to use
 // a given workflow action type, mirroring the authZ of the equivalent direct
 // API route (e.g. update_status ⇄ PATCH /findings/{id}/status requires
-// FindingsWrite; trigger_scan ⇄ ScansWrite; trigger_pipeline ⇄ PipelinesWrite).
+// FindingsWrite; trigger_scan ⇄ ScansWrite; trigger_pipeline ⇄ ScanWorkflowsWrite).
 //
 // Without this gate a user granted only WorkflowsWrite
 // ("findings:workflows:write") could build a workflow whose action nodes
@@ -33,7 +33,7 @@ func actionNodePermission(actionType string) (permission.Permission, bool) {
 	case workflow.ActionTypeTriggerScan:
 		return permission.ScansWrite, true
 	case workflow.ActionTypeTriggerPipeline:
-		return permission.PipelinesWrite, true
+		return permission.ScanWorkflowsWrite, true
 	}
 	return "", false
 }

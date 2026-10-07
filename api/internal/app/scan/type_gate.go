@@ -156,7 +156,7 @@ type StepTargets struct {
 // (INCOMPATIBLE_TARGETS, wrapping shared.ErrValidation): the step must not
 // reach a sensor with nothing it can scan.
 func (s *Service) FilterStepTargets(ctx context.Context, tenantID shared.ID, toolName string, runContext map[string]any) (*StepTargets, error) {
-	// Every step dispatch (scan runs and direct pipeline runs) passes here:
+	// Every step dispatch (scan runs and direct scan runs) passes here:
 	// a tool the organization disabled never reaches a sensor.
 	if s.tenantTools != nil && s.toolRepo != nil && strings.TrimSpace(toolName) != "" {
 		if t, err := s.toolRepo.GetByName(ctx, tenantID, toolName); err == nil {

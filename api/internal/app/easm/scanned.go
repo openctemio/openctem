@@ -41,7 +41,7 @@ type ScanEvidenceStore interface {
 	FiredRules(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string][]attribution.Rule, error)
 	Records(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.Record, error)
 	SaveAutomatic(ctx context.Context, tenantID shared.ID, assetID string, d attribution.Decision) error
-	// ScanRunOf returns the pipeline run and scan of a step run in the
+	// ScanRunOf returns the scan run and scan of a step run in the
 	// tenant ("" when unknown).
 	ScanRunOf(ctx context.Context, tenantID, stepRunID shared.ID) (runID, scanID string, err error)
 }
@@ -224,13 +224,13 @@ func (s *ScanStamper) observed(ctx context.Context, tenantID shared.ID, prov ing
 		observed["report_id"] = truncate(prov.ReportID, 200)
 	}
 	if prov.StepRunID != nil {
-		observed["step_run_id"] = prov.StepRunID.String()
+		observed["scan_run_step_id"] = prov.StepRunID.String()
 		runID, scanID, err := s.store.ScanRunOf(ctx, tenantID, *prov.StepRunID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve scan run: %w", err)
 		}
 		if runID != "" {
-			observed["pipeline_run_id"] = runID
+			observed["scan_run_id"] = runID
 		}
 		if scanID != "" {
 			observed["scan_id"] = scanID

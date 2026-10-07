@@ -5,6 +5,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/robfig/cron/v3"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
@@ -12,7 +15,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
@@ -182,11 +184,11 @@ type TemplateSyncResult struct {
 type Service struct {
 	scanRepo            scan.Repository
 	ownerActivity       OwnerActivity
-	templateRepo        pipeline.TemplateRepository
+	templateRepo        scanworkflow.Repository
 	assetGroupRepo      assetgroup.Repository
-	runRepo             pipeline.RunRepository
-	stepRepo            pipeline.StepRepository
-	stepRunRepo         pipeline.StepRunRepository
+	runRepo             scanrun.RunRepository
+	stepRepo            scanworkflow.StepRepository
+	stepRunRepo         scanrun.StepRunRepository
 	commandRepo         command.Repository
 	scannerTemplateRepo scannertemplate.Repository
 	templateSourceRepo  templatesource.Repository
@@ -211,7 +213,7 @@ type Service struct {
 	toolAvailability ToolAvailability      // optional; nil = no tool availability check at trigger (tool_availability_gate.go)
 	tenantTools      TenantToolConfigs     // optional; nil = per-organization tool switch not enforced
 	optIns           OptInPolicy           // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
-	stepQueuer       StepQueuer            // the pipeline service's step dispatcher; nil refuses workflow scans
+	stepQueuer       StepQueuer            // the scan run service's step dispatcher; nil refuses workflow scans
 	logger           *logger.Logger
 }
 
@@ -285,11 +287,11 @@ func WithAttributionGate(g AttributionGate) ServiceOption {
 // NewService creates a new Service.
 func NewService(
 	scanRepo scan.Repository,
-	templateRepo pipeline.TemplateRepository,
+	templateRepo scanworkflow.Repository,
 	assetGroupRepo assetgroup.Repository,
-	runRepo pipeline.RunRepository,
-	stepRepo pipeline.StepRepository,
-	stepRunRepo pipeline.StepRunRepository,
+	runRepo scanrun.RunRepository,
+	stepRepo scanworkflow.StepRepository,
+	stepRunRepo scanrun.StepRunRepository,
 	commandRepo command.Repository,
 	scannerTemplateRepo scannertemplate.Repository,
 	templateSourceRepo templatesource.Repository,

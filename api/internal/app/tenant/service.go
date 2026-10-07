@@ -1710,7 +1710,7 @@ const AlertSensorOptInEnabled = "sensor_opt_in_enabled"
 // auditSensorOptIn records a change of a sensor opt-in switch (research/25
 // D9). Turning one on widens what the platform sends to sensors: it is
 // audited at critical severity and alerted (a WARN line with alert=…, which
-// the log pipeline forwards). Turning one off is audited at medium.
+// the log scan workflow forwards). Turning one off is audited at medium.
 func (s *TenantService) auditSensorOptIn(ctx context.Context, actx auditapp.AuditContext, key string, from, to bool) {
 	if from == to {
 		return

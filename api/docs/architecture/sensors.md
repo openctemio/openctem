@@ -425,7 +425,7 @@ stored once per `(command, seq)`; a command keeps at most 200 batches and
 every line again (`internal/app/commandlog`), stores it in `command_logs`
 (migration 001130) and the `command-log-retention` controller deletes it after
 14 days. The run page shows a task's lines (Runs, a run, Tasks, Logs) through
-`GET /api/v1/pipeline-runs/{id}/tasks/{task_id}/logs` (`pipelines:read`),
+`GET /api/v1/scan-runs/{id}/tasks/{task_id}/logs` (`pipelines:read`),
 as plain text.
 
 Besides the tool's lines, an SDK with the poller log sink (sdk-go #191) sends
@@ -1198,7 +1198,7 @@ A sensor holds every command it claims under a **lease** (migration 000260:
   status) takes back every tenant command it holds (`acknowledged` or
   `running`) in the same request, not at lease expiry
   (`CommandRepository.ReleaseHeldBySensor`):
-  - **Routed scan work** (type `scan` with a `pipeline_run_id`, the same rule
+  - **Routed scan work** (type `scan` with a `scan_run_id`, the same rule
     as the release of pending work pinned to an unavailable sensor) goes
     back to `pending`, unpinned, zone kept, without a dispatch attempt, with
     `re-queued: the sensor holding it was revoked` (or `disabled`).
@@ -1277,7 +1277,7 @@ and narrows dispatch:
   `local`, `managed`, `scope`, `platform_tool_gate`; sanitized like the
   report). Without it a reason starting `refused by local policy: ` still
   counts (older SDKs, protocol v1). For **routed work** (a scan command with a
-  `pipeline_run_id`, the work the platform chose a sensor for; the rule the
+  `scan_run_id`, the work the platform chose a sensor for; the rule the
   lease and release paths use) the command is re-queued instead of failed:
   pending, unpinned, zone kept, one more dispatch attempt, the refusal
   appended to `commands.refusals` and the sensor to `commands.refused_by`,

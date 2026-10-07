@@ -24,7 +24,7 @@ import (
 // granted, so whatever it gates is silently hidden from — or denied to —
 // every non-admin. The module map once named five such permissions and hid
 // Attack Surface, CTEM Cycles, Business Services, Compensating Controls and
-// Scan Pipelines from every member.
+// Scan Scan workflows from every member.
 //
 // Three reference sites are checked:
 //   - the module → permission map that drives the sidebar (bootstrap);
@@ -61,7 +61,7 @@ func TestPermissionReferences_ModuleMapNamesOnlyRegisteredPermissions(t *testing
 func TestPermissionReferences_CTEMModulesVisibleToMembers(t *testing.T) {
 	mods := []string{
 		module.ModuleAttackSurface, module.ModuleCTEMCycles, module.ModuleBusinessServices,
-		module.ModuleBusinessImpact, module.ModuleCompensatingControls, module.ModuleScanPipelines,
+		module.ModuleBusinessImpact, module.ModuleCompensatingControls, module.ModuleScanWorkflows,
 	}
 	for _, r := range []tenant.Role{tenant.RoleMember, tenant.RoleViewer} {
 		got := module.FilterModuleIDsByPermissions(mods, permission.GetPermissionStringsForRole(r), false)

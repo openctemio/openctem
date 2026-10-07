@@ -60,7 +60,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
           asset_group_ids: formData.targets.assetGroupIds,
           scan_type: formData.mode === 'workflow' ? 'workflow' : 'single',
           scanner_name: formData.mode === 'single' ? formData.scannerName : undefined,
-          pipeline_id: formData.mode === 'workflow' ? formData.workflowId : undefined,
+          scan_workflow_id: formData.mode === 'workflow' ? formData.workflowId : undefined,
           targets_per_job: formData.maxConcurrent || 10,
         },
         formData.scanZoneId

@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -179,8 +180,8 @@ func TestDispatchScanCompleted(t *testing.T) {
 	d := newTestDispatcher(repo, rec)
 
 	scanID := shared.NewID()
-	run := &pipeline.Run{ID: shared.NewID(), TenantID: tenant, PipelineID: shared.NewID(), ScanID: &scanID,
-		Status: pipeline.RunStatusCompleted, TotalFindings: 7}
+	run := &scanrun.Run{ID: shared.NewID(), TenantID: tenant, ScanWorkflowID: shared.NewID(), ScanID: &scanID,
+		Status: scanrun.RunStatusCompleted, TotalFindings: 7}
 	if n := d.dispatchScanCompleted(context.Background(), run); n != 1 {
 		t.Fatalf("triggered = %d, want 1 (other-tenant workflow must be skipped)", n)
 	}

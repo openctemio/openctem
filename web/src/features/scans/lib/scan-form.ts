@@ -110,7 +110,7 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   all.push(...targets.customTargets)
   if (all.length > 0) request.targets = all
 
-  if (form.mode === 'workflow' && form.workflowId) request.pipeline_id = form.workflowId
+  if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
   if (form.mode === 'single') request.scanner_name = form.scannerName
   if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
     request.scanner_config = tenableScanConfigToApi(readTenableScanConfig(form.scannerConfig))
@@ -128,7 +128,7 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
     mode: config.scan_type === 'workflow' ? 'workflow' : 'single',
     scannerName: config.scanner_name ?? '',
     scannerConfig: config.scanner_config ? { ...config.scanner_config } : undefined,
-    workflowId: config.pipeline_id,
+    workflowId: config.scan_workflow_id,
     sensorPreference: config.sensor_preference || 'auto',
     targets: {
       type: 'asset_groups',
@@ -181,7 +181,7 @@ export function formDataToUpdateRequest(
   // empty picker would reset a restricted scan to Automatic.
   if (opts.canSetZone) request.scan_zone_id = form.scanZoneId ?? ''
 
-  if (form.mode === 'workflow' && form.workflowId) request.pipeline_id = form.workflowId
+  if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
   if (form.mode === 'single' && form.scannerName) request.scanner_name = form.scannerName
   if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
     request.scanner_config = tenableScanConfigToApi(

@@ -93,13 +93,12 @@ import {
   usePipelines,
   usePipelineRuns,
   useScanManagementStats,
-  useTriggerPipelineRun,
   useCreatePipeline,
   invalidateAllPipelineCaches,
   get,
   post,
   put,
-  pipelineEndpoints,
+  scanWorkflowEndpoints,
   getErrorMessage,
   type PipelineTemplate,
   type PipelineRun,
@@ -137,32 +136,18 @@ export default function PipelinesPage() {
   const { data: stats, isLoading: loadingStats } = useScanManagementStats()
 
   // Mutations
-  const { trigger: triggerRun, isMutating: triggeringRun } = useTriggerPipelineRun()
   const { trigger: createPipeline, isMutating: creatingPipeline } = useCreatePipeline()
   const [updatingPipeline, setUpdatingPipeline] = useState(false)
   const [togglingPipeline, setTogglingPipeline] = useState<string | null>(null)
-
-  const handleTriggerPipeline = async (pipeline: PipelineTemplate) => {
-    try {
-      await triggerRun({
-        template_id: pipeline.id,
-        trigger_type: 'manual',
-      })
-      toast.success(`Pipeline "${pipeline.name}" triggered successfully`)
-      await invalidateAllPipelineCaches()
-    } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to trigger pipeline "${pipeline.name}"`))
-    }
-  }
 
   const handleToggleActive = async (pipeline: PipelineTemplate) => {
     setTogglingPipeline(pipeline.id)
     try {
       if (pipeline.is_active) {
-        await post(pipelineEndpoints.deactivate(pipeline.id), {})
+        await post(scanWorkflowEndpoints.deactivate(pipeline.id), {})
         toast.success(`Pipeline "${pipeline.name}" deactivated`)
       } else {
-        await post(pipelineEndpoints.activate(pipeline.id), {})
+        await post(scanWorkflowEndpoints.activate(pipeline.id), {})
         toast.success(`Pipeline "${pipeline.name}" activated`)
       }
       await invalidateAllPipelineCaches()
@@ -188,7 +173,7 @@ export default function PipelinesPage() {
 
     setIsCloning(true)
     try {
-      await post(pipelineEndpoints.clone(cloningPipeline.id), { name: cloneName.trim() })
+      await post(scanWorkflowEndpoints.clone(cloningPipeline.id), { name: cloneName.trim() })
       toast.success(
         cloningPipeline.is_system_template
           ? `System template "${cloningPipeline.name}" has been added to your pipelines as "${cloneName.trim()}"`
@@ -216,7 +201,7 @@ export default function PipelinesPage() {
     setLoadingDetail(true)
     setSelectedPipeline(pipeline) // Show immediately with basic data
     try {
-      const fullPipeline = await get<PipelineTemplate>(pipelineEndpoints.get(pipeline.id))
+      const fullPipeline = await get<PipelineTemplate>(scanWorkflowEndpoints.get(pipeline.id))
       setSelectedPipeline(fullPipeline) // Update with full data including steps
     } catch (error) {
       console.error('Failed to fetch pipeline details:', error)
@@ -242,7 +227,7 @@ export default function PipelinesPage() {
     setUpdatingPipeline(true)
     try {
       await put<PipelineTemplate>(
-        pipelineEndpoints.update(editingPipeline.id),
+        scanWorkflowEndpoints.update(editingPipeline.id),
         data as UpdatePipelineRequest
       )
       toast.success(`Pipeline "${editingPipeline.name}" updated`)
@@ -266,7 +251,7 @@ export default function PipelinesPage() {
     // Fetch pipeline with steps from API (list doesn't include steps)
     setLoadingEdit(true)
     try {
-      const fullPipeline = await get<PipelineTemplate>(pipelineEndpoints.get(pipeline.id))
+      const fullPipeline = await get<PipelineTemplate>(scanWorkflowEndpoints.get(pipeline.id))
       setEditingPipeline(fullPipeline)
       setIsFormOpen(true)
     } catch (error) {
@@ -300,12 +285,12 @@ export default function PipelinesPage() {
   // System templates count (for display if needed)
   const _totalSystemTemplates = systemTemplates.length
 
-  // Total runs = pipeline runs (from stats.pipelines, not stats.scans)
-  const totalRuns = stats?.pipelines.total ?? 0
+  // Total runs = pipeline runs (from stats.scan_runs, not stats.scans)
+  const totalRuns = stats?.scan_runs.total ?? 0
   // Success rate = completed pipeline runs / total pipeline runs
   const successRate =
-    stats && stats.pipelines.total > 0
-      ? Math.round((stats.pipelines.completed / stats.pipelines.total) * 100)
+    stats && stats.scan_runs.total > 0
+      ? Math.round((stats.scan_runs.completed / stats.scan_runs.total) * 100)
       : 0
 
   const allPipelines = pipelines?.items ?? []
@@ -447,13 +432,6 @@ export default function PipelinesPage() {
                   </DropdownMenuItem>
                 </>
               )}
-              <DropdownMenuItem
-                onClick={() => handleTriggerPipeline(pipeline)}
-                disabled={triggeringRun || (pipeline.is_system_template && !pipeline.is_active)}
-              >
-                <Play className="me-2 h-4 w-4" />
-                Run now
-              </DropdownMenuItem>
               {!pipeline.is_system_template && (
                 <>
                   <DropdownMenuSeparator />
@@ -473,7 +451,7 @@ export default function PipelinesPage() {
   const runColumns: ColumnDef<PipelineRun>[] = [
     {
       id: 'pipeline',
-      accessorFn: (run) => pipelineNameById.get(run.pipeline_id) ?? 'Pipeline run',
+      accessorFn: (run) => pipelineNameById.get(run.scan_workflow_id) ?? 'Pipeline run',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Pipeline" />,
       cell: ({ getValue }) => <span className="text-sm font-medium">{getValue<string>()}</span>,
     },
@@ -803,26 +781,9 @@ export default function PipelinesPage() {
                           <Plus className="h-4 w-4" />
                           Add to my pipelines
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleTriggerPipeline(pl)}
-                          disabled={triggeringRun}
-                        >
-                          <Play className="h-4 w-4" />
-                          Run now
-                        </Button>
                       </>
                     ) : (
                       <>
-                        <Button
-                          size="sm"
-                          onClick={() => handleTriggerPipeline(pl)}
-                          disabled={triggeringRun || !pl.is_active}
-                        >
-                          <Play className="h-4 w-4" />
-                          Run now
-                        </Button>
                         <Button
                           size="sm"
                           variant="outline"

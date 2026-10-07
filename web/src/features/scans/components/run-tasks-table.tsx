@@ -7,7 +7,7 @@ import { AlertTriangle, FileText, Info, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { RunStatusBadge, TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
-import { pipelineRunEndpoints } from '@/lib/api/endpoints'
+import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunTask, RunTaskPage } from '@/lib/api/generated'
 import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs } from '@/features/scans/lib/run-display'
@@ -90,7 +90,7 @@ export const TASK_PAGE_SIZE = 100
  * The tasks of one run (RFC-046: one dispatched command = one tool, a slice of
  * targets, one sensor attempt). Targets are counted, not listed. The run read
  * embeds the first tasks; when there are more, "Load more" pages through
- * GET /pipeline-runs/{id}/tasks with the cursor the run read returned.
+ * GET /scan-runs/{id}/tasks with the cursor the run read returned.
  */
 export function RunTasksTable({
   runId,
@@ -112,7 +112,7 @@ export function RunTasksTable({
     (index, prev: RunTaskPage | null) => {
       if (!started || !nextCursor) return null
       const cursor = index === 0 ? nextCursor : prev?.next_cursor
-      return cursor ? pipelineRunEndpoints.tasks(runId, cursor, TASK_PAGE_SIZE) : null
+      return cursor ? scanRunEndpoints.tasks(runId, cursor, TASK_PAGE_SIZE) : null
     },
     (url: string) => get<RunTaskPage>(url),
     { revalidateFirstPage: false, revalidateOnFocus: false }

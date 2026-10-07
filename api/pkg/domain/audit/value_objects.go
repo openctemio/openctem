@@ -406,20 +406,20 @@ const (
 	ActionRoleUnassigned   Action = "role.unassigned"
 	ActionUserRolesUpdated Action = "user.roles_updated"
 
-	// Pipeline actions
-	ActionPipelineTemplateCreated     Action = "pipeline_template.created"
-	ActionPipelineTemplateUpdated     Action = "pipeline_template.updated"
-	ActionPipelineTemplateDeleted     Action = "pipeline_template.deleted"
-	ActionPipelineTemplateActivated   Action = "pipeline_template.activated"
-	ActionPipelineTemplateDeactivated Action = "pipeline_template.deactivated"
-	ActionPipelineStepCreated         Action = "pipeline_step.created"
-	ActionPipelineStepUpdated         Action = "pipeline_step.updated"
-	ActionPipelineStepDeleted         Action = "pipeline_step.deleted"
-	ActionPipelineRunTriggered        Action = "pipeline_run.triggered"
-	ActionPipelineRunCompleted        Action = "pipeline_run.completed"
-	ActionPipelineRunPartial          Action = "pipeline_run.partial"
-	ActionPipelineRunFailed           Action = "pipeline_run.failed"
-	ActionPipelineRunCanceled         Action = "pipeline_run.canceled"
+	// Scan workflow actions
+	ActionScanWorkflowCreated     Action = "scan_workflow.created"
+	ActionScanWorkflowUpdated     Action = "scan_workflow.updated"
+	ActionScanWorkflowDeleted     Action = "scan_workflow.deleted"
+	ActionScanWorkflowActivated   Action = "scan_workflow.activated"
+	ActionScanWorkflowDeactivated Action = "scan_workflow.deactivated"
+	ActionScanWorkflowStepCreated Action = "scan_workflow_step.created"
+	ActionScanWorkflowStepUpdated Action = "scan_workflow_step.updated"
+	ActionScanWorkflowStepDeleted Action = "scan_workflow_step.deleted"
+	ActionScanRunTriggered        Action = "scan_run.triggered"
+	ActionScanRunCompleted        Action = "scan_run.completed"
+	ActionScanRunPartial          Action = "scan_run.partial"
+	ActionScanRunFailed           Action = "scan_run.failed"
+	ActionScanRunCanceled         Action = "scan_run.canceled"
 
 	// Pentest campaign team actions
 	ActionCampaignMemberAdded       Action = "campaign.member_added"
@@ -614,10 +614,10 @@ func (a Action) IsValid() bool {
 		ActionPermissionGranted, ActionPermissionRevoked,
 		ActionRoleCreated, ActionRoleUpdated, ActionRoleDeleted,
 		ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
-		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineTemplateDeleted,
-		ActionPipelineTemplateActivated, ActionPipelineTemplateDeactivated,
-		ActionPipelineStepCreated, ActionPipelineStepUpdated, ActionPipelineStepDeleted,
-		ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunPartial, ActionPipelineRunFailed, ActionPipelineRunCanceled,
+		ActionScanWorkflowCreated, ActionScanWorkflowUpdated, ActionScanWorkflowDeleted,
+		ActionScanWorkflowActivated, ActionScanWorkflowDeactivated,
+		ActionScanWorkflowStepCreated, ActionScanWorkflowStepUpdated, ActionScanWorkflowStepDeleted,
+		ActionScanRunTriggered, ActionScanRunCompleted, ActionScanRunPartial, ActionScanRunFailed, ActionScanRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
 		ActionScanConfigExported, ActionScanConfigImported,
@@ -767,35 +767,35 @@ func (a Action) Category() string {
 type ResourceType string
 
 const (
-	ResourceTypeUser             ResourceType = "user"
-	ResourceTypeTenant           ResourceType = "tenant"
-	ResourceTypeMembership       ResourceType = "membership"
-	ResourceTypeInvitation       ResourceType = "invitation"
-	ResourceTypeRepository       ResourceType = "repository"
-	ResourceTypeBranch           ResourceType = "branch"
-	ResourceTypeComponent        ResourceType = "component"
-	ResourceTypeCredential       ResourceType = "credential"
-	ResourceTypeVulnerability    ResourceType = "vulnerability"
-	ResourceTypeFinding          ResourceType = "finding"
-	ResourceTypeFindingComment   ResourceType = "finding_comment"
-	ResourceTypeSLAPolicy        ResourceType = "sla_policy"
-	ResourceTypeSavedView        ResourceType = "saved_view"
-	ResourceTypeScan             ResourceType = "scan"
-	ResourceTypeAsset            ResourceType = "asset"
-	ResourceTypeSettings         ResourceType = "settings"
-	ResourceTypeToken            ResourceType = "token"
-	ResourceTypeSensor           ResourceType = "sensor"
-	ResourceTypeScanZone         ResourceType = "scan_zone"
-	ResourceTypeGroup            ResourceType = "group"
-	ResourceTypePermissionSet    ResourceType = "permission_set"
-	ResourceTypeRole             ResourceType = "role"
-	ResourceTypePipelineTemplate ResourceType = "pipeline_template"
-	ResourceTypeCampaign         ResourceType = "pentest_campaign"
+	ResourceTypeUser           ResourceType = "user"
+	ResourceTypeTenant         ResourceType = "tenant"
+	ResourceTypeMembership     ResourceType = "membership"
+	ResourceTypeInvitation     ResourceType = "invitation"
+	ResourceTypeRepository     ResourceType = "repository"
+	ResourceTypeBranch         ResourceType = "branch"
+	ResourceTypeComponent      ResourceType = "component"
+	ResourceTypeCredential     ResourceType = "credential"
+	ResourceTypeVulnerability  ResourceType = "vulnerability"
+	ResourceTypeFinding        ResourceType = "finding"
+	ResourceTypeFindingComment ResourceType = "finding_comment"
+	ResourceTypeSLAPolicy      ResourceType = "sla_policy"
+	ResourceTypeSavedView      ResourceType = "saved_view"
+	ResourceTypeScan           ResourceType = "scan"
+	ResourceTypeAsset          ResourceType = "asset"
+	ResourceTypeSettings       ResourceType = "settings"
+	ResourceTypeToken          ResourceType = "token"
+	ResourceTypeSensor         ResourceType = "sensor"
+	ResourceTypeScanZone       ResourceType = "scan_zone"
+	ResourceTypeGroup          ResourceType = "group"
+	ResourceTypePermissionSet  ResourceType = "permission_set"
+	ResourceTypeRole           ResourceType = "role"
+	ResourceTypeScanWorkflow   ResourceType = "scan_workflow"
+	ResourceTypeCampaign       ResourceType = "pentest_campaign"
 	// ResourceTypeRemediationCampaign is a Mobilization remediation campaign
 	// (table remediation_campaigns), not a pentest campaign.
 	ResourceTypeRemediationCampaign ResourceType = "remediation_campaign"
-	ResourceTypePipelineStep        ResourceType = "pipeline_step"
-	ResourceTypePipelineRun         ResourceType = "pipeline_run"
+	ResourceTypeScanWorkflowStep    ResourceType = "scan_workflow_step"
+	ResourceTypeScanRun             ResourceType = "scan_run"
 	ResourceTypeScanConfig          ResourceType = "scan_config"
 	ResourceTypeScanProfile         ResourceType = "scan_profile"
 	ResourceTypeCommand             ResourceType = "command"
@@ -846,7 +846,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
 		ResourceTypeAsset, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
-		ResourceTypePipelineTemplate, ResourceTypePipelineStep, ResourceTypePipelineRun, ResourceTypeScanConfig,
+		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
@@ -919,7 +919,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuditChainRebaselined, ActionMemberDataErased, ActionSuppressionRuleSelfApproved:
 		return SeverityCritical
 
-	// High - privilege changes and pipeline failures
+	// High - privilege changes and scan workflow failures
 	case ActionSSOSAMLConfigUpdated, ActionSSOSAMLConfigDeleted,
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
@@ -935,7 +935,7 @@ func SeverityForAction(a Action) Severity {
 		ActionRoleDeleted, ActionRoleAssigned, ActionRoleUnassigned, ActionUserRolesUpdated,
 		ActionCredentialDeleted, ActionCredentialRevealed,
 		ActionTemplateSourceCredentialAttached,
-		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
+		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
 		ActionScopeTargetApproved, ActionScopeSettingsUpdated,
@@ -964,7 +964,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSensorCreated, ActionSensorActivated, ActionSensorKeyRenewed,
 		ActionAPIKeyCreated,
 		ActionRoleCreated, ActionRoleUpdated,
-		ActionPipelineTemplateCreated, ActionPipelineTemplateUpdated, ActionPipelineRunTriggered, ActionPipelineRunCompleted, ActionPipelineRunPartial,
+		ActionScanWorkflowCreated, ActionScanWorkflowUpdated, ActionScanRunTriggered, ActionScanRunCompleted, ActionScanRunPartial,
 		ActionScanConfigCreated, ActionScanConfigTriggered,
 		ActionScanProfileDeleted, ActionScanProfileDefaultSet, ActionScanProfileQualityGateUpdated,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialAccessed,

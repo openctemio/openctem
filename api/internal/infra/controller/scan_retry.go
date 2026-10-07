@@ -5,7 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -16,12 +17,12 @@ type RetryDispatcher interface {
 	RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, retryAttempt int) error
 }
 
-// retryRunRepository is the narrow slice of pipeline.RunRepository the
+// retryRunRepository is the narrow slice of scanrun.RunRepository the
 // ScanRetryController needs: claim eligible runs, and release a claim whose
-// dispatch failed so the run is retried again next tick. pipeline.RunRepository
+// dispatch failed so the run is retried again next tick. scanrun.RunRepository
 // satisfies it, so wiring passes the concrete repo unchanged.
 type retryRunRepository interface {
-	ListPendingRetries(ctx context.Context, limit int) ([]pipeline.RetryCandidate, error)
+	ListPendingRetries(ctx context.Context, limit int) ([]scanrun.RetryCandidate, error)
 	ReleaseFailedRetryDispatch(ctx context.Context, runID shared.ID) error
 }
 
@@ -65,7 +66,7 @@ type ScanRetryControllerConfig struct {
 	Logger *logger.Logger
 }
 
-// ScanRetryController periodically checks for failed pipeline runs that are
+// ScanRetryController periodically checks for failed scan runs that are
 // eligible for automatic retry (based on the parent scan's max_retries +
 // retry_backoff_seconds with exponential backoff) and dispatches retries
 // through the RetryDispatcher.
