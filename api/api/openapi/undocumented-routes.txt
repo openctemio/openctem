@@ -37,7 +37,6 @@ DELETE /api/v1/business-units/{}/assets/{}
 DELETE /api/v1/compensating-controls/{}
 DELETE /api/v1/compliance/findings/{}/controls/{}
 DELETE /api/v1/control-tests/{}
-DELETE /api/v1/custom-capabilities/{}
 DELETE /api/v1/findings/{}/evidence/notes/{}
 DELETE /api/v1/groups/{}/scope-rules/{}
 DELETE /api/v1/iocs/{}
@@ -98,11 +97,8 @@ GET /api/v1/business-services/{}/assets
 GET /api/v1/business-units
 GET /api/v1/business-units/{}
 GET /api/v1/capabilities
-GET /api/v1/capabilities/all
-GET /api/v1/capabilities/by-category/{}
 GET /api/v1/capabilities/categories
 GET /api/v1/capabilities/{}
-GET /api/v1/capabilities/{}/usage-stats
 GET /api/v1/compensating-controls
 GET /api/v1/compensating-controls/{}
 GET /api/v1/compliance/assessments
@@ -282,7 +278,6 @@ POST /api/v1/business-services
 POST /api/v1/business-services/{}/assets
 POST /api/v1/business-units
 POST /api/v1/business-units/{}/assets
-POST /api/v1/capabilities/usage-stats
 POST /api/v1/compensating-controls
 POST /api/v1/compensating-controls/{}/assets
 POST /api/v1/compensating-controls/{}/findings
@@ -297,7 +292,6 @@ POST /api/v1/ctem-cycles/{}/activate
 POST /api/v1/ctem-cycles/{}/profiles
 POST /api/v1/ctem-cycles/{}/scope-refinement
 POST /api/v1/ctem-cycles/{}/start-review
-POST /api/v1/custom-capabilities
 POST /api/v1/findings/actions/assign-to-owners
 POST /api/v1/findings/actions/fix-applied
 POST /api/v1/findings/actions/reject-fix
@@ -390,7 +384,6 @@ PUT /api/v1/business-services/{}
 PUT /api/v1/business-units/{}
 PUT /api/v1/compensating-controls/{}
 PUT /api/v1/ctem-cycles/{}
-PUT /api/v1/custom-capabilities/{}
 PUT /api/v1/exposures/{}/ctem-id
 PUT /api/v1/groups/{}/scope-rules/{}
 PUT /api/v1/pentest/campaigns/{}
