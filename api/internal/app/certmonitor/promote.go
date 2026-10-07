@@ -26,7 +26,10 @@ import (
 //   - under a domain asset or scope target the tenant did not verify: rule
 //     fqdn_under_asserted_root (0.85) → needs_review. The asset is in the
 //     inventory but no active check reaches it (scan targets skip it) until a
-//     person confirms it.
+//     person confirms it;
+//   - covered by a permanent, active scope target or a root-domain seed (and
+//     not excluded or rejected): also rule matches_scope_target (0.99,
+//     strong) → confirmed, without review (RFC-054 §4.3; SetScopeJoin).
 //
 // An asset that already existed keeps its standing: a legacy asset (no
 // attribution record) is confirmed and stays so; evidence is added either
@@ -60,6 +63,16 @@ type TombstoneChecker interface {
 
 // SetTombstones makes promotion skip rejected names (nil: no check).
 func (s *Service) SetTombstones(t TombstoneChecker) { s.tombstones = t }
+
+// ScopeJoiner returns matches_scope_target evidence for the promoted names a
+// permanent scope target or seed of the tenant covers (*easm.ScopeJoin).
+type ScopeJoiner interface {
+	JoinEvidence(ctx context.Context, tenantID shared.ID, names map[string]string) ([]attribution.Evidence, error)
+}
+
+// SetScopeJoin confirms promoted names a declared scope entry covers (nil:
+// they go to review as before).
+func (s *Service) SetScopeJoin(j ScopeJoiner) { s.scopeJoin = j }
 
 // DefaultMaxPromotionsPerRun bounds how many CT names one tenant sweep turns
 // into new assets. A wildcard-heavy or CDN domain can carry thousands of
@@ -196,6 +209,16 @@ func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promo
 		})
 		assetIDs = append(assetIDs, id)
 	}
+	if s.scopeJoin != nil && len(assetIDs) > 0 {
+		extra, err := s.scopeJoin.JoinEvidence(ctx, tenantID, promotedAssets(existing, created, names))
+		if err != nil {
+			// Never confirm on a partial view: the names go to review.
+			s.logger.Warn("ct promotion: scope join failed; names go to review",
+				"tenant_id", tenantID.String(), "error", err)
+		} else {
+			evidence = append(evidence, extra...)
+		}
+	}
 	if err := s.attribution.UpsertEvidence(ctx, tenantID, evidence); err != nil {
 		return len(created), err
 	}
@@ -269,6 +292,20 @@ func (s *Service) promotionReport(tenantID shared.ID, fresh []string, byName map
 		})
 	}
 	return report
+}
+
+// promotedAssets maps the id of every promoted name that is now an asset
+// (existing or just created) to the name.
+func promotedAssets(existing map[string]*assetdom.Asset, created map[string]string, names []string) map[string]string {
+	out := make(map[string]string, len(names))
+	for _, n := range names {
+		if a, ok := existing[n]; ok && a != nil {
+			out[a.ID().String()] = n
+		} else if id, ok := created[n]; ok {
+			out[id] = n
+		}
+	}
+	return out
 }
 
 func containsRule(rules []attribution.Rule, r attribution.Rule) bool {
