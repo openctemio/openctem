@@ -30,10 +30,9 @@ func TestPipelineRunCancel_NeedsScansWrite(t *testing.T) {
 				next.ServeHTTP(w, r.WithContext(ctx))
 			})
 		}
-		passthrough := func(next http.Handler) http.Handler { return next }
 		// A nil service makes the handler panic once the gate lets the
 		// request through, which is how "reached the handler" is observed.
-		registerPipelineRoutes(router, handler.NewPipelineHandler(nil, nil, logger.NewNop()), as, nil, nil, passthrough)
+		registerPipelineRoutes(router, handler.NewPipelineHandler(nil, nil, logger.NewNop()), as, nil, nil, nil)
 		mux := router.(interface{ Handler() http.Handler }).Handler()
 		defer func() {
 			if recover() != nil {
