@@ -3,6 +3,7 @@
  *
  * Type definitions for OpenCTEM API requests and responses
  */
+import type { CriticalityLevel } from '@/lib/criticality'
 
 // ============================================
 // COMMON TYPES
@@ -273,7 +274,7 @@ export interface Asset {
   ipAddresses?: string[]
   operatingSystem?: string
   owner?: string
-  criticality?: 'critical' | 'high' | 'medium' | 'low'
+  criticality?: CriticalityLevel
   status: 'active' | 'inactive' | 'decommissioned'
   createdAt: string
   updatedAt: string

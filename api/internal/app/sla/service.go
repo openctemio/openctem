@@ -49,7 +49,7 @@ type CreatePolicyInput struct {
 	HighDays            int `validate:"required,min=1,max=365"`
 	MediumDays          int `validate:"required,min=1,max=365"`
 	LowDays             int `validate:"required,min=1,max=365"`
-	InfoDays            int `validate:"required,min=1,max=365"`
+	InfoDays            int `validate:"min=0,max=365"` // 0 = no SLA for informational findings
 	WarningThresholdPct int `validate:"min=0,max=100"`
 	// EscalationEnabled turns approaching/breached notifications on for the
 	// policy's findings. Nil = on (the default for a new policy).
@@ -71,11 +71,9 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
 
-	// Validate days order: critical < high < medium < low < info
-	if input.CriticalDays > input.HighDays ||
-		input.HighDays > input.MediumDays ||
-		input.MediumDays > input.LowDays ||
-		input.LowDays > input.InfoDays {
+	// Validate days order: critical <= high <= medium <= low <= info, where an
+	// info of 0 (no SLA) is outside the order.
+	if !slaDaysOrdered(input.CriticalDays, input.HighDays, input.MediumDays, input.LowDays, input.InfoDays) {
 		return nil, fmt.Errorf("%w: SLA days must be in order: critical <= high <= medium <= low <= info", shared.ErrValidation)
 	}
 
@@ -188,7 +186,7 @@ type UpdatePolicyInput struct {
 	HighDays            *int `validate:"omitempty,min=1,max=365"`
 	MediumDays          *int `validate:"omitempty,min=1,max=365"`
 	LowDays             *int `validate:"omitempty,min=1,max=365"`
-	InfoDays            *int `validate:"omitempty,min=1,max=365"`
+	InfoDays            *int `validate:"omitempty,min=0,max=365"` // 0 = no SLA for informational findings
 	WarningThresholdPct *int `validate:"omitempty,min=0,max=100"`
 	EscalationEnabled   *bool
 	IsActive            *bool
@@ -251,7 +249,7 @@ func (s *Service) updateSLADaysIfNeeded(policy *sladom.Policy, input UpdatePolic
 	}
 
 	// Validate order
-	if critical > high || high > medium || medium > low || low > info {
+	if !slaDaysOrdered(critical, high, medium, low, info) {
 		return fmt.Errorf("%w: SLA days must be in order: critical <= high <= medium <= low <= info", shared.ErrValidation)
 	}
 
@@ -403,9 +401,12 @@ func (s *Service) CalculateSLADeadlineForPriority(
 		policy, err = s.GetTenantDefaultPolicy(ctx, tenantID)
 	}
 	if err != nil || policy == nil {
-		// No policy configured: honour priority-class defaults first, then
-		// severity defaults. Never return "no SLA" — every finding must
-		// have a deadline.
+		// No policy configured: an informational finding gets no SLA (the
+		// default info days are sladom.NoSLA); every other finding honors
+		// priority-class defaults first, then severity defaults.
+		if severity.IsInformational() {
+			return time.Time{}, nil
+		}
 		if days, ok := sladom.DefaultPriorityDays[priorityClass]; ok && days > 0 {
 			return detectedAt.Add(time.Duration(days) * 24 * time.Hour), nil
 		}
@@ -432,6 +433,9 @@ func (s *Service) CalculateSLADeadline(ctx context.Context, tenantID, assetID st
 	if err != nil {
 		// Fall back to default values if no policy found
 		s.logger.Warn("no SLA policy found, using defaults", "tenant_id", tenantID, "asset_id", assetID, "error", err)
+		if severity.IsInformational() {
+			return time.Time{}, nil
+		}
 		defaultDays, ok := sladom.DefaultSLADays[severity.String()]
 		if !ok {
 			return time.Time{}, fmt.Errorf("%w: invalid severity", shared.ErrValidation)
@@ -475,14 +479,21 @@ func (s *Service) CheckSLACompliance(
 	var escalationEnabled bool
 
 	if err != nil || policy == nil {
-		days := sladom.DefaultSLADays[severity.String()]
-		deadline = detectedAt.Add(time.Duration(days) * 24 * time.Hour)
+		if days := sladom.DefaultSLADays[severity.String()]; days > 0 {
+			deadline = detectedAt.Add(time.Duration(days) * 24 * time.Hour)
+		}
 		warningThreshold = 80
 		escalationEnabled = false
 	} else {
 		deadline = policy.CalculateDeadline(severity.String(), detectedAt)
 		warningThreshold = policy.WarningThresholdPct()
 		escalationEnabled = policy.EscalationEnabled()
+	}
+
+	// No deadline (an informational finding without an info SLA): there is
+	// nothing to comply with, so it is never overdue and never escalates.
+	if deadline.IsZero() {
+		return &ComplianceResult{IsCompliant: true, Status: "not_applicable"}, nil
 	}
 
 	now := time.Now()
@@ -550,4 +561,14 @@ func (s *Service) CheckSLACompliance(
 	}
 
 	return result, nil
+}
+
+// slaDaysOrdered reports whether the windows are non-decreasing from critical
+// to info. An info of sladom.NoSLA (0) means informational findings get no
+// deadline, so it takes no part in the order.
+func slaDaysOrdered(critical, high, medium, low, info int) bool {
+	if critical > high || high > medium || medium > low {
+		return false
+	}
+	return info == sladom.NoSLA || low <= info
 }

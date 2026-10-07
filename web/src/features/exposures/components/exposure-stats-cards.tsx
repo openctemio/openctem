@@ -5,8 +5,9 @@ import { SeverityBadge } from '@/features/shared'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
 import type { ExposureStats, ExposureSeverity, ExposureState } from '@/lib/api/exposure-types'
+import { SEVERITY_LEVELS } from '@/lib/severity'
 
-const SEVERITIES: ExposureSeverity[] = ['critical', 'high', 'medium', 'low', 'info']
+const SEVERITIES: ExposureSeverity[] = [...SEVERITY_LEVELS]
 
 interface ExposureSeverityBreakdownProps {
   bySeverity: ExposureStats['by_severity']
