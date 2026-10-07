@@ -58,10 +58,13 @@ type Run struct {
 	Provider          Provider
 	Issuer            string
 	// Repository is the canonical repository name (the asset name).
-	Repository      string
-	Ref             string
-	Branch          string
-	CommitSHA       string
+	Repository string
+	Ref        string
+	Branch     string
+	CommitSHA  string
+	// CommitVerified: the commit comes from the signed token. A commit the
+	// job reported (its provider signs none) never matches a break-glass.
+	CommitVerified  bool
 	PullRequest     string
 	DefaultBranch   string
 	IsDefaultBranch bool

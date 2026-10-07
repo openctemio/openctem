@@ -82,9 +82,13 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 		return nil, err
 	}
 	now := s.now().UTC()
-	override, err := s.repo.ActiveOverride(ctx, run.TenantID, run.RepositoryAssetID, run.CommitSHA, now)
-	if err != nil {
-		return nil, fmt.Errorf("load gate override: %w", err)
+	// A break-glass is granted per commit; a commit the job reported (its
+	// provider signs none) could name any commit, so it never matches one.
+	var override *cirun.GateOverride
+	if run.CommitVerified {
+		if override, err = s.repo.ActiveOverride(ctx, run.TenantID, run.RepositoryAssetID, run.CommitSHA, now); err != nil {
+			return nil, fmt.Errorf("load gate override: %w", err)
+		}
 	}
 	gv := cirun.Evaluate(cirun.GateInput{
 		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: newSet,

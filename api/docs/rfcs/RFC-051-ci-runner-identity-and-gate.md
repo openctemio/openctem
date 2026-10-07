@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05); R1, R2 and F1 implemented |
+| Status | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05; P-1..P-6, 2026-10-07); R1, R2, F1 and P1 implemented |
 | Research | research/33 (runner mode), research/36 §3 (CI row), research/37 S14 (runner mode in the SDK kit) |
 | Related | RFC-008 (shift-left CI scanning), RFC-023 (sensors), RFC-040 (result binding), RFC-043 (finding identity), RFC-050 (asset access model) |
 
@@ -66,9 +66,9 @@ Per tenant (`ci_trust_configs`, migration 001077):
 
 | Field | Meaning |
 |---|---|
-| `provider` | `github` or `gitlab` |
-| `issuer` | GitHub: `https://token.actions.githubusercontent.com` only. GitLab: `https://gitlab.com` or a self-managed instance's URL (https, no credentials, query or fragment) |
-| `audience` | What the job asks its provider for; default `openctem:tenant:<tenant id>`, so a token minted for one organization is useless to another |
+| `provider` | `github`, `gitlab`, `azure_devops`, `bitbucket`, `circleci` or `jenkins` (section 3.1) |
+| `issuer` | GitHub: `https://token.actions.githubusercontent.com` only. GitLab: `https://gitlab.com` or a self-managed instance's URL (https, no credentials, query or fragment). The others: section 3.1. Never a hosted provider's issuer under another provider |
+| `audience` | What the job asks its provider for; default `openctem:tenant:<tenant id>`, so a token minted for one organization is useless to another. Azure Pipelines: always `api://AzureADTokenExchange`. Bitbucket, CircleCI, Jenkins: must contain the tenant id |
 | `rules.owners` | GitHub organizations or users, GitLab top-level groups (exact) |
 | `rules.repositories` | `owner/name`, `owner/*` (one level), `owner/**` (any depth); the owner can never be a wildcard |
 | `rules.refs` | Branches or tags (`main`, `release/*`, `refs/tags/v*`); for a pull request, its source branch |
@@ -76,10 +76,50 @@ Per tenant (`ci_trust_configs`, migration 001077):
 | `rules.allow_fork_pull_requests` | Admit `pull_request_target`, `workflow_run` and `external_pull_request_event`, which run fork code with the base repository's identity. Off by default |
 | `rules.require_protected_ref` | Only protected branches and tags. GitLab: the `ref_protected` claim. GitHub tokens carry no such claim: the configuration must list `environments` and the job must run in one of them (environments whose deployment branch rules admit only protected refs); a GitHub configuration with the switch and no environments is refused |
 | `default_branch` | The baseline branch when the platform does not know the repository's default branch yet. A pipeline cannot set it |
+| `rules.workspace_uuid` | Bitbucket only, required: the workspace's immutable id, compared with the token's `workspaceUuid` |
 
 A configuration must name at least one owner or repository: there is no "any
 repository" trust. Several configurations may exist; the first that admits the
-job wins.
+job wins. A configuration is only ever read for the tenant the exchange names,
+by its exact issuer: two tenants may trust the same CI organization, each
+with its own configuration, and nothing matches across them.
+
+### 3.1 Providers
+
+Decisions (2026-10-07): **P-1** every issuer names one CI organization,
+workspace or controller, never a provider as a whole; **P-2** where the job
+chooses its audience, the audience must name the tenant; **P-3** a rule on a
+claim the provider never signs is refused when saved; **P-4** what the token
+does not sign (a commit, a Bitbucket repository name) may come from the job
+but is marked and never authorizes (break-glass, repository names already
+bound); **P-5** a pull request build whose token cannot say whether it comes
+from a fork counts as a fork's; **P-6** no long-lived CI secret as a
+fallback for a CI system without OIDC.
+
+| Provider | Issuer | Audience | Repository, ref, commit | Pipeline key (section 10) | Run, job | Fork / untrusted | Protected ref, events, environments |
+|---|---|---|---|---|---|---|---|
+| Azure Pipelines (pipeline token, no service connection) | `https://vstoken.dev.azure.com/<organization id>`; keys from its discovery document (one key set for every organization, so `org_id` must equal the issuer's) | `api://AzureADTokenExchange` (fixed) | `rpo_uri`, `rpo_ref`, `rpo_ver` | `prj_id` + `pipelines/<def_id>` | `run_id`; no job | every pull request ref | none |
+| Bitbucket Pipelines | `https://api.bitbucket.org/2.0/workspaces/<workspace>/pipelines-config/identity/oidc`; `workspaceUuid` must equal `rules.workspace_uuid` | tenant-bound (`oidc.audiences`) | name: the job's report, bound to `repositoryUuid` on first use; `branchName`; `commitSha` (else the job's) | `repositoryUuid` + `bitbucket-pipelines.yml` | `pipelineUuid` (attempt `pipelineRunUuid`), `stepUuid` | none (a fork's pipelines run under the fork's repository) | environments are deployment environment UUIDs (`deploymentEnvironmentUuid`); protected ref through them; no events |
+| CircleCI | `https://oidc.circleci.com/org/<organization id>`; `org-id`, when present, must match | tenant-bound (`circleci run oidc get --claims`) | `vcs-origin`, `vcs-ref`; commit: the job's (`CIRCLE_SHA1`), unverified | `project-id` + `pipelines/<pipeline-definition-id>` (`.circleci/config.yml` without one) | `workflow-id`, `job-id` | every pull request ref; SSH re-runs always refused | none |
+| Jenkins (OpenID Connect provider plugin) | the controller's (or folder's, or alternate) issuer, https | tenant-bound (the credential's) | claim templates `repository` (`${GIT_URL}`), `branch`, `sha` (else the job's) | hash of the repository + the job's full name without the branch | `build_number` | `PR-<n>` builds | events and environments from optional `event`, `environment` templates; no protected ref |
+
+Bitbucket, CircleCI and Jenkins tokens carry no `jti`: the replay key is
+`sha256:` + the token's SHA-256, recorded like a `jti` (section 4).
+
+Jenkins: the claims are what the controller asserts through its claim
+templates; whoever administers the controller can mint any of them, which the
+trust accepts by naming the controller's issuer. A fallback for controllers
+without the plugin (a tenant-issued CI credential exchanged for a run token)
+was considered and not built (P-6): it would be a stored secret in CI with
+the replay and theft properties of an API key, while the plugin's alternate
+issuer already serves controllers the platform cannot reach.
+
+**Preview.** `POST /api/v1/ci/trust-configs/preview` (`scans:ci:write`, ten a
+minute per person) validates a draft configuration, verifies a pasted sample
+token against its issuer's keys at the token's own issue time, and returns
+the claims (without e-mail addresses), the normalized repository, ref,
+commit and run, and the admission result. Nothing is stored and the token's
+id is not recorded; an invalid draft fetches nothing.
 
 ## 4. Token exchange
 
@@ -101,8 +141,11 @@ job wins.
 3. The verified claims are normalized (GitHub: `repository`, `ref`, `sha`,
    `actor`, `run_id`, `event_name`, `environment`, `head_ref`; GitLab:
    `project_path`, `ref`, `ref_type`, `ref_protected`, `user_login`,
-   `pipeline_id`, `pipeline_source`, `environment`) and checked against the
-   rules. A refusal is audited (`ci_run.token_refused`) with the repository,
+   `pipeline_id`, `pipeline_source`, `environment`; the others: section 3.1)
+   and checked against the rules. The request's optional `commit_sha` and
+   `repository` fill only what the provider does not sign (section 3.1); a
+   reported commit is stored with `commit_verified = false` (migration
+   `001240`) and never matches a break-glass. A refusal is audited (`ci_run.token_refused`) with the repository,
    actor, pipeline run id and the rule that refused.
 4. Replay: `(iss, jti)` is recorded in `ci_oidc_replay` until the token
    expires plus an hour; a second exchange of the same token is refused and
@@ -242,7 +285,13 @@ The sensor's one-shot mode, through sdk-go `pkg/sensorkit` (`CIRun`):
 | Cross-tenant through the fleet union | Each source tenant-scoped; the union adds no query; tests assert another tenant's fleet lists none of the pipelines |
 | A report on another asset | `REPORT_OUT_OF_SCOPE`; the `ci_run` binding can change only the repository asset |
 | Baseline poisoning | The baseline branch is server-side (known default branch, else the configuration's); a run's branch comes from the token |
-| SSRF through a self-managed GitLab issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host |
+| SSRF through a self-managed GitLab issuer or a Jenkins issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host; the preview validates the draft before any fetch |
+| A token valid for other services (Azure's fixed audience, a CI organization's default audience) | Azure: `org_id` pinned to the issuer, one exchange per `jti`, five-minute tokens; elsewhere a tenant-bound audience is required |
+| A renamed Bitbucket workspace's slug taken by someone else | `workspaceUuid` pinned in the configuration |
+| A Bitbucket repository reporting as another (the name is not signed) | Rules list repository UUIDs; a name stays bound to the first UUID that used it (`repository_binding`) |
+| A job naming a commit it did not build (CircleCI) | Marked unverified; never matches a break-glass |
+| A person driving a CI job interactively (CircleCI SSH re-run) | Refused |
+| Pull request builds of fork code where the token cannot say so | Refused unless fork pull requests are admitted |
 | JWKS fetch amplification | One-hour cache, at most one refetch per 30 seconds for an unknown `kid` |
 | Audit flooding | Nothing is audited before the token verifies |
 | Brute force | Per-IP limit on the exchange (shared across replicas) and on run routes before the token lookup; per-run limit after |
@@ -267,8 +316,10 @@ custom roles).
 | F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented |
 | F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6) | Open |
 | F4, F5 | Sensor pools; policy timeouts for daemons (section 10.7) | Design only |
+| P1 | Azure Pipelines, Bitbucket Pipelines, CircleCI and Jenkins trust; trust preview (section 3.1, migration 001240) | Implemented |
 
-Open points: GitHub Enterprise Server issuers (a GitHub configuration accepts
+Open points: Azure Pipelines tokens issued through a service connection (the
+Entra issuer) carry no pipeline claims and are not admitted; GitHub Enterprise Server issuers (a GitHub configuration accepts
 only the github.com issuer today); a merge request's target branch on GitLab is
 not in the ID token, so the baseline is always the default branch.
 
