@@ -634,3 +634,25 @@ func TestListRunStages_CrossTenantNotFound(t *testing.T) {
 		t.Fatalf("another tenant read the lanes: %v", err)
 	}
 }
+
+// A service in every name form is a hop target keyed as host:port
+// (research/63 PR0); a bad port is still refused.
+func TestHopTargetKey_ServiceNames(t *testing.T) {
+	for in, want := range map[string]string{
+		"vndirect.com.vn:443:tcp": "vndirect.com.vn:443",
+		"vndirect.com.vn:443/tcp": "vndirect.com.vn:443",
+		"[2001:db8::1]:443/tcp":   "[2001:db8::1]:443",
+		"203.0.113.5:22:tcp":      "203.0.113.5:22",
+	} {
+		got, ok := hopTargetKey(in)
+		if !ok || got != want {
+			t.Errorf("hopTargetKey(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+		if h := keyHost(in); h == "" {
+			t.Errorf("keyHost(%q) is empty", in)
+		}
+	}
+	if _, ok := hopTargetKey("vndirect.com.vn:70000:tcp"); ok {
+		t.Error("an out-of-range port was accepted")
+	}
+}
