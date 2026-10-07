@@ -87,6 +87,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
@@ -546,7 +547,9 @@ type Services struct {
 	ActiveGate *easmapp.ActiveGate
 	// ScopeJoin confirms discovered names a permanent scope target or seed
 	// covers (RFC-054 §4.3).
-	ScopeJoin        *easmapp.ScopeJoin
+	ScopeJoin *easmapp.ScopeJoin
+	// ScopeGuardrails are the operator's scope guardrails (RFC-054 §8).
+	ScopeGuardrails  scopedom.Guardrails
 	EASMDNS          *easmdnsapp.Service
 	EASMSweep        *easmapp.SweepService
 	CredentialImport *integration.CredentialImportService
@@ -860,6 +863,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetGroup.SetDataScope(s.DataScope)
 	s.AssetType = asset.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.Asset, log)
+	// The platform's scope guardrails (RFC-054 §8): public suffixes, the deny
+	// list and CIDR caps on every new entry; the deny list and the proof mode
+	// at dispatch (the ownership gate below).
+	scopeGuardrails, badDeny := scopedom.NewGuardrails(cfg.Scope.MaxPublicCIDRv4, cfg.Scope.MaxPublicCIDRv6, cfg.Scope.DenyExtra)
+	if len(badDeny) > 0 {
+		return nil, fmt.Errorf("SCOPE_DENY_EXTRA has entries that are neither a domain nor an address range: %v", badDeny)
+	}
+	s.Scope.SetGuardrails(scopeGuardrails)
+	s.ScopeGuardrails = scopeGuardrails
 	s.Scope.SetCoverage(postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}), s.DataScope)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
@@ -1680,7 +1692,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed).
-		WithTakeoverEvidence(repos.EASMDNS)
+		WithTakeoverEvidence(repos.EASMDNS).
+		WithPlatformPolicy(s.ScopeGuardrails, cfg.Scope.ActiveProof == config.ScopeProofAll)
 
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
@@ -1715,6 +1728,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
 		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.EASMSeed)),
+		// Platform sensors and intrusive scans need a verified domain
+		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
+		scan.WithActiveProof(cfg.Scope.ActiveProof),
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),

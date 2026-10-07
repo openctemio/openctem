@@ -29,6 +29,10 @@ type ScopeSettingsStore interface {
 // SetSettingsStore wires GET/PUT /scope/settings.
 func (h *ScopeHandler) SetSettingsStore(s ScopeSettingsStore) { h.settings = s }
 
+// SetActiveProof shows the operator's SCOPE_ACTIVE_PROOF in the settings
+// (read-only; RFC-054 §8.1).
+func (h *ScopeHandler) SetActiveProof(mode string) { h.activeProof = mode }
+
 // ApproveTarget handles POST /api/v1/scope/targets/{id}/approve
 // @Summary      Approve scope entry
 // @Description  Record your approval of a pending scope entry (RFC-054). Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED). The requester cannot approve, and nobody approves twice; once the entry has its required approvals it is active. Audited; the administrators are notified when it takes effect.
@@ -103,6 +107,9 @@ type ScopeSettingsResponse struct {
 	// that count.
 	EffectiveWideningApprovals int `json:"effective_widening_approvals"`
 	AdminCount                 int `json:"admin_count"`
+	// ActiveProof is the operator's setting: off, platform_sensors or all.
+	// Read-only; no tenant setting changes it.
+	ActiveProof string `json:"active_proof"`
 }
 
 // ScopeSettingsRequest replaces the settings. There is no field that turns
@@ -124,7 +131,15 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
+		ActiveProof: activeProofOrOff(h.activeProof),
 	}, nil
+}
+
+func activeProofOrOff(m string) string {
+	if m == "" {
+		return "off"
+	}
+	return m
 }
 
 // GetSettings handles GET /api/v1/scope/settings
