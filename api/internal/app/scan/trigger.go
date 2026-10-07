@@ -305,6 +305,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// the trigger context a caller sent: it stamps every step command and
 	// decides which freeze windows apply.
 	delete(runContext, scanrun.RunContextKeyScanZoneID)
+	delete(runContext, scanrun.RunContextKeySensorRouting)
 	// Who the run acts for (act scope of chained stages): the person who
 	// triggered it, else the scan's owner. Never sent to a sensor.
 	if actor := userIDPtr(triggeredBy); actor != nil {
@@ -344,6 +345,15 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	var zoneIDs []shared.ID
 	if zid := scanrun.ScanZoneFromContext(runContext); zid != nil {
 		zoneIDs = []shared.ID{*zid}
+	} else {
+		// The scan's sensor preference decides, with the checks a single
+		// scan gets; the workflow's own preference does not (research/62
+		// SG-11). Every step of the run follows this decision.
+		routing, err := s.decideWorkflowRouting(ctx, sc, targets)
+		if err != nil {
+			return nil, err
+		}
+		routing.record(runContext)
 	}
 	override, err := s.checkFreeze(ctx, sc, freezeRequest{triggerType, triggeredBy, freezeOverride}, zoneIDs, workflowActive(steps))
 	if err != nil {
@@ -928,10 +938,11 @@ func (s *Service) lazySyncTemplatesIfNeeded(ctx context.Context, tenantID shared
 }
 
 const (
-	sensorRoutingTenant   = "tenant"
-	sensorRoutingPlatform = "platform"
+	sensorRoutingTenant   = scanrun.SensorRoutingTenant
+	sensorRoutingPlatform = scanrun.SensorRoutingPlatform
+	sensorRoutingAuto     = scanrun.SensorRoutingAuto
 
-	runContextKeySensorRouting = "sensor_routing"
+	runContextKeySensorRouting = scanrun.RunContextKeySensorRouting
 )
 
 // sensorRouting is the trigger-time decision between tenant and shared
@@ -996,6 +1007,41 @@ func (s *Service) decideSensorRouting(ctx context.Context, sc *scan.Scan, target
 		return sensorRouting{Routing: sensorRoutingPlatform}, nil
 	}
 	return sensorRouting{Routing: sensorRoutingTenant}, nil
+}
+
+// decideWorkflowRouting is decideSensorRouting for a workflow scan, whose
+// steps use different tools. 'platform' is checked and refused exactly as
+// for a single scan. In 'auto' mode the run may reach platform sensors only
+// when nothing in it is internal, every target is proven where the operator
+// requires it and the tenant may use them; each step then goes there only
+// when no tenant sensor has its tool. Otherwise the run stays on the
+// tenant's sensors.
+func (s *Service) decideWorkflowRouting(ctx context.Context, sc *scan.Scan, targets []string) (sensorRouting, error) {
+	switch {
+	case sc.RunOnTenantRunner || sc.SensorPreference == scan.SensorPreferenceTenant:
+		return sensorRouting{Routing: sensorRoutingTenant}, nil
+	case sc.SensorPreference == scan.SensorPreferencePlatform:
+		return s.decideSensorRouting(ctx, sc, targets, nil)
+	}
+	if s.sensorSelector == nil || sc.HasAssetGroup() || hasInternalTarget(targets) {
+		return sensorRouting{Routing: sensorRoutingTenant}, nil
+	}
+	if s.platformNeedsProof() {
+		unproven, err := s.unverified(ctx, sc.TenantID, targets)
+		if err != nil {
+			s.logger.Warn("target proof lookup failed; run kept on tenant sensors",
+				"error", err, "scan_id", sc.ID.String())
+			return sensorRouting{Routing: sensorRoutingTenant,
+				Warning: "target proof lookup failed; the run is queued for tenant sensors only"}, nil
+		}
+		if len(unproven) > 0 {
+			return sensorRouting{Routing: sensorRoutingTenant}, nil
+		}
+	}
+	if canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID); !canUse {
+		return sensorRouting{Routing: sensorRoutingTenant}, nil
+	}
+	return sensorRouting{Routing: sensorRoutingAuto}, nil
 }
 
 // shouldUsePlatformSensor determines whether to route this scan to shared
