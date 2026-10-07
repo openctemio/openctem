@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -148,112 +147,6 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 		"tenant_id", tenantID,
 		"created", result.AssetsCreated,
 		"skipped", result.AssetsSkipped,
-	)
-	return result, nil
-}
-
-// =============================================================================
-// Kubernetes Discovery
-// =============================================================================
-
-// K8sDiscoveryInput holds Kubernetes cluster info for asset import.
-type K8sDiscoveryInput struct {
-	ClusterName string         `json:"cluster_name"`
-	Namespaces  []K8sNamespace `json:"namespaces"`
-}
-
-// K8sNamespace holds namespace + workloads.
-type K8sNamespace struct {
-	Name      string        `json:"name"`
-	Workloads []K8sWorkload `json:"workloads"`
-}
-
-// K8sWorkload represents a Kubernetes workload.
-type K8sWorkload struct {
-	Kind     string            `json:"kind"`
-	Name     string            `json:"name"`
-	Replicas int               `json:"replicas"`
-	Images   []string          `json:"images"`
-	Labels   map[string]string `json:"labels,omitempty"`
-}
-
-// ImportKubernetes imports assets from a Kubernetes cluster discovery report.
-func (s *AssetImportService) ImportKubernetes(ctx context.Context, tenantID string, input K8sDiscoveryInput) (*AssetImportResult, error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
-	}
-	if input.ClusterName == "" {
-		return nil, fmt.Errorf("%w: cluster_name is required", shared.ErrValidation)
-	}
-
-	result := &AssetImportResult{}
-	now := time.Now().UTC()
-
-	// Create cluster asset
-	// A cluster is (kubernetes, cluster) and a workload (kubernetes,
-	// workload): they used to be stored as host/kubernetes_cluster and
-	// container/<kind> (RFC-042 §6.3.8).
-	cluster, clusterErr := assetdom.NewAssetWithSubType(input.ClusterName, assetdom.AssetTypeKubernetes, "cluster", assetdom.CriticalityHigh)
-	if clusterErr == nil {
-		cluster.SetTenantID(tid)
-		cluster.SetProperties(map[string]any{"namespace_count": len(input.Namespaces)})
-		cluster.SetDiscoverySource("kubernetes")
-		cluster.SetDiscoveredAt(&now)
-
-		if err := s.assetRepo.Create(ctx, cluster); err != nil {
-			if !strings.Contains(err.Error(), "already exists") {
-				result.Errors = append(result.Errors, fmt.Sprintf("cluster: %v", err))
-			}
-		} else {
-			result.AssetsCreated++
-		}
-	}
-
-	// Create workload assets
-	for _, ns := range input.Namespaces {
-		for _, wl := range ns.Workloads {
-			name := fmt.Sprintf("%s/%s", ns.Name, wl.Name)
-
-			a, createErr := assetdom.NewAssetWithSubType(name, assetdom.AssetTypeKubernetes, "workload", assetdom.CriticalityMedium)
-			if createErr != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("workload %s: %v", name, createErr))
-				continue
-			}
-			a.SetTenantID(tid)
-			a.UpdateDescription(fmt.Sprintf("%s in %s (%d replicas)", wl.Kind, ns.Name, wl.Replicas))
-			a.SetDiscoverySource("kubernetes")
-			a.SetDiscoveredAt(&now)
-
-			props := map[string]any{
-				"namespace":     ns.Name,
-				"kind":          wl.Kind,
-				"workload_kind": strings.ToLower(wl.Kind),
-				"replicas":      wl.Replicas,
-				"cluster_name":  input.ClusterName,
-			}
-			if len(wl.Images) > 0 {
-				props["images"] = wl.Images
-			}
-			a.SetProperties(props)
-			a.AddTag("kubernetes")
-			a.AddTag(ns.Name)
-
-			if err := s.assetRepo.Create(ctx, a); err != nil {
-				if strings.Contains(err.Error(), "already exists") {
-					// Create only — existing asset untouched, so skip not update.
-					result.AssetsSkipped++
-				} else {
-					result.Errors = append(result.Errors, fmt.Sprintf("workload %s: %v", name, err))
-				}
-				continue
-			}
-			result.AssetsCreated++
-		}
-	}
-
-	s.logger.Info("Kubernetes import completed",
-		"tenant_id", tenantID, "cluster", input.ClusterName, "created", result.AssetsCreated,
 	)
 	return result, nil
 }
