@@ -7,7 +7,7 @@
  * web app, SSL, brute force, tech detection, API security) plus the intensity
  * slider were written into scanner_config keys that no scanner, sensor or API
  * code reads, and the scanner was hardcoded to nuclei. The wizard now asks for
- * the scanner itself (single) or a real pipeline (workflow).
+ * the scanner itself (single) or a real workflow (workflow).
  */
 
 import type {

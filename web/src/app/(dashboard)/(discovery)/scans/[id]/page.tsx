@@ -51,14 +51,17 @@ import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
 import { del, post } from '@/lib/api/client'
 import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { PIPELINE_TRIGGER_LABELS, type PipelineTriggerType } from '@/lib/api/pipeline-types'
+import {
+  SCAN_RUN_TRIGGER_LABELS,
+  type ScanWorkflowTriggerType,
+} from '@/lib/api/scan-workflow-types'
 import { useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
 import {
   SCAN_CONFIG_STATUS_LABELS,
   SCAN_TYPE_LABELS,
   SCHEDULE_TYPE_LABELS,
   SENSOR_PREFERENCE_LABELS,
-  type PipelineRun,
+  type ScanRun,
 } from '@/lib/api/scan-types'
 import { useAssetGroup } from '@/lib/api/security-hooks'
 import { Can, Permission } from '@/lib/permissions'
@@ -72,7 +75,7 @@ type Tab = (typeof TABS)[number]
 const RUN_PAGE_SIZES = [25, 50, 100]
 
 /** A run's duration, "so far" while it is still going. */
-function runDuration(run: PipelineRun): string {
+function runDuration(run: ScanRun): string {
   const ms = elapsedMs(run)
   if (ms === undefined) return run.status === 'pending' ? 'Not started' : '-'
   const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
@@ -155,7 +158,7 @@ export default function ScanDetailPage() {
   )
   const activeRun = (latestRuns?.data ?? []).find(isRunInProgress)
 
-  const handleStopRun = async (run: PipelineRun) => {
+  const handleStopRun = async (run: ScanRun) => {
     setStoppingRunId(run.id)
     try {
       await post(scanRunEndpoints.cancel(run.id), {})
@@ -186,7 +189,7 @@ export default function ScanDetailPage() {
   // Rebuilt each render: the cancel action reads the in-flight run id. No
   // column sorts: this endpoint lists newest first, and sorting one page of
   // the history would misrepresent the rest.
-  const runColumns: ColumnDef<PipelineRun>[] = [
+  const runColumns: ColumnDef<ScanRun>[] = [
     {
       id: 'started',
       header: 'Started',
@@ -221,7 +224,7 @@ export default function ScanDetailPage() {
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span>
-            {PIPELINE_TRIGGER_LABELS[row.original.trigger_type as PipelineTriggerType] ??
+            {SCAN_RUN_TRIGGER_LABELS[row.original.trigger_type as ScanWorkflowTriggerType] ??
               row.original.trigger_type}
           </span>
           {runTriggeredByLabel(row.original) && (
@@ -548,7 +551,7 @@ export default function ScanDetailPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Can permission={Permission.ScanWorkflowsRead}>
                         <Link
-                          href={`/pipelines/${encodeURIComponent(config.scan_workflow_id)}/builder`}
+                          href={`/scans/workflows/${encodeURIComponent(config.scan_workflow_id)}`}
                           className="text-primary text-sm font-medium hover:underline"
                         >
                           Open scan workflow

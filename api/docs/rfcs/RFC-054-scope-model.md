@@ -166,6 +166,33 @@ step-up and approval (§6.1, §7). So:
 The rule is applied wherever discovered names are attributed: CT promotion
 and the scan stamper (names a tenant scan found).
 
+**When the join runs.** After every committed change that can confirm a
+waiting name, from the scope service (so the API, review rules and later
+automations all get it):
+
+- an entry comes into effect: created in effect, **approved** (the usual path
+  for a new wildcard, since widening needs approval), activated;
+- an entry in effect changes (pattern, type, expiry, tier, discovery);
+- an exclusion goes away or shrinks: deleted, taken out of effect, shortened,
+  or its testing mode changed.
+
+A pending entry or request, a rejection and a new exclusion confirm nothing
+and ask for nothing. The runs are debounced per tenant (2 s) and serialized
+(never two joins of one tenant at once; a change during a run gets one more
+run). The `scope-join` controller repeats every tenant every 6 h as the
+safety net (it also picks up exclusions that expire).
+
+**Feedback.** `POST /scope/targets/preview` `{target_type, pattern}` answers
+`{would_confirm}`: the names waiting for review the entry would confirm if it
+were permanent and in effect. A change that put an entry into effect or
+changed one in effect (create, approve, activate, update) runs the join at
+once and answers `join: {confirmed_count, assets_filter: {covered_by}}`;
+`GET /assets?covered_by=<entry id>` lists the assets the join confirmed
+through that entry. Both counts cover only the assets the caller may see
+(Layer 2 data scope); without the data scope the count is refused. Each run
+that confirms names writes one system audit event
+`asset.attribution_auto_confirmed` (count and up to 50 names).
+
 **When the entry goes away** (deleted, deactivated, narrowed or expired): the
 asset, its history and findings stay; nothing is deleted. Active scanning stops
 at once, because the authority check (§4.2 step 6) no longer finds a cover;
