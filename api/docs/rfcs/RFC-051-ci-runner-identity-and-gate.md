@@ -83,7 +83,7 @@ job wins.
 
 ## 4. Token exchange
 
-`POST /api/v1/ci/oidc/exchange` `{tenant_id, id_token, run_id?}` (public).
+`POST /api/v1/ci/oidc/exchange` `{tenant_id, id_token, run_id?, aggregate?}` (public).
 
 1. The issuer is read from the unverified token only to pick the tenant's
    enabled configurations for it. No configuration, or a malformed token:
@@ -133,6 +133,37 @@ job). It is honored only for the same tenant, repository, commit, CI run id,
 run attempt and job (when the run recorded one), before the run was evaluated
 and within six hours of its start; the old token stops working. Another job of
 the same pipeline, or a re-run, gets its own run. Anything else is refused and audited (`run_mismatch`).
+
+### 4.1 Aggregate runs
+
+A pipeline that runs one job per scan capability in parallel (the
+`openctemio/ci` GitHub reusable workflow and GitLab `all` template) reports
+into ONE run and is judged once. Each job sends `aggregate: true`:
+
+- The run is keyed by the pipeline, the provider's pipeline run id, the
+  attempt and the commit, all from the verified token (GitHub `run_id` and
+  `run_attempt`, GitLab `pipeline_id`). The first job opens it
+  (`ci_runs.aggregate`); every later job of the same pipeline run joins it.
+  At most one aggregate run is open per key (`idx_ci_runs_aggregate_open`,
+  partial unique on `status = 'running'`), so racing jobs land in the same
+  run. A token without a pipeline run id is refused (`aggregate_no_run_id`).
+- Every job gets its own 15-minute token for the run (`ci_run_tokens`, one
+  hash per exchange); a job joining never invalidates another job's token.
+  A continuation (`run_id`) on an aggregate run adds a token instead of
+  rotating one.
+- The scan jobs upload; a final job (which joins the same way) calls
+  `evaluate` with the number of capability jobs that did not report as
+  `scan_failures`. The verdict covers every report of the run. Once
+  evaluated, the run takes no more results, and the next aggregate exchange
+  of that pipeline run opens a new run.
+- The response says `aggregate: true`; a client that asked for an aggregate
+  run and does not see it refuses to continue (otherwise its gate would judge
+  an empty run).
+- Security: joining needs a token the trust admits, like any exchange; the
+  join key comes only from verified claims, so a job can join only a run of
+  its own pipeline run, in its own tenant, on its own repository and commit.
+  Each join is audited (`ci_run.token_issued` with `aggregate`, `joined` and
+  the job id).
 
 ## 5. Uploads
 
