@@ -289,6 +289,25 @@ var batchTools = map[string]bool{
 	"nuclei": true, "subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
 }
 
+// capabilityJobTools run capability jobs on the sensor (their embedded
+// descriptors implement the capability, sensor SN1): a step that runs one
+// names its capability in the command (TakesCapabilityJobs). Every other
+// tool gets the command as before. Kept with toolParams and batchTools as
+// the built-in fallback until the platform reads every tool's contract
+// from its sensors (RFC-055 TC12).
+var capabilityJobTools = map[string]bool{
+	"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
+	"nuclei": true, "trivy": true, "semgrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
+}
+
+// TakesCapabilityJobs reports whether a step running tool for the stage
+// should name the capability in its command: the tool implements the stage
+// and runs capability jobs on the sensor.
+func TakesCapabilityJobs(s Stage, tool string) bool {
+	tool = normalizeTool(tool)
+	return capabilityJobTools[tool] && s.Implements(tool)
+}
+
 // ContractVersion is the major version of every capability contract of
 // catalog v1.
 const ContractVersion = 1
