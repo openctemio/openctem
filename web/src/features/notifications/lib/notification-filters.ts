@@ -9,6 +9,7 @@
  */
 import { z } from 'zod'
 import type { NotificationSeverity } from '@/features/integrations/types/integration.types'
+import { SEVERITY_LEVELS } from '@/lib/severity'
 
 export const EMPTY_SEVERITIES_MESSAGE =
   'Select at least one severity. To stop this channel, disable it instead.'
@@ -22,7 +23,7 @@ export const enabledSeveritiesSchema = z
 export const enabledEventTypesSchema = z.array(z.string()).min(1, EMPTY_EVENT_TYPES_MESSAGE)
 
 /** The real finding severities; "none" (no severity) is an extra opt-in. */
-const REAL_SEVERITIES: NotificationSeverity[] = ['critical', 'high', 'medium', 'low', 'info']
+const REAL_SEVERITIES: NotificationSeverity[] = [...SEVERITY_LEVELS]
 
 /**
  * True only when every real severity is enabled. The list used to say "All

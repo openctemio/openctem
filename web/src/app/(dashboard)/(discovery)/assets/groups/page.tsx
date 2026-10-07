@@ -78,12 +78,12 @@ import type { AssetGroup, CreateAssetGroupInput } from '@/features/asset-groups/
 import type { AssetGroupApiFilters } from '@/features/asset-groups/api'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
+import { CRITICALITY_BADGE_SOFT, CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
 import {
-  CRITICALITY_BADGE_SOFT,
-  CRITICALITY_DOT_COLORS,
   CRITICALITY_LABELS,
-  CRITICALITY_ORDER,
-} from '@/lib/criticality-colors'
+  RATED_CRITICALITY_LEVELS,
+  type RatedCriticality,
+} from '@/lib/criticality'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
@@ -93,10 +93,10 @@ import { cn } from '@/lib/utils'
 // ============================================
 
 type Environment = 'production' | 'staging' | 'development' | 'testing'
-type Criticality = 'critical' | 'high' | 'medium' | 'low'
+type Criticality = RatedCriticality
 
 const ENVIRONMENTS: Environment[] = ['production', 'staging', 'development', 'testing']
-const CRITICALITIES: Criticality[] = CRITICALITY_ORDER
+const CRITICALITIES: readonly Criticality[] = RATED_CRITICALITY_LEVELS
 
 const CRITICALITY_BADGE: Record<string, string> = CRITICALITY_BADGE_SOFT
 

@@ -18,10 +18,14 @@ export interface Capability {
   color: string
   category?: string // security, recon, analysis
   is_builtin: boolean
+  /** platform (shared) or custom (the organization's own) */
+  source: 'platform' | 'custom'
   sort_order: number
   created_by?: string
   created_at: string
   updated_at: string
+  /** include=usage. Absent means unknown (not asked, or not permitted). */
+  usage?: CapabilityUsageStats
 }
 
 /**
@@ -55,21 +59,24 @@ export interface CapabilityListResponse {
   total: number
   page: number
   per_page: number
+  total_pages: number
+  meta: { omitted_includes: string[] }
 }
 
 /**
  * Capability list filters
  */
 export interface CapabilityListFilters {
-  is_builtin?: boolean
+  source?: 'platform' | 'custom'
   category?: string
-  search?: string
+  q?: string
+  include?: 'usage'
   page?: number
   per_page?: number
 }
 
 /**
- * Capability all list response (for dropdowns, no pagination)
+ * Every capability the organization sees (all pages of the list)
  */
 export interface CapabilityAllResponse {
   items: Capability[]
@@ -93,14 +100,7 @@ export interface CapabilityUsageStats {
 }
 
 /**
- * Batch usage stats request
- */
-export interface CapabilityUsageStatsBatchRequest {
-  ids: string[]
-}
-
-/**
- * Batch usage stats response - map of capability ID to stats
+ * Usage per capability ID (from the list with include=usage)
  */
 export type CapabilityUsageStatsBatchResponse = Record<string, CapabilityUsageStats>
 

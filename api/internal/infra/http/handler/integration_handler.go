@@ -1578,7 +1578,7 @@ func (h *IntegrationHandler) TestNotification(w http.ResponseWriter, r *http.Req
 type SendNotificationRequest struct {
 	Title    string            `json:"title" validate:"required,min=1,max=255"`
 	Body     string            `json:"body" validate:"required,max=4000"`
-	Severity string            `json:"severity" validate:"required,oneof=critical high medium low"`
+	Severity string            `json:"severity" validate:"required,oneof=critical high medium low info"`
 	URL      string            `json:"url" validate:"omitempty,url"`
 	Fields   map[string]string `json:"fields"`
 }
@@ -1807,27 +1807,6 @@ func (h *IntegrationHandler) RotateGitHubWebhookSecret(w http.ResponseWriter, r 
 		auditdom.SeverityHigh, "GitHub inbound webhook secret rotated", map[string]any{"provider": "github"})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(githubWebhookConfig(tenantID, secret))
-}
-
-// ImportRepositories handles POST /api/v1/integrations/{id}/import-repositories.
-// It lists repositories from an SCM integration and upserts them as repository
-// assets for the tenant (dedup by full name; archived skipped unless requested).
-func (h *IntegrationHandler) ImportRepositories(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	integrationID := r.PathValue("id")
-
-	result, err := h.service.ImportSCMRepositories(r.Context(), integrationapp.ImportReposInput{
-		IntegrationID:   integrationID,
-		TenantID:        tenantID,
-		IncludeArchived: r.URL.Query().Get("include_archived") == queryParamTrue,
-	})
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(result)
 }
 
 // allowSCMChange refuses a change to an SCM connection when the caller lacks
