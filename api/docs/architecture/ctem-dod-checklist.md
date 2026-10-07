@@ -70,7 +70,8 @@ breadth (more cloud connectors, more RLS tables) or UI consumers.
   payload + timestamp).
 - `GET /audit-logs/verify` walks the chain and returns 409 with the
   offending entry on any break.
-- `POST /audit-logs/rebaseline` re-signs the chain after a known-benign
+- `POST /admin/tenants/{tenantId}/audit-chain/rebaseline` (admin console
+  only) re-signs the chain after a known-benign
   hashing change; overwritten hashes are archived (migration 000244) and the
   action is audited. See [audit-hash-chain.md](audit-hash-chain.md).
 
