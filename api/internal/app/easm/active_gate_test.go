@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
@@ -439,6 +440,58 @@ func TestActiveGate_ScopeOfAsset(t *testing.T) {
 	// Another tenant: tenant A's asset id is unknown there.
 	if got, _, _ := g.ScopeOfAsset(context.Background(), shared.NewID(), in.ID().String()); got != ScopeStatusOutOfScope {
 		t.Errorf("another tenant saw %s", got)
+	}
+}
+
+// RFC-054 §4.2 step 6: the gate lists the targets covered only below the
+// probe's tier, with the entry to raise; what nothing covers, and private
+// names, are left to the ownership gate. Another tenant sees none of it.
+func TestActiveGate_TierExceeded(t *testing.T) {
+	f := newGateFixture(t)
+	low, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "*.low.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	low.SetMaxTier(scopedom.TierPassive, time.Now())
+	f.targets = append(f.targets, low)
+	g := NewActiveGate(f, f, f, f)
+	ctx := context.Background()
+	targets := []string{"app.low.example", "app.scoped.com", "www.seeded.com", "www.verified.com", "nothing.example", "10.0.0.5"}
+
+	got, err := g.TierExceeded(ctx, f.tenant, targets, scopedom.TierActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got["app.low.example"] == nil || got["app.low.example"].ID != low.ID().String() {
+		t.Fatalf("t1: %v", got)
+	}
+	got, err = g.TierExceeded(ctx, f.tenant, targets, scopedom.TierIntrusive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"app.low.example", "app.scoped.com", "www.seeded.com", "www.verified.com"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("t2: %s not listed (%v)", want, got)
+		}
+	}
+	if r := got["www.seeded.com"]; r != nil {
+		t.Errorf("a seed has no entry to raise: %+v", r)
+	}
+	if _, ok := got["nothing.example"]; ok {
+		t.Error("an uncovered name is the ownership gate's answer, not tier_exceeds")
+	}
+	if _, ok := got["10.0.0.5"]; ok {
+		t.Error("a private address is gated by zones")
+	}
+	if got, _ := g.TierExceeded(ctx, f.tenant, targets, scopedom.TierPassive); len(got) != 0 {
+		t.Errorf("t0 exceeds nothing: %v", got)
+	}
+	// Another tenant: nothing of this tenant covers anything for it.
+	if got, err := g.TierExceeded(ctx, shared.NewID(), targets, scopedom.TierIntrusive); err != nil || len(got) != 0 {
+		t.Errorf("another tenant: %v, %v", got, err)
+	}
+	if _, err := (&ActiveGate{}).TierExceeded(ctx, f.tenant, targets, scopedom.TierActive); err == nil {
+		t.Error("an unwired gate must refuse")
 	}
 }
 
