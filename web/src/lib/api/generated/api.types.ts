@@ -41534,6 +41534,11 @@ export interface components {
       id?: string
       pipeline_id?: string
       quality_gate_result?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult']
+      /**
+       * @description RefusalCode says why a blocked run was refused (status blocked only),
+       *     e.g. ALL_TARGETS_EXCLUDED, SCAN_FREEZE_ACTIVE, NO_SENSOR_AVAILABLE.
+       */
+      refusal_code?: string
       scan_id?: string
       /**
        * @description ScanName names the run's scan (list rows only; empty when the scan was
@@ -41829,6 +41834,11 @@ export interface components {
       asset_group_id?: string
       /** @description Multiple asset groups */
       asset_group_ids?: string[]
+      /**
+       * @description BlockedRuns: triggers refused before anything was dispatched; each
+       *     is a run with status blocked and its refusal_code.
+       */
+      blocked_runs?: number
       created_at?: string
       created_by?: string
       created_by_name?: string
