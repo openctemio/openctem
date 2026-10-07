@@ -488,6 +488,23 @@ func ForTool(tool string) []Stage {
 	return out
 }
 
+// ProbeTier is the highest tier among the stages a tool implements: what a
+// run of the tool may send at its targets. A tool the catalog does not know
+// counts as an active (T1) probe; it is never treated as passive.
+func ProbeTier(tool string) Tier {
+	stages := ForTool(tool)
+	if len(stages) == 0 {
+		return TierActive
+	}
+	t := TierPassive
+	for _, s := range stages {
+		if s.Tier > t {
+			t = s.Tier
+		}
+	}
+	return t
+}
+
 // PassiveTool reports whether every stage the tool implements is passive
 // (T0): it sends no traffic to its targets. A tool the catalog does not know
 // is not passive.

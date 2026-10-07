@@ -50,6 +50,7 @@ const (
 	FixUseTenantSensor  = "use_tenant_sensor"
 	FixAddZone          = "add_zone"
 	FixContactSupport   = "contact_support"
+	FixRaiseTier        = "raise_tier"
 )
 
 // Permissions fixes need (strings, so the domain does not import RBAC).
@@ -69,6 +70,9 @@ type Fix struct {
 	Days       int    `json:"days,omitempty"`
 	ID         string `json:"id,omitempty"`
 	Domain     string `json:"domain,omitempty"`
+	// Tier is the tier the probe needs (raise_tier, allow_temporarily for a
+	// tier_exceeds refusal): t1 or t2.
+	Tier string `json:"tier,omitempty"`
 	// Requires is the permission the action needs ("" = anyone who could scan).
 	Requires string `json:"requires,omitempty"`
 }
@@ -127,6 +131,18 @@ func NewRefusal(target, code string, rule *RuleRef, oneOffDays int) Refusal {
 	return Refusal{Target: target, Code: code, Message: RefusalMessages[code], Rule: rule, Fixes: FixesFor(code, target, rule, oneOffDays)}
 }
 
+// NewTierRefusal refuses a target whose covering entries allow a lower tier
+// than the probe's (tier_exceeds). rule is the covering entry with the
+// highest ceiling, nil when only a seed or verified domain covers it (they
+// allow t1 at most).
+func NewTierRefusal(target string, rule *RuleRef, tier Tier, oneOffDays int) Refusal {
+	r := NewRefusal(target, RefusalTierExceeds, rule, oneOffDays)
+	for i := range r.Fixes {
+		r.Fixes[i].Tier = tier.String()
+	}
+	return r
+}
+
 // FixesFor lists the fixes for a refusal of target (oneOffDays: the one-off
 // default; 0 = 7).
 func FixesFor(code, target string, rule *RuleRef, oneOffDays int) []Fix {
@@ -163,6 +179,16 @@ func FixesFor(code, target string, rule *RuleRef, oneOffDays int) []Fix {
 		}
 	case RefusalEntryInactive:
 		return []Fix{{Action: FixActivateEntry, ID: id, Requires: permScopeApprove}}
+	case RefusalTierExceeds:
+		// Raise the covering entry's ceiling; without one (a seed or a
+		// verified domain covers it) an expiring entry at the needed tier.
+		if id != "" {
+			return []Fix{{Action: FixRaiseTier, ID: id, Requires: permScopeApprove}}
+		}
+		if host != "" {
+			return []Fix{{Action: FixAllowTemporarily, Pattern: host, TargetType: typ, Days: oneOffDays, Requires: permScopeApprove}}
+		}
+		return nil
 	case RefusalExcluded:
 		return []Fix{{Action: FixRemoveExclusion, ID: id, Requires: permExclApprove}}
 	case RefusalRejected, RefusalNeedsReview, RefusalCandidate, RefusalDependency, RefusalMonitorOnly:

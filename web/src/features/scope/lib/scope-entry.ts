@@ -79,7 +79,7 @@ export function coversText(e: { pattern?: string; covers?: string; target_type?:
       return `${pattern} only`
     case 'addresses':
       return pattern.includes('/') || pattern.includes('-')
-        ? `Every address in ${pattern}`
+        ? `every address in ${pattern}`
         : `${pattern} only`
     default:
       return pattern ? `Names matching ${pattern}` : ''
@@ -136,7 +136,7 @@ export function canApproveEntry(
   userId: string | undefined
 ): boolean {
   if (entryStatus(e) !== 'pending' || !userId) return false
-  if (e.created_by === userId) return false
+  if (e.created_by?.id === userId) return false
   return !(e.approvals ?? []).some((a) => a.user_id === userId)
 }
 

@@ -24,7 +24,7 @@ describe('what an entry covers (RFC-054 §4.1: *.x is x and every name below it)
   it('reads an exact name and addresses', () => {
     expect(coversText({ pattern: 'api.acme.io', covers: 'name' })).toBe('api.acme.io only')
     expect(coversText({ pattern: '203.0.113.0/24', covers: 'addresses' })).toBe(
-      'Every address in 203.0.113.0/24'
+      'every address in 203.0.113.0/24'
     )
     expect(coversText({ pattern: '203.0.113.7', covers: 'addresses' })).toBe('203.0.113.7 only')
   })
@@ -34,7 +34,7 @@ describe('what an entry covers (RFC-054 §4.1: *.x is x and every name below it)
       'shop.globex.io only'
     )
     expect(coversText({ pattern: '203.0.113.0/24', target_type: 'ip_range' })).toBe(
-      'Every address in 203.0.113.0/24'
+      'every address in 203.0.113.0/24'
     )
   })
 
@@ -59,7 +59,7 @@ describe('expiry', () => {
 describe('approving', () => {
   const pending = {
     status: 'pending',
-    created_by: 'requester',
+    created_by: { kind: 'user', id: 'requester' },
     approvals: [{ user_id: 'first' }],
     approvals_required: 2,
   }
