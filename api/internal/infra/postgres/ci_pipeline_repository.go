@@ -395,3 +395,16 @@ func (r *CIRunRepository) RecordRunTools(ctx context.Context, tenantID, runID sh
 	}
 	return tx.Commit()
 }
+
+// RepositoryBoundElsewhere reports whether an active pipeline of the
+// provider and issuer with another repository id reports on the named
+// repository asset.
+func (r *CIRunRepository) RepositoryBoundElsewhere(ctx context.Context, tenantID shared.ID, provider cirun.Provider,
+	issuer, repositoryName, externalRepoID string) (bool, error) {
+	var bound bool
+	err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM ci_pipelines
+		WHERE tenant_id = $1 AND provider = $2 AND issuer = $3 AND repository_name = $4
+		  AND external_repo_id <> $5 AND retired_at IS NULL)`,
+		tenantID.String(), string(provider), issuer, repositoryName, externalRepoID).Scan(&bound)
+	return bound, err
+}

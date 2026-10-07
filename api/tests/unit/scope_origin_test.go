@@ -3,10 +3,8 @@ package unit
 // The origin each creating path records (research/53 §4.6).
 
 import (
-	"context"
 	"testing"
 
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -40,13 +38,5 @@ func TestScopeOrigin_SetByThePath(t *testing.T) {
 	odd, err := create(svc, tenantID, approverA, "odd.example", func(in *scope.CreateTargetInput) { in.Origin = "hacker" })
 	if err != nil || odd.Origin() != scopedom.OriginManual {
 		t.Fatalf("unknown origin: %v %v", odd, err)
-	}
-
-	seeds, _, _, _, _ := seedService(t, 1, tenant.ScopeSettings{})
-	seed, err := seeds.Create(context.Background(), tenantID, easmapp.CreateSeedInput{
-		Kind: "root_domain", Value: "seeded-origin.com", Attested: true, Actor: approverA,
-	})
-	if err != nil || seed.Origin() != scopedom.OriginSeed {
-		t.Fatalf("seed: %v %v", seed, err)
 	}
 }

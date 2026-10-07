@@ -11,6 +11,8 @@ export interface AttributionEvidence {
   rule: string
   technique: string
   source: string
+  /** A person-readable source: the sensor's name for "sensor:<id>" (review queue). */
+  source_label?: string
   weight: number
   observed?: Record<string, unknown>
   first_observed_at: string
@@ -104,10 +106,49 @@ export function describeEvidence(e: AttributionEvidence): string {
       what = e.rule.replace(/_/g, ' ')
   }
   const technique = TECHNIQUE_LABEL[e.technique] ?? e.technique.replace(/_/g, ' ')
-  const source = SOURCE_LABEL[e.source] ?? e.source
+  const source = evidenceSourceText(e)
   const first = typeof e.observed?.first_seen === 'string' ? e.observed.first_seen : ''
   const since = first ? ` since ${formatDay(first)}` : ''
   return `${what} — seen in ${technique} (${source})${since}`
+}
+
+/**
+ * Where a piece of evidence came from, in words. A sensor is named by the
+ * server (`source_label`: the organization's own sensor by name, or
+ * "platform sensor"); a sensor id is never shown, so one the server could
+ * not name reads "a removed sensor".
+ */
+export function evidenceSourceText(
+  e: Pick<AttributionEvidence, 'source' | 'source_label'>
+): string {
+  if (e.source_label) return e.source_label
+  if (e.source.startsWith('sensor:')) return 'a removed sensor'
+  return SOURCE_LABEL[e.source] ?? e.source
+}
+
+/** The review hint of an address row (RFC-054 §4.3, §6.6). */
+export const REVIEW_HINT_TEXT: Record<string, string> = {
+  ip_needs_ip_entry: 'Names never grant their addresses; this IP needs its own scope entry.',
+}
+
+export interface ReviewNetworkFacts {
+  asn?: string
+  org?: string
+  shared?: boolean
+  shared_provider?: string
+  org_matches?: boolean
+}
+
+/** One line about the network an address sits in, for the review queue. */
+export function reviewNetworkText(n: ReviewNetworkFacts | null | undefined): string | null {
+  if (!n) return null
+  const who = [n.asn, n.org].filter(Boolean).join(' ')
+  if (n.shared) {
+    const provider = n.shared_provider ? ` (${n.shared_provider})` : ''
+    return `${who ? `${who}: ` : ''}shared provider space${provider}; it cannot be added, because these addresses serve other organizations.`
+  }
+  if (!who) return null
+  return n.org_matches ? `${who}, which matches your organization.` : `${who}.`
 }
 
 function formatDay(iso: string): string {

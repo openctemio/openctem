@@ -41,19 +41,21 @@ const (
 )
 
 // IsValid reports whether p is a supported provider.
-func (p Provider) IsValid() bool { return p == ProviderGitHub || p == ProviderGitLab }
+func (p Provider) IsValid() bool { return slices.Contains(AllProviders(), p) }
 
 // Rules decide which pipelines a trust configuration admits. A pipeline is
 // admitted when every non-empty rule matches. Owners or Repositories must
 // name something: there is no "any repository" configuration.
 type Rules struct {
-	// Owners are GitHub organizations or users (repository_owner) or GitLab
-	// top-level groups (the first segment of project_path). Exact match,
-	// case-insensitive.
+	// Owners are the first segment of the repository path: GitHub
+	// organizations or users, GitLab top-level groups, the Bitbucket
+	// workspace, the Azure Repos organization or the code host owner of a
+	// repository built elsewhere. Exact match, case-insensitive.
 	Owners []string `json:"owners,omitempty"`
 	// Repositories are "owner/name" (GitLab: the full project path). A
 	// trailing "/*" admits every repository directly under that path and
-	// "/**" every repository below it.
+	// "/**" every repository below it. Bitbucket: repository UUIDs (the
+	// token signs the id, never the name).
 	Repositories []string `json:"repositories,omitempty"`
 	// Refs are the branches or tags a pipeline may run on: "main",
 	// "release/*", or a full ref ("refs/tags/v*"). Shell-style patterns per
@@ -75,6 +77,10 @@ type Rules struct {
 	// claim: the job must run in one of Environments (required with this
 	// switch), whose deployment branch rules admit only protected refs.
 	RequireProtectedRef bool `json:"require_protected_ref,omitempty"`
+	// WorkspaceUUID is the Bitbucket workspace's immutable id (required for
+	// Bitbucket): the issuer names the workspace by its slug, which a
+	// renamed workspace gives up to whoever takes it next.
+	WorkspaceUUID string `json:"workspace_uuid,omitempty"`
 }
 
 // TrustConfig is one tenant's trust in one CI issuer.
@@ -114,6 +120,22 @@ func (c *TrustConfig) Normalize() {
 		c.DefaultBranch = "main"
 	}
 	c.Rules = c.Rules.normalized()
+	if c.Provider == ProviderBitbucket || c.Provider == ProviderAzureDevOps || c.Provider == ProviderCircleCI {
+		// Their issuers are lower case; a pasted organization id or
+		// workspace may not be.
+		c.Issuer = strings.ToLower(c.Issuer)
+	}
+	if repositoriesByID(c.Provider) {
+		for i, r := range c.Rules.Repositories {
+			c.Rules.Repositories[i] = NormalizeUUID(r)
+		}
+	}
+	if c.Provider == ProviderBitbucket {
+		for i, e := range c.Rules.Environments {
+			c.Rules.Environments[i] = NormalizeUUID(e)
+		}
+	}
+	c.Rules.WorkspaceUUID = NormalizeUUID(c.Rules.WorkspaceUUID)
 	if c.Issuer == "" {
 		switch c.Provider {
 		case ProviderGitHub:
@@ -122,8 +144,13 @@ func (c *TrustConfig) Normalize() {
 			c.Issuer = GitLabDefaultIssuer
 		}
 	}
-	if c.Audience == "" && !c.TenantID.IsZero() {
-		c.Audience = DefaultAudience(c.TenantID)
+	if c.Audience == "" {
+		switch {
+		case c.Provider == ProviderAzureDevOps:
+			c.Audience = AzureDevOpsAudience
+		case !c.TenantID.IsZero():
+			c.Audience = DefaultAudience(c.TenantID)
+		}
 	}
 }
 
@@ -159,29 +186,69 @@ func (c *TrustConfig) Validate() error {
 		return invalid("name is required (at most %d characters)", maxNameLen)
 	}
 	if !c.Provider.IsValid() {
-		return invalid("provider must be github or gitlab")
+		return invalid("provider must be one of github, gitlab, azure_devops, bitbucket, circleci or jenkins")
 	}
-	switch c.Provider {
-	case ProviderGitHub:
-		if c.Issuer != GitHubIssuer {
-			return invalid("the GitHub Actions issuer is %s", GitHubIssuer)
-		}
-	case ProviderGitLab:
-		if err := validateIssuerURL(c.Issuer); err != nil {
-			return invalid("issuer %v", err)
-		}
+	if err := validateProviderIssuer(c.Provider, c.Issuer); err != nil {
+		return invalid("issuer %v", err)
 	}
 	if c.Audience == "" || len(c.Audience) > maxAudienceLen || strings.ContainsAny(c.Audience, " \t\r\n") {
 		return invalid("audience is required, without spaces (at most %d characters)", maxAudienceLen)
 	}
+	if err := c.validateProviderRules(); err != nil {
+		return invalid("%v", err)
+	}
 	if len(c.DefaultBranch) > maxBranchNameLen || strings.ContainsAny(c.DefaultBranch, " \t\r\n*?[") {
 		return invalid("default_branch must be a branch name")
 	}
-	if c.Provider == ProviderGitHub && c.Rules.RequireProtectedRef && len(c.Rules.Environments) == 0 {
-		return invalid("require_protected_ref on GitHub needs environments: list the deployment environments " +
-			"whose deployment branch rules admit only protected branches and tags")
-	}
 	return c.Rules.validate()
+}
+
+// validateProviderRules refuses what the provider's token cannot back: an
+// audience shared with other services, a rule on a claim the token never
+// carries (it would refuse every job), a protected-ref switch the token
+// cannot prove.
+func (c *TrustConfig) validateProviderRules() error {
+	p := c.Provider
+	switch {
+	case p == ProviderAzureDevOps && c.Audience != AzureDevOpsAudience:
+		return fmt.Errorf("an Azure Pipelines token always carries the audience %s", AzureDevOpsAudience)
+	case TenantBoundAudience(p) && (c.TenantID.IsZero() || !strings.Contains(c.Audience, c.TenantID.String())):
+		return fmt.Errorf("the audience must contain the organization id (default %s), so that a token "+
+			"minted for this organization is refused by any other", DefaultAudience(c.TenantID))
+	case p == ProviderBitbucket && !uuidRE.MatchString(c.Rules.WorkspaceUUID):
+		return fmt.Errorf("workspace_uuid is required for Bitbucket: the workspace's UUID")
+	case p != ProviderBitbucket && c.Rules.WorkspaceUUID != "":
+		return fmt.Errorf("workspace_uuid applies to Bitbucket only")
+	case len(c.Rules.Events) > 0 && !hasEventClaim(p):
+		return fmt.Errorf("events: this provider's token does not name the trigger event")
+	case len(c.Rules.Environments) > 0 && !hasEnvironmentClaim(p):
+		return fmt.Errorf("environments: this provider's token does not name a deployment environment")
+	}
+	if repositoriesByID(p) {
+		for _, r := range c.Rules.Repositories {
+			if !uuidRE.MatchString(r) {
+				return fmt.Errorf("repositories: %q must be a repository UUID (the token signs the id, never the name)", r)
+			}
+		}
+		for _, e := range c.Rules.Environments {
+			if !uuidRE.MatchString(e) {
+				return fmt.Errorf("environments: %q must be a deployment environment UUID", e)
+			}
+		}
+	}
+	if c.Rules.RequireProtectedRef {
+		switch protectedRefFrom(p) {
+		case protectedRefNone:
+			return fmt.Errorf("require_protected_ref: this provider's token does not say whether a ref is protected; " +
+				"list the refs instead")
+		case protectedRefEnvironment:
+			if len(c.Rules.Environments) == 0 {
+				return fmt.Errorf("require_protected_ref needs environments: list the deployment environments " +
+					"whose rules admit only protected branches and tags")
+			}
+		}
+	}
+	return nil
 }
 
 func (r Rules) validate() error {
@@ -210,6 +277,9 @@ func (r Rules) validate() error {
 		}
 	}
 	for _, repo := range r.Repositories {
+		if uuidRE.MatchString(repo) {
+			continue // a repository id (Bitbucket)
+		}
 		segs := strings.Split(repo, "/")
 		if len(segs) < 2 {
 			return invalid("repositories: %q must be owner/name", repo)

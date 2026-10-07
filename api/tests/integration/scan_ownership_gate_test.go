@@ -28,7 +28,7 @@ import (
 func ownershipGate(db *sql.DB) *easmapp.ActiveGate {
 	pg := &postgres.DB{DB: db}
 	return easmapp.NewActiveGate(postgres.NewAttributionRepository(pg), postgres.NewAssetRepository(pg),
-		scopeService(db), postgres.NewEASMSeedRepository(pg))
+		scopeService(db), postgres.NewVerifiedDomainNameRepository(pg))
 }
 
 func seedOwnedAsset(t *testing.T, db *sql.DB, tenant shared.ID, name, typ string) shared.ID {
@@ -67,10 +67,8 @@ func TestScanOwnershipGate(t *testing.T) {
 
 	// Tenant A authorizes *.scoped.example.com and seeds example.org.
 	seedScopeTarget(t, db, tenantA, "domain", "*.scoped.example.com")
-	if _, err := db.ExecContext(ctx, `INSERT INTO easm_seeds (id, tenant_id, kind, value) VALUES ($1, $2, 'root_domain', 'example.org')`,
-		shared.NewID().String(), tenantA.String()); err != nil {
-		t.Fatal(err)
-	}
+	// A former seed is the permanent entry *.example.org (research/53 SC1).
+	seedScopeTarget(t, db, tenantA, "domain", "*.example.org")
 
 	// Allowed: unrecorded inside a scope target, unrecorded under a seed,
 	// confirmed by a person inside a scope target.

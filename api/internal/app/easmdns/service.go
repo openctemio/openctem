@@ -62,7 +62,7 @@ type Store interface {
 	DueTargets(ctx context.Context, tenantID shared.ID, kind string, checkedBefore time.Time, limit int) ([]Target, error)
 	SaveState(ctx context.Context, tenantID, assetID shared.ID, kind, outcome, lastErr string, at time.Time) error
 	// SaveNameState records the outcome for a name target (a root-domain
-	// seed or verified domain with no domain asset; email check only).
+	// scope entry with discovery or verified domain with no domain asset; email check only).
 	SaveNameState(ctx context.Context, tenantID shared.ID, name, kind, outcome, lastErr string, at time.Time) error
 	ResolveAuto(ctx context.Context, tenantID shared.ID, source string, fingerprints []string, note string) (int, error)
 	ReopenAuto(ctx context.Context, tenantID shared.ID, source string, fingerprints []string, note string) (int, error)

@@ -74,6 +74,23 @@ type Store interface {
 	RecordRequested(ctx context.Context, rt *retestdom.Retest, source vulnerability.ActivitySource) error
 }
 
+// RunRecorder records a retest as a scan run (kind retest) so it shows up in
+// Runs with its tasks and logs (research/62 P0-3). Implemented by the scan
+// run service.
+type RunRecorder interface {
+	StartRetestRun(ctx context.Context, rt *retestdom.Retest) (runID, stepRunID shared.ID, err error)
+	FinishRetestRun(ctx context.Context, tenantID, runID shared.ID, succeeded bool, message, code string) error
+}
+
+// runLinker stores a retest's run id (*postgres.FindingRetestRepository).
+type runLinker interface {
+	SetRun(ctx context.Context, tenantID, id, runID shared.ID) error
+}
+
+// runRef is the run a retest's commands are tagged with (zero when no run
+// recorder is wired).
+type runRef struct{ run, step shared.ID }
+
 // FindingReader reads one finding of a tenant.
 type FindingReader interface {
 	GetByID(ctx context.Context, tenantID, id shared.ID) (*vulnerability.Finding, error)
@@ -142,6 +159,7 @@ type Service struct {
 	announcer     Announcer
 	policy        Policy
 	evidence      EvidenceStore
+	runs          RunRecorder
 	now           func() time.Time
 	logger        *logger.Logger
 }
@@ -156,6 +174,9 @@ func NewService(store Store, findings FindingReader, assets AssetReader, command
 		now: time.Now, logger: log.With("service", "retest"),
 	}
 }
+
+// SetRunRecorder wires the scan run service: each retest then gets a run.
+func (s *Service) SetRunRecorder(r RunRecorder) { s.runs = r }
 
 // SetRegressionSLA wires the fresh-SLA-on-regression restart (RFC-039 D2).
 func (s *Service) SetRegressionSLA(r RegressionSLA) { s.regressionSLA = r }
@@ -224,12 +245,14 @@ func (s *Service) Request(ctx context.Context, in RequestInput) (*retestdom.Rete
 		return nil, err
 	}
 
+	ref := s.startRun(ctx, rt)
+
 	var checkID, reachID *shared.ID
 	var dispatchErr error
 	if method == retestdom.MethodTool {
-		checkID, dispatchErr = s.dispatchTool(ctx, rt, a, findingTool(f), f.Fingerprint())
+		checkID, dispatchErr = s.dispatchTool(ctx, rt, a, findingTool(f), f.Fingerprint(), ref)
 	} else {
-		checkID, reachID, dispatchErr = s.dispatch(ctx, rt, a)
+		checkID, reachID, dispatchErr = s.dispatch(ctx, rt, a, ref)
 	}
 	if checkID != nil || reachID != nil {
 		if err := s.store.SetCommands(ctx, rt.TenantID, rt.ID, checkID, reachID); err != nil {
@@ -395,12 +418,13 @@ func probeTarget(a *asset.Asset, address string) validation.Target {
 }
 
 // dispatch queues the template re-run and the reachability probe.
-func (s *Service) dispatch(ctx context.Context, rt *retestdom.Retest, a *asset.Asset) (*shared.ID, *shared.ID, error) {
+func (s *Service) dispatch(ctx context.Context, rt *retestdom.Retest, a *asset.Asset, ref runRef) (*shared.ID, *shared.ID, error) {
 	target := probeTarget(a, rt.Target)
 	check := validation.ValidationJob{
 		JobID: shared.NewID(), TenantID: rt.TenantID, FindingID: rt.FindingID,
 		ExecutorKind: validation.KindNuclei, Technique: validation.NucleiTechnique,
 		Target: target, TimeoutSeconds: checkTimeoutSeconds, TemplateID: rt.TemplateID, RetestID: rt.ID,
+		ScanRunID: ref.run, ScanRunStepID: ref.step,
 	}
 	checkID, err := s.dispatcher.Dispatch(ctx, check)
 	if err != nil {
@@ -410,6 +434,7 @@ func (s *Service) dispatch(ctx context.Context, rt *retestdom.Retest, a *asset.A
 		JobID: shared.NewID(), TenantID: rt.TenantID, FindingID: rt.FindingID,
 		ExecutorKind: validation.KindSafeCheck, Technique: validation.SafeCheckTechnique,
 		Target: target, TimeoutSeconds: checkTimeoutSeconds, RetestID: rt.ID,
+		ScanRunID: ref.run, ScanRunStepID: ref.step,
 	}
 	reachID, err := s.dispatcher.Dispatch(ctx, reach)
 	if err != nil {
@@ -419,11 +444,12 @@ func (s *Service) dispatch(ctx context.Context, rt *retestdom.Retest, a *asset.A
 }
 
 // dispatchTool queues the one retest command for the finding's own tool.
-func (s *Service) dispatchTool(ctx context.Context, rt *retestdom.Retest, a *asset.Asset, tool, fingerprint string) (*shared.ID, error) {
+func (s *Service) dispatchTool(ctx context.Context, rt *retestdom.Retest, a *asset.Asset, tool, fingerprint string, ref runRef) (*shared.ID, error) {
 	id, err := s.dispatcher.DispatchToolRetest(ctx, validation.ToolRetestJob{
 		TenantID: rt.TenantID, FindingID: rt.FindingID, RetestID: rt.ID, Tool: tool,
 		Target: probeTarget(a, rt.Target), RuleID: rt.TemplateID, Fingerprint: fingerprint,
 		TimeoutSeconds: checkTimeoutSeconds,
+		ScanRunID:      ref.run, ScanRunStepID: ref.step,
 	})
 	if err != nil {
 		return nil, err
@@ -764,6 +790,7 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 		return false, err
 	}
 	if res.Applied {
+		s.finishRun(ctx, rt, v)
 		s.logger.Info("retest settled", "tenant_id", rt.TenantID.String(), "finding_id", rt.FindingID.String(),
 			"retest_id", rt.ID.String(), "outcome", string(outcome), "from", string(res.PriorStatus),
 			"to", string(res.ResultStatus), "regression", regression)
@@ -852,3 +879,37 @@ func ResolveTarget(matchedAt, assetName string) string {
 
 // hostOf returns the host part of an asset name (a bare host, host:port or URL).
 func hostOf(name string) string { return asset.HostOf(name) }
+
+// startRun records the retest's run (kind retest) and links it to the
+// retest. Best-effort: a retest whose run could not be recorded still runs,
+// it is only missing from Runs.
+func (s *Service) startRun(ctx context.Context, rt *retestdom.Retest) runRef {
+	if s.runs == nil {
+		return runRef{}
+	}
+	runID, stepID, err := s.runs.StartRetestRun(ctx, rt)
+	if err != nil {
+		s.logger.Warn("failed to record the retest run", "retest_id", rt.ID.String(), "error", err)
+		return runRef{}
+	}
+	rt.RunID = &runID
+	if l, ok := s.store.(runLinker); ok {
+		if err := l.SetRun(ctx, rt.TenantID, rt.ID, runID); err != nil {
+			s.logger.Warn("failed to link the retest to its run", "retest_id", rt.ID.String(), "error", err)
+		}
+	}
+	return runRef{run: runID, step: stepID}
+}
+
+// finishRun settles the retest's run with the verdict: a verdict (fixed,
+// not reproduced, still vulnerable) completes it; an inconclusive retest
+// fails it with the reason.
+func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestdom.Verdict) {
+	if s.runs == nil || rt.RunID == nil {
+		return
+	}
+	succeeded := v.Outcome != retestdom.OutcomeInconclusive
+	if err := s.runs.FinishRetestRun(ctx, rt.TenantID, *rt.RunID, succeeded, evidence.RedactText(v.Reason), strings.ToUpper(string(v.Code))); err != nil {
+		s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
+	}
+}

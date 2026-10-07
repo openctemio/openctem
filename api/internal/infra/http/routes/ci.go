@@ -32,6 +32,9 @@ const (
 	ciIPRatePerSecond   = 10.0
 	ciIPBurst           = 100
 	ciExchangePerMinute = 60
+	// A trust preview reads an issuer's keys: ten a minute per person.
+	ciPreviewPerSecond = 10.0 / 60
+	ciPreviewBurst     = 10
 )
 
 func registerCIRoutes(
@@ -76,12 +79,21 @@ func registerCIRoutes(
 	if admin == nil {
 		return
 	}
+	previewRL := middleware.NewTelemetryRateLimiter(ciPreviewPerSecond, ciPreviewBurst, time.Hour, log).
+		MiddlewareKeyed(func(r *http.Request) string {
+			if uid := middleware.GetUserID(r.Context()); uid != "" {
+				return "user:" + uid
+			}
+			return "ip:" + middleware.ClientIPKey(r)
+		}, "CI trust preview rate limit exceeded")
 	router.Group("/api/v1/ci", func(r Router) {
 		r.GET("/settings", admin.GetSettings, middleware.Require(permission.CIRead))
 		r.PUT("/settings", admin.UpdateSettings, middleware.Require(permission.CIWrite))
 
 		r.GET("/trust-configs", admin.ListTrustConfigs, middleware.Require(permission.CIRead))
 		r.POST("/trust-configs", admin.CreateTrustConfig, middleware.Require(permission.CIWrite))
+		// Fetches the draft issuer's keys (SSRF-guarded): per-user budget.
+		r.POST("/trust-configs/preview", admin.PreviewTrustConfig, middleware.Require(permission.CIWrite), previewRL)
 		r.GET("/trust-configs/{id}", admin.GetTrustConfig, middleware.Require(permission.CIRead))
 		r.PUT("/trust-configs/{id}", admin.UpdateTrustConfig, middleware.Require(permission.CIWrite))
 		r.DELETE("/trust-configs/{id}", admin.DeleteTrustConfig, middleware.Require(permission.CIWrite))

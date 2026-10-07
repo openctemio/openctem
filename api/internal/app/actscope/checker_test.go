@@ -77,7 +77,7 @@ func (failingRoots) RootDomainSeedNames(context.Context, shared.ID) ([]string, e
 }
 
 func (failingRoots) VerifiedDomainNames(context.Context, shared.ID) ([]string, error) {
-	return nil, nil
+	return nil, errors.New("db down")
 }
 
 func (failingRoots) EASMVerifiedDomainNames(context.Context, shared.ID) ([]string, error) {
@@ -235,9 +235,8 @@ func TestCheck_FailsClosed(t *testing.T) {
 }
 
 // Free text gets the same authority as an inventory asset (RFC-054 §4.2):
-// a name at or under a seed or verified domain of the tenant is covered, as
-// is a name inside a scope target, and another tenant's seeds, verified
-// domains and targets cover nothing.
+// only a scope entry of the tenant covers it (research/53 SC1, SC2); a
+// verified domain is proof only, and another tenant's entries cover nothing.
 func TestCheck_FreeTextUsesTheOneAuthority(t *testing.T) {
 	f := newFixture(t)
 	c := New(&fakeEnforcer{unrestricted: true}, f.assets, f.targets, f.roots)
@@ -254,6 +253,7 @@ func TestCheck_FreeTextUsesTheOneAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{
+		"seeded.example.net": true, "www.seeded.example.net": true, "https://a.verified.example.net/x": true,
 		"b-seeded.example.net": true, "x.b-verified.example.net": true, "app.b-allowed.example.com": true,
 		"notseeded.example.net": true,
 	}

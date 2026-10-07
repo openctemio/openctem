@@ -42,6 +42,8 @@ const (
 	ProduceAsset      = "asset"
 	ProduceFinding    = "finding"
 	ProduceDependency = "dependency"
+	// ProduceEndpoint: the tool reports web endpoints (CTIS 1.6 endpoints[]).
+	ProduceEndpoint = "endpoint"
 )
 
 // ToolContract is a tool's tool-contract manifest as the sensor names it.
@@ -159,7 +161,7 @@ func SanitizeToolContract(c *ToolContract) (*ToolContract, string) {
 }
 
 func validProduce(v string) bool {
-	if v == ProduceDependency {
+	if v == ProduceDependency || v == ProduceEndpoint {
 		return true
 	}
 	kind, typ, ok := strings.Cut(v, ":")
@@ -173,8 +175,8 @@ func (c *ToolContract) Declares(kind, typ string) bool {
 	if c == nil {
 		return false
 	}
-	want := ProduceDependency
-	if kind != ProduceDependency {
+	want := kind
+	if kind != ProduceDependency && kind != ProduceEndpoint {
 		want = kind + ":" + strings.ToLower(strings.TrimSpace(typ))
 	}
 	return slices.Contains(c.Produces, want)
