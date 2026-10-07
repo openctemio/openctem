@@ -83,36 +83,36 @@ export function useListParams<F extends string = never>(
   const sort = (sortFields && parseListSort(params.get('sort'), sortFields)) || defaultSort
   const q = params.get('q') ?? ''
 
+  // filterDefaults is a new object each render: key the memos on its value.
   const filterKey = JSON.stringify(filterDefaults)
+  const defaults = useMemo(() => JSON.parse(filterKey) as Record<F, string>, [filterKey])
   const filters = useMemo(() => {
     const out = {} as Record<F, string>
-    for (const name of Object.keys(filterDefaults) as F[]) {
-      out[name] = params.get(name) ?? filterDefaults[name]
+    for (const name of Object.keys(defaults) as F[]) {
+      out[name] = params.get(name) ?? defaults[name]
     }
     return out
-    // filterKey stands for filterDefaults (a new object each render).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params, filterKey])
+  }, [params, defaults])
 
   /** Write several keys at once; a default (or empty) value is removed. */
   const write = useCallback(
     (changes: Record<string, string | number | null>) => {
       const next = new URLSearchParams(window.location.search)
-      const defaults: Record<string, string> = {
+      const keyDefaults: Record<string, string> = {
         page: '1',
         per_page: String(defaultPageSize),
         sort: defaultSort,
         q: '',
-        ...JSON.parse(filterKey),
+        ...defaults,
       }
       for (const [key, value] of Object.entries(changes)) {
         const v = value === null ? '' : String(value)
-        if (v === '' || v === defaults[key]) next.delete(key)
+        if (v === '' || v === keyDefaults[key]) next.delete(key)
         else next.set(key, v)
       }
       replaceUrlSearch(next)
     },
-    [defaultPageSize, defaultSort, filterKey]
+    [defaultPageSize, defaultSort, defaults]
   )
 
   const setPage = useCallback((p: number) => write({ page: p }), [write])
@@ -132,9 +132,9 @@ export function useListParams<F extends string = never>(
   )
   const reset = useCallback(() => {
     const cleared: Record<string, null> = { q: null, page: null }
-    for (const name of Object.keys(JSON.parse(filterKey))) cleared[name] = null
+    for (const name of Object.keys(defaults)) cleared[name] = null
     write(cleared)
-  }, [write, filterKey])
+  }, [write, defaults])
 
   const sorting = useMemo<SortingState>(() => {
     if (!sort) return []
@@ -157,11 +157,10 @@ export function useListParams<F extends string = never>(
     if (sort) out.sort = sort
     if (q.trim()) out.q = q.trim()
     for (const [name, value] of Object.entries(filters) as [F, string][]) {
-      if (value && value !== filterDefaults[name]) out[name] = value
+      if (value && value !== defaults[name]) out[name] = value
     }
     return out
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, perPage, sort, q, filters, filterKey])
+  }, [page, perPage, sort, q, filters, defaults])
 
   return {
     page,
