@@ -38,6 +38,7 @@ export const WORKFLOW_TRIGGER_TYPES = [
   'asset_discovered',
   'scan_completed',
   'webhook',
+  'finding_status_changed',
 ] as const
 
 /** Stored-only trigger types: readable, never offered, refused by the API. */
@@ -55,6 +56,7 @@ export const WORKFLOW_TRIGGER_LABELS: Record<WorkflowTriggerType, string> = {
   asset_discovered: 'Asset Discovered',
   scan_completed: 'Scan Completed',
   webhook: 'Webhook',
+  finding_status_changed: 'Finding Status Changed',
 }
 
 // ============================================
@@ -65,7 +67,8 @@ export const WORKFLOW_TRIGGER_LABELS: Record<WorkflowTriggerType, string> = {
  * Action types a picker may offer: the ones the platform actually executes.
  *
  * `assign_team` and `update_priority` are NOT here: they have no backing
- * service and fail every run, so the API refuses them (400). They stay in
+ * service and fail every run, and `run_script` is disabled (no sandbox), so the
+ * API refuses them (400). They stay in
  * {@link WORKFLOW_UNSUPPORTED_ACTION_TYPES} so stored workflows still render.
  */
 export const WORKFLOW_ACTION_TYPES = [
@@ -78,11 +81,14 @@ export const WORKFLOW_ACTION_TYPES = [
   'trigger_pipeline',
   'trigger_scan',
   'http_request',
-  'run_script',
 ] as const
 
 /** Stored-only action types: readable, never offered, refused by the API. */
-export const WORKFLOW_UNSUPPORTED_ACTION_TYPES = ['assign_team', 'update_priority'] as const
+export const WORKFLOW_UNSUPPORTED_ACTION_TYPES = [
+  'assign_team',
+  'update_priority',
+  'run_script',
+] as const
 
 export type WorkflowActionType =
   (typeof WORKFLOW_ACTION_TYPES)[number] | (typeof WORKFLOW_UNSUPPORTED_ACTION_TYPES)[number]
