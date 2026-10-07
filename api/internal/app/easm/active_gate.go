@@ -74,6 +74,70 @@ type ActiveGate struct {
 	// dangling backs the takeover exception (takeover_gate.go); nil admits
 	// nothing.
 	dangling ActiveGateDangling
+	// guardrails deny targets the platform does not allow (RFC-054 §8.2);
+	// proofAll requires a verified domain for every active probe (§8.1).
+	guardrails *scopedom.Guardrails
+	proofAll   bool
+}
+
+// WithPlatformPolicy sets the operator's guardrails and whether every active
+// probe needs a verified domain (SCOPE_ACTIVE_PROOF=all).
+func (g *ActiveGate) WithPlatformPolicy(gr scopedom.Guardrails, proofAll bool) *ActiveGate {
+	g.guardrails, g.proofAll = &gr, proofAll
+	return g
+}
+
+func (g *ActiveGate) denied(name string) bool {
+	return g.guardrails != nil && g.guardrails.Denies(name)
+}
+
+// CoverOf answers which of the tenant's authorities covers each target
+// (the dry run's "via"); a target nothing covers is absent.
+func (g *ActiveGate) CoverOf(ctx context.Context, tenantID shared.ID, targets []string) (map[string]scopeauth.Via, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	auth, err := scopeauth.Load(ctx, tenantID, g.scope, g.roots)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]scopeauth.Via, len(targets))
+	for _, t := range targets {
+		if v, ok := auth.Covers(t); ok {
+			if auth.Verified(t) {
+				v.Proof = scopeauth.ProofVerified
+			}
+			out[t] = v
+		}
+	}
+	return out, nil
+}
+
+// UnverifiedTargets returns the targets naming an internet host or public
+// address that are not at or under a verified domain of the tenant (an
+// address never is: there is no address proof yet). Implements
+// scan.ProofVerifier.
+func (g *ActiveGate) UnverifiedTargets(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	var auth *scopeauth.Authority
+	var out []string
+	for _, t := range targets {
+		if !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		if !auth.Verified(t) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
 // NewActiveGate wires the gate. Every dependency is required; a nil one
@@ -199,6 +263,10 @@ func (g *ActiveGate) BlockedTargets(ctx context.Context, tenantID shared.ID, tar
 		}
 		var auth *scopeauth.Authority
 		for _, t := range free {
+			if g.denied(t) {
+				out[t] = attribution.StatePlatformDenied
+				continue
+			}
 			if _, no := out[t]; no || !needsAuthority(t) {
 				continue
 			}
@@ -207,8 +275,11 @@ func (g *ActiveGate) BlockedTargets(ctx context.Context, tenantID shared.ID, tar
 					return nil, err
 				}
 			}
-			if _, ok := auth.Covers(t); !ok {
+			switch _, ok := auth.Covers(t); {
+			case !ok:
 				out[t] = attribution.StateUnattributed
+			case g.proofAll && !auth.Verified(t):
+				out[t] = attribution.StateProofRequired
 			}
 		}
 	}
@@ -271,6 +342,10 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			out[id] = attribution.StateUnattributed
 			continue
 		}
+		if g.denied(a.Name()) {
+			out[id] = attribution.StatePlatformDenied
+			continue
+		}
 		rec, recorded := records[id]
 		humanConfirmed := recorded && rec.State == attribution.StateConfirmed && rec.HumanDecided
 		// A person confirming this very asset overrides a rejected parent;
@@ -292,6 +367,9 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			}
 		}
 		if _, ok := auth.Covers(a.Name()); ok {
+			if g.proofAll && !auth.Verified(a.Name()) {
+				out[id] = attribution.StateProofRequired
+			}
 			continue
 		}
 		if recorded {
