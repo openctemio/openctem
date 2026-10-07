@@ -14,7 +14,7 @@ import (
 // tool: a pinned step names a tool the catalog has (and a sensor image
 // ships), with capabilities the catalog gives that tool (the queue-time step
 // check refuses anything else, so before migration 000270 no preset could
-// run); a capability step (the starter workflows, migration 001182) names
+// run); a capability step (the starter workflows, migration 001201) names
 // one routed catalog capability that a shipped tool implements.
 // Requires DATABASE_URL (CI applies every migration first).
 func TestPresetPipelines_UseShippedTools(t *testing.T) {
