@@ -1,0 +1,482 @@
+# RFC-054: Scope model (what a tenant may actively probe)
+
+| | |
+|---|---|
+| Status | Accepted (owner decisions S1–S6, 2026-10-07); P0 in implementation |
+| Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
+| Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
+| Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
+
+## 1. Summary
+
+Several records decide whether a target may be probed today: scope targets,
+root-domain seeds, verified domains, attribution states and inventory
+membership, with exclusions, scan zones and freeze windows on top. They
+disagreed with each other, widening scope was one unaudited click, and a
+refusal said nothing about how to fix it.
+
+This RFC makes one model out of them:
+
+1. **`*.x` means `x` and every name below it** (S1). An exclusion of exactly
+   `x` carves the apex out.
+2. **One authority check** decides for every target, typed or inventory, on
+   every path. An asset's ownership record alone never authorizes an active
+   probe; a scope entry, seed or verified domain must cover it.
+3. **Discovered names under a declared root are confirmed** (S4): names only,
+   never IP addresses; tombstones and exclusions win.
+4. **Expiring entries** replace "exceptions" (S6): `expires_at` + `reason`,
+   default 7 days, at most 30; expired entries stop authorizing at once.
+   Members request; approvers create and approve.
+5. **Widening is the guarded direction** (S3): step-up re-authentication on
+   every widening route, a tenant approval count of 0/1/2 (default
+   `min(1, admins − 1)`, never 0 for intrusive entries), every administrator
+   notified, everything audited.
+6. **Structured refusals**: every refused target carries a code, the rule that
+   decided, and the fixes the caller may apply. `POST /scope/check` is a dry
+   run of the whole gate.
+7. **Platform guardrails** (S2), operator-level only: active-probe proof
+   (`SCOPE_ACTIVE_PROOF`), public-suffix refusal, a minimal platform deny list
+   and CIDR size caps.
+8. **Tenant settings** (S5): auto-join, who adds one-off targets, maximum
+   days, approval count, default tier. There is **no** switch that turns
+   scope off.
+
+## 2. Threat model
+
+| Actor | Goal | Control |
+|---|---|---|
+| Careless admin | types `vndirect.com` for `vndirect.com.vn` | preview (`POST /scope/check`), step-up, second approver when the tenant has two or more admins, admin notification |
+| Compromised admin session | adds `*.victim.com` and scans it | step-up on every widening route (a stolen cookie alone cannot widen), approvals, notification of every admin, audit |
+| Malicious tenant (colluding admins) | uses the platform to scan a third party | approvals do not help; **ownership proof** for probes from platform sensors (`SCOPE_ACTIVE_PROOF`), platform deny list, public-suffix refusal, CIDR caps; none of them tenant-overridable |
+| Restricted member | scans outside their assets | act scope (D9) unchanged; may only *request* a one-off entry |
+| DNS pointing to others' IPs | an in-scope name resolves to a third party's address | a name grant never becomes an IP grant: discovered addresses never inherit (S4); the sensor resolves and pins (local policy) |
+| Ownership-tab click | confirms `bank.example` as the tenant's and scans it | confirmation no longer authorizes alone (§4.2) |
+| Cross-tenant oracle | learns that another tenant verified or scoped a name | every lookup is tenant-scoped; refusal reasons name only the caller's own rules or "platform policy" |
+
+Every query is tenant-scoped (`tenant_id` from the authenticated context).
+Every lookup error refuses (fail closed).
+
+## 3. Decisions
+
+| # | Decision |
+|---|---|
+| S1 | (a) `*.x` = `x` + all subdomains; exclusion `x` carves the apex out |
+| S2 | (a) proof for active probes is an operator setting `SCOPE_ACTIVE_PROOF`: SaaS default `platform_sensors`, self-hosted `off`; intrusive (T2) always needs proof |
+| S3 | (a) widening approvals are a tenant setting 0/1/2, default `min(1, admins − 1)`, never 0 for T2 (amends RFC-040 Q2 (a)) |
+| S4 | yes: an active root authorizes discovered child **names**, never IPs; tombstones and exclusions win; the attribution review queue holds the rest |
+| S5 | tenant knobs (§7); no global scope-off switch, ever |
+| S6 | one-off = a scope entry with `expires_at` + `reason`; admins create, members request; default 7 days, max 30 |
+
+## 4. Semantics
+
+### 4.1 Domain patterns
+
+| Pattern | Covers |
+|---|---|
+| `x` | exactly `x` |
+| `*.x` (and `**.x`) | `x` and every name below it, at any depth |
+| `*.x` + exclusion `x` | the subdomains of `x`, not `x` |
+
+Matching is case-insensitive, ignores one trailing dot and compares IDNA ASCII
+forms. Scope targets and exclusions use the same matcher
+(`pkg/domain/scope.matchDomain`), and so do seeds, verified domains and the
+active-scan gate.
+
+**Upgrade note.** Existing `*.x` scope targets start covering their apex, and
+existing `*.x` exclusions start excluding it. Live had 3 wildcard targets, 1 of
+them without its own apex row (counted 2026-10-07). A tenant that needs the
+apex out adds an exclusion of exactly `x`.
+
+**Sensor-local policy.** The sensor's operator-written policy
+(`targets.allow`/`deny`, sdk-go `pkg/core/local_policy`) still reads `*.x` as
+"names below `x`". That is the stricter reading on an allow list, so nothing is
+probed that the platform would refuse; a follow-up sdk-go/sensor change aligns
+it with this section.
+
+### 4.2 One authority check
+
+A target (typed text or inventory asset) may be actively probed only when all
+of these hold, in order (`scan.Service.ResolveDispatchTargets` and the scan
+trigger):
+
+1. the scan target validator accepts it (no loopback, link-local, metadata;
+   private addresses only inside a scan zone);
+2. the platform deny list does not cover it (§8);
+3. no active exclusion matches it;
+4. the tenant did not reject it or a parent name of it (tombstone or rejected
+   asset);
+5. its attribution record, if any, is `confirmed`;
+6. **authority**: an internet-facing target is covered by an *active* scope
+   entry (approved, unexpired) with `max_tier` at or above the probe's tier, or
+   sits at or under a root-domain seed or verified domain (T1 at most);
+7. proof, when §8.1 requires it: the target sits at or under a verified domain;
+8. the actor may act on it (D9: data scope; restricted members only their
+   assets);
+9. scan-zone routing.
+
+Private addresses and internal names are gated by zones, not by step 6.
+Repositories and cloud resources keep the record-only rule until their
+connectors become proof (P1).
+
+Steps 1–9 run on every path: scan create/clone/import/quick scan, scan runs
+(manual, scheduled, workflow, retry), `POST /pipelines/runs`, the coverage
+dispatcher, every validate command (retests, proof-of-fix, simulations),
+connector scans, CI-triggered scans and EASM active stages. Passive (T0)
+stages keep only steps 1–4.
+
+**Ownership tab.** Before this RFC, a person confirming an asset on its
+Ownership tab authorized it for active checks even outside every root. Now
+confirmation records ownership only; a scope entry, seed or verified domain
+must still cover the name. The refusal offers "add scope entry".
+
+### 4.3 Discovered names (S4)
+
+A name discovered by CT or by a tenant scan gets the strong rule
+`fqdn_under_scope_root` (weight 0.95) when it sits at or under an active
+domain scope entry with `max_tier` ≥ t1 or a root-domain seed, the tenant has
+`auto_join_discovered` on, no active exclusion matches it and no tombstone
+names it or a parent. With that rule the attribution engine confirms it. IP
+addresses, CIDRs and services never get the rule. Everything else keeps
+today's evidence and lands in the existing attribution review queue.
+
+**Backfill.** When the rule ships, a one-shot job re-evaluates the existing
+records that are `needs_review` with reason `fqdn_under_asserted_root` and are
+not human-decided: each name still under an active domain scope entry, seed or
+verified domain of the **same tenant** (and not excluded, not tombstoned, not
+under a rejected name, tenant `auto_join_discovered` on) gets the
+`fqdn_under_scope_root` evidence and is re-evaluated, which confirms it. The
+job is idempotent (evidence is upserted per asset, rule and root; a confirmed
+record is left alone), runs per tenant, and writes one system audit event per
+tenant (`attribution.backfill_confirmed`, actor `system`, the count and up to
+50 names). It runs at API start-up once per tenant, recorded so it does not
+repeat, and with the CT sweep afterwards (the rule is applied on every
+promotion anyway). Live had 10 such names under `*.vndirect.com.vn`
+(2026-10-07).
+
+### 4.4 Inventory membership (one definition)
+
+An asset is **in the inventory** when its attribution is confirmed (recorded,
+or no record: a legacy asset), `dependency` or `monitor_only`
+(`attribution.FilterApproved`). The review queue (`needs_review`,
+`candidate`) and `rejected` assets are not. Every surface uses this one
+definition: the Assets list default, dashboard and attack-surface counts and
+trends, and attack-surface "recent changes". A change event whose asset is not
+in the inventory is still listed in recent changes, but carries its
+attribution state so the UI shows "Added · needs review" instead of "Added".
+
+## 5. Data model (migration `001149`)
+
+`scope_targets` gains:
+
+| Column | Type | Default | Meaning |
+|---|---|---|---|
+| `expires_at` | timestamptz NULL | NULL (permanent) | expiring entries; expired ones never authorize |
+| `reason` | text NOT NULL | `''` | authority statement; required for expiring entries and requests |
+| `max_tier` | smallint NOT NULL, 0–2 | 1 | ceiling for probes authorized by this entry |
+| `approvals_required` | smallint NOT NULL, 0–2 | 0 | approvals the entry needs before it authorizes |
+| `approved_at` | timestamptz NULL | `created_at` for existing rows | when it became effective |
+| `rejected_by`, `rejected_at` | uuid / timestamptz NULL | — | a declined request |
+
+`status` adds `pending`, `rejected` and `expired` to `active`/`inactive`.
+`scope_target_approvals (tenant_id, target_id, approver_id, approved_at)`
+records each approval (composite tenant foreign key, one row per approver).
+
+Permission `attack_surface:scope:approve` (owner and admin by default)
+creates effective entries and approves requests and widening changes.
+
+## 6. API contract
+
+All routes are under `/api/v1/scope`, tenant from the token, module
+`scope_config`. "Step-up" means `403 STEP_UP_REQUIRED` until the session
+re-authenticated within the step-up window (the web client's existing
+re-authentication dialog handles it).
+
+### 6.1 Scope entries
+
+**`POST /targets`** (`scope:write`)
+
+```json
+{
+  "target_type": "domain",
+  "pattern": "*.example.com",
+  "description": "",
+  "reason": "We own it (registrar account 123)",
+  "expires_in_days": 7,
+  "expires_at": "2026-10-14T00:00:00Z",
+  "max_tier": "t1",
+  "priority": 0,
+  "tags": []
+}
+```
+
+`expires_in_days` (1 – `one_off_max_days`) or `expires_at` (future, within the
+same bound) makes the entry a one-off; neither makes it permanent.
+`max_tier` defaults to the tenant's `default_max_tier`.
+
+- Caller holds `scope:approve`: **step-up**. The entry needs
+  `approvals_required = effective_widening_approvals` (raised to at least 1
+  for `t2`). With 0 it is `active` at once; otherwise `pending`.
+- Caller lacks `scope:approve`: the entry is a **request**: it must be a
+  one-off for a single name or address (no wildcard, no range), `reason` is
+  required, the tenant's `one_off_targets` must be `admins_and_requests`, and
+  it is `pending` with `approvals_required = max(1, effective)`. No step-up
+  (a request authorizes nothing).
+- `t2` needs an expiry and at least one approval.
+- Refused patterns answer `400` with codes `PUBLIC_SUFFIX`, `DENY_LIST`,
+  `CIDR_TOO_LARGE`, `ONE_OFF_TOO_LONG`, `REASON_REQUIRED`,
+  `REQUEST_NOT_ALLOWED`, `REQUEST_MUST_BE_SINGLE`.
+
+Response (`ScopeTargetResponse`, also for list/get/update):
+
+```json
+{
+  "id": "…", "tenant_id": "…", "target_type": "domain", "pattern": "*.example.com",
+  "covers": "domain_and_subdomains",
+  "description": "", "reason": "…", "priority": 0, "tags": [],
+  "status": "pending",
+  "expires_at": "2026-10-14T00:00:00Z",
+  "max_tier": "t1",
+  "approvals_required": 1,
+  "approvals": [{"user_id": "…", "approved_at": "…"}],
+  "approved_at": null,
+  "rejected_by": null, "rejected_at": null,
+  "created_by": "…", "created_at": "…", "updated_at": "…",
+  "warnings": ["Pattern \"*.example.com\" is a superset of existing pattern \"api.example.com\""]
+}
+```
+
+`covers` is `name`, `domain_and_subdomains`, `addresses` or `pattern`.
+`status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
+
+**`POST /targets/{id}/approve`** (`scope:approve`, **step-up**): records the
+caller's approval. The requester cannot approve; nobody approves twice. When
+the distinct approvals reach `approvals_required`, the entry becomes `active`.
+`409 ENTRY_NOT_PENDING` for anything not pending; `409 ENTRY_EXPIRED` when it
+expired while pending.
+
+**`POST /targets/{id}/reject`** (`scope:approve`): `pending` → `rejected`.
+
+**`PUT /targets/{id}`** (`scope:write`): `description`, `priority`, `tags`,
+`reason`, `expires_at`, `expires_in_days`, `clear_expiry` (bool), `max_tier`.
+A **widening** change (a later or removed expiry, a higher tier) needs
+`scope:approve` and **step-up**, and sends the entry back to `pending` when
+`approvals_required` > 0 (as an exclusion's extended window does). A narrowing
+change (earlier expiry, lower tier) applies at once.
+
+**`POST /targets/{id}/activate`**: widening. With `scope:approve`: step-up,
+then `active` or `pending` as for create. Without it: a request (`pending`,
+at least one approval).
+
+`POST /targets/{id}/deactivate`, `DELETE /targets/{id}`,
+`POST /targets/bulk/delete`: narrowing, unchanged.
+
+### 6.2 Exclusions
+
+Unchanged, except that the widening exclusion routes require **step-up**:
+`DELETE /exclusions/{id}`, `POST /exclusions/{id}/deactivate`,
+`POST /exclusions/bulk/delete`, and `PUT /exclusions/{id}` when it shortens
+the window. The approval rule (approver ≠ requester) stays.
+
+### 6.3 Settings (S5)
+
+**`GET /settings`** (`scope:read`) and **`PUT /settings`** (`scope:approve`,
+**step-up**; every admin notified, audited):
+
+```json
+{
+  "auto_join_discovered": true,
+  "one_off_targets": "admins_and_requests",
+  "one_off_max_days": 7,
+  "widening_approvals": null,
+  "default_max_tier": "t1",
+
+  "effective_widening_approvals": 1,
+  "admin_count": 2,
+  "active_proof": "platform_sensors"
+}
+```
+
+| Field | Values | Default |
+|---|---|---|
+| `auto_join_discovered` | bool | true |
+| `one_off_targets` | `admins`, `admins_and_requests`, `disabled` | `admins_and_requests` |
+| `one_off_max_days` | 1–30 | 7 |
+| `widening_approvals` | `null` (default), 0, 1, 2 | `null` → `min(1, admins − 1)` |
+| `default_max_tier` | `t0`, `t1` | `t1` |
+
+The last three fields are read-only. `effective_widening_approvals` never
+exceeds `admin_count − 1` for a value the tenant could not satisfy; a tenant
+with two or more admins cannot go below 1 (S3). `active_proof` is the
+operator's setting (§8.1). `t2` is never a default.
+
+### 6.4 Dry run: `POST /check` (`scope:read`)
+
+```json
+{ "targets": ["vndirect.com.vn", "promo-landing.net"],
+  "asset_ids": [],
+  "sensor_preference": "auto",
+  "tier": 1 }
+```
+
+At most 200 targets. Runs §4.2 steps 1–9 for the caller (act scope included)
+without dispatching, auditing or logging a refusal.
+
+```json
+{ "results": [
+  { "target": "vndirect.com.vn", "allowed": true,
+    "via": {"kind": "scope_target", "id": "…", "pattern": "*.vndirect.com.vn", "proof": "asserted"},
+    "zone": null },
+  { "target": "promo-landing.net", "allowed": false,
+    "code": "no_entry",
+    "message": "No scope entry, seed or verified domain covers this name.",
+    "rule": null,
+    "fixes": [
+      {"action": "allow_temporarily", "pattern": "promo-landing.net", "target_type": "domain", "days": 7},
+      {"action": "add_entry", "pattern": "*.promo-landing.net", "target_type": "domain"}
+    ] }
+] }
+```
+
+`via.kind`: `scope_target`, `seed`, `verified_domain`, `internal` (zone-gated),
+`not_applicable` (repository, cloud resource). `via.proof`: `verified` or
+`asserted`. `rule` names the caller's own rule that refused: `{"kind":
+"exclusion"|"scope_target"|"tombstone"|"asset", "id", "pattern"}`; for
+platform policy it is `{"kind": "platform_policy"}` with no detail.
+
+### 6.5 Refusal codes
+
+| Code | Meaning | Fixes offered |
+|---|---|---|
+| `invalid_target` | malformed, loopback, link-local, metadata, private outside a zone | — |
+| `deny_list` | platform policy (§8.2) | `contact_support` |
+| `excluded` | an active exclusion matches | `remove_exclusion` (approver) |
+| `rejected` | the tenant rejected this name or a parent | `review_asset` |
+| `needs_review`, `candidate`, `monitor_only` | attribution not confirmed | `review_asset` |
+| `dependency` | the tenant's name on third-party infrastructure | `review_asset` |
+| `no_entry` | nothing covers it | `add_entry`, `allow_temporarily` (approver), `request_access` (member) |
+| `entry_pending` | covered only by an entry awaiting approval | `approve_entry` (approver) |
+| `entry_expired` | covered only by an expired entry | `renew_entry`, `request_access` |
+| `entry_inactive` | covered only by a deactivated entry | `activate_entry` |
+| `tier_exceeds` | covering entries allow a lower tier | `raise_tier` (approver) |
+| `proof_required` | platform sensors, `all`, or T2 need a verified root | `verify_domain`, `use_tenant_sensor` |
+| `out_of_data_scope` | asset outside the actor's data scope | — |
+| `not_an_asset` | a restricted member typed free text | `request_access` |
+| `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
+
+Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
+"domain"?}`. Fixes are filtered by the caller's permissions.
+
+### 6.6 Review queue and inventory membership (existing routes, extended)
+
+The review queue already exists (RFC-036 §6.10); the web uses it as the
+"pending" list. Nothing new is built next to it.
+
+- **`GET /api/v1/easm/candidates`** (`assets:read`, data-scoped):
+  `states` (default `needs_review,candidate`), `types`, `min_confidence`,
+  `search`, `reason` (new: a rule, e.g. `fqdn_under_asserted_root`), `page`,
+  `per_page` ≤ 100. Each item: `asset_id`, `name`, `type`, `state`,
+  `confidence`, `reason`, `human_decided`, `evidence[]` (`rule`, `technique`,
+  `source`, `weight`, `observed`, `first_observed_at`, `last_observed_at`),
+  and `covered_by` (new: the caller's scope entry, seed or verified domain
+  that covers the name, or null; a null `covered_by` on approval means
+  widening, so the UI offers "add scope entry" first).
+- **`GET /api/v1/easm/summary`** (`assets:read`): adds
+  `review.needs_review`, `review.candidate` and `review.by_reason`
+  (`{rule: count}`) for the caller's data scope.
+- **`POST /api/v1/easm/candidates/decisions`** (`assets:write`, data-scoped,
+  at most 200 assets, audited per asset): `{"asset_ids": […], "decision":
+  "confirm"|"reject"|"dependency"|"monitor_only", "reason": "…"}`. Unchanged,
+  except that a confirmation no longer authorizes active probes by itself
+  (§4.2).
+- **`GET /api/v1/attack-surface/stats`**: every count uses §4.4;
+  `recent_changes[]` items add `attribution_state` (`confirmed`,
+  `needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`, or
+  empty for a legacy asset) and `in_inventory` (bool).
+
+The same `code` (and `fixes`) appear on every refusal the API returns:
+`TARGET_OUT_OF_SCOPE` errors list `details.refused[]` as
+`{target, code, message, fixes}`, and dispatch-gate refusals carry `code`.
+
+## 7. Approvals and notification (S3)
+
+- Effective approvals: the tenant's `widening_approvals`, or
+  `min(1, admins − 1)` when unset; at least 1 when the tenant has two or more
+  admins; at least 1 for `t2`; capped at `admins − 1` only for the default.
+- Approvers hold `scope:approve`, differ from the requester, and count once.
+- Widening events notify every active owner and admin in-app and on the
+  tenant's channels: entry created active, approved, activated, expiry
+  extended, tier raised, exclusion removed or shortened, settings changed;
+  a new request notifies the approvers.
+- Audit actions: `scope_target.created|updated|activated|deactivated|deleted|
+  approved|rejected|expired`, `scope_exclusion.*` (existing),
+  `scope.settings_updated`.
+
+## 8. Platform guardrails (S2), operator-level
+
+None of these is a tenant setting; nothing a tenant sends turns them off.
+
+### 8.1 Active-probe proof
+
+`SCOPE_ACTIVE_PROOF`:
+
+| Value | Rule |
+|---|---|
+| `off` | no proof needed (self-hosted default: the operator is the tenant) |
+| `platform_sensors` | a job routed to platform sensors needs every target at or under a verified domain of the tenant (SaaS default) |
+| `all` | every active probe needs a verified root (internal, zone-gated targets excepted) |
+
+Unset: `platform_sensors` when `TENANT_CREATION_MODE=self_service`, else
+`off`. Intrusive (T2) probes always need a verified root. IP targets have no
+proof kind yet, so they are refused where proof is required.
+
+### 8.2 Deny list and public suffixes
+
+Checked when an entry is created or widened and again at dispatch:
+
+- public suffixes (ICANN and private sections of the Public Suffix List,
+  embedded through `golang.org/x/net/publicsuffix`, no network call): no entry
+  may be, or wildcard, a public suffix (`*.com.vn`, `com`, `*.azurewebsites.net`);
+- government and military suffixes (`gov`, `mil`, `gov.*`, `mil.*`,
+  `gouv.fr`, `gc.ca`, `go.jp`, …);
+- shared-provider apexes as wildcard roots (`*.amazonaws.com`,
+  `*.cloudfront.net`, `*.herokuapp.com`, …); exact names under them stay
+  allowed;
+- `0.0.0.0/0`, `::/0`, link-local and cloud metadata addresses;
+- the operator's own ranges and names, `SCOPE_DENY_EXTRA` (comma-separated
+  domains and CIDRs).
+
+### 8.3 CIDR caps
+
+A public IPv4 range larger than `/SCOPE_MAX_PUBLIC_CIDR_V4` (default 16) or
+IPv6 larger than `/SCOPE_MAX_PUBLIC_CIDR_V6` (default 32) is refused. Private
+ranges are gated by zones and are not capped.
+
+## 9. Rollout and upgrade
+
+- One release, no flag. Changelog fragments describe each behaviour change.
+- Existing entries keep working: they are `active`, permanent, `t1`, with
+  `approved_at = created_at`.
+- Assets confirmed on the Ownership tab but outside every entry, seed and
+  verified domain stop being probed; runs say so in their warnings, and the
+  refusal offers `add_entry`.
+- Members who created scope targets directly now create requests.
+
+## 10. Plan
+
+| Phase | Items |
+|---|---|
+| P0 (this RFC) | S1 matcher; one authority check (I2/I3); expiring entries + requests + approvals + step-up + notification; settings; S4 rule; structured refusals + dry run; proof setting, deny list, PSL, CIDR caps |
+| P1 | proof kinds (HTTP file, cloud connector, platform-reviewed LOA); seeds folded into scope entries; `commands.authorizing_entry_id`; platform deny list as a table with a console; velocity signals; sensor-local policy aligned with §4.1 |
+| P2 | T2 grants with engagement labels; name-vs-IP grants in signed jobs; opt-out registry |
+
+## 11. Implementation
+
+| PR | Content |
+|---|---|
+| S1 | matcher, tests, docs, this RFC |
+| Authority | one authority check for typed and inventory targets; Ownership-tab bypass removed |
+| Guardrails | PSL, deny list, CIDR caps, `SCOPE_ACTIVE_PROOF` |
+| Entries | migration `001149`, expiry, requests, approvals, step-up, notification, settings, sweep |
+| Discovery | `fqdn_under_scope_root` + backfill |
+| Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
+| Refusals | codes, fixes, `POST /check` dry run |
