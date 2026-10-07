@@ -138,7 +138,6 @@ type CreateSensorRequest struct {
 	Type              string   `json:"type" validate:"required,oneof=worker collector sensor"`
 	Description       string   `json:"description" validate:"max=1000"`
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
-	Tools             []string `json:"tools" validate:"max=20,dive,max=50"`
 	ExecutionMode     string   `json:"execution_mode" validate:"omitempty,oneof=standalone daemon"`
 	MaxConcurrentJobs int      `json:"max_concurrent_jobs" validate:"omitempty,min=1,max=100"`
 }
@@ -151,7 +150,6 @@ type SensorResponse struct {
 	Type          string   `json:"type"`
 	Description   string   `json:"description,omitempty"`
 	Capabilities  []string `json:"capabilities"`
-	Tools         []string `json:"tools"`
 	ExecutionMode string   `json:"execution_mode"`
 	Status        string   `json:"status"` // Admin-controlled: active, disabled, revoked
 	// Health is automatic: stored by heartbeats and the heartbeat ladder.
@@ -258,15 +256,16 @@ type SensorResponse struct {
 	// IsPlatformSensor marks shared platform infrastructure.
 	IsPlatformSensor bool `json:"is_platform_sensor"`
 
-	// capabilities, tools and max_concurrent_jobs above are the
-	// administrator's settings (limits). Reported is what the sensor last
-	// reported it has (RFC-029 §4.3.1), null when it never reported;
-	// Effective is what dispatch uses: the report narrowed by the
-	// administrator's settings (the settings alone without a report).
+	// capabilities and max_concurrent_jobs above are the administrator's
+	// settings (limits). Reported is what the sensor last reported it has
+	// (RFC-029 §4.3.1), null when it never reported; Effective is what
+	// dispatch uses: the report narrowed by those settings (the settings
+	// alone without a report). The effective tools are the reported
+	// installed tools (none before a report); the sensor grant narrows them.
 	Reported  *SensorReportedResponse `json:"reported"`
 	Effective SensorEffectiveResponse `json:"effective"`
 	// CapabilityMismatch lists settings the sensor's report contradicts
-	// (a tool set here that the sensor does not have); omitted when none.
+	// (a capability set here that the sensor does not report); omitted when none.
 	CapabilityMismatch *sensor.CapabilityMismatch `json:"capability_mismatch,omitempty"`
 
 	// Content is the scanner content the sensor reports (trivy DB, nuclei
@@ -478,7 +477,6 @@ func (h *SensorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Type:              req.Type,
 		Description:       req.Description,
 		Capabilities:      req.Capabilities,
-		Tools:             req.Tools,
 		ExecutionMode:     req.ExecutionMode,
 		MaxConcurrentJobs: req.MaxConcurrentJobs,
 		AuditContext:      h.buildAuditContext(r),
@@ -748,7 +746,6 @@ type UpdateSensorRequest struct {
 	Name              string   `json:"name" validate:"omitempty,min=1,max=255"`
 	Description       string   `json:"description" validate:"max=1000"`
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
-	Tools             []string `json:"tools" validate:"max=20,dive,max=50"`
 	Status            string   `json:"status" validate:"omitempty,oneof=active disabled revoked"` // Admin-controlled
 	MaxConcurrentJobs *int     `json:"max_concurrent_jobs" validate:"omitempty,min=1,max=100"`
 }
@@ -788,7 +785,6 @@ func (h *SensorHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Name:              req.Name,
 		Description:       req.Description,
 		Capabilities:      req.Capabilities,
-		Tools:             req.Tools,
 		Status:            req.Status,
 		MaxConcurrentJobs: req.MaxConcurrentJobs,
 		AuditContext:      h.buildAuditContext(r),
@@ -998,7 +994,6 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 		Type:          string(a.Type),
 		Description:   a.Description,
 		Capabilities:  a.Capabilities,
-		Tools:         a.Tools,
 		ExecutionMode: string(a.ExecutionMode),
 		Status:        string(a.Status), // Admin-controlled
 		Health:        string(a.Health), // Automatic heartbeat

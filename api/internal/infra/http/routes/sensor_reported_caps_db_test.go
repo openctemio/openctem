@@ -11,11 +11,14 @@ package routes
 import (
 	"context"
 	"encoding/json"
+
 	"net/http"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
@@ -27,20 +30,29 @@ import (
 func (h *ctlHarness) newLimitedSensor(tenantID, name string, tools, caps []string, maxJobs int) ctlSensor {
 	h.t.Helper()
 	out, err := h.sensors.CreateSensor(context.Background(), sensorapp.CreateSensorInput{TenantID: tenantID, Name: name,
-		Type: "worker", Capabilities: caps, Tools: tools, ExecutionMode: "daemon", MaxConcurrentJobs: maxJobs})
+		Type: "worker", Capabilities: caps, ExecutionMode: "daemon", MaxConcurrentJobs: maxJobs})
 	if err != nil {
 		h.t.Fatalf("create sensor: %v", err)
 	}
-	return ctlSensor{id: out.Sensor.ID.String(), key: out.APIKey}
+	return ctlSensor{id: out.Sensor.ID.String(), key: out.APIKey, tools: tools}
 }
 
-// verifyTools records the sensor's declared tools as reported installed, as
-// a sensor on a current SDK does on its first heartbeat. Dispatch only sends
-// a sensor the tools it verified.
+// verifyTools records the sensor's tools as reported installed, as a sensor
+// on a current SDK does on its first heartbeat. Dispatch only sends a sensor
+// the tools it verified.
 func (h *ctlHarness) verifyTools(s ctlSensor) {
 	h.t.Helper()
+	inv := make([]sensor.ReportedTool, 0, len(s.tools))
+	for _, t := range s.tools {
+		inv = append(inv, sensor.ReportedTool{Name: t, Installed: true})
+	}
+	raw, err := json.Marshal(inv)
+	if err != nil {
+		h.t.Fatal(err)
+	}
 	if _, err := h.db.ExecContext(context.Background(),
-		`UPDATE sensors SET reported_tool_names = tools, reported_at = now() WHERE id = $1`, s.id); err != nil {
+		`UPDATE sensors SET reported_tools = $2::jsonb, reported_tool_names = $3, reported_at = now() WHERE id = $1`,
+		s.id, string(raw), pq.Array(s.tools)); err != nil {
 		h.t.Fatalf("verify tools: %v", err)
 	}
 }
@@ -136,17 +148,17 @@ func TestReportedCaps_DispatchByReportedTool(t *testing.T) {
 		t.Fatal("HasSensorForCapability(dast) = false: reported capability not used")
 	}
 
-	// B: declared but not installed is shown.
+	// B: a capability set but not reported is shown.
 	bs := h.load(b)
-	if m := bs.CapabilityMismatch(); !slices.Equal(m.ToolsNotInstalled, []string{"nuclei"}) ||
-		!slices.Equal(m.CapabilitiesNotReported, []string{"nuclei"}) {
+	if m := bs.CapabilityMismatch(); !slices.Equal(m.CapabilitiesNotReported, []string{"nuclei"}) {
 		t.Fatalf("B mismatch %+v", m)
 	}
 }
 
-// The administrator's list narrows the report and the report never widens
-// it; unknown and malformed names, oversized lists and absurd concurrency
-// are dropped or clamped.
+// The tools dispatch uses are the known installed tools the sensor reports
+// (the grant narrows them, not a list on the sensor); unknown and malformed
+// names, oversized lists and absurd concurrency are dropped or clamped, and
+// the administrator's capability and concurrency limits still narrow.
 func TestReportedCaps_MaliciousReportIsBounded(t *testing.T) {
 	h := newCtlHarness(t)
 	ctx := context.Background()
@@ -183,13 +195,12 @@ func TestReportedCaps_MaliciousReportIsBounded(t *testing.T) {
 	if got.Reported.MaxConcurrentJobs != sensor.MaxReportedJobs || got.Reported.OS != "linuxrmrf" || len(got.Reported.Arch) != sensor.MaxReportedPlatformLen {
 		t.Fatalf("not clamped: max=%d os=%q arch=%d", got.Reported.MaxConcurrentJobs, got.Reported.OS, len(got.Reported.Arch))
 	}
-	// Narrow only: semgrep (allowed and installed), never nuclei; capacity
-	// stays at the administrator's 5.
-	if !slices.Equal(got.EffectiveTools(), []string{"semgrep"}) || got.EffectiveMaxConcurrentJobs() != 5 {
+	// The known installed tools only; capacity stays at the administrator's 5.
+	if !slices.Equal(got.EffectiveTools(), []string{"nuclei", "semgrep"}) || got.EffectiveMaxConcurrentJobs() != 5 {
 		t.Fatalf("effective tools %v max %d", got.EffectiveTools(), got.EffectiveMaxConcurrentJobs())
 	}
-	if c, _ := h.repo.FindAvailableWithCapacity(ctx, tid, []string{"nuclei"}, "nuclei"); len(c) != 0 {
-		t.Fatalf("a report widened the administrator's tool list: %v", ids(c))
+	if c, _ := h.repo.FindAvailableWithCapacity(ctx, tid, []string{"validate"}, "evil"); len(c) != 0 {
+		t.Fatalf("an unknown reported tool is dispatched: %v", ids(c))
 	}
 	var dbTools []string
 	var dbMax int
@@ -326,8 +337,8 @@ func (s *jsonStringsScanner) Scan(src any) error {
 
 // A scan for a tool is offered (poll and doorbell count) only to sensors
 // whose effective tools include it (the RFC-030 tool gate reads
-// effective_tools): the reported inventory narrowed by the limit, or the
-// declared tools of a sensor that never reported.
+// effective_tools): the reported installed tools; a sensor that never
+// reported has none.
 func TestReportedCaps_PollOffersToolScansOnlyToSensorsWithTheTool(t *testing.T) {
 	h := newCtlHarness(t)
 	ctx := context.Background()

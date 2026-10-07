@@ -18,7 +18,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { DangerZone, DangerZoneItem } from '@/features/shared/components/danger-zone'
@@ -38,8 +37,7 @@ import {
 import type { Sensor } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
-import { useSensorFormOptions } from '../hooks'
-import { sensorCapacity, toolsNotInstalled } from '../lib/capabilities'
+import { sensorCapacity } from '../lib/capabilities'
 import {
   isSensorEditDirty,
   MAX_JOBS_LIMIT,
@@ -172,7 +170,6 @@ export function EditSensorDialog({
     [zones, sensor.id]
   )
 
-  const { getCapabilitiesForTools } = useSensorFormOptions()
   const { trigger: updateSensor } = useUpdateSensor(sensor.id)
   const { trigger: revokeSensor, isMutating: isRevoking } = useRevokeSensor()
   const { trigger: deleteSensor, isMutating: isDeleting } = useDeleteSensor()
@@ -209,7 +206,6 @@ export function EditSensorDialog({
   const reportedVersions = new Map(
     (sensor.reported?.tools ?? []).filter((t) => t.installed).map((t) => [t.name, t.version])
   )
-  const missingTools = toolsNotInstalled(sensor)
   const capacity = sensorCapacity(sensor)
   const revoked = sensor.status === 'revoked'
   const mode = EXECUTION_MODE_TEXT[sensor.execution_mode] ?? EXECUTION_MODE_TEXT.daemon
@@ -229,7 +225,7 @@ export function EditSensorDialog({
     if (!dirty || hasErrors || revoked) return
     setSaving(true)
     try {
-      const body = sensorUpdateBody(sensor, current, initial, getCapabilitiesForTools)
+      const body = sensorUpdateBody(current, initial)
       if (Object.keys(body).length > 0) await updateSensor(body)
       const { join, leave } = zoneChanges(current, initial)
       if (join.length || leave.length) {
@@ -368,7 +364,7 @@ export function EditSensorDialog({
 
                 <Section
                   title="Work"
-                  description="The sensor reports what it has. You can narrow what the platform sends it."
+                  description="The sensor reports what it has. You can limit how much the platform sends it."
                 >
                   <div className="space-y-1">
                     <p className="text-sm font-medium">Execution mode</p>
@@ -378,13 +374,12 @@ export function EditSensorDialog({
                     </p>
                   </div>
 
-                  <fieldset className="space-y-2">
-                    <legend className="text-sm font-medium">Tools</legend>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Tools</p>
                     {reported == null ? (
                       <p className="text-sm text-muted-foreground">
-                        This sensor hasn&apos;t reported its tools yet. Once it connects, its tools
-                        show here and you can limit which ones the platform uses.
-                        {base.tools.length > 0 && <> Current limit: {base.tools.join(', ')}.</>}
+                        This sensor hasn&apos;t reported its tools yet. Once it connects, the tools
+                        it has installed show here and the platform can send it work for them.
                       </p>
                     ) : reported.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
@@ -392,71 +387,26 @@ export function EditSensorDialog({
                       </p>
                     ) : (
                       <>
-                        <RadioGroup
-                          value={draft.toolMode}
-                          onValueChange={(v) => set('toolMode', v as Draft['toolMode'])}
-                          aria-label="Limit to"
-                          className="gap-2"
-                        >
-                          <div className="flex items-center gap-2">
-                            <RadioGroupItem value="all" id={`${ids.form}-all`} />
-                            <Label htmlFor={`${ids.form}-all`} className="font-normal">
-                              All reported tools
-                            </Label>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <RadioGroupItem value="only" id={`${ids.form}-only`} />
-                            <Label htmlFor={`${ids.form}-only`} className="font-normal">
-                              Only the tools selected below
-                            </Label>
-                          </div>
-                        </RadioGroup>
-                        <div
-                          className="flex flex-wrap gap-2 pt-1"
-                          role="group"
-                          aria-label="Reported tools"
-                        >
+                        <p className="text-sm text-muted-foreground">
+                          The platform uses every tool the sensor reports installed. To narrow them,
+                          edit the sensor&apos;s grant.
+                        </p>
+                        <ul className="flex flex-wrap gap-2 pt-1" aria-label="Reported tools">
                           {reported.map((t) => {
                             const v = reportedVersions.get(t)
-                            const label = v ? `${t} ${v}` : t
-                            if (draft.toolMode === 'all') {
-                              return (
-                                <span
-                                  key={t}
-                                  className="rounded-full border bg-muted/50 px-3 py-1 text-sm"
-                                >
-                                  {label}
-                                </span>
-                              )
-                            }
-                            const on = draft.tools.includes(t)
                             return (
-                              <ToggleChip
+                              <li
                                 key={t}
-                                pressed={on}
-                                onToggle={() =>
-                                  set(
-                                    'tools',
-                                    on
-                                      ? draft.tools.filter((x) => x !== t)
-                                      : [...draft.tools, t].sort()
-                                  )
-                                }
+                                className="rounded-full border bg-muted/50 px-3 py-1 text-sm"
                               >
-                                {label}
-                              </ToggleChip>
+                                {v ? `${t} ${v}` : t}
+                              </li>
                             )
                           })}
-                        </div>
-                        <FieldError id={`${ids.form}-tools`} message={errors.tools} />
+                        </ul>
                       </>
                     )}
-                    {missingTools.length > 0 && (
-                      <p className="text-xs text-warning">
-                        Allowed but not installed on the sensor: {missingTools.join(', ')}.
-                      </p>
-                    )}
-                  </fieldset>
+                  </div>
 
                   <div className="space-y-1.5">
                     <Label htmlFor={ids.maxJobs}>Concurrent jobs</Label>

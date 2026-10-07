@@ -23,7 +23,7 @@ function sensor(over: Partial<Sensor> = {}): Sensor {
     name: 'scanner',
     type: 'worker',
     capabilities: [],
-    tools: ['nuclei'],
+    effective: { tools: ['nuclei'], capabilities: [], max_concurrent_jobs: 5 },
     execution_mode: 'daemon',
     status: 'active',
     health: 'online',

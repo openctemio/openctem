@@ -8,17 +8,15 @@ import {
   hasReportedTools,
   sensorCapacity,
   sensorToolRows,
-  toolsNotInstalled,
 } from '../capabilities'
 import { TEST_SENSOR_KEY_PREFIX } from '@/test/sensor-keys'
 
 type S = Pick<
   Sensor,
-  'tools' | 'reported' | 'effective' | 'max_concurrent_jobs' | 'capability_mismatch' | 'load'
+  'reported' | 'effective' | 'max_concurrent_jobs' | 'capability_mismatch' | 'load'
 >
 
 const base = (over: Partial<S> = {}): S => ({
-  tools: [],
   max_concurrent_jobs: 5,
   ...over,
 })
@@ -34,44 +32,28 @@ const report = (
 })
 
 describe('sensorToolRows', () => {
-  it('shows the set tools as declared when the sensor reports nothing', () => {
-    const s = base({ tools: ['trivy', 'nuclei'] as never[] })
+  it('shows nothing, and dispatches nothing, before the sensor reports its tools', () => {
+    const s = base()
     expect(hasReportedTools(s)).toBe(false)
-    expect(sensorToolRows(s)).toEqual([
-      { name: 'nuclei', status: 'declared' },
-      { name: 'trivy', status: 'declared' },
-    ])
-    // An API from before the report: reported is absent, effective too.
-    expect(dispatchTools(s)).toEqual(['trivy', 'nuclei'])
+    expect(sensorToolRows(s)).toEqual([])
+    expect(dispatchTools(s)).toEqual([])
   })
 
-  it('combines the inventory with the limit', () => {
+  it('lists the reported inventory: installed first, then not installed', () => {
     const s = base({
-      tools: ['semgrep', 'nuclei', 'checkov'] as never[],
       reported: report([
         { name: 'semgrep', version: '1.90.0', installed: true },
         { name: 'nuclei', installed: false },
         { name: 'trivy', version: '0.68.2', installed: true },
       ]),
-      effective: { tools: ['semgrep'], capabilities: [], max_concurrent_jobs: 5 },
+      effective: { tools: ['semgrep', 'trivy'], capabilities: [], max_concurrent_jobs: 5 },
     })
     expect(sensorToolRows(s)).toEqual([
       { name: 'semgrep', version: '1.90.0', status: 'ready' },
-      { name: 'trivy', version: '0.68.2', status: 'excluded' },
-      { name: 'checkov', status: 'not_installed' },
+      { name: 'trivy', version: '0.68.2', status: 'ready' },
       { name: 'nuclei', status: 'not_installed' },
     ])
-    expect(toolsNotInstalled(s)).toEqual(['checkov', 'nuclei'])
-    expect(dispatchTools(s)).toEqual(['semgrep'])
-  })
-
-  it('prefers the API mismatch list', () => {
-    const s = base({
-      tools: ['nuclei'] as never[],
-      reported: report([]),
-      capability_mismatch: { tools_not_installed: ['nuclei'] },
-    })
-    expect(toolsNotInstalled(s)).toEqual(['nuclei'])
+    expect(dispatchTools(s)).toEqual(['semgrep', 'trivy'])
   })
 
   it('treats an empty inventory as reported', () => {
