@@ -161,6 +161,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
 	commandLogs := commandlog.NewService(repos.CommandLog)
 	commandHandler.SetCommandLogs(commandLogs)
+	commandHandler.SetFindingScope(svc.DataScope)
 	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
 	// Sensor authentication and the services the protocol v2 control handler
