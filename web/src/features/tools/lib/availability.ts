@@ -1,7 +1,7 @@
 /**
  * Tool availability helpers (api/docs/architecture/tool-availability.md).
  *
- * One reading of GET /api/v1/tenant-tools/availability for every place that
+ * One reading of GET /api/v1/tools?include=availability for every place that
  * shows or picks a tool: the Tools page, the scan and workflow tool pickers,
  * the sensor detail and the Capabilities page. The data is what the sensors
  * report, so it is advice: the API still checks each scan at trigger and
