@@ -58,7 +58,7 @@ key; the sensor's start request fills in the key and turns it `pending`.
 
 | Piece | Where |
 |---|---|
-| Model, profiles, admission, command tier, narrowing comparison, effective grant | `pkg/domain/sensor/grant.go` (tier: the stage catalog's lowest tier for the tool; custom templates and callbacks raise to T2; an unknown tool is T2) |
+| Model, profiles, admission, command tier, narrowing comparison, effective grant | `pkg/domain/sensor/grant.go` (tier: the stage catalog's lowest tier for the tool; custom templates and callbacks raise to T2; an unknown tool is T2; a retest takes the tier of the detection it repeats, the finding's tool's scan tier; profiles that may scan also list `validate` and `retest`, migration 001263) |
 | Repository | `internal/infra/postgres/sensor_grant_repository.go` (`sensor_grants` keyed on `(tenant_id, sensor_id)`, and the trust level on `sensors.trust_level`; migration 001119: legacy-broad backfill, insert trigger for the narrow default) |
 | Service (narrow/widen, compare-and-swap, audit, notifications, pairing hook) | `internal/app/sensorgrant/service.go` |
 | Claim gate | `internal/app/command/local_policy.go` `dispatchGate.refusal` (poll, claim-N, claim by id). A refused claim by id answers like a lost claim (`command-claimed`) so deployed sensors drop the command; it is audited with the dimension. Claim by id also checks the command's required capabilities now (`ClaimForSensor`). |
@@ -68,7 +68,7 @@ key; the sensor's start request fills in the key and turns it `pending`.
 
 Every sensor has exactly one grant: sensors that existed before 001119 got
 `legacy-broad` at trust level `trusted`; a sensor inserted later gets
-`internal-network-scanner` at `new` from a trigger, and the pairing approval
+`internal-network-scanner` (scan, validate, retest) at `new` from a trigger, and the pairing approval
 replaces it with the chosen profile in its transaction. A missing or
 unreadable grant withholds every command and refuses push ingest (fail
 closed). Known gap: the heartbeat's `pending_jobs` count does not apply the
