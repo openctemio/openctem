@@ -226,9 +226,12 @@ the platform can address it:
    service, application, website, …) and passes the **target gate** (§7.2).
 4. a `validate:nuclei` sensor is online for the tenant.
 
-Target: the finding's matched-at URL (`file_path`) when its host is the asset's
-host; otherwise the asset name. A finding cannot point a retest at a host that is
-not its own asset.
+Target: the origin (`scheme://host[:port]`) of the finding's matched-at URL
+(`file_path`) when its host is the asset's host; otherwise the asset name. A
+finding cannot point a retest at a host that is not its own asset. It is never
+the matched-at URL itself: a template builds its request from its input
+(`{{BaseURL}}/path`), so a matched-at input requests the path twice and always
+misses, which read as "fixed" until migration 001175 voided those outcomes.
 
 Later phases add the other deterministic families, each as its own check kind on
 the same model:
