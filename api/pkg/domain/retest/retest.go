@@ -143,9 +143,11 @@ type Retest struct {
 	Method         string
 	CheckCommandID *shared.ID
 	ReachCommandID *shared.ID
-	DeadlineAt     time.Time
-	CreatedAt      time.Time
-	CompletedAt    *time.Time
+	// SensorID is the sensor that ran the check (set when the retest settles).
+	SensorID    *shared.ID
+	DeadlineAt  time.Time
+	CreatedAt   time.Time
+	CompletedAt *time.Time
 }
 
 // CheckResult is what one of a retest's two commands reported. Outcome uses the
@@ -327,6 +329,8 @@ type SettleInput struct {
 	Outcome    Outcome
 	ReasonCode ReasonCode
 	Reason     string
+	// SensorID is the sensor that ran the check; nil when none claimed it.
+	SensorID   *shared.ID
 	ResolvedBy *shared.ID // stamped when the finding is resolved
 	TemplateID string
 	// Decide maps the finding's current status to the status the outcome

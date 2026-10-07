@@ -10,3 +10,4 @@ WHERE outcome IS NOT NULL;
 ALTER TABLE finding_retests ADD CONSTRAINT chk_finding_retests_outcome CHECK (
     outcome IS NULL OR outcome IN ('fixed', 'still_present', 'unknown'));
 ALTER TABLE finding_retests DROP COLUMN reason_code;
+ALTER TABLE finding_retests DROP COLUMN IF EXISTS sensor_id;

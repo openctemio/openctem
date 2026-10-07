@@ -298,7 +298,24 @@ func TestRetestDB_ConfirmedFixAwaitsAPersonUnlessAutoResolve(t *testing.T) {
 	}
 
 	f := fx.newFinding(fx.asset, "confirmed", "exposed-admin-panel")
-	got := settle(f, "https://shop.example.com/admin", 404)
+	// The sensor that claims the check is recorded on the retest (a run:
+	// finding + command + sensor).
+	sensor := shared.NewID()
+	fx.exec(`INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status) VALUES ($1, $2, 'retest-runner', $3, 'octs_rt', 'active')`,
+		sensor.String(), fx.tenant.String(), "hash-"+sensor.String())
+	settleClaimed := func(f shared.ID, url string, status int) *retestdom.Retest {
+		t.Helper()
+		rt := fx.request(svc, f)
+		fx.exec(`UPDATE commands SET sensor_id = $2 WHERE id = $1`, rt.CheckCommandID.String(), sensor.String())
+		fx.finishAttempt(rt.CheckCommandID, "not_detected", url, status)
+		fx.finish(rt.ReachCommandID, "detected", "target answered")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	got := settleClaimed(f, "https://shop.example.com/admin", 404)
+	if got.SensorID == nil || *got.SensorID != sensor || got.CheckCommandID == nil {
+		t.Fatalf("retest run linkage = sensor %v command %v, want the claiming sensor and the check command", got.SensorID, got.CheckCommandID)
+	}
 	if got.Outcome != retestdom.OutcomeConfirmedFixed || got.ResultStatus != "validated_fixed" ||
 		!strings.Contains(got.Reason, "https://shop.example.com/admin answered 404") {
 		t.Fatalf("retest = %+v, want confirmed_fixed → validated_fixed", got)

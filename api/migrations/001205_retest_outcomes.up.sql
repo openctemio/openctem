@@ -10,6 +10,11 @@
 
 ALTER TABLE finding_retests ADD COLUMN reason_code varchar(32);
 
+-- The sensor that ran the attempt (the check command's claimer), so a
+-- retest is traceable as a run: finding + command + sensor.
+ALTER TABLE finding_retests ADD COLUMN sensor_id uuid REFERENCES sensors(id) ON DELETE SET NULL;
+CREATE INDEX idx_finding_retests_sensor ON finding_retests (tenant_id, sensor_id) WHERE sensor_id IS NOT NULL;
+
 ALTER TABLE finding_retests DROP CONSTRAINT chk_finding_retests_outcome;
 
 UPDATE finding_retests SET
