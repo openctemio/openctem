@@ -208,13 +208,15 @@ func rangeAround(addr string) string {
 }
 
 // orgNoise are words that say nothing about which organization it is.
-var orgNoise = map[string]bool{
-	"the": true, "and": true, "company": true, "corporation": true, "corp": true, "inc": true, "ltd": true,
-	"limited": true, "llc": true, "joint": true, "stock": true, "group": true, "holding": true, "holdings": true,
-	"jsc": true, "plc": true, "gmbh": true, "network": true, "networks": true, "services": true, "service": true,
-	"technology": true, "technologies": true, "telecom": true, "communications": true, "internet": true,
-	"vietnam": true, "viet": true, "nam": true, "international": true, "global": true, "online": true,
-}
+var orgNoise = func() map[string]bool {
+	m := map[string]bool{}
+	for _, w := range strings.Fields("the and company corporation corp inc ltd limited llc joint stock group holding holdings " +
+		"jsc plc gmbh network networks services service technology technologies telecom communications internet " +
+		"vietnam viet nam international global online") {
+		m[w] = true
+	}
+	return m
+}()
 
 // orgMatches reports whether the ASN organization names this organization:
 // a distinctive word (4+ letters or digits, not a generic company word) of
