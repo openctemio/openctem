@@ -1,6 +1,6 @@
 package integration
 
-// Migration 001181 (RFC-042 §6.3.9): stored asset properties fold their
+// Migration 001185 (RFC-042 §6.3.9): stored asset properties fold their
 // synonyms into the canonical key (ip_addresses, nameservers, ...), lose the
 // keys only other classes may hold (a port on a domain), keep updated_at,
 // and the down migration restores every changed row exactly. Rows of
@@ -20,7 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-func TestMigration001181NormalisesAssetProperties(t *testing.T) {
+func TestMigration001185NormalisesAssetProperties(t *testing.T) {
 	appDB := openLifecycleDB(t)
 	ctx := context.Background()
 	tenantA := seedLifecycleTenant(ctx, t, appDB)
@@ -28,7 +28,7 @@ func TestMigration001181NormalisesAssetProperties(t *testing.T) {
 
 	read := func(name string) string {
 		t.Helper()
-		b, err := os.ReadFile("../../migrations/001181_normalise_asset_properties." + name + ".sql")
+		b, err := os.ReadFile("../../migrations/001185_normalise_asset_properties." + name + ".sql")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -57,7 +57,7 @@ func TestMigration001181NormalisesAssetProperties(t *testing.T) {
 			t.Fatalf("%v\n%s", err, q)
 		}
 	}
-	// The database is migrated: take 001181 back first.
+	// The database is migrated: take 001185 back first.
 	exec(down)
 
 	type row struct {
@@ -125,7 +125,7 @@ func TestMigration001181NormalisesAssetProperties(t *testing.T) {
 		}
 	}
 	var saved int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_properties_pre_001181 WHERE asset_id = ANY($1::uuid[])`,
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_properties_pre_001185 WHERE asset_id = ANY($1::uuid[])`,
 		"{"+strings.Join(ids, ",")+"}").Scan(&saved); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestMigration001181NormalisesAssetProperties(t *testing.T) {
 		t.Errorf("saved %d rows, want %d (every changed row)", saved, len(rows)-1)
 	}
 	var leftover int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM pg_proc WHERE proname LIKE 'mig001181%'`).Scan(&leftover); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM pg_proc WHERE proname LIKE 'mig001185%'`).Scan(&leftover); err != nil {
 		t.Fatal(err)
 	}
 	if leftover != 0 {
