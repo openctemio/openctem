@@ -23,6 +23,9 @@ type Secret struct {
 // value beyond the bound is still masked, but its plaintext is not kept.
 const MaxSecretsPerItem = 100
 
+// replacerCapacityHint bounds the preallocated replacer pairs (a hint only).
+const replacerCapacityHint = 1024
+
 // minSecretLen: shorter values are masked where they were found by name but
 // not searched for elsewhere in the item (too many false hits).
 const minSecretLen = 4
@@ -491,8 +494,8 @@ func (m *masker) replacer() *strings.Replacer {
 		}
 		return vals[i] < vals[j]
 	})
-	// No precomputed capacity: the replacer gets every value, however many.
-	var pairs []string
+	// A bounded capacity hint; the replacer still gets every value.
+	pairs := make([]string, 0, 2*min(len(vals), replacerCapacityHint))
 	for _, v := range vals {
 		pairs = append(pairs, v, m.byValue[v])
 	}
