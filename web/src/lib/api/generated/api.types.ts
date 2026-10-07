@@ -25156,6 +25156,68 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scans/workflow-preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Preview a workflow scan
+     * @description What a workflow scan would do, before it is saved or started: per step the capability, tier, the tool the planner picks and whether an online sensor may run it; the targets (zone routing, scope exclusions; at most 20 samples); an active freeze window. Computed with the trigger's code; creates nothing. `blocking` is true when a trigger with these settings would be refused.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Workflow and targets */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.WorkflowPreviewRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreview']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description workflow, scan zone or asset group not in this tenant */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/scope/check': {
     parameters: {
       query?: never
@@ -36644,6 +36706,40 @@ export interface components {
       zone_id?: string
       zone_name?: string
     }
+    'github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreview': {
+      /** @description Blocking: a trigger with these settings would be refused. */
+      blocking?: boolean
+      freeze?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewFreeze']
+      nodes?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewNode'][]
+      targets?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.ZoneRoutingPreview']
+    }
+    'github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewAvailability': {
+      sensors_excluded?: number
+      sensors_online?: number
+      sensors_total?: number
+      status?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewFreeze': {
+      until?: string
+      window?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewNode': {
+      /**
+       * @description Availability is the tool's sensor status (ready, offline_only,
+       *     no_sensor, ...) with the counts behind it; nil when unknown.
+       */
+      availability?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewAvailability']
+      /** @description Blocking is what the trigger would refuse this step with. */
+      blocking?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.PreviewError']
+      candidates?: string[]
+      capability?: string
+      name?: string
+      pinned?: boolean
+      step_key?: string
+      tier?: string
+      /** @description Tool is the tool the planner picks now; Pinned when the step names it. */
+      tool?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_scan.ZoneRoutingPreview': {
       error?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.PreviewError']
       excluded?: string[]
@@ -43823,6 +43919,12 @@ export interface components {
       status?: string
       title?: string
       updated_at?: string
+    }
+    'internal_infra_http_handler.WorkflowPreviewRequest': {
+      asset_group_ids?: string[]
+      pipeline_id: string
+      scan_zone_id?: string
+      targets?: string[]
     }
     'internal_infra_http_handler.remediationGroupsResponse': {
       groups?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_remediation.Group'][]

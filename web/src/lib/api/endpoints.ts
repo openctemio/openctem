@@ -1866,6 +1866,11 @@ export const scanEndpoints = {
    */
   schedulePreview: () => `${API_BASE.SCANS}/schedule-preview`,
 
+  /**
+   * What a workflow scan would do before it is saved or started
+   */
+  workflowPreview: () => `${API_BASE.SCANS}/workflow-preview`,
+
   // ============================================
   // BULK OPERATIONS
   // ============================================
