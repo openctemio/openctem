@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1488,7 +1489,25 @@ func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler
 				return
 			}
 
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), readCostKey{}, limiter)))
 		})
 	}
+}
+
+// readCostKey carries the caller's read limiter to the handler.
+type readCostKey struct{}
+
+// ChargeReadCost takes n more tokens from the caller's read budget for a
+// read that costs more than one request (an expensive include=). It reports
+// false, having taken nothing, when the budget cannot cover it; the caller
+// then answers 429. Without a read limiter (rate limiting off) it is free.
+func ChargeReadCost(ctx context.Context, n int) bool {
+	if n <= 0 {
+		return true
+	}
+	lim, ok := ctx.Value(readCostKey{}).(*rate.Limiter)
+	if !ok || lim == nil {
+		return true
+	}
+	return lim.AllowN(time.Now(), n)
 }
