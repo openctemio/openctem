@@ -625,6 +625,12 @@ func (e *WorkflowExecutor) executeConditionNode(ctx context.Context, execCtx *Ex
 func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *ExecutionContext, node *workflowdom.Node) (map[string]any, error) {
 	actionType := node.Config.ActionType
 
+	// A stored workflow may still hold an action type that new writes refuse
+	// (workflowdom.ValidateSupported). Such a node never runs.
+	if !actionType.IsSupported() {
+		return nil, fmt.Errorf("action type %s is not supported; edit the automation to remove it", actionType)
+	}
+
 	// Look up the action handler
 	e.mu.RLock()
 	handler, ok := e.actionHandlers[actionType]

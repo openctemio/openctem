@@ -14,9 +14,10 @@
 - Adding or removing an edge, deleting or editing a node, and switching an
   automation on need the permission of every step, like adding one. Notification
   steps need `integrations:read`; outbound HTTP needs `integrations:manage`.
-- The `http_request` action is refused for new automations (outbound calls go
-  through a notification integration). A stored one keeps running only while its
-  owner holds `integrations:manage`; its header values are no longer returned by
-  the API, and response bodies and headers are no longer stored with the run.
+- The `http_request` action is retired (outbound calls go through a notification
+  integration): new nodes are refused, a stored one no longer runs (its step
+  fails), its header values are no longer returned by the API, and response
+  bodies and headers are no longer stored with the run. Building one needed
+  `integrations:manage`.
 - **Upgrade note:** an active automation with no owner (`created_by` empty) runs
   no step until someone with the needed permissions saves or switches it on again.

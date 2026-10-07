@@ -11,8 +11,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 )
 
-// The schedule/finding_age triggers never fire and the assign_team/
-// update_priority actions always fail at run time. The API must refuse to
+// The schedule/finding_age/finding_updated/webhook triggers never fire, the
+// assign_team/update_priority actions always fail at run time and
+// trigger_pipeline (a scan workflow run outside any scan) is refused by design. The API must refuse to
 // create, edit or activate workflows that use them (a 400: ErrValidation),
 // while stored workflows that already use them stay readable and flagged.
 
@@ -31,6 +32,9 @@ func unsupportedCases() []struct {
 		{"assign_team action", workflow.NodeConfig{ActionType: workflow.ActionTypeAssignTeam}, "action:assign_team"},
 		{"update_priority action", workflow.NodeConfig{ActionType: workflow.ActionTypeUpdatePriority}, "action:update_priority"},
 		{"run_script action", workflow.NodeConfig{ActionType: workflow.ActionTypeRunScript}, "action:run_script"},
+		{"finding_updated trigger", workflow.NodeConfig{TriggerType: workflow.TriggerTypeFindingUpdated}, "trigger:finding_updated"},
+		{"webhook trigger", workflow.NodeConfig{TriggerType: workflow.TriggerTypeWebhook}, "trigger:webhook"},
+		{"trigger_pipeline action", workflow.NodeConfig{ActionType: workflow.ActionTypeTriggerPipeline}, "action:trigger_pipeline"},
 		{"http_request action", workflow.NodeConfig{ActionType: workflow.ActionTypeHTTPRequest}, "action:http_request"},
 	}
 }
@@ -55,8 +59,8 @@ func TestWorkflowSupport_TypeSets(t *testing.T) {
 		}
 	}
 	for _, tr := range []workflow.TriggerType{
-		workflow.TriggerTypeManual, workflow.TriggerTypeFindingCreated, workflow.TriggerTypeFindingUpdated,
-		workflow.TriggerTypeAssetDiscovered, workflow.TriggerTypeScanCompleted, workflow.TriggerTypeWebhook,
+		workflow.TriggerTypeManual, workflow.TriggerTypeFindingCreated, workflow.TriggerTypeFindingStatusChanged,
+		workflow.TriggerTypeAssetDiscovered, workflow.TriggerTypeScanCompleted,
 		workflow.TriggerTypeAITriageCompleted, workflow.TriggerTypeAITriageFailed,
 	} {
 		if !tr.IsSupported() {
@@ -66,7 +70,7 @@ func TestWorkflowSupport_TypeSets(t *testing.T) {
 	for _, a := range []workflow.ActionType{
 		workflow.ActionTypeAssignUser, workflow.ActionTypeUpdateStatus, workflow.ActionTypeAddTags,
 		workflow.ActionTypeRemoveTags, workflow.ActionTypeCreateTicket, workflow.ActionTypeUpdateTicket,
-		workflow.ActionTypeTriggerPipeline, workflow.ActionTypeTriggerScan,
+		workflow.ActionTypeTriggerScan,
 		workflow.ActionTypeTriggerAITriage,
 	} {
 		if !a.IsSupported() {
@@ -212,5 +216,14 @@ func TestUpdateWorkflow_ActivateOtherTenantIsNotFound(t *testing.T) {
 	}
 	if wf.IsActive {
 		t.Fatal("another tenant's workflow was activated")
+	}
+}
+
+// Refusing trigger_pipeline says what to use instead.
+func TestWorkflowSupport_TriggerPipelinePointsToTriggerScan(t *testing.T) {
+	err := workflow.ValidateSupported(workflow.NodeConfig{ActionType: workflow.ActionTypeTriggerPipeline})
+	assertUnsupportedErr(t, err, "action:trigger_pipeline")
+	if !strings.Contains(err.Error(), "trigger_scan") {
+		t.Fatalf("error %q does not point to trigger_scan", err.Error())
 	}
 }
