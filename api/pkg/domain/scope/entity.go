@@ -25,9 +25,19 @@ type Target struct {
 	createdBy   string
 	createdAt   time.Time
 	updatedAt   time.Time
+
+	// Entry fields (entry.go, RFC-054 §5).
+	reason            string
+	expiresAt         *time.Time
+	maxTier           Tier
+	approvalsRequired int
+	approvals         []Approval
+	approvedAt        *time.Time
+	rejectedBy        string
+	rejectedAt        *time.Time
 }
 
-// NewTarget creates a new scope target.
+// NewTarget creates a new scope target: active, permanent, t1.
 func NewTarget(
 	tenantID shared.ID,
 	targetType TargetType,
@@ -60,6 +70,8 @@ func NewTarget(
 		createdBy:   createdBy,
 		createdAt:   now,
 		updatedAt:   now,
+		maxTier:     TierActive,
+		approvedAt:  &now,
 	}, nil
 }
 
@@ -89,6 +101,7 @@ func ReconstituteTarget(
 		createdBy:   createdBy,
 		createdAt:   createdAt,
 		updatedAt:   updatedAt,
+		maxTier:     TierActive,
 	}
 }
 
@@ -105,9 +118,11 @@ func (t *Target) CreatedBy() string      { return t.createdBy }
 func (t *Target) CreatedAt() time.Time   { return t.createdAt }
 func (t *Target) UpdatedAt() time.Time   { return t.updatedAt }
 
-// IsActive returns true if the target is active.
+// IsActive reports whether the target is in effect now: active and not past
+// its expiry (InEffect). A pending, inactive, rejected or expired target
+// authorizes nothing.
 func (t *Target) IsActive() bool {
-	return t.status == StatusActive
+	return t.InEffect(time.Now())
 }
 
 // Matches checks if a value matches this target's pattern.
