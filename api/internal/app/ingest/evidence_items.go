@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/openctemio/ctis"
 
@@ -23,12 +24,17 @@ func (p *FindingProcessor) SetEvidenceStore(s EvidenceStore) { p.evidence = s }
 // SetEvidenceStore wires finding evidence storage on the processor.
 func (s *Service) SetEvidenceStore(e EvidenceStore) { s.findingProcessor.SetEvidenceStore(e) }
 
-// findingEvidence is a sighting's evidence: the HTTP exchange, extracted
-// values and reproduction command a tool attached as properties (the nuclei
-// sensor does). A secret finding keeps none: its evidence is the leaked
-// value itself, which the secret pipeline handles.
+// findingEvidence is a sighting's evidence: the CTIS 1.6 evidence_items
+// a tool sent (any tool, any kind; an unknown kind is kept as text), or,
+// from tools that predate them, the HTTP exchange, extracted values and
+// reproduction command attached as properties (the nuclei sensor). A secret
+// finding keeps none: its evidence is the leaked value itself, which the
+// secret pipeline handles.
 func findingEvidence(fingerprint string, cf *ctis.Finding, tool *ctis.Tool) (evidenceapp.Detection, bool) {
-	if cf == nil || cf.Type == ctis.FindingTypeSecret || cf.Secret != nil || len(cf.Properties) == 0 {
+	if cf == nil || cf.Type == ctis.FindingTypeSecret || cf.Secret != nil {
+		return evidenceapp.Detection{}, false
+	}
+	if len(cf.EvidenceItems) == 0 && len(cf.Properties) == 0 {
 		return evidenceapp.Detection{}, false
 	}
 	matchedAt := ""
@@ -43,7 +49,10 @@ func findingEvidence(fingerprint string, cf *ctis.Finding, tool *ctis.Tool) (evi
 	if cf.RuleID != "" {
 		label += " " + cf.RuleID
 	}
-	items := evidencedom.FromToolProperties(cf.Properties, matchedAt, label)
+	items := typedEvidence(cf.EvidenceItems)
+	if len(items) == 0 {
+		items = evidencedom.FromToolProperties(cf.Properties, matchedAt, label)
+	}
 	if len(items) == 0 {
 		return evidenceapp.Detection{}, false
 	}
@@ -53,4 +62,43 @@ func findingEvidence(fingerprint string, cf *ctis.Finding, tool *ctis.Tool) (evi
 		Items:       items,
 		Meta:        evidenceapp.Meta{ToolName: toolName, RuleID: cf.RuleID, TemplateDigest: prov.TemplateDigest},
 	}, true
+}
+
+// typedEvidence reads CTIS evidence items into the platform's model (the same
+// JSON shape), at most evidence.MaxItemsPerReport. An item the platform
+// cannot read is skipped; the platform's caps and masking apply later.
+func typedEvidence(in []ctis.EvidenceItem) []evidencedom.Item {
+	out := make([]evidencedom.Item, 0, min(len(in), evidencedom.MaxItemsPerReport))
+	for i := range in {
+		if len(out) >= evidencedom.MaxItemsPerReport {
+			break
+		}
+		raw, err := json.Marshal(in[i])
+		if err != nil {
+			continue
+		}
+		if it, ok := evidencedom.Decode(raw); ok {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// webLocationFallback gives a CTIS 1.6 web finding (finding.web, no
+// location) its URL as the location path, where a pre-1.6 report put the
+// matched-at. The finding's endpoint is what a retest re-checks and must
+// prove it requested (RFC-057 R2), and the fingerprint of a re-sighting
+// stays the one an older report produced. The URL is the redacted one (no
+// query values, user info or fragment).
+func webLocationFallback(f *ctis.Finding) {
+	if f == nil || f.Web == nil || f.Web.URL == "" {
+		return
+	}
+	if f.Location != nil && f.Location.Path != "" {
+		return
+	}
+	if f.Location == nil {
+		f.Location = &ctis.FindingLocation{}
+	}
+	f.Location.Path = f.Web.URL
 }

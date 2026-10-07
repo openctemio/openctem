@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -21,6 +22,10 @@ func (proofGate) ActiveCheckBlocked(context.Context, shared.ID, []string) (map[s
 }
 
 func (proofGate) BlockedTargets(context.Context, shared.ID, []string) (map[string]attribution.State, error) {
+	return nil, nil
+}
+
+func (proofGate) TierExceeded(context.Context, shared.ID, []string, scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
 	return nil, nil
 }
 

@@ -22,7 +22,7 @@ const (
 // ("" leaves it out, as an older sensor does).
 func (fx *fixture) finishWithDigest(cmd *shared.ID, outcome, digest string) {
 	fx.t.Helper()
-	ev := map[string]any{"address": "https://shop.example.com/admin"}
+	ev := map[string]any{"address": "https://shop.example.com/admin", "evidence_items": attemptItems("https://shop.example.com/admin", 404)}
 	if digest != "" {
 		ev["template_digest"] = digest
 	}
@@ -54,11 +54,11 @@ func TestRetestDB_TemplateDigestDriftIsInconclusive(t *testing.T) {
 		wantStatus  string
 		wantReason  string
 	}{
-		{"same digest, no match: fixed", digestA, "not_detected", retestdom.OutcomeFixed, "resolved", ""},
-		{"other digest, no match: inconclusive", digestB, "not_detected", retestdom.OutcomeUnknown, "confirmed", "template changed"},
-		{"no digest reported: inconclusive", "", "not_detected", retestdom.OutcomeUnknown, "confirmed", "no template digest"},
-		{"garbage digest counts as none", "md5:abc", "not_detected", retestdom.OutcomeUnknown, "confirmed", "no template digest"},
-		{"other digest, match: inconclusive too", digestB, "detected", retestdom.OutcomeUnknown, "confirmed", "template changed"},
+		{"same digest, no match: confirmed fixed", digestA, "not_detected", retestdom.OutcomeConfirmedFixed, "validated_fixed", ""},
+		{"other digest, no match: inconclusive", digestB, "not_detected", retestdom.OutcomeInconclusive, "confirmed", "template changed"},
+		{"no digest reported: inconclusive", "", "not_detected", retestdom.OutcomeInconclusive, "confirmed", "no template digest"},
+		{"garbage digest counts as none", "md5:abc", "not_detected", retestdom.OutcomeInconclusive, "confirmed", "no template digest"},
+		{"other digest, match: inconclusive too", digestB, "detected", retestdom.OutcomeInconclusive, "confirmed", "template changed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,7 +84,7 @@ func TestRetestDB_TemplateDigestDriftIsInconclusive(t *testing.T) {
 func TestRetestDB_NoBaselineDecidesAsBefore(t *testing.T) {
 	fx := newFixture(t)
 	f := fx.newFinding(fx.asset, "confirmed", "exposed-admin-panel")
-	if got := fx.settle(f, "", "not_detected"); got.Outcome != retestdom.OutcomeFixed {
+	if got := fx.settle(f, "", "not_detected"); got.Outcome != retestdom.OutcomeConfirmedFixed {
 		t.Fatalf("no baseline: %s (%s), want fixed", got.Outcome, got.Reason)
 	}
 
@@ -92,7 +92,7 @@ func TestRetestDB_NoBaselineDecidesAsBefore(t *testing.T) {
 	g := fx.newFinding(fx.asset, "confirmed", "exposed-admin-panel-2")
 	fx.baseline(g, digestA)
 	fx.baseline(g, digestB)
-	if got := fx.settle(g, digestB, "not_detected"); got.Outcome != retestdom.OutcomeFixed {
+	if got := fx.settle(g, digestB, "not_detected"); got.Outcome != retestdom.OutcomeConfirmedFixed {
 		t.Fatalf("re-baselined: %s (%s), want fixed", got.Outcome, got.Reason)
 	}
 }

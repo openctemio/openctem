@@ -28,7 +28,7 @@ func NewScopeTargetRepository(db *DB) *ScopeTargetRepository {
 const scopeTargetSelectQuery = `
 	SELECT id, tenant_id, target_type, pattern, description, priority, status, tags,
 	       created_by, created_at, updated_at,
-	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at
+	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at, origin
 	FROM scope_targets
 `
 
@@ -52,12 +52,13 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		approvedAt  sql.NullTime
 		rejectedBy  sql.NullString
 		rejectedAt  sql.NullTime
+		origin      string
 	)
 
 	err := row.Scan(
 		&id, &tenantID, &targetType, &pattern, &description, &priority, &status, &tags,
 		&createdBy, &createdAt, &updatedAt,
-		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt,
+		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt, &origin,
 	)
 	if err != nil {
 		return nil, err
@@ -84,6 +85,7 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		ApprovalsRequired: approvals, ApprovedAt: scopeTimePtr(approvedAt),
 		RejectedBy: rejectedBy.String, RejectedAt: scopeTimePtr(rejectedAt),
 	})
+	t.SetOrigin(scope.Origin(origin))
 	return t, nil
 }
 
@@ -158,8 +160,8 @@ func (r *ScopeTargetRepository) Create(ctx context.Context, target *scope.Target
 		INSERT INTO scope_targets (
 			id, tenant_id, target_type, pattern, description, priority, status, tags,
 			created_by, created_at, updated_at,
-			expires_at, reason, max_tier, approvals_required, approved_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			expires_at, reason, max_tier, approvals_required, approved_at, origin
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -179,6 +181,7 @@ func (r *ScopeTargetRepository) Create(ctx context.Context, target *scope.Target
 		int(target.MaxTier()),
 		target.ApprovalsRequired(),
 		target.ApprovedAt(),
+		string(target.Origin()),
 	)
 
 	if err != nil {
