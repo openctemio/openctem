@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -135,6 +136,16 @@ func (r outputRules) findingAllowed(f *ctis.Finding) bool {
 	return r.declared == nil || r.declared.Declares(sensor.ProduceFinding, string(f.Type))
 }
 
+// endpointsAllowed reports whether the tool may report web endpoints: a
+// catalog stage of the tool reports them, and a declared contract names
+// them.
+func (r outputRules) endpointsAllowed() bool {
+	if len(r.stages) > 0 && !slices.ContainsFunc(r.stages, func(st stage.Stage) bool { return st.Endpoints }) {
+		return false
+	}
+	return r.declared == nil || r.declared.Declares(sensor.ProduceEndpoint, "")
+}
+
 func (r outputRules) dependenciesAllowed() bool {
 	return r.declared == nil || r.declared.Declares(sensor.ProduceDependency, "")
 }
@@ -194,13 +205,18 @@ func splitByContract(report *ctis.Report, rules outputRules) *contractSplit {
 		keptDeps, heldDeps = nil, report.Dependencies
 		sp.heldTypes[sensor.ProduceDependency] += len(heldDeps)
 	}
-	if len(heldAssets) == 0 && len(heldFindings) == 0 && len(heldDeps) == 0 {
+	keptEndpoints, heldEndpoints := report.Endpoints, []ctis.Endpoint(nil)
+	if len(report.Endpoints) > 0 && !rules.endpointsAllowed() {
+		keptEndpoints, heldEndpoints = nil, report.Endpoints
+		sp.heldTypes[sensor.ProduceEndpoint] += len(heldEndpoints)
+	}
+	if len(heldAssets) == 0 && len(heldFindings) == 0 && len(heldDeps) == 0 && len(heldEndpoints) == 0 {
 		return sp
 	}
 	kept := *report
-	kept.Assets, kept.Findings, kept.Dependencies = keptAssets, keptFindings, keptDeps
+	kept.Assets, kept.Findings, kept.Dependencies, kept.Endpoints = keptAssets, keptFindings, keptDeps, keptEndpoints
 	held := *report
-	held.Assets, held.Findings, held.Dependencies = heldAssets, heldFindings, heldDeps
+	held.Assets, held.Findings, held.Dependencies, held.Endpoints = heldAssets, heldFindings, heldDeps, heldEndpoints
 	sp.kept, sp.held = &kept, &held
 	sp.heldFindings, sp.heldDependencies = len(heldFindings), len(heldDeps)
 	return sp
@@ -251,7 +267,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 		report.Metadata.Capability = ""
 	}
 	if binding.Kind != BindingCommand || report == nil ||
-		(len(report.Assets) == 0 && len(report.Findings) == 0 && len(report.Dependencies) == 0) {
+		(len(report.Assets) == 0 && len(report.Findings) == 0 && len(report.Dependencies) == 0 && len(report.Endpoints) == 0) {
 		return report
 	}
 	tool := binding.Tool

@@ -97,7 +97,9 @@ type Stage struct {
 	Relations []string `json:"relations,omitempty"`
 	// Findings: the stage reports findings.
 	Findings bool `json:"findings"`
-	Tier     Tier `json:"tier"`
+	// Endpoints: the stage reports web endpoints (CTIS 1.6 endpoints[]).
+	Endpoints bool `json:"endpoints,omitempty"`
+	Tier      Tier `json:"tier"`
 	// Implementations, the default first.
 	Implementations []Implementation `json:"implementations"`
 	// MaxFanout bounds how many derived targets one run hands this stage.
@@ -225,7 +227,8 @@ var catalog = []Stage{
 		Key: CrawlWeb, Name: "Web crawl",
 		Description: "Crawl web services for URLs, staying on the same host.",
 		Inputs:      []asset.TypeRef{tHTTPService, tDiscoveredURL, tWebsite},
-		Outputs:     []asset.TypeRef{tDiscoveredURL},
+		Outputs:     []asset.TypeRef{tHTTPService},
+		Endpoints:   true,
 		Tier:        TierActive,
 		Implementations: []Implementation{
 			{Tool: "katana", Default: true},
@@ -253,6 +256,7 @@ var catalog = []Stage{
 		Description: "Dynamic application security testing of a web application.",
 		Inputs:      []asset.TypeRef{tWebsite, tAPI, tHTTPService, tDiscoveredURL},
 		Findings:    true,
+		Endpoints:   true,
 		// An active DAST scan sends attack payloads: intrusive.
 		Tier: TierIntrusive,
 		Implementations: []Implementation{

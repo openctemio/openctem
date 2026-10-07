@@ -69,6 +69,10 @@ var assetMergeRefs = []mergeRef{
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"port", "protocol"}}}},
+	// Web endpoints of a merged origin (RFC-056); a template the kept origin
+	// already has is dropped with its parameters.
+	{table: "web_endpoints", column: "origin_asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"template_hash"}}}},
 	{table: "asset_components", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{
 			{cols: []string{"component_id", "path"}},
