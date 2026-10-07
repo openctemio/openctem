@@ -36,6 +36,7 @@ import type {
   ToolExecution,
   ToolExecutionListResponse,
   ToolExecutionListFilters,
+  ToolAvailabilityResponse,
 } from './tool-types'
 
 // ============================================
@@ -137,6 +138,10 @@ async function fetchToolWithConfig(url: string): Promise<ToolWithConfig> {
 
 async function fetchToolsWithConfig(url: string): Promise<ToolsWithConfigListResponse> {
   return get<ToolsWithConfigListResponse>(url)
+}
+
+async function fetchToolAvailability(url: string): Promise<ToolAvailabilityResponse> {
+  return get<ToolAvailabilityResponse>(url)
 }
 
 async function fetchToolStats(url: string): Promise<ToolStats> {
@@ -458,6 +463,24 @@ export function useToolsWithConfig(filters?: ToolListFilters, config?: SWRConfig
   const key = currentTenant ? tenantToolEndpoints.allTools(filters) : null
 
   return useSWR<ToolsWithConfigListResponse>(key, fetchToolsWithConfig, {
+    ...defaultConfig,
+    ...config,
+  })
+}
+
+/**
+ * Tool availability: every catalog tool plus every tool the organization's
+ * sensors report, with the sensors that have it, their versions and a
+ * derived status. The one source the Tools page, the scan and workflow tool
+ * pickers and the sensor detail read (api tool-availability.md). zoneId
+ * limits it to the sensors of one scan zone.
+ */
+export function useToolAvailability(zoneId?: string | null, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+
+  const key = currentTenant ? tenantToolEndpoints.availability(zoneId) : null
+
+  return useSWR<ToolAvailabilityResponse>(key, fetchToolAvailability, {
     ...defaultConfig,
     ...config,
   })
