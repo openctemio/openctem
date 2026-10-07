@@ -111,7 +111,7 @@ func newMasker() *masker {
 // add registers value as a secret of kind and returns its placeholder.
 func (m *masker) add(kind, value string) {
 	value = strings.TrimSpace(value)
-	if value == "" || IsPlaceholder(value) || strings.HasPrefix(value, placeholderPrefix) || value == "[REDACTED]" {
+	if value == "" || IsPlaceholder(value) || strings.HasPrefix(value, placeholderPrefix) || alreadyMasked(value) {
 		return
 	}
 	if _, ok := m.byValue[value]; ok {
@@ -124,6 +124,16 @@ func (m *masker) add(kind, value string) {
 	if len(m.secrets) < MaxSecretsPerItem {
 		m.secrets = append(m.secrets, Secret{Placeholder: p, Kind: kind, Value: value})
 	}
+}
+
+// alreadyMasked reports a value a tool masked before the platform saw it
+// (nuclei writes "***", the sensor "[REDACTED]"): there is nothing to keep
+// or reveal.
+func alreadyMasked(v string) bool {
+	if v == "[REDACTED]" || strings.EqualFold(v, "redacted") {
+		return true
+	}
+	return strings.Trim(v, "*") == ""
 }
 
 func cleanKind(k string) string {
@@ -497,7 +507,7 @@ func maskHeaderValue(h Header, r *strings.Replacer) string {
 	if !known && !sensitiveHeaderPattern.MatchString(name) {
 		return v
 	}
-	if strings.Contains(v, placeholderPrefix) || v == "" {
+	if strings.Contains(v, placeholderPrefix) || v == "" || alreadyMasked(v) {
 		return v
 	}
 	// A sensitive header whose value no rule replaced (shorter than

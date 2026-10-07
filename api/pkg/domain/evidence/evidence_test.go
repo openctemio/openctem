@@ -230,3 +230,16 @@ func TestHashIsStable(t *testing.T) {
 		t.Error("hash not stable")
 	}
 }
+
+func TestMaskLeavesToolMaskedValuesAlone(t *testing.T) {
+	it, _ := Normalize(Item{Kind: KindHTTPExchange, HTTP: &HTTP{Request: &HTTPRequest{URL: "https://h/", Headers: []Header{
+		{Name: "Authorization", Value: "***"}, {Name: "Cookie", Value: "***"}, {Name: "X-Api-Key", Value: "[REDACTED]"},
+	}}}})
+	masked, secrets := Mask(it)
+	if len(secrets) != 0 {
+		t.Fatalf("a value the tool already masked became a revealable secret: %+v", secrets)
+	}
+	if v := masked.HTTP.Request.Headers[0].Value; v != "***" {
+		t.Errorf("Authorization = %q, want the tool mask kept", v)
+	}
+}
