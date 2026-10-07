@@ -68,6 +68,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { exportToCsv } from '@/hooks/use-csv-export'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
@@ -148,8 +149,8 @@ export default function ExternalSurfacePage() {
   const [typeParam, setTypeParam] = useUrlFilter('type', 'all')
   const [riskParam, setRiskParam] = useUrlFilter('risk', 'all')
   const [findingsParam, setFindingsParam] = useUrlFilter('findings', 'all')
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '20')
+  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
 
   const [searchInput, setSearchInput] = useState(qParam)
   const search = useDebounce(searchInput, 300)
@@ -161,23 +162,8 @@ export default function ExternalSurfacePage() {
     if (search === pushedSearch.current) return
     pushedSearch.current = search
     setQParam(search)
-    setPageParam('1')
-  }, [search, setQParam, setPageParam])
-
-  const pagination = useMemo(() => {
-    const size = parseInt(perPageParam, 10)
-    return {
-      pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(size) ? size : 20,
-    }
-  }, [pageParam, perPageParam])
-  const setPagination = useCallback(
-    (next: { pageIndex: number; pageSize: number }) => {
-      setPageParam(String(next.pageIndex + 1))
-      setPerPageParam(String(next.pageSize))
-    },
-    [setPageParam, setPerPageParam]
-  )
+    setPage(1)
+  }, [search, setQParam, setPage])
 
   const listFilters = useMemo(
     () =>
@@ -227,7 +213,7 @@ export default function ExternalSurfacePage() {
       onClick: () => {
         setRiskParam('all')
         setFindingsParam('all')
-        setPageParam('1')
+        setPage(1)
       },
       active: riskParam === 'all' && findingsParam === 'all',
     },
@@ -239,7 +225,7 @@ export default function ExternalSurfacePage() {
       hint: `Risk score ${thresholds.critical_min} or more`,
       onClick: () => {
         setRiskParam(riskParam === 'critical' ? 'all' : 'critical')
-        setPageParam('1')
+        setPage(1)
       },
       active: riskParam === 'critical',
     },
@@ -250,7 +236,7 @@ export default function ExternalSurfacePage() {
       tone: 'warning',
       onClick: () => {
         setFindingsParam(findingsParam === 'true' ? 'all' : 'true')
-        setPageParam('1')
+        setPage(1)
       },
       active: findingsParam === 'true',
     },
@@ -515,7 +501,7 @@ export default function ExternalSurfacePage() {
         value={typeParam}
         onValueChange={(v) => {
           setTypeParam(v)
-          setPageParam('1')
+          setPage(1)
         }}
       >
         <SelectTrigger className="h-9 w-36" aria-label="Filter by type">
@@ -534,7 +520,7 @@ export default function ExternalSurfacePage() {
         value={riskParam}
         onValueChange={(v) => {
           setRiskParam(v)
-          setPageParam('1')
+          setPage(1)
         }}
       >
         <SelectTrigger className="h-9 w-32" aria-label="Filter by risk">
