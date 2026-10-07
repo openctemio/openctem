@@ -139,7 +139,7 @@ export function EndpointSheet({ endpointId, onClose, onChanged }: EndpointSheetP
                   title="Never tested"
                   actions={
                     <Button variant="outline" size="sm" asChild>
-                      <Link href="/scope-config?tab=exclusions">Open the exclusion</Link>
+                      <Link href="/scope?tab=exclusions">Open the exclusion</Link>
                     </Button>
                   }
                 >
