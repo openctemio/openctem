@@ -27,7 +27,9 @@ export const WORKFLOW_NODE_TYPE_LABELS: Record<WorkflowNodeType, string> = {
 /**
  * Trigger types a picker may offer: the ones the platform actually fires.
  *
- * `schedule` and `finding_age` are NOT here: nothing fires them, so the API
+ * `schedule`, `finding_age`, `finding_updated` and `webhook` are NOT here:
+ * nothing fires them (no scheduler, age sweep, finding update hook or inbound
+ * webhook route), so the API
  * refuses to create, edit or activate a workflow that uses them (400). They
  * stay in {@link WORKFLOW_UNSUPPORTED_TRIGGER_TYPES} so stored workflows still
  * render, flagged.
@@ -35,15 +37,18 @@ export const WORKFLOW_NODE_TYPE_LABELS: Record<WorkflowNodeType, string> = {
 export const WORKFLOW_TRIGGER_TYPES = [
   'manual',
   'finding_created',
-  'finding_updated',
   'asset_discovered',
   'scan_completed',
-  'webhook',
   'finding_status_changed',
 ] as const
 
 /** Stored-only trigger types: readable, never offered, refused by the API. */
-export const WORKFLOW_UNSUPPORTED_TRIGGER_TYPES = ['schedule', 'finding_age'] as const
+export const WORKFLOW_UNSUPPORTED_TRIGGER_TYPES = [
+  'schedule',
+  'finding_age',
+  'finding_updated',
+  'webhook',
+] as const
 
 export type WorkflowTriggerType =
   (typeof WORKFLOW_TRIGGER_TYPES)[number] | (typeof WORKFLOW_UNSUPPORTED_TRIGGER_TYPES)[number]
@@ -68,8 +73,10 @@ export const WORKFLOW_TRIGGER_LABELS: Record<WorkflowTriggerType, string> = {
  * Action types a picker may offer: the ones the platform actually executes.
  *
  * `assign_team` and `update_priority` are NOT here: they have no backing
- * service and fail every run, and `run_script` is disabled (no sandbox), so the
- * API refuses them (400). They stay in
+ * service and fail every run, `run_script` is disabled (no sandbox), and
+ * `trigger_pipeline` is refused by design (it ran a scan workflow outside any
+ * scan; an automation runs a saved scan through `trigger_scan`), so the API
+ * refuses them (400). They stay in
  * {@link WORKFLOW_UNSUPPORTED_ACTION_TYPES} so stored workflows still render.
  */
 export const WORKFLOW_ACTION_TYPES = [
@@ -79,7 +86,6 @@ export const WORKFLOW_ACTION_TYPES = [
   'remove_tags',
   'create_ticket',
   'update_ticket',
-  'trigger_pipeline',
   'trigger_scan',
   'http_request',
 ] as const
@@ -89,6 +95,7 @@ export const WORKFLOW_UNSUPPORTED_ACTION_TYPES = [
   'assign_team',
   'update_priority',
   'run_script',
+  'trigger_pipeline',
 ] as const
 
 export type WorkflowActionType =
