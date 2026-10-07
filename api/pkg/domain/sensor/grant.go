@@ -333,6 +333,13 @@ func (r *GrantRefusal) Error() string {
 // Admit checks one command against the effective grant. zoneID is the
 // command's scan zone (nil when unzoned).
 func (g Grant) Admit(cmdType string, payload json.RawMessage, zoneID *shared.ID) *GrantRefusal {
+	return g.AdmitContract(cmdType, payload, zoneID, nil)
+}
+
+// AdmitContract is Admit with the tool contract the sensor reported for the
+// job's tool: the tier the grant's ceiling is compared with is the one the
+// platform assigns from it (CommandTierFor).
+func (g Grant) AdmitContract(cmdType string, payload json.RawMessage, zoneID *shared.ID, contract *ToolContract) *GrantRefusal {
 	e := g.Effective()
 	t := strings.ToLower(strings.TrimSpace(cmdType))
 	if slices.Contains(controlJobTyp, t) {
@@ -355,7 +362,7 @@ func (g Grant) Admit(cmdType string, payload json.RawMessage, zoneID *shared.ID)
 			}
 		}
 	}
-	if tier := CommandTier(t, job); tier > e.TierCeiling {
+	if tier := CommandTierFor(t, job, contract); tier > e.TierCeiling {
 		return &GrantRefusal{DimTier, fmt.Sprintf("tier T%d above the ceiling T%d", tier, e.TierCeiling)}
 	}
 	if r := e.admitTargets(payload); r != nil {
@@ -475,7 +482,14 @@ func requiredCapabilities(payload json.RawMessage) []string {
 // stages its tool implements (stage catalog); custom templates or
 // out-of-band callbacks make any job T2, and a scan whose tool the catalog
 // does not know is T2 (fail closed).
-func CommandTier(cmdType string, job Job) int {
+func CommandTier(cmdType string, job Job) int { return CommandTierFor(cmdType, job, nil) }
+
+// CommandTierFor is CommandTier with the tool contract the sensor reported
+// for the job's tool (nil: none, a sensor older than the tool contract).
+// The platform assigns the tier (tool_tier.go): the job's capability floor,
+// the tool's declared tier, T2 for a declared side effect and for a tool
+// the operator installed; the contract only ever raises it.
+func CommandTierFor(cmdType string, job Job, c *ToolContract) int {
 	if job.Interactsh || job.CustomTemplates > 0 {
 		return TierIntrusive
 	}
@@ -485,15 +499,17 @@ func CommandTier(cmdType string, job Job) int {
 	case "connector_scan", "validate":
 		return TierActive
 	}
-	stages := stage.ForTool(job.Tool)
-	if job.Tool == "" || len(stages) == 0 {
+	if job.Tool == "" {
 		return TierIntrusive
 	}
-	tier := TierIntrusive
-	for _, s := range stages {
-		tier = min(tier, int(s.Tier))
+	tier := TierPassive
+	if stages := stage.ForTool(job.Tool); len(stages) > 0 {
+		tier = TierIntrusive
+		for _, s := range stages {
+			tier = min(tier, int(s.Tier))
+		}
 	}
-	return tier
+	return contractTier(tier, job, c)
 }
 
 // CarriesCredentials reports whether a command's tool configuration holds

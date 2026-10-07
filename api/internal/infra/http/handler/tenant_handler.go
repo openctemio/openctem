@@ -1989,47 +1989,6 @@ func (h *TenantHandler) UpdateBrandingSettings(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
 }
 
-// UpdateBranchSettingsRequest represents the request to update branch naming convention settings.
-type UpdateBranchSettingsRequest struct {
-	TypeRules []tenantapp.BranchTypeRuleInput `json:"type_rules" validate:"dive"`
-}
-
-// UpdateBranchSettings handles PATCH /api/v1/tenants/{tenant}/settings/branch
-func (h *TenantHandler) UpdateBranchSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-
-	var req UpdateBranchSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := tenantapp.UpdateBranchSettingsInput{
-		TypeRules: req.TypeRules,
-	}
-
-	actx := h.buildAuditContext(r)
-	settings, err := h.service.UpdateBranchSettings(settingsWriteCtx(r), tenantID.String(), input, actx)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	etags := h.writeSectionETag(w, r, tenantID, tenant.SectionBranch)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(withSettingsETags(toSettingsResponse(settings), etags))
-}
-
 // =============================================================================
 // Pentest Settings Endpoints
 // =============================================================================
