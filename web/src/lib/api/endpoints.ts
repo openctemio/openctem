@@ -326,12 +326,6 @@ export const tenantEndpoints = {
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}`,
 
   /**
-   * Remove member from tenant
-   */
-  removeMember: (tenantIdOrSlug: string, memberId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}`,
-
-  /**
    * Create a user account directly (POST, owner/admin) — no self-registration
    */
   createUser: (tenantIdOrSlug: string) => `${API_BASE.TENANTS}/${tenantIdOrSlug}/users`,
@@ -1604,6 +1598,16 @@ export const pipelineEndpoints = {
    */
   deleteStep: (pipelineId: string, stepId: string) =>
     `/api/v1/pipelines/${pipelineId}/steps/${stepId}`,
+
+  /**
+   * Check a draft pipeline's steps as a workflow graph (stores nothing)
+   */
+  verify: () => '/api/v1/pipelines/verify',
+
+  /**
+   * The scan capability catalog: contracts, port types and adapters
+   */
+  capabilities: () => '/api/v1/scans/stages',
 } as const
 
 /**

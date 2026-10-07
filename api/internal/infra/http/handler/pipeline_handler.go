@@ -284,6 +284,21 @@ type RunTaskResponse struct {
 	StartedAt    *string `json:"started_at,omitempty"`
 	CompletedAt  *string `json:"completed_at,omitempty"`
 	ErrorMessage string  `json:"error_message,omitempty"`
+	// SkippedTargets are the targets the sensor's local policy skipped in a
+	// task that completed on the rest (at most 20; sensor-supplied text,
+	// show as plain text). SkippedTargetsTotal counts all of them.
+	SkippedTargets      []RunTaskSkippedTarget `json:"skipped_targets,omitempty"`
+	SkippedTargetsTotal int                    `json:"skipped_targets_total,omitempty"`
+}
+
+// RunTaskSkippedTarget is one target a sensor skipped, and why: reason is
+// unresolvable, wildcard_pattern, denied_by_policy, invalid_target or
+// refused; rule is the sensor's policy rule.
+type RunTaskSkippedTarget struct {
+	Target string `json:"target"`
+	Reason string `json:"reason"`
+	Rule   string `json:"rule,omitempty"`
+	Detail string `json:"detail,omitempty"`
 }
 
 func toRunTaskSummaryResponse(s pipeline.TaskSummary) *RunTaskSummaryResponse {
@@ -303,6 +318,10 @@ func toRunTaskResponses(tasks []pipeline.Task) []RunTaskResponse {
 			ID: t.ID.String(), StepKey: t.StepKey, Tool: t.Tool, Status: string(t.Status),
 			SensorName: t.SensorName, Platform: t.Platform, Targets: t.Targets, Attempts: t.Attempts,
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: t.ErrorMessage,
+			SkippedTargetsTotal: t.SkippedTotal,
+		}
+		for _, sk := range t.Skipped {
+			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))
 		}
 		if t.StepRunID != nil {
 			v := t.StepRunID.String()
