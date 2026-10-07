@@ -859,7 +859,7 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 }
 
 // triggerScanRunFailed triggers scan workflow failure when a command fails.
-func (h *CommandHandler) triggerScanRunFailed(ctx context.Context, cmd *commanddom.Command, errorMessage string) {
+func (h *CommandHandler) triggerScanRunFailed(ctx context.Context, cmd *commanddom.Command, errorMessage, errorCode string) {
 	if h.scanRunService == nil {
 		return
 	}
@@ -885,7 +885,7 @@ func (h *CommandHandler) triggerScanRunFailed(ctx context.Context, cmd *commandd
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := h.scanRunService.OnStepFailed(bgCtx, payload.ScanRunID, payload.StepKey, errorMessage, "COMMAND_FAILED"); err != nil {
+		if err := h.scanRunService.OnStepFailed(bgCtx, payload.ScanRunID, payload.StepKey, errorMessage, errorCode); err != nil {
 			h.logger.Error("failed to trigger pipeline failure",
 				"scan_run_id", payload.ScanRunID,
 				"step_key", payload.StepKey,

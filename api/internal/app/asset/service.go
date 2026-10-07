@@ -1314,6 +1314,9 @@ type ListAssetsInput struct {
 	// dependency, monitor_only, rejected) or the aliases unknown, unconfirmed
 	// and approved (RFC-036). Validated by attribution.ParseFilter.
 	Attribution []string `validate:"max=9,dive,max=20"`
+	// CoveredBy: assets the scope join confirmed through this scope entry
+	// (RFC-054 §4.3), the link behind "N assets confirmed".
+	CoveredBy string `validate:"omitempty,uuid"`
 
 	Sort    string `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page    int    `validate:"min=0"`
@@ -1442,6 +1445,13 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 		return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
 	} else if given {
 		filter = filter.WithAttribution(af)
+	}
+	if input.CoveredBy != "" {
+		id, err := shared.IDFromString(input.CoveredBy)
+		if err != nil {
+			return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: covered_by must be a scope entry id", shared.ErrValidation)
+		}
+		filter.CoveredByScopeTarget = &id
 	}
 	if len(input.DataClassifications) > 0 {
 		filter = filter.WithDataClassifications(input.DataClassifications...)

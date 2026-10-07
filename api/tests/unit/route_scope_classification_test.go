@@ -92,6 +92,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/webhooks":                        {classConfig, "inbound Jira/GitHub webhooks (HMAC); the outbound webhook API is removed"},
 	"/api/v1/scope":                           {classConfig, "scope targets, exclusions (two-person, L-07) and schedules"},
 	"GET /api/v1/scope/stats":                 {classScoped, "inventory coverage counted in SQL over the caller's data scope (research/53 S-3)"},
+	"POST /api/v1/scope/targets/preview":      {classScoped, "names an entry would confirm, counted over the caller's data scope (RFC-054 §4.3)"},
 	"/api/v1/ci/settings":                     {classConfig, "CI settings: tenant configuration (RFC-051)"},
 	"/api/v1/ci/trust-configs":                {classConfig, "CI trust configurations: tenant configuration (RFC-051)"},
 	"/api/v1/ci/gate-policies":                {classConfig, "CI gate policies: tenant configuration (RFC-051)"},
