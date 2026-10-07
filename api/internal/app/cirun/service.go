@@ -187,7 +187,12 @@ type ExchangeInput struct {
 	// already holds (a long job whose token expired). It is honored only for
 	// the same repository, commit and pipeline run, before the run was
 	// evaluated and within MaxRunContinuation of its start.
-	RunID     string
+	RunID string
+	// Hints are what the job reports about itself, used only for what its
+	// provider's token does not sign (cirun.Hints): the commit on CircleCI
+	// (and Bitbucket or Jenkins tokens without one), the repository name on
+	// Bitbucket.
+	Hints     cirun.Hints
 	ClientIP  string
 	UserAgent string
 }
@@ -227,7 +232,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		return nil, s.refuseUnverified("no enabled trust configuration for the issuer")
 	}
 
-	tok, claims, err := s.verify(ctx, in.IDToken, configs)
+	tok, claims, err := s.verify(ctx, in.IDToken, configs, in.Hints)
 	if err != nil {
 		s.log.Info("ci exchange refused: token did not verify", "tenant_id", tenantID.String(),
 			"issuer", logger.SanitizeValue(issuer), "error", logger.SanitizeError(err))
@@ -237,6 +242,15 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	cfg, refusals := admit(configs, tok, claims)
 	if cfg == nil {
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
+		return nil, ErrExchangeRefused
+	}
+	// A token that signs no repository name (Bitbucket) names its
+	// repository asset through the job; the name must not belong to another
+	// of the tenant's repositories.
+	if refusal, err := s.checkRepositoryBinding(ctx, tenantID, cfg, claims); err != nil {
+		return nil, err
+	} else if refusal != nil {
+		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
 		return nil, ErrExchangeRefused
 	}
 	// The pipeline's identity comes from the verified claims only: a token
@@ -294,31 +308,58 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	return out, nil
 }
 
-// verify tries the token against each distinct audience of the
-// configurations; the first that verifies wins.
-func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustConfig) (*oidc.WorkloadToken, cirun.Claims, error) {
+// RefuseRepositoryBinding refuses a job whose reported repository name is
+// already bound to another repository id of the same CI organization.
+const RefuseRepositoryBinding = "repository_binding"
+
+// checkRepositoryBinding protects repository names a token does not sign
+// (Bitbucket signs the repository UUID, not its name). The first repository
+// id that reports under a name keeps it: another repository of the same
+// workspace cannot report into that repository asset. Other providers sign
+// the name and are not checked.
+func (s *Service) checkRepositoryBinding(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims) (*cirun.Refusal, error) {
+	if cfg.Provider != cirun.ProviderBitbucket {
+		return nil, nil
+	}
+	name := asset.NormalizeName(c.CanonicalRepository(), asset.AssetTypeRepository, "")
+	bound, err := s.repo.RepositoryBoundElsewhere(ctx, tenantID, cfg.Provider, cfg.Issuer, name, c.RepositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("check repository binding: %w", err)
+	}
+	if bound {
+		return &cirun.Refusal{Code: RefuseRepositoryBinding,
+			Detail: fmt.Sprintf("repository %q reports under another repository id", name)}, nil
+	}
+	return nil, nil
+}
+
+// verify tries the token against each distinct provider and audience of
+// the configurations; the first that verifies wins. The claims are read with
+// that provider's mapping and completed with the job's hints where the
+// provider signs nothing (cirun.Claims.ApplyHints).
+func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustConfig, hints cirun.Hints) (*oidc.WorkloadToken, cirun.Claims, error) {
 	if s.verifier == nil {
 		return nil, cirun.Claims{}, errors.New("no token verifier")
 	}
 	tried := map[string]bool{}
 	var lastErr error
 	for _, c := range configs {
-		if tried[c.Audience] {
+		key := string(c.Provider) + "\x00" + c.Audience
+		if tried[key] {
 			continue
 		}
-		tried[c.Audience] = true
-		tok, err := s.verifier.VerifyWorkloadToken(ctx, raw, oidc.WorkloadExpectations{Issuer: c.Issuer, Audience: c.Audience})
+		tried[key] = true
+		tok, err := s.verifier.VerifyWorkloadToken(ctx, raw, oidc.WorkloadExpectations{Issuer: c.Issuer, Audience: c.Audience,
+			JTIOptional: cirun.JTIOptional(c.Provider)})
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		var claims cirun.Claims
-		switch c.Provider {
-		case cirun.ProviderGitHub:
-			claims = cirun.ParseGitHubClaims(tok.Claims)
-		case cirun.ProviderGitLab:
-			claims = cirun.ParseGitLabClaims(tok.Claims)
-		}
+		claims := cirun.ParseClaims(c.Provider, tok.Claims)
+		// The replay key the verifier chose (the token's jti, or a hash of
+		// the token for a provider that sends none).
+		claims.JTI = tok.JTI
+		claims.ApplyHints(hints)
 		claims.Audience = c.Audience
 		return tok, claims, nil
 	}
@@ -334,7 +375,7 @@ func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Cl
 	var refusals []*cirun.Refusal
 	for i := range configs {
 		c := &configs[i]
-		if c.Audience != claims.Audience || c.Issuer != tok.Issuer {
+		if c.Audience != claims.Audience || c.Issuer != tok.Issuer || c.Provider != claims.Provider {
 			continue
 		}
 		if r := c.Rules.Admit(claims); r != nil {
@@ -348,7 +389,7 @@ func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Cl
 
 func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims,
 	key cirun.PipelineKey, userAgent string) (*ExchangeOutput, error) {
-	repoName := cirun.CanonicalRepository(cfg.Provider, cfg.Issuer, c.Repository)
+	repoName := c.CanonicalRepository()
 	repoAsset, err := s.repositoryAsset(ctx, tenantID, repoName)
 	if err != nil {
 		return nil, err
@@ -396,6 +437,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		Ref:               truncate(c.Ref, 500),
 		Branch:            truncate(c.Branch, 255),
 		CommitSHA:         truncate(c.SHA, 64),
+		CommitVerified:    c.CommitVerified,
 		PullRequest:       truncate(c.PullRequest, 32),
 		DefaultBranch:     defaultBranch,
 		IsDefaultBranch:   c.Branch != "" && c.PullRequest == "" && c.Branch == defaultBranch,
@@ -485,7 +527,7 @@ func (s *Service) continueRun(ctx context.Context, tenantID shared.ID, cfg *ciru
 		return nil, fmt.Errorf("load run: %w", err)
 	}
 	now := s.now().UTC()
-	if run.Repository != asset.NormalizeName(cirun.CanonicalRepository(cfg.Provider, cfg.Issuer, c.Repository), asset.AssetTypeRepository, "") ||
+	if run.Repository != asset.NormalizeName(c.CanonicalRepository(), asset.AssetTypeRepository, "") ||
 		run.CommitSHA != c.SHA || run.ExternalRunID == "" || run.ExternalRunID != c.RunID || run.Issuer != cfg.Issuer ||
 		run.RunAttempt != truncate(c.RunAttempt, 16) || (run.ExternalJobID != "" && run.ExternalJobID != truncate(c.JobID, 64)) ||
 		run.Status != cirun.StatusRunning || now.Sub(run.CreatedAt) > MaxRunContinuation {
@@ -560,7 +602,8 @@ func (s *Service) auditRefusal(ctx context.Context, tenantID shared.ID, in Excha
 		WithMetadata("pipeline_run_id", c.RunID).
 		WithMetadata("run_attempt", c.RunAttempt).
 		WithMetadata("job_id", c.JobID).
-		WithMetadata("commit_sha", c.SHA)
+		WithMetadata("commit_sha", c.SHA).
+		WithMetadata("commit_verified", c.CommitVerified)
 	for _, code := range codes {
 		if code == "replay" {
 			ev = ev.WithSeverity(auditdom.SeverityHigh)
@@ -580,6 +623,7 @@ func (s *Service) auditIssued(ctx context.Context, tenantID shared.ID, in Exchan
 		WithMetadata("repository_asset_id", r.RepositoryAssetID.String()).
 		WithMetadata("ref", r.Ref).
 		WithMetadata("commit_sha", r.CommitSHA).
+		WithMetadata("commit_verified", r.CommitVerified).
 		WithMetadata("event", r.Event).
 		WithMetadata("actor", r.Actor).
 		WithMetadata("pipeline_run_id", r.ExternalRunID).
