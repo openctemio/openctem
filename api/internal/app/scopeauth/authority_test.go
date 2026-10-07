@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -125,5 +126,55 @@ func TestLoad_FailsClosed(t *testing.T) {
 	var nilAuth *Authority
 	if _, ok := nilAuth.Covers("app.scoped.com"); ok {
 		t.Error("a nil authority covers nothing")
+	}
+}
+
+// RFC-054 §4.2 step 6: an entry covers up to its max_tier, a seed or verified
+// domain up to t1. Another tenant's higher entry lifts nothing.
+func TestCoversAt(t *testing.T) {
+	f := newSources(t)
+	now := time.Now()
+	low, _ := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "low.example", "", "")
+	low.SetMaxTier(scopedom.TierPassive, now)
+	high, _ := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "*.intrusive.example", "", "")
+	high.SetMaxTier(scopedom.TierIntrusive, now)
+	f.targets = append(f.targets, low, high)
+	a, err := Load(context.Background(), f.tenant, f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		tier scopedom.Tier
+		want bool
+	}{
+		{"low.example", scopedom.TierPassive, true},
+		{"low.example", scopedom.TierActive, false},
+		{"app.scoped.com", scopedom.TierActive, true}, // default t1
+		{"app.scoped.com", scopedom.TierIntrusive, false},
+		{"www.seeded.com", scopedom.TierActive, true},
+		{"www.seeded.com", scopedom.TierIntrusive, false},
+		{"www.verified.com", scopedom.TierIntrusive, false},
+		{"a.intrusive.example", scopedom.TierIntrusive, true},
+		{"nothing.example", scopedom.TierPassive, false},
+	}
+	for _, c := range cases {
+		if _, ok := a.CoversAt(c.name, c.tier); ok != c.want {
+			t.Errorf("CoversAt(%q, %s) = %v, want %v", c.name, c.tier, ok, c.want)
+		}
+	}
+	if c := a.Ceiling("low.example"); c == nil || c.ID() != low.ID() {
+		t.Errorf("Ceiling(low.example) = %v", c)
+	}
+	if c := a.Ceiling("www.seeded.com"); c != nil {
+		t.Errorf("a seed has no entry to raise: %v", c)
+	}
+
+	other, err := Load(context.Background(), shared.NewID(), f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := other.CoversAt("a.intrusive.example", scopedom.TierPassive); ok {
+		t.Error("another tenant's entry covered a name")
 	}
 }

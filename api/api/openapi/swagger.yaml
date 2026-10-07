@@ -4792,6 +4792,11 @@ definitions:
         type: string
       target_type:
         type: string
+      tier:
+        description: |-
+          Tier is the tier the probe needs (raise_tier, allow_temporarily for a
+          tier_exceeds refusal): t1 or t2.
+        type: string
     type: object
   github_com_openctemio_openctem_api_pkg_domain_scope.RuleRef:
     properties:
