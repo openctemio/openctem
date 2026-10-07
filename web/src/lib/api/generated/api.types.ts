@@ -37607,6 +37607,11 @@ export interface components {
       /** @description Requires is the permission the action needs ("" = anyone who could scan). */
       requires?: string
       target_type?: string
+      /**
+       * @description Tier is the tier the probe needs (raise_tier, allow_temporarily for a
+       *     tier_exceeds refusal): t1 or t2.
+       */
+      tier?: string
     }
     'github_com_openctemio_openctem_api_pkg_domain_scope.RuleRef': {
       id?: string

@@ -183,6 +183,50 @@ func (g *ActiveGate) UnverifiedTargets(ctx context.Context, tenantID shared.ID, 
 	return out, nil
 }
 
+// TierExceeded returns the targets the tenant's scope authority covers, but
+// not at tier (RFC-054 §4.2 step 6, refusal tier_exceeds): every covering
+// scope target has a lower max_tier, or only a seed or verified domain
+// covers it and tier is above t1. Each is mapped to the covering entry with
+// the highest ceiling (nil for a seed or verified domain). Targets nothing
+// covers, and private or internal targets (scan zones gate them), are not
+// listed: the ownership gate answers for them. Part of scan.AttributionGate.
+func (g *ActiveGate) TierExceeded(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	out := map[string]*scopedom.RuleRef{}
+	if tier <= scopedom.TierPassive || len(targets) == 0 {
+		return out, nil
+	}
+	if len(targets) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many targets for one tier check", shared.ErrValidation)
+	}
+	var auth *scopeauth.Authority
+	for _, t := range targets {
+		if !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		if _, covered := auth.Covers(t); !covered {
+			continue
+		}
+		if _, ok := auth.CoversAt(t, tier); ok {
+			continue
+		}
+		var rule *scopedom.RuleRef
+		if c := auth.Ceiling(t); c != nil {
+			rule = &scopedom.RuleRef{Kind: scopedom.RuleScopeTarget, ID: c.ID().String(), Pattern: c.Pattern()}
+		}
+		out[t] = rule
+	}
+	return out, nil
+}
+
 // NewActiveGate wires the gate. Every dependency is required; a nil one
 // makes every check fail (fail closed).
 func NewActiveGate(records ActiveGateRecords, assets ActiveGateAssets, scope ActiveGateScope, roots ActiveGateRoots) *ActiveGate {
