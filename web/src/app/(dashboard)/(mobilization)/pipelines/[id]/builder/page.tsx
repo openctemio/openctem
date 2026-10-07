@@ -439,7 +439,10 @@ export default function PipelineBuilderPage({ params }: PageProps) {
                 </Badge>
               )}
               {hasValidationErrors && !isReadOnly && (
-                <Badge variant="outline" className="text-red-600 border-red-600 text-xs gap-1">
+                <Badge
+                  variant="outline"
+                  className="text-destructive border-destructive text-xs gap-1"
+                >
                   <AlertTriangle className="h-3 w-3" />
                   {invalidSteps.length} step{invalidSteps.length > 1 ? 's' : ''} need scanner
                 </Badge>
@@ -447,7 +450,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
               {graphErrors.length > 0 && !isReadOnly && (
                 <Badge
                   variant="outline"
-                  className="text-red-600 border-red-600 text-xs gap-1"
+                  className="text-destructive border-destructive text-xs gap-1"
                   title={graphErrors.map((e) => e.message).join('\n')}
                 >
                   <AlertTriangle className="h-3 w-3" />

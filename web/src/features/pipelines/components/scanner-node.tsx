@@ -398,7 +398,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
         {(data.issues ?? []).map((msg) => (
           <div
             key={msg}
-            className="flex items-start gap-1.5 text-[10px] text-red-600 dark:text-red-400"
+            className="flex items-start gap-1.5 text-[10px] text-destructive"
             role="alert"
           >
             <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
