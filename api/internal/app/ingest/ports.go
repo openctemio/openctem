@@ -29,9 +29,11 @@ import (
 	"strings"
 
 	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/capability"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 )
 
@@ -45,9 +47,18 @@ const (
 // port they found open on it, so a port missing from it is closed.
 var portScanTools = []string{"naabu", "nmap", "masscan", "rustscan"}
 
-// isPortScanReport reports whether the report comes from a port scanner.
+// isPortScanReport reports whether the report comes from a port scanner:
+// its bound capability is scan.ports (set by the output binding from the
+// command's tool, never taken from the sensor alone), or, for a report
+// without one, its tool is a known port scanner.
 func isPortScanReport(report *ctis.Report) bool {
-	if report == nil || report.Tool == nil {
+	if report == nil {
+		return false
+	}
+	if id, _, ok := capability.ParseRef(report.Metadata.Capability); ok && id == string(stage.ScanPorts) {
+		return true
+	}
+	if report.Tool == nil {
 		return false
 	}
 	for _, t := range portScanTools {
