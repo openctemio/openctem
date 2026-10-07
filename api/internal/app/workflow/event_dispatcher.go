@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -88,11 +89,13 @@ func (d *WorkflowEventDispatcher) DispatchFindingEvent(ctx context.Context, even
 		}
 
 		// Trigger the workflow
-		_, err := d.service.TriggerWorkflow(ctx, TriggerWorkflowInput{
+		subject := event.Finding.ID()
+		err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
 			TenantID:    event.TenantID,
 			WorkflowID:  wf.ID,
 			TriggerType: event.EventType,
 			TriggerData: triggerData,
+			SubjectID:   &subject,
 		})
 		if err != nil {
 			d.logger.Error("failed to trigger workflow",
@@ -264,37 +267,21 @@ func (d *WorkflowEventDispatcher) buildFindingTriggerData(event FindingEvent) ma
 	return data
 }
 
-// DispatchFindingsCreated dispatches finding_created events for a batch of newly created findings.
-// This is called by the ingest service when findings are created during ingestion.
-// Events are dispatched asynchronously to avoid blocking the ingestion pipeline.
+// DispatchFindingsCreated dispatches finding_created for a batch of newly
+// created findings (the ingest callback). It runs asynchronously so ingest
+// never waits, with panic recovery.
 //
-// Optimizations applied:
-// - Batch workflow matching: finds workflows once for all findings instead of per-finding
-// - Limits findings per dispatch to prevent memory exhaustion
-// - Proper goroutine recovery to prevent panics from crashing the service
-// - Deduplication: each workflow is triggered once per batch (not per finding)
+// Every matching automation runs once per matching finding: 40 new critical
+// findings and a "critical -> ticket" automation give 40 runs (before, one
+// run for the first finding of the batch). The runs are bounded where they
+// are created: the key finding_created:<finding> makes a finding start an
+// automation at most once, and the per-automation and per-tenant hourly
+// quotas refuse the rest, visibly (workflowdom.MaxRunsPerWorkflowPerHour).
 func (d *WorkflowEventDispatcher) DispatchFindingsCreated(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) {
 	if len(findings) == 0 {
 		return
 	}
-
-	// Limit findings to prevent memory exhaustion
-	if len(findings) > maxFindingsPerDispatch {
-		d.logger.Warn("truncating findings batch for dispatch",
-			"original_count", len(findings),
-			"max_allowed", maxFindingsPerDispatch,
-		)
-		findings = findings[:maxFindingsPerDispatch]
-	}
-
-	d.logger.Debug("dispatching finding_created events",
-		"tenant_id", tenantID,
-		"count", len(findings),
-	)
-
-	// Dispatch events asynchronously to avoid blocking ingestion
 	go func() {
-		// Recover from panics to prevent crashing the service
 		defer func() {
 			if r := recover(); r != nil {
 				d.logger.Error("panic recovered in workflow dispatch",
@@ -303,97 +290,83 @@ func (d *WorkflowEventDispatcher) DispatchFindingsCreated(ctx context.Context, t
 				)
 			}
 		}()
-
 		dispatchCtx, cancel := context.WithTimeout(context.Background(), dispatchTimeout)
 		defer cancel()
-
-		// OPTIMIZATION: Find matching workflows ONCE for all findings
-		// Instead of querying per-finding, we query once and filter locally
-		workflows, err := d.findMatchingWorkflows(dispatchCtx, tenantID, workflowdom.TriggerTypeFindingCreated)
-		if err != nil {
-			d.logger.Error("failed to find matching workflows",
-				"tenant_id", tenantID,
-				"error", err,
-			)
-			return
-		}
-
-		if len(workflows) == 0 {
-			d.logger.Debug("no matching workflows for finding_created events",
-				"tenant_id", tenantID,
-				"findings_count", len(findings),
-			)
-			return
-		}
-
-		// OPTIMIZATION: Group findings by matching workflow to deduplicate triggers
-		// Each workflow should only be triggered once per batch, with aggregated data
-		triggeredWorkflows := make(map[string]bool) // workflow ID -> already triggered
-		triggeredCount := 0
-		findingsProcessed := 0
-
-		for _, finding := range findings {
-			event := FindingEvent{
-				TenantID:  tenantID,
-				Finding:   finding,
-				EventType: workflowdom.TriggerTypeFindingCreated,
-			}
-
-			for _, wf := range workflows {
-				// Skip if this workflow was already triggered in this batch
-				if triggeredWorkflows[wf.ID.String()] {
-					continue
-				}
-
-				// Check if finding matches the trigger config filters
-				if !d.matchesTriggerFilters(wf, event) {
-					continue
-				}
-
-				// Build trigger data from finding
-				triggerData := d.buildFindingTriggerData(event)
-
-				// Add batch context to trigger data
-				triggerData["batch_size"] = len(findings)
-				triggerData["batch_index"] = findingsProcessed
-
-				// Trigger the workflow
-				_, err := d.service.TriggerWorkflow(dispatchCtx, TriggerWorkflowInput{
-					TenantID:    tenantID,
-					WorkflowID:  wf.ID,
-					TriggerType: workflowdom.TriggerTypeFindingCreated,
-					TriggerData: triggerData,
-				})
-				if err != nil {
-					d.logger.Error("failed to trigger workflow",
-						"workflow_id", wf.ID,
-						"workflow_name", wf.Name,
-						"error", err,
-					)
-					continue
-				}
-
-				// Mark workflow as triggered for this batch
-				triggeredWorkflows[wf.ID.String()] = true
-				triggeredCount++
-
-				d.logger.Info("workflow triggered by finding_created event",
-					"workflow_id", wf.ID,
-					"workflow_name", wf.Name,
-					"finding_id", finding.ID(),
-					"batch_size", len(findings),
-				)
-			}
-			findingsProcessed++
-		}
-
-		d.logger.Info("finding_created events dispatched",
-			"tenant_id", tenantID,
-			"findings_count", len(findings),
-			"workflows_matched", len(workflows),
-			"workflows_triggered", triggeredCount,
-		)
+		d.dispatchFindingsCreated(dispatchCtx, tenantID, findings)
 	}()
+}
+
+// dispatchFindingsCreated is the synchronous body of DispatchFindingsCreated.
+// It returns the number of runs started.
+func (d *WorkflowEventDispatcher) dispatchFindingsCreated(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) int {
+	if len(findings) > maxFindingsPerDispatch {
+		d.logger.Warn("truncating findings batch for dispatch",
+			"original_count", len(findings),
+			"max_allowed", maxFindingsPerDispatch,
+		)
+		findings = findings[:maxFindingsPerDispatch]
+	}
+
+	workflows, err := d.findMatchingWorkflows(ctx, tenantID, workflowdom.TriggerTypeFindingCreated)
+	if err != nil {
+		d.logger.Error("failed to find matching workflows", "tenant_id", tenantID, "error", err)
+		return 0
+	}
+	if len(workflows) == 0 {
+		return 0
+	}
+
+	started, duplicates := 0, 0
+	for _, wf := range workflows {
+		if wf.TenantID != tenantID {
+			continue
+		}
+		for _, f := range findings {
+			if f == nil || f.TenantID() != tenantID {
+				continue
+			}
+			event := FindingEvent{TenantID: tenantID, Finding: f, EventType: workflowdom.TriggerTypeFindingCreated}
+			if !d.matchesTriggerFilters(wf, event) {
+				continue
+			}
+			subject := f.ID()
+			err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
+				TenantID:       tenantID,
+				WorkflowID:     wf.ID,
+				TriggerType:    workflowdom.TriggerTypeFindingCreated,
+				TriggerData:    d.buildFindingTriggerData(event),
+				SubjectID:      &subject,
+				IdempotencyKey: "finding_created:" + subject.String(),
+			})
+			switch {
+			case err == nil:
+				started++
+			case errors.Is(err, workflowdom.ErrRunDuplicate):
+				duplicates++
+			case workflowdom.IsRunThrottled(err):
+				// The quota holds for the rest of this batch too: stop
+				// asking. The run history records the throttling once.
+				d.logger.Warn("automation throttled; the rest of this batch does not start it",
+					"workflow_id", wf.ID, "workflow_name", wf.Name, "error", err)
+			default:
+				d.logger.Error("failed to trigger workflow",
+					"workflow_id", wf.ID, "workflow_name", wf.Name, "finding_id", subject, "error", err)
+				continue
+			}
+			if workflowdom.IsRunThrottled(err) {
+				break
+			}
+		}
+	}
+
+	d.logger.Info("finding_created events dispatched",
+		"tenant_id", tenantID,
+		"findings_count", len(findings),
+		"workflows_matched", len(workflows),
+		"runs_started", started,
+		"duplicates", duplicates,
+	)
+	return started
 }
 
 // DispatchFindingStatusChanged dispatches a `finding_status_changed` event for a
@@ -484,13 +457,19 @@ func (d *WorkflowEventDispatcher) DispatchAITriageEvent(ctx context.Context, eve
 			continue
 		}
 
-		// Trigger the workflow
-		_, err := d.service.TriggerWorkflow(ctx, TriggerWorkflowInput{
-			TenantID:    event.TenantID,
-			WorkflowID:  wf.ID,
-			TriggerType: event.EventType,
-			TriggerData: triggerData,
+		// Trigger the workflow: once per triage result.
+		subject := event.FindingID
+		err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
+			TenantID:       event.TenantID,
+			WorkflowID:     wf.ID,
+			TriggerType:    event.EventType,
+			TriggerData:    triggerData,
+			SubjectID:      &subject,
+			IdempotencyKey: string(event.EventType) + ":" + event.TriggerID(),
 		})
+		if errors.Is(err, workflowdom.ErrRunDuplicate) {
+			continue
+		}
 		if err != nil {
 			d.logger.Error("failed to trigger workflow for AI triage event",
 				"workflow_id", wf.ID,
@@ -518,6 +497,11 @@ func (d *WorkflowEventDispatcher) DispatchAITriageEvent(ctx context.Context, eve
 	)
 
 	return nil
+}
+
+// TriggerID is the triage result's identity for run idempotency.
+func (e AITriageEvent) TriggerID() string {
+	return e.TriageID.String()
 }
 
 // buildAITriageTriggerData builds trigger data from an AI triage event.
