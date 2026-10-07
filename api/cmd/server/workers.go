@@ -295,6 +295,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 	w.ControllerManager.Register(jobRecovery)
 
+	// One-off scans that never ran are archived after 30 days (audited).
+	w.ControllerManager.Register(controller.NewOneOffScanArchiveController(svc.Scan, 0, 0))
+
 	// Scan timeout controller: enforces per-scan timeout_seconds on running pipeline_runs
 	w.ControllerManager.Register(controller.NewScanTimeoutController(
 		repos.PipelineRun,
@@ -463,6 +466,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// domain assets (SSRF-guarded, rate-limited, body-bounded) and emits
 	// subdomain_discovered + certificate_expiring ExposureEvents. Inert until a
 	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
+	// Names a permanent scope target or seed covers are confirmed: once at
+	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
+	if svc.ScopeJoin != nil {
+		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
+	}
+
 	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor != nil {
 		w.ControllerManager.Register(controller.NewCertMonitorController(
 			svc.CertMonitor,

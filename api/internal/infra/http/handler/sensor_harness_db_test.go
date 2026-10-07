@@ -91,7 +91,7 @@ func newSensorHarness(t *testing.T) *sensorHarness {
 
 	out, err := sensorSvc.CreateSensor(ctx, sensor.CreateSensorInput{
 		TenantID: tenantID.String(), Name: "harness-sensor", Type: "worker",
-		Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "daemon",
+		Capabilities: []string{"sast"}, ExecutionMode: "daemon",
 	})
 	if err != nil {
 		t.Fatalf("create sensor: %v", err)

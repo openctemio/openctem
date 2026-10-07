@@ -443,6 +443,13 @@ var scanZoneErrorCodes = map[string]bool{
 	"PLATFORM_SENSOR_REFUSED": true,
 	"SENSOR_POLICY_REFUSED":   true,
 	"SENSOR_OPT_IN_DISABLED":  true,
+	// Tool and sensor refusals at trigger time
+	// (docs/architecture/tool-availability.md).
+	"NO_SENSOR_FOR_TOOL":  true,
+	"NO_SENSOR_AVAILABLE": true,
+	"TOOL_NOT_FOUND":      true,
+	"TOOL_DISABLED":       true,
+	"TOOL_NOT_SCANNER":    true,
 }
 
 // scanZoneErrorCode returns the contract code carried by err, or fallback.

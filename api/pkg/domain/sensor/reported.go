@@ -135,9 +135,12 @@ func effectiveList(declared, reported []string) []string {
 	return out
 }
 
-// EffectiveTools is the tools dispatch may send this sensor jobs for.
+// EffectiveTools is the tools dispatch may send this sensor jobs for: the
+// installed tools it reported (empty, never nil, before its first report).
+// An administrator narrows them with the sensor grant (grant.go), not here.
+// The same rule as the generated column effective_tools (migration 001149).
 func (a *Sensor) EffectiveTools() []string {
-	return effectiveList(a.Tools, a.Reported.InstalledToolNames())
+	return append([]string{}, a.Reported.InstalledToolNames()...)
 }
 
 // EffectiveCapabilities is the capabilities dispatch and the command poll
@@ -170,9 +173,6 @@ func (a *Sensor) EffectiveMaxConcurrentJobs() int {
 // report contradicts. Display hints only; dispatch already uses the
 // effective values.
 type CapabilityMismatch struct {
-	// ToolsNotInstalled are tools the administrator set that the sensor
-	// reports as not installed or does not report at all.
-	ToolsNotInstalled []string `json:"tools_not_installed,omitempty"`
 	// CapabilitiesNotReported are capabilities the administrator set that
 	// the sensor does not report.
 	CapabilitiesNotReported []string `json:"capabilities_not_reported,omitempty"`
@@ -180,7 +180,7 @@ type CapabilityMismatch struct {
 
 // IsEmpty reports whether there is nothing to show.
 func (m CapabilityMismatch) IsEmpty() bool {
-	return len(m.ToolsNotInstalled) == 0 && len(m.CapabilitiesNotReported) == 0
+	return len(m.CapabilitiesNotReported) == 0
 }
 
 // CapabilityMismatch compares the administrator's settings with the report.
@@ -189,9 +189,6 @@ func (m CapabilityMismatch) IsEmpty() bool {
 // and the API shows both numbers.
 func (a *Sensor) CapabilityMismatch() CapabilityMismatch {
 	var m CapabilityMismatch
-	if a.Reported.Tools != nil {
-		m.ToolsNotInstalled = missingFrom(a.Tools, a.Reported.InstalledToolNames())
-	}
 	if a.Reported.Capabilities != nil {
 		m.CapabilitiesNotReported = missingFrom(a.Capabilities, a.Reported.Capabilities)
 	}
@@ -420,4 +417,15 @@ func sanitizePlatform(p string) string {
 		p = p[:MaxReportedPlatformLen]
 	}
 	return p
+}
+
+// ReportOf is a capability report that names the given tools as installed,
+// as a sensor reports them. A report built in code (a test, a fixture)
+// uses it; dispatch reads tools only from a report.
+func ReportOf(tools ...string) CapabilityReport {
+	r := CapabilityReport{Tools: make([]ReportedTool, 0, len(tools))}
+	for _, t := range tools {
+		r.Tools = append(r.Tools, ReportedTool{Name: t, Installed: true})
+	}
+	return r
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	nessusparser "github.com/openctemio/openctem/api/pkg/parsers/nessus"
 )
 
 // AssetImportService handles bulk asset import from various formats.
@@ -147,118 +145,6 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 		"skipped", result.AssetsSkipped,
 	)
 	return result, nil
-}
-
-// =============================================================================
-// Nessus XML Import
-// =============================================================================
-
-// maxNessusImportSize bounds a host-only Nessus import.
-const maxNessusImportSize = 100 * 1024 * 1024
-
-// ImportNessus imports hosts from Nessus XML export.
-func (s *AssetImportService) ImportNessus(ctx context.Context, tenantID string, reader io.Reader) (*AssetImportResult, error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
-	}
-
-	// The one Nessus parser, shared with the findings converter.
-	report, err := nessusparser.Parse(reader, maxNessusImportSize)
-	if err != nil {
-		if errors.Is(err, nessusparser.ErrTooLarge) {
-			return nil, fmt.Errorf("%w: Nessus export larger than 100 MB", shared.ErrValidation)
-		}
-		if errors.Is(err, nessusparser.ErrInvalid) {
-			return nil, fmt.Errorf("%w: invalid Nessus XML format", shared.ErrValidation)
-		}
-		return nil, fmt.Errorf("failed to read nessus data: %w", err)
-	}
-
-	result := &AssetImportResult{}
-
-	for _, host := range report.Hosts {
-		hostname := host.Name
-		props := make(map[string]any)
-		var os string
-
-		for _, p := range host.Properties {
-			switch p.Name {
-			case "host-ip":
-				props["ip_address"] = p.Value
-				if hostname == "" {
-					hostname = p.Value
-				}
-			case "operating-system":
-				os = p.Value
-				props["os"] = p.Value
-			case "host-fqdn":
-				if p.Value != "" {
-					hostname = p.Value
-				}
-				props["fqdn"] = p.Value
-			case "mac-address":
-				props["mac_address"] = p.Value
-			}
-		}
-
-		if hostname == "" {
-			result.AssetsSkipped++
-			continue
-		}
-
-		a, createErr := assetdom.NewAssetWithTenant(tid, hostname, assetdom.AssetTypeHost, assetdom.CriticalityMedium)
-		if createErr != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("invalid host %s: %v", hostname, createErr))
-			continue
-		}
-
-		// The OS is an attribute, not a sub-type (RFC-042 §6.3.8 R2).
-		if os != "" {
-			props["os_family"] = normalizeOS(os)
-		}
-		a.SetProperties(props)
-		a.SetDiscoverySource("nessus")
-		now := time.Now().UTC()
-		a.SetDiscoveredAt(&now)
-
-		openPorts := 0
-		for _, item := range host.Items {
-			if item.Port > 0 {
-				openPorts++
-			}
-		}
-		a.UpdateDescription(fmt.Sprintf("Discovered by Nessus (%d services)", openPorts))
-
-		if createErr := s.assetRepo.Create(ctx, a); createErr != nil {
-			if strings.Contains(createErr.Error(), "already exists") {
-				// Create only — an existing asset is left untouched, so this is
-				// a skip, not an update (matches the CSV importer's accounting).
-				result.AssetsSkipped++
-			} else {
-				result.Errors = append(result.Errors, fmt.Sprintf("host %s: %v", hostname, createErr))
-			}
-			continue
-		}
-		result.AssetsCreated++
-	}
-
-	s.logger.Info("Nessus import completed", "tenant_id", tenantID, "created", result.AssetsCreated)
-	return result, nil
-}
-
-func normalizeOS(os string) string {
-	lower := strings.ToLower(os)
-	switch {
-	case strings.Contains(lower, "linux"):
-		return "linux"
-	case strings.Contains(lower, "windows"):
-		return "windows"
-	case strings.Contains(lower, "macos"), strings.Contains(lower, "mac os"):
-		return "macos"
-	default:
-		return "other"
-	}
 }
 
 // =============================================================================
