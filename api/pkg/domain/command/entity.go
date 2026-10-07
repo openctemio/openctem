@@ -147,6 +147,13 @@ type Command struct {
 	// written on create and never read back from a request.
 	FreezeOverride bool
 
+	// HostKeys are the hosts an active workflow chunk sends traffic to.
+	// While the command is acknowledged or running, no other command of
+	// the tenant with one of these keys is claimed (platform-side per-host
+	// politeness, research/49 §3.12.3). Nil: no per-host limit. Written on
+	// create only; never sent to a sensor.
+	HostKeys []string
+
 	// ==========================================================================
 	// Platform Job Fields (v3.2)
 	// ==========================================================================
