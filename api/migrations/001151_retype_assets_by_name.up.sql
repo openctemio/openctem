@@ -6,8 +6,9 @@
 -- asset_lens follow from trg_assets_registry_class. Row-local: every row is
 -- judged by its own name only. A row whose target (tenant, type, name) is
 -- already taken is skipped with a NOTICE, so no unique key can be violated.
--- Each change writes a system-actor audit row, like the other automated
--- changes (actor_id NULL).
+-- It writes NO audit_logs rows: the tamper-evident chain (audit_log_chain) is
+-- extended only by the app's AuditService, and an unchained row would read as
+-- a chain break. Each change is reported by a NOTICE (id, old type, new type).
 
 DO $$
 DECLARE
@@ -61,14 +62,8 @@ BEGIN
         UPDATE assets SET asset_type = target, sub_type = NULL, updated_at = now()
          WHERE id = r.id;
 
-        INSERT INTO audit_logs (tenant_id, actor_id, actor_email, action, resource_type,
-                                resource_id, resource_name, result, severity, message, metadata)
-        VALUES (r.tenant_id, NULL, 'system@migration-001151', 'asset.type_corrected', 'asset',
-                r.id::text, r.name, 'success', 'low',
-                format('Asset type corrected from %s to %s to match its name', r.asset_type, target),
-                jsonb_build_object('old_type', r.asset_type, 'old_sub_type', r.sub_type,
-                                   'new_type', target, 'reason', 'type_contradicts_name',
-                                   'automated', true));
+        RAISE NOTICE 'retype_assets_by_name: asset % (tenant %) "%": % -> %',
+            r.id, r.tenant_id, r.name, r.asset_type, target;
         moved := moved + 1;
     END LOOP;
     RAISE NOTICE 'retype_assets_by_name: % retyped, % skipped', moved, skipped;

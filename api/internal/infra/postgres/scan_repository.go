@@ -919,6 +919,8 @@ func (r *ScanRepository) buildWhereClause(filter scan.Filter) (string, []any) {
 	if filter.ExcludeAdHoc {
 		conditions = append(conditions, "ad_hoc = false")
 	}
+	// Archived one-off scans are never listed.
+	conditions = append(conditions, "archived_at IS NULL")
 
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex))
