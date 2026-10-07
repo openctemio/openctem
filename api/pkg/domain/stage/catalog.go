@@ -20,6 +20,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/openctemio/ctis/capability"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
@@ -127,6 +129,16 @@ type Stage struct {
 	// CrossCutting capabilities (verify.finding) are used by other flows,
 	// never as a workflow node.
 	CrossCutting bool `json:"cross_cutting,omitempty"`
+
+	// From the capability taxonomy (ctis/capability): the engagement phase
+	// and its CTEM stage, the MITRE ATT&CK techniques and D3FEND functions
+	// of the act, and the required-output rules a report is checked
+	// against.
+	Phase          string            `json:"phase,omitempty"`
+	CTEMStage      string            `json:"ctem_stage,omitempty"`
+	Attack         []string          `json:"attack,omitempty"`
+	D3FEND         []string          `json:"d3fend,omitempty"`
+	RequiredOutput []capability.Rule `json:"required_output,omitempty"`
 }
 
 // Fan-out caps (research/27 §5.6). The run cap stays the dispatch cap of a
@@ -358,6 +370,9 @@ func (s Stage) clone() Stage {
 	s.OutPorts = slices.Clone(s.OutPorts)
 	s.Params = slices.Clone(s.Params)
 	s.RequiredOutputFields = slices.Clone(s.RequiredOutputFields)
+	s.Attack = slices.Clone(s.Attack)
+	s.D3FEND = slices.Clone(s.D3FEND)
+	s.RequiredOutput = slices.Clone(s.RequiredOutput)
 	return s
 }
 
