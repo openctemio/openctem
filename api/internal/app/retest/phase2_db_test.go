@@ -153,17 +153,29 @@ func TestPhase2DB_RetestRegressionGetsFreshSLAAndIsAnnounced(t *testing.T) {
 	}
 }
 
-// A clean retest that resolves a finding is announced as a fix; an unknown one
-// is announced as nothing.
+// A confirmed fix that resolves a finding (tenant auto-resolve on) is
+// announced as a fix; an inconclusive retest, a bare non-match and a fix that
+// awaits a person are announced as nothing.
 func TestPhase2DB_RetestFixIsAnnouncedUnknownIsNot(t *testing.T) {
 	fx := newFixture(t)
 	svc := fx.service()
 	ann := &recordingAnnouncer{}
 	svc.SetAnnouncer(ann)
 
+	awaiting := fx.newFinding(fx.newAsset("await.example.com"), "confirmed", "tpl-await")
+	fx.exec(`UPDATE findings SET file_path = 'https://await.example.com/admin' WHERE id = $1`, awaiting.String())
+	rt0 := fx.request(svc, awaiting)
+	fx.finishAttempt(rt0.CheckCommandID, "not_detected", "https://await.example.com/admin", 404)
+	fx.finish(rt0.ReachCommandID, "detected", "")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt0.ReachCommandID)
+	if k := ann.kinds(); len(k) != 0 {
+		t.Fatalf("a fix awaiting confirmation was announced: %v", k)
+	}
+
+	fx.autoResolve(true)
 	fixed := fx.newFinding(fx.asset, "confirmed", "tpl-fixed")
 	rt := fx.request(svc, fixed)
-	fx.finish(rt.CheckCommandID, "not_detected", "")
+	fx.finishAttempt(rt.CheckCommandID, "not_detected", "https://shop.example.com/admin", 404)
 	fx.finish(rt.ReachCommandID, "detected", "")
 	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
 
@@ -204,11 +216,11 @@ func TestPhase2DB_ProofOfFixRetestsAFixAppliedFinding(t *testing.T) {
 	if rt.Trigger != retestdom.TriggerProofOfFix || rt.RequestedBy != nil {
 		t.Fatalf("retest = %+v, want a system proof_of_fix retest", rt)
 	}
-	fx.finish(rt.CheckCommandID, "not_detected", "")
+	fx.finishAttempt(rt.CheckCommandID, "not_detected", "https://shop.example.com/admin", 404)
 	fx.finish(rt.ReachCommandID, "detected", "")
 	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.CheckCommandID)
-	if status, method, by := fx.findingState(f); status != "resolved" || method != "retest_verified" || by != "" {
-		t.Fatalf("finding = %s/%s/%q, want resolved by the system", status, method, by)
+	if status, _, _ := fx.findingState(f); status != "validated_fixed" {
+		t.Fatalf("finding = %s, want validated_fixed (verified fixed, awaiting a person)", status)
 	}
 	if fallback.calls != 0 {
 		t.Errorf("a retestable finding also went to the fallback")

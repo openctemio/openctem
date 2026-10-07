@@ -2013,7 +2013,9 @@ func (s *TenantService) UpdateRetestSettings(
 		WithMetadata("interval_hours_before", before.IntervalHours).
 		WithMetadata("interval_hours_after", rs.IntervalHours).
 		WithMetadata("daily_cap_before", before.DailyCap).
-		WithMetadata("daily_cap_after", rs.DailyCap)
+		WithMetadata("daily_cap_after", rs.DailyCap).
+		WithMetadata("auto_resolve_before", before.AutoResolve).
+		WithMetadata("auto_resolve_after", rs.AutoResolve)
 	s.logAudit(ctx, actx, event)
 
 	out := t.TypedSettings().Retest

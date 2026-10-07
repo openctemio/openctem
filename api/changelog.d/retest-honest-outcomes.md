@@ -1,0 +1,7 @@
+### Behaviour change: a retest that does not match no longer resolves a finding by itself
+
+- Retest outcomes are now `confirmed_fixed`, `not_reproduced`, `still_vulnerable` and `inconclusive` with a `reason_code` (`unreachable`, `blocked`, `auth_changed`, `server_error`, `endpoint_mismatch`, `template_changed`, `no_result`, `error`). Migration 001197 renames earlier rows: `fixed` becomes `not_reproduced`, `still_present` `still_vulnerable`, `unknown` `inconclusive`; no finding status changes.
+- A confirmed fix needs the re-run's own evidence: a request to the finding's endpoint (its matched-at) that got an answer that is not a block, an auth failure or a server error, and the template the finding was last seen with. A plain "not detected" on a host that answers is `not_reproduced` and changes nothing.
+- A confirmed fix moves the finding to `validated_fixed` ("Verified fixed — awaiting confirmation") for a person with `findings:verify` to close. Set `auto_resolve: true` in `PUT /api/v1/organization/settings/retest` to resolve it directly (audited).
+- Each attempt's request and response are kept as masked finding evidence and shown under the retest ("View evidence"); retest reasons and announcements never carry URL parameter values or detected secrets.
+- **Upgrade note:** sensors report attempt evidence from sensor releases with nuclei `-ms` retests; until then nuclei retests read `not_reproduced` instead of fixed.

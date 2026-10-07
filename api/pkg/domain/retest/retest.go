@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -42,19 +43,61 @@ const (
 	StatusCompleted Status = "completed"
 )
 
-// Outcome is what a completed retest concluded.
+// Outcome is what a completed retest concluded (RFC-057 R2). A check that
+// did not match is not, by itself, proof of a fix.
 type Outcome string
 
 const (
-	// OutcomeFixed: the template no longer matched AND the target answered.
-	OutcomeFixed Outcome = "fixed"
-	// OutcomeStillPresent: the template matched again.
-	OutcomeStillPresent Outcome = "still_present"
-	// OutcomeUnknown: no conclusion — the target did not answer, the template
-	// is not installed on the sensor, the run failed or no result came back.
-	// A finding is never moved on unknown.
-	OutcomeUnknown Outcome = "unknown"
+	// OutcomeConfirmedFixed: the re-run requested the finding's own endpoint,
+	// an HTTP answer came back that is not a block, an auth failure or a
+	// server error, the check evaluated it and did not match, and the
+	// template is the one the finding was last seen with.
+	OutcomeConfirmedFixed Outcome = "confirmed_fixed"
+	// OutcomeNotReproduced: the check did not match, but nothing proves the
+	// endpoint was evaluated (no request evidence from the sensor). The
+	// finding does not move.
+	OutcomeNotReproduced Outcome = "not_reproduced"
+	// OutcomeStillVulnerable: the check matched again.
+	OutcomeStillVulnerable Outcome = "still_vulnerable"
+	// OutcomeInconclusive: no conclusion; ReasonCode says why. The finding
+	// does not move.
+	OutcomeInconclusive Outcome = "inconclusive"
 )
+
+// ReasonCode classifies a retest's outcome.
+type ReasonCode string
+
+const (
+	ReasonMatched          ReasonCode = "matched"
+	ReasonNotMatched       ReasonCode = "not_matched"
+	ReasonNoEndpointProof  ReasonCode = "no_endpoint_proof"
+	ReasonUnreachable      ReasonCode = "unreachable"
+	ReasonBlocked          ReasonCode = "blocked"
+	ReasonAuthChanged      ReasonCode = "auth_changed"
+	ReasonServerError      ReasonCode = "server_error"
+	ReasonEndpointMismatch ReasonCode = "endpoint_mismatch"
+	ReasonTemplateChanged  ReasonCode = "template_changed"
+	ReasonNoResult         ReasonCode = "no_result"
+	ReasonError            ReasonCode = "error"
+)
+
+// Verdict is a decided outcome with its reason code and a human reason.
+type Verdict struct {
+	Outcome Outcome
+	Code    ReasonCode
+	Reason  string
+}
+
+// inconclusive is a Verdict without a conclusion.
+func inconclusive(code ReasonCode, reason string) Verdict {
+	return Verdict{Outcome: OutcomeInconclusive, Code: code, Reason: reason}
+}
+
+// Inconclusive is an inconclusive Verdict (for the service's own failures).
+func Inconclusive(code ReasonCode, reason string) Verdict { return inconclusive(code, reason) }
+
+// Conclusive reports whether the outcome says something about the finding.
+func (o Outcome) Conclusive() bool { return o == OutcomeConfirmedFixed || o == OutcomeStillVulnerable }
 
 // ActorName is the audit actor of every status change a retest makes.
 const ActorName = "system: retest"
@@ -87,6 +130,7 @@ type Retest struct {
 	RequestedBy  *shared.ID
 	Status       Status
 	Outcome      Outcome
+	ReasonCode   ReasonCode
 	Reason       string
 	PriorStatus  vulnerability.FindingStatus
 	ResultStatus vulnerability.FindingStatus
@@ -115,6 +159,9 @@ type CheckResult struct {
 	// TemplateDigest is the sha256 of the template the re-run used
 	// (evidence.template_digest, sensor#134); "" when not reported.
 	TemplateDigest string
+	// Evidence is what the re-run reported it sent and received
+	// (evidence_items in the result), normalized but not masked.
+	Evidence []evidence.Item
 }
 
 const (
@@ -123,51 +170,54 @@ const (
 )
 
 // Decide combines the template re-run (check) and the reachability probe
-// (reach) into a retest outcome and a human reason.
+// (reach) into a verdict. matchedAt is the finding's recorded endpoint.
 //
-// The reachability probe is the guard against the false "fixed" a down host
-// produces: nuclei prints nothing and exits 0 when the target does not answer,
-// which the sensor reports as not_detected. "No match" only counts as fixed
-// when the same target was reachable.
-func Decide(check, reach CheckResult) (Outcome, string) {
+// A non-match counts as confirmed fixed only when the re-run's own evidence
+// proves it requested that endpoint and got an answer that is not a block,
+// an auth failure or a server error. Without request evidence a non-match on
+// a reachable target is "not reproduced" (nothing moves); without a reachable
+// target it is inconclusive. nuclei prints nothing and exits 0 when a host
+// does not answer, and a template run with the wrong input never requests the
+// endpoint, so a bare "not detected" proves nothing.
+func Decide(check, reach CheckResult, matchedAt string) Verdict {
 	if check.Missing {
-		return OutcomeUnknown, "no result from the template re-run"
+		return inconclusive(ReasonNoResult, "no result from the template re-run")
 	}
 	switch check.Outcome {
 	case checkDetected:
-		return OutcomeStillPresent, nonEmpty(check.Summary, "the detection template matched again")
+		return Verdict{Outcome: OutcomeStillVulnerable, Code: ReasonMatched,
+			Reason: nonEmpty(evidence.RedactText(check.Summary), "the detection template matched again")}
 	case checkNotDetected:
-		if reach.Missing {
-			return OutcomeUnknown, "template did not match, but the reachability probe returned no result"
+		reached := !reach.Missing && reach.Outcome == checkDetected
+		detail := "the reachability probe returned no result"
+		if !reach.Missing {
+			detail = nonEmpty(evidence.RedactText(reach.Summary), "the reachability probe did not connect")
 		}
-		if reach.Outcome == checkDetected {
-			return OutcomeFixed, "template did not match and the target answered"
-		}
-		return OutcomeUnknown, "target unreachable: " + nonEmpty(reach.Summary, "the reachability probe did not connect")
+		return decideNotMatched(AnalyzeAttempt(check.Evidence, matchedAt), matchedAt, reached, detail)
 	default:
-		return OutcomeUnknown, nonEmpty(check.Summary, "the template re-run was inconclusive")
+		return inconclusive(ReasonError, nonEmpty(evidence.RedactText(check.Summary), "the template re-run was inconclusive"))
 	}
 }
 
-// ApplyTemplateDrift turns a conclusive retest outcome into OutcomeUnknown
-// when the template content changed since the finding's last sighting
-// (research/18 O6, "template digest drift → inconclusive"): baseline is
-// the template digest recorded at that sighting, check the re-run. A
-// re-run that reports no digest, or a different one, proves nothing about
-// the finding: a tightened matcher reads as fixed, a widened one as still
+// ApplyTemplateDrift turns a conclusive verdict inconclusive when the
+// template content changed since the finding's last sighting (research/18
+// O6): baseline is the template digest recorded at that sighting, digest the
+// re-run's. A tightened matcher reads as fixed, a widened one as still
 // present. Without a baseline (sighted before provenance existed, or by
-// another tool) the outcome stands. Re-baselining is a new sighting.
-func ApplyTemplateDrift(outcome Outcome, reason, baseline string, check CheckResult) (Outcome, string) {
-	if baseline == "" || check.Missing || (outcome != OutcomeFixed && outcome != OutcomeStillPresent) {
-		return outcome, reason
+// another tool) the verdict stands. requireDigest says whether a re-run that
+// reported no digest counts as drift: always for a fix; for a match only on
+// the validate path (a tool verdict reports a digest only from newer sensors).
+func ApplyTemplateDrift(v Verdict, baseline, digest string, requireDigest bool) Verdict {
+	if baseline == "" || !v.Outcome.Conclusive() {
+		return v
 	}
 	switch {
-	case check.TemplateDigest == "":
-		return OutcomeUnknown, "inconclusive: the re-run reported no template digest, so it cannot be tied to the template recorded at the last sighting (" + shortDigest(baseline) + "); a new scan sighting re-baselines it"
-	case check.TemplateDigest != baseline:
-		return OutcomeUnknown, "inconclusive: the template changed since the last sighting (recorded " + shortDigest(baseline) + ", re-run " + shortDigest(check.TemplateDigest) + "); a new scan sighting re-baselines it"
+	case digest == "" && (requireDigest || v.Outcome == OutcomeConfirmedFixed):
+		return inconclusive(ReasonTemplateChanged, "the re-run reported no template digest, so it cannot be tied to the template recorded at the last sighting ("+shortDigest(baseline)+"); a new scan sighting re-baselines it")
+	case digest != "" && digest != baseline:
+		return inconclusive(ReasonTemplateChanged, "the template changed since the last sighting (recorded "+shortDigest(baseline)+", re-run "+shortDigest(digest)+"); a new scan sighting re-baselines it")
 	}
-	return outcome, reason
+	return v
 }
 
 // shortDigest is "sha256:" and the first 12 hex digits of d.
@@ -204,24 +254,32 @@ func EligibleStatuses() []string {
 	}
 }
 
-// NextStatus is the finding status a retest outcome leads to from status prior,
-// and whether it changes. Unknown never moves a finding; neither does an
-// ineligible status.
+// NextStatus is the finding status a retest outcome leads to from status
+// prior, and whether it changes. Only a conclusive outcome moves a finding,
+// and never one in an ineligible status.
 //
-//	fixed:          open / fix_applied / validated_fixed / not_observed → resolved; resolved stays
-//	still_present:  resolved → confirmed (regression); fix_applied → in_progress;
-//	                validated_fixed / not_observed → confirmed; open stays
-func NextStatus(prior vulnerability.FindingStatus, outcome Outcome) (vulnerability.FindingStatus, bool) {
+//	confirmed_fixed:  resolved stays; with autoResolve the rest → resolved;
+//	                  otherwise open / fix_applied / not_observed → validated_fixed
+//	                  ("verified fixed, awaiting confirmation"), validated_fixed stays
+//	still_vulnerable: resolved → confirmed (regression); fix_applied → in_progress;
+//	                  validated_fixed / not_observed → confirmed; open stays
+func NextStatus(prior vulnerability.FindingStatus, outcome Outcome, autoResolve bool) (vulnerability.FindingStatus, bool) {
 	if !EligibleStatus(prior) {
 		return prior, false
 	}
 	switch outcome {
-	case OutcomeFixed:
-		if prior == vulnerability.FindingStatusResolved {
+	case OutcomeConfirmedFixed:
+		switch {
+		case prior == vulnerability.FindingStatusResolved:
 			return prior, false
+		case autoResolve:
+			return vulnerability.FindingStatusResolved, true
+		case prior == vulnerability.FindingStatusValidatedFixed:
+			return prior, false
+		default:
+			return vulnerability.FindingStatusValidatedFixed, true
 		}
-		return vulnerability.FindingStatusResolved, true
-	case OutcomeStillPresent:
+	case OutcomeStillVulnerable:
 		switch prior {
 		case vulnerability.FindingStatusResolved, vulnerability.FindingStatusValidatedFixed,
 			vulnerability.FindingStatusNotObserved:
@@ -244,7 +302,7 @@ func IsRegression(prior, next vulnerability.FindingStatus) bool {
 
 // ResolutionNote is the resolution text a retest stamps on a finding it resolves.
 func ResolutionNote(templateID string) string {
-	return "retest: not detected (" + templateID + ")"
+	return "retest: confirmed fixed (" + templateID + ")"
 }
 
 func nonEmpty(s, fallback string) string {
@@ -267,6 +325,7 @@ type SettleInput struct {
 	RetestID   shared.ID
 	FindingID  shared.ID
 	Outcome    Outcome
+	ReasonCode ReasonCode
 	Reason     string
 	ResolvedBy *shared.ID // stamped when the finding is resolved
 	TemplateID string

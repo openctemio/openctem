@@ -88,7 +88,7 @@ storage is bounded; a sensor cannot close a finding with a bare verdict.
 
 | Part | Where |
 |---|---|
-| R1 origin target, void false fixes (migration 001175) | openctem#1307 |
+| R1 origin target, void false fixes (migration 001175) | openctem#1307 (merged) |
 | E1–E3 evidence store, masking, reveal, ingest of nuclei properties, viewer (migration 001196) | this PR series |
-| R2–R3 outcomes, policy, attempt evidence, labels | follow-up openctem PR |
+| R2–R3 outcomes, policy, attempt evidence, labels (migration 001197) | this PR series |
 | CTIS 1.6 `evidence_items`, SDK emitter and verdict evidence, nuclei raw evidence and `-ms` attempts | ctis, sdk-go, sensor (tool contract track, RFC-055) |
