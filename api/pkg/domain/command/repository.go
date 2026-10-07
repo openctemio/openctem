@@ -195,6 +195,28 @@ type StepBatchGate interface {
 	ClaimStepFinalization(ctx context.Context, stepRunID shared.ID) (bool, error)
 }
 
+// StepSensorShare is how many of one step's commands (its chunks) one
+// sensor holds or ran. A command no sensor holds yet counts under no sensor
+// (SensorID nil, Platform false); a platform job counts under Platform,
+// without the platform sensor's identity.
+type StepSensorShare struct {
+	StepKey    string
+	SensorID   *shared.ID
+	SensorName string
+	Platform   bool
+	Total      int
+	Queued     int // pending, not yet taken
+	Running    int // acknowledged or running
+	Completed  int
+	Failed     int // failed, expired or canceled
+}
+
+// StepShareReader is implemented by the command repository (asserted where
+// needed): how the commands of a run's steps are spread over sensors.
+type StepShareReader interface {
+	StepSensorShares(ctx context.Context, tenantID, runID shared.ID) ([]StepSensorShare, error)
+}
+
 // ExhaustedFailer fails the commands that were handed out max-dispatch times
 // and never finished (poison commands), and returns them, so the owning
 // pipeline run can be told which step died and why. FailExhaustedCommands
