@@ -33,6 +33,11 @@ import {
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { generateTempStepId, generateStepKey, isTempStepId } from '@/lib/utils'
+import { insertAdapterStep, type GraphValidation } from '@/features/pipelines/lib/capability-graph'
+import {
+  useCapabilityTable,
+  validatePipelineSteps,
+} from '@/features/pipelines/lib/use-capability-table'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -62,6 +67,11 @@ export default function PipelineBuilderPage({ params }: PageProps) {
   // Unsaved changes dialog
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
+
+  // The capability catalog (typed ports, adapters) and the API's graph check
+  // of the current draft
+  const { table: capabilityTable } = useCapabilityTable()
+  const [graphReport, setGraphReport] = useState<GraphValidation | null>(null)
 
   // Fetch tools for selection
   const { data: toolsData } = useToolsWithConfig({
@@ -103,6 +113,51 @@ export default function PipelineBuilderPage({ params }: PageProps) {
     }
     loadPipeline()
   }, [id])
+
+  // Check the draft graph with the API while editing (debounced). Best
+  // effort: the save validates again and is the authority.
+  useEffect(() => {
+    if (!pipeline || pipeline.is_system_template || localSteps.length === 0) {
+      setGraphReport(null)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      validatePipelineSteps(localSteps)
+        .then((report) => {
+          if (!cancelled) setGraphReport(report)
+        })
+        .catch(() => {
+          // A step-level problem (key, tool, settings) is reported on save.
+        })
+    }, 600)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [localSteps, pipeline])
+
+  const issuesByStep = useMemo(() => {
+    const out: Record<string, string[]> = {}
+    for (const e of graphReport?.errors ?? []) {
+      const key = e.node || e.to
+      if (!key || !e.message) continue
+      ;(out[key] ??= []).push(e.message)
+    }
+    return out
+  }, [graphReport])
+  const graphErrors = graphReport?.errors ?? []
+
+  // Insert the adapter step a refused connection needs
+  const handleInsertAdapter = useCallback(
+    (sourceId: string, targetId: string, capability: string) => {
+      setLocalSteps((prev) =>
+        insertAdapterStep(capabilityTable, prev, sourceId, targetId, capability)
+      )
+      setHasChanges(true)
+    },
+    [capabilityTable]
+  )
 
   // Handle navigation with unsaved changes
   const handleBack = useCallback(() => {
@@ -288,6 +343,9 @@ export default function PipelineBuilderPage({ params }: PageProps) {
       toast.success('Pipeline saved successfully')
     } catch (err) {
       console.error('Failed to save pipeline:', err)
+      // A refused graph comes back with every issue: show them on the steps.
+      const details = (err as { details?: unknown })?.details as GraphValidation | undefined
+      if (details && Array.isArray(details.errors)) setGraphReport({ ...details, valid: false })
       toast.error(getErrorMessage(err, 'Failed to save pipeline'))
     } finally {
       setIsSaving(false)
@@ -386,6 +444,16 @@ export default function PipelineBuilderPage({ params }: PageProps) {
                   {invalidSteps.length} step{invalidSteps.length > 1 ? 's' : ''} need scanner
                 </Badge>
               )}
+              {graphErrors.length > 0 && !isReadOnly && (
+                <Badge
+                  variant="outline"
+                  className="text-red-600 border-red-600 text-xs gap-1"
+                  title={graphErrors.map((e) => e.message).join('\n')}
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {graphErrors.length} workflow problem{graphErrors.length > 1 ? 's' : ''}
+                </Badge>
+              )}
               {hasChanges && !isReadOnly && (
                 <Badge variant="outline" className="text-yellow-600 border-yellow-600 text-xs">
                   Unsaved
@@ -395,7 +463,9 @@ export default function PipelineBuilderPage({ params }: PageProps) {
                 <Button
                   size="sm"
                   onClick={handleSave}
-                  disabled={!hasChanges || isSaving || hasValidationErrors}
+                  disabled={
+                    !hasChanges || isSaving || hasValidationErrors || graphErrors.length > 0
+                  }
                 >
                   {isSaving ? (
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />
@@ -424,6 +494,9 @@ export default function PipelineBuilderPage({ params }: PageProps) {
                 onEndPositionChange={handleEndPositionChange}
                 onNodeDelete={isReadOnly ? undefined : handleNodeDelete}
                 onAddNode={isReadOnly ? undefined : handleAddNode}
+                capabilityTable={capabilityTable}
+                issuesByStep={issuesByStep}
+                onInsertAdapter={isReadOnly ? undefined : handleInsertAdapter}
                 readOnly={isReadOnly}
               />
             </div>
