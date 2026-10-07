@@ -27,12 +27,21 @@ body byte range; the matcher name), `extracted[]`, `label`, `captured_at`,
 the tool's `content_sha256` and `sensitive[]` (spans the tool marked, by JSON
 pointer and byte range).
 
-Today the nuclei sensor sends its proof as finding properties (`request`,
-`response`, `curl_command`, `extracted_results`, `matcher_name`); ingest
-turns them into an `http_exchange` (raw HTTP parsed, the URL made absolute
-from the matched-at) and a `curl` item, and highlights the extracted values
-in the response body. A tool that sends `evidence_items` (CTIS 1.6) is read
-directly once the API pins that CTIS version.
+A tool sends its proof as CTIS 1.6 `finding.evidence_items` (any tool, the
+third-party tier included; the ctis importers fill them for nuclei, SARIF
+`webRequest`/`webResponse`, HAR and ZAP files). An unknown kind is kept with
+its fields as text. A tool that predates them sends finding properties
+(`request`, `response`, `curl_command`, `extracted_results`,
+`matcher_name`, the nuclei sensor before CTIS 1.6); ingest turns those into
+an `http_exchange` (raw HTTP parsed, the URL made absolute from the
+matched-at) and a `curl` item, and highlights the extracted values in the
+response body. When a finding carries both, `evidence_items` wins.
+
+nuclei masks `Authorization` and `Cookie` itself (`***`, no option turns it
+off): those values never reach the platform and are shown as the tool's mask,
+not as revealable placeholders. Everything else in the exchange (query and
+body parameters, `Set-Cookie`, custom key headers) arrives and is masked and
+kept for reveal by the platform.
 
 ## Pipeline (ingest, `internal/app/evidence`)
 
