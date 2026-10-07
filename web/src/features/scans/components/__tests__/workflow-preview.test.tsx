@@ -21,6 +21,24 @@ const base: WorkflowPreview = {
 }
 
 describe('WorkflowPreviewBody', () => {
+  it('says how many sensors share a chunked step, from the API', () => {
+    render(
+      <WorkflowPreviewBody
+        preview={{
+          ...base,
+          nodes: [{ ...base.nodes![0], chunk_size: 50, max_parallel_sensors: 2 }],
+        }}
+      />
+    )
+    expect(screen.getByTestId('preview-parallel').textContent).toContain('chunks of 50')
+    expect(screen.getByTestId('preview-parallel').textContent).toContain('up to 2 sensor(s)')
+  })
+
+  it('says nothing about chunks for a one-command step', () => {
+    render(<WorkflowPreviewBody preview={base} />)
+    expect(screen.queryByTestId('preview-parallel')).toBeNull()
+  })
+
   it('shows each step with its capability, tier, tool and sensors', () => {
     render(<WorkflowPreviewBody preview={base} />)
     expect(screen.getByText('Every step can run.')).toBeInTheDocument()
