@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
@@ -701,6 +702,10 @@ type TriggerWorkflowInput struct {
 	// IdempotencyKey identifies the event: a second trigger with the same
 	// key for the same workflow returns workflowdom.ErrRunDuplicate.
 	IdempotencyKey string
+	// SubjectCooldown refuses the run (workflowdom.ErrRunCooldown) when the
+	// workflow already ran for this subject and trigger type within
+	// SubjectCooldown (loop_guard.go).
+	SubjectCooldown bool
 }
 
 // TriggerWorkflow triggers a workflow execution.
@@ -719,6 +724,19 @@ func (s *WorkflowService) TriggerWorkflow(ctx context.Context, input TriggerWork
 	// Check if workflow is active
 	if !w.IsActive {
 		return nil, shared.NewDomainError("WORKFLOW_INACTIVE", "workflow is not active", shared.ErrValidation)
+	}
+
+	if input.SubjectCooldown && input.SubjectID != nil {
+		if recent, ok := s.runRepo.(workflowdom.RecentSubjectRunChecker); ok {
+			found, err := recent.HasRecentSubjectRun(ctx, input.TenantID, input.WorkflowID, *input.SubjectID,
+				input.TriggerType, time.Now().Add(-SubjectCooldown))
+			if err != nil {
+				return nil, fmt.Errorf("check the subject cooldown: %w", err)
+			}
+			if found {
+				return nil, workflowdom.ErrRunCooldown
+			}
+		}
 	}
 
 	// Create run

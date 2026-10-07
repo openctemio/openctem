@@ -226,9 +226,22 @@ func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run
 	if run.ScanID != nil {
 		data["scan"].(map[string]any)["scan_id"] = run.ScanID.String()
 	}
+	// A scan an automation started carries the automation's cause in its run
+	// context: "scan finished => run the scan" must not loop.
+	var cause *AutomationCause
+	if c, ok := automationCauseFromData(run.Context); ok {
+		cause = &c
+		data = withCause(data, cause)
+	}
 	triggered := 0
 	for _, wf := range workflows {
 		if wf.TenantID != run.TenantID {
+			continue
+		}
+		if cfg, _ := triggerConfigFor(wf, workflowdom.TriggerTypeScanCompleted); loopBlocked(wf, cause, cfg) != "" {
+			d.logger.Warn("automation not started: loop guard",
+				"workflow_id", wf.ID, "workflow_name", wf.Name, "scan_run_id", run.ID,
+				"reason", loopBlocked(wf, cause, cfg))
 			continue
 		}
 		if _, ok := triggerConfigFor(wf, workflowdom.TriggerTypeScanCompleted); !ok {
