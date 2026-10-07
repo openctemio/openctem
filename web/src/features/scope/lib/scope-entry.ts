@@ -62,7 +62,16 @@ export function wildcardApex(pattern: string): string {
 export function coversText(e: { pattern?: string; covers?: string; target_type?: string }): string {
   const pattern = (e.pattern ?? '').trim()
   const apex = wildcardApex(pattern)
-  const covers = e.covers || (apex ? 'domain_and_subdomains' : '')
+  const kind = e.target_type ?? ''
+  const covers =
+    e.covers ||
+    (apex
+      ? 'domain_and_subdomains'
+      : kind === 'domain' || kind === 'subdomain'
+        ? 'name'
+        : kind === 'ip_address' || kind === 'ip_range' || kind === 'cidr'
+          ? 'addresses'
+          : '')
   switch (covers) {
     case 'domain_and_subdomains':
       return apex ? `${apex} and every name below it` : 'The domain and every name below it'
