@@ -1510,7 +1510,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// organization enabled them (default off).
 		command.WithOptInPolicy(s.Tenant),
 		// RFC-052 §5: each sensor's grant, before every other gate.
-		command.WithGrants(repos.SensorGrant, s.Sensor)}
+		command.WithGrants(repos.SensorGrant, s.Sensor),
+		// RFC-055 §6.3: the tier is assigned from the tool contract.
+		command.WithToolContracts(repos.Sensor)}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
