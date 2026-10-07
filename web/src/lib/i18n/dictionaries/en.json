@@ -439,5 +439,7 @@
   "criticality.low": "Low",
   "criticality.none": "Not rated",
   "findings.hideInformational": "Hide informational",
-  "findings.hideInformational.hint": "Hide info findings from the list. Saved on this browser."
+  "findings.hideInformational.hint": "Hide info findings from the list. Saved on this browser.",
+  "assets.properties.title": "Properties",
+  "assets.properties.other": "Other"
 }
