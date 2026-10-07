@@ -48,13 +48,13 @@ export function approveBlocker(
 ): string | null {
   if (c.kind === 'entry') {
     if (!perms.entries) return 'Only a scope approver can approve scope entries.'
-    if (c.item.created_by === userId) return 'You requested this; another approver must approve it.'
+    if (c.item.created_by?.id === userId) return 'You requested this; another approver must approve it.'
     if (!canApproveEntry(c.item, userId))
       return 'You already approved this; it waits for another approver.'
     return null
   }
   if (!perms.exclusions) return 'Only an exclusion approver can approve exclusions.'
-  if (c.item.created_by === userId) return 'You requested this; another approver must approve it.'
+  if (c.item.created_by?.id === userId) return 'You requested this; another approver must approve it.'
   return null
 }
 
@@ -243,7 +243,7 @@ export function ScopeApprovals() {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={busy || e.created_by === user?.id}
+                        disabled={busy || e.created_by?.id === user?.id}
                         onClick={() => void decide([c], false)}
                       >
                         <X className="h-4 w-4" />
@@ -263,7 +263,7 @@ export function ScopeApprovals() {
                   // Without the approve permission there is nothing to click:
                   // say where it stands instead of showing dead buttons.
                   <p className="shrink-0 text-xs text-muted-foreground sm:max-w-56 sm:text-end">
-                    {e.created_by === user?.id
+                    {e.created_by?.id === user?.id
                       ? 'You asked for this. It waits for an approver.'
                       : 'Waiting for an approver.'}
                   </p>
