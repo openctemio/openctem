@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -1147,9 +1148,13 @@ type ScopeCoverage interface {
 // SetDryRun wires POST /scope/check (RFC-054 §6.4).
 func (h *ScopeHandler) SetDryRun(r ScopeDryRunner, c ScopeCoverage) { h.dryRun, h.coverage = r, c }
 
-// CheckScopeRequest asks what the gate would do with each target.
+// CheckScopeRequest asks what the gate would do with each target and
+// inventory asset (at least one, at most 200 together).
 type CheckScopeRequest struct {
-	Targets []string `json:"targets" validate:"required,min=1,max=200,dive,required,max=500"`
+	Targets []string `json:"targets" validate:"omitempty,max=200,dive,min=1,max=500"`
+	// AssetIDs are inventory assets, checked by their name as a scan of them
+	// would be. An id the caller may not see answers out_of_data_scope.
+	AssetIDs []string `json:"asset_ids" validate:"omitempty,max=200,dive,uuid"`
 	// SensorPreference: auto (default), tenant or platform.
 	SensorPreference string `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	// Tier: 0 passive, 1 safe active (default), 2 intrusive.
@@ -1174,7 +1179,11 @@ type ScopeCheckZone struct {
 
 // ScopeCheckResult is the gate's answer for one target.
 type ScopeCheckResult struct {
-	Target  string            `json:"target"`
+	// Target is the typed target or the asset's name; for an asset the
+	// caller may not see, its id.
+	Target string `json:"target"`
+	// AssetID is set for an asset_ids entry.
+	AssetID string            `json:"asset_id,omitempty"`
 	Allowed bool              `json:"allowed"`
 	Via     *ScopeCheckVia    `json:"via,omitempty"`
 	Zone    *ScopeCheckZone   `json:"zone,omitempty"`
@@ -1191,7 +1200,7 @@ type CheckScopeResponse struct {
 
 // CheckScope handles POST /api/v1/scope/check
 // @Summary      Dry run of the active-probe gate
-// @Description  For each target, what a scan by the caller would do now (RFC-054 §6.4): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. At most 200 targets.
+// @Description  For each target and inventory asset, what a scan by the caller would do now (RFC-054 §6.4): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. An asset is checked by its name; one outside the caller's data scope, or not the organization's, answers out_of_data_scope with its id only. At most 200 targets and assets together.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -1213,6 +1222,19 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		h.handleValidationError(w, err)
 		return
 	}
+	if n := len(req.Targets) + len(req.AssetIDs); n == 0 || n > scansvc.MaxDryRunTargets {
+		apierror.BadRequest(fmt.Sprintf("send 1 to %d targets and asset_ids together", scansvc.MaxDryRunTargets)).WriteJSON(w)
+		return
+	}
+	assetIDs := make([]shared.ID, 0, len(req.AssetIDs))
+	for _, raw := range req.AssetIDs {
+		id, err := shared.IDFromString(raw)
+		if err != nil {
+			apierror.BadRequest("asset_ids must be UUIDs").WriteJSON(w)
+			return
+		}
+		assetIDs = append(assetIDs, id)
+	}
 	if h.dryRun == nil || h.coverage == nil {
 		apierror.InternalServerError("the scope check is not available").WriteJSON(w)
 		return
@@ -1226,7 +1248,7 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 	if req.Tier != nil {
 		tier = *req.Tier
 	}
-	results, err := h.dryRun.DryRunTargets(ctx, scansvc.DryRunInput{TenantID: tid, Targets: req.Targets, SensorPreference: req.SensorPreference, Tier: tier})
+	results, err := h.dryRun.DryRunTargets(ctx, scansvc.DryRunInput{TenantID: tid, Targets: req.Targets, AssetIDs: assetIDs, SensorPreference: req.SensorPreference, Tier: tier})
 	if err != nil {
 		h.handleServiceError(w, "Scope check", err)
 		return
@@ -1254,7 +1276,7 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 	has := func(p string) bool { return middleware.HasPermission(ctx, p) }
 	out := CheckScopeResponse{Results: make([]ScopeCheckResult, 0, len(results))}
 	for _, res := range results {
-		item := ScopeCheckResult{Target: res.Target, Allowed: res.Allowed}
+		item := ScopeCheckResult{Target: res.Target, AssetID: res.AssetID, Allowed: res.Allowed}
 		if res.Allowed {
 			if v, ok := cover[res.Target]; ok {
 				item.Via = &ScopeCheckVia{Kind: v.Kind, ID: v.ID, Pattern: v.Pattern, Proof: v.Proof}

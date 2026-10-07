@@ -25283,7 +25283,7 @@ export interface paths {
     put?: never
     /**
      * Dry run of the active-probe gate
-     * @description For each target, what a scan by the caller would do now (RFC-054 §6.4): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. At most 200 targets.
+     * @description For each target and inventory asset, what a scan by the caller would do now (RFC-054 §6.4): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. An asset is checked by its name; one outside the caller's data scope, or not the organization's, answers out_of_data_scope with its id only. At most 200 targets and assets together.
      */
     post: {
       parameters: {
@@ -39545,11 +39545,16 @@ export interface components {
     }
     'internal_infra_http_handler.CheckScopeRequest': {
       /**
+       * @description AssetIDs are inventory assets, checked by their name as a scan of them
+       *     would be. An id the caller may not see answers out_of_data_scope.
+       */
+      asset_ids?: string[]
+      /**
        * @description SensorPreference: auto (default), tenant or platform.
        * @enum {string}
        */
       sensor_preference?: 'auto' | 'tenant' | 'platform'
-      targets: string[]
+      targets?: string[]
       /** @description Tier: 0 passive, 1 safe active (default), 2 intrusive. */
       tier?: number
     }
@@ -42626,10 +42631,16 @@ export interface components {
     }
     'internal_infra_http_handler.ScopeCheckResult': {
       allowed?: boolean
+      /** @description AssetID is set for an asset_ids entry. */
+      asset_id?: string
       code?: string
       fixes?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scope.Fix'][]
       message?: string
       rule?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scope.RuleRef']
+      /**
+       * @description Target is the typed target or the asset's name; for an asset the
+       *     caller may not see, its id.
+       */
       target?: string
       via?: components['schemas']['internal_infra_http_handler.ScopeCheckVia']
       zone?: components['schemas']['internal_infra_http_handler.ScopeCheckZone']
