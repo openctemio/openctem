@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/command'
 import { X, Check } from 'lucide-react'
 import { FilterButton } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
+import { propertyDefinition, propertyLabel } from '@/features/asset-types/lib/property-schema'
 import type { AssetType } from '../types'
 
 interface PropertyFacet {
@@ -23,6 +25,11 @@ interface PropertyFacet {
   Label: string
   Values: string[]
   Count: number
+}
+
+/** A facet's label: the property schema's, in the viewer's language. */
+function facetLabel(facet: PropertyFacet, locale: string): string {
+  return propertyDefinition(facet.Key) ? propertyLabel(facet.Key, locale) : facet.Label
 }
 
 interface PropertyFilterProps {
@@ -48,6 +55,7 @@ export function PropertyFilter({
   filtered: _filtered,
   total: _total,
 }: PropertyFilterProps) {
+  const { locale } = useTranslation()
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<'key' | 'value'>('key')
   const [selectedKey, setSelectedKey] = useState<string>('')
@@ -119,7 +127,7 @@ export function PropertyFilter({
                       onSelect={() => handleSelectKey(facet)}
                       className="flex items-center justify-between"
                     >
-                      <span>{facet.Label}</span>
+                      <span>{facetLabel(facet, locale)}</span>
                       <span className="text-xs text-muted-foreground">{facet.Count}</span>
                     </CommandItem>
                   ))}
@@ -128,10 +136,14 @@ export function PropertyFilter({
             </Command>
           ) : (
             <Command>
-              <CommandInput placeholder={`Search ${selectedFacet?.Label ?? ''}...`} />
+              <CommandInput
+                placeholder={`Search ${selectedFacet ? facetLabel(selectedFacet, locale) : ''}...`}
+              />
               <CommandList>
                 <CommandEmpty>No values found</CommandEmpty>
-                <CommandGroup heading={selectedFacet?.Label ?? selectedKey}>
+                <CommandGroup
+                  heading={selectedFacet ? facetLabel(selectedFacet, locale) : selectedKey}
+                >
                   <CommandItem
                     value="__back__"
                     onSelect={() => setStep('key')}
@@ -176,6 +188,7 @@ export function PropertyFilterChips({
   filtered?: number
   total?: number
 }) {
+  const { locale } = useTranslation()
   const activeFilters = Object.entries(value)
   if (activeFilters.length === 0) return null
 
@@ -198,7 +211,9 @@ export function PropertyFilterChips({
       {activeFilters.flatMap(([key, vals]) =>
         vals.map((val) => (
           <Badge key={`${key}:${val}`} variant="secondary" className="gap-1 text-xs h-7 ps-2 pe-1">
-            <span className="text-muted-foreground">{facetLabels?.[key] || key}:</span>
+            <span className="text-muted-foreground">
+              {facetLabels?.[key] || propertyLabel(key, locale)}:
+            </span>
             <span className="font-medium truncate max-w-[150px]">{val}</span>
             <button
               type="button"

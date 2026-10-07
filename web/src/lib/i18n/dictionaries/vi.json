@@ -509,5 +509,20 @@
   "actor.system.system": "OpenCTEM (tự động)",
   "actor.former": "Cựu thành viên",
   "actor.member": "Một thành viên",
-  "nav.item.scope": "Phạm vi"
+  "nav.item.scope": "Phạm vi",
+  "severity.critical": "Nghiêm trọng",
+  "severity.high": "Cao",
+  "severity.medium": "Trung bình",
+  "severity.low": "Thấp",
+  "severity.info": "Thông tin",
+  "severity.informational": "Thông tin",
+  "criticality.critical": "Trọng yếu",
+  "criticality.high": "Cao",
+  "criticality.medium": "Trung bình",
+  "criticality.low": "Thấp",
+  "criticality.none": "Chưa đánh giá",
+  "findings.hideInformational": "Ẩn mức thông tin",
+  "findings.hideInformational.hint": "Ẩn các phát hiện mức thông tin khỏi danh sách. Lưu trên trình duyệt này.",
+  "assets.properties.title": "Thuộc tính",
+  "assets.properties.other": "Khác"
 }

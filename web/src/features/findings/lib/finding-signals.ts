@@ -10,6 +10,7 @@
 
 import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
 import type { FindingDetail } from '../types'
+import { CRITICALITY_LABELS } from '@/lib/criticality'
 
 /** `raises` makes the finding more urgent; `lowers` less; `neutral` is context. */
 export type SignalEffect = 'raises' | 'lowers' | 'neutral'
@@ -127,15 +128,13 @@ export function riskSignals(f: SignalInput): RiskSignal[] {
   }
 
   // --- Business impact ----------------------------------------------------
-  if (asset?.criticality && asset.criticality !== 'info') {
+  // Not rated (none) is not a signal.
+  if (asset?.criticality && asset.criticality !== 'none') {
     const c = asset.criticality
     out.push({
       key: 'criticality',
       group: 'impact',
-      label:
-        c === 'critical'
-          ? 'Critical asset'
-          : `${c.charAt(0).toUpperCase()}${c.slice(1)}-criticality asset`,
+      label: c === 'critical' ? 'Critical asset' : `${CRITICALITY_LABELS[c]}-criticality asset`,
       effect: c === 'critical' || c === 'high' ? 'raises' : 'neutral',
     })
   }

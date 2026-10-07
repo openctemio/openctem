@@ -3,8 +3,10 @@ package ingest
 // Typed edges from a report's related_assets (research/22 E5,
 // research/27 §5.1). CTIS links assets by report-local id without a type;
 // ingest turns a link into a relationship only for the pairs it knows the
-// meaning of, today one: an HTTP service and the TLS certificate it served
-// (serves_certificate). Every other link is ignored, never guessed.
+// meaning of: an HTTP service and the TLS certificate it served
+// (serves_certificate), and a domain, host or address and the port service
+// a misplaced port was routed to (exposes, misplaced_props.go). Every other
+// link is ignored, never guessed.
 
 import (
 	"context"
@@ -25,14 +27,22 @@ const maxRelatedPerAsset = 100
 // relatedRelType is the relationship a related_assets link from src to dst
 // stands for, or "" when ingest does not know one.
 func relatedRelType(src, dst ctis.AssetType) asset.RelationshipType {
-	if dst != ctis.AssetTypeCertificate {
-		return ""
-	}
-	switch src {
-	case ctis.AssetTypeHTTPService, ctis.AssetTypeService:
+	switch {
+	case dst == ctis.AssetTypeCertificate && (src == ctis.AssetTypeHTTPService || src == ctis.AssetTypeService):
 		return asset.RelTypeServesCertificate
+	case dst == ctis.AssetTypeOpenPort && (src == ctis.AssetTypeDomain || src == ctis.AssetTypeSubdomain ||
+		src == ctis.AssetTypeHost || src == ctis.AssetTypeIPAddress):
+		return asset.RelTypeExposes
 	}
 	return ""
+}
+
+// relatedDescription describes one related_assets edge.
+func relatedDescription(relType asset.RelationshipType, src, dst *ctis.Asset) string {
+	if relType == asset.RelTypeExposes {
+		return fmt.Sprintf("%s exposes %s", shortName(getAssetName(src)), shortName(getAssetName(dst)))
+	}
+	return fmt.Sprintf("%s presented this certificate in its TLS handshake", shortName(getAssetName(src)))
 }
 
 // relatedAssetRelationships builds the typed relationships of a report's
@@ -83,7 +93,7 @@ func relatedAssetRelationships(tenantID shared.ID, report *ctis.Report, assetMap
 				continue
 			}
 			seen[[2]shared.ID{srcID, dstID}] = true
-			rel.SetDescription(fmt.Sprintf("%s presented this certificate in its TLS handshake", shortName(getAssetName(src))))
+			rel.SetDescription(relatedDescription(relType, src, dst))
 			_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)
 			rels = append(rels, rel)
 		}

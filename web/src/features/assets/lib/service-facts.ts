@@ -1,5 +1,10 @@
 import type { Asset } from '../types'
 import { CERT_EXPIRING_DAYS, type CertStatus } from './certificate-facts'
+import {
+  IP_ADDRESSES_KEY,
+  propertyDefinition,
+  propertyStrings,
+} from '@/features/asset-types/lib/property-schema'
 
 /**
  * Read the facts scanners store on external-surface assets (web services,
@@ -179,8 +184,9 @@ export function parseTechnology(raw: string): Technology {
 export function technologies(asset: Pick<Asset, 'metadata'>): Technology[] | null {
   const m = meta(asset)
   if ('technologies' in m) return uniq(strList(m.technologies)).map(parseTechnology)
-  // Legacy manual form key. An empty string there means nobody entered any.
-  const legacy = strList(m.technology)
+  // A synonym an older row still holds (the manual form's `technology`). An
+  // empty string there means nobody entered any.
+  const legacy = (propertyDefinition('technologies')?.synonyms ?? []).flatMap((k) => strList(m[k]))
   return legacy.length > 0 ? uniq(legacy).map(parseTechnology) : null
 }
 
@@ -273,24 +279,14 @@ export function dnsRecordTypes(asset: Pick<Asset, 'metadata'>): string[] {
 
 /**
  * Every IP address the asset is known to resolve to or be served from:
- * httpx `ip`, host `ip_addresses`, subfinder/dnsx `resolved_ips`, A/AAAA
- * records, and the legacy flat keys.
+ * `ip_addresses` and the synonyms an older row still holds (the property
+ * schema, RFC-042 §6.3.9), and the A/AAAA records.
  */
 export function ipAddresses(asset: Pick<Asset, 'metadata'>): string[] {
-  const m = meta(asset)
   const fromDns = dnsRecords(asset)
     .filter((r) => r.type === 'A' || r.type === 'AAAA')
     .map((r) => r.value)
-  return uniq([
-    ...strList(m.ip),
-    ...strList(m.ip_addresses),
-    ...strList(m.resolved_ips),
-    ...strList(m.resolved_ip),
-    // The external-surface form writes a flat string; ingest writes a map
-    // under the same key (handled by strList returning [] for a map).
-    ...(typeof m.ip_address === 'string' ? strList(m.ip_address) : []),
-    ...fromDns,
-  ])
+  return uniq([...propertyStrings(meta(asset), IP_ADDRESSES_KEY), ...fromDns])
 }
 
 /** CNAME targets: dnsx records, the flat `cname_target`, httpx `cname`. */
