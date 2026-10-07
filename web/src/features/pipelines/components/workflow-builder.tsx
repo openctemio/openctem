@@ -79,6 +79,8 @@ export interface WorkflowBuilderProps {
   issuesByStep?: Record<string, string[]>
   // Insert the adapter capability between two steps that cannot be wired
   onInsertAdapter?: (sourceId: string, targetId: string, capability: string) => void
+  // The selected step (for its settings panel), null when none
+  onSelectionChange?: (stepId: string | null) => void
   readOnly?: boolean
   className?: string
 }
@@ -289,6 +291,7 @@ function WorkflowBuilderInner({
   capabilityTable = EMPTY_TABLE,
   issuesByStep,
   onInsertAdapter,
+  onSelectionChange,
   readOnly = false,
   className,
 }: WorkflowBuilderProps) {
@@ -688,18 +691,23 @@ function WorkflowBuilderInner({
   )
 
   // Handle node selection (just for highlighting)
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    // Don't select start/end nodes
-    if (node.id === START_NODE_ID || node.id === END_NODE_ID) {
-      return
-    }
-    setSelectedNodeId(node.id)
-  }, [])
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      // Don't select start/end nodes
+      if (node.id === START_NODE_ID || node.id === END_NODE_ID) {
+        return
+      }
+      setSelectedNodeId(node.id)
+      onSelectionChange?.(node.id)
+    },
+    [onSelectionChange]
+  )
 
   // Handle canvas click (deselect)
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null)
-  }, [])
+    onSelectionChange?.(null)
+  }, [onSelectionChange])
 
   // Handle drag over (allow drop)
   const onDragOver = useCallback((event: React.DragEvent) => {

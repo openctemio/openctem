@@ -16,6 +16,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from '@/components/charts'
+import { ACTIONABLE_SEVERITIES, SEVERITY_LABELS } from '@/lib/severity'
 
 function formatHours(hours: number): string {
   if (hours < 1) return `${Math.round(hours * 60)}m`
@@ -29,21 +30,19 @@ export function MTTRCard() {
 
   if (!mttr) return null
 
+  // MTTR is a remediation metric: informational findings carry no SLA and no
+  // remediation target, so the card covers the actionable severities only.
   const criticalMTTR = mttr.critical ?? 0
   const highMTTR = mttr.high ?? 0
-  const mediumMTTR = mttr.medium ?? 0
-  const lowMTTR = mttr.low ?? 0
+  const reported = ACTIONABLE_SEVERITIES.filter((s) => typeof mttr[s] === 'number')
   const avgAll =
-    Object.values(mttr).length > 0
-      ? Object.values(mttr).reduce((sum, v) => sum + v, 0) / Object.values(mttr).length
-      : 0
+    reported.length > 0 ? reported.reduce((sum, s) => sum + (mttr[s] ?? 0), 0) / reported.length : 0
 
-  const chartData = [
-    { severity: 'Critical', hours: Math.round(criticalMTTR), fill: SEVERITY_CHART_COLORS.critical },
-    { severity: 'High', hours: Math.round(highMTTR), fill: SEVERITY_CHART_COLORS.high },
-    { severity: 'Medium', hours: Math.round(mediumMTTR), fill: SEVERITY_CHART_COLORS.medium },
-    { severity: 'Low', hours: Math.round(lowMTTR), fill: SEVERITY_CHART_COLORS.low },
-  ].filter((d) => d.hours > 0)
+  const chartData = ACTIONABLE_SEVERITIES.map((s) => ({
+    severity: SEVERITY_LABELS[s],
+    hours: Math.round(mttr[s] ?? 0),
+    fill: SEVERITY_CHART_COLORS[s],
+  })).filter((d) => d.hours > 0)
 
   return (
     <Card>

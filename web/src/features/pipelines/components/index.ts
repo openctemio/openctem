@@ -14,6 +14,6 @@ export {
   type AvailableTool,
 } from './workflow-builder'
 export { NodePalette } from './node-palette'
-export { StepEditPanel } from './step-edit-panel'
+export { NodeInspector } from './node-inspector'
 export { PipelineForm } from './pipeline-form'
 export { VisualBuilderDialog } from './visual-builder-dialog'

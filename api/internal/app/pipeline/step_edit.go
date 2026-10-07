@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // Editing a pipeline's steps.
@@ -40,6 +41,7 @@ type AddStepInput struct {
 	UIPositionY       *float64            `json:"ui_position_y"`
 	Tool              string              `json:"tool" validate:"max=100"`
 	Capabilities      []string            `json:"capabilities" validate:"omitempty,max=10"`
+	PreferTools       []string            `json:"prefer_tools" validate:"omitempty,max=5"`
 	Config            map[string]any      `json:"config"`
 	TimeoutSeconds    int                 `json:"timeout_seconds"`
 	DependsOn         []string            `json:"depends_on"`
@@ -122,7 +124,51 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 	if input.MaxRetries > 0 {
 		step.SetRetry(input.MaxRetries, input.RetryDelaySeconds)
 	}
+	step.PreferTools = normalizeToolList(input.PreferTools)
+	if err := checkStepSelection(step); err != nil {
+		return nil, err
+	}
 	return step, nil
+}
+
+// normalizeToolList lowercases and de-duplicates tool names, in order.
+func normalizeToolList(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, t := range in {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t != "" && !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// checkStepSelection checks how a step picks its tool and its settings
+// against its capability contract: a pinned tool or a prefer list, not both;
+// every preferred tool implements the capability; the standard params have
+// the contract's types and bounds; tool settings need a pinned tool. A step
+// the catalog cannot place (a tenant tool) keeps its settings as they are.
+func checkStepSelection(step *pipeline.Step) error {
+	if step.Tool != "" && len(step.PreferTools) > 0 {
+		return fmt.Errorf("%w: a step pins a tool or lists tools to prefer, not both", shared.ErrValidation)
+	}
+	st, ok := stage.ForStep(step.Tool, step.Capabilities)
+	if !ok {
+		if len(step.PreferTools) > 0 {
+			return fmt.Errorf("%w: step '%s': tools to prefer need a catalog capability", shared.ErrValidation, step.StepKey)
+		}
+		return nil
+	}
+	for _, t := range step.PreferTools {
+		if !st.Implements(t) {
+			return fmt.Errorf("%w: step '%s': %s does not implement %s (it can run on %s)",
+				shared.ErrValidation, step.StepKey, t, st.Key, strings.Join(st.Tools(), ", "))
+		}
+	}
+	if err := stage.ValidateParams(st, step.Config, step.Tool); err != nil {
+		return fmt.Errorf("%w: step '%s': %w", shared.ErrValidation, step.StepKey, err)
+	}
+	return nil
 }
 
 // ValidateSteps validates step inputs without storing anything: each step
@@ -368,6 +414,9 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 				if err := applyStepUpdate(c, input); err != nil {
 					return nil, err
 				}
+				if err := checkStepSelection(c); err != nil {
+					return nil, err
+				}
 				updated = c
 				if err := validateStepsGraph(current); err != nil {
 					return nil, err
@@ -423,6 +472,9 @@ func applyStepUpdate(step *pipeline.Step, input AddStepInput) error {
 	}
 	if input.MaxRetries >= 0 {
 		step.SetRetry(input.MaxRetries, input.RetryDelaySeconds)
+	}
+	if input.PreferTools != nil {
+		step.PreferTools = normalizeToolList(input.PreferTools)
 	}
 	return nil
 }
