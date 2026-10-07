@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -37,6 +38,9 @@ type ReviewQuery struct {
 	MinConfidence int
 	// Search is a substring of the asset name.
 	Search string
+	// Reason keeps rows whose record was set by this rule
+	// (e.g. fqdn_under_asserted_root); "" = any.
+	Reason string
 	Limit  int
 	Offset int
 }
@@ -63,7 +67,19 @@ type ReviewItem struct {
 	InQueueAt  time.Time        `json:"in_queue_since"`
 	LastSeen   *time.Time       `json:"last_seen,omitempty"`
 	Evidence   []ReviewEvidence `json:"evidence"`
+	// CoveredBy is the caller's scope target, seed or verified domain that
+	// covers the name (RFC-054 §6.6); nil means confirming it widens scope,
+	// so the UI offers "add scope entry" first.
+	CoveredBy *scopeauth.Via `json:"covered_by"`
 }
+
+// ReviewCoverage names what covers each name (*ActiveGate).
+type ReviewCoverage interface {
+	CoverOf(ctx context.Context, tenantID shared.ID, targets []string) (map[string]scopeauth.Via, error)
+}
+
+// SetCoverage fills covered_by on queue items (nil: never filled).
+func (s *ReviewService) SetCoverage(c ReviewCoverage) { s.coverage = c }
 
 // ReviewPage is one page of the queue.
 type ReviewPage struct {
@@ -85,6 +101,7 @@ type ReviewService struct {
 	store     ReviewStore
 	dataScope *datascope.Enforcer
 	effects   *DecisionEffects
+	coverage  ReviewCoverage
 }
 
 // SetDecisionEffects runs reclassification and rejection hygiene after each
@@ -130,11 +147,32 @@ func (s *ReviewService) Queue(ctx context.Context, tenantID shared.ID, q ReviewQ
 	if q.Offset < 0 {
 		q.Offset = 0
 	}
+	if len(q.Reason) > 100 {
+		return nil, fmt.Errorf("%w: reason is too long", shared.ErrValidation)
+	}
 	scopeUser, err := s.scopeUser(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListForReview(ctx, tenantID, scopeUser, q)
+	page, err := s.store.ListForReview(ctx, tenantID, scopeUser, q)
+	if err != nil || s.coverage == nil || len(page.Items) == 0 {
+		return page, err
+	}
+	names := make([]string, 0, len(page.Items))
+	for _, it := range page.Items {
+		names = append(names, it.Name)
+	}
+	cover, err := s.coverage.CoverOf(ctx, tenantID, names)
+	if err != nil {
+		return nil, fmt.Errorf("review coverage: %w", err)
+	}
+	for i := range page.Items {
+		if v, ok := cover[page.Items[i].Name]; ok {
+			v := v
+			page.Items[i].CoveredBy = &v
+		}
+	}
+	return page, nil
 }
 
 // Decision is the outcome for one asset of a bulk decision.
