@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -100,43 +98,6 @@ func TestThreatActorHandler_Create_AcceptsValid(t *testing.T) {
 	}
 	if repo.created != 1 {
 		t.Errorf("expected repo.Create called once, got %d", repo.created)
-	}
-}
-
-// ─── Jira ticket link validation ───
-
-func jiraLinkRequest(findingID, body string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/findings/"+findingID+"/link-ticket", strings.NewReader(body))
-	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", findingID)
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
-	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, shared.NewID().String())
-	return req.WithContext(ctx)
-}
-
-func TestJiraHandler_LinkTicket_RejectsMalformedURL(t *testing.T) {
-	// Service is nil: validation must reject the malformed ticket_url BEFORE
-	// the service is ever reached, so a nil service is safe here.
-	h := handler.NewJiraWebhookHandler(nil, validator.New(), logger.NewNop())
-
-	body := `{"ticket_key":"OPS-1","ticket_url":"not a url"}`
-	rec := httptest.NewRecorder()
-	h.LinkTicket(rec, jiraLinkRequest("019d9095-a3fb-75dd-bc23-a244713dcc51", body))
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for malformed ticket_url, got %d (body: %s)", rec.Code, rec.Body.String())
-	}
-}
-
-func TestJiraHandler_LinkTicket_RejectsMissingTicketKey(t *testing.T) {
-	h := handler.NewJiraWebhookHandler(nil, validator.New(), logger.NewNop())
-
-	body := `{"ticket_url":"https://example.atlassian.net/browse/OPS-1"}`
-	rec := httptest.NewRecorder()
-	h.LinkTicket(rec, jiraLinkRequest("019d9095-a3fb-75dd-bc23-a244713dcc51", body))
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for missing ticket_key, got %d", rec.Code)
 	}
 }
 

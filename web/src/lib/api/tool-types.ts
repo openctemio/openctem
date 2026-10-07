@@ -298,7 +298,17 @@ export interface ToolAvailabilitySensor {
   /** Why the sensor may not run the tool although it has it. */
   excluded?: 'grant' | 'local_policy'
   excluded_detail?: string
+  /** The tool's trust on this sensor; absent when it reports no tool contract. */
+  trust?: ToolTrust
+  /** The tier the platform assigns a scan with the tool on this sensor. */
+  tier?: ToolTier
 }
+
+/** builtin: compiled into the sensor; unverified: installed by its operator (runs only as T2). */
+export type ToolTrust = 'builtin' | 'unverified'
+
+/** T0 passive, T1 active, T2 intrusive (RFC-055 §5). */
+export type ToolTier = 'T0' | 'T1' | 'T2'
 
 /** One tool's availability from the organization's sensors (include=availability). */
 export interface ToolAvailabilityInfo {
@@ -320,6 +330,10 @@ export interface ToolAvailabilityInfo {
   update_available: boolean
   content: { name: string; versions: string[] }[]
   last_reported_at?: string
+  /** The lowest trust among the sensors that can run the tool; absent when none reports a contract. */
+  trust?: ToolTrust
+  /** The highest tier the platform assigns a scan with the tool on those sensors. */
+  tier?: ToolTier
 }
 
 /** One tool of the availability view: a catalog tool or one only the sensors report. */

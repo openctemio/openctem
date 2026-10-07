@@ -232,3 +232,34 @@ func TestAcceptsTargetList(t *testing.T) {
 		}
 	}
 }
+
+// A workflow step is cut into chunks of its capability size only for a tool
+// that takes a target list; a one-target tool, an unknown tool and the code
+// capabilities stay one task.
+func TestChunkSizeFor(t *testing.T) {
+	cases := []struct {
+		key  Key
+		tool string
+		want int
+	}{
+		{ProbeHTTP, "httpx", 200},
+		{ProbeHTTP, " HTTPX ", 200},
+		{ResolveDNS, "dnsx", 200},
+		{ScanPorts, "naabu", 50},
+		{VulnTemplates, "nuclei", 25},
+		{CrawlWeb, "katana", 10},
+		{DASTWeb, "zap", 0}, // one target per task
+		{ProbeHTTP, "unknown-tool", 0},
+		{SecretsCode, "betterleaks", 0},
+		{ContainerImage, "trivy", 0},
+	}
+	for _, c := range cases {
+		s, ok := Lookup(c.key)
+		if !ok {
+			t.Fatalf("no stage %s", c.key)
+		}
+		if got := s.ChunkSizeFor(c.tool); got != c.want {
+			t.Errorf("%s/%s: ChunkSizeFor = %d, want %d", c.key, c.tool, got, c.want)
+		}
+	}
+}

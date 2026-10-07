@@ -122,6 +122,10 @@ type Stage struct {
 	OutPorts             []PortType `json:"out_ports"`
 	Params               []Param    `json:"params"`
 	RequiredOutputFields []string   `json:"required_output_fields"`
+	// ChunkSize is how many targets one task of a list-taking tool gets
+	// when a workflow step's targets are cut into chunks that any eligible
+	// sensor may claim (0: the step stays one task).
+	ChunkSize int `json:"chunk_size,omitempty"`
 	// CrossCutting capabilities (verify.finding) are used by other flows,
 	// never as a workflow node.
 	CrossCutting bool `json:"cross_cutting,omitempty"`

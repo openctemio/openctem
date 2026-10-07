@@ -14,6 +14,7 @@ import {
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
 import { toStringArray } from '@/features/assets/lib/property-utils'
+import { ipAddresses } from '@/features/assets/lib/service-facts'
 
 export const hostsConfig: AssetPageConfig = {
   type: 'host',
@@ -27,22 +28,13 @@ export const hostsConfig: AssetPageConfig = {
 
   columns: [
     {
-      // IP column: supports both legacy metadata.ip (string) and
-      // standardized metadata.ip_addresses (array).
-      accessorKey: 'metadata.ip',
+      // IP column: the host's addresses (ip_addresses and the synonyms an
+      // older row still holds), then its public/private cloud addresses.
+      accessorKey: 'metadata.ip_addresses',
       header: 'IP',
       cell: ({ row }) => {
         const meta = row.original.metadata as Record<string, unknown>
-        // Collect IPs from all possible sources
-        const ips: string[] = []
-        // Standard array format
-        if (Array.isArray(meta.ip_addresses)) {
-          ips.push(...(meta.ip_addresses as string[]))
-        }
-        // Legacy single IP
-        if (typeof meta.ip === 'string' && meta.ip && !ips.includes(meta.ip)) {
-          ips.push(meta.ip)
-        }
+        const ips = ipAddresses(row.original)
         // Extra IPs
         for (const key of ['public_ip', 'ipv6', 'private_ip']) {
           const v = meta[key]
@@ -274,9 +266,8 @@ export const hostsConfig: AssetPageConfig = {
   copyAction: {
     label: 'Copy IP',
     getValue: (asset: Asset) => {
-      const ips = (asset.metadata as Record<string, unknown>).ip_addresses as string[] | undefined
-      if (ips && ips.length > 0) return ips.join(', ')
-      return (asset.metadata.ip as string) || asset.name
+      const ips = ipAddresses(asset)
+      return ips.length > 0 ? ips.join(', ') : asset.name
     },
   },
 
@@ -304,15 +295,7 @@ export const hostsConfig: AssetPageConfig = {
         {
           label: 'IP Addresses',
           getValue: (asset: Asset) => {
-            // Support both standard ip_addresses array and legacy ip string
-            const ips: string[] = []
-            if (Array.isArray((asset.metadata as Record<string, unknown>).ip_addresses)) {
-              ips.push(...((asset.metadata as Record<string, unknown>).ip_addresses as string[]))
-            }
-            const legacyIp = asset.metadata.ip as string | undefined
-            if (legacyIp && !ips.includes(legacyIp)) {
-              ips.push(legacyIp)
-            }
+            const ips = ipAddresses(asset)
             if (ips.length === 0) return <span className="text-muted-foreground">-</span>
             return (
               <div className="space-y-1">
@@ -425,10 +408,7 @@ export const hostsConfig: AssetPageConfig = {
     { header: 'Name', accessor: (a: Asset) => a.name },
     {
       header: 'IP',
-      accessor: (a: Asset) => {
-        const m = a.metadata as Record<string, unknown>
-        return (m.ip as string) || ''
-      },
+      accessor: (a: Asset) => ipAddresses(a).join(';'),
     },
     {
       header: 'Hostname',
