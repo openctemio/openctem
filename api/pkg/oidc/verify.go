@@ -49,6 +49,10 @@ type TokenPolicy struct {
 	Leeway time.Duration
 	// ExpOptional allows a token without exp (an OIDC logout token).
 	ExpOptional bool
+	// IgnoreTimes skips the exp, nbf and iat checks against the clock; the
+	// signature, iss and aud are still checked. Only a diagnostic preview
+	// that never grants anything may set it.
+	IgnoreTimes bool
 }
 
 var errIncompletePolicy = errors.New("incomplete token policy")
@@ -74,6 +78,15 @@ func (c *Client) VerifyJWT(ctx context.Context, raw string, claims jwtv5.Claims,
 	}
 	if !p.ExpOptional {
 		opts = append(opts, jwtv5.WithExpirationRequired())
+	}
+	if p.IgnoreTimes {
+		// Judge the token at its own issue time: every other check (the
+		// signature, iss, aud, exp present) runs unchanged.
+		at, err := unverifiedIssuedAt(raw)
+		if err != nil {
+			return err
+		}
+		opts = append(opts, jwtv5.WithTimeFunc(func() time.Time { return at }))
 	}
 	if p.Issuer != "" {
 		opts = append(opts, jwtv5.WithIssuer(p.Issuer))
@@ -103,4 +116,19 @@ func (c *Client) VerifyJWT(ctx context.Context, raw string, claims jwtv5.Claims,
 	}
 	_, err := jwtv5.NewParser(opts...).ParseWithClaims(raw, claims, keyFunc)
 	return err
+}
+
+// unverifiedIssuedAt reads iat from a token without verifying it, to pick
+// the clock a preview verifies the token at. The signature is verified right
+// after, at that time.
+func unverifiedIssuedAt(raw string) (time.Time, error) {
+	claims := jwtv5.MapClaims{}
+	if _, _, err := jwtv5.NewParser().ParseUnverified(raw, claims); err != nil {
+		return time.Time{}, errors.New("token is not a readable JWT")
+	}
+	iat, err := claims.GetIssuedAt()
+	if err != nil || iat == nil {
+		return time.Time{}, errors.New("token: iat is missing")
+	}
+	return iat.Add(time.Second), nil
 }
