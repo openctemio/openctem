@@ -12,12 +12,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -424,16 +425,13 @@ func isNetworkTarget(target string) bool {
 }
 
 func hostOf(target string) string {
-	host := strings.TrimSpace(target)
-	if strings.Contains(host, "://") {
-		if u, err := url.Parse(host); err == nil {
-			return u.Hostname()
+	if strings.Contains(target, "/") && !strings.Contains(target, "://") {
+		// A CIDR stays a CIDR (inTargetScope reads it as a prefix).
+		if _, err := netip.ParsePrefix(strings.TrimSpace(target)); err == nil {
+			return strings.TrimSpace(target)
 		}
 	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		return h
-	}
-	return host
+	return asset.HostOf(target)
 }
 
 // inTargetScope reports whether target lies in one of cidrs or is one of

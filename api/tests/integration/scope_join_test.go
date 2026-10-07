@@ -77,6 +77,12 @@ func TestScopeJoin(t *testing.T) {
 	excluded := pending("excl.join-a.example", "subdomain")
 	tomb := pending("x.dead.join-a.example", "subdomain")
 	foreign := pending("api.join-b.example", "subdomain")
+	// A service follows its host, in every name form (stored host:port:proto,
+	// reported host:port/proto); an address's service only through an IP entry.
+	svcColon := pending("join-a.example:443:tcp", "service")
+	svcSlash := pending("api.join-a.example:8443/tcp", "service")
+	svcIPIn := pending("198.51.100.8:443:tcp", "service")
+	svcIPOut := pending("203.0.113.8:443:tcp", "service")
 	human := seedOwnedAsset(t, db, tenantA, "held.join-a.example", "subdomain")
 	decide(t, db, tenantA, human, attribution.StateNeedsReview)
 	// Tenant B's own pending name under tenant A's target.
@@ -90,19 +96,21 @@ func TestScopeJoin(t *testing.T) {
 	}
 	slices.Sort(confirmed)
 	// *.join-a.example covers its apex too (RFC-054 §4.1).
-	want := []string{"198.51.100.7", "api.join-a.example", "join-a.example", "www.seeded-a.example"}
+	want := []string{"198.51.100.7", "198.51.100.8:443:tcp", "api.join-a.example", "api.join-a.example:8443/tcp",
+		"join-a.example", "join-a.example:443:tcp", "www.seeded-a.example"}
 	if !slices.Equal(confirmed, want) {
 		t.Fatalf("confirmed = %v, want %v", confirmed, want)
 	}
-	for _, id := range []shared.ID{apex, sub, seeded, ipIn} {
+	for _, id := range []shared.ID{apex, sub, seeded, ipIn, svcColon, svcSlash, svcIPIn} {
 		if st := attributionState(t, db, tenantA, id); st != attribution.StateConfirmed {
 			t.Errorf("%s = %s, want confirmed", id, st)
 		}
 	}
 	for name, id := range map[string]shared.ID{
 		"IP outside every IP entry": ipOut, "name outside everything": other, "under an inactive target": paused,
-		"under an expiring (one-off) entry": oneOff,
-		"excluded":                          excluded, "under a tombstone": tomb, "under another tenant's target": foreign,
+		"a service on an IP outside every IP entry": svcIPOut,
+		"under an expiring (one-off) entry":         oneOff,
+		"excluded":                                  excluded, "under a tombstone": tomb, "under another tenant's target": foreign,
 		"a person's needs_review decision": human,
 	} {
 		if st := attributionState(t, db, tenantA, id); st != attribution.StateNeedsReview {
