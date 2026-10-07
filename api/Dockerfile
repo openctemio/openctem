@@ -47,13 +47,13 @@ WORKDIR /app
 # Install dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
-# Set GOPRIVATE for private modules (SDK is private on GitHub)
-ENV GOPRIVATE=github.com/openctemio/*
+# openctemio modules are public: fetch them through the Go module proxy and
+# verify them against the checksum database like every other dependency.
 
 # Copy go mod files (context is api/ folder)
 COPY go.mod go.sum ./
 
-# Download dependencies (SDK fetched from GitHub)
+# Download dependencies
 RUN go mod download
 
 # -----------------------------------------------------------------------------
