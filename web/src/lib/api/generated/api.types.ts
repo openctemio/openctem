@@ -20655,6 +20655,59 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pipelines/validate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Validate a pipeline graph
+     * @description Checks a draft pipeline's steps as a save would (step keys, tools, settings, then the graph against the capability contracts: typed connections, cycles, missing steps, intrusive steps fed derived targets, size). Stores nothing.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Draft steps */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.ValidatePipelineRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.PipelineGraphValidationResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/repositories/{repository_id}/branches': {
     parameters: {
       query?: never
@@ -39430,6 +39483,30 @@ export interface components {
       api_key?: string
       sensor?: components['schemas']['internal_infra_http_handler.SensorResponse']
     }
+    'internal_infra_http_handler.CreateStepRequest': {
+      capabilities?: string[]
+      condition?: components['schemas']['internal_infra_http_handler.StepConditionRequest']
+      config?: {
+        [key: string]: unknown
+      }
+      depends_on?: string[]
+      description?: string
+      /**
+       * @description ID is the id of the existing step this entry is, when the request saves
+       *     a whole pipeline (PUT): the step is updated in place and keeps its run
+       *     history. Optional; an id that is not one of the pipeline's steps (for
+       *     example a client-side temporary id) makes the entry a new step.
+       */
+      id?: string
+      max_retries?: number
+      name: string
+      order?: number
+      retry_delay_seconds?: number
+      step_key: string
+      timeout_seconds?: number
+      tool?: string
+      ui_position?: components['schemas']['internal_infra_http_handler.UIPositionRequest']
+    }
     'internal_infra_http_handler.CreateTemplateSourceRequest': {
       auto_sync_on_scan?: boolean
       cache_ttl_minutes?: number
@@ -41149,6 +41226,20 @@ export interface components {
       permissions?: string[]
       version?: number
     }
+    'internal_infra_http_handler.PipelineGraphIssueResponse': {
+      /** @description Adapter is the capability that would connect an incompatible edge. */
+      adapter?: string
+      code?: string
+      from?: string
+      message?: string
+      node?: string
+      to?: string
+    }
+    'internal_infra_http_handler.PipelineGraphValidationResponse': {
+      errors?: components['schemas']['internal_infra_http_handler.PipelineGraphIssueResponse'][]
+      valid?: boolean
+      warnings?: components['schemas']['internal_infra_http_handler.PipelineGraphIssueResponse'][]
+    }
     'internal_infra_http_handler.PlatformIdPRequest': {
       client_id?: string
       client_secret?: string
@@ -42780,6 +42871,11 @@ export interface components {
         [key: string]: number
       }
     }
+    'internal_infra_http_handler.StepConditionRequest': {
+      /** @enum {string} */
+      type?: 'always' | 'never' | 'asset_type' | 'expression' | 'step_result'
+      value?: string
+    }
     'internal_infra_http_handler.StepRunResponse': {
       attempt?: number
       completed_at?: string
@@ -43086,6 +43182,10 @@ export interface components {
     'internal_infra_http_handler.TriggerSyncRequest': {
       /** @description empty or "all" for all sources */
       source?: string
+    }
+    'internal_infra_http_handler.UIPositionRequest': {
+      x?: number
+      y?: number
     }
     'internal_infra_http_handler.UnreadCountResponse': {
       count?: number
@@ -43484,6 +43584,9 @@ export interface components {
       preferences?: components['schemas']['internal_infra_http_handler.PreferencesDTO']
       status?: string
       updated_at?: string
+    }
+    'internal_infra_http_handler.ValidatePipelineRequest': {
+      steps?: components['schemas']['internal_infra_http_handler.CreateStepRequest'][]
     }
     'internal_infra_http_handler.ValidateResponse': {
       /** @description AuthMethod is how this console session was opened: password or idp. */

@@ -9364,6 +9364,59 @@ definitions:
       sensor:
         $ref: '#/definitions/internal_infra_http_handler.SensorResponse'
     type: object
+  internal_infra_http_handler.CreateStepRequest:
+    properties:
+      capabilities:
+        items:
+          type: string
+        maxItems: 10
+        type: array
+      condition:
+        $ref: '#/definitions/internal_infra_http_handler.StepConditionRequest'
+      config:
+        additionalProperties: true
+        type: object
+      depends_on:
+        items:
+          type: string
+        maxItems: 20
+        type: array
+      description:
+        maxLength: 1000
+        type: string
+      id:
+        description: |-
+          ID is the id of the existing step this entry is, when the request saves
+          a whole pipeline (PUT): the step is updated in place and keeps its run
+          history. Optional; an id that is not one of the pipeline's steps (for
+          example a client-side temporary id) makes the entry a new step.
+        maxLength: 64
+        type: string
+      max_retries:
+        type: integer
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+      order:
+        type: integer
+      retry_delay_seconds:
+        type: integer
+      step_key:
+        maxLength: 100
+        minLength: 1
+        type: string
+      timeout_seconds:
+        type: integer
+      tool:
+        maxLength: 100
+        type: string
+      ui_position:
+        $ref: '#/definitions/internal_infra_http_handler.UIPositionRequest'
+    required:
+    - name
+    - step_key
+    type: object
   internal_infra_http_handler.CreateTemplateSourceRequest:
     properties:
       auto_sync_on_scan:
@@ -12518,6 +12571,36 @@ definitions:
       version:
         type: integer
     type: object
+  internal_infra_http_handler.PipelineGraphIssueResponse:
+    properties:
+      adapter:
+        description: Adapter is the capability that would connect an incompatible
+          edge.
+        type: string
+      code:
+        type: string
+      from:
+        type: string
+      message:
+        type: string
+      node:
+        type: string
+      to:
+        type: string
+    type: object
+  internal_infra_http_handler.PipelineGraphValidationResponse:
+    properties:
+      errors:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.PipelineGraphIssueResponse'
+        type: array
+      valid:
+        type: boolean
+      warnings:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.PipelineGraphIssueResponse'
+        type: array
+    type: object
   internal_infra_http_handler.PlatformIdPRequest:
     properties:
       client_id:
@@ -15373,6 +15456,20 @@ definitions:
           type: integer
         type: object
     type: object
+  internal_infra_http_handler.StepConditionRequest:
+    properties:
+      type:
+        enum:
+        - always
+        - never
+        - asset_type
+        - expression
+        - step_result
+        type: string
+      value:
+        maxLength: 500
+        type: string
+    type: object
   internal_infra_http_handler.StepRunResponse:
     properties:
       attempt:
@@ -15925,6 +16022,13 @@ definitions:
       source:
         description: empty or "all" for all sources
         type: string
+    type: object
+  internal_infra_http_handler.UIPositionRequest:
+    properties:
+      x:
+        type: number
+      "y":
+        type: number
     type: object
   internal_infra_http_handler.UnreadCountResponse:
     properties:
@@ -16842,6 +16946,14 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  internal_infra_http_handler.ValidatePipelineRequest:
+    properties:
+      steps:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CreateStepRequest'
+        maxItems: 50
+        type: array
     type: object
   internal_infra_http_handler.ValidateResponse:
     properties:
@@ -31568,6 +31680,37 @@ paths:
       security:
       - BearerAuth: []
       summary: A run task's logs
+      tags:
+      - Pipelines
+  /pipelines/validate:
+    post:
+      consumes:
+      - application/json
+      description: 'Checks a draft pipeline''s steps as a save would (step keys, tools,
+        settings, then the graph against the capability contracts: typed connections,
+        cycles, missing steps, intrusive steps fed derived targets, size). Stores
+        nothing.'
+      parameters:
+      - description: Draft steps
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.ValidatePipelineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.PipelineGraphValidationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Validate a pipeline graph
       tags:
       - Pipelines
   /repositories/{repository_id}/branches:

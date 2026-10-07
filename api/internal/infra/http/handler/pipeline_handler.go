@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -610,6 +611,95 @@ func (h *PipelineHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toTemplateResponse(template))
+}
+
+// writeGraphInvalid writes a refused workflow graph as 422 with every
+// node- and edge-anchored issue in details; false when err is not one.
+func writeGraphInvalid(w http.ResponseWriter, err error) bool {
+	var ge *pipelinesvc.GraphInvalidError
+	if !errors.As(err, &ge) {
+		return false
+	}
+	apierror.ValidationFailed("The workflow is not valid", ge.Report).WriteJSON(w)
+	return true
+}
+
+// ValidatePipelineRequest is a draft pipeline's steps.
+type ValidatePipelineRequest struct {
+	Steps []CreateStepRequest `json:"steps" validate:"max=50,dive"`
+}
+
+// PipelineGraphIssueResponse is one problem of a workflow graph, anchored to
+// a node (step key) or an edge (from → to).
+type PipelineGraphIssueResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Node    string `json:"node,omitempty"`
+	From    string `json:"from,omitempty"`
+	To      string `json:"to,omitempty"`
+	// Adapter is the capability that would connect an incompatible edge.
+	Adapter string `json:"adapter,omitempty"`
+}
+
+// PipelineGraphValidationResponse is the outcome of a graph check. Errors
+// refuse a save; warnings do not.
+type PipelineGraphValidationResponse struct {
+	Valid    bool                         `json:"valid"`
+	Errors   []PipelineGraphIssueResponse `json:"errors"`
+	Warnings []PipelineGraphIssueResponse `json:"warnings"`
+}
+
+// ValidatePipeline handles POST /api/v1/pipelines/validate
+// @Summary      Validate a pipeline graph
+// @Description  Checks a draft pipeline's steps as a save would (step keys, tools, settings, then the graph against the capability contracts: typed connections, cycles, missing steps, intrusive steps fed derived targets, size). Stores nothing.
+// @Tags         Pipelines
+// @Accept       json
+// @Produce      json
+// @Param        body  body      ValidatePipelineRequest  true  "Draft steps"
+// @Success      200   {object}  PipelineGraphValidationResponse
+// @Failure      400   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /pipelines/validate [post]
+func (h *PipelineHandler) ValidatePipeline(w http.ResponseWriter, r *http.Request) {
+	var req ValidatePipelineRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	inputs := make([]pipelinesvc.AddStepInput, 0, len(req.Steps))
+	for _, st := range req.Steps {
+		inputs = append(inputs, toAddStepInput(tenantID, "", st))
+	}
+	rep, err := h.service.ValidateGraph(r.Context(), pipelinesvc.ValidateGraphInput{TenantID: tenantID, Steps: inputs})
+	if err != nil {
+		h.handleStepError(w, err)
+		return
+	}
+	out := PipelineGraphValidationResponse{
+		Valid:    rep.Valid(),
+		Errors:   make([]PipelineGraphIssueResponse, 0, len(rep.Errors)),
+		Warnings: make([]PipelineGraphIssueResponse, 0, len(rep.Warnings)),
+	}
+	for _, is := range rep.Errors {
+		out.Errors = append(out.Errors, toGraphIssueResponse(is))
+	}
+	for _, is := range rep.Warnings {
+		out.Warnings = append(out.Warnings, toGraphIssueResponse(is))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func toGraphIssueResponse(is stage.GraphIssue) PipelineGraphIssueResponse {
+	return PipelineGraphIssueResponse{
+		Code: is.Code, Message: is.Message, Node: is.Node,
+		From: is.From, To: is.To, Adapter: string(is.Adapter),
+	}
 }
 
 // toAddStepInput maps one step of a request to the service input.
@@ -1450,6 +1540,7 @@ func (h *PipelineHandler) handleValidationError(w http.ResponseWriter, err error
 // handleServiceError converts service errors to API errors.
 func (h *PipelineHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case writeGraphInvalid(w, err):
 	case errors.Is(err, pipeline.ErrPipelineRunActive):
 		apierror.New(http.StatusConflict, apierror.Code(pipeline.ErrPipelineRunActive.Code), pipeline.ErrPipelineRunActive.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
@@ -1471,6 +1562,7 @@ func (h *PipelineHandler) handleServiceError(w http.ResponseWriter, err error) {
 // handleStepError converts step-related service errors to API errors.
 func (h *PipelineHandler) handleStepError(w http.ResponseWriter, err error) {
 	switch {
+	case writeGraphInvalid(w, err):
 	case errors.Is(err, pipeline.ErrPipelineRunActive):
 		apierror.New(http.StatusConflict, apierror.Code(pipeline.ErrPipelineRunActive.Code), pipeline.ErrPipelineRunActive.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
