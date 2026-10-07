@@ -100,6 +100,8 @@ import type {
   ExposureState,
 } from '@/lib/api/exposure-types'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import { SEVERITY_LEVELS } from '@/lib/severity'
+import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 
 type ActionType = 'resolve' | 'accept' | 'false_positive' | 'reactivate'
 
@@ -112,14 +114,8 @@ const STATE_VIEWS: { value: StateTab; label: string }[] = [
   { value: 'all', label: 'All states' },
 ]
 
-const SEVERITIES: ExposureSeverity[] = ['critical', 'high', 'medium', 'low', 'info']
-const SEVERITY_LABELS: Record<ExposureSeverity, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-}
+const SEVERITIES: ExposureSeverity[] = [...SEVERITY_LEVELS]
+const SEVERITY_LABELS: Record<ExposureSeverity, string> = SHARED_SEVERITY_LABELS
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 

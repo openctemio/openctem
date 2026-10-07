@@ -1647,3 +1647,27 @@ func TestSecValGetAllowedCapabilities_DBErrorFallsBackToDefaults(t *testing.T) {
 		t.Error("expected default capability 'scan' even when DB fails")
 	}
 }
+
+// A capability node names a catalog capability key ("scan.ports"): valid on
+// its own, and with a pinned tool only when the tool implements it. Planned
+// capabilities (no routed implementation) stay refused.
+func TestSecValValidateStepConfig_CatalogCapabilityKeys(t *testing.T) {
+	repo := newSecValMockToolRepo()
+	makeActivePlatformTool(repo, "naabu", []string{"portscan"})
+	makeActivePlatformTool(repo, "nuclei", []string{"web"})
+	sv := newSecValValidator(repo)
+	ctx := context.Background()
+
+	if r := sv.ValidateStepConfig(ctx, shared.NewID(), "", []string{"scan.ports"}, nil); !r.Valid {
+		t.Fatalf("auto capability node refused: %v", r.Errors)
+	}
+	if r := sv.ValidateStepConfig(ctx, shared.NewID(), "naabu", []string{"scan.ports"}, nil); !r.Valid {
+		t.Fatalf("naabu pinned on scan.ports refused: %v", r.Errors)
+	}
+	if r := sv.ValidateStepConfig(ctx, shared.NewID(), "nuclei", []string{"scan.ports"}, nil); r.Valid || !hasCode(r, "CAPABILITY_TOOL_MISMATCH") {
+		t.Fatalf("nuclei on scan.ports accepted: %v", r.Errors)
+	}
+	if r := sv.ValidateStepConfig(ctx, shared.NewID(), "", []string{"check.tls"}, nil); r.Valid || !hasCode(r, "INVALID_CAPABILITY") {
+		t.Fatalf("planned capability accepted: %v", r.Errors)
+	}
+}

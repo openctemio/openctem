@@ -59,6 +59,7 @@ import { AssignmentRuleDetailSheet } from '@/features/access-control/components/
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { fetcherWithOptions } from '@/lib/api/client'
 import { Can } from '@/lib/permissions'
+import { SEVERITY_LEVELS } from '@/lib/severity'
 
 type FilterType = 'all' | 'active' | 'inactive'
 
@@ -89,7 +90,7 @@ const CONDITION_OPTIONS: Record<string, string[]> = {
     'container',
     'api_endpoint',
   ],
-  finding_severity: ['critical', 'high', 'medium', 'low', 'info'],
+  finding_severity: [...SEVERITY_LEVELS],
   // NOTE: asset_status / asset_criticality were phantom condition keys — the
   // backend AssignmentConditions only accepts asset_type, file_path_pattern,
   // finding_severity, finding_type, finding_source, asset_tags, and silently
