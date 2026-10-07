@@ -34,7 +34,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		SourcesRead, SourcesWrite, SourcesDelete,
+		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
@@ -63,7 +63,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
 		// Validation (legacy)
-		ValidationRead, ValidationWrite,
+		PentestRead, PentestWrite,
 		// Pentest (granular - all)
 		PentestCampaignsRead, PentestCampaignsWrite, PentestCampaignsDelete,
 		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
@@ -111,7 +111,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Scans
 		ScansRead, ScansWrite, ScansDelete, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		SourcesRead, SourcesWrite, SourcesDelete,
+		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
@@ -140,7 +140,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
 		// Validation (legacy)
-		ValidationRead, ValidationWrite,
+		PentestRead, PentestWrite,
 		// Pentest (granular - all)
 		PentestCampaignsRead, PentestCampaignsWrite, PentestCampaignsDelete,
 		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
@@ -194,7 +194,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Template sources and scanner templates: read only. A custom
 		// template is code the sensors run, so writing one is owner/admin
 		// only (owner decision 2026-10-02, migration 000262).
-		SourcesRead,
+		TemplateSourcesRead,
 		ToolsRead,
 		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead,
@@ -221,7 +221,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Attack Surface (read + write)
 		ScopeRead, ScopeWrite,
 		// Validation (legacy)
-		ValidationRead, ValidationWrite,
+		PentestRead, PentestWrite,
 		// Pentest (read + write, no delete)
 		PentestCampaignsRead, PentestCampaignsWrite,
 		PentestFindingsRead, PentestFindingsWrite,
@@ -265,7 +265,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Scans (read only)
 		ScansRead,
 		ScanProfilesRead,
-		SourcesRead,
+		TemplateSourcesRead,
 		ToolsRead,
 		TenantToolsRead,
 		ScannerTemplatesRead,
@@ -291,7 +291,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Attack Surface (read only)
 		ScopeRead,
 		// Validation (legacy)
-		ValidationRead,
+		PentestRead,
 		// Pentest (read only)
 		PentestCampaignsRead, PentestFindingsRead, PentestRetestsRead, PentestTemplatesRead,
 		// Compliance (read only)
