@@ -79,6 +79,9 @@ type Workflow struct {
 	// Status
 	IsActive         bool
 	IsSystemTemplate bool
+	// RetiredAt is set when the workflow was deleted while it had runs: it
+	// is hidden, read-only and cannot run, and is kept for its run history.
+	RetiredAt *time.Time
 
 	// Metadata
 	Tags []string

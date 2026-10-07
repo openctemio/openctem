@@ -402,6 +402,8 @@ export interface ScanWorkflowListFilters {
 export interface ScanRunListFilters {
   scan_workflow_id?: string
   asset_id?: string
+  /** The scan the runs belong to (a scan's "View all runs"). */
+  scan_id?: string
   status?: ScanRunStatus
   trigger_type?: ScanWorkflowTriggerType
   /** One sort key, `-` for descending (created_at, started_at, completed_at, total_findings). */
@@ -415,7 +417,7 @@ export interface ScanRunListFilters {
 // ============================================
 
 export interface ScanWorkflowListResponse {
-  items: ScanWorkflow[]
+  data: ScanWorkflow[]
   total: number
   page: number
   per_page: number
@@ -423,7 +425,7 @@ export interface ScanWorkflowListResponse {
 }
 
 export interface ScanRunListResponse {
-  items: ScanRun[]
+  data: ScanRun[]
   total: number
   page: number
   per_page: number

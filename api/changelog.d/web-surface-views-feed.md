@@ -6,7 +6,7 @@
   `GET /api/v1/web-path-catalog`. All within the tenant and the caller's data scope.
 - Endpoints are labelled from a platform-curated sensitive-path catalog (`catalog_key`); `/web-endpoints/stats` reports
   `excluded_sensitive` and `unauth_sensitive`, and endpoints carry `exclusion_id` and their catalog entry.
-- The change feed table `web_endpoint_events` (migration 001291). Retention: endpoints unseen 30 days become gone, gone
+- The change feed table `web_endpoint_events` (migration 001297). Retention: endpoints unseen 30 days become gone, gone
   for a year are deleted; events are kept 90 days.
 - A template step chained after a crawl can take only the endpoints found new or changed in the run
   (`endpoint_selector: new | changed`). Design: RFC-056.

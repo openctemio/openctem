@@ -285,7 +285,7 @@ export interface ScanConfigListFilters {
  * Scan configuration list response
  */
 export interface ScanConfigListResponse {
-  items: ScanConfig[]
+  data: ScanConfig[]
   total: number
   page: number
   per_page: number

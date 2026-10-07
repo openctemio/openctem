@@ -291,6 +291,10 @@ type Filter struct {
 	// counted as confirmed) matches too. Nil = no attribution filter.
 	Attribution *attribution.StateFilter
 
+	// CoveredByScopeTarget keeps the assets the scope join confirmed through
+	// this scope entry (matches_scope_target evidence from it).
+	CoveredByScopeTarget *shared.ID
+
 	// Layer 2: Data Scope. When set, only the assets in this user's scope
 	// rows (user_accessible_assets) are returned; a user with none sees none.
 	DataScopeUserID *shared.ID
