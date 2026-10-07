@@ -65,7 +65,6 @@ func registerDashboardRoutes(
 
 	// Dashboard routes
 	router.Group("/api/v1/dashboard", func(r Router) {
-		r.GET("/stats/global", h.GetGlobalStats, middleware.Require(permission.DashboardRead))
 		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead))
 		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead))
 		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead))
@@ -120,12 +119,11 @@ func registerAuditRoutes(
 		// running verify with wider permissions than read.
 		r.GET("/verify", h.VerifyChain, middleware.RequireAdmin())
 
-		// Re-baseline the hash-chain (re-sign from current data) to clear
-		// breaks from a known-benign hashing change. Owner-only + audited —
-		// it overwrites the tamper-evident chain, so an administrator must not
-		// be able to erase the evidence of their own changes (owner decision
-		// 2026-10-02).
-		r.POST("/rebaseline", h.RebaselineChain, middleware.RequireOwner(), requireStepUp())
+		// There is no rebaseline here: re-signing the tamper-evident chain is
+		// a platform-operator action, only in the admin console
+		// (POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline). The
+		// chain exists to make an insider's changes evident, and the
+		// organization's owner is that insider.
 	}, tenantMiddlewares...)
 }
 

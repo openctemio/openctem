@@ -373,12 +373,12 @@ export const settingsNav: SettingsNavGroup[] = [
       {
         id: 'tools',
         title: 'Tools',
-        description: 'The scanners that sensors can run.',
+        description: 'The tools your sensors have, and whether a scan can run with each.',
         url: '/settings/scanning/tools',
         icon: Wrench,
         permission: Permission.ToolsRead,
         module: 'scans',
-        keywords: ['scanners', 'tool registry'],
+        keywords: ['scanners', 'tool registry', 'tool availability'],
       },
       {
         id: 'capabilities',

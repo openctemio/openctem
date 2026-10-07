@@ -13,7 +13,9 @@ type fakeSources struct {
 	tenant          shared.ID
 	targets         []*scopedom.Target
 	seeds, verified []string
-	err             error
+	// sso: domains verified for SSO sign-in (proof only, never authority).
+	sso []string
+	err error
 }
 
 func (f *fakeSources) ListActiveTargets(_ context.Context, t string) ([]*scopedom.Target, error) {
@@ -34,6 +36,13 @@ func (f *fakeSources) RootDomainSeedNames(_ context.Context, t shared.ID) ([]str
 }
 
 func (f *fakeSources) VerifiedDomainNames(_ context.Context, t shared.ID) ([]string, error) {
+	if !t.Equals(f.tenant) {
+		return nil, nil
+	}
+	return append(append([]string{}, f.verified...), f.sso...), nil
+}
+
+func (f *fakeSources) EASMVerifiedDomainNames(_ context.Context, t shared.ID) ([]string, error) {
 	if !t.Equals(f.tenant) {
 		return nil, nil
 	}
@@ -125,5 +134,33 @@ func TestLoad_FailsClosed(t *testing.T) {
 	var nilAuth *Authority
 	if _, ok := nilAuth.Covers("app.scoped.com"); ok {
 		t.Error("a nil authority covers nothing")
+	}
+}
+
+// A domain a platform administrator verified for SSO sign-in never
+// authorizes active probes (owner decision SC2); it still proves control, so
+// a scope entry under it reports proof "verified".
+func TestCovers_SSOVerifiedDomainIsProofNotAuthority(t *testing.T) {
+	f := newSources(t)
+	f.sso = []string{"signin.com", "scoped.com"}
+	a, err := Load(context.Background(), f.tenant, f, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"signin.com", "www.signin.com", "https://app.signin.com/login"} {
+		if via, ok := a.Covers(n); ok {
+			t.Errorf("an SSO-verified domain authorized %q: %+v", n, via)
+		}
+	}
+	if !a.Verified("www.signin.com") {
+		t.Error("an SSO-verified domain is still proof of control")
+	}
+	via, ok := a.Covers("app.scoped.com")
+	if !ok || via.Kind != KindScopeTarget || via.Proof != ProofVerified {
+		t.Errorf("scope entry under an SSO-verified domain: %+v %v", via, ok)
+	}
+	// An easm-purpose verified domain still authorizes.
+	if via, ok := a.Covers("www.verified.com"); !ok || via.Kind != KindVerifiedDomain {
+		t.Errorf("easm verified domain: %+v %v", via, ok)
 	}
 }

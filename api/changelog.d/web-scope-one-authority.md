@@ -21,3 +21,15 @@
 
 - The scope entries and exclusions lists sent `target_type` / `status`; the
   API reads `types` / `statuses`, so the type filter never filtered.
+
+### Changed: Scoping › Boundaries is now Scoping › Scope at /scope (web)
+
+- The page moved from `/scope-config` to `/scope` with no redirect; every
+  link and the navigation use the new URL.
+- No inline status switches: activating an entry (a widening that may wait
+  for approval) and lifting an exclusion are labelled row actions.
+- Kinds are detected from the pattern (domain, IP address, IP range, URL,
+  repository, cloud account); `subdomain` is no longer offered and older
+  rows read as Domain.
+- "Added by" shows the person (or the system action in words), never a raw
+  user id or `system:...` string (shared `ActorChip`).

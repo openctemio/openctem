@@ -64,6 +64,54 @@ func (f *runTasksFixture) command(t *testing.T, tenant, run shared.ID, sensor *s
 	return id
 }
 
+// A task whose sensor skipped targets carries them, bounded and cleaned,
+// from its result metadata; a result without them, or with a malformed
+// list, reads as none.
+func TestListRunTasks_SkippedTargets(t *testing.T) {
+	f := newRunTasksFixture(t)
+	s1 := f.sensor(t, f.tenant, "edge")
+	run := seedCounterRun(f.ctx, t, f.runs, f.tenant, f.scan)
+	setResult := func(id shared.ID, result string) {
+		t.Helper()
+		if _, err := f.db.ExecContext(f.ctx, `UPDATE commands SET result = $2::jsonb WHERE tenant_id = $1 AND id = $3`,
+			f.tenant.String(), result, id.String()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	partial := f.command(t, f.tenant, run.ID, &s1, "completed", map[string]any{"scanner": "nuclei", "targets": []string{"example.com"}})
+	setResult(partial, `{"status":"completed","findings_count":1,"metadata":{"partial":true,"refused_targets_total":2,
+		"refused_targets":[{"target":"api.example.com","reason":"unresolvable","rule":"targets"},{"target":"*.example.com","reason":"wildcard_pattern"}]}}`)
+	plain := f.command(t, f.tenant, run.ID, &s1, "completed", map[string]any{"scanner": "nuclei", "targets": []string{"b.example.com"}})
+	setResult(plain, `{"status":"completed","findings_count":0}`)
+	bogus := f.command(t, f.tenant, run.ID, &s1, "completed", map[string]any{"scanner": "nuclei", "targets": []string{"c.example.com"}})
+	setResult(bogus, `{"metadata":{"refused_targets":"nope","refused_targets_total":"9"}}`)
+
+	tasks, _, err := f.cmds.ListRunTasks(f.ctx, f.tenant, run.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[shared.ID]pipeline.Task{}
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+	p := byID[partial]
+	if p.SkippedTotal != 2 || len(p.Skipped) != 2 || p.Skipped[0].Target != "api.example.com" ||
+		p.Skipped[0].Reason != pipeline.SkipReasonUnresolvable || p.Skipped[1].Reason != pipeline.SkipReasonWildcard {
+		t.Fatalf("partial task skipped = %+v (total %d)", p.Skipped, p.SkippedTotal)
+	}
+	if byID[plain].SkippedTotal != 0 || byID[plain].Skipped != nil {
+		t.Fatalf("plain task skipped = %+v", byID[plain])
+	}
+	if byID[bogus].SkippedTotal != 0 || byID[bogus].Skipped != nil {
+		t.Fatalf("malformed metadata read as %+v", byID[bogus])
+	}
+	// The page read carries them too.
+	page, err := f.cmds.ListRunTasksAfter(f.ctx, f.tenant, run.ID, nil, 10)
+	if err != nil || len(page) != 3 || page[0].SkippedTotal != 2 {
+		t.Fatalf("page %+v, err %v", page, err)
+	}
+}
+
 func TestListRunTasks_SummaryItemsAndTenantScope(t *testing.T) {
 	f := newRunTasksFixture(t)
 	s1 := f.sensor(t, f.tenant, "edge")

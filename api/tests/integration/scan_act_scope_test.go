@@ -163,6 +163,10 @@ func TestScanActScope(t *testing.T) {
 			exec(`INSERT INTO verified_domains (id, tenant_id, domain, verification_token, status, purpose) VALUES ($1, $2, $3, 'tok', $4, 'easm')`,
 				shared.NewID().String(), tenant.String(), d, status)
 		}
+		// A domain a platform administrator verified for SSO sign-in never
+		// authorizes scans (owner decision SC2).
+		exec(`INSERT INTO verified_domains (id, tenant_id, domain, verification_token, status, purpose) VALUES ($1, $2, 'a-sso.example.net', 'tok', 'verified', 'sso')`,
+			shared.NewID().String(), tenantA.String())
 		seed(tenantA, "a-seeded.example.net")
 		verified(tenantA, "a-verified.example.net", "verified")
 		verified(tenantA, "a-pending.example.net", "pending")
@@ -174,7 +178,7 @@ func TestScanActScope(t *testing.T) {
 				t.Fatalf("%s refused: %v", target, err)
 			}
 		}
-		for _, target := range []string{"x.a-pending.example.net", "b-seeded.example.net", "x.b-verified.example.net"} {
+		for _, target := range []string{"x.a-pending.example.net", "b-seeded.example.net", "x.b-verified.example.net", "a-sso.example.net", "www.a-sso.example.net"} {
 			_, err := create(asAdmin, admin, target)
 			refused(t, err)
 		}
