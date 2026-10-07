@@ -2942,7 +2942,7 @@ func TestToolService_CreateCustomTool_PlatformNameReserved(t *testing.T) {
 	}
 }
 
-// Security test: the tenant-tools endpoints load a tool by id. Another
+// Security test: the tool settings and views load a tool by id. Another
 // tenant's custom tool must answer not-found (its definition and default
 // config never cross the tenant boundary, and no tenant may attach a config
 // to it); platform tools and the caller's own custom tools still work.

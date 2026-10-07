@@ -1,6 +1,6 @@
 package routes
 
-// GET /api/v1/tenant-tools/availability end to end
+// GET /api/v1/tools?include=availability end to end
 // (docs/architecture/tool-availability.md): the catalog joined with the
 // tools the tenant's sensors report, the derived status, the zone filter,
 // the sensor list gated on sensors:read, and tenant isolation (another
@@ -37,12 +37,15 @@ func newToolAvailabilityHarness(t *testing.T) *authzPolicyHarness {
 	toolSvc := toolapp.NewService(postgres.NewToolRepository(db), postgres.NewTenantToolConfigRepository(db),
 		postgres.NewToolExecutionRepository(db), log)
 	toolSvc.SetAvailabilitySources(sensorSvc, postgres.NewScanZoneRepository(db), postgres.NewSensorGrantRepository(db))
+	toolSvc.SetCategoryRepo(postgres.NewToolCategoryRepository(db))
+	categorySvc := toolapp.NewCategoryService(postgres.NewToolCategoryRepository(db), postgres.NewToolRepository(db), log)
 
 	cfg := &config.Config{}
 	cfg.Auth.Provider = config.AuthProviderLocal
 	router := infrahttp.NewChiRouter()
 	Register(router, Handlers{
-		Tool: handler.NewToolHandler(toolSvc, validator.New(), log),
+		Tool:         handler.NewToolHandler(toolSvc, validator.New(), log),
+		ToolCategory: handler.NewToolCategoryHandler(categorySvc, validator.New(), log),
 	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: base.gen},
 		postgres.NewTenantRepository(db), tenantapp.NewUserService(postgres.NewUserRepository(db), log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
@@ -80,13 +83,31 @@ func join(v []string) string {
 	return out
 }
 
-func availabilityByName(t *testing.T, body string) (map[string]handler.ToolAvailabilityItem, handler.ToolAvailabilityResponse) {
+// availabilityItem is one tool of the availability view as a test reads it:
+// a catalog tool (Tool set) or a tool only the sensors report.
+type availabilityItem struct {
+	handler.ToolAvailabilityInfo
+	Tool *handler.ToolViewResponse
+}
+
+// availabilityByName reads GET /api/v1/tools?include=availability into one
+// map by tool name: the catalog items and the unlisted tools.
+func availabilityByName(t *testing.T, body string) (map[string]availabilityItem, handler.ToolListResponse) {
 	t.Helper()
-	var resp handler.ToolAvailabilityResponse
+	var resp handler.ToolListResponse
 	mustJSON(t, body, &resp)
-	out := make(map[string]handler.ToolAvailabilityItem, len(resp.Items))
-	for _, it := range resp.Items {
-		out[it.Name] = it
+	out := make(map[string]availabilityItem, len(resp.Items))
+	for i, it := range resp.Items {
+		if it.Availability == nil {
+			t.Fatalf("%s: no availability", it.Name)
+		}
+		out[it.Name] = availabilityItem{ToolAvailabilityInfo: *it.Availability, Tool: &resp.Items[i]}
+	}
+	if resp.Availability == nil {
+		t.Fatal("include=availability: no availability block")
+	}
+	for _, u := range resp.Availability.Unlisted {
+		out[u.Name] = availabilityItem{ToolAvailabilityInfo: u.ToolAvailabilityInfo}
 	}
 	return out, resp
 }
@@ -119,7 +140,7 @@ func TestToolAvailability_Routes_DB(t *testing.T) {
 	h.exec(`INSERT INTO scan_zone_sensors (tenant_id, zone_id, sensor_id) VALUES ($1, $2, $3)`, tid, zoneA, online)
 	h.exec(`INSERT INTO scan_zones (id, tenant_id, name, ranges) VALUES ($1, $2, 'theirs', '{10.0.0.0/8}')`, zoneB, other)
 
-	const path = "/api/v1/tenant-tools/availability"
+	const path = "/api/v1/tools?include=availability&per_page=50"
 	got, resp := availabilityByName(t, h.expect(admin, http.MethodGet, path, "", http.StatusOK))
 
 	nuclei := got["nuclei"]
@@ -152,17 +173,17 @@ func TestToolAvailability_Routes_DB(t *testing.T) {
 	if st := got["gitleaks"].Status; st != "disabled" {
 		t.Errorf("gitleaks (inactive in the catalog): %s, want disabled", st)
 	}
-	if resp.Summary["ready"] < 2 || resp.ComputedAt == "" {
-		t.Errorf("summary %+v computed_at %q", resp.Summary, resp.ComputedAt)
+	if resp.Availability.Summary["ready"] < 2 || resp.Availability.ComputedAt == "" {
+		t.Errorf("summary %+v computed_at %q", resp.Availability.Summary, resp.Availability.ComputedAt)
 	}
 
 	// Zone filter: only the zone's sensors count.
-	inZone, zresp := availabilityByName(t, h.expect(admin, http.MethodGet, path+"?zone_id="+zoneA, "", http.StatusOK))
-	if inZone["nuclei"].SensorsTotal != 1 || inZone["semgrep"].Status != "no_sensor" || zresp.ZoneID != zoneA {
-		t.Errorf("zone view: nuclei %+v semgrep %s zone %q", inZone["nuclei"], inZone["semgrep"].Status, zresp.ZoneID)
+	inZone, zresp := availabilityByName(t, h.expect(admin, http.MethodGet, path+"&zone_id="+zoneA, "", http.StatusOK))
+	if inZone["nuclei"].SensorsTotal != 1 || inZone["semgrep"].Status != "no_sensor" || zresp.Availability.ZoneID != zoneA {
+		t.Errorf("zone view: nuclei %+v semgrep %s zone %q", inZone["nuclei"], inZone["semgrep"].Status, zresp.Availability.ZoneID)
 	}
-	h.expect(admin, http.MethodGet, path+"?zone_id="+zoneB, "", http.StatusNotFound)
-	h.expect(admin, http.MethodGet, path+"?zone_id=not-a-uuid", "", http.StatusBadRequest)
+	h.expect(admin, http.MethodGet, path+"&zone_id="+zoneB, "", http.StatusNotFound)
+	h.expect(admin, http.MethodGet, path+"&zone_id=not-a-uuid", "", http.StatusBadRequest)
 
 	// The other tenant sees its own sensor, none of ours.
 	theirs, _ := availabilityByName(t, h.expect(outsider, http.MethodGet, path, "", http.StatusOK))
@@ -175,31 +196,33 @@ func TestToolAvailability_Routes_DB(t *testing.T) {
 
 	// A caller with tenant tools but not sensors: counts, no sensor list.
 	toolsOnly := h.member(tid, "member")
-	h.customRoleMember(toolsOnly, tid, permission.TenantToolsRead)
+	h.customRoleMember(toolsOnly, tid, permission.ToolsRead, permission.TenantToolsRead)
 	h.mintToken(&toolsOnly, tid)
 	limited, _ := availabilityByName(t, h.expect(toolsOnly, http.MethodGet, path, "", http.StatusOK))
 	if n := limited["nuclei"]; n.SensorsOnline != 1 || len(n.Sensors) != 0 {
 		t.Errorf("without sensors:read: nuclei %+v, want counts and no sensors", n)
 	}
-	// Without tenant tools: refused.
-	nothing := h.member(tid, "member")
-	h.customRoleMember(nothing, tid, permission.SensorsRead)
-	h.mintToken(&nothing, tid)
-	h.expect(nothing, http.MethodGet, path, "", http.StatusForbidden)
+	// The catalog without the tenant's data: the catalog, not its availability.
+	catalogOnly := h.member(tid, "member")
+	h.customRoleMember(catalogOnly, tid, permission.ToolsRead, permission.SensorsRead)
+	h.mintToken(&catalogOnly, tid)
+	var omitted handler.ToolListResponse
+	mustJSON(t, h.expect(catalogOnly, http.MethodGet, path, "", http.StatusOK), &omitted)
+	if omitted.Availability != nil || len(omitted.Meta.OmittedIncludes) != 1 || omitted.Meta.OmittedIncludes[0] != "availability" {
+		t.Errorf("without scans:tenant_tools:read: availability %v meta %+v, want it left out", omitted.Availability, omitted.Meta)
+	}
+	h.expect(catalogOnly, http.MethodGet, "/api/v1/tools?available=true", "", http.StatusForbidden)
+	h.expect(catalogOnly, http.MethodGet, "/api/v1/tools", "", http.StatusOK)
 
-	// is_available on the tools-with-config list follows the same source,
-	// and the tenant switch turns a ready tool into disabled.
-	allTools := h.expect(admin, http.MethodGet, "/api/v1/tenant-tools/all-tools?per_page=100", "", http.StatusOK)
-	var list struct {
-		Items []handler.ToolWithConfigResponse `json:"items"`
+	// available= follows the same source (a scan job can be dispatched now).
+	var avail handler.ToolListResponse
+	mustJSON(t, h.expect(admin, http.MethodGet, "/api/v1/tools?available=true&per_page=100", "", http.StatusOK), &avail)
+	runnable := map[string]bool{}
+	for _, it := range avail.Items {
+		runnable[it.Name] = true
 	}
-	mustJSON(t, allTools, &list)
-	avail := map[string]bool{}
-	for _, it := range list.Items {
-		avail[it.Tool.Name] = it.IsAvailable
-	}
-	if !avail["nuclei"] || avail["semgrep"] || avail["checkov"] {
-		t.Errorf("is_available: nuclei %v semgrep %v checkov %v, want true false false", avail["nuclei"], avail["semgrep"], avail["checkov"])
+	if !runnable["nuclei"] || runnable["semgrep"] || runnable["checkov"] {
+		t.Errorf("available=true: nuclei %v semgrep %v checkov %v, want true false false", runnable["nuclei"], runnable["semgrep"], runnable["checkov"])
 	}
 	// The tenant switch on a tool it never configured (no row: enabled)
 	// creates the row; another tenant's custom tool id is ignored.
@@ -213,7 +236,7 @@ func TestToolAvailability_Routes_DB(t *testing.T) {
 	if err := h.db.QueryRowContext(context.Background(), `SELECT id FROM tools WHERE name = 'zz-their-tool'`).Scan(&theirToolID); err != nil {
 		t.Fatal(err)
 	}
-	h.expect(admin, http.MethodPost, "/api/v1/tenant-tools/bulk/disable", `{"tool_ids":["`+nucleiID+`","`+theirToolID+`"]}`, http.StatusNoContent)
+	h.expect(admin, http.MethodPatch, "/api/v1/tools/settings", `{"tool_ids":["`+nucleiID+`","`+theirToolID+`"],"is_enabled":false}`, http.StatusNoContent)
 	var rows int
 	if err := h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM tenant_tool_configs WHERE tool_id = $1`, theirToolID).Scan(&rows); err != nil || rows != 0 {
 		t.Fatalf("another tenant's custom tool got %d config rows (%v)", rows, err)
@@ -226,7 +249,7 @@ func TestToolAvailability_Routes_DB(t *testing.T) {
 	if !theirs["nuclei"].Enabled {
 		t.Error("our switch turned nuclei off for the other tenant")
 	}
-	h.expect(admin, http.MethodPost, "/api/v1/tenant-tools/bulk/enable", `{"tool_ids":["`+nucleiID+`"]}`, http.StatusNoContent)
+	h.expect(admin, http.MethodPatch, "/api/v1/tools/settings", `{"tool_ids":["`+nucleiID+`"],"is_enabled":true}`, http.StatusNoContent)
 	on, _ := availabilityByName(t, h.expect(admin, http.MethodGet, path, "", http.StatusOK))
 	if on["nuclei"].Status != "ready" {
 		t.Errorf("nuclei after the tenant switched it back on: %s", on["nuclei"].Status)

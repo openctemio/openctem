@@ -130,7 +130,6 @@ const PERMISSION_TO_LICENSE_MODULE: Record<string, string> = {
   'scan-profiles': 'scans',
   'scm-connections': 'integrations',
   'assignment-rules': 'team',
-  'tenant-tools': 'scans',
 
   // Admin - New naming (hierarchical)
   branches: 'assets',
