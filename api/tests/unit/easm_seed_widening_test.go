@@ -229,3 +229,26 @@ func TestSeedWidening_DiscoveryTurnedOn(t *testing.T) {
 		t.Fatalf("cross-tenant update: %v", err)
 	}
 }
+
+// The platform guardrails (RFC-054 §8.2) refuse a seed exactly as they
+// refuse a scope entry: government suffixes and the operator's own deny
+// list.
+func TestSeedWidening_PlatformGuardrails(t *testing.T) {
+	seeds, svc, tr, notes, _ := seedService(t, 1, tenant.ScopeSettings{})
+	g, bad := scopedom.NewGuardrails(0, 0, []string{"operator-internal.com"})
+	if len(bad) != 0 {
+		t.Fatal(bad)
+	}
+	svc.SetGuardrails(g)
+	tenantID := shared.NewID()
+	for _, v := range []string{"agency.gov", "army.mil", "operator-internal.com", "eu.operator-internal.com"} {
+		_, err := addSeed(seeds, tenantID, approverA, v)
+		var de *shared.DomainError
+		if !errors.As(err, &de) || (de.Code != "DENY_LIST" && de.Code != "PUBLIC_SUFFIX") {
+			t.Errorf("%s: %v, want DENY_LIST or PUBLIC_SUFFIX", v, err)
+		}
+	}
+	if len(tr.targets) != 0 || len(notes.titles) != 0 {
+		t.Fatalf("a refused seed left %d entries, %d notices", len(tr.targets), len(notes.titles))
+	}
+}
