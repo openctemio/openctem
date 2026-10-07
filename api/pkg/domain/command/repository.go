@@ -168,6 +168,7 @@ type StepBatch struct {
 	Active     int    // still pending, acknowledged or running
 	Failed     int    // failed, expired or canceled
 	Findings   int    // sum of the batches' reported findings_count
+	Skipped    int    // sum of the completed batches' refused_targets_total
 	FirstError string // first failure message, in completion order
 }
 

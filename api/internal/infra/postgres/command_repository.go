@@ -13,6 +13,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -1619,12 +1620,15 @@ func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRu
 		       count(*) FILTER (WHERE status IN ('failed', 'expired', 'canceled')),
 		       COALESCE(sum(CASE WHEN jsonb_typeof(result->'findings_count') = 'number'
 		                         THEN (result->>'findings_count')::numeric END), 0)::bigint,
+		       LEAST(COALESCE(sum(CASE WHEN status = 'completed'
+		                                AND jsonb_typeof(result->'metadata'->'refused_targets_total') = 'number'
+		                               THEN LEAST(GREATEST((result->'metadata'->>'refused_targets_total')::numeric, 0), $3) END), 0), $3)::bigint,
 		       COALESCE((array_agg(error_message ORDER BY completed_at NULLS LAST, id)
 		                 FILTER (WHERE status IN ('failed', 'expired', 'canceled')
 		                           AND COALESCE(error_message, '') <> ''))[1], '')
 		FROM commands
 		WHERE tenant_id = $1 AND step_run_id = $2`,
-		tenantID.String(), stepRunID.String()).Scan(&b.Total, &b.Active, &b.Failed, &b.Findings, &b.FirstError)
+		tenantID.String(), stepRunID.String(), pipeline.MaxSkippedTargetsTotal).Scan(&b.Total, &b.Active, &b.Failed, &b.Findings, &b.Skipped, &b.FirstError)
 	if err != nil {
 		return b, fmt.Errorf("step batch state: %w", err)
 	}
