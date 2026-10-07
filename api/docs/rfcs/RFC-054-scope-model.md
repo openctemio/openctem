@@ -22,8 +22,9 @@ This RFC makes one model out of them:
 2. **One authority check** decides for every target, typed or inventory, on
    every path. An asset's ownership record alone never authorizes an active
    probe; a scope entry, seed or verified domain must cover it.
-3. **Discovered names under a declared root are confirmed** (S4): names only,
-   never IP addresses; tombstones and exclusions win.
+3. **Names covered by a permanent scope entry or seed are confirmed** into the
+   inventory (S4): IP addresses only through IP entries; expiring entries
+   never confirm; tombstones and exclusions win.
 4. **Expiring entries** replace "exceptions" (S6): `expires_at` + `reason`,
    default 7 days, at most 30; expired entries stop authorizing at once.
    Members request; approvers create and approve.
@@ -63,7 +64,7 @@ Every lookup error refuses (fail closed).
 | S1 | (a) `*.x` = `x` + all subdomains; exclusion `x` carves the apex out |
 | S2 | (a) proof for active probes is an operator setting `SCOPE_ACTIVE_PROOF`: SaaS default `platform_sensors`, self-hosted `off`; intrusive (T2) always needs proof |
 | S3 | (a) widening approvals are a tenant setting 0/1/2, default `min(1, admins − 1)`, never 0 for T2 (amends RFC-040 Q2 (a)) |
-| S4 | yes: an active root authorizes discovered child **names**, never IPs; tombstones and exclusions win; the attribution review queue holds the rest |
+| S4 | yes, refined 2026-10-07: an active, non-expiring scope entry or seed confirms the names it covers (`matches_scope_target`, no review); IPs only through IP entries; one-off entries never confirm; tombstones and exclusions win; removal keeps the asset and stops scanning; backfill of existing `needs_review` rows |
 | S5 | tenant knobs (§7); no global scope-off switch, ever |
 | S6 | one-off = a scope entry with `expires_at` + `reason`; admins create, members request; default 7 days, max 30 |
 
@@ -129,29 +130,55 @@ Ownership tab authorized it for active checks even outside every root. Now
 confirmation records ownership only; a scope entry, seed or verified domain
 must still cover the name. The refusal offers "add scope entry".
 
-### 4.3 Discovered names (S4)
+### 4.3 Discovered names (S4, owner refinement 2026-10-07)
 
-A name discovered by CT or by a tenant scan gets the strong rule
-`fqdn_under_scope_root` (weight 0.95) when it sits at or under an active
-domain scope entry with `max_tier` ≥ t1 or a root-domain seed, the tenant has
-`auto_join_discovered` on, no active exclusion matches it and no tombstone
-names it or a parent. With that rule the attribution engine confirms it. IP
-addresses, CIDRs and services never get the rule. Everything else keeps
-today's evidence and lands in the existing attribution review queue.
+A declared, permanent scope entry is an intentional ownership claim, made with
+step-up and approval (§6.1, §7). So:
 
-**Backfill.** When the rule ships, a one-shot job re-evaluates the existing
-records that are `needs_review` with reason `fqdn_under_asserted_root` and are
-not human-decided: each name still under an active domain scope entry, seed or
-verified domain of the **same tenant** (and not excluded, not tombstoned, not
-under a rejected name, tenant `auto_join_discovered` on) gets the
-`fqdn_under_scope_root` evidence and is re-evaluated, which confirms it. The
-job is idempotent (evidence is upserted per asset, rule and root; a confirmed
-record is left alone), runs per tenant, and writes one system audit event per
-tenant (`attribution.backfill_confirmed`, actor `system`, the count and up to
-50 names). It runs at API start-up once per tenant, recorded so it does not
-repeat, and with the CT sweep afterwards (the rule is applied on every
-promotion anyway). Live had 10 such names under `*.vndirect.com.vn`
-(2026-10-07).
+- **Rule `matches_scope_target`** (strong, weight 0.99): a domain name that a
+  tenant **active, non-expiring** domain scope target covers (`x`, or `*.x` /
+  `**.x` under §4.1), or that sits at or under one of its root-domain seeds, is
+  **confirmed** into the inventory. No review queue. The decision is recorded
+  as automatic (not human), with the matching entry in the evidence, and is
+  audited as a system decision.
+- **IP addresses never inherit from names.** An IP asset is confirmed by this
+  rule only when an active, non-expiring `ip_address`, `ip_range` or `cidr`
+  scope entry contains it. Services follow their host.
+- **Expiring (one-off) entries authorize scanning only** and never confirm
+  inventory.
+- **Exclusions and tombstones win**: an excluded name, a tombstoned name or a
+  name under a rejected parent never gets the rule.
+- **Not proof.** Confirmation is ownership bookkeeping; §8.1 (platform sensors
+  need a verified root) is unchanged.
+- The tenant setting `auto_join_discovered` (default on) turns the rule off:
+  new names then go to the review queue as before.
+- Every other discovered name keeps today's evidence and lands in the existing
+  attribution review queue.
+
+The rule is applied wherever discovered names are attributed: CT promotion
+and the scan stamper (names a tenant scan found).
+
+**When the entry goes away** (deleted, deactivated, narrowed or expired): the
+asset, its history and findings stay; nothing is deleted. Active scanning stops
+at once, because the authority check (§4.2 step 6) no longer finds a cover;
+the asset's attribution view answers `scope_status: "out_of_scope"` and the
+refusal code `no_entry`.
+
+**Backfill.** A one-shot job re-evaluates the records that are `needs_review`
+(for example reason `fqdn_under_asserted_root`) and not human-decided: each
+name now covered by an active, non-expiring scope target or a root-domain seed
+of the **same tenant** (and not excluded, not tombstoned, not under a rejected
+name, `auto_join_discovered` on) gets the `matches_scope_target` evidence and
+is re-evaluated, which confirms it. Idempotent (evidence upserted per asset,
+rule and source; confirmed records are left alone), per tenant, one system
+audit event per tenant (`attribution.backfill_confirmed`, the count and up to
+50 names). It runs at API start-up, recorded once per tenant. Live had 10 such
+names under `*.vndirect.com.vn` (2026-10-07).
+
+Tests: a wildcard match confirms; an expiring entry does not; an IP does not
+(unless inside an IP scope entry); an exclusion or tombstone blocks; removing
+the entry flags the asset out of scope and stops active checks; another
+tenant's entries have no effect.
 
 ### 4.4 Inventory membership (one definition)
 
@@ -388,6 +415,11 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   "confirm"|"reject"|"dependency"|"monitor_only", "reason": "…"}`. Unchanged,
   except that a confirmation no longer authorizes active probes by itself
   (§4.2).
+- **`GET /api/v1/assets/{id}/attribution`**: adds `scope_status`
+  (`in_scope`, `out_of_scope`, `internal` for zone-gated names,
+  `not_applicable` for repositories and cloud resources) and `covered_by`
+  (as above); `active_checks_allowed` / `active_checks_blocked_by` use the
+  same gate, with `blocked_code` (a §6.5 code).
 - **`GET /api/v1/attack-surface/stats`**: every count uses §4.4;
   `recent_changes[]` items add `attribution_state` (`confirmed`,
   `needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`, or
@@ -477,6 +509,6 @@ ranges are gated by zones and are not capped.
 | Authority | one authority check for typed and inventory targets; Ownership-tab bypass removed |
 | Guardrails | PSL, deny list, CIDR caps, `SCOPE_ACTIVE_PROOF` |
 | Entries | migration `001149`, expiry, requests, approvals, step-up, notification, settings, sweep |
-| Discovery | `fqdn_under_scope_root` + backfill |
+| Discovery | `matches_scope_target` + backfill |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
 | Refusals | codes, fixes, `POST /check` dry run |
