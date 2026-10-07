@@ -866,7 +866,19 @@ func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) 
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
-	h := handler.NewEASMSeedHandler(easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed), audit, log)
+	seeds := easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed)
+	// A new seed is a scope entry created through the guarded widening path
+	// (RFC-054 §6.1): without the scope service, adding one is refused.
+	if svc.Scope != nil {
+		seeds.SetEntries(svc.Scope)
+	}
+	h := handler.NewEASMSeedHandler(seeds, audit, log)
+	if svc.Scope != nil {
+		h.SetAdminNotifier(svc.Scope)
+	}
+	if svc.ScopeJoin != nil {
+		h.SetScopeJoin(svc.ScopeJoin)
+	}
 	// A new seed starts a sweep so its first results arrive in minutes (P0-11).
 	if svc.EASMSweep != nil {
 		h.SetSweeper(svc.EASMSweep)
