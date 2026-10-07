@@ -120,8 +120,6 @@ type Param struct {
 	Max  *int     `json:"max,omitempty"`
 }
 
-func intPtr(n int) *int { return &n }
-
 // Adapter is the capability that turns one port type into another: what the
 // editor offers to insert when two incompatible ports are wired.
 type Adapter struct {
