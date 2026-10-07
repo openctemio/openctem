@@ -54,10 +54,7 @@ export function scannerUnavailableReason(
 }
 
 export function useScannerOptions(allowConnectors = false, zoneId?: string | null) {
-  const { data, isLoading, error } = useTools(
-    { is_active: true, per_page: 100 },
-    { revalidateOnFocus: false }
-  )
+  const { data, isLoading, error } = useTools({ per_page: 100 }, { revalidateOnFocus: false })
   const { data: avail } = useToolAvailability(zoneId, { revalidateOnFocus: false })
   const options = useMemo(
     () => scannerOptions(data?.items, allowConnectors),
