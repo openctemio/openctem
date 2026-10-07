@@ -1002,7 +1002,7 @@ export default function ScopeConfigPage() {
       key: 'coverage',
       label: 'Inventory in scope',
       value: `${stats.coverage}%`,
-      hint: 'of discovered assets match an active target',
+      hint: 'of the internet-facing inventory you can see is covered by an active target',
     },
   ]
 
