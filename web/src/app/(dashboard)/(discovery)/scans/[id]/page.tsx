@@ -47,7 +47,7 @@ import {
   runTriggeredByLabel,
   scanRunCounts,
 } from '@/features/scans/lib/run-display'
-import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { del, post } from '@/lib/api/client'
 import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -125,10 +125,11 @@ export default function ScanDetailPage() {
 
   const [tabParam, setTabParam] = useUrlFilter('tab', 'runs')
   const tab: Tab = (TABS as readonly string[]).includes(tabParam) ? (tabParam as Tab) : 'runs'
-  // The run history is paged on the server; the page lives in the URL.
-  const [runPage, setRunPage] = useUrlFilterNumber('run_page', 1)
-  const [runPerPageParam, setRunPerPage] = useUrlFilterNumber('run_per_page', 25)
-  const runPerPage = RUN_PAGE_SIZES.includes(runPerPageParam) ? runPerPageParam : 25
+  // The run history is an embedded list: its paging is local state, and
+  // "View all runs" opens the Runs list filtered to this scan (a linkable,
+  // plain page / per_page URL).
+  const [runPage, setRunPage] = useState(1)
+  const [runPerPage, setRunPerPage] = useState(25)
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -442,6 +443,13 @@ export default function ScanDetailPage() {
             paginationNoun="runs"
             emptyMessage="No runs yet"
             emptyDescription="Trigger this scan to see its first run here."
+            toolbarEnd={
+              <Button variant="outline" size="sm" className="h-9" asChild>
+                <Link href={`/scans/runs?scan_id=${encodeURIComponent(scanId)}`}>
+                  View all runs
+                </Link>
+              </Button>
+            }
           />
         </TabsContent>
 

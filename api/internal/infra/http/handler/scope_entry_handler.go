@@ -58,12 +58,13 @@ func (h *ScopeHandler) ApproveTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditTarget(r, audit.ActionScopeTargetApproved, targetID, before, target)
+	out := h.targetOut(r, target)
 	if effective {
-		h.reevaluate(tenantID, target)
 		h.discover(tenantID, target)
+		out = h.joinedOut(r, target)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(h.targetOut(r, target))
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // RejectTarget handles POST /api/v1/scope/targets/{id}/reject

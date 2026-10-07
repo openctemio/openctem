@@ -27,6 +27,7 @@ import {
   type MetricStripItem,
 } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { AssetTypeIcon, getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { AdminApiError } from '@/features/admin-console/api/admin-client'
 import {
@@ -80,10 +81,8 @@ export default function TargetMappingsPage() {
   const [targetType, setTargetType] = useUrlFilter('target_type', '')
   const [assetType, setAssetType] = useUrlFilter('asset_type', '')
   const [status, setStatus] = useUrlFilter('status', '')
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '50')
-  const page = Math.max(1, parseInt(pageParam, 10) || 1)
-  const perPage = PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 50
+  const listParams = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 50 })
+  const { page, perPage } = listParams
   const filtered = !!(targetType || assetType || status)
 
   const list = useTargetMappings({ targetType, assetType, status, page, perPage })
@@ -98,7 +97,7 @@ export default function TargetMappingsPage() {
     void stats.mutate()
   }, [list, stats])
 
-  const resetPage = () => setPageParam('1')
+  const resetPage = () => listParams.setPage(1)
   const toggleStatus = (next: string) => {
     setStatus(status === next ? '' : next)
     resetPage()
@@ -326,15 +325,7 @@ export default function TargetMappingsPage() {
             rowCount={list.data?.total ?? 0}
             pageSizeOptions={PAGE_SIZES}
             pagination={{ pageIndex: page - 1, pageSize: perPage }}
-            onPaginationChange={(p) => {
-              // A new page size starts from the first page.
-              if (p.pageSize !== perPage) {
-                setPerPageParam(String(p.pageSize))
-                resetPage()
-              } else {
-                setPageParam(String(p.pageIndex + 1))
-              }
-            }}
+            onPaginationChange={listParams.setPagination}
             toolbarStart={
               <div className="flex w-full flex-col gap-2 sm:flex-row">
                 <Select

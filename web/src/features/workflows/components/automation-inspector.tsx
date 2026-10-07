@@ -90,7 +90,7 @@ function JsonField({
 
 function SavedScanSelect({ value, onChange }: { value?: string; onChange: (id: string) => void }) {
   const { data, isLoading } = useScanConfigs({ per_page: 100, sort: 'name' })
-  const scans = data?.items ?? []
+  const scans = data?.data ?? []
   return (
     <div className="space-y-1.5">
       <Label>Saved scan</Label>

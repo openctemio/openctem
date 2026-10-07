@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import type { StateChangeResponse } from '@/lib/api/generated'
 import {
@@ -152,8 +153,8 @@ export default function AssetChangesPage() {
   const [viewParam, setViewParam] = useUrlFilter('view', 'appeared')
   const [periodParam, setPeriodParam] = useUrlFilter('period', '7d')
   const [internetParam, setInternetParam] = useUrlFilter('internet', 'false')
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '20')
+  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
   // End of the period window. Set by Refresh so "the last 7 days" is
   // recomputed from now.
   const [anchor, setAnchor] = useState(() => Date.now())
@@ -168,21 +169,6 @@ export default function AssetChangesPage() {
   const from = useMemo(
     () => new Date(Math.floor(anchor / 60_000) * 60_000 - period.ms).toISOString(),
     [anchor, period.ms]
-  )
-
-  const pagination = useMemo(
-    () => ({
-      pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 20,
-    }),
-    [pageParam, perPageParam]
-  )
-  const setPagination = useCallback(
-    (next: { pageIndex: number; pageSize: number }) => {
-      setPageParam(String(next.pageIndex + 1))
-      setPerPageParam(String(next.pageSize))
-    },
-    [setPageParam, setPerPageParam]
   )
 
   const query = useMemo(() => ({ from, internetOnly }), [from, internetOnly])
@@ -207,9 +193,9 @@ export default function AssetChangesPage() {
   const selectView = useCallback(
     (next: ChangeView) => {
       setViewParam(next)
-      setPageParam('1')
+      setPage(1)
     },
-    [setViewParam, setPageParam]
+    [setViewParam, setPage]
   )
 
   const metrics: MetricStripItem[] = (Object.keys(VIEW_META) as ChangeView[]).map((key) => ({
@@ -318,7 +304,7 @@ export default function AssetChangesPage() {
           checked={internetParam === 'true'}
           onCheckedChange={(checked) => {
             setInternetParam(checked ? 'true' : 'false')
-            setPageParam('1')
+            setPage(1)
           }}
         />
         <Label htmlFor="internet-only" className="cursor-pointer text-sm font-normal">
@@ -345,7 +331,7 @@ export default function AssetChangesPage() {
           value={period.value}
           onValueChange={(value) => {
             setPeriodParam(value)
-            setPageParam('1')
+            setPage(1)
           }}
         >
           <SelectTrigger className="h-9 w-[150px]" aria-label="Period">
