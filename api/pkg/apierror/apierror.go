@@ -46,6 +46,9 @@ const (
 	// that does not parse against the resource's field registry (RFC-048).
 	// Details name each bad param or JSON path.
 	CodeInvalidFilter Code = "INVALID_FILTER"
+	// CodeInvalidInclude is a 400 for an include= value the resource does
+	// not offer, a nested one, or too many (internal/infra/http/include).
+	CodeInvalidInclude Code = "INVALID_INCLUDE"
 )
 
 // Error represents a standardized API error.
