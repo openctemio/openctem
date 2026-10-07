@@ -522,5 +522,7 @@
   "criticality.low": "Thấp",
   "criticality.none": "Chưa đánh giá",
   "findings.hideInformational": "Ẩn mức thông tin",
-  "findings.hideInformational.hint": "Ẩn các phát hiện mức thông tin khỏi danh sách. Lưu trên trình duyệt này."
+  "findings.hideInformational.hint": "Ẩn các phát hiện mức thông tin khỏi danh sách. Lưu trên trình duyệt này.",
+  "assets.properties.title": "Thuộc tính",
+  "assets.properties.other": "Khác"
 }
