@@ -31,7 +31,7 @@ func (s toolSensors) HasRetestSensor(_ context.Context, _ shared.ID, tool string
 
 // finishTool completes a retest command with the verdicts the sensor's kit
 // reports (metadata.retest.verdicts), or fails it when verdicts is nil.
-func (fx *fixture) finishTool(cmd *shared.ID, verdicts []map[string]string) {
+func (fx *fixture) finishTool(cmd *shared.ID, verdicts []map[string]any) {
 	fx.t.Helper()
 	if cmd == nil {
 		fx.t.Fatal("retest has no command")
@@ -45,8 +45,13 @@ func (fx *fixture) finishTool(cmd *shared.ID, verdicts []map[string]string) {
 	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, cmd.String(), res)
 }
 
-func verdict(ref shared.ID, v string) []map[string]string {
-	return []map[string]string{{"ref": ref.String(), "verdict": v, "detail": "checked"}}
+func verdict(ref shared.ID, v string) []map[string]any {
+	return []map[string]any{{"ref": ref.String(), "verdict": v, "detail": "checked"}}
+}
+
+// verdictWithAttempt is a verdict carrying the attempt's HTTP exchange.
+func verdictWithAttempt(ref shared.ID, v, url string, status int) []map[string]any {
+	return []map[string]any{{"ref": ref.String(), "verdict": v, "detail": "checked", "evidence": attemptItems(url, status)}}
 }
 
 // One retest command, routed to retest:<tool>, naming the tool as "scanner",
@@ -89,16 +94,29 @@ func TestRetestDB_ToolVerdictSettlesTheFinding(t *testing.T) {
 	svc := fx.serviceWith(toolSensors{"nuclei": true})
 	ctx := context.Background()
 
-	// fixed: an open finding is resolved by the retest.
-	open := fx.newFinding(fx.asset, "confirmed", "tpl-open")
-	rt := fx.request(svc, open)
-	fx.finishTool(rt.CheckCommandID, verdict(open, "fixed"))
+	// A bare "fixed" (no attempt evidence) is not reproduced: nothing moves.
+	bare := fx.newFinding(fx.asset, "confirmed", "tpl-bare")
+	rt := fx.request(svc, bare)
+	fx.finishTool(rt.CheckCommandID, verdict(bare, "fixed"))
 	svc.OnCommandFinished(ctx, fx.tenant, *rt.CheckCommandID)
-	if st, method, by := fx.findingState(open); st != "resolved" || method != "retest_verified" || by != fx.user.String() {
-		t.Fatalf("fixed: status %s method %s by %s", st, method, by)
+	if st, _, _ := fx.findingState(bare); st != "confirmed" {
+		t.Fatalf("bare fixed moved the finding to %s", st)
 	}
-	if got := fx.retest(rt.ID); got.Outcome != retestdom.OutcomeFixed {
-		t.Fatalf("fixed: retest %+v", got)
+	if got := fx.retest(rt.ID); got.Outcome != retestdom.OutcomeNotReproduced {
+		t.Fatalf("bare fixed: retest %+v", got)
+	}
+
+	// fixed with the endpoint's answer: verified fixed, awaiting a person.
+	open := fx.newFinding(fx.newAsset("open.example.com"), "confirmed", "tpl-open")
+	fx.exec(`UPDATE findings SET file_path = 'https://open.example.com/admin' WHERE id = $1`, open.String())
+	rt = fx.request(svc, open)
+	fx.finishTool(rt.CheckCommandID, verdictWithAttempt(open, "fixed", "https://open.example.com/admin", 404))
+	svc.OnCommandFinished(ctx, fx.tenant, *rt.CheckCommandID)
+	if st, _, _ := fx.findingState(open); st != "validated_fixed" {
+		t.Fatalf("fixed with proof: status %s", st)
+	}
+	if got := fx.retest(rt.ID); got.Outcome != retestdom.OutcomeConfirmedFixed {
+		t.Fatalf("fixed with proof: retest %+v", got)
 	}
 
 	// still_present: a resolved finding is reopened (regression).
@@ -125,7 +143,7 @@ func TestRetestDB_ToolVerdictSettlesTheFinding(t *testing.T) {
 		finish(f, rt)
 		svc.OnCommandFinished(ctx, fx.tenant, *rt.CheckCommandID)
 		got := fx.retest(rt.ID)
-		if got.Status != retestdom.StatusCompleted || got.Outcome != retestdom.OutcomeUnknown {
+		if got.Status != retestdom.StatusCompleted || got.Outcome != retestdom.OutcomeInconclusive {
 			t.Errorf("%s: retest %+v", name, got)
 		}
 		if st, _, _ := fx.findingState(f); st != "confirmed" {

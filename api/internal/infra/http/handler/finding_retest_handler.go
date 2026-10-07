@@ -32,20 +32,30 @@ func NewFindingRetestHandler(svc *retestapp.Service, log *logger.Logger) *Findin
 
 // FindingRetestResponse is one retest of a finding.
 type FindingRetestResponse struct {
-	ID           string     `json:"id"`
-	FindingID    string     `json:"finding_id"`
-	Trigger      string     `json:"trigger"`
-	RequestedBy  string     `json:"requested_by,omitempty"`
-	Status       string     `json:"status"`
-	Outcome      string     `json:"outcome,omitempty"`
-	Reason       string     `json:"reason,omitempty"`
-	PriorStatus  string     `json:"prior_status"`
-	ResultStatus string     `json:"result_status,omitempty"`
-	TemplateID   string     `json:"template_id"`
-	Target       string     `json:"target"`
-	CreatedAt    time.Time  `json:"created_at"`
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`
-	DeadlineAt   time.Time  `json:"deadline_at"`
+	ID          string `json:"id"`
+	FindingID   string `json:"finding_id"`
+	Trigger     string `json:"trigger"`
+	RequestedBy string `json:"requested_by,omitempty"`
+	Status      string `json:"status"`
+	// Outcome: confirmed_fixed (the endpoint answered and the check did not
+	// match), not_reproduced (no match, endpoint not proven checked),
+	// still_vulnerable, inconclusive (reason_code says why).
+	Outcome      string `json:"outcome,omitempty"`
+	ReasonCode   string `json:"reason_code,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	PriorStatus  string `json:"prior_status"`
+	ResultStatus string `json:"result_status,omitempty"`
+	TemplateID   string `json:"template_id"`
+	Target       string `json:"target"`
+	// RunKind is "retest": an attempt is a run linked to the finding, the
+	// command that carried it (check_command_id) and the sensor that ran it.
+	RunKind        string     `json:"run_kind"`
+	CheckCommandID string     `json:"check_command_id,omitempty"`
+	ReachCommandID string     `json:"reach_command_id,omitempty"`
+	SensorID       string     `json:"sensor_id,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	DeadlineAt     time.Time  `json:"deadline_at"`
 }
 
 // FindingRetestListResponse is a finding's retest history, newest first.
@@ -56,7 +66,7 @@ type FindingRetestListResponse struct {
 func toFindingRetestResponse(rt *retestdom.Retest) FindingRetestResponse {
 	out := FindingRetestResponse{
 		ID: rt.ID.String(), FindingID: rt.FindingID.String(), Trigger: string(rt.Trigger),
-		Status: string(rt.Status), Outcome: string(rt.Outcome), Reason: rt.Reason,
+		Status: string(rt.Status), Outcome: string(rt.Outcome), ReasonCode: string(rt.ReasonCode), Reason: rt.Reason,
 		PriorStatus: string(rt.PriorStatus), ResultStatus: string(rt.ResultStatus),
 		TemplateID: rt.TemplateID, Target: rt.Target,
 		CreatedAt: rt.CreatedAt, CompletedAt: rt.CompletedAt, DeadlineAt: rt.DeadlineAt,
@@ -64,12 +74,22 @@ func toFindingRetestResponse(rt *retestdom.Retest) FindingRetestResponse {
 	if rt.RequestedBy != nil {
 		out.RequestedBy = rt.RequestedBy.String()
 	}
+	out.RunKind = "retest"
+	if rt.CheckCommandID != nil {
+		out.CheckCommandID = rt.CheckCommandID.String()
+	}
+	if rt.ReachCommandID != nil {
+		out.ReachCommandID = rt.ReachCommandID.String()
+	}
+	if rt.SensorID != nil {
+		out.SensorID = rt.SensorID.String()
+	}
 	return out
 }
 
 // Request handles POST /api/v1/findings/{id}/retests.
 // @Summary      Retest a finding now
-// @Description  Re-runs the nuclei template that produced the finding against its own target, with a reachability probe of the same target (RFC-039). The result is applied asynchronously: fixed resolves the finding, still present keeps it (or reopens a resolved one), and an unreachable target is "unknown" and changes nothing. Requires findings:verify; out-of-scope findings are 404.
+// @Description  Re-runs the check that produced the finding against the origin of its matched-at URL (RFC-039, RFC-057). Applied asynchronously: confirmed_fixed (the re-run reached the finding's endpoint, got an answer that is not a block, an auth failure or a server error, and did not match) moves the finding to validated_fixed, or resolves it when the tenant enabled retest.auto_resolve; still_vulnerable keeps it (or reopens a resolved one); not_reproduced and inconclusive change nothing. The attempt's request and response are kept as finding evidence. Requires findings:verify; out-of-scope findings are 404.
 // @Tags         Findings
 // @Produce      json
 // @Param        id   path      string  true  "Finding ID"
