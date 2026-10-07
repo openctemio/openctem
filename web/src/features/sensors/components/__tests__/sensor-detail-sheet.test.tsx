@@ -54,6 +54,7 @@ const content = vi.hoisted(() => ({ refreshSensorContent: vi.fn(), refreshFleetC
 vi.mock('@/lib/api/sensor-content-hooks', () => content)
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 vi.mock('@/features/scan-zones', () => ({ SensorZonesSection: () => null }))
+vi.mock('@/lib/api/tool-hooks', () => ({ useToolAvailability: () => ({ data: undefined }) }))
 // The grant panel has its own tests (sensor-grant-section.test.tsx).
 vi.mock('../sensor-grant-section', () => ({ SensorGrantSection: () => null }))
 vi.mock('../sensor-activity', () => ({

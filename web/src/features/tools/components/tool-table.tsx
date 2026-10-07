@@ -3,47 +3,38 @@
 import type * as React from 'react'
 import { useMemo, useCallback } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
+import Image from 'next/image'
+import { ArrowUpCircle, ExternalLink, Eye, Github, Settings, Trash2 } from 'lucide-react'
+
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  Eye,
-  Settings,
-  Trash2,
-  ArrowUpCircle,
-  ExternalLink,
-  Github,
-  Power,
-  PowerOff,
-} from 'lucide-react'
 import {
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
   type RowAction,
 } from '@/features/shared'
-
-import type { Tool } from '@/lib/api/tool-types'
+import type { Tool, ToolAvailabilityItem } from '@/lib/api/tool-types'
 import type { ToolCategory } from '@/lib/api/tool-category-types'
-import { INSTALL_METHOD_DISPLAY_NAMES } from '@/lib/api/tool-types'
 import { getCategoryNameById, getCategoryDisplayNameById } from '@/lib/api/tool-category-hooks'
-import { sanitizeExternalUrl } from '@/lib/utils'
-import { ToolCategoryIcon } from './tool-category-icon'
+import { formatRelative } from '@/lib/format-date'
 import { safeImageSrc } from '@/lib/safe-href'
-import Image from 'next/image'
+import { sanitizeExternalUrl } from '@/lib/utils'
+
+import { TOOL_AVAILABILITY_STATUSES, toolDisplayName, versionsLabel } from '../lib/availability'
+import { ToolCategoryIcon } from './tool-category-icon'
+import { ToolSensorsCell, ToolStatusBadge } from './tool-availability'
 
 interface ToolTableProps {
-  tools: Tool[]
+  items: ToolAvailabilityItem[]
   categories?: ToolCategory[] // For looking up category name from category_id
-  onViewTool: (tool: Tool) => void
+  onViewTool: (item: ToolAvailabilityItem) => void
   onEditTool?: (tool: Tool) => void
   onDeleteTool?: (tool: Tool) => void
-  onActivateTool?: (tool: Tool) => void
-  onDeactivateTool?: (tool: Tool) => void
-  onCheckUpdate?: (tool: Tool) => void
-  /** When true, hides edit/delete/activate/deactivate actions (for platform tools) */
-  readOnly?: boolean
-  /** Passed through to the DataTable toolbar (search, filters, view toggle). */
+  /** Switch the tool on or off for the organization; omitted without permission. */
+  onToggleEnabled?: (item: ToolAvailabilityItem, enabled: boolean) => void
+  /** Passed through to the DataTable toolbar (search, filters). */
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
   emptyMessage?: string
@@ -56,41 +47,39 @@ interface ToolTableProps {
 const openExternal = (url: string) =>
   window.open(sanitizeExternalUrl(url), '_blank', 'noopener,noreferrer')
 
+const STATUS_ORDER = new Map(TOOL_AVAILABILITY_STATUSES.map((s, i) => [s, i]))
+
 export function ToolTable({
-  tools,
+  items,
   categories,
   onViewTool,
   onEditTool,
   onDeleteTool,
-  onActivateTool,
-  onDeactivateTool,
-  onCheckUpdate,
-  readOnly = false,
+  onToggleEnabled,
   toolbarStart,
   toolbarEnd,
   emptyMessage = 'No tools match these filters',
 }: ToolTableProps) {
-  const getCategoryName = useCallback(
-    (tool: Tool) => getCategoryNameById(categories, tool.category_id),
+  const categoryName = useCallback(
+    (item: ToolAvailabilityItem) => getCategoryNameById(categories, item.tool?.category_id),
     [categories]
   )
-  const getCategoryDisplayName = useCallback(
-    (tool: Tool) => getCategoryDisplayNameById(categories, tool.category_id),
+  const categoryDisplayName = useCallback(
+    (item: ToolAvailabilityItem) =>
+      item.tool ? getCategoryDisplayNameById(categories, item.tool.category_id) : '',
     [categories]
   )
 
-  const canToggle = !readOnly && Boolean(onActivateTool || onDeactivateTool)
-
-  const columns = useMemo<ColumnDef<Tool>[]>(
+  const columns = useMemo<ColumnDef<ToolAvailabilityItem>[]>(
     () => [
       {
         id: 'name',
-        accessorFn: (t) => `${t.display_name} ${t.name} ${t.description ?? ''}`,
-        sortingFn: (a, b) => a.original.display_name.localeCompare(b.original.display_name),
+        accessorFn: (i) => `${toolDisplayName(i)} ${i.name} ${i.tool?.description ?? ''}`,
+        sortingFn: (a, b) => toolDisplayName(a.original).localeCompare(toolDisplayName(b.original)),
         header: ({ column }) => <DataTableColumnHeader column={column} title="Tool" />,
         cell: ({ row }) => {
-          const tool = row.original
-          const logoSrc = safeImageSrc(tool.logo_url)
+          const item = row.original
+          const logoSrc = safeImageSrc(item.tool?.logo_url)
           return (
             <div className="flex min-w-0 items-center gap-3">
               {logoSrc ? (
@@ -107,14 +96,26 @@ export function ToolTable({
               ) : (
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted">
                   <ToolCategoryIcon
-                    category={getCategoryName(tool)}
+                    category={categoryName(item)}
                     className="h-4 w-4 text-muted-foreground"
                   />
                 </div>
               )}
               <div className="min-w-0">
-                <p className="truncate font-medium">{tool.display_name}</p>
-                <p className="truncate font-mono text-xs text-muted-foreground">{tool.name}</p>
+                <p className="flex items-center gap-1.5 truncate font-medium">
+                  <span className="truncate">{toolDisplayName(item)}</span>
+                  {item.tool && !item.tool.is_builtin && (
+                    <Badge variant="outline" className="text-[10px] font-normal">
+                      Custom
+                    </Badge>
+                  )}
+                  {!item.in_catalog && (
+                    <Badge variant="outline" className="text-[10px] font-normal">
+                      Not in catalog
+                    </Badge>
+                  )}
+                </p>
+                <p className="truncate font-mono text-xs text-muted-foreground">{item.name}</p>
               </div>
             </div>
           )
@@ -122,40 +123,52 @@ export function ToolTable({
       },
       {
         id: 'category',
-        accessorFn: (t) => getCategoryDisplayName(t),
+        accessorFn: (i) => categoryDisplayName(i),
         header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
-        cell: ({ row }) => (
-          <Badge variant="outline" className="gap-1">
-            <ToolCategoryIcon category={getCategoryName(row.original)} className="h-3 w-3" />
-            {getCategoryDisplayName(row.original)}
-          </Badge>
-        ),
+        cell: ({ row }) =>
+          row.original.tool ? (
+            <Badge variant="outline" className="gap-1">
+              <ToolCategoryIcon category={categoryName(row.original)} className="h-3 w-3" />
+              {categoryDisplayName(row.original)}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">–</span>
+          ),
       },
       {
-        id: 'install',
-        accessorFn: (t) => INSTALL_METHOD_DISPLAY_NAMES[t.install_method],
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Install" />,
-        cell: ({ getValue }) => <Badge variant="secondary">{getValue<string>()}</Badge>,
+        id: 'status',
+        accessorFn: (i) => STATUS_ORDER.get(i.status) ?? 99,
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        cell: ({ row }) => <ToolStatusBadge item={row.original} />,
       },
       {
-        id: 'version',
-        accessorFn: (t) => t.current_version ?? '',
+        id: 'sensors',
+        accessorFn: (i) => i.sensors_online * 1000 + i.sensors_total,
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Sensors" />,
+        cell: ({ row }) => <ToolSensorsCell item={row.original} />,
+      },
+      {
+        id: 'versions',
+        accessorFn: (i) => versionsLabel(i),
         enableSorting: false,
-        header: 'Version',
+        header: 'Version(s)',
         cell: ({ row }) => {
-          const tool = row.original
+          const item = row.original
+          const label = versionsLabel(item)
           return (
             <div className="flex items-center gap-2">
-              <span className="text-xs tabular-nums">{tool.current_version || '–'}</span>
-              {tool.has_update && tool.latest_version && (
+              <span className="text-xs tabular-nums">{label || '–'}</span>
+              {item.update_available && item.latest_version && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Badge variant="secondary" className="gap-1 tabular-nums">
                       <ArrowUpCircle className="h-3 w-3" />
-                      {tool.latest_version}
+                      {item.latest_version}
                     </Badge>
                   </TooltipTrigger>
-                  <TooltipContent>Update available</TooltipContent>
+                  <TooltipContent>
+                    A sensor runs an older version than {item.latest_version}, the newest known
+                  </TooltipContent>
                 </Tooltip>
               )}
             </div>
@@ -163,37 +176,36 @@ export function ToolTable({
         },
       },
       {
-        id: 'type',
-        accessorFn: (t) => (t.is_builtin ? 'Built-in' : 'Custom'),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
-        cell: ({ getValue }) => <Badge variant="outline">{getValue<string>()}</Badge>,
+        id: 'last_reported',
+        accessorFn: (i) => i.last_reported_at ?? '',
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Last reported" />,
+        cell: ({ row }) => (
+          <span
+            className="text-xs text-muted-foreground"
+            title={row.original.last_reported_at ?? undefined}
+          >
+            {formatRelative(row.original.last_reported_at, '–')}
+          </span>
+        ),
       },
       {
-        id: 'status',
-        accessorFn: (t) => (t.is_active ? 'Active' : 'Inactive'),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        id: 'enabled',
+        accessorFn: (i) => (i.enabled ? 1 : 0),
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Enabled" />,
         cell: ({ row }) => {
-          const tool = row.original
-          if (!canToggle) {
-            return (
-              <Badge variant={tool.is_active ? 'outline' : 'secondary'}>
-                {tool.is_active ? 'Active' : 'Inactive'}
-              </Badge>
-            )
-          }
+          const item = row.original
+          // A tool outside the catalog, or one the platform switched off,
+          // has no organization switch.
+          const switchable = !!onToggleEnabled && !!item.tool && item.tool.is_active
           return (
-            <div className="flex items-center gap-2">
+            <span onClick={(e) => e.stopPropagation()} className="inline-flex">
               <Switch
-                checked={tool.is_active}
-                aria-label={tool.is_active ? 'Deactivate tool' : 'Activate tool'}
-                onCheckedChange={() =>
-                  tool.is_active ? onDeactivateTool?.(tool) : onActivateTool?.(tool)
-                }
+                checked={item.enabled}
+                disabled={!switchable}
+                aria-label={`${item.enabled ? 'Disable' : 'Enable'} ${toolDisplayName(item)}`}
+                onCheckedChange={(on) => onToggleEnabled?.(item, on)}
               />
-              <span className="text-sm text-muted-foreground">
-                {tool.is_active ? 'Active' : 'Inactive'}
-              </span>
-            </div>
+            </span>
           )
         },
       },
@@ -202,25 +214,19 @@ export function ToolTable({
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => {
-          const tool = row.original
+          const item = row.original
+          const tool = item.tool
           const actions: RowAction[] = [
-            { label: 'View details', icon: Eye, onClick: () => onViewTool(tool) },
+            { label: 'View details', icon: Eye, onClick: () => onViewTool(item) },
           ]
-          if (!readOnly && !tool.is_builtin && onEditTool) {
+          if (tool && !tool.is_builtin && onEditTool) {
             actions.push({ label: 'Edit', icon: Settings, onClick: () => onEditTool(tool) })
           }
-          if (tool.has_update && onCheckUpdate) {
-            actions.push({
-              label: 'Check update',
-              icon: ArrowUpCircle,
-              onClick: () => onCheckUpdate(tool),
-            })
-          }
-          if (tool.github_url) {
+          if (tool?.github_url) {
             const url = tool.github_url
             actions.push({ label: 'GitHub', icon: Github, onClick: () => openExternal(url) })
           }
-          if (tool.docs_url) {
+          if (tool?.docs_url) {
             const url = tool.docs_url
             actions.push({
               label: 'Documentation',
@@ -228,55 +234,27 @@ export function ToolTable({
               onClick: () => openExternal(url),
             })
           }
-          if (canToggle) {
-            if (tool.is_active && onDeactivateTool) {
-              actions.push({
-                label: 'Deactivate',
-                icon: PowerOff,
-                onClick: () => onDeactivateTool(tool),
-                separatorBefore: true,
-              })
-            } else if (!tool.is_active && onActivateTool) {
-              actions.push({
-                label: 'Activate',
-                icon: Power,
-                onClick: () => onActivateTool(tool),
-                separatorBefore: true,
-              })
-            }
-          }
-          if (!readOnly && !tool.is_builtin && onDeleteTool) {
+          if (tool && !tool.is_builtin && onDeleteTool) {
             actions.push({
               label: 'Delete',
               icon: Trash2,
               onClick: () => onDeleteTool(tool),
               destructive: true,
-              separatorBefore: !canToggle,
+              separatorBefore: true,
             })
           }
           return <DataTableRowActions actions={actions} />
         },
       },
     ],
-    [
-      onViewTool,
-      onEditTool,
-      onDeleteTool,
-      onActivateTool,
-      onDeactivateTool,
-      onCheckUpdate,
-      readOnly,
-      canToggle,
-      getCategoryName,
-      getCategoryDisplayName,
-    ]
+    [onViewTool, onEditTool, onDeleteTool, onToggleEnabled, categoryName, categoryDisplayName]
   )
 
   return (
     <DataTable
       columns={columns}
-      data={tools}
-      getRowId={(t) => t.id}
+      data={items}
+      getRowId={(i) => i.name}
       showSearch={false}
       onRowClick={onViewTool}
       toolbarStart={toolbarStart}

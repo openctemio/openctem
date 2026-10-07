@@ -1,6 +1,6 @@
 # Scan stages: catalogue, planner and chaining
 
-> Last updated: 2026-10-05. Design: [RFC-046](../rfcs/RFC-046-scans-redesign.md)
+> Last updated: 2026-10-07. Design: [RFC-046](../rfcs/RFC-046-scans-redesign.md)
 > §5 (engines and the stage catalogue) and research/27 (scan modes and
 > workflows, owner decisions G1–G12). Run model: [scan-lifecycle.md](scan-lifecycle.md).
 > Target gate: [active-probe-gate.md](active-probe-gate.md).
@@ -52,8 +52,53 @@ platform data: a tenant, a sensor or a report cannot widen it.
   cycle), and a stage that does not take the seeds must take a type its `from`
   stages produce. It refuses T2 stages until the approval flow exists. The
   engine spec (research/27 P1-1) calls it on save.
-- **API.** `GET /api/v1/scans/stages` (`scans:read`) serves the catalogue. It is
-  static platform data and reads nothing of the tenant.
+- **API.** `GET /api/v1/scans/stages` (`scans:read`) serves the catalogue with the
+  capability contracts (§1.1). It is static platform data and reads nothing of
+  the tenant.
+
+### 1.1 Capability contracts (typed ports, params, versions)
+
+Each catalogue stage is a **capability** with a contract (`pkg/domain/stage/contract.go`)
+that every implementation honors, so a workflow is wired once and any conforming
+tool runs it:
+
+- **Version.** A capability has a versioned id (`scan.ports@1`). Changing its
+  ports, removing a param or adding a required output field bumps the major.
+- **Typed ports.** Inputs and outputs are also expressed as **port types**, a closed set of ten:
+  `root_domain`, `hostname`, `ip`, `cidr`, `service`, `url`, `repository`,
+  `container_image`, `cloud_account` and `finding`. Each port type carries stored
+  pairs (`url` carries `service/http`, `service/discovered_url`,
+  `application/website` and `application/api`). An edge connects an output
+  port to an input port of the same type. The stored `Inputs`/`Outputs` stay
+  what the router and the output binding use. A unit test keeps the ports and
+  the stored types equal: each type a stage takes or produces is carried by
+  one of its ports, and each port carries a type the stage takes or produces.
+  Technology is an attribute of `url`/`service`, not a port type.
+- **Standard params** have a type (`string`, `string_list`, `integer`, `boolean`,
+  `port_list`), an optional enum and optional bounds. Each implementation maps
+  the params it accepts to its own config key, the key the sensor's settings
+  schema declares (naabu: `top_n` → `top_ports`). A tool with no mapping for
+  a param does not accept that param.
+- **Required output fields** are what a report of the capability must carry.
+- **Batch.** Each implementation states whether the tool takes a list of
+  targets per task (`stage.AcceptsTargetList`). This replaces the scan
+  package's hardcoded scanner map. The Tenable bridge names, which are not catalogue
+  tools, keep their entry.
+- **Adapters.** One table says which capability turns one port type into another
+  (`hostname → url`: `probe.http`; `hostname → ip`: `resolve.dns`;
+  `ip → service`: `scan.ports`; …). The editor offers it when two incompatible
+  ports are wired.
+- **Taxonomy v1** lists 22 capabilities. The 13 routed stages above have
+  implementations. Nine are **planned**: they have a contract but no routed
+  implementation (`intel.passive`, `check.takeover`, `detect.services`,
+  `fingerprint.tech`, `check.tls`, `capture.screenshot`, `host.credentialed`,
+  `cloud.posture`, `verify.finding`). They are served with `available: false`
+  and are invisible to `Lookup`, `ForTool` and `ForCapabilities`, so no step
+  can run one and no tool's routing changes. `verify.finding` is
+  cross-cutting (retests), never a workflow node.
+
+`GET /api/v1/scans/stages` serves every capability with its contract and
+implementations, plus `port_types` and `adapters`.
 
 ## 2. The planner: one dispatcher, capability → tool
 
