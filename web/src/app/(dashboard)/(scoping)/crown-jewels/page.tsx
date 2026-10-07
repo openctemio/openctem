@@ -28,7 +28,8 @@ import { BUSINESS_CONTEXT_SECTION_TABS } from '@/config/section-tabs'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { SEVERITY_BADGE_SOLID, type SeverityLevel } from '@/lib/severity-colors'
+import { SEVERITY_BADGE_SOLID } from '@/lib/severity-colors'
+import { SEVERITY_LEVELS, severityCounts } from '@/lib/severity'
 import { useRiskThresholds } from '@/context/risk-scoring-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -126,12 +127,11 @@ function isExposed(j: CrownJewel) {
 // Compact findings-by-severity chips (only non-zero bands).
 function SeverityChips({ sev }: { sev?: CrownJewel['findingSeverity'] }) {
   if (!sev) return <span className="text-muted-foreground text-xs">—</span>
-  const parts: { n: number; level: SeverityLevel; k: string }[] = [
-    { n: sev.critical, level: 'critical' as const, k: 'C' },
-    { n: sev.high, level: 'high' as const, k: 'H' },
-    { n: sev.medium, level: 'medium' as const, k: 'M' },
-    { n: sev.low, level: 'low' as const, k: 'L' },
-  ].filter((p) => p.n > 0)
+  const parts = SEVERITY_LEVELS.map((level) => ({
+    n: sev[level] ?? 0,
+    level,
+    k: level === 'info' ? 'I' : level.charAt(0).toUpperCase(),
+  })).filter((p) => p.n > 0)
   if (parts.length === 0) return <span className="text-muted-foreground text-xs">None</span>
   return (
     <span className="inline-flex items-center gap-1">
@@ -182,12 +182,7 @@ export default function CrownJewelsPage() {
         riskScore: (a.risk_score as number) || 0,
         businessImpactScore: biz,
         findingCount: (a.finding_count as number) || 0,
-        findingSeverity: {
-          critical: sev.critical || 0,
-          high: sev.high || 0,
-          medium: sev.medium || 0,
-          low: sev.low || 0,
-        },
+        findingSeverity: severityCounts(sev),
         exposure: (a.exposure as string) || 'unknown',
         isInternetAccessible: Boolean(a.is_internet_accessible),
         criticality: (a.criticality as string) || '',

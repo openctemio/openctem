@@ -127,11 +127,17 @@ The closed set of port types:
 | `container_image` | `container` |
 | `cloud_account` | `cloud_account` |
 | `finding` | (sink; input only to `verify.finding`) |
+| `endpoint` | (CTIS 1.6 `endpoints[]`: a method and path an origin serves; not an asset) |
 
 - `Accepts(assetType)`: an input port carries the type.
 - `MayEmit(kind)`: true for kinds the output ports carry, kinds the input
   ports carry (a tool re-observes its targets), the extra outputs, and
   findings of an allowed type.
+- `crawl.web@1` and `dast.web@1` output `endpoint` besides `url`, and
+  `probe.http@1` may report endpoints from an API schema. `import.api_spec@1`
+  (planned, cross-cutting) reads an OpenAPI, GraphQL or Postman document
+  into endpoints. A tool that emits endpoints declares `endpoint` in
+  `produces` (an undeclared endpoint is quarantined like any record).
 
 ### 3.3 Required output rules (fixes D12)
 
@@ -331,6 +337,52 @@ Additions:
 - The required-output check runs before upload. A miss downgrades the
   result to `partial` with a warning.
 
+### 6.1 Web scope of a job
+
+A job may carry `web_scope`: `hosts` (exact, or `*.example.com` for the
+domain and every name under it), `path_prefixes`, `deny_paths` (`/logout`,
+`/admin`) and `methods` (GET, HEAD and OPTIONS when none are named). The
+platform sets it; the sensor enforces it, and the platform re-checks what
+comes back (mutual distrust, RFC-040).
+
+- The SDK (`pkg/webscope`) checks a request as the server sees its path:
+  percent-decoded, dot segments resolved, backslash as a slash. A path with
+  an encoded slash, backslash or NUL is refused. Deny paths match by prefix,
+  ignoring case.
+- `tool.Context.HTTP` refuses every request outside the scope, each redirect
+  included.
+- A networked tool takes a job with a web scope only when its descriptor
+  declares `features.web_scope`; otherwise the job is refused
+  (`refused_by_policy`). An invalid scope is refused, never ignored. A
+  scanner that cannot take capability jobs fails such a job.
+- An exec-profile tool reads the scope from `{{task.web_scope_file}}`.
+  A compiled-in wrapper maps it onto its tool's flags: katana gets an
+  out-of-scope regex per deny path (any case, any character percent-encoded,
+  repeated slashes), an in-scope regex for prefixes and hosts, field scope
+  `fqdn`, no redirects and no form filling without POST; its results are
+  filtered with the scope again.
+
+### 6.2 Endpoints and evidence on the wire
+
+- The adapter protocol's `record` gains the kind `endpoint` (one CTIS 1.6
+  endpoint); exec-profile CTIS output and every importer format carry
+  `endpoints[]` through the same checks.
+- A retest verdict may carry up to five `evidence` items (CTIS 1.6
+  evidence) and the `template_digest` of the check that ran
+  (`RetestContext.Report`). The runtime validates them as CTIS; too many
+  items, an invalid item or an unreadable digest make the verdict
+  `unverifiable`. Every accepted item is marked again
+  (`ctis.MarkSensitive`), never masked.
+- **A networked tool's `fixed` on a finding stands only with an
+  `http_exchange` whose response arrived** (the attempt that did not see
+  the issue). Otherwise the verdict is `unverifiable`. The existing rules
+  stay: the target was reported done and the task finished. The platform
+  then requires the exchange to match the finding's own endpoint before it
+  closes anything (research/57).
+- nuclei runs retests and re-verification with `-ms`: a non-match line is the
+  attempt's exchange, an error line is no verdict, and the error text (which
+  quotes the URL) never leaves the sensor.
+
 ## 7. Parsers (TC5, TC6)
 
 **One home: `ctis/importer`.** A parser is a pure function:
@@ -399,6 +451,27 @@ Preferred formats for third-party tools, in order:
 
 The platform accepts the new members before any sensor sends them. Attack
 paths stay platform-derived; a tool never emits them.
+
+### 8.1 CTIS 1.6 (additive)
+
+- `report.endpoints[]`: origin, method, path, template hint, kind, source,
+  auth, status, content type, technologies and parameters (location, name,
+  type hint; never a value). Receivers recompute the origin, the template and
+  the dedup key with `ctis/weburl`.
+- `finding.web`: the redacted URL, method, endpoint reference, the parameter
+  the finding is about, and the status. Web findings use it instead of a URL
+  in `location.path`. A URL there keeps parameter names and drops every
+  query value, user info and fragment.
+- `finding.evidence_items[]` (at most 20): typed evidence (`http_exchange`,
+  `raw_text`, `curl`, `command_output`, `file_excerpt`, `screenshot`, or an
+  unknown kind kept as data). Evidence may carry a sensitive value only
+  inside a span its `sensitive[]` list marks (or one a receiver detects);
+  receivers mask before display or forwarding and may keep the value for an
+  authorized reveal. Every other member stays secret-free.
+- Producers build evidence with the ctis builders (`HTTPExchangeFromRaw`,
+  `HTTPExchangeFromHAR`, `CurlEvidence`, `MarkSensitive`, `FitEvidenceItem`)
+  or the SDK's `tool.HTTPExchange`, which also keeps a window around the
+  first match of a body over 64 KiB and hashes the full capture.
 
 ## 9. Flow end to end
 
@@ -501,6 +574,9 @@ platform ingest: CTIS validate → output binding (capability ∩ catalogue ∩ 
 | Cross-tenant leakage of descriptors | `tool_descriptors` is keyed by tenant, and a digest reported by one tenant is never visible to another; built-in descriptors are public |
 | Mutual distrust (RFC-040) | The SDK enforces on the sensor; the platform re-checks tier, scope, outputs and provenance; the sensor re-checks jobs and local policy whatever the platform says |
 | Secrets in outputs | `RedactSecretFinding` on every field; `secrets.code@1` requires `secret.masked_value`, and conformance asserts the raw value is absent everywhere |
+| A crawler or DAST tool requests a destructive path (`/logout`, `/admin/delete`) | The job's `web_scope`, enforced by the SDK on every request and redirect and mapped onto katana's flags; a tool must declare `features.web_scope`; the `crawl.web` and `dast.web` conformance suites fail a tool that requests a denied path, including by dot segments, case, percent-encoding, a redirect, a form or a script |
+| Target credentials leak through evidence | Builders and the runtime mark Authorization, Cookie, Set-Cookie and credential parameters; conformance fails unmarked sensitive headers; the platform masks marked values and reveals only with permission, scope and step-up |
+| A hostile or broken tool closes findings | A networked `fixed` needs the attempt's answered exchange (runtime) that matches the finding's endpoint (platform); a verdict without evidence is not a fix |
 
 Every implementation PR carries:
 - a threat-model note;
@@ -554,6 +630,14 @@ Every implementation PR carries:
 | OC4 | api | Ingest: capability carries, required paths (warn → quarantine), derivations keyed by capability, CTIS 1.5 members | CT2, OC1 |
 | OC5 | api | Drop the legacy vocabulary: `capabilities` table, legacy `tools` columns, `Legacy` words; add the codeql row | OC2–OC4 |
 | OC6 | web | Builder palette and forms from capabilities × descriptors; trust, tier and availability badges | OC2 |
+| CT4 | ctis | `weburl` (parse, normalise, template, redact web URLs) | — |
+| CT5 | ctis | CTIS 1.6: `endpoints[]`, `finding.web`, `finding.evidence_items` | CT4 |
+| CT6 | ctis | Evidence builders and importer mappings (nuclei, SARIF, HAR, ZAP) | CT5 |
+| CT7 | ctis | Taxonomy: the `endpoint` port, `import.api_spec@1`, web outputs | CT6 |
+| SG7 | sdk-go | `web_scope` enforced by the SDK; `features.web_scope`; the web-scope conformance suite | — |
+| SG8 | sdk-go | CTIS 1.6 in the SDK: `endpoint` records, evidence builders, verdict evidence and the fixed rule, evidence conformance | CT7 |
+| SN5 | sensor | katana keeps to the web scope | SG7 |
+| SN6 | sensor | nuclei evidence (CTIS 1.6) and `-ms` retests; katana endpoints | SG8, SN5 |
 | DOC1 | api docs | This RFC, the index row, [tool-contract.md](../architecture/tool-contract.md) | — |
 | DOC2 | docs | "Write a tool in 30 minutes" and generated references | SG5 |
 

@@ -8,7 +8,6 @@ package scope
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -55,45 +54,6 @@ func (m *ExclusionMatcher) ExcludedAsset(a *asset.Asset) bool {
 		return false
 	}
 	values := m.s.getAssetValues(a)
-	values = append(values, assetAddresses(a.Properties())...)
+	values = append(values, asset.IPAddresses(a.Properties())...)
 	return m.Excluded(values...)
-}
-
-// addressKeys are the asset properties that hold addresses of the asset:
-// written by ingest (normalizeHostIPProperties, DNS resolution) and by the
-// asset forms.
-var addressKeys = []string{"ip", "ip_address", "ips", "ip_addresses", "resolved_ips", "addresses"}
-
-// assetAddresses returns the address strings stored in an asset's properties.
-func assetAddresses(props map[string]any) []string {
-	if props == nil {
-		return nil
-	}
-	var out []string
-	add := func(v string) {
-		if v = strings.TrimSpace(v); v != "" {
-			out = append(out, v)
-		}
-	}
-	for _, k := range addressKeys {
-		switch v := props[k].(type) {
-		case string:
-			add(v)
-		case []string:
-			for _, s := range v {
-				add(s)
-			}
-		case []any:
-			for _, e := range v {
-				if s, ok := e.(string); ok {
-					add(s)
-				}
-			}
-		case map[string]any: // {"address": "...", "hostname": "..."}
-			if s, ok := v["address"].(string); ok {
-				add(s)
-			}
-		}
-	}
-	return out
 }
