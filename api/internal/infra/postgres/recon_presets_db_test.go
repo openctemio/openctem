@@ -2,15 +2,20 @@ package postgres
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
-// Every step of an active system preset pipeline names a tool the catalog
-// has (and a sensor image ships), with capabilities the catalog gives that
-// tool: the queue-time step check (SecurityValidator.ValidateStepConfig)
-// refuses anything else, so before migration 000270 no preset could run.
+// Every step of an active system preset pipeline can run on a shipped
+// tool: a pinned step names a tool the catalog has (and a sensor image
+// ships), with capabilities the catalog gives that tool (the queue-time step
+// check refuses anything else, so before migration 000270 no preset could
+// run); a capability step (the starter workflows, migration 001201) names
+// one routed catalog capability that a shipped tool implements.
 // Requires DATABASE_URL (CI applies every migration first).
 func TestPresetPipelines_UseShippedTools(t *testing.T) {
 	db := openSensorDB(t)
@@ -27,7 +32,7 @@ func TestPresetPipelines_UseShippedTools(t *testing.T) {
 		JOIN pipeline_templates pt ON pt.id = ps.pipeline_id
 		LEFT JOIN tools t ON t.name = ps.tool AND t.tenant_id IS NULL AND t.is_active
 		WHERE pt.is_system_template AND pt.is_active
-		  AND pt.id::text LIKE 'a0000001-%'`) // the 000061 presets; Quick Scan picks its tool per run
+		  AND (pt.id::text LIKE 'a0000001-%' OR pt.id::text LIKE 'a0000002-%')`) // presets and starters; Quick Scan picks its tool per run
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +46,19 @@ func TestPresetPipelines_UseShippedTools(t *testing.T) {
 			t.Fatal(err)
 		}
 		n++
-		if tool == "" || !inCatalog || !shipped[tool] {
+		if tool == "" {
+			// A capability step: one routed capability a shipped tool runs.
+			if len(stepCaps) != 1 {
+				t.Errorf("%s / %s: a capability step names one capability, got %v", tmpl, key, stepCaps)
+				continue
+			}
+			st, ok := stage.Lookup(stage.Key(stepCaps[0]))
+			if !ok || !slices.ContainsFunc(st.Tools(), func(tl string) bool { return shipped[tl] }) {
+				t.Errorf("%s / %s: no shipped tool runs %q", tmpl, key, stepCaps[0])
+			}
+			continue
+		}
+		if !inCatalog || !shipped[tool] {
 			t.Errorf("%s / %s: tool %q is not a shipped catalog tool", tmpl, key, tool)
 			continue
 		}

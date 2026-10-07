@@ -334,3 +334,18 @@ func TestStepSelection_PersistsAndStepRunRecordsResolution(t *testing.T) {
 		t.Fatalf("an update erased the resolution: %+v", again)
 	}
 }
+
+// A step stored without a description (a seed, an old row) reads back with
+// an empty one instead of failing the whole template read.
+func TestPipelineStep_NullDescriptionReads(t *testing.T) {
+	ctx := context.Background()
+	db := openScanDB(t)
+	f := seedStepHistory(ctx, t, db, true)
+	if _, err := db.ExecContext(ctx, `UPDATE pipeline_steps SET description = NULL WHERE id = $1`, f.stepA.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewPipelineStepRepository(&DB{DB: db}).GetByID(ctx, f.stepA.ID)
+	if err != nil || got.Description != "" {
+		t.Fatalf("read: %+v %v", got, err)
+	}
+}
