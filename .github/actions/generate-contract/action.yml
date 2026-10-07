@@ -1,0 +1,49 @@
+name: Generate contract files
+description: >-
+  Generates the contract files that are not committed (api/docs/development/ci-cd.md,
+  "Generated contract files"): the OpenAPI spec, the route manifest and the web
+  route permission map from the Go source (`make -C api contract`), and, with
+  `web-types`, the web API types from the spec. Run it after checkout and before
+  anything that compiles, tests or builds an image of the web console.
+
+inputs:
+  web-types:
+    description: Also generate web/src/lib/api/generated/api.types.ts (sets up Node and runs npm ci when web/node_modules is missing).
+    default: 'true'
+  cache:
+    description: >-
+      Use the setup-go/setup-node caches. Release workflows pass 'false': a
+      published image must not be built from a cache another workflow wrote.
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: api/go.mod
+        cache: ${{ inputs.cache == 'true' }}
+        cache-dependency-path: api/go.sum
+
+    - name: Generate the spec, the route manifest and the route permission map
+      shell: bash
+      env:
+        GOWORK: 'off'
+      run: make -C api contract
+
+    - name: Setup Node.js
+      if: inputs.web-types == 'true'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: web/.nvmrc
+        cache: ${{ inputs.cache == 'true' && 'npm' || '' }}
+        cache-dependency-path: web/package-lock.json
+
+    - name: Generate the web API types
+      if: inputs.web-types == 'true'
+      shell: bash
+      working-directory: web
+      run: |
+        [ -d node_modules ] || npm ci --no-audit --no-fund
+        npm run generate:api-types
