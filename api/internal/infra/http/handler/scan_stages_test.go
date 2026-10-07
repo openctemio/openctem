@@ -59,7 +59,7 @@ func TestListStages_ServesContracts(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.PortTypes) != 10 || len(resp.Adapters) == 0 {
+	if len(resp.PortTypes) != 11 || len(resp.Adapters) == 0 {
 		t.Fatalf("port types %d adapters %d", len(resp.PortTypes), len(resp.Adapters))
 	}
 	byKey := map[string]ScanStageResponse{}
