@@ -169,7 +169,7 @@
   "settings.item.source-credentials": "Thông tin xác thực nguồn",
   "settings.desc.source-credentials": "Thông tin xác thực đã mã hóa mà nguồn mẫu dùng để tải về.",
   "settings.item.tools": "Công cụ",
-  "settings.desc.tools": "Các trình quét mà sensor có thể chạy.",
+  "settings.desc.tools": "Các công cụ mà sensor của bạn có, và quét bằng từng công cụ có chạy được không.",
   "settings.item.capabilities": "Năng lực",
   "settings.item.ci-pipelines": "Tích hợp CI/CD",
   "settings.desc.ci-pipelines": "Pipeline CI/CD nào được gửi kết quả và điều gì làm pipeline thất bại.",

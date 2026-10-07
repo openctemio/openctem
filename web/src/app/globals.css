@@ -61,6 +61,22 @@
   scrollbar-width: none; /* Firefox */
 }
 
+/* Overlay-like scrollbar for a scroll container: the gutter is always
+   reserved (content never shifts when the scrollbar appears) and the thumb is
+   visible only while scrolling (data-scrolling, set by useScrollActivity).
+   Wheel, trackpad, keyboard and touch scrolling are unchanged. Forced-colors
+   mode keeps the system scrollbar. */
+@utility scrollbar-auto-hide {
+  scrollbar-gutter: stable;
+  scrollbar-color: transparent transparent;
+  &[data-scrolling] {
+    scrollbar-color: var(--border) transparent;
+  }
+  @media (forced-colors: active) {
+    scrollbar-color: auto;
+  }
+}
+
 @utility faded-bottom {
   @apply after:pointer-events-none after:absolute after:start-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,_transparent_10%,_var(--background)_70%)] md:after:block;
 }
