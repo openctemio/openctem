@@ -17,7 +17,7 @@
 -- recomputes templates with ctis/weburl on the next crawl; a template this
 -- SQL wrote differently is retired by the 30-day gone sweep.
 
-CREATE TEMP TABLE _url_assets ON COMMIT DROP AS
+CREATE TEMP TABLE _url_assets AS
 SELECT a.id, a.tenant_id, a.name AS url,
        regexp_replace(regexp_replace(lower(substring(a.name FROM '^(https?://[^/?#]+)')),
            '^(https://.+):443$', '\1'), '^(http://.+):80$', '\1') AS origin,
@@ -32,7 +32,7 @@ SELECT uuid_generate_v7(), u.tenant_id, u.origin, 'service', 'http'
   FROM (SELECT DISTINCT tenant_id, origin FROM _url_assets) u
  WHERE NOT EXISTS (SELECT 1 FROM assets o WHERE o.tenant_id = u.tenant_id AND o.name = u.origin AND o.deleted_at IS NULL);
 
-CREATE TEMP TABLE _url_map ON COMMIT DROP AS
+CREATE TEMP TABLE _url_map AS
 SELECT u.id AS url_id, u.tenant_id, u.path, u.query,
        (SELECT o.id FROM assets o WHERE o.tenant_id = u.tenant_id AND o.name = u.origin AND o.deleted_at IS NULL
          ORDER BY (o.sub_type = 'http') DESC, o.created_at LIMIT 1) AS origin_id,
@@ -72,3 +72,6 @@ UPDATE exposure_events x SET asset_id = m.origin_id
   FROM _url_map m WHERE x.asset_id = m.url_id AND x.tenant_id = m.tenant_id AND m.origin_id IS NOT NULL;
 
 DELETE FROM assets a USING _url_map m WHERE a.id = m.url_id AND m.origin_id IS NOT NULL;
+
+DROP TABLE _url_map;
+DROP TABLE _url_assets;
