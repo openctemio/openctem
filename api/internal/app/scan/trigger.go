@@ -348,7 +348,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 
 	// Create step runs
 	for _, step := range steps {
-		stepRun := pipeline.NewStepRun(run.ID, step.ID, step.StepKey, step.StepOrder, step.MaxRetries)
+		stepRun := pipeline.NewStepRunForStep(run.ID, step)
 		if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
 			s.logger.Warn("failed to create step run", "error", err)
 		}
@@ -543,7 +543,7 @@ func (s *Service) createSingleScanStepRun(ctx context.Context, run *pipeline.Run
 	// scan dispatches one scanner command, so one step run is what completion
 	// is measured against — matching the SetTotalSteps(1) above.
 	step := steps[0]
-	stepRun := pipeline.NewStepRun(run.ID, step.ID, step.StepKey, step.StepOrder, step.MaxRetries)
+	stepRun := pipeline.NewStepRunForStep(run.ID, step)
 	if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
 		s.logger.Warn("failed to create step run for single scan",
 			"run_id", run.ID.String(), "error", err)

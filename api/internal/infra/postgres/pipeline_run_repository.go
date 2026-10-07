@@ -1401,15 +1401,16 @@ func (r *StepRunRepository) Create(ctx context.Context, sr *pipeline.StepRun) er
 			id, pipeline_run_id, step_id, step_key, step_order, status,
 			sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 			findings_count, output, attempt, max_attempts,
-			queued_at, started_at, completed_at, error_message, error_code, created_at
+			queued_at, started_at, completed_at, error_message, error_code, created_at,
+			step_name, tool
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
 		sr.ID.String(),
 		sr.PipelineRunID.String(),
-		sr.StepID.String(),
+		stepRunStepID(sr.StepID),
 		sr.StepKey,
 		sr.StepOrder,
 		string(sr.Status),
@@ -1428,6 +1429,8 @@ func (r *StepRunRepository) Create(ctx context.Context, sr *pipeline.StepRun) er
 		sr.ErrorMessage,
 		sr.ErrorCode,
 		sr.CreatedAt,
+		nullString(sr.StepName),
+		nullString(sr.Tool),
 	)
 
 	if err != nil {
@@ -1438,7 +1441,7 @@ func (r *StepRunRepository) Create(ctx context.Context, sr *pipeline.StepRun) er
 }
 
 // stepRunBatchChunkSize caps rows per multi-row INSERT to stay well under
-// PostgreSQL's 65535 bind-parameter limit (21 columns × 100 = 2100 params).
+// PostgreSQL's 65535 bind-parameter limit (23 columns × 100 = 2300 params).
 const stepRunBatchChunkSize = 100
 
 // CreateBatch creates multiple step runs in a single multi-row INSERT per chunk.
@@ -1464,7 +1467,7 @@ func (r *StepRunRepository) CreateBatch(ctx context.Context, stepRuns []*pipelin
 
 // insertStepRunChunk performs a single multi-row INSERT for a chunk of step runs.
 func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*pipeline.StepRun) error {
-	const cols = 21 // number of columns per row — must match the VALUES list below
+	const cols = 23 // number of columns per row — must match the VALUES list below
 	valueStrings := make([]string, 0, len(stepRuns))
 	valueArgs := make([]interface{}, 0, len(stepRuns)*cols)
 
@@ -1475,16 +1478,15 @@ func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*
 		}
 
 		offset := i * cols
-		valueStrings = append(valueStrings, fmt.Sprintf(
-			"($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
-			offset+1, offset+2, offset+3, offset+4, offset+5, offset+6, offset+7,
-			offset+8, offset+9, offset+10, offset+11, offset+12, offset+13, offset+14,
-			offset+15, offset+16, offset+17, offset+18, offset+19, offset+20, offset+21,
-		))
+		placeholders := make([]string, cols)
+		for j := range cols {
+			placeholders[j] = fmt.Sprintf("$%d", offset+j+1)
+		}
+		valueStrings = append(valueStrings, "("+strings.Join(placeholders, ", ")+")")
 		valueArgs = append(valueArgs,
 			sr.ID.String(),
 			sr.PipelineRunID.String(),
-			sr.StepID.String(),
+			stepRunStepID(sr.StepID),
 			sr.StepKey,
 			sr.StepOrder,
 			string(sr.Status),
@@ -1503,6 +1505,8 @@ func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*
 			sr.ErrorMessage,
 			sr.ErrorCode,
 			sr.CreatedAt,
+			nullString(sr.StepName),
+			nullString(sr.Tool),
 		)
 	}
 
@@ -1511,7 +1515,8 @@ func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*
 			id, pipeline_run_id, step_id, step_key, step_order, status,
 			sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 			findings_count, output, attempt, max_attempts,
-			queued_at, started_at, completed_at, error_message, error_code, created_at
+			queued_at, started_at, completed_at, error_message, error_code, created_at,
+			step_name, tool
 		)
 		VALUES %s
 	`, strings.Join(valueStrings, ", "))
@@ -1831,7 +1836,8 @@ func (r *StepRunRepository) selectQuery() string {
 		SELECT id, pipeline_run_id, step_id, step_key, step_order, status,
 		       sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 		       findings_count, output, attempt, max_attempts,
-		       queued_at, started_at, completed_at, error_message, error_code, created_at
+		       queued_at, started_at, completed_at, error_message, error_code, created_at,
+		       step_name, tool
 		FROM step_runs
 	`
 }
@@ -1841,7 +1847,9 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 	var (
 		id              string
 		pipelineRunID   string
-		stepID          string
+		stepID          sql.NullString
+		stepName        sql.NullString
+		stepTool        sql.NullString
 		status          string
 		sensorID        sql.NullString
 		commandID       sql.NullString
@@ -1876,6 +1884,8 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		&errorMessage,
 		&errorCode,
 		&sr.CreatedAt,
+		&stepName,
+		&stepTool,
 	)
 
 	if err != nil {
@@ -1884,7 +1894,11 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 
 	sr.ID, _ = shared.IDFromString(id)
 	sr.PipelineRunID, _ = shared.IDFromString(pipelineRunID)
-	sr.StepID, _ = shared.IDFromString(stepID)
+	if stepID.Valid {
+		sr.StepID, _ = shared.IDFromString(stepID.String)
+	}
+	sr.StepName = stepName.String
+	sr.Tool = stepTool.String
 	sr.Status = pipeline.StepRunStatus(status)
 	sr.SkipReason = skipReason.String
 	sr.ErrorMessage = errorMessage.String
@@ -1916,4 +1930,13 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 	}
 
 	return sr, nil
+}
+
+// stepRunStepID is the step_id column value: NULL for a step run whose step
+// was removed from the pipeline (zero StepID).
+func stepRunStepID(id shared.ID) sql.NullString {
+	if id.IsZero() {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: id.String(), Valid: true}
 }
