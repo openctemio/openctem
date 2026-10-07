@@ -47,11 +47,27 @@ platform data: a tenant, a sensor or a report cannot widen it.
 - **Registry outputs (research/27 F3).** `tools.output_types` (migration
   001040) records what each platform tool produces, backfilled from the
   catalogue. No API writes it; a DB test keeps it equal to the catalogue.
-- **Validation.** `stage.ValidateChain` checks an engine's stages: known
-  capabilities, unique ids, `from` naming only earlier stages or the seeds (no
-  cycle), and a stage that does not take the seeds must take a type its `from`
-  stages produce. It refuses T2 stages until the approval flow exists. The
-  engine spec (research/27 P1-1) calls it on save.
+- **Validation.** `stage.ValidateGraph` checks a workflow graph against the
+  capability contracts (§1.1). Every pipeline save calls it: full save, create,
+  and add, update or delete of a step, inside the save transaction. It also
+  backs `POST /api/v1/pipelines/verify` (`pipelines:write`), which checks a
+  draft and stores nothing. A pipeline's steps are the graph
+  (`pipeline.StepsGraph`): one node per step and one edge per dependency. A step
+  the catalogue places is a capability node, with its tool as the pin. A tenant
+  tool with no contract is **opaque**: an edge to or from it is a warning (it
+  orders the steps and passes no data). The errors, each anchored to a node or
+  an edge (422, `details.errors`):
+  - an unknown, planned or cross-cutting capability;
+  - a pinned tool that does not implement the node's capability;
+  - an empty or duplicate node id, an edge naming a missing step, a self-loop or a cycle;
+  - an edge whose port types do not meet, with the adapter that would connect them
+    (`subfinder → katana`: "insert HTTP probe");
+  - a port named on one side only, or a port the node does not have;
+  - derived targets fed into an intrusive (T2) node, which the router never feeds;
+  - more than 30 nodes or 120 edges.
+
+  Deleting a step drops it from the other steps' dependencies. Every seeded
+  system template passes (integration test).
 - **API.** `GET /api/v1/scans/stages` (`scans:read`) serves the catalogue with the
   capability contracts (§1.1). It is static platform data and reads nothing of
   the tenant.

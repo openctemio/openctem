@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { CapabilityBadgeList } from '@/components/capability-badge'
+import { PortChips, TypedHandle } from '@/components/flow/typed-handle'
 
 // =============================================================================
 // UTILITIES
@@ -58,6 +59,15 @@ export type ScannerNodeData = {
   availableTools?: Array<{ name: string; displayName: string; capabilities?: string[] }>
   // Available steps for dependencies (other steps in the pipeline)
   availableSteps?: Array<{ stepKey: string; name: string }>
+  // The capability contract the step runs (GET /scans/stages): its typed
+  // ports. Absent for a step the catalog cannot place (no typed ports).
+  capabilityName?: string
+  capabilityTier?: string
+  inPorts?: string[]
+  outPorts?: string[]
+  portLabels?: Record<string, string>
+  // Problems the API's graph check reports for this step
+  issues?: string[]
   // Callbacks for inline editing
   onLabelChange?: (label: string) => void
   onToolChange?: (tool: string) => void
@@ -264,12 +274,8 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
         selected ? 'shadow-lg ring-2 ring-primary ring-offset-2' : 'hover:shadow-md'
       )}
     >
-      {/* Target Handle */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!w-2.5 !h-2.5 !bg-slate-400 !border-2 !border-white dark:!border-slate-800 !-left-1"
-      />
+      {/* Target Handle: the step's typed input ports */}
+      <TypedHandle type="target" ports={data.inPorts ?? []} label="Takes" />
 
       {/* Header with icon and name */}
       <div
@@ -366,6 +372,40 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
           </Badge>
         </div>
 
+        {/* Capability contract: typed ports (what may be wired in and out) */}
+        {data.capabilityName ? (
+          <div className="space-y-1 rounded-md border border-dashed px-1.5 py-1">
+            <div className="flex items-center gap-1 text-[10px] font-medium">
+              <span className="truncate">{data.capabilityName}</span>
+              {data.capabilityTier && (
+                <Badge variant="outline" className="px-1 py-0 text-[9px]">
+                  {data.capabilityTier}
+                </Badge>
+              )}
+            </div>
+            <PortChips label="takes" ports={data.inPorts ?? []} labels={data.portLabels} />
+            <PortChips label="gives" ports={data.outPorts ?? []} labels={data.portLabels} />
+          </div>
+        ) : (
+          (data.tool || localCapabilities.length > 0) && (
+            <p className="text-[10px] text-muted-foreground">
+              No typed ports: runs on the scan&apos;s targets and takes no data from earlier steps.
+            </p>
+          )
+        )}
+
+        {/* Graph check issues (from the API) */}
+        {(data.issues ?? []).map((msg) => (
+          <div
+            key={msg}
+            className="flex items-start gap-1.5 text-[10px] text-destructive"
+            role="alert"
+          >
+            <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+            <span className="break-words">{msg}</span>
+          </div>
+        ))}
+
         {/* Capabilities (read-only, derived from selected tool) */}
         {localCapabilities.length > 0 && (
           <CapabilityBadgeList capabilities={localCapabilities} size="sm" />
@@ -407,12 +447,8 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
         )}
       </div>
 
-      {/* Source Handle */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!w-2.5 !h-2.5 !bg-slate-400 !border-2 !border-white dark:!border-slate-800 !-right-1"
-      />
+      {/* Source Handle: the step's typed output ports */}
+      <TypedHandle type="source" ports={data.outPorts ?? []} label="Gives" />
     </div>
   )
 }

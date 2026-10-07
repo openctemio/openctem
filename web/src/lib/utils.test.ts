@@ -10,6 +10,7 @@ import {
   slugify,
   generateStepKey,
   generateTempStepId,
+  isTempStepId,
   getPageNumbers,
   sanitizeExternalUrl,
 } from './utils'
@@ -298,6 +299,20 @@ describe('generateStepKey', () => {
 // ============================================
 // GENERATE TEMP STEP ID TESTS
 // ============================================
+
+describe('isTempStepId', () => {
+  // The builder sends the id of a saved step so the save updates it in place
+  // (keeping its run history); a temp id must never be sent as a step id.
+  it('is true for a generated temp id and for a missing id', () => {
+    expect(isTempStepId(generateTempStepId())).toBe(true)
+    expect(isTempStepId(undefined)).toBe(true)
+    expect(isTempStepId('')).toBe(true)
+  })
+
+  it('is false for a saved step id', () => {
+    expect(isTempStepId('01890f3e-5c1a-7d2b-9e4f-0a1b2c3d4e5f')).toBe(false)
+  })
+})
 
 describe('generateTempStepId', () => {
   describe('format validation', () => {
