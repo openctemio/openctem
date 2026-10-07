@@ -24,7 +24,7 @@ import { sanitizeExternalUrl } from '@/lib/utils'
 
 import { TOOL_AVAILABILITY_STATUSES, toolDisplayName, versionsLabel } from '../lib/availability'
 import { ToolCategoryIcon } from './tool-category-icon'
-import { ToolSensorsCell, ToolStatusBadge } from './tool-availability'
+import { ToolSensorsCell, ToolStatusBadge, ToolTrustBadge } from './tool-availability'
 
 interface ToolTableProps {
   items: ToolAvailabilityItem[]
@@ -139,7 +139,12 @@ export function ToolTable({
         id: 'status',
         accessorFn: (i) => STATUS_ORDER.get(i.status) ?? 99,
         header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-        cell: ({ row }) => <ToolStatusBadge item={row.original} />,
+        cell: ({ row }) => (
+          <span className="inline-flex flex-wrap items-center gap-1">
+            <ToolStatusBadge item={row.original} />
+            <ToolTrustBadge item={row.original} />
+          </span>
+        ),
       },
       {
         id: 'sensors',
