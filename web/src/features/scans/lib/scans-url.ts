@@ -27,7 +27,7 @@ export const SCAN_CONFIG_SORT_FIELDS = [
 export type ScanConfigSortField = (typeof SCAN_CONFIG_SORT_FIELDS)[number]
 export const DEFAULT_SCAN_CONFIG_SORT = 'name'
 
-/** Sortable fields of GET /pipeline-runs (api pkg/domain/pipeline/run_sort.go). */
+/** Sortable fields of GET /scan-runs (api pkg/domain/scanrun/run_sort.go). */
 export const RUN_SORT_FIELDS = [
   'created_at',
   'started_at',

@@ -202,7 +202,7 @@ var chunkSizes = map[Key]int{
 // toolParams maps a tool's standard params to its own config keys: the keys
 // the sensor's settings schema for that tool declares. A tool listed with
 // no entry for a param does not accept it yet. Keep in step with
-// pipeline.stepToolSettings.
+// scan workflow.stepToolSettings.
 var toolParams = map[string]map[string]string{
 	"naabu":  {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
 	"nuclei": {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},

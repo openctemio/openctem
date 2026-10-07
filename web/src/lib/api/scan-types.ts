@@ -81,7 +81,7 @@ export interface ScanConfig {
   asset_group_ids?: string[] // Multiple asset groups
   targets?: string[] // Direct targets (individual assets or custom)
   scan_type: ScanType
-  pipeline_id?: string
+  scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
   /** scanner_config values that look like secrets (never blocks a save). */
@@ -120,7 +120,7 @@ export interface ScanConfig {
   /** The scan's latest run, with its real state (the list's "Last run" column). */
   last_run?: ScanLastRun
   /** Name of the workflow a workflow scan runs. */
-  pipeline_name?: string
+  scan_workflow_name?: string
   created_by?: string
   created_by_name?: string
   created_at: string
@@ -167,7 +167,7 @@ export interface CreateScanConfigRequest {
   asset_group_ids?: string[] // Multiple asset groups (NEW)
   targets?: string[] // Direct targets (domains, IPs, URLs)
   scan_type: ScanType
-  pipeline_id?: string
+  scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
   targets_per_job?: number
@@ -198,7 +198,7 @@ export interface CreateScanConfigRequest {
 export interface UpdateScanConfigRequest {
   name?: string
   description?: string
-  pipeline_id?: string
+  scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
   targets_per_job?: number
@@ -267,7 +267,7 @@ export type BulkAction = 'activate' | 'pause' | 'disable' | 'delete'
  */
 export interface ScanConfigListFilters {
   asset_group_id?: string
-  pipeline_id?: string
+  scan_workflow_id?: string
   scan_type?: ScanType
   schedule_type?: ScheduleType
   status?: ScanConfigStatus
@@ -340,7 +340,7 @@ export interface RunZoneRouting {
   zones?: RunZoneRoute[]
 }
 
-/** GET /pipeline-runs/{id} `dispatch`: present when the trigger recorded one. */
+/** GET /scan-runs/{id} `dispatch`: present when the trigger recorded one. */
 export interface RunDispatch {
   resolved_targets: number
   excluded_targets: number
@@ -369,7 +369,7 @@ export interface StatusCounts {
  * Overview stats for scan management dashboard
  */
 export interface ScanManagementOverview {
-  pipelines: StatusCounts
+  scan_runs: StatusCounts
   scans: StatusCounts
   jobs: StatusCounts
 }

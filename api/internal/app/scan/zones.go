@@ -8,8 +8,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -350,7 +351,7 @@ func recordZonePlan(sc *scan.Scan, plan *zonePlan, runContext map[string]any) er
 // run. Zone batches are stamped with their zone and pinned to the chosen
 // sensor; they are never platform jobs (RFC-023 D14). Unzoned public batches
 // follow the pre-zone platform/tenant rules.
-func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, plan *zonePlan, usePlatform bool) error {
+func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *scanrun.Run, stepRun *scanrun.StepRun, plan *zonePlan, usePlatform bool) error {
 	templates := s.customTemplatesForScan(ctx, sc)
 	batchContext := batchRunContext(run.Context)
 
@@ -473,7 +474,7 @@ func appendUnique(xs []string, x string) []string {
 }
 
 // routeWorkflowTargets applies zones to a workflow run. A workflow runs as one
-// pipeline, so all of its routed targets must fall in one zone (or all be
+// scan workflow, so all of its routed targets must fall in one zone (or all be
 // unzoned public targets); the run is stamped with that zone and every step
 // command stays inside it.
 func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string, runContext map[string]any) ([]string, error) {
@@ -486,7 +487,7 @@ func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones
 		return nil, err
 	}
 	if zid, ok := plan.Summary["zone_id"].(string); ok {
-		runContext[pipeline.RunContextKeyScanZoneID] = zid
+		runContext[scanrun.RunContextKeyScanZoneID] = zid
 	}
 	if err := recordZonePlan(sc, plan, runContext); err != nil {
 		return nil, err

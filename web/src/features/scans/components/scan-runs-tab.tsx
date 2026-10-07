@@ -3,7 +3,7 @@
 /**
  * Scans › Runs: every run the tenant's scans (and pipelines) started.
  *
- * Reads pipeline runs (GET /api/v1/pipeline-runs, paged on the server) — the
+ * Reads pipeline runs (GET /api/v1/scan-runs, paged on the server) — the
  * table every scan trigger writes. The tab used to read scan sessions, which
  * only CI/sensor-pushed runs create, so it stayed empty while scans ran.
  * Counts come from GET /api/v1/scans/overview-stats (`pipelines`).
@@ -76,10 +76,10 @@ export const RUNS_PAGE_SIZE = DEFAULT_SCAN_PAGE_SIZE
 export function ScanRunsTab() {
   return (
     <Can
-      permission={Permission.PipelinesRead}
+      permission={Permission.ScansRead}
       fallback={
         <p className="mt-5 rounded-md border p-6 text-sm text-muted-foreground">
-          Viewing scan runs needs the &quot;View pipelines&quot; permission.
+          Viewing scan runs needs the &quot;View scans&quot; permission.
         </p>
       }
     >
@@ -124,7 +124,7 @@ function ScanRunsTable() {
   const { data, isLoading, error } = usePipelineRuns(filters, swrConfig)
   const { data: overview, isLoading: isLoadingStats } = useScanManagementStats(swrConfig)
   const runs = data?.items ?? []
-  const counts = overview?.pipelines
+  const counts = overview?.scan_runs
 
   const setStatus = useCallback(
     (v: RunStatusFilterValue) => {

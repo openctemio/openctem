@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
@@ -22,7 +24,6 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
-	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -108,10 +109,10 @@ func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
 	}
 }
 
-// newPipelineHandler builds the pipeline handler with the run page's task
+// newScanWorkflowHandler builds the scan workflow handler with the run page's task
 // logs (RFC-029 §4.4.1).
-func newPipelineHandler(svc *pipelinesvc.Service, logs *commandlog.Service, v *validator.Validator, log *logger.Logger) *handler.PipelineHandler {
-	h := handler.NewPipelineHandler(svc, v, log)
+func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
+	h := handler.NewScanWorkflowHandler(svc, v, log)
 	h.SetTaskLogs(logs)
 	return h
 }
@@ -143,13 +144,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetAuditService(svc.Audit)
 
-	// Command handler with pipeline service wired
+	// Command handler with scan run service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetZoneLister(repos.ScanZone)
 	sensorHandler.SetGrantService(svc.SensorGrant)
-	commandHandler.SetPipelineService(svc.Pipeline)
+	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
 	// Map completed validation jobs into finding evidence.
@@ -370,7 +371,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}(),
 		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
 
-		// Scanning & Pipelines
+		// Scanning & ScanRuns
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
 		ScannerTemplate: handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
 		TemplateSource:  handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
@@ -382,7 +383,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CI:              handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:         ciAdmin,
 		CIRunner:        ciRunner,
-		Pipeline:        newPipelineHandler(svc.Pipeline, commandLogs, v, log),
+		ScanWorkflow:    newScanWorkflowHandler(svc.ScanRun, commandLogs, v, log),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),

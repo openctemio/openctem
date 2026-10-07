@@ -112,7 +112,7 @@ func TestScanStamper_E7(t *testing.T) {
 		t.Fatalf("discovered name evidence = %v", r)
 	}
 	ev := store.evidence[typedLegacy.ID.String()][0]
-	for k, want := range map[string]string{"scan_id": "scan-1", "pipeline_run_id": "run-1", "command_id": cmd.String(), "sensor_id": sensorID.String(), "tool": "subfinder"} {
+	for k, want := range map[string]string{"scan_id": "scan-1", "scan_run_id": "run-1", "command_id": cmd.String(), "sensor_id": sensorID.String(), "tool": "subfinder"} {
 		if ev.Observed[k] != want {
 			t.Errorf("observed[%s] = %v, want %s", k, ev.Observed[k], want)
 		}

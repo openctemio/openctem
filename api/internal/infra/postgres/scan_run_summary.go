@@ -16,7 +16,7 @@ import (
 // their own SQL, and a refused scheduled trigger moved last_run_at with no run
 // at all. The list then showed "Last run: today" next to "Runs: 0".
 //
-// Now every change recomputes the whole summary from pipeline_runs in one
+// Now every change recomputes the whole summary from scan_runs in one
 // statement, so the three numbers on a scan row always describe the same set
 // of runs. Migration 001157 ran the same statement once over every scan.
 //
@@ -35,12 +35,12 @@ const scanRunSummaryUpdateSQL = `
 			       (COUNT(*) FILTER (WHERE pr.status IN ('failed', 'timeout')))::int AS failed,
 			       (COUNT(*) FILTER (WHERE pr.status = 'partial'))::int AS partial,
 			       (COUNT(*) FILTER (WHERE pr.status = 'blocked'))::int AS blocked
-			FROM pipeline_runs pr
+			FROM scan_runs pr
 			WHERE pr.tenant_id = s.tenant_id AND pr.scan_id = s.id
 		) a
 		LEFT JOIN LATERAL (
 			SELECT pr.id, pr.created_at, pr.status
-			FROM pipeline_runs pr
+			FROM scan_runs pr
 			WHERE pr.tenant_id = s.tenant_id AND pr.scan_id = s.id
 			ORDER BY pr.created_at DESC, pr.id DESC
 			LIMIT 1

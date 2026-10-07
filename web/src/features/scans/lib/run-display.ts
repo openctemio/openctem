@@ -59,7 +59,7 @@ export function scanRunCounts(
   }
 }
 
-/** Task counts as the runs page reads them (GET /pipeline-runs). */
+/** Task counts as the runs page reads them (GET /scan-runs). */
 export interface TaskCounts {
   total?: number
   queued?: number

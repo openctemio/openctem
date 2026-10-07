@@ -96,8 +96,8 @@ pentest_finding_templates
 pentest_findings
 pentest_reports
 pentest_retests
-pipeline_runs
-pipeline_templates
+scan_runs
+scan_workflows
 priority_class_audit_log
 priority_override_rules
 relationship_suggestions

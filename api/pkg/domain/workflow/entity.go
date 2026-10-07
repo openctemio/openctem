@@ -1,6 +1,6 @@
 // Package workflow defines the Workflow domain entities for automation orchestration.
-// Unlike Pipelines (scan execution), Workflows handle general automation:
-// notifications, ticket creation, assignments, escalations, and triggering pipelines.
+// Unlike Scan workflows (scan execution), Workflows handle general automation:
+// notifications, ticket creation, assignments, escalations, and triggering scan workflows.
 package workflow
 
 import (
