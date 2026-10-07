@@ -268,3 +268,69 @@ func TestMutateSteps_ForeignStepIDIsNotUpdated(t *testing.T) {
 		t.Fatalf("foreign step changed: %+v", got)
 	}
 }
+
+// prefer_tools round-trips, and a queued step run records the capability
+// and the tool the planner picked.
+func TestStepSelection_PersistsAndStepRunRecordsResolution(t *testing.T) {
+	ctx := context.Background()
+	db := openScanDB(t)
+	f := seedStepHistory(ctx, t, db, false)
+	steps := NewPipelineStepRepository(&DB{DB: db})
+	stepRuns := NewStepRunRepository(&DB{DB: db})
+
+	_, err := steps.MutateSteps(ctx, f.tenant, f.template, func(cur []*pipeline.Step) ([]*pipeline.Step, error) {
+		return cur, nil
+	})
+	if !errors.Is(err, pipeline.ErrPipelineRunActive) {
+		t.Fatalf("precondition: %v", err)
+	}
+	// Finish the run, then store a prefer list.
+	if err := NewPipelineRunRepository(&DB{DB: db}).UpdateStatus(ctx, f.run.ID, pipeline.RunStatusCompleted, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := steps.MutateSteps(ctx, f.tenant, f.template, func(cur []*pipeline.Step) ([]*pipeline.Step, error) {
+		for _, s := range cur {
+			if s.ID == f.stepA.ID {
+				s.Tool = ""
+				s.Capabilities = []string{"discover.subdomains"}
+				s.PreferTools = []string{"subfinder"}
+			}
+		}
+		return cur, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := steps.GetByID(ctx, f.stepA.ID)
+	if err != nil || len(got.PreferTools) != 1 || got.PreferTools[0] != "subfinder" || got.Selection() != pipeline.ToolSelectionPrefer {
+		t.Fatalf("prefer_tools: %+v %v", got, err)
+	}
+	b, _ := steps.GetByID(ctx, f.stepB.ID)
+	if b.PreferTools == nil || len(b.PreferTools) != 0 {
+		t.Fatalf("an empty prefer list reads back as %v", b.PreferTools)
+	}
+
+	// Queue-time resolution is written with the queued state.
+	sr := pipeline.NewStepRunForStep(f.run.ID, got) // no tool yet: not pinned
+	if err := stepRuns.Create(ctx, sr); err != nil {
+		t.Fatal(err)
+	}
+	sr.Queue()
+	sr.Tool = "subfinder"
+	sr.Capability = "discover.subdomains@1"
+	if err := stepRuns.Update(ctx, sr); err != nil {
+		t.Fatal(err)
+	}
+	read, err := stepRuns.GetByID(ctx, sr.ID)
+	if err != nil || read.Tool != "subfinder" || read.Capability != "discover.subdomains@1" {
+		t.Fatalf("step run resolution: %+v %v", read, err)
+	}
+	// A later update without them keeps them.
+	read.Tool, read.Capability = "", ""
+	if err := stepRuns.Update(ctx, read); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := stepRuns.GetByID(ctx, sr.ID)
+	if again.Tool != "subfinder" || again.Capability != "discover.subdomains@1" {
+		t.Fatalf("an update erased the resolution: %+v", again)
+	}
+}

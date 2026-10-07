@@ -196,6 +196,238 @@ core_fields: [name, type, sub_type, class, lens, criticality, effective_critical
 # Listed in match order; every type ends with `name`.
 identity_kinds: [host_id, cloud_id, bios_uuid, serial_number, mac, scm_repo_id, fqdn, hostname, ip]
 
+# Property schema (RFC-042 §6.3.9). An asset's free-form `properties` hold
+# the attributes of its type (`attributes` of each type below) plus the
+# platform keys every type may carry (`common_properties`). Every key either
+# may hold is declared once in `properties`, with:
+#
+#   - label / label_vi: what the web shows (English and Vietnamese);
+#   - format: how a value is shown beyond its attribute type: `ip` (each
+#     value is an IP address and links to that IP asset), `url` (an http(s)
+#     link) or `code` (an identifier, shown monospace);
+#   - synonyms: other keys scanners and older code wrote for the same thing.
+#     Every write path (ingest, REST, import) folds a synonym into the
+#     canonical key and drops it; readers use the helpers of
+#     pkg/domain/asset/properties.go, never a key list of their own. Only a
+#     string or list value folds: an object under a synonym (the CTIS
+#     technical `ip_address` block) stays where it is;
+#   - classes: when set, only assets of these classes may hold the key. A
+#     report that puts one on another asset (a port on a domain) has it
+#     routed to the asset it belongs to (a `host:port` service), never
+#     stored on the wrong type.
+#
+# A key outside the schema is a third-party or custom key. Ingest keeps it
+# and logs it; new ones should use the `x_` prefix (x_native_sub_type is the
+# platform's own). The web shows such keys under "Other".
+common_properties: [discovery_source, discovery_tool, aliases, identity_hints, x_native_sub_type, business_impact_score, business_impact_notes, domain, ip_address, service, certificate]
+
+properties:
+  ip_addresses: { label: IP addresses, label_vi: Địa chỉ IP, format: ip, synonyms: [ip, ips, ip_address, resolved_ip, resolved_ips, addresses] }
+  private_ip: { label: Private IP, label_vi: IP nội bộ, format: ip }
+  public_ip: { label: Public IP, label_vi: IP công khai, format: ip }
+  gateway: { label: Gateway, label_vi: "Cổng mạng (gateway)", format: ip }
+  discovery_source: { label: Discovery source, label_vi: Nguồn phát hiện }
+  discovery_tool: { label: Discovery tool, label_vi: Công cụ phát hiện }
+  aliases: { label: Former names, label_vi: Tên cũ }
+  identity_hints: { label: Identity hints, label_vi: Gợi ý định danh }
+  x_native_sub_type: { label: Sensor sub-type, label_vi: Loại con từ cảm biến }
+  business_impact_score: { label: Business impact score, label_vi: Điểm tác động nghiệp vụ }
+  business_impact_notes: { label: Business impact notes, label_vi: Ghi chú tác động nghiệp vụ }
+  domain: { label: Domain details, label_vi: Chi tiết tên miền }
+  ip_address: { label: IP details, label_vi: Chi tiết địa chỉ IP }
+  service: { label: Service, label_vi: Dịch vụ }
+  certificate: { label: Certificate details, label_vi: Chi tiết chứng chỉ }
+  registrar: { label: Registrar, label_vi: Nhà đăng ký }
+  registered_at: { label: Registered, label_vi: Ngày đăng ký }
+  expires_at: { label: Expires, label_vi: Ngày hết hạn }
+  nameservers: { label: Name servers, label_vi: Máy chủ tên miền, synonyms: [nameserver] }
+  dns_records: { label: DNS records, label_vi: Bản ghi DNS }
+  dns_record_types: { label: DNS record types, label_vi: Loại bản ghi DNS }
+  whois: { label: WHOIS, label_vi: WHOIS }
+  root_domain: { label: Root domain, label_vi: Tên miền gốc }
+  domain_level: { label: Domain level, label_vi: Cấp tên miền }
+  parent_domain: { label: Parent domain, label_vi: Tên miền cha }
+  cname_target: { label: CNAME target, label_vi: Đích CNAME }
+  is_wildcard: { label: Wildcard, label_vi: Wildcard }
+  version: { label: Version, label_vi: Phiên bản }
+  hostname: { label: Hostname, label_vi: Tên máy }
+  asn: { label: ASN, label_vi: ASN }
+  asn_org: { label: ASN organization, label_vi: Tổ chức ASN }
+  isp: { label: ISP, label_vi: Nhà cung cấp mạng }
+  country: { label: Country, label_vi: Quốc gia }
+  city: { label: City, label_vi: Thành phố }
+  geolocation: { label: Geolocation, label_vi: Vị trí địa lý }
+  ports: { label: Ports, label_vi: Các cổng }
+  is_private: { label: Private address, label_vi: Địa chỉ nội bộ }
+  is_reserved: { label: Reserved address, label_vi: Địa chỉ dành riêng }
+  serial_number: { label: Serial number, label_vi: Số sê-ri, format: code }
+  subject_cn: { label: Subject CN, label_vi: CN chủ thể }
+  sans: { label: Subject alternative names, label_vi: "Tên thay thế (SAN)", synonyms: [san] }
+  issuer_cn: { label: Issuer CN, label_vi: CN bên cấp }
+  issuer_org: { label: Issuer organization, label_vi: Tổ chức cấp }
+  not_before: { label: Valid from, label_vi: Hiệu lực từ }
+  not_after: { label: Valid until, label_vi: Hiệu lực đến }
+  signature_algorithm: { label: Signature algorithm, label_vi: Thuật toán chữ ký }
+  key_algorithm: { label: Key algorithm, label_vi: Thuật toán khóa }
+  key_size: { label: Key size, label_vi: Độ dài khóa }
+  fingerprint_sha256: { label: SHA-256 fingerprint, label_vi: Dấu vân tay SHA-256, format: code }
+  is_self_signed: { label: Self-signed, label_vi: Tự ký }
+  is_expired: { label: Expired, label_vi: Đã hết hạn }
+  port: { label: Port, label_vi: Cổng, classes: [service, data_store, application, web_endpoint] }
+  protocol: { label: Protocol, label_vi: Giao thức }
+  transport: { label: Transport, label_vi: Giao thức truyền tải }
+  product: { label: Product, label_vi: Sản phẩm }
+  banner: { label: Banner, label_vi: Banner, format: code, classes: [service] }
+  cpe: { label: CPE, label_vi: CPE, format: code }
+  state: { label: State, label_vi: Trạng thái }
+  tls_enabled: { label: TLS enabled, label_vi: Bật TLS }
+  tls_version: { label: TLS version, label_vi: Phiên bản TLS }
+  auth_required: { label: Authentication required, label_vi: Yêu cầu xác thực }
+  response_time_ms: { label: "Response time (ms)", label_vi: "Thời gian phản hồi (ms)", classes: [service, web_endpoint, application] }
+  url: { label: URL, label_vi: URL, format: url }
+  host: { label: Host, label_vi: Máy chủ }
+  scheme: { label: Scheme, label_vi: Lược đồ }
+  status_code: { label: Status code, label_vi: Mã trạng thái, classes: [service, web_endpoint, application] }
+  title: { label: Title, label_vi: Tiêu đề }
+  content_length: { label: Content length, label_vi: Độ dài nội dung, classes: [service, web_endpoint, application] }
+  content_type: { label: Content type, label_vi: Kiểu nội dung, classes: [service, web_endpoint, application] }
+  server: { label: Server, label_vi: Máy chủ web }
+  technologies: { label: Technologies, label_vi: Công nghệ, synonyms: [technology] }
+  cdn: { label: CDN, label_vi: CDN }
+  waf: { label: WAF, label_vi: WAF }
+  redirect_url: { label: Redirects to, label_vi: Chuyển hướng tới, format: url }
+  method: { label: Method, label_vi: Phương thức }
+  source: { label: Source, label_vi: Nguồn }
+  depth: { label: Crawl depth, label_vi: Độ sâu thu thập }
+  parameters: { label: Parameters, label_vi: Tham số }
+  forms: { label: Forms, label_vi: Biểu mẫu }
+  framework: { label: Framework, label_vi: Framework }
+  authentication: { label: Authentication, label_vi: Xác thực }
+  has_waf: { label: Behind a WAF, label_vi: Có WAF }
+  cms: { label: CMS, label_vi: CMS }
+  response_code: { label: Response code, label_vi: Mã phản hồi }
+  waf_vendor: { label: WAF vendor, label_vi: Nhà cung cấp WAF }
+  base_url: { label: Base URL, label_vi: URL gốc, format: url }
+  api_type: { label: API type, label_vi: Loại API }
+  documentation_url: { label: Documentation, label_vi: Tài liệu, format: url }
+  rate_limiting: { label: Rate limiting, label_vi: Giới hạn tần suất }
+  cors_enabled: { label: CORS enabled, label_vi: Bật CORS }
+  endpoints_count: { label: Endpoints, label_vi: Số endpoint }
+  platform: { label: Platform, label_vi: Nền tảng }
+  package_name: { label: Package name, label_vi: Tên gói, format: code }
+  store_url: { label: Store page, label_vi: Trang cửa hàng, format: url }
+  min_sdk_version: { label: Minimum SDK, label_vi: SDK tối thiểu }
+  target_sdk_version: { label: Target SDK, label_vi: SDK mục tiêu }
+  permissions: { label: Permissions, label_vi: Quyền }
+  uses_ssl_pinning: { label: SSL pinning, label_vi: Ghim SSL }
+  fqdn: { label: FQDN, label_vi: FQDN }
+  os_family: { label: OS family, label_vi: Họ hệ điều hành }
+  os_name: { label: Operating system, label_vi: Hệ điều hành }
+  os_version: { label: OS version, label_vi: Phiên bản hệ điều hành }
+  kernel_version: { label: Kernel version, label_vi: Phiên bản kernel }
+  architecture: { label: Architecture, label_vi: Kiến trúc }
+  cpu_count: { label: CPUs, label_vi: Số CPU }
+  memory_gb: { label: "Memory (GB)", label_vi: "Bộ nhớ (GB)" }
+  mac_addresses: { label: MAC addresses, label_vi: Địa chỉ MAC, format: code }
+  is_virtual: { label: Virtual machine, label_vi: Máy ảo }
+  hypervisor: { label: Hypervisor, label_vi: Hypervisor }
+  provider: { label: Provider, label_vi: Nhà cung cấp }
+  instance_id: { label: Instance ID, label_vi: ID máy ảo, format: code }
+  instance_type: { label: Instance type, label_vi: Loại máy ảo }
+  region: { label: Region, label_vi: Vùng }
+  zone: { label: Zone, label_vi: Khu vực }
+  vpc_id: { label: VPC ID, label_vi: ID VPC, format: code }
+  image_id: { label: Image ID, label_vi: ID image, format: code }
+  device_type: { label: Device type, label_vi: Loại thiết bị }
+  user: { label: User, label_vi: Người dùng }
+  edr_installed: { label: EDR installed, label_vi: Đã cài EDR }
+  function_name: { label: Function name, label_vi: Tên hàm }
+  runtime: { label: Runtime, label_vi: Môi trường chạy }
+  handler: { label: Handler, label_vi: Handler, format: code }
+  memory_mb: { label: "Memory (MB)", label_vi: "Bộ nhớ (MB)" }
+  timeout_seconds: { label: "Timeout (s)", label_vi: "Thời gian chờ (giây)" }
+  arn: { label: ARN, label_vi: ARN, format: code }
+  role: { label: Role, label_vi: Vai trò }
+  last_modified: { label: Last modified, label_vi: Sửa đổi lần cuối }
+  account_id: { label: Account ID, label_vi: ID tài khoản, format: code }
+  account_name: { label: Account name, label_vi: Tên tài khoản }
+  organization_id: { label: Organization ID, label_vi: ID tổ chức, format: code }
+  mfa_enabled: { label: MFA enabled, label_vi: Bật MFA }
+  container_id: { label: Container ID, label_vi: ID container, format: code }
+  image: { label: Image, label_vi: Image }
+  created_at: { label: Created, label_vi: Ngày tạo }
+  networks: { label: Networks, label_vi: Mạng }
+  cluster_name: { label: Cluster, label_vi: Cụm }
+  namespace: { label: Namespace, label_vi: Namespace }
+  workload_kind: { label: Workload kind, label_vi: Loại workload }
+  node_count: { label: Nodes, label_vi: Số node }
+  rbac_enabled: { label: RBAC enabled, label_vi: Bật RBAC }
+  namespace_count: { label: Namespaces, label_vi: Số namespace }
+  api_server_url: { label: API server, label_vi: Máy chủ API, format: url }
+  network_plugin: { label: Network plugin, label_vi: Plugin mạng }
+  pod_security_enabled: { label: Pod security enabled, label_vi: Bật bảo mật pod }
+  network_policies: { label: Network policies, label_vi: Chính sách mạng }
+  pod_count: { label: Pods, label_vi: Số pod }
+  service_count: { label: Services, label_vi: Số dịch vụ }
+  namespace_labels: { label: Namespace labels, label_vi: Nhãn namespace }
+  registry_url: { label: Registry URL, label_vi: URL registry, format: url }
+  repository_count: { label: Repositories, label_vi: Số kho }
+  image_count: { label: Images, label_vi: Số image }
+  scan_on_push: { label: Scan on push, label_vi: Quét khi đẩy }
+  encryption_enabled: { label: Encryption enabled, label_vi: Bật mã hóa }
+  immutable_tags: { label: Immutable tags, label_vi: Tag bất biến }
+  visibility: { label: Visibility, label_vi: Chế độ hiển thị }
+  language: { label: Language, label_vi: Ngôn ngữ }
+  default_branch: { label: Default branch, label_vi: Nhánh mặc định }
+  canonical_url: { label: Repository URL, label_vi: URL kho mã, format: url }
+  last_commit_at: { label: Last commit, label_vi: Commit gần nhất }
+  archived: { label: Archived, label_vi: Đã lưu trữ }
+  principal_id: { label: Principal ID, label_vi: ID principal, format: code }
+  email: { label: Email, label_vi: Email }
+  privileged: { label: Privileged, label_vi: Đặc quyền }
+  last_used: { label: Last used, label_vi: Dùng lần cuối }
+  user_id: { label: User ID, label_vi: ID người dùng, format: code }
+  username: { label: Username, label_vi: Tên đăng nhập }
+  last_login: { label: Last sign-in, label_vi: Đăng nhập lần cuối }
+  groups: { label: Groups, label_vi: Nhóm }
+  policies: { label: Policies, label_vi: Chính sách }
+  role_id: { label: Role ID, label_vi: ID vai trò, format: code }
+  role_name: { label: Role name, label_vi: Tên vai trò }
+  max_session_duration: { label: "Max session duration (s)", label_vi: "Thời lượng phiên tối đa (giây)" }
+  trust_policy: { label: Trust policy, label_vi: Chính sách tin cậy }
+  display_name: { label: Display name, label_vi: Tên hiển thị }
+  roles: { label: Roles, label_vi: Vai trò }
+  engine: { label: Engine, label_vi: Engine }
+  endpoint: { label: Endpoint, label_vi: Endpoint }
+  encrypted: { label: Encrypted, label_vi: Đã mã hóa }
+  ssl_enforced: { label: SSL enforced, label_vi: Bắt buộc SSL }
+  publicly_accessible: { label: Publicly accessible, label_vi: Truy cập công khai }
+  backup_retention_days: { label: "Backup retention (days)", label_vi: "Lưu bản sao lưu (ngày)" }
+  bucket_name: { label: Bucket, label_vi: Bucket }
+  versioning_enabled: { label: Versioning enabled, label_vi: Bật lập phiên bản }
+  encryption_type: { label: Encryption type, label_vi: Kiểu mã hóa }
+  public_access: { label: Public access, label_vi: Truy cập công khai }
+  logging_enabled: { label: Logging enabled, label_vi: Bật ghi log }
+  cidr: { label: CIDR, label_vi: CIDR }
+  dns_servers: { label: DNS servers, label_vi: Máy chủ DNS, format: ip }
+  dhcp_enabled: { label: DHCP enabled, label_vi: Bật DHCP }
+  vlan_id: { label: VLAN ID, label_vi: ID VLAN }
+  cidr_block: { label: CIDR block, label_vi: Dải CIDR }
+  secondary_cidrs: { label: Secondary CIDRs, label_vi: Dải CIDR phụ }
+  is_default: { label: Default, label_vi: Mặc định }
+  flow_logs_enabled: { label: Flow logs enabled, label_vi: Bật flow log }
+  subnet_id: { label: Subnet ID, label_vi: ID subnet, format: code }
+  availability_zone: { label: Availability zone, label_vi: Vùng khả dụng }
+  is_public: { label: Public, label_vi: Công khai }
+  firewall_id: { label: Firewall ID, label_vi: ID tường lửa, format: code }
+  direction: { label: Direction, label_vi: Chiều }
+  rules: { label: Rules, label_vi: Quy tắc }
+  lb_type: { label: Load balancer type, label_vi: Loại cân bằng tải }
+  dns_name: { label: DNS name, label_vi: Tên DNS }
+  listeners: { label: Listeners, label_vi: Listener }
+  ssl_policy: { label: SSL policy, label_vi: Chính sách SSL }
+
+
 # Names used in configs/relationship-types.yaml constraints that are not
 # registry types. Resolving them here makes the relationship constraints
 # point at real (type, sub_type) pairs, so the server can enforce them.
@@ -256,6 +488,13 @@ types:
     legacy_category: external_surface
     identity_keys: [fqdn, name]
     attributes:
+      - { name: root_domain, type: string, facet: true, group: true }
+      - { name: domain_level, type: int, facet: true }
+      - { name: parent_domain, type: string }
+      - { name: ip_addresses, type: list }
+      - { name: cname_target, type: string }
+      - { name: dns_record_types, type: string }
+      - { name: is_wildcard, type: bool, facet: true }
       - { name: registrar, type: string, facet: true, group: true }
       - { name: registered_at, type: time }
       - { name: expires_at, type: time }
@@ -277,8 +516,11 @@ types:
     identity_keys: [fqdn, name]
     attributes:
       - { name: parent_domain, type: string, facet: true, group: true }
-      - { name: resolved_ips, type: list }
+      - { name: root_domain, type: string, facet: true, group: true }
+      - { name: domain_level, type: int, facet: true }
+      - { name: ip_addresses, type: list }
       - { name: cname_target, type: string }
+      - { name: dns_record_types, type: string }
       - { name: discovery_source, type: string, facet: true }
       - { name: is_wildcard, type: bool, facet: true }
     columns: [name, parent_domain, findings.open, last_seen, owner]
@@ -355,6 +597,7 @@ types:
       port: { sub_type: open_port }
     identity_keys: [name]
     attributes:
+      - { name: ip_addresses, type: list }
       - { name: port, type: int, facet: true, group: true }
       - { name: protocol, type: string, facet: true, group: true }
       - { name: transport, type: enum, values: [tcp, udp, sctp], facet: true }
@@ -381,6 +624,7 @@ types:
     legacy_category: network
     identity_keys: [name]
     attributes:
+      - { name: ip_addresses, type: list }
       - { name: url, type: string }
       - { name: host, type: string, group: true }
       - { name: port, type: int, facet: true, group: true }
@@ -410,6 +654,7 @@ types:
     legacy_category: network
     identity_keys: [name]
     attributes:
+      - { name: ip_addresses, type: list }
       - { name: host, type: string, group: true }
       - { name: port, type: int, facet: true, group: true }
       - { name: protocol, type: enum, values: [tcp, udp], facet: true }
@@ -484,6 +729,7 @@ types:
     legacy_category: application
     identity_keys: [name]
     attributes:
+      - { name: ip_addresses, type: list }
       - { name: url, type: string }
       - { name: title, type: string }
       - { name: technologies, type: list }
@@ -509,6 +755,7 @@ types:
     legacy_category: application
     identity_keys: [name]
     attributes:
+      - { name: ip_addresses, type: list }
       - { name: base_url, type: string }
       - { name: api_type, type: enum, values: [rest, graphql, grpc, soap, websocket], facet: true, group: true }
       - { name: version, type: string }
@@ -594,6 +841,7 @@ types:
     legacy_category: infrastructure
     identity_keys: [cloud_id, host_id, mac, ip, name]
     attributes:
+      - { name: ip_addresses, type: list }
       - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
       - { name: instance_id, type: string }
       - { name: instance_type, type: string, facet: true, group: true }
@@ -619,6 +867,7 @@ types:
     legacy_category: infrastructure
     identity_keys: [host_id, bios_uuid, serial_number, mac, hostname, name]
     attributes:
+      - { name: ip_addresses, type: list }
       - { name: hostname, type: string }
       - { name: os_family, type: enum, values: [linux, windows, macos, ios, android, other], facet: true, group: true }
       - { name: os_version, type: string }
@@ -1107,6 +1356,7 @@ types:
     legacy_category: network
     identity_keys: [cloud_id, attr.firewall_id, name]
     attributes:
+      - { name: ip_addresses, type: list }
       - { name: provider, type: string, facet: true, group: true }
       - { name: firewall_id, type: string }
       - { name: vpc_id, type: string, group: true }
@@ -1125,6 +1375,7 @@ types:
     legacy_category: network
     identity_keys: [cloud_id, attr.dns_name, name]
     attributes:
+      - { name: ip_addresses, type: list }
       - { name: provider, type: enum, values: [aws, gcp, azure, other], facet: true, group: true }
       - { name: lb_type, type: enum, values: [application, network, classic, gateway], facet: true }
       - { name: dns_name, type: string }

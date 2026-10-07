@@ -7,6 +7,7 @@
 import type { ApiCredential, ApiCredentialStats } from '../api/credential-api.types'
 import type { Asset } from '@/features/assets'
 import type { Status } from '@/features/shared/types'
+import { severityCounts } from '@/lib/severity'
 
 // Map API state to frontend status
 const stateToStatus: Record<string, Status> = {
@@ -113,6 +114,7 @@ export function extractCredentialStats(stats: ApiCredentialStats | undefined) {
       high: 0,
       medium: 0,
       low: 0,
+      info: 0,
     }
   }
 
@@ -122,9 +124,6 @@ export function extractCredentialStats(stats: ApiCredentialStats | undefined) {
     resolved: stats.by_state?.resolved || 0,
     accepted: stats.by_state?.accepted || 0,
     falsePositive: stats.by_state?.false_positive || 0,
-    critical: stats.by_severity?.critical || 0,
-    high: stats.by_severity?.high || 0,
-    medium: stats.by_severity?.medium || 0,
-    low: stats.by_severity?.low || 0,
+    ...severityCounts(stats.by_severity),
   }
 }

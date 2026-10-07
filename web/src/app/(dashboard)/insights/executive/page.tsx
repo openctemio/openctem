@@ -41,6 +41,7 @@ import {
   Activity,
   Target,
 } from 'lucide-react'
+import { compareSeverity } from '@/lib/severity'
 
 // ============================================
 // TYPES
@@ -375,12 +376,14 @@ export default function ExecutiveSummaryPage() {
               <Skeleton className="h-40 w-full" />
             ) : mttr && Object.keys(mttr.by_severity).length > 0 ? (
               <div className="divide-y">
-                {Object.entries(mttr.by_severity).map(([severity, hours]) => (
-                  <div key={severity} className="flex items-center justify-between py-2.5">
-                    <SeverityBadge severity={severity.toLowerCase() as Severity} />
-                    <span className="text-sm font-medium tabular-nums">{formatHours(hours)}</span>
-                  </div>
-                ))}
+                {Object.entries(mttr.by_severity)
+                  .sort(([a], [b]) => compareSeverity(a, b))
+                  .map(([severity, hours]) => (
+                    <div key={severity} className="flex items-center justify-between py-2.5">
+                      <SeverityBadge severity={severity.toLowerCase() as Severity} />
+                      <span className="text-sm font-medium tabular-nums">{formatHours(hours)}</span>
+                    </div>
+                  ))}
                 <div className="flex items-center justify-between py-2.5">
                   <span className="text-sm font-medium">Overall</span>
                   <span className="text-sm font-semibold tabular-nums">

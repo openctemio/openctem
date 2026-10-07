@@ -35,23 +35,12 @@ type Repository interface {
 	// If filter.TenantID is set, also includes that tenant's custom capabilities.
 	List(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*Capability], error)
 
-	// ListAll returns all capabilities for a tenant context (platform + tenant custom).
-	// This is a simpler method without pagination for dropdowns/selects.
-	ListAll(ctx context.Context, tenantID *shared.ID) ([]*Capability, error)
-
-	// ListByNames returns capabilities by their names.
-	// Useful for resolving capability names to IDs.
-	ListByNames(ctx context.Context, tenantID *shared.ID, names []string) ([]*Capability, error)
-
-	// ListByCategory returns all capabilities in a category.
-	ListByCategory(ctx context.Context, tenantID *shared.ID, category string) ([]*Capability, error)
-
-	// Update updates an existing capability.
+	// Update updates one of the capability's tenant's custom capabilities
+	// (a platform capability or another tenant's row is not found).
 	Update(ctx context.Context, capability *Capability) error
 
-	// Delete deletes a capability by ID.
-	// Only tenant custom capabilities can be deleted.
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete deletes one of tenantID's custom capabilities.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// ExistsByName checks if a capability with the given name exists in the scope.
 	ExistsByName(ctx context.Context, tenantID *shared.ID, name string) (bool, error)

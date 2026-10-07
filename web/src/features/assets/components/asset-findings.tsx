@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { DetailSheetFooter, EmptyState } from '@/features/shared'
 import { SEVERITY_BADGE_SOFT, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
+import { SEVERITY_LABELS, SEVERITY_LEVELS, normalizeSeverity } from '@/lib/severity'
 
 import type { AssetFinding } from '../types/asset.types'
 import { useAssetFindingsApi } from '@/features/findings/api/use-findings-api'
@@ -34,16 +35,16 @@ interface AssetFindingsProps {
 }
 
 // Colours come from the shared severity source (dark-mode aware).
-const severityConfig: Record<AssetFinding['severity'], { label: string; icon: React.ElementType }> =
-  {
-    critical: { label: 'Critical', icon: AlertCircle },
-    high: { label: 'High', icon: AlertTriangle },
-    medium: { label: 'Medium', icon: AlertTriangle },
-    low: { label: 'Low', icon: Info },
-    info: { label: 'Info', icon: Info },
-  }
-
-const SUMMARY_LEVELS = ['critical', 'high', 'medium', 'low'] as const
+const SEVERITY_ICONS: Record<AssetFinding['severity'], React.ElementType> = {
+  critical: AlertCircle,
+  high: AlertTriangle,
+  medium: AlertTriangle,
+  low: Info,
+  info: Info,
+}
+const severityConfig = Object.fromEntries(
+  SEVERITY_LEVELS.map((s) => [s, { label: SEVERITY_LABELS[s], icon: SEVERITY_ICONS[s] }])
+) as Record<AssetFinding['severity'], { label: string; icon: React.ElementType }>
 
 const typeConfig: Record<AssetFinding['type'], { label: string; icon: React.ElementType }> = {
   vulnerability: { label: 'Vulnerability', icon: Bug },
@@ -96,9 +97,8 @@ function mapApiFinding(f: ApiFinding): AssetFinding {
   }
   const status: AssetFinding['status'] = statusMap[f.status] || 'open'
 
-  // Map severity, filtering 'none' to 'info'
-  const severity: AssetFinding['severity'] =
-    f.severity === 'none' ? 'info' : (f.severity as AssetFinding['severity'])
+  // none (CVSS 0.0) is shown as info; an unknown value too, never dropped.
+  const severity: AssetFinding['severity'] = normalizeSeverity(f.severity) ?? 'info'
 
   return {
     id: f.id,
@@ -131,13 +131,12 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
   }, [response])
 
   const severityCounts = React.useMemo(() => {
-    return {
-      critical: findings.filter((f) => f.severity === 'critical').length,
-      high: findings.filter((f) => f.severity === 'high').length,
-      medium: findings.filter((f) => f.severity === 'medium').length,
-      low: findings.filter((f) => f.severity === 'low').length,
-      info: findings.filter((f) => f.severity === 'info').length,
-    }
+    const counts = Object.fromEntries(SEVERITY_LEVELS.map((s) => [s, 0])) as Record<
+      AssetFinding['severity'],
+      number
+    >
+    for (const f of findings) counts[f.severity] += 1
+    return counts
   }, [findings])
 
   if (isLoading) {
@@ -195,7 +194,7 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
     <div className={cn('space-y-4', className)}>
       {/* Severity summary */}
       <div className="flex flex-wrap gap-2">
-        {SUMMARY_LEVELS.filter((level) => severityCounts[level] > 0).map((level) => {
+        {SEVERITY_LEVELS.filter((level) => severityCounts[level] > 0).map((level) => {
           const Icon = severityConfig[level].icon
           return (
             <Badge

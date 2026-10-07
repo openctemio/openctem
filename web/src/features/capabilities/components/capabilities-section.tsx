@@ -47,13 +47,12 @@ import { EditCapabilityDialog } from './edit-capability-dialog'
 import { CapabilityDetailPanel } from './capability-detail-panel'
 
 import {
-  useCapabilities,
+  useAllCapabilities,
   useDeleteCapability,
   useCapabilityUsageStats,
-  useCapabilitiesUsageStatsBatch,
   invalidateCapabilitiesCache,
 } from '@/lib/api/capability-hooks'
-import type { Capability, CapabilityListFilters } from '@/lib/api/capability-types'
+import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
 import { EmptyState, ErrorState, PageHeader } from '@/features/shared'
 
 type ViewMode = 'grid' | 'table'
@@ -79,19 +78,22 @@ export function CapabilitiesSection() {
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
   const viewMode: ViewMode = viewParam === 'grid' ? 'grid' : 'table'
   const mainTab: MainTab = tabParam === 'custom' ? 'custom' : 'platform'
-  const [filters, _setFilters] = useState<CapabilityListFilters>({})
+  // API data: every capability, each with its usage (include=usage). A
+  // capability without usage (not permitted) shows as unknown, not unused.
+  const {
+    data: capabilitiesData,
+    error,
+    isLoading,
+    mutate,
+  } = useAllCapabilities(undefined, { usage: true })
 
-  // API data
-  const { data: capabilitiesData, error, isLoading, mutate } = useCapabilities(filters)
-
-  // Get all capability IDs for batch usage stats
-  const capabilityIds = useMemo(
-    () => capabilitiesData?.items?.map((c) => c.id) || [],
-    [capabilitiesData]
-  )
-
-  // Fetch usage stats for all capabilities
-  const { data: usageStatsData } = useCapabilitiesUsageStatsBatch(capabilityIds)
+  const usageStatsData = useMemo(() => {
+    const out: CapabilityUsageStatsBatchResponse = {}
+    for (const c of capabilitiesData?.items ?? []) {
+      if (c.usage) out[c.id] = c.usage
+    }
+    return out
+  }, [capabilitiesData])
 
   // Fetch usage stats for the selected capability (for delete dialog)
   const { data: selectedUsageStats, isLoading: isLoadingSelectedStats } = useCapabilityUsageStats(
@@ -198,9 +200,10 @@ export function CapabilitiesSection() {
 
   // Check if we're in custom capabilities mode for conditional rendering
   const isCustomMode = mainTab === 'custom'
-  // Custom capabilities are written with scans:tenant_tools:* (the API's gate).
-  const canEditCapability = useCanMutate('PUT /api/v1/custom-capabilities/{id}')
-  const canDeleteCapability = useCanMutate('DELETE /api/v1/custom-capabilities/{id}')
+  // Custom capabilities are written with scans:tools:* (owner and admin), as
+  // custom tools are.
+  const canEditCapability = useCanMutate('PUT /api/v1/capabilities/{id}')
+  const canDeleteCapability = useCanMutate('DELETE /api/v1/capabilities/{id}')
 
   // Stats
   const platformCount = capabilitiesData?.items?.filter((c) => c.is_builtin).length || 0
@@ -287,7 +290,7 @@ export function CapabilitiesSection() {
       card={false}
       action={
         !hasFilter && isCustomMode ? (
-          <Can route="POST /api/v1/custom-capabilities">
+          <Can route="POST /api/v1/capabilities">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add capability
@@ -354,7 +357,7 @@ export function CapabilitiesSection() {
         title="Capabilities"
         description="What tools can do. Platform capabilities are built in; add custom ones to extend the tool registry."
       >
-        <Can route="POST /api/v1/custom-capabilities">
+        <Can route="POST /api/v1/capabilities">
           <Tooltip>
             <TooltipTrigger asChild>
               <span>

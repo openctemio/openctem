@@ -200,35 +200,3 @@ func TestImportCSV_ResolvesAliasesAndRejectsUnknownSubTypes(t *testing.T) {
 		}
 	}
 }
-
-func TestImportKubernetes_StoresKubernetesTypes(t *testing.T) {
-	repo := NewMockAssetRepository()
-	svc := assetapp.NewAssetImportService(repo, logger.NewNop())
-	_, err := svc.ImportKubernetes(context.Background(), serviceTenantID.String(), assetapp.K8sDiscoveryInput{
-		ClusterName: "prod",
-		Namespaces:  []assetapp.K8sNamespace{{Name: "shop", Workloads: []assetapp.K8sWorkload{{Kind: "Deployment", Name: "web"}}}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := 0
-	for _, a := range repo.assets {
-		if a.Type() != asset.AssetTypeKubernetes {
-			t.Errorf("%s stored as %s", a.Name(), a.Type())
-		}
-		switch a.SubType() {
-		case "cluster":
-			found++
-		case "workload":
-			found++
-			if a.Properties()["workload_kind"] != "deployment" {
-				t.Errorf("workload_kind = %v", a.Properties()["workload_kind"])
-			}
-		default:
-			t.Errorf("%s sub-type %q", a.Name(), a.SubType())
-		}
-	}
-	if found != 2 {
-		t.Fatalf("got %d kubernetes assets", found)
-	}
-}

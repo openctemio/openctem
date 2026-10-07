@@ -686,12 +686,14 @@ func (r *AssetGroupRepository) GetGroupAssets(ctx context.Context, groupID share
 // scanMemberMatchProps selects the asset properties exclusion matching reads for
 // a scan member (scope.AssetExclusionValues): its addresses and, for
 // repositories, its URLs. Only these leave the database.
-const scanMemberMatchProps = `jsonb_strip_nulls(jsonb_build_object(
-		'ip_addresses', a.properties->'ip_addresses',
-		'ip', a.properties->'ip',
-		'full_name', a.properties->'full_name',
-		'web_url', a.properties->'web_url',
-		'clone_url', a.properties->'clone_url'))`
+var scanMemberMatchProps = func() string {
+	keys := append(asset.AddressPropertyKeys(), "full_name", "web_url", "clone_url")
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("'%s', a.properties->'%s'", k, k)
+	}
+	return "jsonb_strip_nulls(jsonb_build_object(" + strings.Join(parts, ", ") + "))"
+}()
 
 // ListScanMembers returns one keyset page of a group's members for scan
 // dispatch. The group must belong to q.TenantID and so must every member
