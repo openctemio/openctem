@@ -11455,6 +11455,173 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/easm/candidates/rules': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Review by rule: apply
+     * @description accept_rule creates a permanent scope entry exactly as POST /scope/targets does (attack_surface:scope:write; with scope:approve a recent re-authentication, then the organization's approvals; everyone notified) and, once it is in effect, confirms the pending items it covers. accept_selected confirms only asset_ids. reject_rule creates a scope exclusion (pending its approval) and rejects the pending items it covers. Every change is audited. The answer is the preview with what was applied.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.EASMRuleRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.RulePreview']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/candidates/rules/preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Review by rule: preview
+     * @description Exactly what a review-by-rule action would change, changing nothing: the scope entry or exclusion it would create (with the status and approvals it would get), the items it would confirm or reject, the items that stay blocked, and whether it needs a recent re-authentication. A refusal (PUBLIC_SUFFIX, DENY_LIST, CIDR_TOO_LARGE, REQUEST_MUST_BE_ONE_OFF, ...) comes back in refusal.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody: components['requestBodies']['internal_infra_http_handler.EASMRuleRequest']
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.RulePreview']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/easm/candidates/suggestions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Review by rule: suggestions
+     * @description The caller's pending review items grouped into candidate scope rules (RFC-054 §6.7): wildcards at each label level up to the registrable domain (never a public suffix), /24 (IPv4) or /48 (IPv6) ranges (never for shared, CDN or cloud-provider space: those are listed individually), each with the items it covers, the items an exclusion or rejection keeps out, ownership hints and a strength. Narrowed to the caller's data scope.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Attribution states (comma-separated); default needs_review */
+          states?: string
+          /** @description Suggestions to return */
+          limit?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestions']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/easm/seeds': {
     parameters: {
       query?: never
@@ -36532,6 +36699,11 @@ export interface components {
       }
       review_oldest_since?: string
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.BlockedItem': {
+      asset_id?: string
+      code?: string
+      name?: string
+    }
     'github_com_openctemio_openctem_api_internal_app_easm.Decision': {
       asset_id?: string
       from?: string
@@ -36548,11 +36720,21 @@ export interface components {
       by_type?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.TypeCount'][]
       open?: number
     }
+    'github_com_openctemio_openctem_api_internal_app_easm.IndividualItem': {
+      asset_id?: string
+      name?: string
+      reason?: string
+      shared_ip?: boolean
+    }
     'github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock': {
       ct_domains_watched?: number
       ct_failing?: number
       ct_never_succeeded?: number
       ct_oldest_success?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.NamedAsset': {
+      asset_id?: string
+      name?: string
     }
     'github_com_openctemio_openctem_api_internal_app_easm.NewBlock': {
       cycle_start?: string
@@ -36600,6 +36782,53 @@ export interface components {
       severity?: string
       title?: string
       type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.RuleEntryPreview': {
+      approvals_required?: number
+      id?: string
+      /** @description scope_target, exclusion */
+      kind?: string
+      pattern?: string
+      status?: string
+      target_type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.RuleHint': {
+      kind?: string
+      value?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.RulePreview': {
+      action?: string
+      allowed?: boolean
+      /** @description Applied lists what the action changed (action route only). */
+      confirmed?: string[]
+      entry?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.RuleEntryPreview']
+      refusal?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.RuleRefusal']
+      rejected?: string[]
+      stays_blocked?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.BlockedItem'][]
+      step_up_required?: boolean
+      would_confirm?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.NamedAsset'][]
+      would_reject?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.NamedAsset'][]
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.RuleRefusal': {
+      code?: string
+      message?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestion': {
+      blocked?: number
+      blocked_sample?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.BlockedItem'][]
+      covered?: number
+      covered_sample?: string[]
+      hints?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.RuleHint'][]
+      id?: string
+      /** @description domain_wildcard, ip_cidr */
+      kind?: string
+      pattern?: string
+      strength?: string
+      target_type?: string
+    }
+    'github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestions': {
+      individual?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.IndividualItem'][]
+      suggestions?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestion'][]
     }
     'github_com_openctemio_openctem_api_internal_app_easm.SeedView': {
       attested_at?: string
@@ -40007,6 +40236,17 @@ export interface components {
       note?: string
       /** @description State: confirmed, rejected, dependency, monitor_only or needs_review. */
       state?: string
+    }
+    'internal_infra_http_handler.EASMRuleRequest': {
+      /** @description Action: accept_rule, accept_selected or reject_rule. */
+      action?: string
+      /** @description AssetIDs are the items to confirm (accept_selected), at most 200. */
+      asset_ids?: string[]
+      pattern?: string
+      /** @description Reason is required for accept_rule and reject_rule (audited). */
+      reason?: string
+      /** @description TargetType: domain, cidr, ip_range or ip_address (accept_rule, reject_rule). */
+      target_type?: string
     }
     'internal_infra_http_handler.EASMSeedCreateRequest': {
       /**
@@ -44036,6 +44276,12 @@ export interface components {
     'internal_infra_http_handler.SavedViewRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.SavedViewRequest']
+      }
+    }
+    /** @description Action */
+    'internal_infra_http_handler.EASMRuleRequest': {
+      content: {
+        'application/json': components['schemas']['internal_infra_http_handler.EASMRuleRequest']
       }
     }
     /** @description Update data */

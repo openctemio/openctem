@@ -179,7 +179,7 @@ type entryDecision struct {
 	request   bool
 }
 
-func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, targetType scopedom.TargetType, in CreateTargetInput, now time.Time) (entryDecision, error) {
+func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, targetType scopedom.TargetType, in CreateTargetInput, now time.Time, preview bool) (entryDecision, error) {
 	var d entryDecision
 	p, err := s.loadPolicy(ctx, tenantID)
 	if err != nil {
@@ -215,8 +215,10 @@ func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, target
 		case strings.TrimSpace(in.Reason) == "":
 			return d, scopedom.ErrReasonRequiredFor
 		}
-	} else if err := s.requireStepUp(ctx, in.Actor); err != nil {
-		return d, err
+	} else if !preview {
+		if err := s.requireStepUp(ctx, in.Actor); err != nil {
+			return d, err
+		}
 	}
 	d.approvals = p.approvals(d.tier, d.request)
 	return d, nil
@@ -241,6 +243,54 @@ func (s *Service) widenEntry(ctx context.Context, t *scopedom.Target, actor Acto
 	}
 	t.Widen(actor.UserID, p.approvals(t.MaxTier(), false), now)
 	return nil
+}
+
+// TargetPreview is what CreateTarget would do, without saving or asking for
+// step-up (the review-by-rule preview, RFC-054 §6.7).
+type TargetPreview struct {
+	Status            scopedom.Status
+	ApprovalsRequired int
+	StepUpRequired    bool
+}
+
+// PreviewTarget runs CreateTarget's checks (guardrails, one-off and request
+// rules, approvals) and answers what it would create. An error is the
+// refusal CreateTarget would give.
+func (s *Service) PreviewTarget(ctx context.Context, input CreateTargetInput) (*TargetPreview, error) {
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	targetType, err := scopedom.ParseTargetType(input.TargetType)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+	}
+	if err := scopedom.ValidatePattern(targetType, input.Pattern); err != nil {
+		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+	}
+	g := scopedom.DefaultGuardrails()
+	if s.guardrails != nil {
+		g = *s.guardrails
+	}
+	if err := g.CheckPattern(targetType, input.Pattern); err != nil {
+		return nil, err
+	}
+	exists, err := s.targetRepo.ExistsByPattern(ctx, tenantID, targetType, input.Pattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check target existence: %w", err)
+	}
+	if exists {
+		return nil, scopedom.ErrTargetAlreadyExists
+	}
+	d, err := s.decideNewEntry(ctx, tenantID, targetType, input, time.Now().UTC(), true)
+	if err != nil {
+		return nil, err
+	}
+	out := &TargetPreview{Status: scopedom.StatusActive, ApprovalsRequired: d.approvals, StepUpRequired: input.Actor.CanApprove && !input.Actor.system()}
+	if d.approvals > 0 {
+		out.Status = scopedom.StatusPending
+	}
+	return out, nil
 }
 
 // ApproveTarget records the actor's approval of a pending entry. The route

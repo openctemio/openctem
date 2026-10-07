@@ -241,6 +241,8 @@
 "POST /api/v1/custom-tools/{id}/activate": {"permissions":["scans:tenant_tools:write"]},
 "POST /api/v1/custom-tools/{id}/deactivate": {"permissions":["scans:tenant_tools:write"]},
 "POST /api/v1/easm/candidates/decisions": {"permissions":["assets:write"]},
+"POST /api/v1/easm/candidates/rules": {"permissions":["assets:write"]},
+"POST /api/v1/easm/candidates/rules/preview": {"permissions":["assets:read"]},
 "POST /api/v1/easm/seeds": {"permissions":["attack_surface:scope:write"]},
 "POST /api/v1/easm/sweeps": {"permissions":["attack_surface:scope:write"]},
 "POST /api/v1/easm/verified-domains": {"permissions":["attack_surface:scope:write"]},
