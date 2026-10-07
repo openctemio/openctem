@@ -85,6 +85,18 @@ type GrantRefusalObserver interface {
 	ObserveGrantRefusal(ctx context.Context, tenantID, sensorID shared.ID, commandID string, r *sensordom.GrantRefusal)
 }
 
+// ToolContractSource reads a sensor's current manifest, whose tool contracts
+// set the tier the grant checks (sensor.ManifestStore).
+type ToolContractSource interface {
+	CurrentManifest(ctx context.Context, tenantID *shared.ID, sensorID shared.ID) (*sensordom.ManifestVersion, error)
+}
+
+// WithToolContracts makes the grant check assign each job's tier from the
+// tool contract its sensor reported (RFC-055 §6.3).
+func WithToolContracts(src ToolContractSource) Option {
+	return func(s *Service) { s.contracts = src }
+}
+
 // WithGrants makes Poll, Claim and Acknowledge enforce each sensor's grant
 // before anything else: a command outside it is never offered, and a claim
 // by id of one fails like a lost claim and is reported to o (nil: not
@@ -108,9 +120,13 @@ var ErrOutOfGrant = fmt.Errorf("%w (%w): the command is outside the sensor's gra
 // settings. A nil gate (no sensor identity, no lookup wired) withholds
 // nothing.
 type dispatchGate struct {
-	grant  *sensordom.Grant
-	report *sensordom.LocalPolicyReport
-	opts   sensordom.DispatchOptions
+	grant *sensordom.Grant
+	// manifest is the polling sensor's current manifest, whose tool
+	// contracts set the tier of each job (nil: none or unreadable; the
+	// catalog rules apply, as for a sensor older than the tool contract).
+	manifest *sensordom.Manifest
+	report   *sensordom.LocalPolicyReport
+	opts     sensordom.DispatchOptions
 	// closed: the sensor or the tenant setting could not be read; every
 	// command is withheld (fail closed) until a later poll can read them.
 	closed bool
@@ -141,6 +157,11 @@ func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *sha
 		return &dispatchGate{closed: true}
 	}
 	g := &dispatchGate{opts: opts, grant: grant}
+	if grant != nil && s.contracts != nil {
+		if v, err := s.contracts.CurrentManifest(ctx, &tenantID, *sensorID); err == nil && v != nil {
+			g.manifest = &v.Manifest
+		}
+	}
 	if s.sensors == nil {
 		// No report to read: only the private-target switch applies, and
 		// no sensor qualifies for it.
@@ -199,7 +220,11 @@ func (g *dispatchGate) grantRefusal(c *commanddom.Command) *sensordom.GrantRefus
 	if g == nil || g.grant == nil {
 		return nil
 	}
-	return g.grant.Admit(string(c.Type), c.Payload, c.ScanZoneID)
+	var contract *sensordom.ToolContract
+	if g.manifest != nil {
+		contract = g.manifest.ToolContract(sensordom.JobOf(string(c.Type), c.Payload).Tool)
+	}
+	return g.grant.AdmitContract(string(c.Type), c.Payload, c.ScanZoneID, contract)
 }
 
 // accepted keeps the commands the gate does not withhold, in order.

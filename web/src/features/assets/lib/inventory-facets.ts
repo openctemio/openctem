@@ -11,7 +11,7 @@
 import type { AssetStatsData } from '../hooks/use-assets'
 import { ATTRIBUTION_FILTER_VALUES, type InventoryFilters } from './inventory-url'
 import { ASSET_TYPE_LABELS, ASSET_SCOPE_LABELS, EXPOSURE_LEVEL_LABELS } from '../types/asset.types'
-import { CRITICALITY_LABELS } from '@/lib/criticality-colors'
+import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
 
 /** Data classification levels (mirrors the api CHECK constraint on assets). */
 export const DATA_CLASSIFICATION_LABELS: Record<string, string> = {
@@ -127,7 +127,7 @@ export function buildFacetGroups(businessUnitLabels: Record<string, string>): Fa
           filterKey: 'criticalities',
           label: 'Criticality',
           source: 'static',
-          values: ['critical', 'high', 'medium', 'low'],
+          values: [...ASSET_CRITICALITY_LEVELS],
           labelFor: (v) => CRITICALITY_LABELS[v as keyof typeof CRITICALITY_LABELS] ?? v,
           counts: (s) => s.byCriticality,
         },

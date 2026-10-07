@@ -317,7 +317,8 @@ export function calculateLicenseStats(components: Component[]) {
 
 /**
  * Calculate risk score from vulnerability counts
- * Higher weights for more severe vulnerabilities
+ * Higher weights for more severe vulnerabilities; informational findings add
+ * nothing (they carry no remediation obligation).
  */
 function calculateRiskScore(critical: number, high: number, medium: number, low: number): number {
   // Weighted calculation: critical=40, high=20, medium=5, low=1, capped at 100
@@ -337,6 +338,7 @@ export function transformVulnerableComponent(api: ApiVulnerableComponent): Compo
   const highCount = api.high_count ?? 0
   const mediumCount = api.medium_count ?? 0
   const lowCount = api.low_count ?? 0
+  const infoCount = api.info_count ?? 0
 
   const ecosystem = mapEcosystem(api.ecosystem ?? '')
   const licenseCategory = detectLicenseCategory(api.license)
@@ -415,7 +417,7 @@ export function transformVulnerableComponent(api: ApiVulnerableComponent): Compo
       high: highCount,
       medium: mediumCount,
       low: lowCount,
-      info: 0,
+      info: infoCount,
     },
     riskScore,
     license: api.license || null,
