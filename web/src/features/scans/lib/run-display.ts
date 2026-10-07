@@ -26,12 +26,11 @@ export function runTriggeredByLabel(
 }
 
 /**
- * The run counts on a scan's page. The scan's own counters (total, successful,
- * failed) are bumped when a run FINISHES, so a scan whose first run is still
- * going read "Total runs 0" above a run history showing that run. Total adds
- * the runs in progress; successful, partial and failed stay finished-only.
- * successRate is scanSuccessRate (null before any run settled), the same
- * number the scan list shows.
+ * The run counts on a scan's page. The scan's counters are recomputed from
+ * its runs by the API, so total_runs already includes the runs in progress
+ * (and blocked runs); inProgress is how many of the latest runs are still
+ * going. successRate is scanSuccessRate (null before any run settled), the
+ * same number the scan list shows.
  */
 export function scanRunCounts(
   config: {
@@ -51,7 +50,7 @@ export function scanRunCounts(
 } {
   const inProgress = recentRuns.filter(isRunInProgress).length
   return {
-    total: config.total_runs + inProgress,
+    total: config.total_runs,
     inProgress,
     successful: config.successful_runs,
     partial: config.partial_runs ?? 0,

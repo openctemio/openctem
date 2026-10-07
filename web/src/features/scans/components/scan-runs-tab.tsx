@@ -65,6 +65,8 @@ export const RUN_STATUS_FILTERS = [
   { value: 'failed', label: 'Failed' },
   { value: 'timeout', label: 'Timed out' },
   { value: 'canceled', label: 'Canceled' },
+  // Refused before anything was dispatched (scope, freeze, no sensor...).
+  { value: 'blocked', label: 'Blocked' },
 ] as const
 
 type RunStatusFilterValue = (typeof RUN_STATUS_FILTERS)[number]['value']
