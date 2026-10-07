@@ -20,7 +20,17 @@ describe('pipeline run statuses', () => {
 
   it('match the API run statuses exactly', () => {
     expect([...PIPELINE_RUN_STATUSES].sort()).toEqual(
-      ['pending', 'running', 'completed', 'partial', 'failed', 'canceled', 'timeout'].sort()
+      [
+        'pending',
+        'running',
+        'completed',
+        'partial',
+        'failed',
+        'canceled',
+        'timeout',
+        // pipeline.RunStatusBlocked: a trigger refused before dispatch.
+        'blocked',
+      ].sort()
     )
   })
 
