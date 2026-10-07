@@ -4,7 +4,7 @@
   deadline by default. An SLA policy's `info_days` of `0` now means "no SLA for
   informational findings" and is the default for new policies; a positive
   value opts back in. The priority class no longer hands an informational
-  finding a deadline. Migration 001170 moves policies still on a shipped
+  finding a deadline. Migration 001180 moves policies still on a shipped
   default info window (90 or 365 days) to `0` and clears the deadline of open
   informational findings whose effective policy has no info SLA, so they stop
   counting as SLA breaches.
@@ -30,7 +30,7 @@
 ### Fixed: an asset can be saved as Not rated
 
 - `assets.criticality` accepted `none` everywhere except the database CHECK,
-  so saving an asset as Not rated failed. Migration 001170 adds it. The
+  so saving an asset as Not rated failed. Migration 001180 adds it. The
   findings `asset_criticality` filter accepts `none`. New assets still default
   to `medium`: Not rated adds no criticality weight to risk, so it stays an
   explicit choice.
