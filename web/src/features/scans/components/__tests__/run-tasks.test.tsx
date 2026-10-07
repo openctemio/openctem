@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 
-import { RunTasksTable, taskSensorLabel, taskStatusNote } from '../run-tasks-table'
+import { RunTasksTable, taskSensorLabel, taskSkippedNote, taskStatusNote } from '../run-tasks-table'
 import { runOutcomeCallout } from '../run-detail-sheet'
 
 const getMock = vi.fn()
@@ -153,5 +153,53 @@ describe('runOutcomeCallout', () => {
     expect(runOutcomeCallout('canceled')).toEqual({ tone: 'info', title: 'Run canceled' })
     expect(runOutcomeCallout('failed')).toEqual({ tone: 'destructive', title: 'Run failed' })
     expect(runOutcomeCallout('timeout').title).toBe('Run timed out')
+  })
+})
+
+describe('taskSkippedNote', () => {
+  it('says how many targets the sensor skipped and why', () => {
+    expect(
+      taskSkippedNote({
+        skipped_targets: [{ target: 'api.example.com', reason: 'unresolvable' }],
+        skipped_targets_total: 1,
+      })
+    ).toBe('Completed with 1 target skipped: api.example.com (does not resolve)')
+    expect(
+      taskSkippedNote({
+        skipped_targets: [
+          { target: 'a', reason: 'wildcard_pattern' },
+          { target: 'b', reason: 'denied_by_policy' },
+          { target: 'c', reason: 'invalid_target' },
+          { target: 'd', reason: 'something new' },
+        ],
+        skipped_targets_total: 9,
+      })
+    ).toBe(
+      "Completed with 9 targets skipped: a (wildcard pattern), b (outside the sensor's policy), c (not a valid target), and 6 more"
+    )
+    expect(taskSkippedNote({ skipped_targets_total: 2 })).toBe('Completed with 2 targets skipped')
+    expect(taskSkippedNote({})).toBeNull()
+  })
+
+  it('shows the skipped targets on the row', () => {
+    fresh(
+      <RunTasksTable
+        runId="r1"
+        total={1}
+        tasks={[
+          {
+            id: 't1',
+            status: 'completed',
+            tool: 'nuclei',
+            targets: 1,
+            skipped_targets: [{ target: 'api.example.com', reason: 'unresolvable' }],
+            skipped_targets_total: 1,
+          },
+        ]}
+      />
+    )
+    expect(
+      screen.getByText('Completed with 1 target skipped: api.example.com (does not resolve)')
+    ).toBeInTheDocument()
   })
 })

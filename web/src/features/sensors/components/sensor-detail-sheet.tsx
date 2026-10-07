@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
@@ -57,6 +57,8 @@ import { sensorRoleOf } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { redactUrlQueries } from '@/lib/redact-url'
 import { cn } from '@/lib/utils'
+import { useToolAvailability } from '@/lib/api/tool-hooks'
+import { sensorToolExclusions } from '@/features/tools/lib/availability'
 
 import { SensorRecentActivity } from './sensor-activity'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
@@ -435,6 +437,13 @@ function ToolsAndCapacity({
 }) {
   const cap = sensorCapacity(sensor)
   const reported = hasReportedTools(sensor)
+  // Which installed tools its grant or local policy refuses: the same
+  // availability view the Tools page and the scan pickers read.
+  const { data: availability } = useToolAvailability()
+  const exclusions = useMemo(
+    () => sensorToolExclusions(availability?.items, sensor.id),
+    [availability, sensor.id]
+  )
   const platform = sensor.reported?.os
     ? [sensor.reported.os, sensor.reported.arch].filter(Boolean).join('/')
     : null
@@ -447,7 +456,7 @@ function ToolsAndCapacity({
   return (
     <DetailSection title="Tools & capacity">
       <div className="space-y-2">
-        <SensorToolList rows={sensorToolRows(sensor)} />
+        <SensorToolList rows={sensorToolRows(sensor, exclusions)} />
         <p className="text-xs text-muted-foreground">
           {reported
             ? 'As the sensor reported. Scans go only to tools it has installed and its grant allows.'

@@ -22,11 +22,9 @@ import {
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,7 +44,6 @@ import {
   Play,
   Trash2,
   XCircle,
-  Clock,
   Copy,
   Pencil,
   Tag,
@@ -56,7 +53,7 @@ import {
 } from 'lucide-react'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
-import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { Can, Permission } from '@/lib/permissions'
 import {
   useScanConfigs,
   useScanConfigStats,
@@ -85,10 +82,13 @@ import {
   QuickScanDialog,
 } from '@/features/scans/components'
 import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-detail-sheet'
+import { LastRunCell } from '@/features/scans/components/last-run-cell'
+import { ScheduleCell } from '@/features/scans/components/schedule-cell'
+import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { ScanRunsTab } from '@/features/scans/components/scan-runs-tab'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
 import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
-import { formatScanDate, scanSuccessRate } from '@/features/scans/lib/format'
+import { scanSuccessRate } from '@/features/scans/lib/format'
 import {
   DEFAULT_SCAN_CONFIG_SORT,
   DEFAULT_SCAN_PAGE_SIZE,
@@ -107,10 +107,12 @@ import type { SortingState } from '@tanstack/react-table'
 type ConfigStatusFilter = ScanConfigStatus | 'all'
 type ConfigTypeFilter = ApiScanType | 'all'
 
+// The configuration's state, not a run state: an enabled scan runs on its
+// schedule (if it has one), a paused one only when someone runs it.
 const configStatusFilters: { value: ConfigStatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'active', label: 'Active' },
-  { value: 'paused', label: 'Paused' },
+  { value: 'active', label: 'Enabled' },
+  { value: 'paused', label: 'Schedule paused' },
   { value: 'disabled', label: 'Disabled' },
 ]
 
@@ -134,28 +136,6 @@ const configScheduleFilters: { value: ConfigScheduleFilter; label: string }[] = 
 // ============================================
 // UTILS
 // ============================================
-
-/**
- * Format next run time as relative time (e.g., "in 2 days", "in 3 hours")
- */
-function formatNextRun(nextRunAt?: string): string | null {
-  if (!nextRunAt) return null
-
-  const now = new Date()
-  const nextRun = new Date(nextRunAt)
-  const diffMs = nextRun.getTime() - now.getTime()
-
-  if (diffMs < 0) return 'Overdue'
-
-  const diffMinutes = Math.floor(diffMs / (1000 * 60))
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-  if (diffDays > 0) return `in ${diffDays} day${diffDays > 1 ? 's' : ''}`
-  if (diffHours > 0) return `in ${diffHours} hour${diffHours > 1 ? 's' : ''}`
-  if (diffMinutes > 0) return `in ${diffMinutes} min${diffMinutes > 1 ? 's' : ''}`
-  return 'Soon'
-}
 
 // ============================================
 // SHARED LIST PIECES
@@ -299,86 +279,6 @@ export default function ScansPage() {
 }
 
 // ============================================
-// STATUS TOGGLE CELL (with loading state and debounce)
-// ============================================
-
-interface StatusToggleCellProps {
-  config: ScanConfig
-  onToggle: (action: 'pause' | 'activate', config: ScanConfig) => Promise<void>
-}
-
-function StatusToggleCell({ config, onToggle }: StatusToggleCellProps) {
-  // Pausing and resuming need scans:write (POST /scans/{id}/pause|activate).
-  const canWrite = useHasPermission(Permission.ScansWrite)
-  const [isLoading, setIsLoading] = useState(false)
-  const [localStatus, setLocalStatus] = useState(config.status)
-  const debounceRef = React.useRef<NodeJS.Timeout | null>(null)
-
-  // Sync local status with prop when config changes
-  React.useEffect(() => {
-    setLocalStatus(config.status)
-  }, [config.status])
-
-  const handleToggle = async (checked: boolean) => {
-    // Debounce to prevent rapid clicking
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current)
-    }
-
-    const action = checked ? 'activate' : 'pause'
-    const canToggle =
-      (checked && localStatus === 'paused') || (!checked && localStatus === 'active')
-
-    if (!canToggle) return
-
-    // Optimistic update
-    setLocalStatus(checked ? 'active' : 'paused')
-    setIsLoading(true)
-
-    debounceRef.current = setTimeout(async () => {
-      try {
-        await onToggle(action, config)
-      } catch {
-        // Revert on error
-        setLocalStatus(config.status)
-      } finally {
-        setIsLoading(false)
-      }
-    }, 300) // 300ms debounce
-  }
-
-  const isActive = localStatus === 'active'
-  const isDisabled = config.status === 'disabled'
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="relative">
-        <Switch
-          checked={isActive}
-          onCheckedChange={handleToggle}
-          disabled={isDisabled || isLoading || !canWrite}
-          aria-label={isActive ? 'Pause scan' : 'Activate scan'}
-        />
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-          </div>
-        )}
-      </div>
-      <span className="text-xs text-muted-foreground min-w-[50px]">
-        {isLoading
-          ? 'Saving…'
-          : localStatus === 'active'
-            ? 'Active'
-            : localStatus === 'paused'
-              ? 'Paused'
-              : 'Disabled'}
-      </span>
-    </div>
-  )
-}
-
-// ============================================
 // CONFIG ACTIONS CELL (simplified - no hooks to prevent re-renders)
 // ============================================
 
@@ -480,6 +380,9 @@ function ConfigurationsTab() {
   ]
   const [tagFilter, setTagFilter] = useUrlFilter('tag', '')
   const debouncedTag = useDebounce(tagFilter, 300)
+  // One-off (quick) scans are hidden unless asked for.
+  const [oneOffParam, setOneOffParam] = useUrlFilter('one_off', '')
+  const showOneOff = oneOffParam === '1'
   // Paged and sorted on the server. The list used to fetch the API's default
   // first page (20 scans) and page those on the client, so scan 21 and later
   // could not be seen at all and the footer read "of 20".
@@ -525,6 +428,7 @@ function ConfigurationsTab() {
       schedule_type: scheduleFilter !== 'all' ? scheduleFilter : undefined,
       tags: debouncedTag || undefined,
       search: debouncedSearch || undefined,
+      include_ad_hoc: showOneOff || undefined,
       sort: toSortParam(sorting, SCAN_CONFIG_SORT_FIELDS, DEFAULT_SCAN_CONFIG_SORT),
       page: pageParam,
       per_page: perPage,
@@ -535,6 +439,7 @@ function ConfigurationsTab() {
       scheduleFilter,
       debouncedTag,
       debouncedSearch,
+      showOneOff,
       sorting,
       pageParam,
       perPage,
@@ -591,9 +496,14 @@ function ConfigurationsTab() {
 
   // Narrowing the list starts again at page 1 (page 3 of the old result may
   // not exist in the new one). Skipped on mount so a shared link keeps its page.
-  const filterKey = [statusFilter, typeFilter, scheduleFilter, debouncedTag, debouncedSearch].join(
-    '\u0000'
-  )
+  const filterKey = [
+    statusFilter,
+    typeFilter,
+    scheduleFilter,
+    debouncedTag,
+    debouncedSearch,
+    oneOffParam,
+  ].join('\u0000')
   const lastFilterKey = React.useRef(filterKey)
   useEffect(() => {
     if (lastFilterKey.current === filterKey) return
@@ -613,12 +523,17 @@ function ConfigurationsTab() {
   // and a scan with no finished run has no rate at all (not 0%).
   const getProgress = useCallback((config: ScanConfig) => scanSuccessRate(config) ?? -1, [])
 
-  // Toggle handler for StatusToggleCell (returns Promise for loading state)
+  // The Schedule column's switch: pause turns the schedule off, resume on.
   const handleToggle = useCallback(async (action: 'pause' | 'activate', config: ScanConfig) => {
     const endpoint =
       action === 'pause' ? scanEndpoints.pause(config.id) : scanEndpoints.activate(config.id)
-    await post(endpoint, {})
-    toast.success(`Scan "${config.name}" ${action === 'pause' ? 'paused' : 'activated'}`)
+    try {
+      await post(endpoint, {})
+    } catch (error) {
+      toast.error(getErrorMessage(error, `Failed to change the schedule of "${config.name}"`))
+      throw error
+    }
+    toast.success(`Schedule of "${config.name}" turned ${action === 'pause' ? 'off' : 'on'}`)
     await invalidateScanConfigsCache()
   }, [])
 
@@ -756,15 +671,25 @@ function ConfigurationsTab() {
         accessorKey: 'scan_type',
         header: 'Type',
         enableSorting: false,
-        cell: ({ row }) => (
-          <Badge variant="outline">{SCAN_TYPE_LABELS[row.original.scan_type]}</Badge>
-        ),
+        cell: ({ row }) => {
+          // What the scan runs: the workflow's name, or a single check's tool.
+          const { label, kind } = scanTypeLabel(row.original)
+          return (
+            <div className="flex min-w-0 flex-col">
+              <span className="max-w-[14rem] truncate text-sm" title={label}>
+                {label}
+              </span>
+              <span className="text-xs text-muted-foreground">{SCAN_TYPE_LABELS[kind]}</span>
+            </div>
+          )
+        },
       },
       {
-        accessorKey: 'status',
-        header: 'Status',
-        enableSorting: false,
-        cell: ({ row }) => <StatusToggleCell config={row.original} onToggle={handleToggle} />,
+        // The real latest run, never the configuration's enabled flag.
+        id: 'last_run_at',
+        accessorKey: 'last_run_at',
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Last run" />,
+        cell: ({ row }) => <LastRunCell run={lastRunOf(row.original)} onOpen={setOpenRunId} />,
       },
       {
         id: 'success_rate',
@@ -804,6 +729,7 @@ function ConfigurationsTab() {
         cell: ({ row }) => {
           const config = row.original
           if (config.total_runs === 0) return <span className="text-muted-foreground">-</span>
+          const blocked = config.blocked_runs ?? 0
           return (
             <span className="text-sm tabular-nums">
               {config.successful_runs} passed
@@ -813,45 +739,17 @@ function ConfigurationsTab() {
               {config.failed_runs > 0 && (
                 <span className="text-destructive"> · {config.failed_runs} failed</span>
               )}
+              {blocked > 0 && <span className="text-destructive"> · {blocked} blocked</span>}
             </span>
           )
         },
       },
       {
-        id: 'last_run_at',
-        accessorKey: 'last_run_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last run" />,
-        cell: ({ row }) =>
-          row.original.last_run_at ? (
-            <span className="text-sm text-muted-foreground">
-              {formatScanDate(row.original.last_run_at)}
-            </span>
-          ) : (
-            <span className="text-sm text-muted-foreground">Never</span>
-          ),
-      },
-      {
+        // The schedule and its on/off switch; manual scans have neither.
         accessorKey: 'schedule_type',
         header: 'Schedule',
         enableSorting: false,
-        cell: ({ row }) => {
-          const config = row.original
-          const nextRun = formatNextRun(config.next_run_at)
-          const isPaused = config.status === 'paused'
-          const isActive = config.status === 'active'
-          return (
-            <div className="flex flex-col">
-              <span className="text-sm">{SCHEDULE_TYPE_LABELS[config.schedule_type]}</span>
-              {nextRun && (isActive || isPaused) && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  Next: {nextRun}
-                  {isPaused && <span className="opacity-70">(if resumed)</span>}
-                </span>
-              )}
-            </div>
-          )
-        },
+        cell: ({ row }) => <ScheduleCell config={row.original} onToggle={handleToggle} />,
       },
       {
         id: 'actions',
@@ -873,6 +771,7 @@ function ConfigurationsTab() {
     typeFilter !== 'all',
     scheduleFilter !== 'all',
     tagFilter !== '',
+    showOneOff,
   ].filter(Boolean).length
 
   const clearFilters = () => {
@@ -880,6 +779,7 @@ function ConfigurationsTab() {
     setTypeFilter('all')
     setScheduleFilter('all')
     setTagFilter('')
+    setOneOffParam('')
     setPageParam(1)
   }
 
@@ -897,14 +797,14 @@ function ConfigurationsTab() {
     },
     {
       key: 'active',
-      label: 'Active',
+      label: 'Enabled',
       value: stats?.active ?? 0,
       onClick: () => toggleStatus('active'),
       active: statusFilter === 'active',
     },
     {
       key: 'paused',
-      label: 'Paused',
+      label: 'Schedule paused',
       value: stats?.paused ?? 0,
       onClick: () => toggleStatus('paused'),
       active: statusFilter === 'paused',
@@ -922,7 +822,7 @@ function ConfigurationsTab() {
   // group: ticking an option replaces the previous one, unticking clears it.
   const facetPanel = (
     <FacetPanel activeCount={activeFiltersCount} onClearAll={clearFilters}>
-      <FacetSection title="Status" selectedCount={statusFilter !== 'all' ? 1 : 0}>
+      <FacetSection title="State" selectedCount={statusFilter !== 'all' ? 1 : 0}>
         {configStatusFilters
           .filter((f) => f.value !== 'all')
           .map((f) => (
@@ -957,6 +857,13 @@ function ConfigurationsTab() {
               onCheckedChange={(on) => setScheduleFilter(on ? f.value : 'all')}
             />
           ))}
+      </FacetSection>
+      <FacetSection title="One-off scans" selectedCount={showOneOff ? 1 : 0}>
+        <FacetOption
+          label="Show one-off scans"
+          checked={showOneOff}
+          onCheckedChange={(on) => setOneOffParam(on ? '1' : '')}
+        />
       </FacetSection>
       <FacetSection title="Tag" selectedCount={tagFilter ? 1 : 0}>
         <div className="relative pe-1 pt-1">

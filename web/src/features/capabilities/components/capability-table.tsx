@@ -11,6 +11,9 @@ import { DynamicIcon } from '@/components/dynamic-icon'
 import { DataTable, DataTableColumnHeader, DataTableRowActions } from '@/features/shared'
 
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
+import { useToolAvailability } from '@/lib/api/tool-hooks'
+import type { ToolAvailabilityItem } from '@/lib/api/tool-types'
+import { TOOL_STATUS_META, availabilityByName, isRunnable } from '@/features/tools/lib/availability'
 
 interface CapabilityTableProps {
   capabilities: Capability[]
@@ -49,8 +52,21 @@ function getColorClass(color: string) {
 }
 
 // Usage badges (tool + sensor counts) with tooltips — unchanged from the original.
-function UsageCell({ stats }: { stats?: CapabilityUsageStatsBatchResponse[string] }) {
+function UsageCell({
+  stats,
+  availability,
+}: {
+  stats?: CapabilityUsageStatsBatchResponse[string]
+  /** Tool availability by name (the Tools page's source); null while unknown. */
+  availability: Map<string, ToolAvailabilityItem> | null
+}) {
   if (!stats) return <span className="text-muted-foreground">-</span>
+  const ready = availability
+    ? (stats.tool_names ?? []).filter((n) => {
+        const a = availability.get(n)
+        return !!a && isRunnable(a)
+      }).length
+    : null
   return (
     <div className="flex items-center gap-2">
       <Tooltip>
@@ -68,12 +84,19 @@ function UsageCell({ stats }: { stats?: CapabilityUsageStatsBatchResponse[string
             {stats.tool_count === 0
               ? 'No tools using this capability'
               : `${stats.tool_count} tool${stats.tool_count > 1 ? 's' : ''}`}
+            {ready != null && stats.tool_count > 0 && `, ${ready} ready on your sensors`}
           </p>
           {stats.tool_names && stats.tool_names.length > 0 && (
             <ul className="mt-1 text-xs text-muted-foreground">
-              {stats.tool_names.slice(0, 5).map((name) => (
-                <li key={name}>• {name}</li>
-              ))}
+              {stats.tool_names.slice(0, 5).map((name) => {
+                const a = availability?.get(name)
+                return (
+                  <li key={name}>
+                    • {name}
+                    {a && ` (${TOOL_STATUS_META[a.status].label.toLowerCase()})`}
+                  </li>
+                )
+              })}
               {stats.tool_names.length > 5 && <li>• +{stats.tool_names.length - 5} more</li>}
             </ul>
           )}
@@ -120,6 +143,12 @@ export function CapabilityTable({
   toolbarEnd,
 }: CapabilityTableProps) {
   const showActions = Boolean(onViewDetails || (!readOnly && (onEdit || onDelete)))
+  // Which of a capability's tools a scan can run now (api tool-availability.md).
+  const { data: availData } = useToolAvailability()
+  const availability = useMemo(
+    () => (availData ? availabilityByName(availData.items) : null),
+    [availData]
+  )
 
   const columns = useMemo<ColumnDef<Capability>[]>(() => {
     const cols: ColumnDef<Capability>[] = [
@@ -180,7 +209,9 @@ export function CapabilityTable({
         id: 'usage',
         header: 'Usage',
         enableSorting: false,
-        cell: ({ row }) => <UsageCell stats={usageStats?.[row.original.id]} />,
+        cell: ({ row }) => (
+          <UsageCell stats={usageStats?.[row.original.id]} availability={availability} />
+        ),
       },
       {
         accessorKey: 'description',
@@ -227,7 +258,7 @@ export function CapabilityTable({
     }
 
     return cols
-  }, [usageStats, showActions, onViewDetails, onEdit, onDelete, readOnly])
+  }, [usageStats, availability, showActions, onViewDetails, onEdit, onDelete, readOnly])
 
   // Parent (capabilities-section) owns search + tab/category filters, so the
   // table's own search is disabled; DataTable adds sortable headers + pagination.

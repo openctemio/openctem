@@ -103,6 +103,15 @@ Add every new protected route to `stepUpRoutes` in
 `internal/infra/http/routes/step_up_routes_test.go`; the test proves each one
 refuses outside the window and passes inside it.
 
+Step-up follows the action, not the path. `stepUpServiceActions` in
+`tests/unit/step_up_service_mapping_test.go` lists the service actions that
+need it; the test maps each one to every user-plane route whose handler
+reaches it (directly or through a service method) and fails when one of those
+routes lacks `requireStepUp()`. A second route to the same action cannot skip
+step-up. Offboarding has one route, `POST /api/v1/organization/members/{id}/offboard`;
+the former `DELETE /api/v1/tenants/{tenant}/members/{id}` reached the same
+offboarding without step-up and is removed.
+
 ## Protected routes
 
 | Route | Why |
@@ -113,11 +122,13 @@ refuses outside the window and passes inside it.
 | `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve` | Installs who can sign in to the organization. |
 | `DELETE /api/v1/tenants/{tenant}` | Deletes the organization. |
 | `DELETE /api/v1/organization/members/{id}/mfa` | Removes a member's second factor. |
-| `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. |
+| `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. Disabling (`POST /api/v1/tenants/{tenant}/members/{id}/suspend`) and re-enabling stay one click: they are reversible and keep everything the member holds. |
 | `POST /api/v1/ci/gate-overrides` | Break-glass past the CI security gate. |
 | `POST /api/v1/audit-logs/rebaseline` | Overwrites the tamper-evident audit chain. |
 | `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST …/webhook-secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, repository events) for the organization. |
 | `PATCH /api/v1/attachments/storage-config` | Decides where evidence files are written and with which credentials. |
+| `POST /api/v1/sensors`, `POST /api/v1/sensors/{id}/regenerate-key` | Mints a persistent sensor key, a credential that outlives the session (the same reason as an API key). Revoking, disabling and deleting stay one click. |
+| `POST /api/v1/credentials/{id}/reveal` | Returns a leaked credential in plaintext; also audited (`credential.revealed`), and the response is not cached. |
 
 ### Actions that need step-up only in some cases
 
@@ -133,6 +144,7 @@ the web dialog appears and the request is retried.
 |---|---|
 | Making someone an administrator or an owner: `POST /api/v1/users/{id}/roles`, `PUT /api/v1/users/{id}/roles`, `POST /api/v1/roles/{id}/members/bulk` with the admin or owner role, `POST/PATCH /api/v1/tenants/{tenant}/members…` with `admin`, an invitation or a created user with the admin role | `RoleService.authorizeAdminPromotion`, `TenantService.authorizeAdminPromotion` (only when the user does not hold the role yet) |
 | Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
+| Allowing bearer-key sensors again: `PUT /api/v1/sensors/identity-policy` with `bearer_keys_allowed: true` while the organization requires key-bound identity | `SensorService.SetBearerKeysAllowed` (requiring key-bound identity, and re-sending the current value, stay one click) |
 
 The gate judges only the user making the request: a grant authorized
 earlier and applied for someone else (an invitation accepted by the invitee,
