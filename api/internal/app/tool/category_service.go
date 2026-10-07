@@ -37,11 +37,12 @@ func NewCategoryService(
 
 // ListCategoriesInput represents the input for listing categories.
 type ListCategoriesInput struct {
-	TenantID  string
-	IsBuiltin *bool
-	Search    string
-	Page      int
-	PerPage   int
+	TenantID string
+	// Source: SourcePlatform, SourceCustom or "" (both).
+	Source  string
+	Search  string
+	Page    int
+	PerPage int
 }
 
 // ListCategories returns categories matching the filter.
@@ -60,9 +61,21 @@ func (s *CategoryService) ListCategories(ctx context.Context, input ListCategori
 	}
 
 	filter := tooldomcat.Filter{
-		TenantID:  tenantID,
-		IsBuiltin: input.IsBuiltin,
-		Search:    input.Search,
+		TenantID: tenantID,
+		Search:   input.Search,
+	}
+	// Platform categories have no tenant; custom ones are the caller's.
+	switch input.Source {
+	case "":
+	case SourcePlatform:
+		filter.TenantID = nil
+	case SourceCustom:
+		if tenantID == nil {
+			return pagination.Result[*tooldomcat.ToolCategory]{}, fmt.Errorf("%w: tenant id required", shared.ErrValidation)
+		}
+		filter.OnlyCustom = true
+	default:
+		return pagination.Result[*tooldomcat.ToolCategory]{}, fmt.Errorf("%w: source must be platform or custom", shared.ErrValidation)
 	}
 
 	page := pagination.New(input.Page, input.PerPage)
@@ -86,16 +99,29 @@ func (s *CategoryService) ListAllCategories(ctx context.Context, tenantID string
 	return s.repo.ListAll(ctx, tid)
 }
 
-// GetCategory returns a category by ID.
-func (s *CategoryService) GetCategory(ctx context.Context, id string) (*tooldomcat.ToolCategory, error) {
+// GetCategory returns a category the tenant may see: a platform category or
+// its own custom category. Any other id is not found, so another tenant's
+// category never shows, not even its existence.
+func (s *CategoryService) GetCategory(ctx context.Context, tenantID, id string) (*tooldomcat.ToolCategory, error) {
 	s.logger.Debug("getting tool category", "id", id)
 
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 	categoryID, err := shared.IDFromString(id)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid category id", shared.ErrValidation)
 	}
 
-	return s.repo.GetByID(ctx, categoryID)
+	tc, err := s.repo.GetByID(ctx, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	if tc.TenantID != nil && !tc.CanBeModifiedByTenant(tid) {
+		return nil, fmt.Errorf("%w: tool category not found", shared.ErrNotFound)
+	}
+	return tc, nil
 }
 
 // =============================================================================
@@ -206,9 +232,10 @@ func (s *CategoryService) UpdateCategory(ctx context.Context, input UpdateCatego
 		return nil, err
 	}
 
-	// Check ownership - only tenant's own categories can be updated
+	// Only the tenant's own categories can be changed; a platform category
+	// or another tenant's is not found (its existence is not confirmed).
 	if !tc.CanBeModifiedByTenant(tenantID) {
-		return nil, fmt.Errorf("%w: cannot modify this category", shared.ErrForbidden)
+		return nil, fmt.Errorf("%w: tool category not found", shared.ErrNotFound)
 	}
 
 	// Set defaults
@@ -254,9 +281,10 @@ func (s *CategoryService) DeleteCategory(ctx context.Context, tenantID, category
 		return err
 	}
 
-	// Check ownership - only tenant's own categories can be deleted
+	// Only the tenant's own categories can be deleted; a platform category
+	// or another tenant's is not found.
 	if !tc.CanBeModifiedByTenant(tid) {
-		return fmt.Errorf("%w: cannot delete this category", shared.ErrForbidden)
+		return fmt.Errorf("%w: tool category not found", shared.ErrNotFound)
 	}
 
 	// Check if category is in use by any tools
