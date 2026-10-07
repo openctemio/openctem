@@ -98,6 +98,28 @@ The trigger codes `NO_SENSOR_FOR_TOOL`, `NO_SENSOR_AVAILABLE`, `TOOL_NOT_FOUND`,
 `TOOL_DISABLED` and `TOOL_NOT_SCANNER` now reach the client in the error body's
 `code`. They used to be reported as `BAD_REQUEST`.
 
+## Web console
+
+Every screen that shows or picks a tool reads this one endpoint, through `useToolAvailability`
+(`web/src/lib/api/tool-hooks.ts`). The helpers live in `web/src/features/tools/lib/availability.ts`:
+status labels, `isRunnable` and `toolUnavailableReason`. The shared pieces are in
+`web/src/features/tools/components/tool-availability.tsx`: the status pill, the "n/m online" cell
+with its sensor popover, and the sensor list.
+
+- **Settings > Scanning > Tools**
+  - **Columns:** Tool, Category, Status (with a tooltip), Sensors (n/m online, with a popover listing each sensor, its zone, version and exclusion), Version(s) (with an update badge), Last reported, Enabled.
+  - **Default filter:** the tools at least one sensor reports. "Show full catalog" adds the rest.
+  - **Metrics:** Ready, Offline only, No sensor, Outdated, Disabled and Updates available. Each one filters the table.
+  - **Enabled switch:** the organization's own on/off per tool (`tenant-tools/bulk/enable|disable`).
+  - **Tool detail:**
+    - an "On your sensors" section with sensors, versions, content and last report;
+    - the install details, under "How to add this tool to a sensor";
+    - a callout with the reason when a scan cannot run.
+- **Scan builder** (New/Edit scan, Quick scan): a scanner no online sensor may run is listed, disabled, with the reason. Availability is judged in the scan's zone when one is selected. A scan's current scanner stays selectable, with a warning.
+- **Workflow builder:** the node palette and the step tool picker grey out such tools with the same reason.
+- **Sensor detail:** the tool list marks an installed tool the grant or local policy refuses.
+- **Capabilities page:** the tool tooltip says which of a capability's tools are ready on your sensors.
+
 ## Trust and isolation
 
 - **Display and advice only.** What a sensor reports is a claim. The claim-time
