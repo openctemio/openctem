@@ -354,6 +354,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if err := s.validator.ValidateReport(report); err != nil {
 		return nil, err
 	}
+	// SECURITY: mask a secret scanner's raw match wherever a finding
+	// repeats it (title, description, message, tags, properties), before
+	// anything is stored, fingerprinted, quarantined or logged.
+	redactReportSecrets(report)
 	// Fill the normalized members a CTIS 1.4 report left empty from its
 	// typed ids and native identity (interop.go), before the CVE catalog
 	// step and the identity recipes read them.
