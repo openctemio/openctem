@@ -325,7 +325,7 @@ func onlineSensor(now time.Time) *Sensor {
 	seen := now.Add(-5 * time.Second)
 	due := now.Add(30 * time.Second)
 	return &Sensor{ID: shared.NewID(), TenantID: &tid, Status: SensorStatusActive, Health: SensorHealthOnline,
-		Type: SensorTypeWorker, ExecutionMode: ExecutionModeDaemon, Tools: []string{"nuclei"},
+		Type: SensorTypeWorker, ExecutionMode: ExecutionModeDaemon, Reported: ReportOf("nuclei"),
 		LastSeenAt: &seen, HeartbeatDueAt: &due, HeartbeatInterval: 30 * time.Second}
 }
 

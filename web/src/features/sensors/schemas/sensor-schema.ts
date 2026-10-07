@@ -25,8 +25,8 @@ export const SENSOR_EXECUTION_MODE_OPTIONS = [
   { value: 'daemon', label: 'Daemon' },
 ] as const
 
-// Note: Capability and Tool options are now dynamically loaded from the API
-// See: useSensorFormOptions hook in ../hooks/use-sensor-form-options.ts
+// Note: capability options are loaded from the API.
+// The tools a sensor has come from its own report, never from a form.
 
 // Enum schemas
 export const sensorTypeSchema = z.enum(['worker', 'collector', 'sensor'])
@@ -40,7 +40,6 @@ export interface CreateSensorFormData {
   type: 'worker' | 'collector' | 'sensor'
   description?: string
   capabilities: string[]
-  tools: string[]
   execution_mode: 'standalone' | 'daemon'
   labels?: Record<string, string>
 }
@@ -51,7 +50,6 @@ export const createSensorSchema = z.object({
   type: sensorTypeSchema,
   description: z.string().max(1000).optional(),
   capabilities: z.array(z.string()),
-  tools: z.array(z.string()),
   execution_mode: executionModeSchema,
   labels: z.record(z.string(), z.string()).optional(),
 })

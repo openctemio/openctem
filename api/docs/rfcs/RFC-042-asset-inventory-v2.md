@@ -1776,7 +1776,8 @@ workflow (F18) are extended:
 | `effect` | `discovery_and_dispatch` (default), `dispatch_only` |
 
 - **Wildcard semantics are made explicit (F17):**
-  - `*.x` matches subdomains only;
+  - `*.x` matches subdomains only (**superseded by RFC-054 §4.1**: `*.x`
+    now matches `x` and every name below it);
   - `x` matches the name only;
   - `**.x` is accepted and stored as `*.x`;
   - mid-label wildcards such as `test.*.x` match exactly one label.

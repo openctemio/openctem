@@ -499,6 +499,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Changes to what sensors scan and run (scope targets and exclusions,
 	// tools and their tenant config, scanner templates) too (RFC-040 §5.11).
 	handlers.Scope.SetAuditService(svc.Audit)
+	if svc.ScopeJoin != nil {
+		handlers.Scope.SetScopeJoin(svc.ScopeJoin)
+	}
 	handlers.Tool.SetAuditService(svc.Audit)
 	// Configuration changes audited with a before/after diff.
 	handlers.Integration.SetAuditService(svc.Audit)
@@ -879,9 +882,8 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 
 // newAssetImportHandler builds the asset import handler with its audit trail.
 func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
-	h := handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log)
+	h := handler.NewAssetImportHandler(svc.AssetImport, log)
 	h.SetAuditService(svc.Audit)
-	h.SetDataScope(svc.DataScope)
 	return h
 }
 

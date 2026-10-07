@@ -53,6 +53,7 @@ import { FleetContentRefreshButton } from './sensor-content-cells'
 import { SensorTable } from './sensor-table'
 import { FleetHealthStrip } from './fleet-health-strip'
 import { SensorFacetPanel } from './sensor-facet-panel'
+import { dispatchTools } from '../lib/capabilities'
 import {
   useAllSensors,
   useTenantSensorStats,
@@ -618,7 +619,7 @@ export function SensorsSection({
         { header: 'Max jobs', accessor: (s) => s.max_concurrent_jobs },
         { header: 'Outbox pending', accessor: (s) => s.outbox?.pending_count ?? '' },
         { header: 'Key expires', accessor: (s) => s.key_expires_at ?? '' },
-        { header: 'Tools', accessor: (s) => (s.tools ?? []).join(' ') },
+        { header: 'Tools', accessor: (s) => dispatchTools(s).join(' ') },
         { header: 'Last heartbeat', accessor: (s) => s.last_seen_at ?? '' },
         { header: 'Scans', accessor: (s) => s.total_scans },
         { header: 'Findings', accessor: (s) => s.total_findings },

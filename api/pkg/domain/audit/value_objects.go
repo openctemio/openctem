@@ -41,6 +41,10 @@ const (
 	// ActionAssetAttributionDecided: a person set whether an asset is the
 	// organization's (RFC-036 attribution review).
 	ActionAssetAttributionDecided Action = "asset.attribution_decided"
+	// ActionAssetAttributionAutoConfirmed: the platform confirmed discovered
+	// names that a scope target or seed of the organization covers (RFC-054
+	// §4.3). A system decision; one event per run and organization.
+	ActionAssetAttributionAutoConfirmed Action = "asset.attribution_auto_confirmed"
 	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
 	// existing repository asset and attached its SCM data to it. POST
 	// /assets no longer merges (a duplicate is a 409); older rows from it
@@ -535,6 +539,7 @@ func (a Action) IsValid() bool {
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
+		ActionAssetAttributionAutoConfirmed,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
@@ -940,6 +945,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
+		ActionAssetAttributionAutoConfirmed,
 		ActionAssetCreateMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionInvitationAccepted,

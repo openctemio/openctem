@@ -29,7 +29,7 @@ outbox:
 # renewal has retired.
 
 scanners:
-{{- with tools .Sensor.Tools}}
+{{- with tools .Sensor.EffectiveTools}}
 {{- range .}}
   - name: {{toScannerName .}}
     enabled: true

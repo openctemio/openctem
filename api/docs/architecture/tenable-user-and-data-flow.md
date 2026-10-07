@@ -79,10 +79,9 @@ The pragmatic path that works now (no runner needed): export a `.nessus` from
 Nessus/.sc and upload it (a person, or a cron job on the prod network):
 
 ```
-Findings/Assets → Import → Nessus results        🔜 (button)
-  └─ POST /api/v1/assets/import/nessus-findings   ✅ (endpoint live)
-        ?session_id=<batch>  &tool=tenable  &min_severity=1
-        body: the .nessus XML
+Findings → Import results, Settings → Vulnerability scanners → Import .nessus
+  └─ POST /api/v1/findings/import   (multipart; format detected: nessus)
+        ?min_severity=low   (the scanners page skips informational results)
 ```
 
 Each upload = one **batch/session**: assets + vulnerability findings are ingested,
@@ -165,9 +164,9 @@ Only for deployments that accept api↔Tenable.
 ### 5c. Manual `.nessus` upload — SHIPPED TODAY  ✅
 
 ```
-operator/cron ──► POST /assets/import/nessus-findings (JWT, tenant from token)
-   └─ nessus.Convert(.nessus) → *ctis.Report (tool=tenable, session=upload id)
-        └─ ingest pipeline → assets + findings (batch-scoped auto-resolve: not effective for hosts, see scan-coverage.md)
+operator/cron ──► POST /findings/import (JWT or API key, tenant from token)
+   └─ ctis importer (.nessus) → *ctis.Report (tool=nessus, report id = import record)
+        └─ ingest pipeline with the uploader's rights → assets + findings (partial coverage: never auto-resolves)
 ```
 
 ### Shared ingest core (all three paths)

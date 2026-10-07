@@ -415,9 +415,9 @@ one, the platform records one **`manifest_changed`** event (category
 Both digests go in its details. Content versions keep their own
 `content_updated` events. A heartbeat that carries `manifest_digest` writes no
 `tools_changed` or `capacity_changed`: for a registering sensor the manifest
-records those. What a new tool may do is still decided by the
-administrator's tool limit: a tool outside it shows as "installed but not
-allowed". Manifests derived from heartbeats keep the heartbeat's
+records those. What a new tool may do is still decided by the sensor grant
+(RFC-052): a tool outside the grant is refused at admission. (The tool limit
+on the sensor, `sensors.tools`, is gone since migration 001149.) Manifests derived from heartbeats keep the heartbeat's
 `tools_changed` and `capacity_changed` events (§6.6), so nothing is recorded
 twice.
 
@@ -589,7 +589,7 @@ resulting Phase 2 design.
 
 | # | Decision |
 |---|---|
-| O1 | **No re-approval** when a manifest adds a tool or changes its build. The change is recorded as an event (`manifest_changed`), and the administrator's tool limit still governs what the tool may do. |
+| O1 | **No re-approval** when a manifest adds a tool or changes its build. The change is recorded as an event (`manifest_changed`), and the sensor grant still governs what the tool may do. |
 | O2 | **The SDK refuses** commands for tools outside the platform's policy. The platform returns the policy (allowed tools, capabilities, capacity) in the manifest answer and on `GET /api/v2/sensor/manifest`. |
 | O3 | **Slim heartbeats.** Once the manifest is acknowledged, heartbeats drop the tool list. This is per sensor and has a server kill switch (`SENSOR_SLIM_HEARTBEAT`). |
 | O4 | **Resources** (CPU, memory) from the manifest are visible to `sensors:read`. |
