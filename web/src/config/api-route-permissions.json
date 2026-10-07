@@ -160,8 +160,6 @@
 "POST /api/v1/assets/dedup/reviews/{id}/reject": {"permissions":["assets:delete"]},
 "POST /api/v1/assets/import/csv": {"permissions":["assets:import","assets:write"]},
 "POST /api/v1/assets/import/kubernetes": {"permissions":["assets:import","assets:write"]},
-"POST /api/v1/assets/import/nessus": {"permissions":["assets:import","assets:write"]},
-"POST /api/v1/assets/import/nessus-findings": {"permissions":["assets:import","assets:write","findings:write"]},
 "POST /api/v1/assets/repository": {"permissions":["assets:write"]},
 "POST /api/v1/assets/{id}/access-grants": {"permissions":["team:groups:write"]},
 "POST /api/v1/assets/{id}/activate": {"permissions":["assets:write"]},

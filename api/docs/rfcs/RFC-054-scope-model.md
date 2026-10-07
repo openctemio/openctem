@@ -191,7 +191,7 @@ trends, and attack-surface "recent changes". A change event whose asset is not
 in the inventory is still listed in recent changes, but carries its
 attribution state so the UI shows "Added · needs review" instead of "Added".
 
-## 5. Data model (migration `001152`)
+## 5. Data model (migration `001155`)
 
 `scope_targets` gains:
 
@@ -636,7 +636,7 @@ are gated by zones and are not capped.
 | S1 | matcher, tests, docs, this RFC |
 | Authority | one authority check for typed and inventory targets; Ownership-tab bypass removed |
 | Guardrails | PSL, deny list, CIDR caps, `SCOPE_ACTIVE_PROOF` |
-| Entries | migration `001152`, expiry, requests, approvals, step-up, notification, settings, sweep |
+| Entries | migration `001155`, expiry, requests, approvals, step-up, notification, settings, sweep |
 | Discovery | `matches_scope_target` + backfill |
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
