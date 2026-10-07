@@ -150,3 +150,16 @@ func TestSLAApplier_AllFailed_ReturnsError(t *testing.T) {
 		}
 	}
 }
+
+// A zero deadline means "no SLA" (an informational finding): the finding
+// keeps no deadline and the batch is not reported as failed.
+func TestSLAApplier_ZeroDeadlineLeavesNoSLA(t *testing.T) {
+	a := NewApplier(&fakeCalc{})
+	f := newAppliedFinding(t, "P3", vulnerability.SeverityInfo)
+	if err := a.ApplyBatch(context.Background(), shared.NewID(), []*vulnerability.Finding{f}); err != nil {
+		t.Fatalf("zero deadline reported as failure: %v", err)
+	}
+	if f.SLADeadline() != nil {
+		t.Fatalf("informational finding got a deadline: %v", f.SLADeadline())
+	}
+}
