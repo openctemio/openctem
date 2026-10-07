@@ -25905,7 +25905,7 @@ export interface paths {
     }
     /**
      * Get scope statistics
-     * @description Get aggregate statistics for scope targets and exclusions
+     * @description Aggregate counts of scope targets and exclusions, and the share of the internet-facing inventory (domains, subdomains, public addresses, services, applications in the inventory) that the active scope targets cover. The inventory counts include only the assets the caller may see.
      */
     get: {
       parameters: {
@@ -42200,7 +42200,27 @@ export interface components {
     'internal_infra_http_handler.ScopeStatsResponse': {
       active_exclusions?: number
       active_targets?: number
+      /**
+       * @description Coverage is the percentage of the internet-facing inventory that the
+       *     active scope targets cover (in_scope of internet_facing), counted over
+       *     the assets the caller may see.
+       */
       coverage?: number
+      /**
+       * @description InventoryInScope is the part of it an active scope target covers and
+       *     no exclusion removes.
+       */
+      inventory_in_scope?: number
+      /**
+       * @description InventoryInternal counts internal names and private addresses
+       *     (zone-gated), left out of both.
+       */
+      inventory_internal?: number
+      /**
+       * @description InventoryInternetFacing counts the caller-visible inventory domains,
+       *     subdomains, public addresses, services and applications.
+       */
+      inventory_internet_facing?: number
       total_exclusions?: number
       total_targets?: number
     }
