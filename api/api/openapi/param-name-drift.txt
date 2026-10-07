@@ -14,9 +14,4 @@ DELETE /api/v1/repositories/{repositoryId}/branches/{branchId}
 GET /api/v1/repositories/{repositoryId}/branches/{branchId}
 PUT /api/v1/repositories/{repositoryId}/branches/{branchId}
 PUT /api/v1/repositories/{repositoryId}/branches/{branchId}/default
-DELETE /api/v1/tenant-tools/{toolId}
-GET /api/v1/tenant-tools/{toolId}
-PUT /api/v1/tenant-tools/{toolId}
-GET /api/v1/tenant-tools/{toolId}/effective-config
-GET /api/v1/tenant-tools/{toolId}/with-config
 GET /api/v1/vulnerabilities/cve/{cveId}

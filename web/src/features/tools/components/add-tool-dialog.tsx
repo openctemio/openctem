@@ -40,7 +40,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   useCreateCustomTool,
   useUpdateCustomTool,
-  invalidateCustomToolsCache,
+  invalidateToolsCache,
 } from '@/lib/api/tool-hooks'
 import { useAllToolCategories, getCategoryNameById } from '@/lib/api/tool-category-hooks'
 import {
@@ -178,7 +178,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
         toast.success(`Tool "${data.display_name || data.name}" created`)
       }
 
-      await invalidateCustomToolsCache()
+      await invalidateToolsCache()
       form.reset()
       setCommandsOpen(false)
       setMetadataOpen(false)

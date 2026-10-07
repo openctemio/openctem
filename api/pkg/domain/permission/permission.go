@@ -145,10 +145,10 @@ const (
 	ScanProfilesWrite  Permission = "scans:profiles:write"
 	ScanProfilesDelete Permission = "scans:profiles:delete"
 
-	// Source permissions (scans:sources:*)
-	SourcesRead   Permission = "scans:sources:read"
-	SourcesWrite  Permission = "scans:sources:write"
-	SourcesDelete Permission = "scans:sources:delete"
+	// Template source permissions (scans:sources:*)
+	TemplateSourcesRead   Permission = "scans:sources:read"
+	TemplateSourcesWrite  Permission = "scans:sources:write"
+	TemplateSourcesDelete Permission = "scans:sources:delete"
 
 	// Tool Registry permissions (scans:tools:*)
 	ToolsRead   Permission = "scans:tools:read"
@@ -318,9 +318,10 @@ const (
 // =============================================================================
 
 const (
-	// Pentest/Validation permissions (validation:* - legacy)
-	ValidationRead  Permission = "validation:read"
-	ValidationWrite Permission = "validation:write"
+	// Pentest/validation permissions (validation:*): the module-wide gate
+	// of pentest, simulations and control tests.
+	PentestRead  Permission = "validation:read"
+	PentestWrite Permission = "validation:write"
 
 	// Granular pentest permissions (pentest:*)
 	PentestCampaignsRead   Permission = "pentest:campaigns:read"
@@ -409,25 +410,6 @@ const (
 	AITriageTrigger Permission = "ai_triage:trigger"
 )
 
-// =============================================================================
-// LEGACY ALIASES (for backward compatibility in code)
-// These map to new standardized permissions but keep old constant names
-// =============================================================================
-
-const (
-	// MembersManage is an alias for MembersWrite (team:members:write)
-	MembersManage Permission = "team:members:write"
-
-	// PentestRead/Write are aliases for ValidationRead/Write
-	PentestRead  Permission = "validation:read"
-	PentestWrite Permission = "validation:write"
-
-	// TemplateSources are aliases for Sources (same permission strings)
-	TemplateSourcesRead   Permission = "scans:sources:read"
-	TemplateSourcesWrite  Permission = "scans:sources:write"
-	TemplateSourcesDelete Permission = "scans:sources:delete"
-)
-
 // AllPermissions returns all defined permissions.
 // Useful for validation and documentation.
 func AllPermissions() []Permission {
@@ -456,7 +438,7 @@ func AllPermissions() []Permission {
 		// Scans module
 		ScansRead, ScansWrite, ScansDelete, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		SourcesRead, SourcesWrite, SourcesDelete,
+		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,
 		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
@@ -472,7 +454,7 @@ func AllPermissions() []Permission {
 
 		// Team module
 		TeamRead, TeamUpdate, TeamDelete,
-		MembersRead, MembersInvite, MembersWrite, MembersManage,
+		MembersRead, MembersInvite, MembersWrite,
 		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,
@@ -491,7 +473,7 @@ func AllPermissions() []Permission {
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
 
 		// Validation module (legacy)
-		ValidationRead, ValidationWrite, PentestRead, PentestWrite,
+		PentestRead, PentestWrite,
 
 		// Pentest module (granular)
 		PentestCampaignsRead, PentestCampaignsWrite, PentestCampaignsDelete,
