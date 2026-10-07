@@ -44,6 +44,7 @@ import (
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -604,6 +605,27 @@ func (s *Service) OnCommandIngested(ctx context.Context, tenantID, commandID sha
 	if err := s.advanceRun(ctx, run, template); err != nil {
 		s.logger.Warn("chained stages: advance after ingest", "run_id", runID.String(), "error", err)
 	}
+}
+
+// RunStepShares is how the run's step commands (chunks) are spread over
+// sensors, per step. Empty when the command store cannot tell.
+func (s *Service) RunStepShares(ctx context.Context, tenantID, runID string) ([]command.StepSensorShare, error) {
+	run, err := s.GetRun(ctx, tenantID, runID)
+	if err != nil {
+		return nil, err
+	}
+	reader, ok := s.commandRepo.(command.StepShareReader)
+	if !ok {
+		return []command.StepSensorShare{}, nil
+	}
+	shares, err := reader.StepSensorShares(ctx, run.TenantID, run.ID)
+	if err != nil {
+		return nil, err
+	}
+	if shares == nil {
+		shares = []command.StepSensorShare{}
+	}
+	return shares, nil
 }
 
 // ListRunStages returns how each stage of a run was planned (inputs,

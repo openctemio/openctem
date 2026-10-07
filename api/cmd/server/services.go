@@ -881,6 +881,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
 	s.AttackSurface.SetDataScope(s.DataScope)
 	s.AttackSurface.SetStateHistory(repos.AssetStateHistory) // recent changes: real removals + exposure changes
+	if repos.Attribution != nil {
+		// recent changes say "Added · needs review" for names not in the inventory (RFC-054 §4.4)
+		s.AttackSurface.SetAttributionRecords(repos.Attribution)
+	}
 	// Continuous threat modeling: composes exposure chains + attacker profiles +
 	// ATT&CK catalog + live findings into a per-scope threat model.
 	s.ThreatModel = threatmodel.NewService(
