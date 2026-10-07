@@ -111,7 +111,7 @@ trigger):
 6. **authority**: an internet-facing target is covered by an *active* scope
    entry (approved, unexpired) with `max_tier` at or above the probe's tier, or
    nothing else authorizes: a verified domain of any purpose is proof only
-   (step 7), and root-domain seeds are entries since migration `001242`;
+   (step 7), and root-domain seeds are entries since migration `001245`;
 7. proof, when §8.1 requires it: the target sits at or under a verified domain;
 8. the actor may act on it (D9: data scope; restricted members only their
    assets);
@@ -299,7 +299,7 @@ send on create, when it fixes a refused scan target), `seed`,
 platform rows `system`). Audit records keep the reference without the name.
 `status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
 
-**One concept: scope entries** (research/53 SC1, SC2; migration `001242`).
+**One concept: scope entries** (research/53 SC1, SC2; migration `001245`).
 Seeds are folded into entries and `/api/v1/easm/seeds` is removed: a root
 domain to discover from is the permanent entry `*.example.com` with
 `discovery` on, created like any entry (approvers, step-up, approvals,

@@ -43,7 +43,7 @@ controller then marks it `expired`.
 - Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one
   click.
 - **One authority: scope entries** (research/53 SC1, SC2; migration
-  `001242`). Root-domain seeds were folded into permanent `*.<domain>`
+  `001245`). Root-domain seeds were folded into permanent `*.<domain>`
   entries and `/api/v1/easm/seeds` is gone; a verified domain, of any
   purpose, is proof only (§8.1 of RFC-054). `scopeauth.Load` reads the
   active entries and the verified domain names (proof); nothing else.

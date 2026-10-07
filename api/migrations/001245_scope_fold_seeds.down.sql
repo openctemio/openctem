@@ -1,4 +1,4 @@
--- Undo 001242: recreate easm_seeds from the entries the fold inserted, remove
+-- Undo 001245: recreate easm_seeds from the entries the fold inserted, remove
 -- those entries, and drop the discovery column. Entries the fold only
 -- updated (an existing "*.v" put back into effect or given discovery) keep
 -- their state: there is no record of what they were before.
