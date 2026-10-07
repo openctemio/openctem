@@ -38,12 +38,25 @@ type Policy struct {
 }
 
 // DefaultSLADays contains the default remediation days per severity.
+//
+// info is 0 = NoSLA: an informational finding reports a fact (a detected
+// technology, an open port by design) rather than a weakness, so it gets no
+// remediation deadline unless a tenant opts in by setting info days.
 var DefaultSLADays = map[string]int{
 	"critical": 2,
 	"high":     15,
 	"medium":   30,
 	"low":      60,
-	"info":     90,
+	"info":     NoSLA,
+}
+
+// NoSLA as a policy's info days means informational findings get no deadline.
+const NoSLA = 0
+
+// isInformational reports whether a raw severity is informational (info, or
+// none = CVSS 0.0). Kept local so the SLA domain does not import findings.
+func isInformational(severity string) bool {
+	return severity == "info" || severity == "none"
 }
 
 // DefaultPriorityDays is the default remediation window per CTEM priority
@@ -256,11 +269,21 @@ func (p *Policy) GetDaysForPriorityClass(priorityClass string) int {
 	}
 }
 
+// InformationalHasSLA reports whether the policy gives informational
+// findings a deadline at all (info days > 0).
+func (p *Policy) InformationalHasSLA() bool {
+	return p.infoDays > NoSLA
+}
+
 // CalculateDeadline calculates the SLA deadline using severity only.
 // Retained for backward compatibility; prefer CalculateDeadlineFor for
-// priority-aware deadlines.
+// priority-aware deadlines. It returns the zero time when the finding gets
+// no SLA (an informational finding under a policy with info days = 0).
 func (p *Policy) CalculateDeadline(severity string, detectedAt time.Time) time.Time {
 	days := p.GetDaysForSeverity(severity)
+	if days <= 0 {
+		return time.Time{}
+	}
 	return detectedAt.Add(time.Duration(days) * 24 * time.Hour)
 }
 
@@ -268,7 +291,14 @@ func (p *Policy) CalculateDeadline(severity string, detectedAt time.Time) time.T
 // class first, falling back to severity when the priority class is
 // empty or unknown (legacy findings without a class yet). This is the
 // single entry point downstream services should use.
+//
+// An informational finding under a policy without an info SLA gets no
+// deadline (zero time) whatever its priority class: the class must not hand
+// a remediation clock to a finding that has nothing to remediate.
 func (p *Policy) CalculateDeadlineFor(priorityClass, severity string, detectedAt time.Time) time.Time {
+	if isInformational(severity) && !p.InformationalHasSLA() {
+		return time.Time{}
+	}
 	if days := p.GetDaysForPriorityClass(priorityClass); days > 0 {
 		return detectedAt.Add(time.Duration(days) * 24 * time.Hour)
 	}
@@ -301,9 +331,11 @@ func (p *Policy) SetDefault(isDefault bool) {
 	p.updatedAt = time.Now().UTC()
 }
 
+// UpdateSLADays sets the per-severity windows. critical..low must be at least
+// 1 day; info may be NoSLA (0) = informational findings get no deadline.
 func (p *Policy) UpdateSLADays(critical, high, medium, low, info int) error {
-	if critical < 1 || high < 1 || medium < 1 || low < 1 || info < 1 {
-		return fmt.Errorf("%w: SLA days must be at least 1", shared.ErrValidation)
+	if critical < 1 || high < 1 || medium < 1 || low < 1 || info < NoSLA {
+		return fmt.Errorf("%w: SLA days must be at least 1 (info may be 0 = no SLA)", shared.ErrValidation)
 	}
 	p.criticalDays = critical
 	p.highDays = high
