@@ -150,11 +150,11 @@ func TestExecutor_StepTimeoutApplied(t *testing.T) {
 	run, _ := workflowdom.NewRun(shared.NewID(), shared.NewID(), workflowdom.TriggerTypeManual, nil)
 	e := NewWorkflowExecutor(nil, stepRunRepo{run: run}, stepNodeRuns{}, logger.NewNop())
 	e.maxNodeTime = 50 * time.Millisecond
-	e.RegisterActionHandler(workflowdom.ActionTypeAddTags, hangingHandler{})
+	e.conditionEvaluator = hangingEvaluator{}
 	wf := &workflowdom.Workflow{ID: run.WorkflowID, TenantID: run.TenantID}
-	node := &workflowdom.Node{NodeKey: "a", NodeType: workflowdom.NodeTypeAction,
-		Config: workflowdom.NodeConfig{ActionType: workflowdom.ActionTypeAddTags}}
-	nr, _ := workflowdom.NewNodeRun(run.ID, shared.NewID(), "a", workflowdom.NodeTypeAction)
+	node := &workflowdom.Node{NodeKey: "a", NodeType: workflowdom.NodeTypeCondition,
+		Config: workflowdom.NodeConfig{ConditionExpr: "trigger.x == 1"}}
+	nr, _ := workflowdom.NewNodeRun(run.ID, shared.NewID(), "a", workflowdom.NodeTypeCondition)
 	execCtx := &ExecutionContext{Run: run, Workflow: wf, Context: map[string]any{},
 		CompletedNodeKeys: map[string]bool{}, NodeRunsByKey: map[string]*workflowdom.NodeRun{"a": nr}}
 
@@ -181,9 +181,10 @@ type stepNodeRuns struct{ workflowdom.NodeRunRepository }
 
 func (stepNodeRuns) Update(context.Context, *workflowdom.NodeRun) error { return nil }
 
-type hangingHandler struct{}
+// hangingEvaluator stands for any step that hangs until its context ends.
+type hangingEvaluator struct{}
 
-func (hangingHandler) Execute(ctx context.Context, _ *ActionInput) (map[string]any, error) {
+func (hangingEvaluator) Evaluate(ctx context.Context, _ string, _ map[string]any) (bool, error) {
 	<-ctx.Done()
-	return nil, ctx.Err()
+	return false, ctx.Err()
 }
