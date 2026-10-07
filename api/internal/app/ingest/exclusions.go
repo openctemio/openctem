@@ -33,6 +33,11 @@ type ExclusionSource interface {
 // report is retried like any other storage failure.
 func (s *Service) SetExclusionSource(src ExclusionSource) {
 	s.assetProcessor.SetExclusionSource(src)
+	// The same source decides which web endpoints lie under a path
+	// exclusion (RFC-056): they are stored excluded-untested.
+	if w, ok := src.(WebRuleSource); ok {
+		s.webRules = w
+	}
 }
 
 // SetExclusionSource wires the exclusion source (nil = not checked).

@@ -28,7 +28,8 @@ func NewScopeExclusionRepository(db *DB) *ScopeExclusionRepository {
 const scopeExclusionSelectQuery = `
 	SELECT id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
 	       approved_by, approved_at, created_by, created_at, updated_at,
-	       rejected_by, rejected_at, origin
+	       rejected_by, rejected_at, origin,
+	       path_prefix, methods, testing, testing_until, testing_changed_by, testing_changed_at
 	FROM scope_exclusions
 `
 
@@ -48,6 +49,12 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		updatedAt     sql.NullTime
 		rejectedBy    sql.NullString
 		rejectedAt    sql.NullTime
+		pathPrefix    sql.NullString
+		methods       pq.StringArray
+		testing       string
+		testingUntil  sql.NullTime
+		testingBy     sql.NullString
+		testingAt     sql.NullTime
 		origin        string
 	)
 
@@ -55,6 +62,7 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		&id, &tenantID, &exclusionType, &pattern, &reason, &status, &expiresAt,
 		&approvedBy, &approvedAt, &createdBy, &createdAt, &updatedAt,
 		&rejectedBy, &rejectedAt, &origin,
+		&pathPrefix, &methods, &testing, &testingUntil, &testingBy, &testingAt,
 	)
 	if err != nil {
 		return nil, err
@@ -94,8 +102,38 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		}
 		e.SetRejection(rejectedBy.String, rejAt)
 	}
+	if pathPrefix.Valid {
+		web := &scope.WebRule{PathPrefix: pathPrefix.String, Methods: []string(methods),
+			Testing: scope.Testing(testing), TestingChangedBy: testingBy.String}
+		if testingUntil.Valid {
+			t := testingUntil.Time
+			web.TestingUntil = &t
+		}
+		if testingAt.Valid {
+			t := testingAt.Time
+			web.TestingChangedAt = &t
+		}
+		e.SetWeb(web)
+	}
 	e.SetOrigin(scope.Origin(origin))
 	return e, nil
+}
+
+// SetTesting records a path exclusion's testing mode, who set it and when.
+// Tenant-scoped; only a `path` exclusion has one.
+func (r *ScopeExclusionRepository) SetTesting(ctx context.Context, tenantID, id shared.ID, rule *scope.WebRule) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE scope_exclusions
+		SET testing = $3, testing_until = $4, testing_changed_by = $5, testing_changed_at = $6, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND exclusion_type = 'path'`,
+		tenantID.String(), id.String(), string(rule.Testing), nullTime(rule.TestingUntil),
+		nullString(rule.TestingChangedBy), nullTime(rule.TestingChangedAt))
+	if err != nil {
+		return fmt.Errorf("failed to set exclusion testing: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return scope.ErrExclusionNotFound
+	}
+	return nil
 }
 
 // Create persists a new scope exclusion.
@@ -104,9 +142,17 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		INSERT INTO scope_exclusions (
 			id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
 			approved_by, approved_at, created_by, created_at, updated_at,
-			rejected_by, rejected_at, origin
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			rejected_by, rejected_at, origin, path_prefix, methods
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
+	var pathPrefix sql.NullString
+	methods := []string{}
+	if web := exclusion.Web(); web != nil {
+		pathPrefix = sql.NullString{String: web.PathPrefix, Valid: true}
+		if web.Methods != nil {
+			methods = web.Methods
+		}
+	}
 
 	_, err := r.db.ExecContext(ctx, query,
 		exclusion.ID().String(),
@@ -124,6 +170,8 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		nullString(exclusion.RejectedBy()),
 		nullTime(exclusion.RejectedAt()),
 		string(exclusion.Origin()),
+		pathPrefix,
+		pq.Array(methods),
 	)
 
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	assettyperef "github.com/openctemio/openctem/api/pkg/domain/asset"
 
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
@@ -923,7 +924,7 @@ func newTestScanService(opts ...scanservice.ServiceOption) (*scanservice.Service
 	// one step dispatcher (research/27 P0-2), as in production.
 	svc.SetStepQueuer(scanrun.NewService(deps.templateRepo, deps.stepRepo, deps.runRepo,
 		&mockStepRunRepo{}, newMockSensorRepo(), deps.commandRepo, nil, log,
-		scanrun.WithToolRepo(deps.toolRepo)))
+		scanrun.WithToolRepo(deps.toolRepo), scanrun.WithWebScope(noWebScope{})))
 
 	return svc, deps
 }
@@ -2688,4 +2689,11 @@ func TestScanService_TriggerScan_OverlapSkipIsNotBlocked(t *testing.T) {
 	if got := blockedRuns(deps, s.ID); len(got) != 0 {
 		t.Fatalf("overlap skip recorded %d blocked run(s)", len(got))
 	}
+}
+
+// noWebScope is a web scope builder with no path exclusions (RFC-056).
+type noWebScope struct{}
+
+func (noWebScope) BuildWebScope(context.Context, shared.ID, []string) (*scopeapp.WebScope, error) {
+	return nil, nil
 }

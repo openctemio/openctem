@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -444,7 +445,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	chunks := stepChunks(resolved, stepTargets)
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
-		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
+		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk, stageKeyOf(resolved))
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
 			// chunk, so no other sensor hits them at the same time.
@@ -473,6 +474,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	return s.stepRunRepo.Update(ctx, stepRun)
 }
 
+// stageKeyOf is the catalog stage a resolved step runs ("" when none).
+func stageKeyOf(resolved scanapp.StepTool) stage.Key {
+	if !resolved.HasStage {
+		return ""
+	}
+	return resolved.Stage.Key
+}
+
 // stepChunks cuts a step's targets into the chunks its commands carry:
 // pieces of the capability's chunk size for a tool that takes a target
 // list (stage.ChunkSizeFor), else one chunk with every target. A step with
@@ -495,9 +504,14 @@ func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets) []*scanapp.S
 
 // stepCommand builds one command of a step for the given chunk of its
 // targets, after the payload passed the security validator.
-func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun, chunk *scanapp.StepTargets) (*command.Command, error) {
+func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun,
+	chunk *scanapp.StepTargets, key stage.Key,
+) (*command.Command, error) {
 	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
 	if err != nil {
+		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
+	if err := s.applyWebScope(ctx, run.TenantID, key, payload); err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 

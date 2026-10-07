@@ -302,6 +302,16 @@ type ScopeExclusionResponse struct {
 	Origin    string    `json:"origin"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Path exclusions only (RFC-056): the path prefix, the methods blocked
+	// (empty: all), the testing mode set and the one in force now.
+	HostPattern      string     `json:"host_pattern,omitempty"`
+	PathPrefix       string     `json:"path_prefix,omitempty"`
+	Methods          []string   `json:"methods,omitempty"`
+	Testing          string     `json:"testing,omitempty" enums:"blocked,read_only,allowed"`
+	TestingEffective string     `json:"testing_effective,omitempty" enums:"blocked,read_only,allowed"`
+	TestingUntil     *time.Time `json:"testing_until,omitempty"`
+	TestingChangedBy string     `json:"testing_changed_by,omitempty"`
+	TestingChangedAt *time.Time `json:"testing_changed_at,omitempty"`
 }
 
 // CreateTargetResponseWithWarnings wraps a target response with overlap warnings.
@@ -379,6 +389,17 @@ type CreateScopeExclusionRequest struct {
 	Pattern       string     `json:"pattern" validate:"required,max=500"`
 	Reason        string     `json:"reason" validate:"required,max=1000"`
 	ExpiresAt     *time.Time `json:"expires_at"`
+	// PathPrefix and Methods: a `path` exclusion's web rule (RFC-056). The
+	// pattern is then a host pattern ("*", "*.example.com", a host or an
+	// origin URL); methods empty blocks every method.
+	PathPrefix *string  `json:"path_prefix,omitempty" validate:"omitempty,max=500"`
+	Methods    []string `json:"methods,omitempty" validate:"omitempty,max=7"`
+}
+
+// SetExclusionTestingRequest sets how a path exclusion may be tested.
+type SetExclusionTestingRequest struct {
+	Testing      string     `json:"testing" validate:"required,oneof=blocked read_only allowed"`
+	TestingUntil *time.Time `json:"testing_until,omitempty"`
 }
 
 // UpdateScopeExclusionRequest represents the request to update a scope exclusion.
@@ -478,7 +499,7 @@ func scopeActor(r *http.Request) scope.Actor {
 }
 
 func toScopeExclusionResponse(e *scopedom.Exclusion) ScopeExclusionResponse {
-	return ScopeExclusionResponse{
+	resp := ScopeExclusionResponse{
 		ID:            e.ID().String(),
 		TenantID:      e.TenantID().String(),
 		ExclusionType: e.ExclusionType().String(),
@@ -496,6 +517,12 @@ func toScopeExclusionResponse(e *scopedom.Exclusion) ScopeExclusionResponse {
 		CreatedAt:     e.CreatedAt(),
 		UpdatedAt:     e.UpdatedAt(),
 	}
+	if web := e.Web(); web != nil {
+		resp.HostPattern, resp.PathPrefix, resp.Methods = e.HostPattern(), web.PathPrefix, web.Methods
+		resp.Testing, resp.TestingEffective = string(web.Testing), string(web.EffectiveTesting(time.Now()))
+		resp.TestingUntil, resp.TestingChangedBy, resp.TestingChangedAt = web.TestingUntil, web.TestingChangedBy, web.TestingChangedAt
+	}
+	return resp
 }
 
 // =============================================================================
@@ -965,6 +992,8 @@ func (h *ScopeHandler) CreateExclusion(w http.ResponseWriter, r *http.Request) {
 		Reason:        req.Reason,
 		ExpiresAt:     req.ExpiresAt,
 		CreatedBy:     userID,
+		PathPrefix:    req.PathPrefix,
+		Methods:       req.Methods,
 	}
 
 	exclusion, err := h.service.CreateExclusion(r.Context(), input)
