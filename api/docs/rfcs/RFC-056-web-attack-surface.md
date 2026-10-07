@@ -147,7 +147,11 @@ A crawl now hands the chained stage its origin asset, not one asset per URL.
 
 ## 5. Scope for paths and methods
 
-Entry and exclusion shape: `{host_pattern, path_prefix, methods}`.
+Exclusion shape: an exclusion of type `path` with `pattern` = host pattern,
+`path_prefix` and `methods` (WS9: the old one-string `path` type is replaced
+by this rule and its rows migrated; the API contract is in RFC-054 §6.2).
+Scope entries with a path prefix (a grant limited to a path, for web tools
+only) follow in a later change.
 
 - The path match is a segment-aware prefix (`/admin/debug` matches itself
   and `/admin/debug/x`, not `/admin/debugger`); no regular expression.

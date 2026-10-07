@@ -1613,12 +1613,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Assets reported for a tenant's own scan commands get tenant_scanned
 	// attribution evidence (RFC-036 O8).
 	if repos.Attribution != nil {
-		// Names a permanent scope target or seed covers are confirmed
-		// without review (RFC-054 §4.3); the join also backs the start-up
-		// backfill and the re-evaluation after a scope target change.
+		// Names a permanent scope entry covers are confirmed without review
+		// (RFC-054 §4.3); the join also backs the start-up backfill, and the
+		// scope service runs it (debounced per tenant) after every committed
+		// change that can confirm a waiting name.
 		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, s.Scope, repos.Attribution, repos.Asset, log)
 		s.ScopeJoin.SetAudit(s.Audit)
 		s.ScopeJoin.SetSettings(s.Tenant)
+		s.Scope.SetScopeJoin(easmapp.NewJoinScheduler(s.ScopeJoin, 0, log),
+			postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}))
 		stamper := easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)
 		stamper.SetScopeJoin(s.ScopeJoin)
 		s.Ingest.SetScanAttributionStamper(stamper)
@@ -1890,6 +1893,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Chained steps take what their predecessors produced, through the
 		// per-hop gate (hop_router.go).
 		scanrun.WithHopStore(scanHops),
+		// Web steps carry the path exclusions of their hosts (RFC-056).
+		scanrun.WithWebScope(s.Scope),
 	)
 
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
@@ -2376,6 +2381,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	if s.SensorGrant != nil {
 		s.SensorGrant.SetNotifications(repos.MemberLifecycle, s.Notification)
 	}
+
 	// Scope entries: settings, the approval count and the widening notice to
 	// every administrator (RFC-054 §7).
 	if s.Scope != nil {

@@ -27,3 +27,42 @@ func TestClassifyStepFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestFailureClasses(t *testing.T) {
+	for code, want := range map[string]FailureClass{
+		FailureNoMatchingTool:      FailureClassConfig,
+		FailureIncompatibleTargets: FailureClassConfig,
+		FailureStageNotChainable:   FailureClassConfig,
+		FailureTargetRefused:       FailureClassScope,
+		FailureNoSensor:            FailureClassPlacement,
+		FailurePolicyRefused:       FailureClassPolicy,
+		FailureLeaseLost:           FailureClassTransient,
+		FailureCommandExhausted:    FailureClassTransient,
+		FailureToolExit:            FailureClassTool,
+		FailureTimeout:             FailureClassTimeout,
+		FailureCanceled:            FailureClassCanceled,
+		"SOMETHING_NEW":            FailureClassTool,
+	} {
+		if got := ClassOf(code); got != want {
+			t.Errorf("ClassOf(%s) = %s, want %s", code, got, want)
+		}
+	}
+	for _, code := range []string{FailureNoMatchingTool, FailureIncompatibleTargets, FailureStageNotChainable, FailurePolicyRefused, FailureCanceled} {
+		if !IsPermanentFailure(code) {
+			t.Errorf("%s must be permanent (never retried)", code)
+		}
+	}
+	for _, code := range []string{FailureLeaseLost, FailureCommandExhausted, FailureCommandFailed, FailureTimeout} {
+		if IsPermanentFailure(code) {
+			t.Errorf("%s must stay retryable", code)
+		}
+	}
+	// A structured code wins over the text; COMMAND_FAILED still falls back
+	// to the text classification for sensors that send no code.
+	if code, retry := ClassifyStepFailure(FailureToolExit, "scanner not found"); code != FailureToolExit || !retry {
+		t.Errorf("structured TOOL_EXIT: %s %v", code, retry)
+	}
+	if code, retry := ClassifyStepFailure(FailureNoMatchingTool, "x"); code != FailureNoMatchingTool || retry {
+		t.Errorf("NO_MATCHING_TOOL: %s %v", code, retry)
+	}
+}
