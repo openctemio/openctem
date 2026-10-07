@@ -876,24 +876,21 @@ func TestWfActionFinding_UnsupportedAction(t *testing.T) {
 // =============================================================================
 
 func TestWfActionPipeline_TriggerPipeline_NilService(t *testing.T) {
-	// pipelineService == nil → returns error-less map with triggered=false
+	// No backing service: the step fails. A {"triggered": false} success
+	// would show a green run that started nothing.
 	log := logger.NewNop()
 	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
-	tenantID := shared.NewID()
-	pipelineID := shared.NewID()
-
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerPipeline, map[string]any{
-		"pipeline_id": pipelineID.String(),
+	input := newWfActionInput(shared.NewID(), workflow.ActionTypeTriggerPipeline, map[string]any{
+		"pipeline_id": shared.NewID().String(),
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error when pipelineService is nil, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "pipeline service not available") {
+		t.Fatalf("err = %v, want a %q failure", err, "pipeline service not available")
 	}
-	triggered, _ := out["triggered"].(bool)
-	if triggered {
-		t.Errorf("expected triggered=false when service is nil, got true")
+	if out != nil {
+		t.Errorf("a failed step reported output %v", out)
 	}
 }
 
@@ -930,23 +927,21 @@ func TestWfActionPipeline_TriggerPipeline_InvalidPipelineIDFormat(t *testing.T) 
 // =============================================================================
 
 func TestWfActionPipeline_TriggerScan_NilService(t *testing.T) {
+	// No backing service: the step fails. A {"triggered": false} success
+	// would show a green run that started nothing.
 	log := logger.NewNop()
 	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
-	tenantID := shared.NewID()
-	scanID := shared.NewID()
-
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerScan, map[string]any{
-		"scan_id": scanID.String(),
+	input := newWfActionInput(shared.NewID(), workflow.ActionTypeTriggerScan, map[string]any{
+		"scan_id": shared.NewID().String(),
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error when scanService is nil, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "scan service not available") {
+		t.Fatalf("err = %v, want a %q failure", err, "scan service not available")
 	}
-	triggered, _ := out["triggered"].(bool)
-	if triggered {
-		t.Errorf("expected triggered=false when service is nil, got true")
+	if out != nil {
+		t.Errorf("a failed step reported output %v", out)
 	}
 }
 
@@ -1087,24 +1082,21 @@ func TestWfActionTicket_UnsupportedAction(t *testing.T) {
 // =============================================================================
 
 func TestWfActionAITriage_TriggerAITriage_NilService(t *testing.T) {
-	// aiTriageService == nil → returns map with triggered=false (no error)
+	// No backing service: the step fails. A {"triggered": false} success
+	// would show a green run that started nothing.
 	log := logger.NewNop()
 	h := workflowsvc.NewAITriageActionHandler(nil, log)
 
-	tenantID := shared.NewID()
-	findingID := shared.NewID()
-
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerAITriage, map[string]any{
-		"finding_id": findingID.String(),
+	input := newWfActionInput(shared.NewID(), workflow.ActionTypeTriggerAITriage, map[string]any{
+		"finding_id": shared.NewID().String(),
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error when aiTriageService is nil, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "AI triage service not available") {
+		t.Fatalf("err = %v, want a %q failure", err, "AI triage service not available")
 	}
-	triggered, _ := out["triggered"].(bool)
-	if triggered {
-		t.Errorf("expected triggered=false when service is nil, got true")
+	if out != nil {
+		t.Errorf("a failed step reported output %v", out)
 	}
 }
 
@@ -1144,12 +1136,11 @@ func TestWfActionAITriage_TriggerAITriage_FindingIDFromTriggerData(t *testing.T)
 		Context: map[string]any{},
 	}
 
-	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error when service is nil (triggered=false), got %v", err)
-	}
-	if out["finding_id"] != findingID.String() {
-		t.Errorf("expected finding_id=%s, got %v", findingID.String(), out["finding_id"])
+	// The finding id resolves from the trigger data: the step gets past it
+	// and fails only for the missing service.
+	_, err := h.Execute(context.Background(), input)
+	if err == nil || !strings.Contains(err.Error(), "AI triage service not available") {
+		t.Fatalf("err = %v, want the missing-service failure (finding %s resolved)", err, findingID)
 	}
 }
 
