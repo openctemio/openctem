@@ -649,7 +649,7 @@ type PipelineGraphValidationResponse struct {
 	Warnings []PipelineGraphIssueResponse `json:"warnings"`
 }
 
-// ValidatePipeline handles POST /api/v1/pipelines/validate
+// ValidatePipeline handles POST /api/v1/pipelines/verify
 // @Summary      Validate a pipeline graph
 // @Description  Checks a draft pipeline's steps as a save would (step keys, tools, settings, then the graph against the capability contracts: typed connections, cycles, missing steps, intrusive steps fed derived targets, size). Stores nothing.
 // @Tags         Pipelines
@@ -659,7 +659,7 @@ type PipelineGraphValidationResponse struct {
 // @Success      200   {object}  PipelineGraphValidationResponse
 // @Failure      400   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /pipelines/validate [post]
+// @Router       /pipelines/verify [post]
 func (h *PipelineHandler) ValidatePipeline(w http.ResponseWriter, r *http.Request) {
 	var req ValidatePipelineRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {

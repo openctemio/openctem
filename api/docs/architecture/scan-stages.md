@@ -50,7 +50,7 @@ platform data: a tenant, a sensor or a report cannot widen it.
 - **Validation.** `stage.ValidateGraph` checks a workflow graph against the
   capability contracts (§1.1). Every pipeline save calls it: full save, create,
   and add, update or delete of a step, inside the save transaction. It also
-  backs `POST /api/v1/pipelines/validate` (`pipelines:write`), which checks a
+  backs `POST /api/v1/pipelines/verify` (`pipelines:write`), which checks a
   draft and stores nothing. A pipeline's steps are the graph
   (`pipeline.StepsGraph`): one node per step and one edge per dependency. A step
   the catalogue places is a capability node, with its tool as the pin. A tenant
