@@ -176,7 +176,7 @@ export function RunTasksTable({
                       />
                     )}
                     {skipped && (
-                      <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-amber-700 dark:text-amber-400">
+                      <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
                         <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
                         <TruncatedText value={skipped} label="Skipped targets" />
                       </div>

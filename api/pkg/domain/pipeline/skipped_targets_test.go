@@ -14,7 +14,7 @@ func TestParseSkippedTargets(t *testing.T) {
 		{"target":"10.0.0.1","reason":"made_up","rule":"targets.deny"},
 		{"target":"","reason":"unresolvable"},
 		{"target":42},
-		{"target":"evil‮.example.com\nline2","reason":"denied_by_policy","detail":"x\u0000y"}
+		{"target":"evil\u202e.example.com\nline2","reason":"denied_by_policy","detail":"x\u0000y"}
 	]`)
 	got, total := ParseSkippedTargets(list, 2)
 	if len(got) != 4 {
@@ -27,7 +27,7 @@ func TestParseSkippedTargets(t *testing.T) {
 		t.Errorf("reasons %q %q: an unknown reason reads as refused", got[1].Reason, got[2].Reason)
 	}
 	// Sensor-supplied text is one clean line.
-	if strings.ContainsAny(got[3].Target, "‮\n") || strings.ContainsRune(got[3].Detail, 0) {
+	if strings.ContainsAny(got[3].Target, "\u202e\n") || strings.ContainsRune(got[3].Detail, 0) {
 		t.Errorf("not cleaned: %q %q", got[3].Target, got[3].Detail)
 	}
 	if total != 4 {
