@@ -27,7 +27,7 @@ export type SensorPreference = (typeof SENSOR_PREFERENCES)[number]
 // Labels for display
 export const SCAN_TYPE_LABELS: Record<ScanType, string> = {
   workflow: 'Workflow',
-  single: 'Single Scan',
+  single: 'Single check',
 }
 
 export const SCHEDULE_TYPE_LABELS: Record<ScheduleType, string> = {
@@ -115,10 +115,31 @@ export interface ScanConfig {
   failed_runs: number
   /** Runs that kept results but lost some work; neither a success nor a failure. */
   partial_runs?: number
+  /** Triggers refused before anything was dispatched (runs with status blocked). */
+  blocked_runs?: number
+  /** The scan's latest run, with its real state (the list's "Last run" column). */
+  last_run?: ScanLastRun
+  /** Name of the workflow a workflow scan runs. */
+  pipeline_name?: string
   created_by?: string
   created_by_name?: string
   created_at: string
   updated_at: string
+}
+
+/** A scan's latest run as the scan list carries it (GET /scans). */
+export interface ScanLastRun {
+  id: string
+  status: string
+  trigger_type?: string
+  created_at: string
+  started_at?: string
+  completed_at?: string
+  /** 0-100 for a live run (finished tasks of all tasks). */
+  progress?: number
+  /** Why a blocked run was refused, and the message of a blocked or failed run. */
+  refusal_code?: string
+  error_message?: string
 }
 
 /**
@@ -252,6 +273,8 @@ export interface ScanConfigListFilters {
   status?: ScanConfigStatus
   tags?: string
   search?: string
+  /** Also list one-off (ad-hoc quick) scans; hidden by default. */
+  include_ad_hoc?: boolean
   /** One sort key, `-` for descending (name, created_at, last_run_at, next_run_at, total_runs). */
   sort?: string
   page?: number
@@ -353,7 +376,15 @@ export interface ScanManagementOverview {
 
 /** Status of a scan's last run. */
 export type ScanRunStatus =
-  'queued' | 'pending' | 'running' | 'completed' | 'failed' | 'canceled' | 'timeout'
+  | 'queued'
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'partial'
+  | 'failed'
+  | 'canceled'
+  | 'timeout'
+  | 'blocked'
 
 /**
  * Quality gate evaluation result returned by the backend after a scan run
