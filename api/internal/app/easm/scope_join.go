@@ -285,6 +285,51 @@ func (j *ScopeJoin) Covered(ctx context.Context, tenantID shared.ID, items []Joi
 	return out, nil
 }
 
+// Blocked returns the items an active exclusion matches ("excluded") or that
+// sit at or under a name the tenant rejected ("rejected"): no rule confirms
+// them. Tenant-scoped; a lookup error refuses.
+func (j *ScopeJoin) Blocked(ctx context.Context, tenantID shared.ID, items []JoinItem) (map[string]string, error) {
+	if err := j.ready(); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	if len(items) == 0 {
+		return out, nil
+	}
+	cands := make([]scope.ExclusionCandidate, 0, len(items))
+	byCand := make(map[shared.ID]string, len(items))
+	hosts := map[string]string{}
+	for _, it := range items {
+		id, err := shared.IDFromString(it.ID)
+		if err != nil {
+			continue
+		}
+		cands = append(cands, scope.ExclusionCandidate{ID: id, Values: []string{it.Name}})
+		byCand[id] = it.ID
+		if h := dnsHost(it.Name); h != "" {
+			hosts[it.ID] = h
+		}
+	}
+	excluded, err := j.exclusions.ExcludedTargets(ctx, tenantID.String(), cands)
+	if err != nil {
+		return nil, fmt.Errorf("check scope exclusions: %w", err)
+	}
+	gate := &ActiveGate{records: j.store, assets: j.assets}
+	rejected, err := gate.rejectedNames(ctx, tenantID, hostValues(hosts))
+	if err != nil {
+		return nil, err
+	}
+	for cid, assetID := range byCand {
+		switch {
+		case excluded[cid]:
+			out[assetID] = "excluded"
+		case hosts[assetID] != "" && underAny(hosts[assetID], rejected):
+			out[assetID] = "rejected"
+		}
+	}
+	return out, nil
+}
+
 // Evidence is the matches_scope_target evidence for the covered items.
 func (j *ScopeJoin) Evidence(ctx context.Context, tenantID shared.ID, items []JoinItem) ([]attribution.Evidence, error) {
 	covered, err := j.Covered(ctx, tenantID, items)
