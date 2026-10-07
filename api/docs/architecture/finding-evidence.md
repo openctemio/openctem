@@ -62,7 +62,7 @@ directly once the API pins that CTIS version.
    (`APP_ENCRYPTION_KEY`, re-keyed by `cmd/rekey`). The plaintext is bound to
    tenant, item and placeholder (`evidence:v1|tenant|item|placeholder|value`):
    a ciphertext copied to another row does not open.
-5. **Store**: `finding_evidence` (masked item, migration 001210) and
+5. **Store**: `finding_evidence` (masked item, migration 001223) and
    `finding_evidence_secrets` (ciphertexts, expiring). A detection item
    the finding already holds (same content hash) is not stored again.
 
@@ -130,7 +130,7 @@ same audited reveal. **Copy curl** and **Download** are masked.
 | Item, caps, masking, raw HTTP parsing, curl | `pkg/domain/evidence` |
 | Service (store, list, reveal, sweep) | `internal/app/evidence/service.go` |
 | Ingest | `internal/app/ingest/evidence_items.go` (step 9 of the finding processor) |
-| Repository | `internal/infra/postgres/finding_evidence_repository.go`, migration `001210_finding_evidence` |
+| Repository | `internal/infra/postgres/finding_evidence_repository.go`, migration `001223_finding_evidence` |
 | Routes / handler | `internal/infra/http/routes/finding_evidence_items.go`, `internal/infra/http/handler/finding_evidence_items_handler.go` |
 | Retention | `internal/infra/controller/finding_evidence_retention.go` |
 | Settings | `pkg/domain/tenant/evidence_settings.go` |
