@@ -60,6 +60,15 @@ const StateUnattributed State = "unattributed"
 // by itself. The asset, its history and findings stay.
 const StateOutOfScope State = "out_of_scope"
 
+// StatePlatformDenied and StateProofRequired are never stored either: the
+// platform's guardrails refuse the target (deny list, RFC-054 §8.2), or the
+// operator requires a verified domain for every active probe and the target
+// has none (SCOPE_ACTIVE_PROOF=all, §8.1). No tenant setting changes them.
+const (
+	StatePlatformDenied State = "platform_denied"
+	StateProofRequired  State = "proof_required"
+)
+
 // AllowsActiveChecks reports whether a recorded state lets a sensor touch an
 // asset (RFC-036 §6.3 active_allowed: confirmed only). The empty state (no
 // record) answers true here only as far as the record goes: the active-scan
