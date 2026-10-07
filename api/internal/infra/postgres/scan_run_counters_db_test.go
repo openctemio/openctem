@@ -13,9 +13,8 @@ import (
 // Run outcome bookkeeping, against the real SQL.
 //
 // Before: UpdateStatus/Update were unconditional, so a cancel racing a
-// completion (or two parallel final steps) moved a finished run again and the
-// scan recorded (and counted) it twice; and a late older run relabelled the
-// scan's newer, still-running run.
+// completion (or two parallel final steps) moved a finished run again. The
+// scan summary tests are in scan_run_summary_db_test.go.
 
 const quickScanTemplate = "00000000-0000-0000-0000-000000000001"
 
@@ -56,59 +55,6 @@ func readCounters(ctx context.Context, t *testing.T, db *sql.DB, scanID shared.I
 		t.Fatalf("read scan: %v", err)
 	}
 	return total, ok, failed, st.String, lastRun
-}
-
-func TestScanRunCounters_OneRunCountsOnce(t *testing.T) {
-	ctx := context.Background()
-	db := openScanDB(t)
-	scans := NewScanRepository(&DB{DB: db})
-	runs := NewPipelineRunRepository(&DB{DB: db})
-	tenantID, scanID := seedCounterScan(ctx, t, db)
-	run := seedCounterRun(ctx, t, runs, tenantID, scanID)
-
-	if err := scans.RecordRunStarted(ctx, tenantID, scanID, run.ID); err != nil {
-		t.Fatalf("RecordRunStarted: %v", err)
-	}
-	total, _, _, status, _ := readCounters(ctx, t, db, scanID)
-	if total != 0 || status != "running" {
-		t.Fatalf("after start: total_runs=%d status=%q, want 0 running (counted when it finishes)", total, status)
-	}
-
-	if err := scans.RecordRun(ctx, tenantID, scanID, run.ID, "completed"); err != nil {
-		t.Fatalf("RecordRun: %v", err)
-	}
-	total, ok, failed, status, _ := readCounters(ctx, t, db, scanID)
-	if total != 1 || ok != 1 || failed != 0 || status != "completed" {
-		t.Fatalf("after completion: total=%d ok=%d failed=%d status=%q, want 1/1/0 completed (one run counts once)",
-			total, ok, failed, status)
-	}
-}
-
-func TestScanRunCounters_LateOlderRunDoesNotRelabelNewerRun(t *testing.T) {
-	ctx := context.Background()
-	db := openScanDB(t)
-	scans := NewScanRepository(&DB{DB: db})
-	runs := NewPipelineRunRepository(&DB{DB: db})
-	tenantID, scanID := seedCounterScan(ctx, t, db)
-	older := seedCounterRun(ctx, t, runs, tenantID, scanID)
-	if err := scans.RecordRunStarted(ctx, tenantID, scanID, older.ID); err != nil {
-		t.Fatal(err)
-	}
-	newer := seedCounterRun(ctx, t, runs, tenantID, scanID)
-	if err := scans.RecordRunStarted(ctx, tenantID, scanID, newer.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := scans.RecordRun(ctx, tenantID, scanID, older.ID, "failed"); err != nil {
-		t.Fatal(err)
-	}
-	total, ok, failed, status, last := readCounters(ctx, t, db, scanID)
-	if total != 1 || ok != 0 || failed != 1 {
-		t.Fatalf("total=%d ok=%d failed=%d, want 1/0/1", total, ok, failed)
-	}
-	if status != "running" || last.String != newer.ID.String() {
-		t.Fatalf("last run = %s %q, want the newer run still 'running'", last.String, status)
-	}
 }
 
 func TestUpdateStatus_TerminalRunIsFinal(t *testing.T) {

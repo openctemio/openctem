@@ -231,7 +231,10 @@ type ScanDetailResponse struct {
 	SuccessfulRuns int     `json:"successful_runs"`
 	FailedRuns     int     `json:"failed_runs"`
 	// PartialRuns: runs that kept results but lost some work (RFC-046 D5).
-	PartialRuns   int     `json:"partial_runs"`
+	PartialRuns int `json:"partial_runs"`
+	// BlockedRuns: triggers refused before anything was dispatched; each
+	// is a run with status blocked and its refusal_code.
+	BlockedRuns   int     `json:"blocked_runs"`
 	CreatedBy     *string `json:"created_by,omitempty"`
 	CreatedByName *string `json:"created_by_name,omitempty"`
 	CreatedAt     string  `json:"created_at"`
@@ -1312,6 +1315,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		SuccessfulRuns:        s.SuccessfulRuns,
 		FailedRuns:            s.FailedRuns,
 		PartialRuns:           s.PartialRuns,
+		BlockedRuns:           s.BlockedRuns,
 		CreatedAt:             s.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:             s.UpdatedAt.Format(time.RFC3339),
 	}
@@ -1407,8 +1411,12 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrValidation):
 		// Trigger refusals (NO_ZONE_COVERAGE, ZONE_SPLIT_REQUIRED, ...) keep
 		// their code so the client can explain them.
-		apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
-			cleanErrorMessage(err, "Invalid request")).WriteJSON(w)
+		e := apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
+			cleanErrorMessage(err, "Invalid request"))
+		if d := toolUnavailableDetails(err); d != nil {
+			e.Details = d
+		}
+		e.WriteJSON(w)
 	case scansvc.AsFrozen(err) != nil:
 		// A scan freeze window is active: 409 with its own code, so the
 		// console can offer the override to those who hold it.
@@ -1659,4 +1667,28 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), sc))
+}
+
+// ToolUnavailableDetails is the error body's details on a NO_SENSOR_FOR_TOOL
+// refusal: the tool, the workflow step that needs it, and the sensor counts
+// behind the refusal (docs/architecture/tool-availability.md).
+type ToolUnavailableDetails struct {
+	Tool            string `json:"tool"`
+	Step            string `json:"step,omitempty"`
+	Status          string `json:"status"`
+	SensorsTotal    int    `json:"sensors_total"`
+	SensorsOnline   int    `json:"sensors_online"`
+	SensorsExcluded int    `json:"sensors_excluded"`
+	ZoneID          string `json:"zone_id,omitempty"`
+}
+
+// toolUnavailableDetails returns the details of a NO_SENSOR_FOR_TOOL
+// refusal, or nil.
+func toolUnavailableDetails(err error) *ToolUnavailableDetails {
+	var tu *scansvc.ToolUnavailableError
+	if !errors.As(err, &tu) {
+		return nil
+	}
+	return &ToolUnavailableDetails{Tool: tu.Tool, Step: tu.Step, Status: tu.Status,
+		SensorsTotal: tu.SensorsTotal, SensorsOnline: tu.SensorsOnline, SensorsExcluded: tu.SensorsExcluded, ZoneID: tu.ZoneID}
 }

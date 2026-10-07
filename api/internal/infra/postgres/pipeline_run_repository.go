@@ -50,10 +50,10 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, freeze_override
+			created_at, scheduled_for, deadline_at, freeze_override, refusal_code
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23, NULLIF($24, ''))
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -80,6 +80,7 @@ func (r *PipelineRunRepository) Create(ctx context.Context, run *pipeline.Run) e
 		run.CreatedAt,
 		nullTime(run.ScheduledFor),
 		run.FreezeOverride,
+		run.RefusalCode,
 	)
 
 	if isOccurrenceConflict(err) {
@@ -211,7 +212,7 @@ func (r *PipelineRunRepository) Update(ctx context.Context, run *pipeline.Run) e
 }
 
 // terminalRunStatusesSQL lists the statuses a run never leaves.
-const terminalRunStatusesSQL = `('completed', 'partial', 'failed', 'canceled', 'timeout')`
+const terminalRunStatusesSQL = `('completed', 'partial', 'failed', 'canceled', 'timeout', 'blocked')`
 
 // notUpdatedError explains a guarded UPDATE that touched no row: the run is
 // missing, or it already finished.
@@ -483,10 +484,10 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, freeze_override
+			created_at, scheduled_for, deadline_at, freeze_override, refusal_code
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23, NULLIF($24, ''))
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -513,6 +514,7 @@ func (r *PipelineRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 		run.CreatedAt,
 		nullTime(run.ScheduledFor),
 		run.FreezeOverride,
+		run.RefusalCode,
 	)
 	if isOccurrenceConflict(err) {
 		return pipeline.ErrOccurrenceAlreadyRun
@@ -583,7 +585,7 @@ const MaxUnfinishedTargets = 10000
 //     the command held), and no sensor picks a pending one up late;
 //   - its open steps end 'partial' when one of their commands completed and
 //     'timeout' otherwise;
-//   - the scan counts the run once, as partial or as failed.
+//   - afterwards, each scan's run summary is recomputed from its runs.
 //
 // Returns the number of runs settled.
 func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error) {
@@ -667,28 +669,25 @@ func (r *PipelineRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, er
 			WHERE sr.pipeline_run_id = t.id
 			  AND sr.status IN ('pending', 'queued', 'running')
 			RETURNING sr.id
-		), recorded_scans AS (
-			UPDATE scans s
-			SET last_run_status = CASE WHEN s.last_run_id IS NULL OR s.last_run_id = t.id THEN t.status ELSE s.last_run_status END,
-			    last_run_id = COALESCE(s.last_run_id, t.id),
-			    total_runs = s.total_runs + 1,
-			    failed_runs = s.failed_runs + CASE WHEN t.status = 'timeout' THEN 1 ELSE 0 END,
-			    partial_runs = s.partial_runs + CASE WHEN t.status = 'partial' THEN 1 ELSE 0 END,
-			    updated_at = NOW()
-			FROM settled t
-			WHERE s.id = t.scan_id
-			RETURNING s.id
 		)
 		SELECT
 			(SELECT COUNT(*) FROM settled),
 			(SELECT COUNT(*) FROM closed_commands),
 			(SELECT COUNT(*) FROM closed_steps),
-			(SELECT COUNT(*) FROM recorded_scans)
+			COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM settled WHERE scan_id IS NOT NULL), '{}')
 	`
 
-	var runs, commands, steps, scans int64
-	if err := r.db.QueryRowContext(ctx, query, MaxUnfinishedTargets).Scan(&runs, &commands, &steps, &scans); err != nil {
+	var (
+		runs, commands, steps int64
+		scanIDs               []string
+	)
+	if err := r.db.QueryRowContext(ctx, query, MaxUnfinishedTargets).Scan(&runs, &commands, &steps, pq.Array(&scanIDs)); err != nil {
 		return 0, fmt.Errorf("failed to mark timed out runs: %w", err)
+	}
+	// The scans' summaries are recomputed after the statement: a summary
+	// computed inside it would still see the runs as open (one snapshot).
+	if err := refreshScanRunSummariesByID(ctx, r.db, scanIDs); err != nil {
+		return runs, fmt.Errorf("runs timed out, scan summaries not refreshed: %w", err)
 	}
 	return runs, nil
 }
@@ -825,7 +824,7 @@ func (r *PipelineRunRepository) CloseCanceledRun(ctx context.Context, tenantID, 
 // the work; it was then even retried. Here the run fails with the reason, its
 // open steps fail with NO_SENSOR (a code the retry controller never retries),
 // its commands are failed so no sensor picks them up late, and the scan
-// records the failure.
+// summary is recomputed from its runs.
 func (r *PipelineRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error) {
 	const query = `
 		WITH candidates AS (
@@ -872,25 +871,22 @@ func (r *PipelineRunRepository) AbortUnclaimedRuns(ctx context.Context, schedule
 			WHERE sr.pipeline_run_id = u.id
 			  AND sr.status IN ('pending', 'queued', 'running')
 			RETURNING sr.id
-		), recorded_scans AS (
-			UPDATE scans s
-			SET last_run_status = CASE WHEN s.last_run_id IS NULL OR s.last_run_id = u.id THEN 'failed' ELSE s.last_run_status END,
-			    last_run_id = COALESCE(s.last_run_id, u.id),
-			    total_runs = s.total_runs + 1,
-			    failed_runs = s.failed_runs + 1,
-			    updated_at = NOW()
-			FROM unclaimed u
-			WHERE s.id = u.scan_id
-			RETURNING s.id
 		)
 		SELECT (SELECT COUNT(*) FROM unclaimed), (SELECT COUNT(*) FROM closed_commands),
-		       (SELECT COUNT(*) FROM closed_steps), (SELECT COUNT(*) FROM recorded_scans)
+		       (SELECT COUNT(*) FROM closed_steps),
+		       COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM unclaimed WHERE scan_id IS NOT NULL), '{}')
 	`
-	var runs, commands, steps, scans int64
+	var (
+		runs, commands, steps int64
+		scanIDs               []string
+	)
 	if err := r.db.QueryRowContext(ctx, query,
 		int64(scheduledAfter.Seconds()), int64(interactiveAfter.Seconds()), AbsoluteRunTimeoutSeconds,
-	).Scan(&runs, &commands, &steps, &scans); err != nil {
+	).Scan(&runs, &commands, &steps, pq.Array(&scanIDs)); err != nil {
 		return 0, fmt.Errorf("failed to abort unclaimed runs: %w", err)
+	}
+	if err := refreshScanRunSummariesByID(ctx, r.db, scanIDs); err != nil {
+		return runs, fmt.Errorf("unclaimed runs aborted, scan summaries not refreshed: %w", err)
 	}
 	return runs, nil
 }
@@ -1048,7 +1044,8 @@ func (r *PipelineRunRepository) selectQuery() string {
 		       started_at, completed_at, error_message,
 		       scan_profile_id, quality_gate_result, retry_attempt,
 		       created_at, scheduled_for,
-		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0), freeze_override
+		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0), freeze_override,
+		       COALESCE(refusal_code, '')
 		FROM pipeline_runs
 	`
 }
@@ -1169,6 +1166,7 @@ func (r *PipelineRunRepository) scanRun(row *sql.Row) (*pipeline.Run, error) {
 		&deadlineAt,
 		&run.UnfinishedTargetCount,
 		&run.FreezeOverride,
+		&run.RefusalCode,
 	)
 	_ = retryAttempt // populated below
 
@@ -1282,6 +1280,7 @@ func (r *PipelineRunRepository) scanRunFromRows(rows *sql.Rows) (*pipeline.Run, 
 		&deadlineAt,
 		&run.UnfinishedTargetCount,
 		&run.FreezeOverride,
+		&run.RefusalCode,
 	)
 
 	if err != nil {

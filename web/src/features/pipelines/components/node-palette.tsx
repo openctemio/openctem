@@ -27,7 +27,12 @@ import {
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { useToolsWithConfig } from '@/lib/api/tool-hooks'
+import { useToolAvailability, useToolsWithConfig } from '@/lib/api/tool-hooks'
+import {
+  TOOL_STATUS_META,
+  availabilityByName,
+  toolUnavailableReason,
+} from '@/features/tools/lib/availability'
 import { useCapabilityMetadata } from '@/lib/api'
 import type { ToolWithConfig } from '@/lib/api/tool-types'
 import { safeImageSrc } from '@/lib/safe-href'
@@ -163,6 +168,10 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
     is_active: true,
     per_page: 100,
   })
+
+  // Why a tool cannot run now (the same source as the Tools page).
+  const { data: availData } = useToolAvailability()
+  const availability = useMemo(() => availabilityByName(availData?.items), [availData])
 
   // Filter only enabled tools
   const enabledTools = useMemo(() => {
@@ -326,6 +335,9 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                       const Icon = getIconForTool(tool)
                       const iconBg = getColorForTool(tool)
                       const isAvailable = toolWithConfig.is_available
+                      const avail = availability.get(tool.name)
+                      const unavailableReason =
+                        toolUnavailableReason(avail) ?? 'No online sensor can run it'
                       const logoSrc = safeImageSrc(tool.logo_url)
 
                       return (
@@ -342,7 +354,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                           title={
                             isAvailable
                               ? tool.description
-                              : `${tool.display_name || tool.name} - No sensor available`
+                              : `${tool.display_name || tool.name}: ${unavailableReason}`
                           }
                         >
                           {logoSrc ? (
@@ -399,7 +411,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                               {/* Show badge for unavailable tools */}
                               {!isAvailable && (
                                 <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/15 text-red-600 font-medium shrink-0">
-                                  No Sensor
+                                  {avail ? TOOL_STATUS_META[avail.status].label : 'No sensor'}
                                 </span>
                               )}
                             </div>

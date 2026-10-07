@@ -200,8 +200,11 @@ func TestOptIns_TriggerStripsInteractshAndRefusesTemplates(t *testing.T) {
 	if _, err := trigger(t, svc, sc); optInCode(err) != "SENSOR_OPT_IN_DISABLED" {
 		t.Fatalf("custom templates: err = %v", err)
 	}
-	if len(deps.commandRepo.commands) != 0 || len(deps.runRepo.runs) != 0 {
+	if len(deps.commandRepo.commands) != 0 || dispatchedRuns(deps) != 0 {
 		t.Error("a refused trigger left a run or command")
+	}
+	if b := blockedRuns(deps, sc.ID); len(b) != 1 || b[0].RefusalCode != "SENSOR_OPT_IN_DISABLED" {
+		t.Errorf("the refusal is not one blocked run: %+v", b)
 	}
 }
 
