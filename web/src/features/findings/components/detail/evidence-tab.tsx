@@ -35,6 +35,8 @@ import type { Evidence, EvidenceType, FindingDetail } from '../../types'
 import { EVIDENCE_TYPE_CONFIG } from '../../types'
 import { CodeHighlighter } from './code-highlighter'
 import { ValidationEvidencePanel } from './validation-evidence-panel'
+import { FindingEvidenceItems } from './finding-evidence-items'
+import { useFindingEvidenceItems } from '../../api/use-finding-evidence-items'
 import { ComplianceMappingCard } from './compliance-mapping-card'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 import { ManualEvidenceNotesSection } from './manual-evidence-notes'
@@ -111,6 +113,9 @@ function RepositoryLink({
 
 export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
+  // The tool's own proof (request, response, match), masked server-side.
+  const { data: evidenceItems } = useFindingEvidenceItems(finding?.id ?? null)
+  const toolEvidence = evidenceItems?.data ?? []
 
   // Only surface the Compliance Controls card when the tenant can actually use
   // it. Its GET is gated by BOTH the compliance module and compliance:mappings:
@@ -323,6 +328,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
   const hasAttachments = attachments.length > 0
   const hasApiAttachments = apiAttachments.length > 0
   const hasAnyContent =
+    toolEvidence.length > 0 ||
     hasAffectedCode ||
     hasCodeSnippets ||
     hasEvidence ||
@@ -355,6 +361,20 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* What the tool sent and received (masked; reveal is audited) */}
+      {finding?.id && toolEvidence.length > 0 && (
+        <div>
+          <h3 className="mb-3 flex items-center gap-2 font-semibold">
+            <ArrowUpRight className="h-4 w-4" />
+            Tool evidence
+            <Badge variant="secondary" className="text-xs">
+              {toolEvidence.length}
+            </Badge>
+          </h3>
+          <FindingEvidenceItems findingId={finding.id} items={toolEvidence} />
+        </div>
+      )}
+
       {/* Validation (CTEM Stage-4): re-check + evidence timeline */}
       {finding?.id && (
         <>

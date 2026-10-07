@@ -140,7 +140,10 @@ For each target, in order:
    answer `TARGET_OUT_OF_SCOPE` with `details.refused[]` (`target`, `code`,
    `message`, `fixes`). The act scope runs first on those paths, so a
    restricted member never learns the state of an asset outside their data
-   scope. The state is also
+   scope. The dry run (`POST /scope/check`) answers the same codes for typed
+   targets and for inventory assets (`asset_ids`, checked by name); an asset
+   the caller may not see, or that is not the tenant's, answers
+   `out_of_data_scope` by its id only, whichever it is. The state is also
    logged (`active scan target refused`) with the path. A request refused as
    a whole (scan create, clone, import, quick scan, `POST /commands`) is also
    **audited** as `scan.target_refused` (medium, result `failure`) in the

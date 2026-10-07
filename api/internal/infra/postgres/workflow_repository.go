@@ -560,3 +560,17 @@ func (r *WorkflowRepository) ListActiveWithTriggerType(ctx context.Context, tena
 
 	return workflows, nil
 }
+
+// SetOwner implements workflow.OwnerSetter.
+func (r *WorkflowRepository) SetOwner(ctx context.Context, tenantID, id, ownerID shared.ID) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE workflows SET created_by = $3, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), id.String(), ownerID.String())
+	if err != nil {
+		return fmt.Errorf("failed to set workflow owner: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}

@@ -216,10 +216,11 @@ export interface AssetDiscoveredTriggerConfig {
  * Configuration for scan_completed trigger.
  */
 export interface ScanCompletedTriggerConfig {
-  /** Filter by scan types */
-  scan_type_filter?: string[]
-  /** Filter by scan status */
-  status_filter?: string[]
+  /**
+   * Scan run outcomes the automation runs on. Without it, only completed
+   * runs fire it (an unknown outcome is refused on save).
+   */
+  status_filter?: Array<'completed' | 'partial' | 'failed'>
 }
 
 /**

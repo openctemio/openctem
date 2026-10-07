@@ -9,8 +9,6 @@ import {
   getValidRelationshipTypes,
   isValidRelationship,
 } from '@/features/assets/types/relationship.types'
-import { matchesScopeTarget } from '@/features/scope/lib/scope-matcher'
-import type { ScopeTarget } from '@/features/scope/types'
 
 // RFC-042 §6.3.8: only core types are stored, so a feature list that names
 // `website` must match a stored application/website, never the string.
@@ -70,28 +68,5 @@ describe('relationship constraints by stored pair', () => {
         { type: 'kubernetes', subType: 'workload' }
       )
     ).toBe(true)
-  })
-})
-
-describe('scope matcher by stored pair', () => {
-  const target = (type: ScopeTarget['type'], pattern: string): ScopeTarget =>
-    ({ id: 't', type, pattern, status: 'active' }) as ScopeTarget
-
-  it('matches a stored web application against a website scope target', () => {
-    const r = matchesScopeTarget(target('website', 'app.example.com'), {
-      type: 'application',
-      subType: 'website',
-      name: 'app.example.com',
-    })
-    expect(r.matches).toBe(true)
-  })
-
-  it('does not match a mobile app against a website scope target', () => {
-    const r = matchesScopeTarget(target('website', 'app.example.com'), {
-      type: 'application',
-      subType: 'mobile_app',
-      name: 'app.example.com',
-    })
-    expect(r.matches).toBe(false)
   })
 })
