@@ -83,6 +83,7 @@ func (h *EASMHandler) SetReview(rv EASMReviewer, audit AttributionAuditor) *EASM
 // @Param        types           query string false "Asset types (comma-separated)"
 // @Param        min_confidence  query int    false "Minimum confidence 0-100"
 // @Param        search          query string false "Substring of the asset name"
+// @Param        reason          query string false "Only rows set by this attribution rule (e.g. fqdn_under_asserted_root)"
 // @Param        page            query int    false "Page number" default(1)
 // @Param        per_page        query int    false "Items per page" default(50) maximum(100)
 // @Success      200  {object}  easmapp.ReviewPage
@@ -101,6 +102,7 @@ func (h *EASMHandler) Candidates(w http.ResponseWriter, r *http.Request) {
 		Types:         parseQueryArray(query.Get("types")),
 		MinConfidence: parseQueryIntBounded(query.Get("min_confidence"), 0, 0, 100),
 		Search:        query.Get("search"),
+		Reason:        query.Get("reason"),
 	}
 	if len(q.Search) > 255 {
 		apierror.BadRequest("search is too long").WriteJSON(w)
