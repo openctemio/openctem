@@ -201,12 +201,34 @@ func TestToolAvailability_Routes_DB(t *testing.T) {
 	if !avail["nuclei"] || avail["semgrep"] || avail["checkov"] {
 		t.Errorf("is_available: nuclei %v semgrep %v checkov %v, want true false false", avail["nuclei"], avail["semgrep"], avail["checkov"])
 	}
-	h.exec(`INSERT INTO tenant_tool_configs (tenant_id, tool_id, is_enabled) SELECT $1, id, false FROM tools WHERE name = 'nuclei' AND tenant_id IS NULL`, tid)
+	// The tenant switch on a tool it never configured (no row: enabled)
+	// creates the row; another tenant's custom tool id is ignored.
 	t.Cleanup(func() {
-		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM tenant_tool_configs WHERE tenant_id = $1`, tid)
+		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM tenant_tool_configs WHERE tenant_id = ANY($1::uuid[])`, "{"+tid+","+other+"}")
 	})
+	var nucleiID, theirToolID string
+	if err := h.db.QueryRowContext(context.Background(), `SELECT id FROM tools WHERE name = 'nuclei' AND tenant_id IS NULL`).Scan(&nucleiID); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.db.QueryRowContext(context.Background(), `SELECT id FROM tools WHERE name = 'zz-their-tool'`).Scan(&theirToolID); err != nil {
+		t.Fatal(err)
+	}
+	h.expect(admin, http.MethodPost, "/api/v1/tenant-tools/bulk/disable", `{"tool_ids":["`+nucleiID+`","`+theirToolID+`"]}`, http.StatusNoContent)
+	var rows int
+	if err := h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM tenant_tool_configs WHERE tool_id = $1`, theirToolID).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("another tenant's custom tool got %d config rows (%v)", rows, err)
+	}
 	off, _ := availabilityByName(t, h.expect(admin, http.MethodGet, path, "", http.StatusOK))
 	if off["nuclei"].Status != "disabled" || off["nuclei"].Enabled {
 		t.Errorf("nuclei after the tenant switched it off: %+v", off["nuclei"])
+	}
+	theirs, _ = availabilityByName(t, h.expect(outsider, http.MethodGet, path, "", http.StatusOK))
+	if !theirs["nuclei"].Enabled {
+		t.Error("our switch turned nuclei off for the other tenant")
+	}
+	h.expect(admin, http.MethodPost, "/api/v1/tenant-tools/bulk/enable", `{"tool_ids":["`+nucleiID+`"]}`, http.StatusNoContent)
+	on, _ := availabilityByName(t, h.expect(admin, http.MethodGet, path, "", http.StatusOK))
+	if on["nuclei"].Status != "ready" {
+		t.Errorf("nuclei after the tenant switched it back on: %s", on["nuclei"].Status)
 	}
 }

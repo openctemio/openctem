@@ -348,48 +348,40 @@ func (r *TenantToolConfigRepository) ListEnabledTools(ctx context.Context, tenan
 	return configs, nil
 }
 
-// BulkEnable enables multiple tools for a tenant.
+// BulkEnable enables tools for a tenant.
 func (r *TenantToolConfigRepository) BulkEnable(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID) error {
-	if len(toolIDs) == 0 {
-		return nil
-	}
-
-	// Convert to string array
-	ids := make([]string, len(toolIDs))
-	for i, id := range toolIDs {
-		ids[i] = id.String()
-	}
-
-	query := `
-		UPDATE tenant_tool_configs
-		SET is_enabled = true, updated_at = NOW()
-		WHERE tenant_id = $1 AND tool_id = ANY($2)
-	`
-
-	_, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(ids))
-	return err
+	return r.bulkSetEnabled(ctx, tenantID, toolIDs, true)
 }
 
-// BulkDisable disables multiple tools for a tenant.
+// BulkDisable disables tools for a tenant.
 func (r *TenantToolConfigRepository) BulkDisable(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID) error {
+	return r.bulkSetEnabled(ctx, tenantID, toolIDs, false)
+}
+
+// bulkSetEnabled sets the tenant's switch on each tool, creating the config
+// row when the tenant never configured the tool: a tool without a row is
+// enabled, so an UPDATE alone could never disable it. Only tools the tenant
+// may see (platform tools and its own custom tools) get a row; any other id
+// is ignored.
+func (r *TenantToolConfigRepository) bulkSetEnabled(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID, enabled bool) error {
 	if len(toolIDs) == 0 {
 		return nil
 	}
-
-	// Convert to string array
 	ids := make([]string, len(toolIDs))
 	for i, id := range toolIDs {
 		ids[i] = id.String()
 	}
-
-	query := `
-		UPDATE tenant_tool_configs
-		SET is_enabled = false, updated_at = NOW()
-		WHERE tenant_id = $1 AND tool_id = ANY($2)
-	`
-
-	_, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(ids))
-	return err
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO tenant_tool_configs (tenant_id, tool_id, is_enabled)
+		SELECT $1, t.id, $3 FROM tools t
+		WHERE t.id = ANY($2::uuid[]) AND (t.tenant_id IS NULL OR t.tenant_id = $1)
+		ON CONFLICT (tenant_id, tool_id) DO UPDATE
+		SET is_enabled = EXCLUDED.is_enabled, updated_at = NOW()
+	`, tenantID.String(), pq.Array(ids), enabled)
+	if err != nil {
+		return fmt.Errorf("failed to set tools enabled=%t: %w", enabled, err)
+	}
+	return nil
 }
 
 // ListToolsWithConfig returns all tools with their tenant-specific enabled status.
