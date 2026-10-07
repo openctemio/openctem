@@ -1,5 +1,6 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import useSWR from 'swr'
 import { CircleAlert, Hash } from 'lucide-react'
 import { toast } from 'sonner'
@@ -29,6 +30,13 @@ import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs, runRefreshInterval, runTaskProgress } from '@/features/scans/lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
 import { RunStageLanes } from './run-stage-lanes'
+
+// Lazy: the workflow overlay pulls in the graph library only when a
+// workflow run is opened.
+const RunGraph = dynamic(() => import('./run-graph').then((m) => m.RunGraph), {
+  ssr: false,
+  loading: () => <Skeleton className="h-80 w-full" />,
+})
 
 interface RunDetailSheetProps {
   runId: string | null
@@ -155,6 +163,16 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
           </DetailStatGrid>
 
           <DetailSections>
+            {(run.step_runs?.length ?? 0) > 1 && (
+              <DetailSection title="Workflow">
+                <RunGraph
+                  runId={run.id}
+                  pipelineId={run.pipeline_id}
+                  stepRuns={run.step_runs ?? []}
+                  refreshInterval={runRefreshInterval(run)}
+                />
+              </DetailSection>
+            )}
             <DetailSection title="Stages">
               <RunStageLanes runId={run.id} refreshInterval={runRefreshInterval(run)} />
             </DetailSection>

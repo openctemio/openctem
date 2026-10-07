@@ -9,18 +9,22 @@ import (
 
 // Some trigger and action types are valid enum values but do nothing:
 //
-//   - the schedule and finding_age triggers are stored but nothing ever fires
-//     them (no scheduler or age sweep reads them);
+//   - the schedule, finding_age, finding_updated and webhook triggers are
+//     stored but nothing ever fires them (no scheduler, age sweep, finding
+//     update hook or inbound webhook route reads them);
 //   - the assign_team and update_priority actions have no backing service and
 //     fail every time they run;
 //   - the run_script action is disabled (there is no sandbox to run a
 //     tenant-supplied script in), so it fails every time it runs.
+//   - the trigger_pipeline action is refused by design: it ran a scan
+//     workflow outside any scan, with no targets, scope gate or scan history.
+//     An automation runs a saved scan through trigger_scan instead.
 //
 // They stay in the enum so stored workflows that use them still load, read
 // and render. New writes are refused: creating a workflow, replacing its
 // graph, adding or editing a node, or activating a workflow that uses one of
-// them returns a 400 ErrValidation. Remove a type from these sets only when
-// its runtime is built.
+// them returns a 400 ErrValidation, and the executor refuses to run such an
+// action node. Remove a type from these sets only when its runtime is built.
 
 // ErrCodeUnsupportedWorkflowFeature is the domain error code for a workflow
 // that uses a trigger or action type the platform does not execute.
@@ -29,7 +33,7 @@ const ErrCodeUnsupportedWorkflowFeature = "UNSUPPORTED_WORKFLOW_FEATURE"
 // IsSupported reports whether the platform actually fires this trigger type.
 func (t TriggerType) IsSupported() bool {
 	switch t {
-	case TriggerTypeSchedule, TriggerTypeFindingAge:
+	case TriggerTypeSchedule, TriggerTypeFindingAge, TriggerTypeFindingUpdated, TriggerTypeWebhook:
 		return false
 	}
 	return true
@@ -38,7 +42,7 @@ func (t TriggerType) IsSupported() bool {
 // IsSupported reports whether the platform actually executes this action type.
 func (t ActionType) IsSupported() bool {
 	switch t {
-	case ActionTypeAssignTeam, ActionTypeUpdatePriority, ActionTypeRunScript:
+	case ActionTypeAssignTeam, ActionTypeUpdatePriority, ActionTypeRunScript, ActionTypeTriggerPipeline:
 		return false
 	}
 	return true
@@ -71,12 +75,12 @@ func ValidateSupported(configs ...NodeConfig) error {
 	if len(found) == 0 {
 		return nil
 	}
-	return shared.NewDomainError(
-		ErrCodeUnsupportedWorkflowFeature,
-		fmt.Sprintf("workflow uses %s, which is not supported yet; remove it or choose another type",
-			strings.Join(found, ", ")),
-		shared.ErrValidation,
-	)
+	msg := fmt.Sprintf("workflow uses %s, which is not supported; remove it or choose another type",
+		strings.Join(found, ", "))
+	if seen["action:"+string(ActionTypeTriggerPipeline)] {
+		msg += " (to run a scan workflow, save it as a scan and use trigger_scan)"
+	}
+	return shared.NewDomainError(ErrCodeUnsupportedWorkflowFeature, msg, shared.ErrValidation)
 }
 
 // UnsupportedFeatures lists the unsupported trigger and action types the
