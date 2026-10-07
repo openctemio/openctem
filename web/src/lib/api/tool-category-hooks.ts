@@ -10,12 +10,11 @@ import useSWR, { type SWRConfiguration, mutate } from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, post, put, del } from './client'
 import { handleApiError } from './error-handler'
-import { toolCategoryEndpoints, customToolCategoryEndpoints } from './endpoints'
+import { toolCategoryEndpoints } from './endpoints'
 import type {
   ToolCategory,
   ToolCategoryListResponse,
   ToolCategoryListFilters,
-  ToolCategoryAllResponse,
   CreateToolCategoryRequest,
   UpdateToolCategoryRequest,
 } from './tool-category-types'
@@ -89,12 +88,13 @@ export function useToolCategories(filters?: ToolCategoryListFilters, config?: SW
 }
 
 /**
- * Fetch all tool categories for dropdowns (no pagination)
+ * Fetch the tool categories for dropdowns: one page of the largest size (the
+ * platform has about ten categories, an organization a handful more).
  */
 export function useAllToolCategories(config?: SWRConfiguration) {
-  return useSWR<ToolCategoryAllResponse>(
+  return useSWR<ToolCategoryListResponse>(
     toolCategoryKeys.allCategories(),
-    () => get<ToolCategoryAllResponse>(toolCategoryEndpoints.all()),
+    () => get<ToolCategoryListResponse>(toolCategoryEndpoints.list({ per_page: 100 })),
     { ...defaultConfig, ...config }
   )
 }
@@ -121,7 +121,7 @@ export function useCreateToolCategory() {
   return useSWRMutation<ToolCategory, Error, string, CreateToolCategoryRequest>(
     'create-tool-category',
     async (_key, { arg }) => {
-      const response = await post<ToolCategory>(customToolCategoryEndpoints.create(), arg)
+      const response = await post<ToolCategory>(toolCategoryEndpoints.create(), arg)
       await invalidateToolCategoriesCache()
       return response
     }
@@ -135,7 +135,7 @@ export function useUpdateToolCategory(categoryId: string) {
   return useSWRMutation<ToolCategory, Error, string, UpdateToolCategoryRequest>(
     `update-tool-category-${categoryId}`,
     async (_key, { arg }) => {
-      const response = await put<ToolCategory>(customToolCategoryEndpoints.update(categoryId), arg)
+      const response = await put<ToolCategory>(toolCategoryEndpoints.update(categoryId), arg)
       await invalidateToolCategoriesCache()
       return response
     }
@@ -147,7 +147,7 @@ export function useUpdateToolCategory(categoryId: string) {
  */
 export function useDeleteToolCategory(categoryId: string) {
   return useSWRMutation<void, Error, string>(`delete-tool-category-${categoryId}`, async () => {
-    await del(customToolCategoryEndpoints.delete(categoryId))
+    await del(toolCategoryEndpoints.delete(categoryId))
     await invalidateToolCategoriesCache()
   })
 }
