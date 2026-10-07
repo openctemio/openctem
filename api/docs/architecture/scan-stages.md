@@ -138,7 +138,7 @@ tool in one of three ways (`tool_selection` on the step response):
 
 - **auto** (no tool, no `prefer_tools`): any implementation of the capability,
   in catalog order, with the default first;
-- **prefer** (`prefer_tools`, migration 001165): the listed tools, in that
+- **prefer** (`prefer_tools`, migration 001176): the listed tools, in that
   order. Each must implement the capability;
 - **pin** (`tool`): that tool only (strict, G10).
 
@@ -164,7 +164,7 @@ capability: every built-in implementation shares it.
 
 ### 1.3 Starter workflows
 
-Migration 001167 seeds five system workflows built only from capability steps
+Migration 001177 seeds five system workflows built only from capability steps
 (no pinned tool), so any available implementation runs them:
 
 | Workflow | Steps |

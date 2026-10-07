@@ -1,6 +1,6 @@
 ### Added: starter scan workflows (Discover, Discover + Vuln, Web app, Network, Code / CI)
 
-- Five system workflows are built from capability steps, so the platform picks an available tool for each step (migration 001167):
+- Five system workflows are built from capability steps, so the platform picks an available tool for each step (migration 001177):
   - **Discover**: subdomains → DNS → HTTP probe;
   - **Discover + Vuln**: adds ports and vulnerability templates;
   - **Web app**: probe → crawl → templates;

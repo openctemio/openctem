@@ -77,6 +77,10 @@ jobs:
       # build's FROM without a registry.
       - name: Build openctem-api
         run: docker build -t local/openctem-api:ci --target production api
+      # The web image compiles against the generated contract files, which are
+      # not committed (api/docs/development/ci-cd.md).
+      - name: Generate the contract files
+        uses: ./.github/actions/generate-contract
       - name: Build openctem-web
         run: docker build -t local/openctem-web:ci web
       - name: Build openctem (all-in-one)
