@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import useSWR from 'swr'
 import { get, post } from '@/lib/api/client'
-import { pipelineEndpoints } from '@/lib/api/endpoints'
+import { scanWorkflowEndpoints } from '@/lib/api/endpoints'
 import type { PipelineStep } from '@/lib/api'
 import {
   EMPTY_TABLE,
@@ -19,7 +19,7 @@ import {
  */
 export function useCapabilityTable(): { table: CapabilityTable; isLoading: boolean } {
   const { data, isLoading } = useSWR<ScanStageList>(
-    pipelineEndpoints.capabilities(),
+    scanWorkflowEndpoints.capabilities(),
     (url: string) => get<ScanStageList>(url),
     { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 10 * 60 * 1000 }
   )
@@ -29,7 +29,7 @@ export function useCapabilityTable(): { table: CapabilityTable; isLoading: boole
 
 /** Checks draft steps with the API's graph validator (stores nothing). */
 export function validatePipelineSteps(steps: PipelineStep[]): Promise<GraphValidation> {
-  return post<GraphValidation>(pipelineEndpoints.verify(), {
+  return post<GraphValidation>(scanWorkflowEndpoints.verify(), {
     steps: steps.map((s, idx) => ({
       step_key: s.step_key,
       name: s.name,

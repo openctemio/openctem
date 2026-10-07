@@ -49,7 +49,7 @@ import {
 } from '@/features/scans/lib/run-display'
 import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
 import { del, post } from '@/lib/api/client'
-import { pipelineRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
+import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { PIPELINE_TRIGGER_LABELS, type PipelineTriggerType } from '@/lib/api/pipeline-types'
 import { useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
@@ -158,7 +158,7 @@ export default function ScanDetailPage() {
   const handleStopRun = async (run: PipelineRun) => {
     setStoppingRunId(run.id)
     try {
-      await post(pipelineRunEndpoints.cancel(run.id), {})
+      await post(scanRunEndpoints.cancel(run.id), {})
       toast.success('Run canceled. In-flight tasks stop at their next heartbeat.')
       await refetchAll()
     } catch (err) {
@@ -272,9 +272,8 @@ export default function ScanDetailPage() {
         const run = row.original
         if (!isRunInProgress(run)) return null
         return (
-          // POST /pipeline-runs/{id}/cancel needs pipelines:write AND
-          // scans:write (D12).
-          <Can permission={[Permission.PipelinesWrite, Permission.ScansWrite]} requireAll>
+          // POST /scan-runs/{id}/cancel needs scans:write (D12).
+          <Can permission={Permission.ScansWrite}>
             <Button
               size="sm"
               variant="ghost"
@@ -544,9 +543,9 @@ export default function ScanDetailPage() {
                 <DetailField label="Scan ID" full>
                   <DetailCopyId id={config.id} label="Scan ID" />
                 </DetailField>
-                {config.pipeline_id && (
+                {config.scan_workflow_id && (
                   <DetailField label="Pipeline ID" full>
-                    <DetailCopyId id={config.pipeline_id} label="Pipeline ID" />
+                    <DetailCopyId id={config.scan_workflow_id} label="Pipeline ID" />
                   </DetailField>
                 )}
               </DetailFieldGrid>

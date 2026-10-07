@@ -2,7 +2,7 @@
  * Export of Scans › Runs as CSV (research 20 §5, "scoped export").
  *
  * The export reads exactly the list the table shows: the same endpoint
- * (GET /pipeline-runs, tenant from the session, the server's own scoping),
+ * (GET /scan-runs, tenant from the session, the server's own scoping),
  * the same status filter and sort, one page of 100 after another, capped.
  * It never calls a broader endpoint and never builds ids on the client, so it
  * cannot contain anything the viewer could not page through on screen.
@@ -10,7 +10,7 @@
  */
 
 import { get } from '@/lib/api/client'
-import { pipelineRunEndpoints } from '@/lib/api/endpoints'
+import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type {
   PipelineRun,
   PipelineRunListFilters,
@@ -42,7 +42,7 @@ export async function fetchRunsForExport(
   let total = 0
   for (let page = 1; runs.length < cap; page++) {
     const res = await fetchPage(
-      pipelineRunEndpoints.list({ ...filters, page, per_page: EXPORT_PAGE_SIZE })
+      scanRunEndpoints.list({ ...filters, page, per_page: EXPORT_PAGE_SIZE })
     )
     const items = res?.items ?? []
     total = res?.total ?? runs.length + items.length

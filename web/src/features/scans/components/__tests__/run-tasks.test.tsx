@@ -86,7 +86,7 @@ describe('RunTasksTable paging', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Load 3 more' }))
     expect(await screen.findByText('Showing 3 of 4 tasks.')).toBeInTheDocument()
-    expect(getMock.mock.calls[0][0]).toBe('/api/v1/pipeline-runs/r1/tasks?cursor=c1&per_page=100')
+    expect(getMock.mock.calls[0][0]).toBe('/api/v1/scan-runs/r1/tasks?cursor=c1&per_page=100')
 
     await userEvent.click(screen.getByRole('button', { name: 'Load 1 more' }))
     // All tasks shown: the counter and the button go away.

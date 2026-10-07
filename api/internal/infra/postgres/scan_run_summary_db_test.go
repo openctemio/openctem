@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -44,7 +46,7 @@ func TestScanRunSummary_RunningRunCountsAtOnce(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
 	scans := NewScanRepository(&DB{DB: db})
-	runs := NewPipelineRunRepository(&DB{DB: db})
+	runs := NewScanRunRepository(&DB{DB: db})
 	tenantID, scanID := seedCounterScan(ctx, t, db)
 	run := seedCounterRun(ctx, t, runs, tenantID, scanID)
 
@@ -56,7 +58,7 @@ func TestScanRunSummary_RunningRunCountsAtOnce(t *testing.T) {
 		t.Fatalf("after start: %+v, want total 1, last run %s running", got, run.ID)
 	}
 
-	if err := runs.UpdateStatus(ctx, run.ID, pipeline.RunStatusCompleted, ""); err != nil {
+	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusCompleted, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := scans.RefreshRunSummary(ctx, tenantID, scanID); err != nil {
@@ -77,15 +79,15 @@ func TestScanRunSummary_LateOlderRunDoesNotRelabelNewerRun(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
 	scans := NewScanRepository(&DB{DB: db})
-	runs := NewPipelineRunRepository(&DB{DB: db})
+	runs := NewScanRunRepository(&DB{DB: db})
 	tenantID, scanID := seedCounterScan(ctx, t, db)
 	older := seedCounterRun(ctx, t, runs, tenantID, scanID)
 	newer := seedCounterRun(ctx, t, runs, tenantID, scanID)
-	if _, err := db.ExecContext(ctx, `UPDATE pipeline_runs SET created_at = created_at - interval '1 minute' WHERE id = $1`, older.ID.String()); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE scan_runs SET created_at = created_at - interval '1 minute' WHERE id = $1`, older.ID.String()); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := runs.UpdateStatus(ctx, older.ID, pipeline.RunStatusFailed, "boom"); err != nil {
+	if err := runs.UpdateStatus(ctx, older.ID, scanrun.RunStatusFailed, "boom"); err != nil {
 		t.Fatal(err)
 	}
 	if err := scans.RefreshRunSummary(ctx, tenantID, scanID); err != nil {
@@ -106,11 +108,11 @@ func TestScanRunSummary_BlockedRunIsCountedAndRead(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
 	scans := NewScanRepository(&DB{DB: db})
-	runs := NewPipelineRunRepository(&DB{DB: db})
+	runs := NewScanRunRepository(&DB{DB: db})
 	tenantID, scanID := seedCounterScan(ctx, t, db)
 
 	tpl, _ := shared.IDFromString(quickScanTemplate)
-	run, err := pipeline.NewRun(tpl, tenantID, nil, pipeline.TriggerTypeManual, "", map[string]any{"scan_id": scanID.String()})
+	run, err := scanrun.NewRun(tpl, tenantID, nil, scanworkflow.TriggerTypeManual, "", map[string]any{"scan_id": scanID.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,14 +129,14 @@ func TestScanRunSummary_BlockedRunIsCountedAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != pipeline.RunStatusBlocked || got.RefusalCode != "ALL_TARGETS_EXCLUDED" || !strings.Contains(got.ErrorMessage, "excluded by scope") {
+	if got.Status != scanrun.RunStatusBlocked || got.RefusalCode != "ALL_TARGETS_EXCLUDED" || !strings.Contains(got.ErrorMessage, "excluded by scope") {
 		t.Fatalf("read back %s %q %q", got.Status, got.RefusalCode, got.ErrorMessage)
 	}
 	if got.DeadlineAt != nil || got.StartedAt != nil || got.CompletedAt == nil {
 		t.Fatalf("a blocked run never starts: started=%v deadline=%v completed=%v", got.StartedAt, got.DeadlineAt, got.CompletedAt)
 	}
 	// Terminal: nothing moves it again.
-	if err := runs.UpdateStatus(ctx, run.ID, pipeline.RunStatusRunning, ""); err == nil {
+	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusRunning, ""); err == nil {
 		t.Fatal("a blocked run was moved to running")
 	}
 
@@ -182,7 +184,9 @@ func TestScanRunSummary_MigrationBackfillMatchesRepository(t *testing.T) {
 		t.Fatalf("read migration: %v", err)
 	}
 	norm := func(s string) string { return strings.Join(strings.Fields(s), " ") }
-	mig := norm(string(raw))
+	// Migration 001240 renamed the tables after 001157 ran; compare under
+	// the current names.
+	mig := norm(strings.NewReplacer("pipeline_runs", "scan_runs", "pipeline_id", "scan_workflow_id").Replace(string(raw)))
 	if !strings.Contains(mig, norm(scanRunSummaryUpdateSQL)) {
 		t.Fatal("migration 001157's backfill differs from scanRunSummaryUpdateSQL")
 	}
@@ -192,11 +196,11 @@ func TestScanRunSummary_MigrationBackfillMatchesRepository(t *testing.T) {
 func TestScanRunSummary_ReaperRefreshesScan(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
-	runs := NewPipelineRunRepository(&DB{DB: db})
+	runs := NewScanRunRepository(&DB{DB: db})
 	tenantID, scanID := seedCounterScan(ctx, t, db)
 	run := seedCounterRun(ctx, t, runs, tenantID, scanID)
 	if _, err := db.ExecContext(ctx,
-		`UPDATE pipeline_runs SET deadline_at = NOW() - interval '1 minute' WHERE id = $1`, run.ID.String()); err != nil {
+		`UPDATE scan_runs SET deadline_at = NOW() - interval '1 minute' WHERE id = $1`, run.ID.String()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runs.MarkTimedOutRuns(ctx); err != nil {

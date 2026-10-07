@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scanfreeze"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -30,11 +31,11 @@ const maxWorkflowPreviewSamples = 20
 
 // WorkflowPreviewInput is a workflow and the targets a scan would run it on.
 type WorkflowPreviewInput struct {
-	TenantID      string
-	PipelineID    string
-	Targets       []string
-	AssetGroupIDs []string
-	ScanZoneID    string
+	TenantID       string
+	ScanWorkflowID string
+	Targets        []string
+	AssetGroupIDs  []string
+	ScanZoneID     string
 }
 
 // WorkflowPreviewNode is what one step would run.
@@ -91,7 +92,7 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
-	pid, err := shared.IDFromString(in.PipelineID)
+	pid, err := shared.IDFromString(in.ScanWorkflowID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid pipeline id", shared.ErrValidation)
 	}
@@ -166,7 +167,7 @@ func maxParallelSensors(chunkSize, online int) int {
 }
 
 // previewStep resolves one step as the trigger would.
-func (s *Service) previewStep(ctx context.Context, tenantID shared.ID, zoneID *shared.ID, step *pipeline.Step) WorkflowPreviewNode {
+func (s *Service) previewStep(ctx context.Context, tenantID shared.ID, zoneID *shared.ID, step *scanworkflow.Step) WorkflowPreviewNode {
 	node := WorkflowPreviewNode{StepKey: step.StepKey, Name: step.Name, Candidates: []string{}}
 	resolved, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step)
 	if err != nil {

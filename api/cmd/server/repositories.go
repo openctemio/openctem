@@ -139,10 +139,10 @@ type Repositories struct {
 	TemplateSource   *postgres.TemplateSourceRepository
 	SecretStore      *postgres.SecretStoreRepository
 
-	// Pipelines
-	PipelineTemplate *postgres.PipelineTemplateRepository
-	PipelineRun      *postgres.PipelineRunRepository
-	PipelineStep     *postgres.PipelineStepRepository
+	// ScanRuns
+	ScanWorkflow     *postgres.ScanWorkflowRepository
+	ScanRun          *postgres.ScanRunRepository
+	ScanWorkflowStep *postgres.ScanWorkflowStepRepository
 	StepRun          *postgres.StepRunRepository
 
 	// Workflows
@@ -379,10 +379,10 @@ func newRepositories(db *postgres.DB) *Repositories {
 		TemplateSource:   postgres.NewTemplateSourceRepository(db),
 		SecretStore:      postgres.NewSecretStoreRepository(db),
 
-		// Pipelines
-		PipelineTemplate: postgres.NewPipelineTemplateRepository(db),
-		PipelineRun:      postgres.NewPipelineRunRepository(db),
-		PipelineStep:     postgres.NewPipelineStepRepository(db),
+		// ScanRuns
+		ScanWorkflow:     postgres.NewScanWorkflowRepository(db),
+		ScanRun:          postgres.NewScanRunRepository(db),
+		ScanWorkflowStep: postgres.NewScanWorkflowStepRepository(db),
 		StepRun:          postgres.NewStepRunRepository(db),
 
 		// Workflows

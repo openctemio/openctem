@@ -580,7 +580,7 @@ type FailInput struct {
 }
 
 // MaxFailErrorMessageBytes caps the sensor-supplied error message stored on a
-// failed command (it is persisted and rendered in the UI / pipeline runs).
+// failed command (it is persisted and rendered in the UI / scan runs).
 const MaxFailErrorMessageBytes = 4 << 10 // 4 KiB
 
 // Fail marks a command as failed.

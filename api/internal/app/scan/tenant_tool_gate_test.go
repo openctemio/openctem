@@ -5,7 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 )
@@ -48,7 +49,7 @@ func TestTenantDisabledToolIsNotDispatched(t *testing.T) {
 	if err := svc.validateSingleScanTool(ctx, tenantA, "nuclei"); !isDisabled(err) {
 		t.Fatalf("single scan, tenant A disabled nuclei: err = %v, want TOOL_DISABLED", err)
 	}
-	if err := svc.validateStepTool(ctx, tenantA, &pipeline.Step{StepKey: "s1", Tool: "nuclei"}); !isDisabled(err) {
+	if err := svc.validateStepTool(ctx, tenantA, &scanworkflow.Step{StepKey: "s1", Tool: "nuclei"}); !isDisabled(err) {
 		t.Fatalf("workflow step, tenant A: err = %v, want TOOL_DISABLED", err)
 	}
 	if _, err := svc.FilterStepTargets(ctx, tenantA, "nuclei", map[string]any{"targets": []string{"x"}}); !isDisabled(err) {

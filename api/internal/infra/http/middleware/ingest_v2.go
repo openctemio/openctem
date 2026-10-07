@@ -1,6 +1,6 @@
 package middleware
 
-// Edge pipeline of sensor protocol v2 results (RFC-026 §3.3,
+// Edge scan workflow of sensor protocol v2 results (RFC-026 §3.3,
 // docs/rfcs/RFC-026-sensor-results-ingest.md).
 //
 // The chain runs after the sensor authenticator, in this order, each step

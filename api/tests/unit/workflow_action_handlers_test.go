@@ -876,20 +876,20 @@ func TestWfActionFinding_UnsupportedAction(t *testing.T) {
 // =============================================================================
 
 func TestWfActionPipeline_TriggerPipeline_NilService(t *testing.T) {
-	// pipelineService == nil → returns error-less map with triggered=false
+	// scanRunService == nil → returns error-less map with triggered=false
 	log := logger.NewNop()
 	h := workflowsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
-	pipelineID := shared.NewID()
+	scanWorkflowID := shared.NewID()
 
 	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerPipeline, map[string]any{
-		"pipeline_id": pipelineID.String(),
+		"pipeline_id": scanWorkflowID.String(),
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
 	if err != nil {
-		t.Fatalf("expected no error when pipelineService is nil, got %v", err)
+		t.Fatalf("expected no error when scanRunService is nil, got %v", err)
 	}
 	triggered, _ := out["triggered"].(bool)
 	if triggered {

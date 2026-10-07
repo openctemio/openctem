@@ -33,7 +33,7 @@ type CommandIngestedHook func(ctx context.Context, tenantID, commandID shared.ID
 // SetCommandIngestedHook wires the hook. Nil-safe.
 func (s *Service) SetCommandIngestedHook(h CommandIngestedHook) { s.commandIngested = h }
 
-// recordStepOutputs records what a command-bound report of a pipeline step
+// recordStepOutputs records what a command-bound report of a workflow step
 // wrote: every asset this ingest created or updated. Best-effort: a failure
 // is logged and the chained stage then has fewer targets, never more.
 func (s *Service) recordStepOutputs(ctx context.Context, tenantID shared.ID, binding Binding, scope *alterScope) {
@@ -46,7 +46,7 @@ func (s *Service) recordStepOutputs(ctx context.Context, tenantID shared.ID, bin
 	}
 	if _, err := s.stepOutputs.RecordStepOutputs(ctx, tenantID, *binding.StepRunID, ids); err != nil {
 		s.logger.Warn("ingest: chained-stage outputs not recorded",
-			"tenant_id", tenantID.String(), "step_run_id", binding.StepRunID.String(), "assets", len(ids),
+			"tenant_id", tenantID.String(), "scan_run_step_id", binding.StepRunID.String(), "assets", len(ids),
 			"error", logger.SanitizeError(err))
 	}
 }

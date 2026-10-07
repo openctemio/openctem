@@ -150,7 +150,7 @@ any lookup error returns an error, and the caller dispatches nothing.
 |---|---|
 | Scan create, clone, import (`CreateScan`), quick scan, `POST /commands` | the request is refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, the targets named with the generic reason) and audited (`scan.target_refused`) |
 | Scan run: manual trigger, schedule, retry controller, workflow trigger | the target (direct or group member) is skipped with a run warning; a run left with nothing is refused (`ALL_TARGETS_UNCONFIRMED`) |
-| `POST /pipelines/runs`, `trigger_pipeline`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
+| `POST /scan-workflows/runs`, `trigger_pipeline`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
 
 `GET /api/v1/assets/{id}/attribution` answers `active_checks_allowed` with the
 same gate and names the reason in `active_checks_blocked_by`.
@@ -169,7 +169,7 @@ targets say so in their warnings; `GET /assets/{id}/attribution` answers
 | Path | Where | Notes |
 |---|---|---|
 | Scan trigger | `scan/trigger.go`, `scan/targets.go` | Same checks inline (`resolveScanTargets` + zone planning). Folding it into the gate is RFC-042 S5 (`scope.Gate`). |
-| `POST /pipelines/runs` | `pipeline/run_targets.go` | Typed targets; no assets. |
+| `POST /scan-workflows/runs` | `pipeline/run_targets.go` | Typed targets; no assets. |
 | Coverage dispatcher | `scancoverage/scheduler.go` `gateBatch` | Each candidate passes its asset id, so unconfirmed assets are skipped. |
 | Every `validate` command | `validation/dispatcher.go` `CommandDispatcher.Dispatch` | Finding re-check (`POST /findings/{id}/validate`, proof-of-fix fallback, Jira "Done"), continuous retest (both checks), attack-simulation safe-check. |
 | `POST /commands` | `scan/command_gate.go` | Member-created scan commands (RFC-040 group A). |
@@ -214,7 +214,7 @@ system, which is unrestricted.
 | Scan create, quick scan | refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, with each target and its reason) |
 | Scan update | refused when the editor may not scan every direct target of the scan |
 | Scan run (manual, scheduled, workflow) | out-of-scope direct targets and group members are skipped, with a run warning; a run left with nothing is refused |
-| `POST /pipelines/runs`, `trigger_pipeline` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
+| `POST /scan-workflows/runs`, `trigger_pipeline` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
 | `POST /commands` | refused as a whole |
 
 Every lookup error refuses (fail closed). A dispatch that asks for the check

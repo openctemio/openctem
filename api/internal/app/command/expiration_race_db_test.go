@@ -17,20 +17,20 @@ import (
 // write was an unconditional full-row Update of the stale snapshot, so it:
 //   - flipped a command the sensor had just started (or completed) back to
 //     'expired', erasing its started_at/result, and
-//   - failed the owning pipeline step although the sensor was running it, and
+//   - failed the owning workflow step although the sensor was running it, and
 //     failed it once per replica.
 //
 // These tests take the snapshot the checker would have read, change the row the
 // way a sensor or the other replica would, then let the checker act on the
 // snapshot.
 
-func seedExpiredPipelineCommand(ctx context.Context, t *testing.T, db *postgres.DB, repo *postgres.CommandRepository, tenantID shared.ID, runID, stepKey string) *commanddom.Command {
+func seedExpiredScanRunCommand(ctx context.Context, t *testing.T, db *postgres.DB, repo *postgres.CommandRepository, tenantID shared.ID, runID, stepKey string) *commanddom.Command {
 	t.Helper()
 	svc := NewService(repo, logger.NewNop())
 	created, err := svc.Create(ctx, CreateInput{
 		TenantID: tenantID.String(),
 		Type:     string(commanddom.CommandTypeScan),
-		Payload:  pipelinePayload(t, runID, stepKey),
+		Payload:  scanRunPayload(t, runID, stepKey),
 	})
 	if err != nil {
 		t.Fatalf("create command: %v", err)
@@ -58,7 +58,7 @@ func seedExpiredPipelineCommand(ctx context.Context, t *testing.T, db *postgres.
 func newCheckerWithFailer(repo *postgres.CommandRepository) (*ExpirationChecker, *stubStepFailer) {
 	failer := &stubStepFailer{}
 	checker := NewExpirationChecker(repo, nil, ExpirationCheckerConfig{}, logger.NewNop())
-	checker.pipelineService = failer
+	checker.scanRunService = failer
 	return checker, failer
 }
 
@@ -86,7 +86,7 @@ func TestExpirationChecker_DoesNotOverwriteACommandPickedUpMeanwhile(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runID := shared.NewID().String()
-			snapshot := seedExpiredPipelineCommand(ctx, t, db, repo, tenantID, runID, "race-step")
+			snapshot := seedExpiredScanRunCommand(ctx, t, db, repo, tenantID, runID, "race-step")
 
 			if _, err := db.ExecContext(ctx, tc.setSQL, snapshot.ID.String()); err != nil {
 				t.Fatalf("simulate sensor: %v", err)
@@ -119,7 +119,7 @@ func TestExpirationChecker_TwoReplicasFailTheStepOnce(t *testing.T) {
 	tenantID := seedExpiryTenant(ctx, t, db)
 
 	runID := shared.NewID().String()
-	snapshot := seedExpiredPipelineCommand(ctx, t, db, repo, tenantID, runID, "race-step")
+	snapshot := seedExpiredScanRunCommand(ctx, t, db, repo, tenantID, runID, "race-step")
 	// The second replica read the same row before either wrote.
 	snapshot2 := *snapshot
 

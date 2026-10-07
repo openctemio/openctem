@@ -42,7 +42,7 @@ function useDebounced<T>(value: T, ms: number): T {
 export function WorkflowPreviewSection({ request }: { request: WorkflowPreviewRequest }) {
   const debounced = useDebounced(request, 400)
   const ready =
-    !!debounced.pipeline_id &&
+    !!debounced.scan_workflow_id &&
     ((debounced.targets?.length ?? 0) > 0 || (debounced.asset_group_ids?.length ?? 0) > 0)
   const { data, error, isLoading } = useSWR(
     ready ? ['workflow-preview', JSON.stringify(debounced)] : null,

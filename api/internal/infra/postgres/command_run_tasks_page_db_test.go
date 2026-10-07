@@ -1,6 +1,6 @@
 package postgres
 
-// Paging a run's tasks by cursor (GET /pipeline-runs/{id}/tasks): every task
+// Paging a run's tasks by cursor (GET /scan-runs/{id}/tasks): every task
 // exactly once, in dispatch order, never another tenant's, and the run of
 // another tenant is not found. Against the real SQL.
 
@@ -9,8 +9,9 @@ import (
 	"reflect"
 	"testing"
 
-	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -37,7 +38,7 @@ func TestRunTasksPage_CursorWalksEveryTaskOnce_DB(t *testing.T) {
 
 	// Repository: pages of 3 after a cursor reproduce the full order.
 	var got []shared.ID
-	var after *pipeline.TaskCursor
+	var after *scanrundom.TaskCursor
 	for page := 0; page < 5; page++ {
 		items, err := f.cmds.ListRunTasksAfter(f.ctx, f.tenant, run.ID, after, 3)
 		if err != nil {
@@ -49,9 +50,9 @@ func TestRunTasksPage_CursorWalksEveryTaskOnce_DB(t *testing.T) {
 		for _, it := range items {
 			got = append(got, it.ID)
 		}
-		c := pipeline.TaskCursorAfter(items[len(items)-1])
+		c := scanrundom.TaskCursorAfter(items[len(items)-1])
 		// Round-trip through the wire form, as the client does.
-		decoded, err := pipeline.DecodeTaskCursor(c.Encode())
+		decoded, err := scanrundom.DecodeTaskCursor(c.Encode())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -63,7 +64,7 @@ func TestRunTasksPage_CursorWalksEveryTaskOnce_DB(t *testing.T) {
 
 	// Service: per_page pages with next_cursor until the last page.
 	pg := &DB{DB: f.db}
-	svc := pipelinesvc.NewService(nil, nil, NewPipelineRunRepository(pg), nil, nil, NewCommandRepository(pg), nil, logger.NewNop())
+	svc := scanrun.NewService(nil, nil, NewScanRunRepository(pg), nil, nil, NewCommandRepository(pg), nil, logger.NewNop())
 	got = got[:0]
 	cursor := ""
 	for i := 0; i < 5; i++ {

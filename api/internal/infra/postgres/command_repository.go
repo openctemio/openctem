@@ -10,10 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -50,7 +51,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 			id, tenant_id, sensor_id, type, priority, payload,
 			status, error_message,
 			created_at, expires_at, acknowledged_at, started_at, completed_at,
-			result, scheduled_at, schedule_id, step_run_id,
+			result, scheduled_at, schedule_id, scan_run_step_id,
 			is_platform_job, platform_sensor_id,
 			auth_token_hash, auth_token_prefix, auth_token_expires_at,
 			queue_priority, queued_at, dispatch_attempts, scan_zone_id, freeze_override,
@@ -199,7 +200,7 @@ func fairPendingQuery(selectSQL, where string, limit int) string {
 	return `
 		WITH cand AS (
 			SELECT commands.id AS c_id, ` + claimClassSQL + ` AS c_cls, commands.created_at AS c_at,
-			       COALESCE(commands.payload->>'pipeline_run_id', commands.id::text) AS c_run
+			       COALESCE(commands.payload->>'scan_run_id', commands.id::text) AS c_run
 			FROM commands
 			WHERE ` + where + `
 			ORDER BY c_cls, c_at
@@ -705,7 +706,7 @@ func (r *CommandRepository) selectQuery() string {
 		SELECT id, tenant_id, sensor_id, type, priority, payload,
 		       status, error_message,
 		       created_at, expires_at, acknowledged_at, started_at, completed_at,
-		       result, scheduled_at, schedule_id, step_run_id,
+		       result, scheduled_at, schedule_id, scan_run_step_id,
 		       is_platform_job, platform_sensor_id,
 		       auth_token_hash, auth_token_prefix, auth_token_expires_at,
 		       queue_priority, queued_at, dispatch_attempts, scan_zone_id,
@@ -1296,18 +1297,18 @@ func (r *CommandRepository) RecoverStuckJobs(ctx context.Context, stuckThreshold
 
 // FindQueueExpiredPlatformJobs returns platform jobs still waiting in the queue
 // past maxQueueMinutes, so the caller can expire them *and* tell the owning
-// pipeline run why.
+// scan run why.
 //
 // This deliberately returns rows instead of expiring them. The previous
 // ExpireOldPlatformJobs was a raw UPDATE flipping the rows to 'expired'
 // in place — the same silent-expiry mistake ExpireOldCommands made for tenant
-// commands. Platform jobs are created by scan/pipeline dispatch with a
-// pipeline_run_id + step_key payload and no expires_at, so FindExpired never
+// commands. Platform jobs are created by scan/scan workflow dispatch with a
+// scan_run_id + step_key payload and no expires_at, so FindExpired never
 // sees them; the raw UPDATE was the only thing that ever reaped them, and it
 // notified nobody. The step stayed 'queued' until ScanTimeoutController
 // eventually reported a generic timeout instead of "expired in queue".
 // app/command.ExpirationChecker owns the expiry now and calls
-// pipeline.OnStepFailed.
+// scanrun.OnStepFailed.
 func (r *CommandRepository) FindQueueExpiredPlatformJobs(ctx context.Context, maxQueueMinutes int) ([]*command.Command, error) {
 	query := r.selectQuery() + `
 		WHERE is_platform_job = TRUE
@@ -1344,7 +1345,7 @@ func (r *CommandRepository) FindQueueExpiredPlatformJobs(ctx context.Context, ma
 // and queue time must still be the ones in the snapshot. Without the condition
 // the checker wrote its stale snapshot back over a command a sensor had just
 // started or completed, and two replicas both expired the same row and both
-// failed its pipeline step.
+// failed its workflow step.
 func (r *CommandRepository) ExpireIfUnchanged(ctx context.Context, cmd *command.Command, errorMessage string) (bool, error) {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE commands
@@ -1553,8 +1554,8 @@ func (r *CommandRepository) GetPlatformJobsBySensor(ctx context.Context, sensorI
 // (disabled, revoked). Before this, such a command waited for the run timeout:
 // only a zone unassignment ever unpinned pending work (RFC-030 B7).
 //
-// Only routed scan work is released: type 'scan' with a pipeline_run_id in the
-// payload, i.e. what trigger-time zone pinning and pipeline step routing pin.
+// Only routed scan work is released: type 'scan' with a scan_run_id in the
+// payload, i.e. what trigger-time zone pinning and workflow step routing pin.
 // A command an operator addressed to one sensor on purpose (config_update,
 // health_check, a scan coverage job pinned to one Tenable runner) keeps its
 // sensor. scan_zone_id is untouched, so the zone claim predicate still limits
@@ -1580,12 +1581,12 @@ func (r *CommandRepository) ReleasePendingFromUnavailableSensors(ctx context.Con
 }
 
 // routedScanWork is the SQL predicate for scan work the platform routed to a
-// sensor (trigger-time zone pinning, pipeline step routing): type 'scan'
-// with a pipeline_run_id in the payload. Such a command may be handed to
+// sensor (trigger-time zone pinning, workflow step routing): type 'scan'
+// with a scan_run_id in the payload. Such a command may be handed to
 // another sensor; any other command addressed to a sensor is for that
 // sensor only.
 func routedScanWork(alias string) string {
-	return alias + ".type = 'scan' AND " + alias + ".payload ? 'pipeline_run_id'"
+	return alias + ".type = 'scan' AND " + alias + ".payload ? 'scan_run_id'"
 }
 
 // RecoverStuckTenantCommands returns stuck tenant commands to the pool.
@@ -1621,7 +1622,7 @@ func (r *CommandRepository) FailExhaustedCommands(ctx context.Context, maxRetrie
 
 // FailExhaustedCommandsReturning is FailExhaustedCommands (the same rows and
 // the same change as the fail_exhausted_commands() function) returning the
-// failed commands, so the caller can notify their pipeline runs.
+// failed commands, so the caller can notify their scan runs.
 func (r *CommandRepository) FailExhaustedCommandsReturning(ctx context.Context, maxRetries int) ([]*command.Command, error) {
 	const query = `
 		UPDATE commands
@@ -1690,17 +1691,17 @@ func (r *CommandRepository) GetStatsByTenant(ctx context.Context, tenantID share
 	return stats, nil
 }
 
-// CancelByPipelineRunID marks all non-terminal commands for a pipeline run as canceled.
+// CancelByScanRunID marks all non-terminal commands for a scan run as canceled.
 // A command is "non-terminal" if its status is one of: pending, acknowledged, running.
 // Terminal statuses (completed, failed, canceled, expired) are left untouched.
 //
 // Tenant scoping is enforced — only commands belonging to the given tenant are affected.
 // Returns the number of commands canceled.
-func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID, runID shared.ID) (int64, error) {
-	// A command belongs to the run either through commands.step_run_id or
-	// through the pipeline_run_id the dispatcher writes into its payload. The
-	// scan dispatcher only writes the payload key (step_run_id stays NULL), so
-	// matching on step_runs alone canceled nothing for a scan: the run read
+func (r *CommandRepository) CancelByScanRunID(ctx context.Context, tenantID, runID shared.ID) (int64, error) {
+	// A command belongs to the run either through commands.scan_run_step_id or
+	// through the scan_run_id the dispatcher writes into its payload. The
+	// scan dispatcher only writes the payload key (scan_run_step_id stays NULL), so
+	// matching on scan_run_steps alone canceled nothing for a scan: the run read
 	// "canceled" while the sensor kept scanning.
 	query := `
 		UPDATE commands c
@@ -1712,8 +1713,8 @@ func (r *CommandRepository) CancelByPipelineRunID(ctx context.Context, tenantID,
 		WHERE c.tenant_id = $1
 		  AND c.status IN ('pending', 'acknowledged', 'running')
 		  AND (
-		        c.payload->>'pipeline_run_id' = $3
-		        OR c.step_run_id IN (SELECT sr.id FROM step_runs sr WHERE sr.pipeline_run_id = $2)
+		        c.payload->>'scan_run_id' = $3
+		        OR c.scan_run_step_id IN (SELECT sr.id FROM scan_run_steps sr WHERE sr.scan_run_id = $2)
 		  )
 	`
 	result, err := r.db.ExecContext(ctx, query, tenantID.String(), runID.String(), runID.String())
@@ -1748,8 +1749,8 @@ func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRu
 		                 FILTER (WHERE status IN ('failed', 'expired', 'canceled')
 		                           AND COALESCE(error_message, '') <> ''))[1], '')
 		FROM commands
-		WHERE tenant_id = $1 AND step_run_id = $2`,
-		tenantID.String(), stepRunID.String(), pipeline.MaxSkippedTargetsTotal).Scan(&b.Total, &b.Active, &b.Failed, &b.Findings, &b.Skipped, &b.FirstError)
+		WHERE tenant_id = $1 AND scan_run_step_id = $2`,
+		tenantID.String(), stepRunID.String(), scanrun.MaxSkippedTargetsTotal).Scan(&b.Total, &b.Active, &b.Failed, &b.Findings, &b.Skipped, &b.FirstError)
 	if err != nil {
 		return b, fmt.Errorf("step batch state: %w", err)
 	}
@@ -1773,8 +1774,8 @@ func (r *CommandRepository) StepSensorShares(ctx context.Context, tenantID, runI
 		       count(*) FILTER (WHERE c.status = 'completed'),
 		       count(*) FILTER (WHERE c.status IN ('failed', 'expired', 'canceled'))
 		FROM commands c
-		JOIN step_runs sr ON sr.id = c.step_run_id
-		JOIN pipeline_runs pr ON pr.id = sr.pipeline_run_id AND pr.tenant_id = c.tenant_id
+		JOIN scan_run_steps sr ON sr.id = c.scan_run_step_id
+		JOIN scan_runs pr ON pr.id = sr.scan_run_id AND pr.tenant_id = c.tenant_id
 		LEFT JOIN sensors s ON s.id = c.sensor_id AND s.tenant_id = c.tenant_id
 		WHERE c.tenant_id = $1 AND pr.id = $2
 		GROUP BY 1, 2, 3, 4
@@ -1810,7 +1811,7 @@ func (r *CommandRepository) StepSensorShares(ctx context.Context, tenantID, runI
 // the one whose UPDATE matches records the outcome.
 func (r *CommandRepository) ClaimStepFinalization(ctx context.Context, stepRunID shared.ID) (bool, error) {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE step_runs SET completed_at = NOW() WHERE id = $1 AND completed_at IS NULL`,
+		`UPDATE scan_run_steps SET completed_at = NOW() WHERE id = $1 AND completed_at IS NULL`,
 		stepRunID.String())
 	if err != nil {
 		return false, fmt.Errorf("claim step finalization: %w", err)

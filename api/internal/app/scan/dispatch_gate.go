@@ -1,7 +1,7 @@
 package scan
 
 // One target gate for the paths that send traffic at a target outside a scan
-// trigger: POST /pipelines/runs, the coverage dispatcher, and every validate
+// trigger: POST /scan-workflows/runs, the coverage dispatcher, and every validate
 // command (finding re-checks, retests, attack-simulation safe-checks). Design:
 // docs/rfcs/RFC-042-asset-inventory-v2.md (§3.3 F16, §6.11, §6.13);
 // architecture: docs/architecture/active-probe-gate.md.

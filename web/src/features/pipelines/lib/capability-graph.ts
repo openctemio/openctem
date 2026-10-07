@@ -20,8 +20,8 @@ import { generateStepKey, generateTempStepId } from '@/lib/utils'
 
 type S = components['schemas']
 export type ScanStageList = S['internal_infra_http_handler.ScanStageListResponse']
-export type GraphValidation = S['internal_infra_http_handler.PipelineGraphValidationResponse']
-export type GraphIssue = S['internal_infra_http_handler.PipelineGraphIssueResponse']
+export type GraphValidation = S['internal_infra_http_handler.ScanWorkflowGraphValidationResponse']
+export type GraphIssue = S['internal_infra_http_handler.ScanWorkflowGraphIssueResponse']
 
 /** One standard param of a capability contract. */
 export interface CapabilityParam {

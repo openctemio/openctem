@@ -102,10 +102,10 @@ schedules later, is stamped with it and left to the zone's sensors.
 ### Run completion with batches
 
 All batch commands of a single scan share the run's one step run
-(`commands.step_run_id`). `pipeline.Service.OnStepCompleted/OnStepFailed` ask
+(`commands.scan_run_step_id`). `pipeline.Service.OnStepCompleted/OnStepFailed` ask
 the command repository (`command.StepBatchGate`) for the batches of the step:
 while one is still active nothing is recorded; when the last one finishes, the
-caller that wins `UPDATE step_runs SET completed_at = NOW() WHERE completed_at
+caller that wins `UPDATE scan_run_steps SET completed_at = NOW() WHERE completed_at
 IS NULL` records the outcome once: completed with the summed `findings_count`,
 or failed ("k of n scan batches failed: <first error>", no generic retry, since
 that would re-dispatch without zone routing). A step with one command keeps the
@@ -207,7 +207,7 @@ lookup refuses the trigger.
 - **Override:** `POST /api/v1/scans/{id}/trigger` with `"override_freeze": true`
   by a member holding `scans:freeze:override` (owner and admin by default;
   grantable to custom roles) starts the run anyway. The run
-  (`pipeline_runs.freeze_override`) and every command created for it, later
+  (`scan_runs.freeze_override`) and every command created for it, later
   workflow steps included, carry `freeze_override`, which only the server sets;
   the claim predicate lets those through. Audited as
   `scan_freeze_window.overridden` (high). Without the permission the request is
@@ -337,7 +337,7 @@ and why), `404` zone or sensor not in this tenant, `409` duplicate name
 zone with queued/running jobs or that scans pin (`ZONE_IN_USE`; the message
 says which).
 
-Scan runs: `GET /api/v1/pipeline-runs/{id}` now returns a `dispatch` object
+Scan runs: `GET /api/v1/scan-runs/{id}` now returns a `dispatch` object
 when the trigger recorded one:
 
 ```

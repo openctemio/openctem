@@ -4,7 +4,8 @@ import (
 	"context"
 	"testing"
 
-	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -19,7 +20,7 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	pg := &postgres.DB{DB: db}
-	templates := postgres.NewPipelineTemplateRepository(pg)
+	templates := postgres.NewScanWorkflowRepository(pg)
 	tools := postgres.NewToolRepository(pg)
 
 	want := map[string]int{
@@ -38,7 +39,7 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 		if !tpl.IsSystemTemplate || !tpl.IsActive || len(tpl.Steps) != steps {
 			t.Fatalf("%s (%s): system=%v active=%v steps=%d", idStr, tpl.Name, tpl.IsSystemTemplate, tpl.IsActive, len(tpl.Steps))
 		}
-		rep := stage.ValidateGraph(pipelinesvc.StepsGraph(tpl.Steps))
+		rep := stage.ValidateGraph(scanrun.StepsGraph(tpl.Steps))
 		if !rep.Valid() || len(rep.Warnings) != 0 {
 			t.Fatalf("%s: graph errors %+v warnings %+v", tpl.Name, rep.Errors, rep.Warnings)
 		}
@@ -58,7 +59,7 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 
 	// The presets they replace are kept, inactive.
 	var active int
-	if err := db.QueryRow(`SELECT count(*) FROM pipeline_templates WHERE id IN (
+	if err := db.QueryRow(`SELECT count(*) FROM scan_workflows WHERE id IN (
 		'a0000001-0000-0000-0000-000000000001','a0000001-0000-0000-0000-000000000002',
 		'a0000001-0000-0000-0000-000000000003','a0000001-0000-0000-0000-000000000006') AND is_active`).Scan(&active); err != nil {
 		t.Fatal(err)

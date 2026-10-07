@@ -20,19 +20,19 @@ import (
 // CreateScanInput represents the input for creating a scan.
 // Either AssetGroupID/AssetGroupIDs OR Targets must be provided (can have all).
 type CreateScanInput struct {
-	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
-	Name          string         `json:"name" validate:"required,min=1,max=200"`
-	Description   string         `json:"description" validate:"max=1000"`
-	AssetGroupID  string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Primary asset group (legacy)
-	AssetGroupIDs []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets       []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
-	ScanType      string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName   string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig map[string]any `json:"scanner_config"`
-	TargetsPerJob int            `json:"targets_per_job"`
-	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
-	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
+	TenantID       string         `json:"tenant_id" validate:"required,uuid"`
+	Name           string         `json:"name" validate:"required,min=1,max=200"`
+	Description    string         `json:"description" validate:"max=1000"`
+	AssetGroupID   string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Primary asset group (legacy)
+	AssetGroupIDs  []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets        []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any `json:"scanner_config"`
+	TargetsPerJob  int            `json:"targets_per_job"`
+	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
 	ScheduleRRule    string     `json:"schedule_rrule" validate:"max=500"`
 	ScheduleDay      *int       `json:"schedule_day"`
@@ -369,30 +369,30 @@ func (s *Service) createScanEntity(
 	return sc, nil
 }
 
-// configureScanType sets up workflow pipeline or single scanner configuration.
+// configureScanType sets up workflow scan workflow or single scanner configuration.
 func (s *Service) configureScanType(ctx context.Context, sc *scan.Scan, tenantID shared.ID, scanType scan.ScanType, input CreateScanInput) error {
 	if scanType == scan.ScanTypeWorkflow {
-		return s.configureWorkflowScan(ctx, sc, tenantID, input.PipelineID)
+		return s.configureWorkflowScan(ctx, sc, tenantID, input.ScanWorkflowID)
 	}
 	return s.configureSingleScan(ctx, sc, input.ScannerName, input.ScannerConfig, input.TargetsPerJob)
 }
 
-// configureWorkflowScan validates and sets up a workflow scan with a pipeline.
+// configureWorkflowScan validates and sets up a workflow scan with a scan workflow.
 func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tenantID shared.ID, pipelineIDStr string) error {
 	if pipelineIDStr == "" {
-		return fmt.Errorf("%w: pipeline_id is required for workflow type", shared.ErrValidation)
+		return fmt.Errorf("%w: scan_workflow_id is required for workflow type", shared.ErrValidation)
 	}
-	pipelineID, err := shared.IDFromString(pipelineIDStr)
+	scanWorkflowID, err := shared.IDFromString(pipelineIDStr)
 	if err != nil {
-		return fmt.Errorf("%w: invalid pipeline_id", shared.ErrValidation)
+		return fmt.Errorf("%w: invalid scan_workflow_id", shared.ErrValidation)
 	}
 
-	pipelineTemplate, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, pipelineID)
+	pipelineTemplate, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, scanWorkflowID)
 	if err != nil {
 		return fmt.Errorf("pipeline not found: %w", err)
 	}
 
-	steps, err := s.stepRepo.GetByPipelineID(ctx, pipelineTemplate.ID)
+	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, pipelineTemplate.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get pipeline steps: %w", err)
 	}
@@ -418,7 +418,7 @@ func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tena
 		}
 	}
 
-	return sc.SetWorkflow(pipelineID)
+	return sc.SetWorkflow(scanWorkflowID)
 }
 
 // configureSingleScan validates and sets up a single scanner scan.
@@ -565,14 +565,14 @@ func (s *Service) GetScan(ctx context.Context, tenantID, scanID string) (*scan.S
 
 // ListScansInput represents the input for listing scans.
 type ListScansInput struct {
-	TenantID     string   `json:"tenant_id" validate:"required,uuid"`
-	AssetGroupID string   `json:"asset_group_id" validate:"omitempty,uuid"`
-	PipelineID   string   `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScanType     string   `json:"scan_type" validate:"omitempty,oneof=workflow single"`
-	ScheduleType string   `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
-	Status       string   `json:"status" validate:"omitempty,oneof=active paused disabled"`
-	Tags         []string `json:"tags"`
-	Search       string   `json:"search" validate:"max=255"`
+	TenantID       string   `json:"tenant_id" validate:"required,uuid"`
+	AssetGroupID   string   `json:"asset_group_id" validate:"omitempty,uuid"`
+	ScanWorkflowID string   `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScanType       string   `json:"scan_type" validate:"omitempty,oneof=workflow single"`
+	ScheduleType   string   `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	Status         string   `json:"status" validate:"omitempty,oneof=active paused disabled"`
+	Tags           []string `json:"tags"`
+	Search         string   `json:"search" validate:"max=255"`
 	// IncludeAdHoc also lists unsaved quick scans (Scan.AdHoc); by default the
 	// list holds saved configurations only.
 	IncludeAdHoc bool `json:"include_ad_hoc"`
@@ -610,10 +610,10 @@ func (s *Service) ListScans(ctx context.Context, input ListScansInput) (paginati
 		}
 	}
 
-	if input.PipelineID != "" {
-		pID, err := shared.IDFromString(input.PipelineID)
+	if input.ScanWorkflowID != "" {
+		pID, err := shared.IDFromString(input.ScanWorkflowID)
 		if err == nil {
-			filter.PipelineID = &pID
+			filter.ScanWorkflowID = &pID
 		}
 	}
 
@@ -652,16 +652,16 @@ func (s *Service) GetStats(ctx context.Context, tenantID string) (*scan.Stats, e
 
 // UpdateScanInput represents the input for updating a scan.
 type UpdateScanInput struct {
-	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
-	ScanID        string         `json:"scan_id" validate:"required,uuid"`
-	Name          string         `json:"name" validate:"omitempty,min=1,max=200"`
-	Description   string         `json:"description" validate:"max=1000"`
-	PipelineID    string         `json:"pipeline_id" validate:"omitempty,uuid"`
-	ScannerName   string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig map[string]any `json:"scanner_config"`
-	TargetsPerJob *int           `json:"targets_per_job"`
-	ScheduleType  string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
-	ScheduleCron  string         `json:"schedule_cron" validate:"max=100"`
+	TenantID       string         `json:"tenant_id" validate:"required,uuid"`
+	ScanID         string         `json:"scan_id" validate:"required,uuid"`
+	Name           string         `json:"name" validate:"omitempty,min=1,max=200"`
+	Description    string         `json:"description" validate:"max=1000"`
+	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string         `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any `json:"scanner_config"`
+	TargetsPerJob  *int           `json:"targets_per_job"`
+	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
 	ScheduleRRule    string     `json:"schedule_rrule" validate:"max=500"`
 	ScheduleDay      *int       `json:"schedule_day"`
@@ -715,16 +715,16 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 	}
 
 	// Update workflow/scanner if provided
-	if sc.ScanType == scan.ScanTypeWorkflow && input.PipelineID != "" {
-		pipelineID, err := shared.IDFromString(input.PipelineID)
+	if sc.ScanType == scan.ScanTypeWorkflow && input.ScanWorkflowID != "" {
+		scanWorkflowID, err := shared.IDFromString(input.ScanWorkflowID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid pipeline_id", shared.ErrValidation)
+			return nil, fmt.Errorf("%w: invalid scan_workflow_id", shared.ErrValidation)
 		}
 		tenantID, _ := shared.IDFromString(input.TenantID)
-		if _, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, pipelineID); err != nil {
+		if _, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, scanWorkflowID); err != nil {
 			return nil, fmt.Errorf("pipeline not found: %w", err)
 		}
-		if err := sc.SetWorkflow(pipelineID); err != nil {
+		if err := sc.SetWorkflow(scanWorkflowID); err != nil {
 			return nil, err
 		}
 	} else if sc.ScanType == scan.ScanTypeSingle && input.ScannerName != "" {
@@ -1106,13 +1106,13 @@ func (s *Service) bulkStatusChange(ctx context.Context, tenantID string, scanIDs
 // Cascade Deactivation
 // =============================================================================
 
-// DeactivateScansByPipeline pauses all active scans that use the specified pipeline.
+// DeactivateScansByScanWorkflow pauses all active scans that use the specified scan workflow.
 // This implements the ScanDeactivator interface for cascade deactivation.
-// Scans are paused (not disabled) so they can be easily resumed when the pipeline is reactivated.
+// Scans are paused (not disabled) so they can be easily resumed when the scan workflow is reactivated.
 // Returns the count of paused scans.
-func (s *Service) DeactivateScansByPipeline(ctx context.Context, pipelineID shared.ID) (int, error) {
-	// Find all scans using this pipeline
-	scans, err := s.scanRepo.ListByPipelineID(ctx, pipelineID)
+func (s *Service) DeactivateScansByScanWorkflow(ctx context.Context, scanWorkflowID shared.ID) (int, error) {
+	// Find all scans using this scan workflow
+	scans, err := s.scanRepo.ListByScanWorkflowID(ctx, scanWorkflowID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list scans by pipeline: %w", err)
 	}
@@ -1128,7 +1128,7 @@ func (s *Service) DeactivateScansByPipeline(ctx context.Context, pipelineID shar
 		if err := sc.Pause(); err != nil {
 			s.logger.Warn("failed to pause scan for pipeline",
 				"scan_id", sc.ID.String(),
-				"pipeline_id", pipelineID.String(),
+				"scan_workflow_id", scanWorkflowID.String(),
 				"error", err)
 			continue
 		}
@@ -1136,7 +1136,7 @@ func (s *Service) DeactivateScansByPipeline(ctx context.Context, pipelineID shar
 		if err := s.scanRepo.Update(ctx, sc); err != nil {
 			s.logger.Warn("failed to save paused scan for pipeline",
 				"scan_id", sc.ID.String(),
-				"pipeline_id", pipelineID.String(),
+				"scan_workflow_id", scanWorkflowID.String(),
 				"error", err)
 			continue
 		}
@@ -1144,7 +1144,7 @@ func (s *Service) DeactivateScansByPipeline(ctx context.Context, pipelineID shar
 		s.logger.Info("scan paused due to pipeline deactivation",
 			"scan_id", sc.ID.String(),
 			"scan_name", sc.Name,
-			"pipeline_id", pipelineID.String())
+			"scan_workflow_id", scanWorkflowID.String())
 		pausedCount++
 	}
 

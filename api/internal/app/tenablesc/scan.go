@@ -81,7 +81,7 @@ func ParseScanConfig(cfg map[string]any) (ScanConfig, error) {
 }
 
 // ScanPayload is the connector_scan command payload (RFC-047 §5.2), plus the
-// pipeline bookkeeping keys the platform reads back on completion.
+// scan workflow bookkeeping keys the platform reads back on completion.
 type ScanPayload struct {
 	Scanner        string   `json:"scanner"`
 	Instance       string   `json:"instance"`
@@ -93,11 +93,11 @@ type ScanPayload struct {
 	MaxScanSeconds int      `json:"max_scan_seconds"`
 	MinSeverity    int      `json:"min_severity"`
 
-	RunID         string `json:"run_id,omitempty"`
-	ScanID        string `json:"scan_id,omitempty"`
-	PipelineRunID string `json:"pipeline_run_id,omitempty"`
-	StepKey       string `json:"step_key,omitempty"`
-	StepRunID     string `json:"step_run_id,omitempty"`
+	RunID     string `json:"run_id,omitempty"`
+	ScanID    string `json:"scan_id,omitempty"`
+	ScanRunID string `json:"scan_run_id,omitempty"`
+	StepKey   string `json:"step_key,omitempty"`
+	StepRunID string `json:"scan_run_step_id,omitempty"`
 }
 
 // connectorFor loads a tenant's connector integration and validates the scan
@@ -183,8 +183,8 @@ func (s *Service) NewScanCommand(ctx context.Context, tenantID shared.ID, cfg ma
 		Scanner: ToolName, Instance: cc.Instance, IntegrationID: sc.IntegrationID.String(),
 		Targets: slices.Clone(targets), PolicyID: sc.PolicyID, RepositoryID: sc.RepositoryID, ZoneID: sc.ZoneID,
 		MaxScanSeconds: sc.MaxScanSeconds, MinSeverity: cc.MinSeverity,
-		RunID: bk["run_id"], ScanID: bk["scan_id"], PipelineRunID: bk["pipeline_run_id"],
-		StepKey: bk["step_key"], StepRunID: bk["step_run_id"],
+		RunID: bk["run_id"], ScanID: bk["scan_id"], ScanRunID: bk["scan_run_id"],
+		StepKey: bk["step_key"], StepRunID: bk["scan_run_step_id"],
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode connector_scan payload: %w", err)

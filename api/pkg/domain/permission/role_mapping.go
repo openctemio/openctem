@@ -57,7 +57,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
-		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
+		ScanWorkflowsRead, ScanWorkflowsWrite, ScanWorkflowsDelete,
 		// Settings
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
@@ -134,7 +134,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
-		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
+		ScanWorkflowsRead, ScanWorkflowsWrite, ScanWorkflowsDelete,
 		// Settings (billing read only)
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
@@ -215,7 +215,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SCMConnectionsRead, SCMConnectionsWrite,
 		NotificationsRead,
 		APIKeysRead,
-		PipelinesRead, PipelinesWrite, PipelinesExecute,
+		ScanWorkflowsRead, ScanWorkflowsWrite,
 		// Settings (read only; billing is owner/admin only)
 		SLARead,
 		// Attack Surface (read + write)
@@ -285,7 +285,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SCMConnectionsRead,
 		NotificationsRead,
 		APIKeysRead,
-		PipelinesRead,
+		ScanWorkflowsRead,
 		// Settings (read only; billing is owner/admin only)
 		SLARead,
 		// Attack Surface (read only)
