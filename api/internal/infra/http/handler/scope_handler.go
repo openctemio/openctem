@@ -1361,8 +1361,13 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 			rule = explain.Exclusion(res.Target)
 		case scopedom.RefusalDenyList:
 			rule = &scopedom.RuleRef{Kind: scopedom.RulePlatformPolicy}
+		case scopedom.RefusalTierExceeds:
+			rule = explain.Ceiling(res.Target)
 		}
 		ref := scopedom.NewRefusal(res.Target, code, rule, explain.OneOffDays())
+		if code == scopedom.RefusalTierExceeds {
+			ref = scopedom.NewTierRefusal(res.Target, rule, scopedom.Tier(min(max(tier, 0), int(scopedom.TierIntrusive))), explain.OneOffDays())
+		}
 		if ref.Message == "" {
 			ref.Message = res.Reason
 		}
