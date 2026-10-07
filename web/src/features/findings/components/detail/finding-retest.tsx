@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useSWRConfig } from 'swr'
 import { toast } from 'sonner'
 import { Loader2, RefreshCw } from 'lucide-react'
@@ -31,6 +32,8 @@ import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { runHref } from '@/features/scans/lib/run-display'
+import { safeHref } from '@/lib/safe-href'
 import { usePermissions } from '@/context/permission-provider'
 import {
   isRetestable,
@@ -196,6 +199,10 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
 function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: string }) {
   const meta = retestMeta(retest)
   const [open, setOpen] = useState(false)
+  const { hasPermission } = usePermissions()
+  // The run holds the retest's tasks and their logs (Scans > Runs).
+  const runId = retest.run_id
+  const runLink = runId && hasPermission('scans:read') ? safeHref(runHref(runId)) : undefined
   return (
     <div className="space-y-1" data-slot="retest-latest">
       <div className="flex flex-wrap items-center gap-2">
@@ -214,6 +221,14 @@ function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: s
           >
             {open ? 'Hide evidence' : 'View evidence'}
           </button>
+        )}
+        {runLink && (
+          <Link
+            href={runLink}
+            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+          >
+            View run
+          </Link>
         )}
       </div>
       {retest.reason && (
