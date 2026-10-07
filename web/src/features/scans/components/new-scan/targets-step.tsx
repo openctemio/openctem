@@ -43,6 +43,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { COVERAGE_LEVELS, type CoverageLevel } from '../../lib/coverage-expansion'
 import { useCoverageExpansion } from '../../hooks/use-coverage-expansion'
 import { ScopePreview } from './scope-preview'
+import { firstWildcard, scannerTakesWildcard } from '../../lib/wildcard-targets'
+import { WildcardTargetHint } from './wildcard-target-hint'
 
 // Target validation patterns (matching backend validator)
 const TARGET_PATTERNS = {
@@ -249,6 +251,13 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
   const validatedTargets = useMemo(() => {
     return data.targets.customTargets.map(validateTarget)
   }, [data.targets.customTargets])
+
+  // A wildcard pattern for an active single scanner: offer discovery of the
+  // root, or the known assets that match (the API would refuse the pattern).
+  const wildcard =
+    data.mode === 'single' && !scannerTakesWildcard(data.scannerName)
+      ? firstWildcard(data.targets.customTargets)
+      : null
 
   const validationStats = useMemo(() => {
     const valid = validatedTargets.filter((t) => t.status === 'valid').length
@@ -773,6 +782,23 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
                   validationStats.invalid > 0 && 'border-destructive focus-visible:ring-destructive'
                 )}
               />
+
+              {wildcard && (
+                <WildcardTargetHint
+                  pattern={wildcard}
+                  targets={data.targets.customTargets}
+                  onDiscover={(scannerName, targets) =>
+                    onChange({
+                      mode: 'single',
+                      scannerName,
+                      targets: { ...data.targets, customTargets: targets },
+                    })
+                  }
+                  onUseAssets={(targets) =>
+                    onChange({ targets: { ...data.targets, customTargets: targets } })
+                  }
+                />
+              )}
 
               {/* Validation feedback */}
               {hasCustomTargets && (

@@ -43,7 +43,7 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { createScopeTarget, invalidateScopeCache, useScopeSettingsApi } from '../api/use-scope-api'
 import type { ApiScopeTarget, ScopeTier } from '../api/scope-api.types'
-import { getScopeTypeConfig, type ScopeTargetType } from '../types'
+import { extractRootDomain } from '@/features/assets/lib/domain-hierarchy'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import {
   coversText,
@@ -52,7 +52,15 @@ import {
   TIER_LABEL,
   wildcardApex,
 } from '../lib/scope-entry'
-import { REQUESTABLE_TARGET_TYPES, ScopeTargetTypeSelect } from './scope-target-type'
+import {
+  detectScopeKind,
+  REQUESTABLE_TARGET_TYPES,
+  SCOPE_KIND_LABEL,
+  SCOPE_KIND_PLACEHOLDER,
+  scopeKindOf,
+  ScopeTargetTypeSelect,
+  type ScopeKind,
+} from './scope-target-type'
 
 export type ScopeEntryDuration = 'permanent' | 'one_off'
 export type DomainCoverage = 'name' | 'subdomains'
@@ -74,14 +82,23 @@ interface ScopeEntryDialogProps {
 }
 
 const DEFAULT_MAX_DAYS = 7
-const DOMAIN_TYPES = ['domain', 'subdomain']
 
 /** A single name or address: what a member may request. */
 export function isSingleTarget(type: string, pattern: string): boolean {
   const p = pattern.trim()
   if (!p || p.includes('*') || p.includes('/') || p.includes(' ')) return false
   if (type === 'ip_address') return !p.includes('-')
-  return REQUESTABLE_TARGET_TYPES.includes(type)
+  return (REQUESTABLE_TARGET_TYPES as string[]).includes(type)
+}
+
+/**
+ * Coverage default by depth (research/53 §4.3): a registrable domain covers
+ * every name below it; a deeper host covers only itself.
+ */
+export function defaultCoverage(name: string): DomainCoverage {
+  const host = wildcardApex(name) || name.trim().toLowerCase().replace(/\.$/, '')
+  if (!host) return 'subdomains'
+  return extractRootDomain(host) === host ? 'subdomains' : 'name'
 }
 
 /** Approvals the new entry needs before it authorizes anything. */
@@ -105,7 +122,9 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   const requestsAllowed = oneOffPolicy === 'admins_and_requests'
   const oneOffAllowed = canApprove ? oneOffPolicy !== 'disabled' : requestsAllowed
 
-  const [type, setType] = useState<string>('domain')
+  // The kind is detected from what was typed; an override only when asked.
+  const [override, setOverride] = useState<ScopeKind | null>(null)
+  const [coverageTouched, setCoverageTouched] = useState(false)
   const [name, setName] = useState('')
   const [coverage, setCoverage] = useState<DomainCoverage>('subdomains')
   const [duration, setDuration] = useState<ScopeEntryDuration>('permanent')
@@ -121,9 +140,11 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
     if (!open) return
     const pattern = draft?.pattern ?? ''
     const apex = wildcardApex(pattern)
-    setType(draft?.target_type || 'domain')
+    const draftKind = scopeKindOf(draft?.target_type)
+    setOverride(draftKind && draftKind !== detectScopeKind(pattern) ? draftKind : null)
     setName(apex || pattern)
     setCoverage(apex ? 'subdomains' : pattern ? 'name' : 'subdomains')
+    setCoverageTouched(!!pattern)
     setDuration(draft?.duration ?? (canApprove ? 'permanent' : 'one_off'))
     setDays(draft?.days ?? DEFAULT_MAX_DAYS)
     setReason(draft?.reason ?? '')
@@ -136,7 +157,9 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
     if (open && settings?.default_max_tier) setTier(settings.default_max_tier as ScopeTier)
   }, [open, settings?.default_max_tier])
 
-  const isDomain = DOMAIN_TYPES.includes(type)
+  const detected = detectScopeKind(name)
+  const type: ScopeKind = override ?? detected ?? 'domain'
+  const isDomain = type === 'domain'
   // A member's request is one name for a few days, never a wildcard (§6.1).
   const isRequest = !canApprove
   const effectiveCoverage: DomainCoverage = isRequest ? 'name' : coverage
@@ -164,9 +187,11 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   }, [name, pattern, type, effectiveDuration, clampedDays])
 
   const validate = (): string | null => {
-    const config = getScopeTypeConfig(type as ScopeTargetType)
     if (!name.trim()) return 'Enter a name or address.'
-    if (config && !config.validation.pattern.test(pattern)) return config.validation.message
+    if (!override && !detected)
+      return 'This is not a domain, IP address, IP range, URL, repository or cloud account. Pick its kind, or check the spelling.'
+    if (isRequest && !(REQUESTABLE_TARGET_TYPES as string[]).includes(type))
+      return t('scope.error.REQUEST_MUST_BE_SINGLE')
     if (isRequest && !requestsAllowed) return t('scope.error.REQUEST_NOT_ALLOWED')
     if (isRequest && !isSingleTarget(type, pattern)) return t('scope.error.REQUEST_MUST_BE_SINGLE')
     if (effectiveDuration === 'one_off' && !oneOffAllowed) return t('scope.error.ONE_OFF_DISABLED')
@@ -251,44 +276,68 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-[10rem_1fr]">
-              <div className="space-y-2">
-                <Label htmlFor={`${formId}-type`}>Type</Label>
-                <ScopeTargetTypeSelect
-                  id={`${formId}-type`}
-                  value={type}
-                  onValueChange={(v) => {
-                    setType(v)
-                    setError(null)
-                  }}
-                  only={isRequest ? REQUESTABLE_TARGET_TYPES : undefined}
-                />
-              </div>
-              <div className="min-w-0 space-y-2">
-                <Label htmlFor={`${formId}-name`}>{isDomain ? 'Domain' : 'Pattern'}</Label>
-                <Input
-                  id={`${formId}-name`}
-                  value={name}
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder={
-                    isDomain
-                      ? 'example.com'
-                      : getScopeTypeConfig(type as ScopeTargetType)?.placeholder
+            <div className="space-y-2">
+              <Label htmlFor={`${formId}-name`}>What</Label>
+              <Input
+                id={`${formId}-name`}
+                value={name}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={SCOPE_KIND_PLACEHOLDER[type]}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const apex = wildcardApex(v)
+                  // Typing "*.x" picks "x and every name below it".
+                  if (apex && !isRequest) {
+                    setName(apex)
+                    setCoverage('subdomains')
+                    setCoverageTouched(true)
+                  } else {
+                    setName(v)
+                    if (!coverageTouched) setCoverage(defaultCoverage(v))
                   }
-                  onChange={(e) => {
-                    const v = e.target.value
-                    const apex = wildcardApex(v)
-                    // Typing "*.x" picks "x and every name below it".
-                    if (isDomain && apex && !isRequest) {
-                      setName(apex)
-                      setCoverage('subdomains')
-                    } else {
-                      setName(v)
-                    }
-                    setError(null)
-                  }}
-                />
+                  setError(null)
+                }}
+              />
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {override ? (
+                  <>
+                    <span>Kind:</span>
+                    <ScopeTargetTypeSelect
+                      value={override}
+                      onValueChange={(v) => setOverride(v as ScopeKind)}
+                      only={isRequest ? REQUESTABLE_TARGET_TYPES : undefined}
+                      className="h-7 w-44 text-xs"
+                      aria-label="Kind"
+                    />
+                    <button
+                      type="button"
+                      className="underline underline-offset-2 hover:text-foreground"
+                      onClick={() => setOverride(null)}
+                    >
+                      Detect it
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span aria-live="polite">
+                      {name.trim()
+                        ? detected
+                          ? `Detected: ${SCOPE_KIND_LABEL[detected]}`
+                          : 'Kind not recognised'
+                        : 'A domain, IP address, IP range, URL, repository or cloud account.'}
+                    </span>
+                    {name.trim() && (
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 hover:text-foreground"
+                        onClick={() => setOverride(detected ?? 'domain')}
+                      >
+                        {detected ? 'Change' : 'Pick the kind'}
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 
@@ -297,7 +346,10 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                 <legend className="text-sm font-medium">Covers</legend>
                 <RadioGroup
                   value={coverage}
-                  onValueChange={(v) => setCoverage(v as DomainCoverage)}
+                  onValueChange={(v) => {
+                    setCoverage(v as DomainCoverage)
+                    setCoverageTouched(true)
+                  }}
                   className="gap-2"
                 >
                   <CoverageOption

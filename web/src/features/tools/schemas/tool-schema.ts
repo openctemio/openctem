@@ -63,6 +63,11 @@ export const createToolSchema = z.object({
   update_cmd: z.string().max(500, 'Update command must be 500 characters or less').optional(),
   version_cmd: z.string().max(500, 'Version command must be 500 characters or less').optional(),
   version_regex: z.string().max(200, 'Version regex must be 200 characters or less').optional(),
+  min_version: z
+    .string()
+    .regex(/^v?\d+(\.\d+){0,2}([-+][0-9A-Za-z.-]+)?$/, 'Use a release version such as 3.2.0')
+    .or(z.literal(''))
+    .optional(),
   docs_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
   github_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
   logo_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
@@ -88,6 +93,11 @@ export const updateToolSchema = z.object({
   update_cmd: z.string().max(500, 'Update command must be 500 characters or less').optional(),
   version_cmd: z.string().max(500, 'Version command must be 500 characters or less').optional(),
   version_regex: z.string().max(200, 'Version regex must be 200 characters or less').optional(),
+  min_version: z
+    .string()
+    .regex(/^v?\d+(\.\d+){0,2}([-+][0-9A-Za-z.-]+)?$/, 'Use a release version such as 3.2.0')
+    .or(z.literal(''))
+    .optional(),
   docs_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
   github_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
   logo_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
