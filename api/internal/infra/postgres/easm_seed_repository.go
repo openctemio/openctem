@@ -157,6 +157,29 @@ func (r *EASMSeedRepository) VerifiedDomainNames(ctx context.Context, tenantID s
 	return out, rows.Err()
 }
 
+// EASMVerifiedDomainNames returns the tenant's verified domains that the
+// organization verified for attack-surface work (purpose easm). A domain a
+// platform administrator verified for SSO sign-in (purpose sso) is not
+// among them: it admits users, and never authorizes active probes
+// (RFC-054 §4.2 step 6, owner decision SC2).
+func (r *EASMSeedRepository) EASMVerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT domain FROM verified_domains
+		WHERE tenant_id = $1 AND status = 'verified' AND purpose = 'easm'`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list easm verified domains: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // RootDomainSeedNames returns every root_domain seed of the tenant, with
 // discovery on or off: a name at or under one is derived from a seed, which
 // the active-scan gate accepts as authorization (RFC-036 §6.3).

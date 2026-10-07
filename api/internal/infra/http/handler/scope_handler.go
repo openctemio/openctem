@@ -8,6 +8,7 @@ import (
 	"time"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 
 	"github.com/go-chi/chi/v5"
@@ -29,6 +30,7 @@ type ScopeHandler struct {
 	validator *validator.Validator
 	logger    *logger.Logger
 	scopeJoin ScopeJoinReevaluator
+	settings  ScopeSettingsStore
 }
 
 // NewScopeHandler creates a new scope handler.
@@ -44,6 +46,16 @@ func NewScopeHandler(svc *scope.Service, v *validator.Validator, log *logger.Log
 // the tenant's audit log, with the state before and after (RFC-040 §5.11).
 func (h *ScopeHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
+}
+
+// notifyExclusionReduced tells every administrator that an exclusion in
+// effect was taken away or shortened: scope grew (RFC-054 §7).
+func (h *ScopeHandler) notifyExclusionReduced(tenantID string, e *scopedom.Exclusion, title string) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil || e == nil {
+		return
+	}
+	h.service.NotifyAdmins(context.Background(), id, title, e.ExclusionType().String()+" "+e.Pattern())
 }
 
 // ScopeJoinReevaluator confirms the tenant's pending discovered names that
@@ -127,19 +139,40 @@ func (h *ScopeHandler) exclusionBefore(w http.ResponseWriter, r *http.Request, t
 // Response Types
 // =============================================================================
 
-// ScopeTargetResponse represents a scope target in API responses.
+// ScopeTargetResponse represents a scope entry in API responses (RFC-054 §6.1).
 type ScopeTargetResponse struct {
-	ID          string    `json:"id"`
-	TenantID    string    `json:"tenant_id"`
-	TargetType  string    `json:"target_type"`
-	Pattern     string    `json:"pattern"`
-	Description string    `json:"description,omitempty"`
-	Priority    int       `json:"priority"`
-	Status      string    `json:"status"`
-	Tags        []string  `json:"tags,omitempty"`
-	CreatedBy   string    `json:"created_by,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID         string `json:"id"`
+	TenantID   string `json:"tenant_id"`
+	TargetType string `json:"target_type"`
+	Pattern    string `json:"pattern"`
+	// Covers: name, domain_and_subdomains, addresses or pattern.
+	Covers      string `json:"covers"`
+	Description string `json:"description,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	Priority    int    `json:"priority"`
+	// Status: active, pending, inactive, rejected or expired.
+	Status string `json:"status"`
+	// InEffect: the entry authorizes probes now (active, not expired).
+	InEffect          bool                    `json:"in_effect"`
+	ExpiresAt         *time.Time              `json:"expires_at,omitempty"`
+	MaxTier           string                  `json:"max_tier"`
+	ApprovalsRequired int                     `json:"approvals_required"`
+	Approvals         []ScopeApprovalResponse `json:"approvals"`
+	ApprovedAt        *time.Time              `json:"approved_at,omitempty"`
+	RejectedBy        string                  `json:"rejected_by,omitempty"`
+	RejectedAt        *time.Time              `json:"rejected_at,omitempty"`
+	Tags              []string                `json:"tags,omitempty"`
+	// CreatedBy is the requester: whoever created or last widened the entry.
+	// They cannot approve it.
+	CreatedBy string    `json:"created_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ScopeApprovalResponse is one approval of a scope entry.
+type ScopeApprovalResponse struct {
+	UserID     string    `json:"user_id"`
+	ApprovedAt time.Time `json:"approved_at"`
 }
 
 // ScopeExclusionResponse represents a scope exclusion in API responses.
@@ -209,13 +242,27 @@ type CreateScopeTargetRequest struct {
 	Description string   `json:"description" validate:"max=1000"`
 	Priority    int      `json:"priority" validate:"min=0,max=100"`
 	Tags        []string `json:"tags" validate:"max=20,dive,max=50"`
+	// Reason is the authority statement; required for a one-off entry, a
+	// request and a t2 entry.
+	Reason string `json:"reason" validate:"max=1000"`
+	// ExpiresInDays (1..one_off_max_days) or ExpiresAt makes a one-off entry.
+	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=30"`
+	ExpiresAt     *time.Time `json:"expires_at"`
+	// MaxTier: t0, t1 or t2 (default: the organization's default_max_tier).
+	MaxTier string `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
 }
 
 // UpdateScopeTargetRequest represents the request to update a scope target.
+// A later or removed expiry, or a higher tier, widens the entry.
 type UpdateScopeTargetRequest struct {
-	Description *string  `json:"description" validate:"omitempty,max=1000"`
-	Priority    *int     `json:"priority" validate:"omitempty,min=0,max=100"`
-	Tags        []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+	Description   *string    `json:"description" validate:"omitempty,max=1000"`
+	Priority      *int       `json:"priority" validate:"omitempty,min=0,max=100"`
+	Tags          []string   `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+	Reason        *string    `json:"reason" validate:"omitempty,max=1000"`
+	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=30"`
+	ExpiresAt     *time.Time `json:"expires_at"`
+	ClearExpiry   bool       `json:"clear_expiry"`
+	MaxTier       *string    `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
 }
 
 // CreateScopeExclusionRequest represents the request to create a scope exclusion.
@@ -262,18 +309,68 @@ type ScopeBulkOperationResponse struct {
 
 func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 	return ScopeTargetResponse{
-		ID:          t.ID().String(),
-		TenantID:    t.TenantID().String(),
-		TargetType:  t.TargetType().String(),
-		Pattern:     t.Pattern(),
-		Description: t.Description(),
-		Priority:    t.Priority(),
-		Status:      t.Status().String(),
-		Tags:        t.Tags(),
-		CreatedBy:   t.CreatedBy(),
-		CreatedAt:   t.CreatedAt(),
-		UpdatedAt:   t.UpdatedAt(),
+		ID:                t.ID().String(),
+		TenantID:          t.TenantID().String(),
+		TargetType:        t.TargetType().String(),
+		Pattern:           t.Pattern(),
+		Covers:            t.Covers(),
+		Description:       t.Description(),
+		Reason:            t.Reason(),
+		Priority:          t.Priority(),
+		Status:            t.Status().String(),
+		InEffect:          t.InEffect(time.Now()),
+		ExpiresAt:         t.ExpiresAt(),
+		MaxTier:           t.MaxTier().String(),
+		ApprovalsRequired: t.ApprovalsRequired(),
+		Approvals:         approvalsResponse(t.Approvals()),
+		ApprovedAt:        t.ApprovedAt(),
+		RejectedBy:        t.RejectedBy(),
+		RejectedAt:        t.RejectedAt(),
+		Tags:              t.Tags(),
+		CreatedBy:         t.CreatedBy(),
+		CreatedAt:         t.CreatedAt(),
+		UpdatedAt:         t.UpdatedAt(),
 	}
+}
+
+func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
+	out := make([]ScopeApprovalResponse, 0, len(list))
+	for _, a := range list {
+		out = append(out, ScopeApprovalResponse{UserID: a.UserID, ApprovedAt: a.ApprovedAt})
+	}
+	return out
+}
+
+// writeScopeEntryError answers the errors of the scope entry path (step-up
+// and the coded entry errors, RFC-054 §6.1) and reports whether it did. Every
+// route that creates or widens a scope entry answers them the same way.
+func writeScopeEntryError(w http.ResponseWriter, err error) bool {
+	if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+		return true
+	}
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code == "" {
+		return false
+	}
+	if de.Code == "STEP_UP_UNAVAILABLE" {
+		apierror.New(http.StatusForbidden, middleware.CodeStepUpUnavailable, de.Message).WriteJSON(w)
+		return true
+	}
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, shared.ErrForbidden):
+		status = http.StatusForbidden
+	case errors.Is(err, shared.ErrConflict):
+		status = http.StatusConflict
+	}
+	apierror.New(status, apierror.Code(de.Code), de.Message).WriteJSON(w)
+	return true
+}
+
+// scopeActor is the caller as a scope actor.
+func scopeActor(r *http.Request) scope.Actor {
+	ctx := r.Context()
+	return scope.Actor{UserID: middleware.GetUserID(ctx), CanApprove: middleware.HasPermission(ctx, permission.ScopeApprove.String())}
 }
 
 func toScopeExclusionResponse(e *scopedom.Exclusion) ScopeExclusionResponse {
@@ -317,6 +414,9 @@ func (h *ScopeHandler) handleValidationError(w http.ResponseWriter, err error) {
 }
 
 func (h *ScopeHandler) handleServiceError(w http.ResponseWriter, resource string, err error) {
+	if writeScopeEntryError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound),
 		errors.Is(err, scopedom.ErrTargetNotFound),
@@ -410,7 +510,7 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 
 // CreateTarget handles POST /api/v1/scope/targets
 // @Summary      Create scope target
-// @Description  Create a new scope target
+// @Description  Create a scope entry (RFC-054). With attack_surface:scope:approve it needs a recent re-authentication (403 STEP_UP_REQUIRED) and is active at once or pending the organization's approvals; without it, it is a pending request for a one-off entry of one name or address, with a reason
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -437,13 +537,18 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scope.CreateTargetInput{
-		TenantID:    tenantID,
-		TargetType:  req.TargetType,
-		Pattern:     req.Pattern,
-		Description: req.Description,
-		Priority:    req.Priority,
-		Tags:        req.Tags,
-		CreatedBy:   userID,
+		TenantID:      tenantID,
+		TargetType:    req.TargetType,
+		Pattern:       req.Pattern,
+		Description:   req.Description,
+		Priority:      req.Priority,
+		Tags:          req.Tags,
+		CreatedBy:     userID,
+		Reason:        req.Reason,
+		ExpiresAt:     req.ExpiresAt,
+		ExpiresInDays: req.ExpiresInDays,
+		MaxTier:       req.MaxTier,
+		Actor:         scopeActor(r),
 	}
 
 	target, err := h.service.CreateTarget(r.Context(), input)
@@ -502,7 +607,7 @@ func (h *ScopeHandler) GetTarget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTarget handles PUT /api/v1/scope/targets/{id}
 // @Summary      Update scope target
-// @Description  Update an existing scope target
+// @Description  Update a scope entry. A later or removed expiry, or a higher tier, widens it: that needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED), and sends the entry back to pending when the organization requires approvals (RFC-054)
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -530,9 +635,15 @@ func (h *ScopeHandler) UpdateTarget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scope.UpdateTargetInput{
-		Description: req.Description,
-		Priority:    req.Priority,
-		Tags:        req.Tags,
+		Description:   req.Description,
+		Priority:      req.Priority,
+		Tags:          req.Tags,
+		Reason:        req.Reason,
+		ExpiresAt:     req.ExpiresAt,
+		ExpiresInDays: req.ExpiresInDays,
+		ClearExpiry:   req.ClearExpiry,
+		MaxTier:       req.MaxTier,
+		Actor:         scopeActor(r),
 	}
 
 	before, ok := h.targetBefore(w, r, tenantID, targetID)
@@ -582,7 +693,7 @@ func (h *ScopeHandler) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 
 // ActivateTarget handles POST /api/v1/scope/targets/{id}/activate
 // @Summary      Activate scope target
-// @Description  Activate a scope target
+// @Description  Activate a scope entry. Widening: needs attack_surface:scope:approve and a recent re-authentication, then the organization's approvals
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -601,7 +712,7 @@ func (h *ScopeHandler) ActivateTarget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	target, err := h.service.ActivateTarget(r.Context(), targetID, tenantID)
+	target, err := h.service.ActivateTarget(r.Context(), targetID, tenantID, scopeActor(r))
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
 		return
@@ -827,6 +938,9 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditExclusion(r, audit.ActionScopeExclusionUpdated, exclusionID, before, exclusion)
+	if req.ExpiresAt != nil && before.InEffect() && before.ShortensWindow(req.ExpiresAt) {
+		h.notifyExclusionReduced(tenantID, before, "Scope exclusion shortened")
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
@@ -869,6 +983,9 @@ func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditExclusion(r, audit.ActionScopeExclusionDeleted, exclusionID, before, nil)
+	if before.InEffect() {
+		h.notifyExclusionReduced(tenantID, before, "Scope exclusion removed")
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1003,6 +1120,9 @@ func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	h.auditExclusion(r, audit.ActionScopeExclusionDeactivated, exclusionID, before, exclusion)
+	if before.InEffect() {
+		h.notifyExclusionReduced(tenantID, before, "Scope exclusion deactivated")
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
