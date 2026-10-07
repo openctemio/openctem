@@ -80,6 +80,10 @@ func TestCovers(t *testing.T) {
 		{"https://app.scoped.com:8443/x", KindScopeTarget, ProofAsserted},
 		{"198.51.100.9", KindScopeTarget, ProofAsserted},
 		{"198.51.100.9:443", KindScopeTarget, ProofAsserted},
+		{"app.scoped.com:443:tcp", KindScopeTarget, ProofAsserted},
+		{"app.scoped.com:443/tcp", KindScopeTarget, ProofAsserted},
+		{"198.51.100.9:443:tcp", KindScopeTarget, ProofAsserted},
+		{"www.verified.com:443:tcp", KindVerifiedDomain, ProofVerified},
 		{"github.com/org/repo", KindScopeTarget, ProofAsserted},
 		{"seeded.com", KindSeed, ProofAsserted},
 		{"a.b.seeded.com", KindSeed, ProofAsserted},
@@ -92,7 +96,7 @@ func TestCovers(t *testing.T) {
 			t.Errorf("Covers(%q) = %+v, %v; want kind %s proof %s", c.name, via, ok, c.kind, c.proof)
 		}
 	}
-	for _, n := range []string{"notseeded.com", "seeded.com.evil.net", "203.0.113.5", "198.51.100.0/23", "github.com/other/repo", ""} {
+	for _, n := range []string{"notseeded.com", "notseeded.com:443:tcp", "203.0.113.5:443:tcp", "seeded.com.evil.net", "203.0.113.5", "198.51.100.0/23", "github.com/other/repo", ""} {
 		if via, ok := a.Covers(n); ok {
 			t.Errorf("Covers(%q) = %+v, want not covered", n, via)
 		}
