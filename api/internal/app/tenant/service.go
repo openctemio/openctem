@@ -15,7 +15,6 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -1774,53 +1773,11 @@ func (s *TenantService) UpdateBrandingSettings(ctx context.Context, tenantID str
 	return &result, nil
 }
 
-// UpdateBranchSettingsInput represents input for updating branch naming convention settings.
-type UpdateBranchSettingsInput struct {
-	TypeRules []BranchTypeRuleInput `json:"type_rules" validate:"dive"`
-}
-
 // BranchTypeRuleInput represents a single branch type mapping rule.
 type BranchTypeRuleInput struct {
 	Pattern    string `json:"pattern" validate:"required,max=100"`
 	MatchType  string `json:"match_type" validate:"required,oneof=exact prefix"`
 	BranchType string `json:"branch_type" validate:"required,oneof=main develop feature release hotfix"`
-}
-
-// UpdateBranchSettings updates only the branch naming convention settings.
-func (s *TenantService) UpdateBranchSettings(ctx context.Context, tenantID string, input UpdateBranchSettingsInput, actx auditapp.AuditContext) (*tenantdom.Settings, error) {
-	var rules branch.BranchTypeRules
-	var before tenantdom.BranchSettings
-	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionBranch, func(t *tenantdom.Tenant) error {
-		before = t.TypedSettings().Branch
-		rules = make(branch.BranchTypeRules, len(input.TypeRules))
-		for i, r := range input.TypeRules {
-			rules[i] = branch.BranchTypeRule{
-				Pattern:    r.Pattern,
-				MatchType:  r.MatchType,
-				BranchType: branch.Type(r.BranchType),
-			}
-		}
-
-		bs := tenantdom.BranchSettings{
-			TypeRules: rules,
-		}
-
-		return t.UpdateBranchSettings(bs)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	s.logger.Info("branch settings updated", "tenant_id", tenantID, "rules_count", len(rules))
-
-	actx.TenantID = tenantID
-	event := auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
-		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Branch)).
-		WithMessage("Branch naming convention settings updated")
-	s.logAudit(ctx, actx, event)
-
-	result := t.TypedSettings()
-	return &result, nil
 }
 
 // UpdatePentestSettingsInput represents input for updating pentest settings.

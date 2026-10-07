@@ -539,7 +539,6 @@ type Services struct {
 	Vulnerability   *finding.VulnerabilityService
 	FindingActivity *activity.FindingActivityService
 	FindingActions  *finding.FindingActionsService
-	SourceAnalytics *finding.SourceAnalyticsService
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
 	CTEMID          *ctemidapp.Service
@@ -942,7 +941,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
-	s.SourceAnalytics = finding.NewSourceAnalyticsService(repos.Finding, log)
 
 	s.Exposure = exposure.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.Exposure.SetDataScope(s.DataScope)
@@ -1518,7 +1516,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// organization enabled them (default off).
 		command.WithOptInPolicy(s.Tenant),
 		// RFC-052 §5: each sensor's grant, before every other gate.
-		command.WithGrants(repos.SensorGrant, s.Sensor)}
+		command.WithGrants(repos.SensorGrant, s.Sensor),
+		// RFC-055 §6.3: the tier is assigned from the tool contract.
+		command.WithToolContracts(repos.Sensor)}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
