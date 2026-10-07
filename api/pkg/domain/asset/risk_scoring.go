@@ -278,8 +278,17 @@ func (e *RiskScoringEngine) findingScore(a *Asset) int {
 		return weighted
 	}
 
-	// Fallback: count-based
-	score := a.findingCount * cfg.PerFindingPoints
+	// Fallback: count-based. Informational findings (technology detections,
+	// inventory notes) are not weaknesses, so they add no points: eight
+	// "tech detected" results must not cap an asset's finding score at 100.
+	count := a.findingCount
+	if c := a.findingSeverityCounts; c != nil {
+		count -= c.Info
+		if count < 0 {
+			count = 0
+		}
+	}
+	score := count * cfg.PerFindingPoints
 	if score > cfg.FindingCap {
 		return cfg.FindingCap
 	}

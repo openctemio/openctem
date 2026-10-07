@@ -181,8 +181,8 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  assigned_to  query  []string  false  "assigned to: any of (comma list)"  collectionFormat(csv)
 // @Param  assigned_to_null  query  boolean  false  "assigned to is unset (true) or set (false)"
 // @Param  assigned_to_not  query  []string  false  "assigned to: none of (comma list)"  collectionFormat(csv)
-// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
-// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
 // @Param  asset_owner_id  query  []string  false  "asset owner id: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_owner_id_null  query  boolean  false  "asset owner id is unset (true) or set (false)"
 // @Param  exploit_available  query  boolean  false  "exploit available equals"
@@ -332,8 +332,8 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  assigned_to  query  []string  false  "assigned to: any of (comma list)"  collectionFormat(csv)
 // @Param  assigned_to_null  query  boolean  false  "assigned to is unset (true) or set (false)"
 // @Param  assigned_to_not  query  []string  false  "assigned to: none of (comma list)"  collectionFormat(csv)
-// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
-// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
 // @Param  asset_owner_id  query  []string  false  "asset owner id: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_owner_id_null  query  boolean  false  "asset owner id is unset (true) or set (false)"
 // @Param  exploit_available  query  boolean  false  "exploit available equals"

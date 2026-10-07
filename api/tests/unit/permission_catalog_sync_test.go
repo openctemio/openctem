@@ -39,7 +39,9 @@ var permRenameMigrations = []string{}
 // permRemoveMigrations delete permission ids. Each lists the removed ids as
 // one-column VALUES rows ('id'), which tupleID parses; they are applied, in
 // order, after the renames.
-var permRemoveMigrations = []string{}
+var permRemoveMigrations = []string{
+	"001179_drop_tenant_tools_delete_permission.up.sql",
+}
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
 
