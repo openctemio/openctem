@@ -502,6 +502,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.Scope.SetScopeJoin(svc.ScopeJoin)
 	}
 	handlers.Scope.SetSettingsStore(svc.Tenant)
+	handlers.Scope.SetActiveProof(cfg.Scope.ActiveProof)
 	handlers.Tool.SetAuditService(svc.Audit)
 	// Configuration changes audited with a before/after diff.
 	handlers.Integration.SetAuditService(svc.Audit)
