@@ -1,3 +1,4 @@
+-- expand-contract-ok: one-step rename (owner rule: minimal back-compat, no aliases); the API that reads the new names ships in the same release and the deploy runs migrations before the API starts (changelog upgrade note).
 -- Scan workflow naming at every layer (glossary: "pipeline" is a CI word).
 --
 --   pipeline_templates -> scan_workflows       (the graph of steps a Scan runs)
