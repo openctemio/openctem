@@ -522,12 +522,12 @@ src/lib/api/types/
 ### Auto-generate Types from OpenAPI/Swagger
 
 **This is now wired up.** The API response shapes live in
-`src/lib/api/generated/api.types.ts`, generated from the spec vendored at
-`src/lib/api/openapi/swagger.yaml`:
+`src/lib/api/generated/api.types.ts`, generated from the API's spec
+(`api/api/openapi/swagger.yaml`). Neither is committed:
 
 ```bash
-npm run generate:api-types   # regenerate
-npm run check:api-types      # fail if out of date (also runs in CI)
+make generate                # repository root: the spec, then these types
+npm run generate:api-types   # only the types, when the spec is already there
 ```
 
 Two things differ from the sketch this section used to carry:

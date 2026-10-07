@@ -136,9 +136,12 @@ func registerSensorManagementRoutes(
 		// sensors:delete are held by owners and administrators only — the
 		// member and viewer seeds do not grant them (owner decision 2026-10-02).
 		// Members and viewers keep the reads above.
-		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite))
+		// Creating a sensor and regenerating its key mint a persistent
+		// credential, so they need a recent sign-in (step-up), as an API key
+		// does. Revoking and deleting stay one click.
+		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite), requireStepUp())
 		r.PUT("/{id}", h.Update, middleware.Require(permission.SensorsWrite))
-		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite))
+		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp())
 
 		// Status operations (admin-controlled)
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.SensorsWrite))
@@ -300,114 +303,61 @@ func registerScanProfileRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerToolRoutes registers tool registry routes.
+// registerToolRoutes registers the tenant's view of the tool catalog:
+// platform tools plus the tenant's own custom tools, one resource.
+//
+// Authorization, per action:
+//   - read the catalog: scans:tools:read; the tenant's settings,
+//     availability and statistics in it (include=, enabled/available
+//     filters): also scans:tenant_tools:read, checked by the handler;
+//   - change the tenant's settings (switch, config overrides):
+//     scans:tenant_tools:write;
+//   - create, change or delete the tenant's custom tools:
+//     scans:tools:write / scans:tools:delete.
+//
+// Platform tools are managed by the platform (migrations and the seed), never
+// from this tenant API: PUT and DELETE reach only the caller's own custom
+// tools, and a platform tool or another tenant's tool is not found (the
+// service resolves the tool by tenant and id).
 func registerToolRoutes(
 	router Router,
 	h *handler.ToolHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Platform Tools routes (system-wide tools, accessible to all tenants)
-	router.Group("/api/v1/tools/platform", func(r Router) {
-		// Read operations (accessible to all roles with ToolsRead)
-		r.GET("/", h.ListPlatformTools, middleware.Require(permission.ToolsRead))
-	}, tenantMiddlewares...)
-
-	// Tool routes (system-wide, read accessible to all authenticated users)
 	router.Group("/api/v1/tools", func(r Router) {
-		// Read operations (accessible to all roles with ToolsRead)
 		r.GET("/", h.List, middleware.Require(permission.ToolsRead))
-		r.GET("/name/{name}", h.GetByName, middleware.Require(permission.ToolsRead))
+		// Bulk settings (before /{id}).
+		r.PATCH("/settings", h.BulkUpdateSettings, middleware.Require(permission.TenantToolsWrite))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ToolsRead))
+		r.PATCH("/{id}/settings", h.UpdateSettings, middleware.Require(permission.TenantToolsWrite))
 
-		// Write operations (admin only)
+		// The tenant's custom tools.
 		r.POST("/", h.Create, middleware.Require(permission.ToolsWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.ToolsWrite))
-		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.ToolsWrite))
-		r.POST("/{id}/deactivate", h.Deactivate, middleware.Require(permission.ToolsWrite))
-
-		// Delete operations (admin only)
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ToolsDelete))
 	}, tenantMiddlewares...)
-
-	// Tenant Custom Tools routes (tenant-specific tools)
-	router.Group("/api/v1/custom-tools", func(r Router) {
-		// Read operations
-		r.GET("/", h.ListCustomTools, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{id}", h.GetCustomTool, middleware.Require(permission.TenantToolsRead))
-
-		// Write operations
-		r.POST("/", h.CreateCustomTool, middleware.Require(permission.TenantToolsWrite))
-		r.PUT("/{id}", h.UpdateCustomTool, middleware.Require(permission.TenantToolsWrite))
-		r.POST("/{id}/activate", h.ActivateCustomTool, middleware.Require(permission.TenantToolsWrite))
-		r.POST("/{id}/deactivate", h.DeactivateCustomTool, middleware.Require(permission.TenantToolsWrite))
-
-		// Delete operations
-		r.DELETE("/{id}", h.DeleteCustomTool, middleware.Require(permission.TenantToolsDelete))
-	}, tenantMiddlewares...)
-
-	// Tenant Tool Config routes (tenant-scoped)
-	router.Group("/api/v1/tenant-tools", func(r Router) {
-		// Bulk operations (must be before /{toolId} to avoid route conflicts)
-		r.POST("/bulk/enable", h.BulkEnable, middleware.Require(permission.TenantToolsWrite))
-		r.POST("/bulk/disable", h.BulkDisable, middleware.Require(permission.TenantToolsWrite))
-
-		// List all tools with tenant-specific enabled status (must be before /{toolId})
-		r.GET("/all-tools", h.ListAllTools, middleware.Require(permission.TenantToolsRead))
-		// Tool availability from the sensors' manifests (must be before /{toolId}).
-		r.GET("/availability", h.ToolAvailability, middleware.Require(permission.TenantToolsRead))
-
-		// Read operations
-		r.GET("/", h.ListTenantConfigs, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{toolId}", h.GetTenantConfig, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{toolId}/effective-config", h.GetEffectiveConfig, middleware.Require(permission.TenantToolsRead))
-		r.GET("/{toolId}/with-config", h.GetToolWithConfig, middleware.Require(permission.TenantToolsRead))
-
-		// Write operations
-		r.PUT("/{toolId}", h.UpdateTenantConfig, middleware.Require(permission.TenantToolsWrite))
-
-		// Delete operations
-		r.DELETE("/{toolId}", h.DeleteTenantConfig, middleware.Require(permission.TenantToolsDelete))
-
-		// Stats (consolidated from /tool-stats)
-		r.GET("/stats", h.GetTenantStats, middleware.Require(permission.TenantToolsRead))
-		r.GET("/stats/{toolId}", h.GetToolStats, middleware.Require(permission.TenantToolsRead))
-	}, tenantMiddlewares...)
-
-	// /tool-stats removed — use /tenant-tools/stats
 }
 
-// registerToolCategoryRoutes registers tool category endpoints.
+// registerToolCategoryRoutes registers tool categories: platform categories
+// plus the tenant's custom ones. Changes reach only the caller's own custom
+// categories (a platform category or another tenant's is not found).
 func registerToolCategoryRoutes(
 	router Router,
 	h *handler.ToolCategoryHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Tool Categories routes (read - list all platform + tenant custom categories)
 	router.Group("/api/v1/tool-categories", func(r Router) {
-		// List all categories (no pagination, for dropdowns)
-		r.GET("/all", h.ListAllCategories, middleware.Require(permission.ToolsRead))
-		// List categories with pagination
 		r.GET("/", h.ListCategories, middleware.Require(permission.ToolsRead))
-		// Get category by ID
 		r.GET("/{id}", h.GetCategory, middleware.Require(permission.ToolsRead))
-	}, tenantMiddlewares...)
-
-	// Custom Tool Categories routes (tenant-specific categories)
-	router.Group("/api/v1/custom-tool-categories", func(r Router) {
-		// Create custom category
-		r.POST("/", h.CreateCustomCategory, middleware.Require(permission.TenantToolsWrite))
-		// Update custom category
-		r.PUT("/{id}", h.UpdateCustomCategory, middleware.Require(permission.TenantToolsWrite))
-		// Delete custom category
-		r.DELETE("/{id}", h.DeleteCustomCategory, middleware.Require(permission.TenantToolsDelete))
+		r.POST("/", h.CreateCustomCategory, middleware.Require(permission.ToolsWrite))
+		r.PUT("/{id}", h.UpdateCustomCategory, middleware.Require(permission.ToolsWrite))
+		r.DELETE("/{id}", h.DeleteCustomCategory, middleware.Require(permission.ToolsDelete))
 	}, tenantMiddlewares...)
 }
 
