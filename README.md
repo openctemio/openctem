@@ -81,10 +81,13 @@ receiving identical copies for two releases. See
 ## The API contract
 
 `api/api/openapi/swagger.yaml` is generated from the Go handler annotations
-(`make -C api swagger`, gated by `api/scripts/check-openapi.sh`). The web wire
-types in `web/src/lib/api/generated/api.types.ts` are generated from that same
-file (`make api-types`), and CI fails if they differ — so a change to the API
-contract and the web code that consumes it land in one pull request.
+(gated by `api/scripts/check-openapi.sh`), and the web wire types in
+`web/src/lib/api/generated/api.types.ts` are generated from that file. Neither
+is committed: run `make generate` after cloning or pulling (`make
+generate-docker` needs only Docker). CI type-checks the web against the
+contract a pull request produces, so a change to the API contract and the web
+code that consumes it land in one pull request, and it posts the contract
+changes (breaking changes, route gate changes) on the pull request.
 
 ## Contributing / security
 
