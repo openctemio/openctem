@@ -130,6 +130,12 @@ type Run struct {
 	// RolloverStore.GetUnfinishedTargets.
 	UnfinishedTargetCount int
 
+	// Kind is what the run is (RunKindScan for a scan's run). A run that
+	// executes no scan workflow (a retest) has a zero ScanWorkflowID and
+	// names what it is about in Subject.
+	Kind    RunKind
+	Subject map[string]any
+
 	// Step runs (loaded separately)
 	StepRuns []*StepRun
 
@@ -313,4 +319,37 @@ func (r *Run) StepSucceeded(stepKey string) bool {
 func (r *Run) StepFinishedWithoutResults(stepKey string) bool {
 	sr := r.GetStepRun(stepKey)
 	return sr != nil && sr.IsComplete() && !sr.Status.ProducedResults()
+}
+
+// RunKind says what a run is (research/62 §4.3). Every unit of sensor work
+// belongs to one run, so retests and other non-scan work show up in Runs.
+type RunKind string
+
+const (
+	RunKindScan       RunKind = "scan"
+	RunKindQuick      RunKind = "quick"
+	RunKindRetest     RunKind = "retest"
+	RunKindValidation RunKind = "validation"
+	RunKindTest       RunKind = "test"
+	RunKindConnector  RunKind = "connector"
+	// RunKindSystem is platform housekeeping; the Runs list hides it unless
+	// asked.
+	RunKindSystem RunKind = "system"
+)
+
+// IsValid reports whether k is a known run kind.
+func (k RunKind) IsValid() bool {
+	switch k {
+	case RunKindScan, RunKindQuick, RunKindRetest, RunKindValidation, RunKindTest, RunKindConnector, RunKindSystem:
+		return true
+	}
+	return false
+}
+
+// KindOrDefault is the run's kind, RunKindScan when unset.
+func (r *Run) KindOrDefault() RunKind {
+	if r.Kind == "" {
+		return RunKindScan
+	}
+	return r.Kind
 }

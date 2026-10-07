@@ -1385,8 +1385,15 @@ func (s *Service) RunTaskSummaries(ctx context.Context, tenantID string, runs []
 type ListRunsInput struct {
 	TenantID       string `json:"tenant_id" validate:"required,uuid"`
 	ScanWorkflowID string `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	AssetID        string `json:"asset_id" validate:"omitempty,uuid"`
-	Status         string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout"`
+	// Kinds narrows to these run kinds (scan, quick, retest, ...).
+	Kinds []string `json:"kind"`
+	// IncludeSystem lists system runs too (hidden by default).
+	IncludeSystem bool `json:"include_system"`
+	// ExcludeKinds leaves these kinds out (set by the handler, not the
+	// client: runs about a finding the caller may not see).
+	ExcludeKinds []string `json:"-"`
+	AssetID      string   `json:"asset_id" validate:"omitempty,uuid"`
+	Status       string   `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout"`
 	// Sort is one sort key, `field` or `-field` (scanrun.RunListSortFields);
 	// an unknown field is a validation error.
 	Sort    string `json:"sort"`
@@ -1424,6 +1431,19 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 			filter.AssetID = &aid
 		}
 	}
+
+	for _, k := range input.Kinds {
+		kind := scanrun.RunKind(k)
+		if !kind.IsValid() {
+			return pagination.Result[*scanrun.Run]{}, fmt.Errorf("%w: invalid kind", shared.ErrValidation)
+		}
+		filter.Kinds = append(filter.Kinds, kind)
+	}
+	for _, k := range input.ExcludeKinds {
+		filter.ExcludeKinds = append(filter.ExcludeKinds, scanrun.RunKind(k))
+	}
+	// System runs are housekeeping: hidden unless asked for or named.
+	filter.ExcludeSystem = !input.IncludeSystem && len(filter.Kinds) == 0
 
 	if input.Status != "" {
 		st := scanrun.RunStatus(input.Status)
