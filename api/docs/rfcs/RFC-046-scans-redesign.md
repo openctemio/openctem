@@ -204,14 +204,22 @@ Mapping onto today's tables (no big-bang rename; §8):
     └── nobody claimed in 4 h / 1 h (D8) ───────────────▶ failed (NO_SENSOR)
 ```
 
-- Terminal states: `completed`, `partial`, `failed`, `canceled`, `timeout`.
+- Terminal states: `completed`, `partial`, `failed`, `canceled`, `timeout`,
+  `blocked`. A `blocked` run is a trigger refused before anything was
+  dispatched (scope gate, freeze window, unavailable tool or sensor, no
+  target, paused scan); it carries `refusal_code` and the message, is never
+  retried, and is how a refusal shows in the run list.
   A terminal run never moves again (#820); a terminal step run never moves
   again (P1.1).
 - `partial` means "results kept, coverage incomplete". It is not retried as a
   whole (RFC-030 §9 decision 4: "Retry failed" re-runs only the failed
   tasks); its unfinished targets roll over (§6.3).
-- Counters on the scan: `total_runs`, `successful_runs`, `failed_runs` and a
-  new `partial_runs`; the success rate is
+- Counters on the scan: `total_runs`, `successful_runs`, `failed_runs`, a
+  new `partial_runs` and `blocked_runs`. They and `last_run_*` are a cache
+  recomputed from the scan's runs after every run change (migration 001157,
+  `scan_run_summary.go`), so a scan's last run, run count and results always
+  describe the same runs; total counts running and blocked runs too. The
+  success rate is
   `successful / (successful + partial + failed)`, canceled excluded, "n/a"
   with no settled run — one formula for every page.
 - Step runs gain `partial` too (a batched step where some batches failed).

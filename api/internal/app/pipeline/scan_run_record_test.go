@@ -12,7 +12,7 @@ import (
 // A pipeline_run reaching a terminal state used to update only the run row; the
 // scan it belonged to kept last_run_status NULL — reading "never run" straight
 // after a scan that had just finished and produced findings (observed live
-// 2026-08-10). recordScanRun writes the outcome back onto the scan.
+// 2026-08-10). recordScanRun refreshes the scan's run summary from its runs.
 
 type fakeScanRunRecorder struct {
 	calls []recordCall
@@ -20,13 +20,12 @@ type fakeScanRunRecorder struct {
 }
 
 type recordCall struct {
-	scanID shared.ID
-	runID  shared.ID
-	status string
+	tenantID shared.ID
+	scanID   shared.ID
 }
 
-func (f *fakeScanRunRecorder) RecordRun(_ context.Context, _ shared.ID, scanID, runID shared.ID, status string) error {
-	f.calls = append(f.calls, recordCall{scanID, runID, status})
+func (f *fakeScanRunRecorder) RefreshRunSummary(_ context.Context, tenantID, scanID shared.ID) error {
+	f.calls = append(f.calls, recordCall{tenantID, scanID})
 	return f.err
 }
 
@@ -39,18 +38,17 @@ func TestRecordScanRun_WritesOutcomeBackToScan(t *testing.T) {
 	s := newRecorderService(rec)
 
 	scanID := shared.NewID()
-	run := &pipelinedom.Run{ID: shared.NewID(), ScanID: &scanID}
+	run := &pipelinedom.Run{ID: shared.NewID(), TenantID: shared.NewID(), ScanID: &scanID}
 
 	s.recordScanRun(context.Background(), run, "completed")
 
 	if len(rec.calls) != 1 {
-		t.Fatalf("recorder called %d times, want 1 — a completed run must record its "+
-			"outcome on the scan", len(rec.calls))
+		t.Fatalf("recorder called %d times, want 1 — a completed run must refresh "+
+			"its scan's summary", len(rec.calls))
 	}
 	got := rec.calls[0]
-	if got.scanID != scanID || got.runID != run.ID || got.status != "completed" {
-		t.Errorf("recorded {scan=%s run=%s status=%s}, want {%s %s completed}",
-			got.scanID, got.runID, got.status, scanID, run.ID)
+	if got.scanID != scanID || got.tenantID != run.TenantID {
+		t.Errorf("refreshed {tenant=%s scan=%s}, want {%s %s}", got.tenantID, got.scanID, run.TenantID, scanID)
 	}
 }
 
@@ -125,7 +123,7 @@ func TestFinishRun_OnlyTheWinningTransitionRecordsTheRun(t *testing.T) {
 	if s.finishRun(context.Background(), run, pipelinedom.RunStatusFailed, "late") {
 		t.Fatal("second transition must lose: the run already finished")
 	}
-	if len(rec.calls) != 1 || rec.calls[0].status != "completed" {
-		t.Fatalf("scan recordings = %+v, want exactly one 'completed'", rec.calls)
+	if len(rec.calls) != 1 {
+		t.Fatalf("scan refreshes = %+v, want exactly one", rec.calls)
 	}
 }
