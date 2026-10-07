@@ -1555,6 +1555,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// backfill and the re-evaluation after a scope target change.
 		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, repos.EASMSeed, s.Scope, repos.Attribution, repos.Asset, log)
 		s.ScopeJoin.SetAudit(s.Audit)
+		s.ScopeJoin.SetSettings(s.Tenant)
 		stamper := easmapp.NewScanStamper(repos.Attribution, repos.EASMSeed)
 		stamper.SetScopeJoin(s.ScopeJoin)
 		s.Ingest.SetScanAttributionStamper(stamper)
@@ -1668,6 +1669,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Tool = tool.NewService(repos.Tool, repos.TenantToolConfig, repos.ToolExecution, log)
 	// Tool availability: the catalog joined with the tools the sensors report.
 	s.Tool.SetAvailabilitySources(s.Sensor, repos.ScanZone, repos.SensorGrant)
+	// RFC-055 §5: trust and the platform-assigned tier per tool.
+	s.Tool.SetManifestSource(repos.Sensor)
 	s.Tool.SetCategoryRepo(repos.ToolCategory) // Enable category info in responses
 	s.ToolCategory = tool.NewCategoryService(repos.ToolCategory, repos.Tool, log)
 	s.Capability = capability.NewCapabilityService(repos.Capability, s.Audit, log)
@@ -2288,6 +2291,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// A widened grant notifies every administrator (RFC-052 D-5).
 	if s.SensorGrant != nil {
 		s.SensorGrant.SetNotifications(repos.MemberLifecycle, s.Notification)
+	}
+	// Scope entries: settings, the approval count and the widening notice to
+	// every administrator (RFC-054 §7).
+	if s.Scope != nil {
+		s.Scope.SetEntryPolicy(s.Tenant, repos.MemberLifecycle, s.Notification)
 	}
 }
 

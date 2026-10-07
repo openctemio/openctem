@@ -306,6 +306,8 @@ func newTestScopeService() (*scope.Service, *mockTargetRepo, *mockExclusionRepo,
 	ar := newMockAssetRepo()
 	log := logger.NewDevelopment()
 	svc := scope.NewService(tr, er, ar, log)
+	// No user in the test context: a real gate passes system calls too.
+	svc.SetStepUpGate(passGate{})
 	return svc, tr, er, ar
 }
 
@@ -587,7 +589,7 @@ func TestScopeServiceActivateDeactivateTarget(t *testing.T) {
 	})
 
 	t.Run("Activate", func(t *testing.T) {
-		result, err := svc.ActivateTarget(context.Background(), target.ID().String(), tenantID.String())
+		result, err := svc.ActivateTarget(context.Background(), target.ID().String(), tenantID.String(), scope.Actor{})
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -597,7 +599,7 @@ func TestScopeServiceActivateDeactivateTarget(t *testing.T) {
 	})
 
 	t.Run("ActivateNotFound", func(t *testing.T) {
-		_, err := svc.ActivateTarget(context.Background(), shared.NewID().String(), tenantID.String())
+		_, err := svc.ActivateTarget(context.Background(), shared.NewID().String(), tenantID.String(), scope.Actor{})
 		if err == nil {
 			t.Fatal("expected error for not found")
 		}
@@ -1353,7 +1355,7 @@ func TestScopeServiceActivateTargetTenantIsolation(t *testing.T) {
 		target.Deactivate()
 		tr.targets[target.ID().String()] = target
 
-		result, err := svc.ActivateTarget(context.Background(), target.ID().String(), tenantID.String())
+		result, err := svc.ActivateTarget(context.Background(), target.ID().String(), tenantID.String(), scope.Actor{})
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1368,7 +1370,7 @@ func TestScopeServiceActivateTargetTenantIsolation(t *testing.T) {
 		target.Deactivate()
 		tr.targets[target.ID().String()] = target
 
-		_, err := svc.ActivateTarget(context.Background(), target.ID().String(), shared.NewID().String())
+		_, err := svc.ActivateTarget(context.Background(), target.ID().String(), shared.NewID().String(), scope.Actor{})
 		if err == nil {
 			t.Fatal("expected error for wrong tenant")
 		}
