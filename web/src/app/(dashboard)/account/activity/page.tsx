@@ -1,5 +1,6 @@
 'use client'
 
+import { useDisplayUser } from '@/hooks/use-display-user'
 import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,7 +20,6 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { formatRelative, formatDateSafe } from '@/lib/format-date'
-import { useUser } from '@/stores/auth-store'
 import { EmptyState } from '@/features/shared'
 import { useAccountActivity } from '@/features/account'
 import {
@@ -54,7 +54,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 const PER_PAGE = 10
 
 export default function ActivityPage() {
-  const user = useUser()
+  const user = useDisplayUser()
   const [page, setPage] = useState(1)
 
   // Paged on the server (the user-activity endpoint has no category filter,
