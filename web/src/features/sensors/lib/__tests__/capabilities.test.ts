@@ -56,6 +56,29 @@ describe('sensorToolRows', () => {
     expect(dispatchTools(s)).toEqual(['semgrep', 'trivy'])
   })
 
+  it('marks an installed tool the grant or local policy refuses (tool availability)', () => {
+    const s = base({
+      reported: report([
+        { name: 'nuclei', version: '3.4.2', installed: true },
+        { name: 'trivy', installed: false },
+      ]),
+    })
+    const exclusions = new Map([
+      ['nuclei', { reason: 'grant' as const, detail: 'outside the grant (tier)' }],
+      ['trivy', { reason: 'local_policy' as const }],
+    ])
+    expect(sensorToolRows(s, exclusions)).toEqual([
+      {
+        name: 'nuclei',
+        version: '3.4.2',
+        status: 'ready',
+        excluded: { reason: 'grant', detail: 'outside the grant (tier)' },
+      },
+      // Not installed: nothing to exclude.
+      { name: 'trivy', status: 'not_installed' },
+    ])
+  })
+
   it('treats an empty inventory as reported', () => {
     const s = base({
       reported: report([]),

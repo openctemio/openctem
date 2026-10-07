@@ -34,6 +34,8 @@ vi.mock('@/lib/api/tool-hooks', () => ({
     data: { items: [{ id: 't1', name: 'trivy', display_name: 'Trivy', is_active: true }] },
     isLoading: false,
   }),
+  // Availability unknown: nothing is disabled.
+  useToolAvailability: () => ({ data: undefined }),
 }))
 
 globalThis.ResizeObserver ??= class {

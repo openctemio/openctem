@@ -111,6 +111,7 @@ func newWSBindingFixture(t *testing.T) *wsBindingFixture {
 	sessions := authapp.NewSessionService(sessRepo, rtRepo, log)
 	sessions.SetRevocationStore(notifier, time.Hour)
 	f.tenantSvc.SetSessionService(sessions)
+	f.tenantSvc.SetLifecycleRepository(postgres.NewMemberLifecycleRepository(pg))
 	auth := authapp.NewAuthService(postgres.NewUserRepository(pg), sessRepo, rtRepo, f.tenants,
 		auditapp.NewAuditService(postgres.NewAuditRepository(pg), log), config.AuthConfig{AccessTokenDuration: 15 * time.Minute}, log)
 	auth.SetSessionRevocationStore(notifier)
@@ -238,15 +239,15 @@ func TestWSBinding_SuspendedMemberSocketCloses(t *testing.T) {
 	}
 }
 
-func TestWSBinding_RemovedMemberSocketCloses(t *testing.T) {
+func TestWSBinding_OffboardedMemberSocketCloses(t *testing.T) {
 	f := newWSBindingFixture(t)
 	owner := f.member("owner", false)
 	u := f.member("member", false)
 	conn := f.open(u, f.session(u))
 
-	if err := f.tenantSvc.RemoveMember(f.ctx, f.membershipID(u),
+	if _, err := f.tenantSvc.OffboardMember(f.ctx, f.membershipID(u), tenantapp.OffboardMemberInput{},
 		auditapp.AuditContext{TenantID: f.tenantID, ActorID: owner}); err != nil {
-		t.Fatalf("remove: %v", err)
+		t.Fatalf("offboard: %v", err)
 	}
 	if code := wsCloseCode(t, conn); code != websocket.CloseUnauthorized {
 		t.Fatalf("close code %d, want %d", code, websocket.CloseUnauthorized)
