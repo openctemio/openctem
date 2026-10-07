@@ -86,15 +86,12 @@ func TestScopeJoin(t *testing.T) {
 		t.Fatal(err)
 	}
 	slices.Sort(confirmed)
-	want := []string{"198.51.100.7", "api.join-a.example", "www.seeded-a.example"}
-	if apexIncluded := attributionState(t, db, tenantA, apex) == attribution.StateConfirmed; apexIncluded {
-		want = append(want, "join-a.example")
-		slices.Sort(want)
-	}
+	// *.join-a.example covers its apex too (RFC-054 §4.1).
+	want := []string{"198.51.100.7", "api.join-a.example", "join-a.example", "www.seeded-a.example"}
 	if !slices.Equal(confirmed, want) {
 		t.Fatalf("confirmed = %v, want %v", confirmed, want)
 	}
-	for _, id := range []shared.ID{sub, seeded, ipIn} {
+	for _, id := range []shared.ID{apex, sub, seeded, ipIn} {
 		if st := attributionState(t, db, tenantA, id); st != attribution.StateConfirmed {
 			t.Errorf("%s = %s, want confirmed", id, st)
 		}
