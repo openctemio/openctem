@@ -47,7 +47,7 @@ const ALLOWLIST = new Set(
     'features/capabilities/components/capability-table.tsx',
     'features/components/components/component-detail-sheet.tsx',
     'features/pentest/components/finding-detail-sheet.tsx',
-    'features/pipelines/components/node-palette.tsx',
+    'features/scan-workflows/components/node-palette.tsx',
     'features/vulnerabilities/components/vulnerability-detail-sheet.tsx',
     'lib/api/audit-types.ts',
   ].map((p) => p.split('/').join('/'))

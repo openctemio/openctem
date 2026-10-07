@@ -23,10 +23,10 @@ import { TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { scanWorkflowEndpoints, scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunStage, RunStageList } from '@/lib/api/generated'
-import type { PipelineTemplate, StepRun } from '@/lib/api'
+import type { ScanWorkflow, StepRun } from '@/lib/api'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
-import { useCapabilityTable } from '@/features/pipelines/lib/use-capability-table'
+import { useCapabilityTable } from '@/features/scan-workflows/lib/use-capability-table'
 import { skipLabel, skippedReasons } from './run-stage-lanes'
 
 /** What one node of the run overlay shows. Every number comes from the API. */
@@ -158,12 +158,12 @@ const nodeTypes = { runstep: RunStepNode }
  */
 export function RunGraph({
   runId,
-  pipelineId,
+  workflowId,
   stepRuns,
   refreshInterval,
 }: {
   runId: string
-  pipelineId?: string
+  workflowId?: string
   stepRuns: StepRun[]
   refreshInterval?: number
 }) {
@@ -173,15 +173,15 @@ export function RunGraph({
     (url: string) => get<RunStageList>(url),
     { revalidateOnFocus: false, refreshInterval }
   )
-  const { data: pipeline } = useSWR<PipelineTemplate>(
-    pipelineId ? scanWorkflowEndpoints.get(pipelineId) : null,
-    (url: string) => get<PipelineTemplate>(url),
+  const { data: workflow } = useSWR<ScanWorkflow>(
+    workflowId ? scanWorkflowEndpoints.get(workflowId) : null,
+    (url: string) => get<ScanWorkflow>(url),
     { revalidateOnFocus: false }
   )
 
   const { nodes, edges } = useMemo(() => {
     const deps: Record<string, string[]> = {}
-    for (const s of pipeline?.steps ?? []) deps[s.step_key] = s.depends_on ?? []
+    for (const s of workflow?.steps ?? []) deps[s.step_key] = s.depends_on ?? []
     const model = runGraphModel(stepRuns, lanes?.data ?? [], deps)
     // Top to bottom: the overlay lives in a narrow side sheet.
     const pos = layeredLayout(
@@ -205,7 +205,7 @@ export function RunGraph({
       markerEnd: { type: MarkerType.ArrowClosed },
     }))
     return { nodes: flowNodes, edges: flowEdges }
-  }, [stepRuns, lanes, pipeline, table])
+  }, [stepRuns, lanes, workflow, table])
 
   return (
     <div className="h-[28rem] w-full rounded-md border" aria-label="Workflow of this run">

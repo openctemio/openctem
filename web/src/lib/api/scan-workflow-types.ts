@@ -1,8 +1,8 @@
 /**
- * Pipeline API Types
+ * Workflow API Types
  *
- * TypeScript types for Pipeline Management (Workflow Orchestration)
- * Pipelines are templates for multi-step scan workflows.
+ * TypeScript types for Workflow Management (Workflow Orchestration)
+ * Workflows are templates for multi-step scan workflows.
  */
 
 // ============================================
@@ -12,16 +12,16 @@
 import type { RunTask, RunTaskSummary } from './generated'
 import type { RunDispatch } from './scan-types'
 
-export const PIPELINE_TRIGGERS = [
+export const SCAN_RUN_TRIGGERS = [
   'manual',
   'schedule',
   'webhook',
   'api',
   'on_asset_discovery',
 ] as const
-export type PipelineTriggerType = (typeof PIPELINE_TRIGGERS)[number]
+export type ScanWorkflowTriggerType = (typeof SCAN_RUN_TRIGGERS)[number]
 
-export const PIPELINE_TRIGGER_LABELS: Record<PipelineTriggerType, string> = {
+export const SCAN_RUN_TRIGGER_LABELS: Record<ScanWorkflowTriggerType, string> = {
   manual: 'Manual',
   schedule: 'Scheduled',
   webhook: 'Webhook',
@@ -54,21 +54,21 @@ export const STEP_CONDITION_LABELS: Record<StepConditionType, string> = {
 // RUN STATUS TYPES
 // ============================================
 
-export const PIPELINE_RUN_STATUSES = [
+export const SCAN_RUN_STATUSES = [
   'pending',
   'running',
   'completed',
   'partial',
   'failed',
-  // Spelled as the API stores it (pipeline.RunStatusCanceled).
+  // Spelled as the API stores it (workflow.RunStatusCanceled).
   'canceled',
   'timeout',
   // A trigger refused before anything was dispatched; refusal_code says why.
   'blocked',
 ] as const
-export type PipelineRunStatus = (typeof PIPELINE_RUN_STATUSES)[number]
+export type ScanRunStatus = (typeof SCAN_RUN_STATUSES)[number]
 
-export const PIPELINE_RUN_STATUS_LABELS: Record<PipelineRunStatus, string> = {
+export const SCAN_RUN_STATUS_LABELS: Record<ScanRunStatus, string> = {
   pending: 'Pending',
   running: 'Running',
   completed: 'Completed',
@@ -111,11 +111,11 @@ export interface StepCondition {
 }
 
 // ============================================
-// PIPELINE TRIGGER
+// SCAN_WORKFLOW TRIGGER
 // ============================================
 
-export interface PipelineTrigger {
-  type: PipelineTriggerType
+export interface ScanWorkflowTrigger {
+  type: ScanWorkflowTriggerType
   schedule?: string
   webhook?: string
   filters?: Record<string, unknown>
@@ -125,26 +125,30 @@ export interface PipelineTrigger {
 // SENSOR PREFERENCE
 // ============================================
 
-export const PIPELINE_SENSOR_PREFERENCES = ['auto', 'tenant', 'platform'] as const
-export type PipelineSensorPreference = (typeof PIPELINE_SENSOR_PREFERENCES)[number]
+export const SCAN_WORKFLOW_SENSOR_PREFERENCES = ['auto', 'tenant', 'platform'] as const
+export type ScanWorkflowSensorPreference = (typeof SCAN_WORKFLOW_SENSOR_PREFERENCES)[number]
 
-export const PIPELINE_SENSOR_PREFERENCE_LABELS: Record<PipelineSensorPreference, string> = {
-  auto: 'Auto (Tenant first, Platform fallback)',
-  tenant: 'Tenant Sensors Only',
-  platform: 'Platform Sensors Only',
-}
+export const SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS: Record<ScanWorkflowSensorPreference, string> =
+  {
+    auto: 'Auto (Tenant first, Platform fallback)',
+    tenant: 'Tenant Sensors Only',
+    platform: 'Platform Sensors Only',
+  }
 
-export const PIPELINE_SENSOR_PREFERENCE_DESCRIPTIONS: Record<PipelineSensorPreference, string> = {
+export const SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS: Record<
+  ScanWorkflowSensorPreference,
+  string
+> = {
   auto: 'Uses tenant sensors when available, falls back to platform sensors',
   tenant: 'Only uses sensors deployed in your infrastructure',
   platform: "Only uses OpenCTEM's managed platform sensors",
 }
 
 // ============================================
-// PIPELINE SETTINGS
+// SCAN_WORKFLOW SETTINGS
 // ============================================
 
-export interface PipelineSettings {
+export interface ScanWorkflowSettings {
   max_parallel_steps: number
   fail_fast: boolean
   retry_failed_steps: number
@@ -152,10 +156,10 @@ export interface PipelineSettings {
   notify_on_complete: boolean
   notify_on_failure: boolean
   notification_channels?: string[]
-  sensor_preference?: PipelineSensorPreference
+  sensor_preference?: ScanWorkflowSensorPreference
 }
 
-export const DEFAULT_PIPELINE_SETTINGS: PipelineSettings = {
+export const DEFAULT_SCAN_WORKFLOW_SETTINGS: ScanWorkflowSettings = {
   max_parallel_steps: 3,
   fail_fast: false,
   retry_failed_steps: 0,
@@ -170,7 +174,7 @@ export const DEFAULT_PIPELINE_SETTINGS: PipelineSettings = {
 // NODE TYPES (for Visual Builder)
 // ============================================
 
-export const PIPELINE_NODE_TYPES = [
+export const SCAN_WORKFLOW_NODE_TYPES = [
   'scanner',
   'trigger',
   'condition',
@@ -178,20 +182,20 @@ export const PIPELINE_NODE_TYPES = [
   'notification',
   'tool',
 ] as const
-export type PipelineNodeType = (typeof PIPELINE_NODE_TYPES)[number]
+export type WorkflowNodeType = (typeof SCAN_WORKFLOW_NODE_TYPES)[number]
 
 // ============================================
-// PIPELINE STEP
+// SCAN_WORKFLOW STEP
 // ============================================
 
-export interface PipelineStep {
+export interface ScanWorkflowStep {
   id: string
   step_key: string
   name: string
   description?: string
   order: number
   ui_position: UIPosition
-  node_type?: PipelineNodeType // Visual builder node type
+  node_type?: WorkflowNodeType // Visual builder node type
   tool?: string
   capabilities: string[]
   /** Tools to try, in order, when no tool is pinned (capability nodes). */
@@ -207,10 +211,10 @@ export interface PipelineStep {
 }
 
 // ============================================
-// PIPELINE TEMPLATE
+// SCAN_WORKFLOW TEMPLATE
 // ============================================
 
-export interface PipelineTemplate {
+export interface ScanWorkflow {
   id: string
   tenant_id: string
   name: string
@@ -218,10 +222,10 @@ export interface PipelineTemplate {
   version: number
   is_active: boolean
   is_system_template?: boolean
-  triggers: PipelineTrigger[]
-  settings: PipelineSettings
+  triggers: ScanWorkflowTrigger[]
+  settings: ScanWorkflowSettings
   tags?: string[]
-  steps: PipelineStep[]
+  steps: ScanWorkflowStep[]
   // UI positions for visual builder Start/End nodes
   ui_start_position?: UIPosition
   ui_end_position?: UIPosition
@@ -236,7 +240,7 @@ export interface PipelineTemplate {
 
 export interface StepRun {
   id: string
-  /** Absent once the step was removed from the pipeline; the run keeps its key, name and tool. */
+  /** Absent once the step was removed from the workflow; the run keeps its key, name and tool. */
   step_id?: string
   step_key: string
   step_name?: string
@@ -255,15 +259,15 @@ export interface StepRun {
 }
 
 // ============================================
-// PIPELINE RUN
+// SCAN_WORKFLOW RUN
 // ============================================
 
 /**
- * A pipeline run as GET /scan-runs and GET /scan-runs/{id} return it.
- * Scan runs are pipeline runs: this is the one run type of the web (scan-types
+ * A workflow run as GET /scan-runs and GET /scan-runs/{id} return it.
+ * Scan runs are workflow runs: this is the one run type of the web (scan-types
  * re-exports it). List rows carry no step runs or tasks; the run read does.
  */
-export interface PipelineRun {
+export interface ScanRun {
   id: string
   tenant_id: string
   scan_workflow_id: string
@@ -271,11 +275,11 @@ export interface PipelineRun {
   scan_id?: string
   /** The run's scan, named by the server on list rows (empty when deleted). */
   scan_name?: string
-  trigger_type: PipelineTriggerType
+  trigger_type: ScanWorkflowTriggerType
   triggered_by?: string
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
   triggered_by_name?: string
-  status: PipelineRunStatus
+  status: ScanRunStatus
   /** The schedule occurrence this run serves (scheduled runs only); one run per occurrence. */
   scheduled_for?: string
   started_at?: string
@@ -306,11 +310,11 @@ export interface PipelineRun {
 // REQUEST TYPES
 // ============================================
 
-export interface CreatePipelineRequest {
+export interface CreateScanWorkflowRequest {
   name: string
   description?: string
-  triggers?: PipelineTrigger[]
-  settings?: Partial<PipelineSettings>
+  triggers?: ScanWorkflowTrigger[]
+  settings?: Partial<ScanWorkflowSettings>
   tags?: string[]
   steps: CreateStepRequest[]
   // UI positions for visual builder Start/End nodes
@@ -320,7 +324,7 @@ export interface CreatePipelineRequest {
 
 export interface CreateStepRequest {
   /**
-   * Id of the existing step this entry is, when saving a whole pipeline: the
+   * Id of the existing step this entry is, when saving a whole workflow: the
    * step is updated in place and keeps its run history. Omit for a new step.
    */
   id?: string
@@ -340,11 +344,11 @@ export interface CreateStepRequest {
   retry_delay_seconds?: number
 }
 
-export interface UpdatePipelineRequest {
+export interface UpdateScanWorkflowRequest {
   name?: string
   description?: string
-  triggers?: PipelineTrigger[]
-  settings?: Partial<PipelineSettings>
+  triggers?: ScanWorkflowTrigger[]
+  settings?: Partial<ScanWorkflowSettings>
   tags?: string[]
   steps?: CreateStepRequest[]
   // UI positions for visual builder Start/End nodes
@@ -387,7 +391,7 @@ export interface QuickScanResponse {
 // FILTER TYPES
 // ============================================
 
-export interface PipelineListFilters {
+export interface ScanWorkflowListFilters {
   search?: string
   is_active?: boolean
   tags?: string
@@ -395,11 +399,11 @@ export interface PipelineListFilters {
   per_page?: number
 }
 
-export interface PipelineRunListFilters {
+export interface ScanRunListFilters {
   scan_workflow_id?: string
   asset_id?: string
-  status?: PipelineRunStatus
-  trigger_type?: PipelineTriggerType
+  status?: ScanRunStatus
+  trigger_type?: ScanWorkflowTriggerType
   /** One sort key, `-` for descending (created_at, started_at, completed_at, total_findings). */
   sort?: string
   page?: number
@@ -410,16 +414,16 @@ export interface PipelineRunListFilters {
 // RESPONSE TYPES
 // ============================================
 
-export interface PipelineListResponse {
-  items: PipelineTemplate[]
+export interface ScanWorkflowListResponse {
+  items: ScanWorkflow[]
   total: number
   page: number
   per_page: number
   total_pages: number
 }
 
-export interface PipelineRunListResponse {
-  items: PipelineRun[]
+export interface ScanRunListResponse {
+  items: ScanRun[]
   total: number
   page: number
   per_page: number

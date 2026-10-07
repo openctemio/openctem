@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { PipelineStep } from '@/lib/api'
+import type { ScanWorkflowStep } from '@/lib/api'
 import type { Capability } from './capability-graph'
 import {
   paramValue,
@@ -33,7 +33,7 @@ const ports: Capability = {
   },
 }
 
-function step(over: Partial<PipelineStep> = {}): PipelineStep {
+function step(over: Partial<ScanWorkflowStep> = {}): ScanWorkflowStep {
   return {
     id: 's1',
     step_key: 'ports',

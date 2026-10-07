@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { NodeInspector } from '../node-inspector'
-import type { PipelineStep } from '@/lib/api'
+import type { ScanWorkflowStep } from '@/lib/api'
 import type { Capability } from '../../lib/capability-graph'
 
 // Radix scroll areas and radios measure themselves; jsdom has none.
@@ -38,7 +38,7 @@ const ports: Capability = {
   toolParams: { naabu: { rate: 'rate', top_n: 'top_ports' }, masscan: { rate: 'rate' } },
 }
 
-const step: PipelineStep = {
+const step: ScanWorkflowStep = {
   id: 's1',
   step_key: 'ports',
   name: 'Ports',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { PipelineStep } from '@/lib/api'
+import type { ScanWorkflowStep } from '@/lib/api'
 import { makeIsValidConnection, wouldCreateCycle } from '@/components/flow/connection-rules'
 import {
   capabilityForStep,
@@ -91,7 +91,12 @@ const served: ScanStageList = {
 }
 const table = toCapabilityTable(served)
 
-function step(id: string, tool: string, depends: string[] = [], caps: string[] = []): PipelineStep {
+function step(
+  id: string,
+  tool: string,
+  depends: string[] = [],
+  caps: string[] = []
+): ScanWorkflowStep {
   return {
     id,
     step_key: id,

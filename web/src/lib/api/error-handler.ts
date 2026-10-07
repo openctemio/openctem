@@ -494,10 +494,10 @@ export function extractValidationErrors(error: ApiClientError): Record<string, s
  * @example
  * ```typescript
  * try {
- *   await updatePipeline(data)
- *   toast.success('Pipeline updated')
+ *   await updateScanWorkflow(data)
+ *   toast.success('Workflow updated')
  * } catch (error) {
- *   toast.error(getErrorMessage(error, 'Failed to update pipeline'))
+ *   toast.error(getErrorMessage(error, 'Failed to update workflow'))
  * }
  * ```
  */
