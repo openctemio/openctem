@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -63,12 +64,16 @@ type DispatchTargetsInput struct {
 	// unattributed) may be resolved, never actively probed: every other
 	// path leaves this off and gets the full active-scan gate.
 	PassiveOnly bool
+	// DryRun answers POST /scope/check: nothing is logged as refused.
+	DryRun bool
 }
 
-// RefusedTarget is a target the gate will not dispatch, with the reason.
+// RefusedTarget is a target the gate will not dispatch, with the reason and
+// its structured code (RFC-054 §6.5, scopedom.Refusal*).
 type RefusedTarget struct {
 	Target string `json:"target"`
 	Reason string `json:"reason"`
+	Code   string `json:"code"`
 }
 
 // DispatchTargets is the gate's decision for every input target.
@@ -170,7 +175,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		return nil, err
 	}
 	for _, r := range rejected {
-		out.Refused = append(out.Refused, RefusedTarget(r))
+		out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: r.Reason, Code: scopedom.RefusalInvalidTarget})
 	}
 	ok := make(map[string]bool, len(accepted))
 	for _, a := range accepted {
@@ -287,8 +292,10 @@ func (s *Service) refuseUnconfirmed(ctx context.Context, in DispatchTargetsInput
 			}
 		}
 		if no {
-			s.logRefusedTarget(ctx, in.TenantID, "dispatch_gate", t, state)
-			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: ReasonOwnershipNotConfirmed})
+			if !in.DryRun {
+				s.logRefusedTarget(ctx, in.TenantID, "dispatch_gate", t, state)
+			}
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: ReasonOwnershipNotConfirmed, Code: RefusalCodeForState(state)})
 			continue
 		}
 		allowed = append(allowed, t)
@@ -352,11 +359,11 @@ func (s *Service) refuseOutOfActScopeTargets(ctx context.Context, in DispatchTar
 	allowed := make([]string, 0, len(kept))
 	for _, t := range kept {
 		if reason, no := d.RefusedTargets[t]; no {
-			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: reason})
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: reason, Code: RefusalCodeForActReason(reason)})
 			continue
 		}
 		if a, ok := assetOf(in.Assets, t); ok && anyRefused(a.IDs, d.RefusedAssets) {
-			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: actscope.ReasonOutOfDataScope})
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: actscope.ReasonOutOfDataScope, Code: scopedom.RefusalOutOfDataScope})
 			continue
 		}
 		allowed = append(allowed, t)
@@ -413,13 +420,13 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 			if reason == "" {
 				reason = "no scan zone covers this target"
 			}
-			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: reason})
+			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: reason, Code: scopedom.RefusalZoneNone})
 		case r.Zone != nil && len(r.Zone.SensorIDs) == 0:
 			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target,
-				Reason: fmt.Sprintf("scan zone %q has no sensors assigned", r.Zone.Name)})
+				Reason: fmt.Sprintf("scan zone %q has no sensors assigned", r.Zone.Name), Code: scopedom.RefusalZoneNoSensor})
 		case r.Zone != nil && in.SensorID != nil && !r.Zone.HasSensor(*in.SensorID):
 			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target,
-				Reason: fmt.Sprintf("target is in scan zone %q and the pinned sensor is not assigned to it", r.Zone.Name)})
+				Reason: fmt.Sprintf("target is in scan zone %q and the pinned sensor is not assigned to it", r.Zone.Name), Code: scopedom.RefusalZoneSensorMismatch})
 		default:
 			out.Allowed = append(out.Allowed, r.Target)
 			out.ZoneOf[r.Target] = r.Zone
