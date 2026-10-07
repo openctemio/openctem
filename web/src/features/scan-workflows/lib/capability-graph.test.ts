@@ -91,7 +91,12 @@ const served: ScanStageList = {
 }
 const table = toCapabilityTable(served)
 
-function step(id: string, tool: string, depends: string[] = [], caps: string[] = []): ScanWorkflowStep {
+function step(
+  id: string,
+  tool: string,
+  depends: string[] = [],
+  caps: string[] = []
+): ScanWorkflowStep {
   return {
     id,
     step_key: id,

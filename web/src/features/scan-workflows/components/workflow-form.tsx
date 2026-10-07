@@ -267,7 +267,12 @@ function SortableStepItem({
   )
 }
 
-export function ScanWorkflowForm({ workflow, onSubmit, onCancel, isSubmitting }: WorkflowFormProps) {
+export function ScanWorkflowForm({
+  workflow,
+  onSubmit,
+  onCancel,
+  isSubmitting,
+}: WorkflowFormProps) {
   const [currentStep, setCurrentStep] = useState<WizardStep>('basics')
 
   // Fetch tools for selection
@@ -646,7 +651,9 @@ export function ScanWorkflowForm({ workflow, onSubmit, onCancel, isSubmitting }:
                 <div className="flex-1 space-y-3">
                   <Select
                     value={trigger.type}
-                    onValueChange={(v) => updateTrigger(index, 'type', v as ScanWorkflowTriggerType)}
+                    onValueChange={(v) =>
+                      updateTrigger(index, 'type', v as ScanWorkflowTriggerType)
+                    }
                   >
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select trigger" />

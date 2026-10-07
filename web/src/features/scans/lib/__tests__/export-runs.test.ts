@@ -88,8 +88,6 @@ describe('run export cells', () => {
   it('names deleted scans and workflow runs', () => {
     const scanCol = RUN_EXPORT_FIELDS.find((f) => f.header === 'Scan')!
     expect(scanCol.accessor(run(1, { scan_name: undefined }))).toBe('Deleted scan')
-    expect(scanCol.accessor(run(1, { scan_id: undefined, scan_name: undefined }))).toBe(
-      'Scan run'
-    )
+    expect(scanCol.accessor(run(1, { scan_id: undefined, scan_name: undefined }))).toBe('Scan run')
   })
 })

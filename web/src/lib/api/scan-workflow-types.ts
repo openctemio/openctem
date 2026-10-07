@@ -128,13 +128,17 @@ export interface ScanWorkflowTrigger {
 export const SCAN_WORKFLOW_SENSOR_PREFERENCES = ['auto', 'tenant', 'platform'] as const
 export type ScanWorkflowSensorPreference = (typeof SCAN_WORKFLOW_SENSOR_PREFERENCES)[number]
 
-export const SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS: Record<ScanWorkflowSensorPreference, string> = {
-  auto: 'Auto (Tenant first, Platform fallback)',
-  tenant: 'Tenant Sensors Only',
-  platform: 'Platform Sensors Only',
-}
+export const SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS: Record<ScanWorkflowSensorPreference, string> =
+  {
+    auto: 'Auto (Tenant first, Platform fallback)',
+    tenant: 'Tenant Sensors Only',
+    platform: 'Platform Sensors Only',
+  }
 
-export const SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS: Record<ScanWorkflowSensorPreference, string> = {
+export const SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS: Record<
+  ScanWorkflowSensorPreference,
+  string
+> = {
   auto: 'Uses tenant sensors when available, falls back to platform sensors',
   tenant: 'Only uses sensors deployed in your infrastructure',
   platform: "Only uses OpenCTEM's managed platform sensors",
