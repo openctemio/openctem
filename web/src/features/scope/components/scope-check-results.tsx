@@ -269,6 +269,46 @@ export function ScopeCheckRow({ result, onApplied, className }: ScopeCheckRowPro
   )
 }
 
+interface ScopeRefusalPanelProps {
+  refused: ScopeRefusal[]
+  onApplied?: () => void
+  className?: string
+}
+
+/**
+ * A refused request (`TARGET_OUT_OF_SCOPE`) inside the dialog that sent it:
+ * which targets, why, and the fixes, instead of one long toast.
+ */
+export function ScopeRefusalPanel({ refused, onApplied, className }: ScopeRefusalPanelProps) {
+  const { t } = useTranslation()
+  if (refused.length === 0) return null
+  return (
+    <div
+      role="alert"
+      className={cn('rounded-md border border-warning/40 bg-warning/5 p-3', className)}
+    >
+      <p className="text-sm font-medium">
+        {refused.length === 1
+          ? '1 target may not be scanned'
+          : `${refused.length} targets may not be scanned`}
+      </p>
+      <p className="text-xs text-muted-foreground">{t('scope.error.TARGET_OUT_OF_SCOPE')}</p>
+      <ScopeCheckList results={refused} onApplied={onApplied} className="mt-2" />
+    </div>
+  )
+}
+
+/** One line for a toast: "promo.net: Not in scope; old.acme.io: Marked not ours". */
+export function scopeRefusalSummary(
+  t: (key: string, fallback?: string) => string,
+  refused: ScopeRefusal[],
+  max = 3
+): string {
+  const parts = refused.slice(0, max).map((r) => `${r.target}: ${scopeRefusalLabel(t, r.code)}`)
+  if (refused.length > max) parts.push(`and ${refused.length - max} more`)
+  return parts.join('; ')
+}
+
 interface ScopeCheckListProps {
   results: (ApiScopeCheckResult | ScopeRefusal)[]
   onApplied?: () => void
