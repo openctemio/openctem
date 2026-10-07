@@ -150,7 +150,7 @@ export function ZoneSensorsDialog({ open, onOpenChange, zone }: ZoneSensorsDialo
                     </span>
                     <span className="truncate text-xs text-muted-foreground">
                       {sensorHealthLabel(s)}
-                      {s.tools?.length ? ` · ${s.tools.join(', ')}` : ''}
+                      {s.effective?.tools?.length ? ` · ${s.effective.tools.join(', ')}` : ''}
                     </span>
                   </label>
                   {pending === s.id && (

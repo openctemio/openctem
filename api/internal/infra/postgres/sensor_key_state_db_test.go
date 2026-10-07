@@ -20,7 +20,7 @@ func TestSensorKeyUsableSQL(t *testing.T) {
 
 	mk := func(name string) string {
 		t.Helper()
-		s, err := sensor.NewSensor(tenant, name, sensor.SensorTypeWorker, "", nil, nil, sensor.ExecutionModeDaemon)
+		s, err := sensor.NewSensor(tenant, name, sensor.SensorTypeWorker, "", nil, sensor.ExecutionModeDaemon)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -98,7 +98,7 @@ func TestSensorLegacyKeySQL(t *testing.T) {
 
 	mk := func(name, prefix string) string {
 		t.Helper()
-		s, err := sensor.NewSensor(tenant, name, sensor.SensorTypeWorker, "", nil, nil, sensor.ExecutionModeDaemon)
+		s, err := sensor.NewSensor(tenant, name, sensor.SensorTypeWorker, "", nil, sensor.ExecutionModeDaemon)
 		if err != nil {
 			t.Fatal(err)
 		}

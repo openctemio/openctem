@@ -136,7 +136,6 @@ func makeSensorSelSensor(name string, currentJobs, maxJobs int) *sensor.Sensor {
 		CurrentJobs:       currentJobs,
 		MaxConcurrentJobs: maxJobs,
 		Capabilities:      []string{},
-		Tools:             []string{},
 	}
 }
 

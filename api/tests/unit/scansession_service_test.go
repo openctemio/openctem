@@ -282,12 +282,12 @@ func newTestScanSessionService() (*scan.ScanSessionService, *scanSessionMockRepo
 }
 
 func newTestSensorWithTenant(tenantID shared.ID) *sensor.Sensor {
-	agt, _ := sensor.NewSensor(tenantID, "test-sensor", sensor.SensorTypeWorker, "test", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeStandalone)
+	agt, _ := sensor.NewSensor(tenantID, "test-sensor", sensor.SensorTypeWorker, "test", []string{"sast"}, sensor.ExecutionModeStandalone)
 	return agt
 }
 
 func newTestSensorWithoutTenant() *sensor.Sensor {
-	agt, _ := sensor.NewSensor(shared.NewID(), "platform-sensor", sensor.SensorTypeWorker, "platform", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeDaemon)
+	agt, _ := sensor.NewSensor(shared.NewID(), "platform-sensor", sensor.SensorTypeWorker, "platform", []string{"sast"}, sensor.ExecutionModeDaemon)
 	agt.TenantID = nil // Platform sensor has no tenant
 	agt.IsPlatformSensor = true
 	return agt
