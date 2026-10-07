@@ -342,7 +342,7 @@ create's target validator, exclusions, zone routing) in one call.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/{id}/config-report` (setup checklist, research/26) · `/available-capabilities` · `/content-policy` | `sensors:read` |
-| `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write` |
+| `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write`; creating a sensor and regenerating its key also need **step-up** (they mint a persistent key) |
 | `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
 | `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
 
@@ -373,7 +373,7 @@ create's target validator, exclusions, zone routing) in one call.
 | `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + `fingerprint_confirmed` |
 | `GET /api/v1/sensors/{id}/grant` · `GET /api/v1/sensors/grant-profiles` · `GET /api/v1/sensors/grant-summaries` · `GET /api/v1/sensors/identity-policy` | `sensors:read` |
 | `PUT /api/v1/sensors/{id}/grant` | `sensors:grant:narrow` when every dimension narrows or stays (demoting the trust level included); `sensors:grant:widen` otherwise, promoting to trusted included (checked in the service against the stored grant) |
-| `PUT /api/v1/sensors/identity-policy` | require key-bound identity: `sensors:grant:narrow`; allow bearer keys again: `sensors:grant:widen` |
+| `PUT /api/v1/sensors/identity-policy` | require key-bound identity: `sensors:grant:narrow`; allow bearer keys again: `sensors:grant:widen` + **step-up** |
 | `POST /api/v1/sensors/{id}/revoke` · `POST /{id}/keys/{keyId}/revoke` | `sensors:write` or `sensors:revoke` |
 
 > `sensors:pair`, `sensors:approve`, `sensors:grant:narrow`,
@@ -438,7 +438,7 @@ the billing page in the UI.
 | `GET /api/v1/credentials` · `/{id}` · `/{id}/related` · `/identities` · `/identities/{identity}/exposures` · `/stats` | `findings:credentials:read` |
 | `POST /api/v1/credentials/import` · `/import/csv` · `/{id}/resolve` · `/reactivate` | `findings:credentials:write` |
 | `POST /api/v1/credentials/{id}/accept` · `/{id}/false-positive` | `findings:credentials:write` **and** `findings:approve` (same dispositions as the exposure routes) |
-| `POST /api/v1/credentials/{id}/reveal` | `findings:credentials:reveal` |
+| `POST /api/v1/credentials/{id}/reveal` | `findings:credentials:reveal` + **step-up**; audited |
 
 > **The leaked secret is reveal-only.** Read endpoints (here and under
 > `/api/v1/exposures`) return `secret_masked` and `secret_fingerprint` (a
@@ -1747,6 +1747,7 @@ These tests fail the build if the model erodes. Treat them as executable spec:
 | Invariant | Test | What it guarantees |
 |-----------|------|--------------------|
 | **Every route is gated or explicitly allowlisted** | `tests/unit/route_authz_coverage_test.go` (AUTHZ-02) | A go/ast walk of `routes/*.go` resolves chi `.Group` nesting + inherited gates; any route with no `Require*`/`RequireTeam*`/`RequireRole` and not in `allowlistPrefixes` fails the build, naming the route. Removing one `Require(...)` → red. |
+| **Every permission gates something** | `tests/unit/permission_checked_test.go` | The inverse: a permission in the catalog that no code under `internal/` or `cmd/` references fails the build (the role editor would offer a capability that does not exist), unless it is listed in `reservedPermissions` with its decision (today `assets:export`, kept for server-side asset export). Each permission string has exactly one Go constant. |
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
 | **No tenantless by-id statement on a tenant-scoped table** | `tools/lint/tenantsql` (D-11) | Folds the SQL each `internal/infra/postgres` function sends and fails on `WHERE id = $n` against a table with a `tenant_id` column when the statement has no tenant predicate, unless the method is named `...ForPlatform`/`...Unscoped` (never callable from an HTTP handler) or the shrink-only `allowlist.txt` records why. See `tools/lint/tenantsql/README.md`. |
 | **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |

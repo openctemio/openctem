@@ -187,7 +187,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 
 	// Create step runs
 	for _, step := range template.Steps {
-		stepRun := pipeline.NewStepRun(run.ID, step.ID, step.StepKey, step.StepOrder, step.MaxRetries)
+		stepRun := pipeline.NewStepRunForStep(run.ID, step)
 		if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
 			return nil, err
 		}
