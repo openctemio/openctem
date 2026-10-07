@@ -23,6 +23,13 @@ type Service struct {
 	assetRepo     asset.Repository
 	logger        *logger.Logger
 
+	// Entry policy (entries.go): settings, administrators, notices, step-up.
+	settings SettingsReader
+	admins   AdminDirectory
+	inApp    InAppNotifier
+	stepUp   shared.RecentAuthGate
+	// guardrails are the platform's scope guardrails (nil: the defaults).
+	guardrails *scopedom.Guardrails
 	// Coverage of the inventory (GetStats): counted in SQL over the
 	// caller's data scope.
 	coverage  CoverageCounter
@@ -57,11 +64,20 @@ type CreateTargetInput struct {
 	Priority    int      `validate:"min=0,max=100"`
 	Tags        []string `validate:"max=20,dive,max=50"`
 	CreatedBy   string   `validate:"max=200"`
+
+	// Entry fields (RFC-054 §6.1).
+	Reason        string `validate:"max=1000"`
+	ExpiresAt     *time.Time
+	ExpiresInDays *int
+	MaxTier       string `validate:"omitempty,oneof=t0 t1 t2 T0 T1 T2"`
+	// Actor is the caller (zero: a system path, effective at once).
+	Actor Actor
 }
 
-// CreateTarget creates a new scope target.
+// CreateTarget creates a scope entry: effective at once, pending approval,
+// or a member's pending request (entries.go).
 func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*scopedom.Target, error) {
-	s.logger.Info("creating scope target", "type", input.TargetType, "pattern", input.Pattern)
+	s.logger.Info("creating scope target", "type", logSafe(input.TargetType), "pattern", logSafe(input.Pattern))
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -82,7 +98,22 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		return nil, scopedom.ErrTargetAlreadyExists
 	}
 
-	target, err := scopedom.NewTarget(tenantID, targetType, input.Pattern, input.Description, input.CreatedBy)
+	g := scopedom.DefaultGuardrails()
+	if s.guardrails != nil {
+		g = *s.guardrails
+	}
+	if err := g.CheckPattern(targetType, input.Pattern); err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	d, err := s.decideNewEntry(ctx, tenantID, targetType, input, now)
+	if err != nil {
+		return nil, err
+	}
+	target, err := scopedom.NewEntry(tenantID, targetType, input.Pattern, input.Description, input.CreatedBy, scopedom.EntryOptions{
+		Reason: input.Reason, ExpiresAt: d.expiresAt, MaxTier: d.tier, ApprovalsRequired: d.approvals, Now: now,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +132,13 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		return nil, fmt.Errorf("failed to create scope target: %w", err)
 	}
 
-	s.logger.Info("scope target created", "id", target.ID().String(), "pattern", input.Pattern)
+	switch {
+	case target.IsPending():
+		s.notifyRequested(ctx, target)
+	case !input.Actor.system():
+		s.notifyWidened(ctx, target, "Scope entry added")
+	}
+	s.logger.Info("scope target created", "id", target.ID().String(), "pattern", logSafe(input.Pattern), "status", target.Status().String())
 	return target, nil
 }
 
@@ -123,6 +160,16 @@ type UpdateTargetInput struct {
 	Description *string  `validate:"omitempty,max=1000"`
 	Priority    *int     `validate:"omitempty,min=0,max=100"`
 	Tags        []string `validate:"omitempty,max=20,dive,max=50"`
+
+	// Entry fields (RFC-054 §6.1). A later or removed expiry, or a higher
+	// tier, widens: it needs the approval permission and step-up and sends
+	// the entry back to review when approvals are required.
+	Reason        *string `validate:"omitempty,max=1000"`
+	ExpiresAt     *time.Time
+	ExpiresInDays *int
+	ClearExpiry   bool
+	MaxTier       *string `validate:"omitempty,oneof=t0 t1 t2 T0 T1 T2"`
+	Actor         Actor
 }
 
 // UpdateTarget updates an existing scope target.
@@ -152,13 +199,98 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 	if input.Tags != nil {
 		target.UpdateTags(input.Tags)
 	}
+	widened, err := s.applyEntryUpdate(ctx, target, input)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := s.targetRepo.Update(ctx, target); err != nil {
 		return nil, fmt.Errorf("failed to update scope target: %w", err)
 	}
+	if widened {
+		if target.IsPending() {
+			s.notifyRequested(ctx, target)
+		} else if !input.Actor.system() {
+			s.notifyWidened(ctx, target, "Scope entry widened")
+		}
+	}
 
-	s.logger.Info("scope target updated", "id", targetID)
+	s.logger.Info("scope target updated", "id", logSafe(targetID), "widened", widened)
 	return target, nil
+}
+
+// applyEntryUpdate applies the entry fields of an update and reports whether
+// the change widened the entry. Nothing is changed when the caller may not
+// make the change.
+func (s *Service) applyEntryUpdate(ctx context.Context, t *scopedom.Target, in UpdateTargetInput) (bool, error) {
+	now := time.Now().UTC()
+	tier := t.MaxTier()
+	if in.MaxTier != nil {
+		parsed, err := scopedom.ParseTier(*in.MaxTier)
+		if err != nil {
+			return false, err
+		}
+		tier = parsed
+	}
+	expiryChange := in.ClearExpiry || in.ExpiresAt != nil || in.ExpiresInDays != nil
+	next := t.ExpiresAt()
+	if expiryChange {
+		next = nil
+		if !in.ClearExpiry {
+			p, err := s.loadPolicy(ctx, t.TenantID())
+			if err != nil {
+				return false, err
+			}
+			if next, err = resolveExpiry(p, now, in.ExpiresAt, in.ExpiresInDays); err != nil {
+				return false, err
+			}
+		}
+	}
+	if tier == scopedom.TierIntrusive && next == nil {
+		return false, scopedom.ErrIntrusiveNeeds
+	}
+	// A higher tier, a later or removed expiry, or renewing an expired entry
+	// widens.
+	widen := tier > t.MaxTier() ||
+		(expiryChange && (t.ExtendsExpiry(next) || t.Status() == scopedom.StatusExpired || t.ExpiredAt(now)))
+	if widen {
+		if t.Status() == scopedom.StatusRejected {
+			return false, scopedom.ErrEntryRejected
+		}
+		if !in.Actor.system() && !in.Actor.CanApprove {
+			return false, ErrWideningNeedsApprove
+		}
+		if err := s.requireStepUp(ctx, in.Actor); err != nil {
+			return false, err
+		}
+	}
+	if in.Reason != nil {
+		if err := t.SetReason(*in.Reason, now); err != nil {
+			return false, err
+		}
+	}
+	t.SetMaxTier(tier, now)
+	if expiryChange {
+		t.SetExpiry(next, now)
+	}
+	if !widen {
+		return false, nil
+	}
+	if t.Status() == scopedom.StatusInactive {
+		// Widening the fields of a deactivated entry does not activate it;
+		// activating it later is its own widening.
+		return true, nil
+	}
+	p, err := s.loadPolicy(ctx, t.TenantID())
+	if err != nil {
+		return false, err
+	}
+	approvals := 0
+	if !in.Actor.system() {
+		approvals = p.approvals(t.MaxTier(), false)
+	}
+	t.Widen(in.Actor.UserID, approvals, now)
+	return true, nil
 }
 
 // DeleteTarget deletes a scope target by ID with atomic tenant verification.
@@ -230,17 +362,34 @@ func (s *Service) ListTargets(ctx context.Context, input ListTargetsInput) (pagi
 	return s.targetRepo.List(ctx, filter, page)
 }
 
-// ListActiveTargets retrieves all active scope targets for a tenant.
+// ListActiveTargets retrieves the tenant's scope targets in effect: active
+// and not past their expiry. The repository filters on both; re-checking
+// here keeps an expired or pending entry from ever reaching a matcher,
+// whatever the repository returns.
 func (s *Service) ListActiveTargets(ctx context.Context, tenantID string) ([]*scopedom.Target, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
-	return s.targetRepo.ListActive(ctx, parsedID)
+	all, err := s.targetRepo.ListActive(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	out := all[:0:0]
+	for _, t := range all {
+		if t != nil && t.InEffect(now) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
-// ActivateTarget activates a scope target.
-func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID string) (*scopedom.Target, error) {
+// ActivateTarget activates a scope target. Activation widens: an approver
+// re-authenticates and the entry needs the tenant's approvals; anyone else
+// may not activate (they request a new entry). An expired entry is renewed
+// with a new expiry instead.
+func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID string, actor Actor) (*scopedom.Target, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -255,13 +404,29 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 		return nil, err
 	}
 
-	target.Activate()
+	now := time.Now().UTC()
+	switch {
+	case target.Status() == scopedom.StatusRejected:
+		return nil, scopedom.ErrEntryRejected
+	case target.Status() == scopedom.StatusExpired || target.ExpiredAt(now):
+		return nil, scopedom.ErrEntryExpired
+	case target.Status() == scopedom.StatusActive || target.IsPending():
+		return target, nil // nothing to widen
+	}
+	if err := s.widenEntry(ctx, target, actor, now); err != nil {
+		return nil, err
+	}
 
 	if err := s.targetRepo.Update(ctx, target); err != nil {
 		return nil, fmt.Errorf("failed to activate scope target: %w", err)
 	}
+	if target.IsPending() {
+		s.notifyRequested(ctx, target)
+	} else if !actor.system() {
+		s.notifyWidened(ctx, target, "Scope entry activated")
+	}
 
-	s.logger.Info("scope target activated", "id", targetID)
+	s.logger.Info("scope target activated", "id", logSafe(targetID), "status", target.Status().String())
 	return target, nil
 }
 
@@ -307,7 +472,7 @@ type CreateExclusionInput struct {
 
 // CreateExclusion creates a new scope exclusion.
 func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInput) (*scopedom.Exclusion, error) {
-	s.logger.Info("creating scope exclusion", "type", input.ExclusionType, "pattern", input.Pattern)
+	s.logger.Info("creating scope exclusion", "type", logSafe(input.ExclusionType), "pattern", logSafe(input.Pattern))
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -328,7 +493,7 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 		return nil, fmt.Errorf("failed to create scope exclusion: %w", err)
 	}
 
-	s.logger.Info("scope exclusion created", "id", exclusion.ID().String(), "pattern", input.Pattern)
+	s.logger.Info("scope exclusion created", "id", exclusion.ID().String(), "pattern", logSafe(input.Pattern))
 	return exclusion, nil
 }
 
@@ -373,6 +538,12 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 	if input.ExpiresAt != nil && exclusion.ShortensWindow(input.ExpiresAt) {
 		if err := exclusion.AuthorizeReduction(input.Reviewer); err != nil {
 			return nil, err
+		}
+		// Shortening an exclusion in effect widens scope: step-up (RFC-054 §6.2).
+		if exclusion.InEffect() {
+			if err := s.requireStepUp(ctx, Actor{UserID: input.Reviewer.UserID}); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if input.Reason != nil {

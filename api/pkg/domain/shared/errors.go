@@ -24,6 +24,15 @@ type DomainError struct {
 	Code    string
 	Message string
 	Err     error
+	// Details is structured data the API returns with the error (for
+	// example the refused targets with their codes and fixes); nil for none.
+	Details any
+}
+
+// WithDetails attaches structured details and returns the error.
+func (e *DomainError) WithDetails(d any) *DomainError {
+	e.Details = d
+	return e
 }
 
 // Error implements the error interface.
