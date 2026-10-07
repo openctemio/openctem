@@ -35,6 +35,7 @@ func unsupportedCases() []struct {
 		{"finding_updated trigger", workflow.NodeConfig{TriggerType: workflow.TriggerTypeFindingUpdated}, "trigger:finding_updated"},
 		{"webhook trigger", workflow.NodeConfig{TriggerType: workflow.TriggerTypeWebhook}, "trigger:webhook"},
 		{"trigger_pipeline action", workflow.NodeConfig{ActionType: workflow.ActionTypeTriggerPipeline}, "action:trigger_pipeline"},
+		{"http_request action", workflow.NodeConfig{ActionType: workflow.ActionTypeHTTPRequest}, "action:http_request"},
 	}
 }
 
@@ -69,7 +70,7 @@ func TestWorkflowSupport_TypeSets(t *testing.T) {
 	for _, a := range []workflow.ActionType{
 		workflow.ActionTypeAssignUser, workflow.ActionTypeUpdateStatus, workflow.ActionTypeAddTags,
 		workflow.ActionTypeRemoveTags, workflow.ActionTypeCreateTicket, workflow.ActionTypeUpdateTicket,
-		workflow.ActionTypeTriggerScan, workflow.ActionTypeHTTPRequest,
+		workflow.ActionTypeTriggerScan,
 		workflow.ActionTypeTriggerAITriage,
 	} {
 		if !a.IsSupported() {
