@@ -176,7 +176,6 @@ R5 POST /api/v1/assets/{id}/lifecycle/snooze
 R5 POST /api/v1/assets/import/csv
 R5 POST /api/v1/assets/import/kubernetes
 R5 POST /api/v1/attachments/link
-R5 POST /api/v1/audit-logs/rebaseline
 R5 POST /api/v1/ci/runs/{id}/evaluate
 R5 POST /api/v1/credentials/{id}/accept
 R5 POST /api/v1/credentials/import/csv
