@@ -126,9 +126,8 @@ func (r *AttributionRepository) labelSensors(ctx context.Context, tenantID share
 			}
 		}
 	}
-	if len(ids) == 0 {
-		return nil
-	}
+	// No early return without ids: platform evidence carries none and is
+	// still named.
 	names, err := r.sensorNames(ctx, tenantID, ids)
 	if err != nil {
 		return err
@@ -141,7 +140,10 @@ func (r *AttributionRepository) labelSensors(ctx context.Context, tenantID share
 				continue
 			}
 			name, ok := names[id]
-			if !ok {
+			switch {
+			case e.Source == easm.PlatformSensorSource:
+				name = "platform sensor"
+			case !ok:
 				name = "a removed sensor"
 			}
 			e.SourceLabel = name

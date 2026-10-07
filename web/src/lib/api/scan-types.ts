@@ -46,15 +46,15 @@ export const SCAN_CONFIG_STATUS_LABELS: Record<ScanConfigStatus, string> = {
 }
 
 export const SENSOR_PREFERENCE_LABELS: Record<SensorPreference, string> = {
-  auto: 'Auto (Tenant first, Platform fallback)',
-  tenant: 'Tenant Sensors Only',
-  platform: 'Platform Sensors Only',
+  auto: 'Auto (your sensors first, then platform scanning)',
+  tenant: 'Your sensors only',
+  platform: 'Platform scanning only',
 }
 
 export const SENSOR_PREFERENCE_DESCRIPTIONS: Record<SensorPreference, string> = {
-  auto: 'Uses tenant sensors when available, falls back to platform sensors',
+  auto: 'Uses your sensors when they can run the scan, otherwise platform scanning',
   tenant: 'Only uses sensors deployed in your infrastructure',
-  platform: "Only uses OpenCTEM's managed platform sensors",
+  platform: "Only uses the platform's shared scanning (public targets)",
 }
 
 /**

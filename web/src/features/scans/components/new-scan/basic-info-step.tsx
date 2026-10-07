@@ -37,6 +37,7 @@ import { useMemo, useState } from 'react'
 import type { SensorPreference, NewScanFormData } from '../../types'
 import { SENSOR_PREFERENCE_CONFIG } from '../../types'
 import { useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
+import { usePlatformScanning } from '@/lib/api/platform-hooks'
 import { ScannerSelect } from '../scanner-select'
 import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
 import { TENABLE_SC_TOOL } from '@/features/integrations/lib/tenable-sc'
@@ -54,6 +55,8 @@ interface BasicInfoStepProps {
 
 export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoStepProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  // Platform scanning is a choice only where the organization may use it.
+  const { offered: platformOffered } = usePlatformScanning()
   // The workflows are needed to offer the starters, unless the mode is
   // locked to a single scan (Edit).
   const { data: workflowsData, isLoading: isLoadingWorkflows } = useScanWorkflows(
@@ -283,15 +286,17 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                   </span>
                 </Label>
               </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="platform" id="sensor-platform" />
-                <Label htmlFor="sensor-platform" className="cursor-pointer text-sm font-normal">
-                  <span className="flex items-center gap-1.5">
-                    <Cloud className="h-3.5 w-3.5" />
-                    {SENSOR_PREFERENCE_CONFIG.platform.label}
-                  </span>
-                </Label>
-              </div>
+              {(platformOffered || data.sensorPreference === 'platform') && (
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="platform" id="sensor-platform" />
+                  <Label htmlFor="sensor-platform" className="cursor-pointer text-sm font-normal">
+                    <span className="flex items-center gap-1.5">
+                      <Cloud className="h-3.5 w-3.5" />
+                      {SENSOR_PREFERENCE_CONFIG.platform.label}
+                    </span>
+                  </Label>
+                </div>
+              )}
             </RadioGroup>
           </div>
         </CollapsibleContent>

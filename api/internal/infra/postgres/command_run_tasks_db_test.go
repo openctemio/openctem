@@ -199,3 +199,29 @@ func TestListRunTasks_ForeignSensorIsNotNamed(t *testing.T) {
 		t.Fatalf("task names another tenant's sensor: %+v", tasks[0])
 	}
 }
+
+// A platform job is never pinned to a named sensor in the run view, even when
+// the platform sensor that ran it carries the same tenant as the run (its row
+// is the operator tenant), and it does not count as one of the run sensors.
+func TestListRunTasks_PlatformJobNeverNamesTheSensor(t *testing.T) {
+	f := newRunTasksFixture(t)
+	plat := f.sensor(t, f.tenant, "plat-node")
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE sensors SET is_platform_sensor = TRUE WHERE id = $1`, plat.String()); err != nil {
+		t.Fatal(err)
+	}
+	run := seedCounterRun(f.ctx, t, f.runs, f.tenant, f.scan)
+	id := f.command(t, f.tenant, run.ID, &plat, "running", map[string]any{"scanner": "nuclei"})
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE commands SET is_platform_job = TRUE WHERE id = $1`, id.String()); err != nil {
+		t.Fatal(err)
+	}
+	tasks, sum, err := f.cmds.ListRunTasks(f.ctx, f.tenant, run.ID, 0)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("tasks %+v, err %v", tasks, err)
+	}
+	if got := tasks[0]; got.SensorID != nil || got.SensorName != "" || !got.Platform {
+		t.Fatalf("platform task names its sensor: %+v", got)
+	}
+	if sum.Sensors != 0 {
+		t.Fatalf("a platform sensor counted as a run sensor: %+v", sum)
+	}
+}

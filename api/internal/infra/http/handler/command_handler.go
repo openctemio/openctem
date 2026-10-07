@@ -29,6 +29,7 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -169,9 +170,11 @@ func (h *CommandHandler) triggerCoverageAutoResolve(cmd *commanddom.Command) {
 
 // CommandResponse represents a command in API responses.
 type CommandResponse struct {
-	ID             string          `json:"id"`
-	TenantID       string          `json:"tenant_id,omitempty"`
-	SensorID       string          `json:"sensor_id,omitempty"`
+	ID       string `json:"id"`
+	TenantID string `json:"tenant_id,omitempty"`
+	SensorID string `json:"sensor_id,omitempty"`
+	// Platform is true for a job of the shared platform sensors (never named).
+	Platform       bool            `json:"platform,omitempty"`
 	Type           string          `json:"type"`
 	Priority       string          `json:"priority"`
 	Payload        json.RawMessage `json:"payload,omitempty"`
@@ -217,8 +220,16 @@ func toCommandResponse(c *commanddom.Command) CommandResponse {
 		Result:         c.Result,
 	}
 
-	if c.SensorID != nil {
+	// A platform job runs on shared platform sensors: the tenant sees that it
+	// is a platform job, never which sensor runs it, nor the sensor's own
+	// addresses and paths in what it wrote.
+	if c.SensorID != nil && !c.IsPlatformJob {
 		resp.SensorID = c.SensorID.String()
+	}
+	if c.IsPlatformJob {
+		resp.Platform = true
+		resp.ErrorMessage = sensordom.RedactPlatformText(resp.ErrorMessage)
+		resp.Result = redactPlatformJSON(resp.Result)
 	}
 
 	return resp

@@ -74,6 +74,11 @@ func NewScanStamper(store ScanEvidenceStore, roots VerifiedRoots) *ScanStamper {
 // is unknown.
 const TechniqueSensorScan = "sensor_scan"
 
+// PlatformSensorSource is the evidence source of every sighting by a shared
+// platform sensor: one source for all of them, so no tenant learns a
+// platform sensor id.
+const PlatformSensorSource = "sensor:platform"
+
 // TechniqueVerifiedDomain is the technique of the verified-root evidence a
 // scan-discovered name gets when it sits under a verified domain.
 const TechniqueVerifiedDomain = "verified_domain"
@@ -96,8 +101,12 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 		technique = truncate(prov.Tool, 100)
 	}
 	// One row per (asset, rule, sensor): a re-scan refreshes the datum and
-	// last_observed_at instead of piling up rows.
+	// last_observed_at instead of piling up rows. Platform sensors share one
+	// source: the tenant sees "the platform scanned", never which sensor.
 	source := "sensor:" + prov.SensorID.String()
+	if prov.Platform {
+		source = PlatformSensorSource
+	}
 
 	all := make([]string, 0, len(assets))
 	var typed, found []string
@@ -213,6 +222,10 @@ func (s *ScanStamper) observed(ctx context.Context, tenantID shared.ID, prov ing
 	observed := map[string]any{
 		"sensor_id":   prov.SensorID.String(),
 		"observed_at": prov.ObservedAt.UTC().Format(time.RFC3339),
+	}
+	if prov.Platform {
+		delete(observed, "sensor_id")
+		observed["platform"] = true
 	}
 	if prov.CommandID != nil {
 		observed["command_id"] = prov.CommandID.String()

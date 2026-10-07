@@ -34,6 +34,10 @@ const sensorGrantColumns = `g.tenant_id, g.sensor_id, g.profile, s.trust_level, 
 
 const sensorGrantFrom = ` FROM sensor_grants g JOIN sensors s ON s.id = g.sensor_id AND s.tenant_id = g.tenant_id`
 
+// sensorGrantTenantFrom is sensorGrantFrom for the tenant's console lists:
+// the grants of the tenant's own sensors, never a shared platform sensor's.
+const sensorGrantTenantFrom = sensorGrantFrom + ` AND NOT s.is_platform_sensor`
+
 // Get returns the grant of a sensor of the tenant.
 func (r *SensorGrantRepository) Get(ctx context.Context, tenantID, sensorID shared.ID) (*sensordom.Grant, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT `+sensorGrantColumns+sensorGrantFrom+`
@@ -227,7 +231,7 @@ func (r *SensorGrantRepository) ZonesInTenant(ctx context.Context, tenantID shar
 // ListSummaries returns the profile and trust level of every sensor of the
 // tenant (the console's list flags: legacy-broad, New), at most limit rows.
 func (r *SensorGrantRepository) ListSummaries(ctx context.Context, tenantID shared.ID, limit int) ([]sensordom.GrantSummary, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT g.sensor_id, g.profile, s.trust_level`+sensorGrantFrom+`
+	rows, err := r.db.QueryContext(ctx, `SELECT g.sensor_id, g.profile, s.trust_level`+sensorGrantTenantFrom+`
 		WHERE g.tenant_id = $1 ORDER BY g.sensor_id LIMIT $2`, tenantID.String(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("list sensor grants: %w", err)
@@ -252,7 +256,7 @@ func (r *SensorGrantRepository) ListSummaries(ctx context.Context, tenantID shar
 // (the tool availability view checks each sensor's grant without one query
 // per sensor).
 func (r *SensorGrantRepository) ListByTenant(ctx context.Context, tenantID shared.ID) (map[shared.ID]*sensordom.Grant, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT `+sensorGrantColumns+sensorGrantFrom+`
+	rows, err := r.db.QueryContext(ctx, `SELECT `+sensorGrantColumns+sensorGrantTenantFrom+`
 		WHERE g.tenant_id = $1`, tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("list sensor grants: %w", err)
