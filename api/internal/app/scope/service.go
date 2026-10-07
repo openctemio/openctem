@@ -4,7 +4,6 @@ package scope
 import (
 	"context"
 	"fmt"
-	"math"
 	"net"
 	"net/url"
 	"strings"
@@ -23,6 +22,11 @@ type Service struct {
 	exclusionRepo scopedom.ExclusionRepository
 	assetRepo     asset.Repository
 	logger        *logger.Logger
+
+	// Coverage of the inventory (GetStats): counted in SQL over the
+	// caller's data scope.
+	coverage  CoverageCounter
+	dataScope DataScopeResolver
 }
 
 // NewService creates a new Service.
@@ -640,11 +644,9 @@ func (s *Service) GetStats(ctx context.Context, tenantID string) (*scopedom.Stat
 		return nil, fmt.Errorf("failed to count active exclusions: %w", err)
 	}
 
-	// Calculate real coverage: (assets in scope / total assets) * 100
-	coverage, err := s.calculateCoverage(ctx, tenantID)
+	inventory, err := s.inventoryCoverage(ctx, tenantID)
 	if err != nil {
-		s.logger.Warn("failed to calculate coverage, using 0", "error", err)
-		coverage = 0
+		return nil, err
 	}
 
 	return &scopedom.Stats{
@@ -652,109 +654,50 @@ func (s *Service) GetStats(ctx context.Context, tenantID string) (*scopedom.Stat
 		ActiveTargets:    activeTargets,
 		TotalExclusions:  totalExclusions,
 		ActiveExclusions: activeExclusions,
-		Coverage:         coverage,
+		Coverage:         inventory.Percent(),
+		Inventory:        inventory,
 	}, nil
 }
 
-// calculateCoverage calculates the percentage of discovered assets that are covered by scope targets.
-// Formula: (assets matching active scope targets / total active assets) * 100
-func (s *Service) calculateCoverage(ctx context.Context, tenantID string) (float64, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return 0, fmt.Errorf("invalid tenant id: %w", err)
-	}
-
-	// Get total count of active assets for this tenant
-	assetFilter := asset.Filter{
-		TenantID: &tenantID,
-		Statuses: []asset.Status{asset.StatusActive},
-	}
-	totalAssets, err := s.assetRepo.Count(ctx, assetFilter)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count assets: %w", err)
-	}
-
-	// If no assets, coverage is 0%
-	if totalAssets == 0 {
-		return 0, nil
-	}
-
-	// Get all active scope targets for this tenant
-	targets, err := s.targetRepo.ListActive(ctx, parsedTenantID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to list active targets: %w", err)
-	}
-
-	// If no active targets, coverage is 0%
-	if len(targets) == 0 {
-		return 0, nil
-	}
-
-	// Get active exclusions for this tenant
-	exclusions, err := s.effectiveExclusions(ctx, parsedTenantID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to list active exclusions: %w", err)
-	}
-
-	// Count assets in scope using pagination
-	assetsInScope, err := s.countAssetsInScope(ctx, assetFilter, targets, exclusions)
-	if err != nil {
-		return 0, err
-	}
-
-	// Calculate coverage percentage (rounded to 2 decimal places)
-	coverage := (float64(assetsInScope) / float64(totalAssets)) * 100
-	coverage = math.Round(coverage*100) / 100
-	return coverage, nil
+// CoverageCounter counts the scope coverage of the internet-facing
+// inventory in the database (*postgres.ScopeCoverageRepository).
+type CoverageCounter interface {
+	CountCoverage(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (scopedom.InventoryCoverage, error)
 }
 
-// countAssetsInScope counts assets that are in scope and not excluded.
-func (s *Service) countAssetsInScope(
-	ctx context.Context,
-	assetFilter asset.Filter,
-	targets []*scopedom.Target,
-	exclusions []*scopedom.Exclusion,
-) (int64, error) {
-	var assetsInScope int64
-	pageSize := 100
-	page := 1
-
-	for {
-		pager := pagination.New(page, pageSize)
-		result, err := s.assetRepo.List(ctx, assetFilter, asset.NewListOptions(), pager)
-		if err != nil {
-			return 0, fmt.Errorf("failed to list assets: %w", err)
-		}
-
-		for _, a := range result.Data {
-			if s.checkAssetCoverage(a, targets, exclusions) {
-				assetsInScope++
-			}
-		}
-
-		// Check if we've processed all assets
-		if int64(page*pageSize) >= result.Total {
-			break
-		}
-		page++
-	}
-
-	return assetsInScope, nil
+// DataScopeResolver resolves the caller's Layer 2 data scope
+// (*datascope.Enforcer); nil means unrestricted.
+type DataScopeResolver interface {
+	Resolve(ctx context.Context, tenantID shared.ID) (*shared.DataScope, error)
 }
 
-// checkAssetCoverage checks if an asset is in scope and not excluded.
-func (s *Service) checkAssetCoverage(
-	a *asset.Asset,
-	targets []*scopedom.Target,
-	exclusions []*scopedom.Exclusion,
-) bool {
-	assetValues := s.getAssetValues(a)
+// SetCoverage wires the coverage count and the caller's data scope. Without
+// a counter the coverage is reported as zero; without a resolver the count
+// is refused (fail closed), so a restricted caller never sees tenant-wide
+// numbers.
+func (s *Service) SetCoverage(c CoverageCounter, ds DataScopeResolver) {
+	s.coverage, s.dataScope = c, ds
+}
 
-	if !s.isAssetInScope(assetValues, targets) {
-		return false
+// inventoryCoverage counts, in SQL and over the caller's data scope only,
+// the internet-facing inventory and the part of it the active scope targets
+// cover (research/53 S-3, SC8).
+func (s *Service) inventoryCoverage(ctx context.Context, tenantID string) (scopedom.InventoryCoverage, error) {
+	if s.coverage == nil {
+		return scopedom.InventoryCoverage{}, nil
 	}
-
-	return !s.isAssetExcluded(assetValues, exclusions)
+	if s.dataScope == nil {
+		return scopedom.InventoryCoverage{}, fmt.Errorf("scope coverage: the data scope is not configured")
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return scopedom.InventoryCoverage{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	ds, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return scopedom.InventoryCoverage{}, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.coverage.CountCoverage(ctx, tid, ds)
 }
 
 // getAssetValues returns all values to check for an asset (name, URLs, etc).
@@ -810,18 +753,6 @@ func AssetExclusionValues(assetType, name string, props map[string]any) []string
 		}
 	}
 	return values
-}
-
-// isAssetInScope checks if any asset value matches any scope target.
-func (s *Service) isAssetInScope(assetValues []string, targets []*scopedom.Target) bool {
-	for _, assetValue := range assetValues {
-		for _, target := range targets {
-			if scopedom.MatchesPattern(target.TargetType(), target.Pattern(), assetValue) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // effectiveExclusions returns the tenant's exclusions that are in effect:
