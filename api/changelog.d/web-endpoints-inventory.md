@@ -2,7 +2,7 @@
 
 - A crawl (CTIS 1.6 `endpoints[]`, or a legacy `discovered_url` asset) now writes the web surface
   sub-inventory: one row per origin, method and path template in `web_endpoints`, and the parameter
-  names in `web_endpoint_params` (migration 001243). No `discovered_url` asset, attribution record or
+  names in `web_endpoint_params` (migration 001270). No `discovered_url` asset, attribution record or
   graph node is created per URL any more; the origin's `http_service` asset is created when missing.
 - Query values, user info and fragments are never stored, and token-like path segments are templated
   and masked before storage.
