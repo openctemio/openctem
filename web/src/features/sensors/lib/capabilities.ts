@@ -22,6 +22,11 @@ export interface SensorToolRow {
   status: SensorToolStatus
   /** What the tool serves besides its name, as the sensor reported. */
   capabilities?: string[]
+  /**
+   * Installed, but the sensor may not run it: its grant or its local policy
+   * refuses a scan with it (from the tool availability view).
+   */
+  excluded?: { reason: 'grant' | 'local_policy'; detail?: string }
 }
 
 type ToolSource = Pick<Sensor, 'reported' | 'effective'>
@@ -41,15 +46,20 @@ export function dispatchTools(sensor: ToolSource): string[] {
  * ones it reports not installed; alphabetical within each. Empty before the
  * sensor's first report.
  */
-export function sensorToolRows(sensor: ToolSource): SensorToolRow[] {
+export function sensorToolRows(
+  sensor: ToolSource,
+  exclusions?: Map<string, NonNullable<SensorToolRow['excluded']>>
+): SensorToolRow[] {
   const rows = new Map<string, SensorToolRow>()
   for (const t of sensor.reported?.tools ?? []) {
     const caps = t.capabilities?.filter(Boolean) ?? []
+    const excluded = t.installed ? exclusions?.get(t.name) : undefined
     rows.set(t.name, {
       name: t.name,
       version: t.version || undefined,
       status: t.installed ? 'ready' : 'not_installed',
       ...(caps.length > 0 ? { capabilities: caps } : {}),
+      ...(excluded ? { excluded } : {}),
     })
   }
   const order: Record<SensorToolStatus, number> = { ready: 0, not_installed: 1 }
