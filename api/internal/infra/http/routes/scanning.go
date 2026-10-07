@@ -224,6 +224,8 @@ func registerPipelineRoutes(
 		// Write operations
 		r.POST("/", h.CreateTemplate, middleware.Require(permission.PipelinesWrite))
 		r.PUT("/{id}", h.UpdateTemplate, middleware.Require(permission.PipelinesWrite))
+		// Check a draft graph without saving it (the editor, while editing).
+		r.POST("/validate", h.ValidatePipeline, middleware.Require(permission.PipelinesWrite))
 
 		// Status operations
 		r.POST("/{id}/activate", h.ActivateTemplate, middleware.Require(permission.PipelinesWrite))

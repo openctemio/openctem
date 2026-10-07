@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -173,7 +174,11 @@ func (s *Service) AddStep(ctx context.Context, input AddStepInput) (*pipeline.St
 				return nil, errStepKeyTaken(step.StepKey)
 			}
 		}
-		return append(current, step), nil
+		next := append(slices.Clone(current), step)
+		if err := validateStepsGraph(next); err != nil {
+			return nil, err
+		}
+		return next, nil
 	})
 	if err != nil {
 		if errors.Is(err, shared.ErrAlreadyExists) {
@@ -238,6 +243,9 @@ func (s *Service) ReplaceSteps(ctx context.Context, input ReplaceStepsInput) ([]
 	var added, updated, removed []*pipeline.Step
 	steps, err := s.stepRepo.MutateSteps(ctx, tenantID, t.ID, func(current []*pipeline.Step) ([]*pipeline.Step, error) {
 		added, updated, removed = matchSteps(current, input.Steps, built)
+		if err := validateStepsGraph(built); err != nil {
+			return nil, err
+		}
 		return built, nil
 	})
 	if err != nil {
@@ -361,6 +369,9 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 					return nil, err
 				}
 				updated = c
+				if err := validateStepsGraph(current); err != nil {
+					return nil, err
+				}
 				return current, nil
 			}
 		}
@@ -448,6 +459,13 @@ func (s *Service) DeleteStep(ctx context.Context, tenantID, stepID string) error
 		}
 		if len(kept) == len(current) {
 			return nil, shared.ErrNotFound
+		}
+		// Steps that depended on the removed one no longer do.
+		for _, c := range kept {
+			c.DependsOn = slices.DeleteFunc(c.DependsOn, func(d string) bool { return d == step.StepKey })
+		}
+		if err := validateStepsGraph(kept); err != nil {
+			return nil, err
 		}
 		return kept, nil
 	})
