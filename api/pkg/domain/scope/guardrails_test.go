@@ -73,6 +73,9 @@ func TestGuardrails_Denies(t *testing.T) {
 		"portal.gov.vn", "https://portal.gov.vn/x", "portal.gov.vn:443", "x.army.mil",
 		"169.254.169.254", "http://169.254.169.254/latest", "[fe80::1]:80", "203.0.113.5", "203.0.113.0/28",
 		"api.platform.example", "0.0.0.0/0",
+		// A service on a denied address, in every name form (research/63 PR0).
+		"203.0.113.5:443:tcp", "203.0.113.5:443/tcp", "169.254.169.254:80:tcp", "169.254.169.254:80/tcp",
+		"[fe80::1]:22/tcp", "[fe80::1]:22:tcp", "fe80::1:22:tcp", "portal.gov.vn:443:tcp", "api.platform.example:8443/tcp",
 	} {
 		if !g.Denies(target) {
 			t.Errorf("Denies(%q) = false", target)
@@ -80,7 +83,7 @@ func TestGuardrails_Denies(t *testing.T) {
 	}
 	for _, target := range []string{
 		"vndirect.com.vn", "https://app.vndirect.com.vn/", "8.8.8.8", "198.51.100.0/24", "gov.example.com", "govern.vn",
-		"10.0.0.5", "example.com:8443",
+		"10.0.0.5", "example.com:8443", "8.8.8.8:53:udp", "198.51.100.7:443/tcp", "vndirect.com.vn:443:tcp",
 	} {
 		if g.Denies(target) {
 			t.Errorf("Denies(%q) = true", target)

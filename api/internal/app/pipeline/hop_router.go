@@ -454,6 +454,13 @@ func hopTargetKey(name string) (string, bool) {
 		u.Fragment = ""
 		return u.String(), true
 	}
+	if h, p, _, ok := asset.SplitServiceName(s); ok {
+		// A service in any name form keys as host:port.
+		if !validHost(h) || !validPort(strconv.Itoa(p)) {
+			return "", false
+		}
+		return net.JoinHostPort(h, strconv.Itoa(p)), true
+	}
 	host, port := s, ""
 	if h, p, err := net.SplitHostPort(s); err == nil {
 		host, port = h, p
@@ -521,7 +528,9 @@ func keyHost(key string) string {
 		return ""
 	}
 	h := key
-	if host, _, err := net.SplitHostPort(key); err == nil {
+	if host, _, _, ok := asset.SplitServiceName(key); ok {
+		h = host
+	} else if host, _, err := net.SplitHostPort(key); err == nil {
 		h = host
 	}
 	h = strings.ToLower(strings.TrimSuffix(strings.Trim(h, "[]"), "."))
