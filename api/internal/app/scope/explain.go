@@ -92,8 +92,8 @@ func (e *Explainer) Exclusion(target string) *scopedom.RuleRef {
 	return nil
 }
 
-// Covering names an entry in effect that covers the target (nil: a seed or
-// verified domain covers it, or nothing).
+// Covering names an entry in effect that covers the target (nil: nothing
+// does).
 func (e *Explainer) Covering(target string) *scopedom.Target {
 	for _, t := range e.targets {
 		if t != nil && t.InEffect(e.now) && matchesAny(t, target) {

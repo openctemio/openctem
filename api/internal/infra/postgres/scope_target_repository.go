@@ -28,7 +28,7 @@ func NewScopeTargetRepository(db *DB) *ScopeTargetRepository {
 const scopeTargetSelectQuery = `
 	SELECT id, tenant_id, target_type, pattern, description, priority, status, tags,
 	       created_by, created_at, updated_at,
-	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at, origin
+	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at, origin, discovery
 	FROM scope_targets
 `
 
@@ -53,12 +53,13 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		rejectedBy  sql.NullString
 		rejectedAt  sql.NullTime
 		origin      string
+		discovery   bool
 	)
 
 	err := row.Scan(
 		&id, &tenantID, &targetType, &pattern, &description, &priority, &status, &tags,
 		&createdBy, &createdAt, &updatedAt,
-		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt, &origin,
+		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt, &origin, &discovery,
 	)
 	if err != nil {
 		return nil, err
@@ -86,6 +87,7 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		RejectedBy: rejectedBy.String, RejectedAt: scopeTimePtr(rejectedAt),
 	})
 	t.SetOrigin(scope.Origin(origin))
+	t.SetDiscovery(discovery)
 	return t, nil
 }
 
@@ -160,8 +162,8 @@ func (r *ScopeTargetRepository) Create(ctx context.Context, target *scope.Target
 		INSERT INTO scope_targets (
 			id, tenant_id, target_type, pattern, description, priority, status, tags,
 			created_by, created_at, updated_at,
-			expires_at, reason, max_tier, approvals_required, approved_at, origin
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			expires_at, reason, max_tier, approvals_required, approved_at, origin, discovery
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -182,6 +184,7 @@ func (r *ScopeTargetRepository) Create(ctx context.Context, target *scope.Target
 		target.ApprovalsRequired(),
 		target.ApprovedAt(),
 		string(target.Origin()),
+		target.DiscoverySetting(),
 	)
 
 	if err != nil {
@@ -229,7 +232,8 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 			approvals_required = $12,
 			approved_at = $13,
 			rejected_by = $14,
-			rejected_at = $15
+			rejected_at = $15,
+			discovery = $16
 		WHERE id = $1 AND tenant_id = $7
 	`
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -254,6 +258,7 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 		target.ApprovedAt(),
 		nullString(target.RejectedBy()),
 		target.RejectedAt(),
+		target.DiscoverySetting(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope target: %w", err)

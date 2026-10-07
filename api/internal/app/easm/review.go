@@ -74,7 +74,7 @@ type ReviewItem struct {
 	InQueueAt  time.Time        `json:"in_queue_since"`
 	LastSeen   *time.Time       `json:"last_seen,omitempty"`
 	Evidence   []ReviewEvidence `json:"evidence"`
-	// CoveredBy is the caller's scope target, seed or verified domain that
+	// CoveredBy is the caller's scope entry that
 	// covers the name (RFC-054 §6.6); nil means confirming it widens scope,
 	// so the UI offers "add scope entry" first.
 	CoveredBy *scopeauth.Via `json:"covered_by"`

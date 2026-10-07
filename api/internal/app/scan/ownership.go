@@ -26,7 +26,7 @@ import (
 
 // ReasonOwnershipNotConfirmed is the reason shown for any target the
 // ownership gate refuses.
-const ReasonOwnershipNotConfirmed = "it is not authorized for active scanning: its ownership is not confirmed, or no scope target, seed or verified domain covers it; check the asset's Ownership tab and Scoping > Targets"
+const ReasonOwnershipNotConfirmed = "it is not authorized for active scanning: its ownership is not confirmed, or no scope entry covers it; check the asset's Ownership tab and Scoping > Targets"
 
 // refuseUnownedTargets refuses a target list (scan create, update, clone,
 // import, quick scan, a scan command) when any target is one the tenant has
