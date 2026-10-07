@@ -29,7 +29,7 @@ import '@xyflow/react/dist/style.css'
 
 import { toast } from 'sonner'
 import { ScannerNode, StartNode, EndNode, type ScannerNodeData } from './scanner-node'
-import type { PipelineStep, UIPosition } from '@/lib/api'
+import type { ScanWorkflowStep, UIPosition } from '@/lib/api'
 import { makeIsValidConnection } from '@/components/flow/connection-rules'
 import {
   EMPTY_TABLE,
@@ -60,13 +60,13 @@ export interface AvailableTool {
 }
 
 export interface WorkflowBuilderProps {
-  steps: PipelineStep[]
+  steps: ScanWorkflowStep[]
   availableTools?: AvailableTool[]
-  // Initial positions for Start/End nodes (from pipeline template)
+  // Initial positions for Start/End nodes (from workflow template)
   initialStartPosition?: UIPosition
   initialEndPosition?: UIPosition
-  onStepsChange?: (steps: PipelineStep[]) => void
-  onStepUpdate?: (stepId: string, updates: Partial<PipelineStep>) => void
+  onStepsChange?: (steps: ScanWorkflowStep[]) => void
+  onStepUpdate?: (stepId: string, updates: Partial<ScanWorkflowStep>) => void
   onNodePositionChange?: (stepId: string, position: UIPosition) => void
   // Callbacks for Start/End position changes
   onStartPositionChange?: (position: UIPosition) => void
@@ -107,13 +107,13 @@ const START_Y = 100
  * Calculate auto-layout positions for steps based on dependency graph.
  * Uses topological sort to determine levels (columns).
  */
-function calculateAutoLayout(steps: PipelineStep[]): Map<string, { x: number; y: number }> {
+function calculateAutoLayout(steps: ScanWorkflowStep[]): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>()
 
   if (steps.length === 0) return positions
 
   // Build dependency map: step_key -> step
-  const stepsByKey = new Map<string, PipelineStep>()
+  const stepsByKey = new Map<string, ScanWorkflowStep>()
   steps.forEach((step) => stepsByKey.set(step.step_key, step))
 
   // Calculate level (column) for each step using BFS
@@ -155,7 +155,7 @@ function calculateAutoLayout(steps: PipelineStep[]): Map<string, { x: number; y:
   })
 
   // Group steps by level
-  const levelGroups = new Map<number, PipelineStep[]>()
+  const levelGroups = new Map<number, ScanWorkflowStep[]>()
   steps.forEach((step) => {
     const level = levels.get(step.step_key) || 0
     if (!levelGroups.has(level)) {
@@ -181,7 +181,7 @@ function calculateAutoLayout(steps: PipelineStep[]): Map<string, { x: number; y:
   return positions
 }
 
-function stepsToEdges(steps: PipelineStep[]): Edge[] {
+function stepsToEdges(steps: ScanWorkflowStep[]): Edge[] {
   const edges: Edge[] = []
 
   // Find root nodes (steps with no dependencies)
@@ -301,7 +301,7 @@ function WorkflowBuilderInner({
   const updateNodeInternals = useUpdateNodeInternals()
 
   // Calculate default End node position based on steps (fallback if no saved position)
-  const calculateDefaultEndPosition = (stepsData: PipelineStep[]) => {
+  const calculateDefaultEndPosition = (stepsData: ScanWorkflowStep[]) => {
     const autoPositions = calculateAutoLayout(stepsData)
     const allX = stepsData.map((s) => {
       const hasValidPosition = s.ui_position?.x !== undefined
@@ -312,7 +312,7 @@ function WorkflowBuilderInner({
   }
 
   // Store Start/End positions in state
-  // Use saved positions from pipeline template if available, otherwise calculate defaults
+  // Use saved positions from workflow template if available, otherwise calculate defaults
   const [startEndPositions, setStartEndPositions] = useState(() => ({
     start: initialStartPosition || { x: START_X, y: START_Y + 50 },
     end: initialEndPosition || calculateDefaultEndPosition(steps),
@@ -408,7 +408,7 @@ function WorkflowBuilderInner({
             stepKey: step.step_key,
             timeout: step.timeout_seconds,
             dependsOn: step.depends_on,
-            categoryColor: (step as PipelineStep & { category_color?: string }).category_color,
+            categoryColor: (step as ScanWorkflowStep & { category_color?: string }).category_color,
             availableTools: availableTools,
             availableSteps: availableStepsForThis,
             capabilityName: capability?.name,

@@ -12,23 +12,23 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Save, ArrowLeft, Cloud, Server, Loader2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { NodePalette } from '@/features/pipelines/components/node-palette'
-import type { AddNodeData, AvailableTool } from '@/features/pipelines'
+import { NodePalette } from '@/features/scan-workflows/components/node-palette'
+import type { AddNodeData, AvailableTool } from '@/features/scan-workflows'
 // Lazy-load the visual builder so @xyflow/react stays out of this route's
 // initial bundle until the builder renders.
 const WorkflowBuilder = dynamic(
-  () => import('@/features/pipelines/components/workflow-builder').then((m) => m.WorkflowBuilder),
+  () => import('@/features/scan-workflows/components/workflow-builder').then((m) => m.WorkflowBuilder),
   { ssr: false }
 )
 import {
   get,
   put,
   scanWorkflowEndpoints,
-  invalidateAllPipelineCaches,
-  type PipelineTemplate,
-  type PipelineStep,
+  invalidateAllScanWorkflowCaches,
+  type ScanWorkflow,
+  type ScanWorkflowStep,
   type UIPosition,
-  type UpdatePipelineRequest,
+  type UpdateScanWorkflowRequest,
 } from '@/lib/api'
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -37,28 +37,28 @@ import {
   capabilityForStep,
   insertAdapterStep,
   type GraphValidation,
-} from '@/features/pipelines/lib/capability-graph'
-import { NodeInspector } from '@/features/pipelines/components/node-inspector'
+} from '@/features/scan-workflows/lib/capability-graph'
+import { NodeInspector } from '@/features/scan-workflows/components/node-inspector'
 import {
   useCapabilityTable,
-  validatePipelineSteps,
-} from '@/features/pipelines/lib/use-capability-table'
+  validateScanWorkflowSteps,
+} from '@/features/scan-workflows/lib/use-capability-table'
 
 interface PageProps {
   params: Promise<{ id: string }>
 }
 
-export default function PipelineBuilderPage({ params }: PageProps) {
+export default function WorkflowBuilderPage({ params }: PageProps) {
   const { id } = use(params)
   const router = useRouter()
 
-  // Pipeline data
-  const [pipeline, setPipeline] = useState<PipelineTemplate | null>(null)
+  // Workflow data
+  const [workflow, setWorkflow] = useState<ScanWorkflow | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   // Local state for steps
-  const [localSteps, setLocalSteps] = useState<PipelineStep[]>([])
+  const [localSteps, setLocalSteps] = useState<ScanWorkflowStep[]>([])
   const [hasChanges, setHasChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -97,37 +97,37 @@ export default function PipelineBuilderPage({ params }: PageProps) {
       }))
   }, [toolsData])
 
-  // Load pipeline data
+  // Load workflow data
   useEffect(() => {
-    async function loadPipeline() {
+    async function loadWorkflow() {
       try {
         setIsLoading(true)
-        const data = await get<PipelineTemplate>(scanWorkflowEndpoints.get(id))
-        setPipeline(data)
+        const data = await get<ScanWorkflow>(scanWorkflowEndpoints.get(id))
+        setWorkflow(data)
         setLocalSteps(data.steps || [])
         setStartPosition(data.ui_start_position)
         setEndPosition(data.ui_end_position)
         setError(null)
       } catch (err) {
-        console.error('Failed to load pipeline:', err)
-        setError('Failed to load pipeline')
+        console.error('Failed to load workflow:', err)
+        setError('Failed to load workflow')
       } finally {
         setIsLoading(false)
       }
     }
-    loadPipeline()
+    loadWorkflow()
   }, [id])
 
   // Check the draft graph with the API while editing (debounced). Best
   // effort: the save validates again and is the authority.
   useEffect(() => {
-    if (!pipeline || pipeline.is_system_template || localSteps.length === 0) {
+    if (!workflow || workflow.is_system_template || localSteps.length === 0) {
       setGraphReport(null)
       return
     }
     let cancelled = false
     const timer = setTimeout(() => {
-      validatePipelineSteps(localSteps)
+      validateScanWorkflowSteps(localSteps)
         .then((report) => {
           if (!cancelled) setGraphReport(report)
         })
@@ -139,7 +139,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [localSteps, pipeline])
+  }, [localSteps, workflow])
 
   const issuesByStep = useMemo(() => {
     const out: Record<string, string[]> = {}
@@ -164,7 +164,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
   )
 
   // A step edited in the inspector replaces the step in place
-  const handleInspectorChange = useCallback((updated: PipelineStep) => {
+  const handleInspectorChange = useCallback((updated: ScanWorkflowStep) => {
     setLocalSteps((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
     setHasChanges(true)
   }, [])
@@ -173,10 +173,10 @@ export default function PipelineBuilderPage({ params }: PageProps) {
   // Handle navigation with unsaved changes
   const handleBack = useCallback(() => {
     if (hasChanges) {
-      setPendingNavigation('/pipelines')
+      setPendingNavigation('/scans/workflows')
       setShowUnsavedDialog(true)
     } else {
-      router.push('/pipelines')
+      router.push('/scans/workflows')
     }
   }, [hasChanges, router])
 
@@ -190,7 +190,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
   }, [pendingNavigation, router])
 
   // Handle steps change
-  const handleStepsChange = useCallback((newSteps: PipelineStep[]) => {
+  const handleStepsChange = useCallback((newSteps: ScanWorkflowStep[]) => {
     setLocalSteps(newSteps)
     setHasChanges(true)
   }, [])
@@ -198,7 +198,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
   // Handle inline step updates (from node editing)
   // Auto-set capabilities when tool changes
   const handleStepUpdate = useCallback(
-    (stepId: string, updates: Partial<PipelineStep>) => {
+    (stepId: string, updates: Partial<ScanWorkflowStep>) => {
       setLocalSteps((prev) =>
         prev.map((step) => {
           if (step.id !== stepId) return step
@@ -266,13 +266,13 @@ export default function PipelineBuilderPage({ params }: PageProps) {
         stepCapabilities = selectedTool?.capabilities || []
       }
 
-      const newStep: PipelineStep = {
+      const newStep: ScanWorkflowStep = {
         id: generateTempStepId(), // Temporary ID - backend will assign real UUID on save
         step_key: stepKey,
         name: stepName,
         description: '',
         order: localSteps.length + 1,
-        node_type: 'scanner', // All pipeline steps are scanners
+        node_type: 'scanner', // All workflow steps are scanners
         tool: toolName || '', // Pre-fill tool from palette
         capabilities: stepCapabilities,
         timeout_seconds: 3600,
@@ -315,7 +315,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
 
   // Handle save
   const handleSave = async () => {
-    if (!pipeline) return
+    if (!workflow) return
 
     // Validate: all steps must have a tool or capabilities
     if (invalidSteps.length > 0) {
@@ -326,7 +326,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
 
     setIsSaving(true)
     try {
-      const updateData: UpdatePipelineRequest = {
+      const updateData: UpdateScanWorkflowRequest = {
         // Don't send capabilities - backend will derive them from the selected tool
         steps: localSteps.map((s, idx) => ({
           // A saved step keeps its id, so the save updates it in place and
@@ -353,22 +353,22 @@ export default function PipelineBuilderPage({ params }: PageProps) {
         ui_start_position: startPosition,
         ui_end_position: endPosition,
       }
-      await put<PipelineTemplate>(scanWorkflowEndpoints.update(pipeline.id), updateData)
-      await invalidateAllPipelineCaches()
+      await put<ScanWorkflow>(scanWorkflowEndpoints.update(workflow.id), updateData)
+      await invalidateAllScanWorkflowCaches()
       setHasChanges(false)
-      toast.success('Pipeline saved successfully')
+      toast.success('Workflow saved successfully')
     } catch (err) {
-      console.error('Failed to save pipeline:', err)
+      console.error('Failed to save workflow:', err)
       // A refused graph comes back with every issue: show them on the steps.
       const details = (err as { details?: unknown })?.details as GraphValidation | undefined
       if (details && Array.isArray(details.errors)) setGraphReport({ ...details, valid: false })
-      toast.error(getErrorMessage(err, 'Failed to save pipeline'))
+      toast.error(getErrorMessage(err, 'Failed to save workflow'))
     } finally {
       setIsSaving(false)
     }
   }
 
-  const isReadOnly = pipeline?.is_system_template || false
+  const isReadOnly = workflow?.is_system_template || false
 
   // Validation: count steps without tool or capabilities. React Compiler
   // memoises this automatically; an explicit useMemo here trips the
@@ -407,16 +407,16 @@ export default function PipelineBuilderPage({ params }: PageProps) {
   }
 
   // Error state
-  if (error || !pipeline) {
+  if (error || !workflow) {
     return (
       <Main fixed>
         <div className="flex flex-col items-center justify-center h-full gap-4">
           <AlertTriangle className="h-12 w-12 text-destructive" />
-          <p className="text-lg font-medium">{error || 'Pipeline not found'}</p>
+          <p className="text-lg font-medium">{error || 'Workflow not found'}</p>
           <Button variant="outline" asChild>
-            <Link href="/pipelines">
+            <Link href="/scans/workflows">
               <ArrowLeft className="me-2 h-4 w-4" />
-              Back to Pipelines
+              Back to Workflows
             </Link>
           </Button>
         </div>
@@ -434,13 +434,13 @@ export default function PipelineBuilderPage({ params }: PageProps) {
               <Button variant="ghost" size="icon" onClick={handleBack} className="shrink-0">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              {pipeline.is_system_template ? (
+              {workflow.is_system_template ? (
                 <Cloud className="h-5 w-5 text-blue-500 shrink-0" />
               ) : (
                 <Server className="h-5 w-5 text-muted-foreground shrink-0" />
               )}
               <div className="min-w-0">
-                <h1 className="text-base font-semibold truncate">{pipeline.name}</h1>
+                <h1 className="text-base font-semibold truncate">{workflow.name}</h1>
                 <p className="text-xs text-muted-foreground whitespace-nowrap">
                   {isReadOnly
                     ? 'Read-only view - Clone to edit'

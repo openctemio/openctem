@@ -169,7 +169,7 @@ export interface NewScanFormData {
   mode: ScanMode
   /** Tool registry name of the scanner (mode "single"); the API requires it. */
   scannerName: string
-  workflowId?: string // Pipeline template id, only when mode is "workflow"
+  workflowId?: string // Workflow template id, only when mode is "workflow"
   /**
    * scanner_config of a scanner that needs one: a connector scanner
    * (tenable_sc: the connector integration, policy and repository). Other

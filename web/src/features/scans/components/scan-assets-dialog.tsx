@@ -34,7 +34,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { AlertTriangle, Loader2, Wifi } from 'lucide-react'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
-import { invalidatePipelineRunsCache, useQuickScan } from '@/lib/api/pipeline-hooks'
+import { invalidateScanRunsCache, useQuickScan } from '@/lib/api/scan-workflow-hooks'
 
 /** Backend hard cap on targets per quick scan (see POST /scans/quick, 1..1000). */
 const MAX_TARGETS = 1000
@@ -113,13 +113,13 @@ export function ScanAssetsDialog({
         scanner_name: scannerName || undefined,
       })
 
-      await invalidatePipelineRunsCache()
+      await invalidateScanRunsCache()
       toast.success(
         `Scan started for ${cappedTargets.length} target${cappedTargets.length !== 1 ? 's' : ''}`,
         {
           action: {
             label: 'View run',
-            onClick: () => router.push('/scans?tab=runs'),
+            onClick: () => router.push('/scans/runs'),
           },
         }
       )

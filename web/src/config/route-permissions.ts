@@ -252,6 +252,15 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScansRead,
     module: Module.Scans,
   },
+  // Scan workflows are their own module; the longer pattern wins.
+  '/scans/workflows': {
+    permission: Permission.ScanWorkflowsRead,
+    module: Module.ScanWorkflows,
+  },
+  '/scans/workflows/**': {
+    permission: Permission.ScanWorkflowsRead,
+    module: Module.ScanWorkflows,
+  },
 
   // ========================================
   // Discovery Phase - Exposures (Module: exposures)
@@ -409,19 +418,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.RemediationRead,
     module: Module.RemediationTasks,
   },
-  '/pipelines': {
-    permission: Permission.ScanWorkflowsRead,
-    module: Module.ScanWorkflows,
-  },
-  '/pipelines/**': {
-    permission: Permission.ScanWorkflowsRead,
-    module: Module.ScanWorkflows,
-  },
-  '/workflows': {
+  '/automations': {
     permission: Permission.WorkflowsRead,
     module: Module.Workflows,
   },
-  '/workflows/**': {
+  '/automations/**': {
     permission: Permission.WorkflowsRead,
     module: Module.Workflows,
   },

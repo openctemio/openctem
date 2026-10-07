@@ -665,8 +665,8 @@ export default function WorkflowsPage() {
     <>
       <Main>
         <PageHeader
-          title="Workflows"
-          description="Automated responses that run when a trigger fires — notify, assign, open tickets."
+          title="Automations"
+          description="When something happens, do something: notify, assign, open a ticket or run a saved scan."
         >
           <Can permission={Permission.WorkflowsWrite} mode="disable">
             <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>

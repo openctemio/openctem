@@ -15,5 +15,5 @@ export {
 } from './workflow-builder'
 export { NodePalette } from './node-palette'
 export { NodeInspector } from './node-inspector'
-export { PipelineForm } from './pipeline-form'
+export { ScanWorkflowForm } from './workflow-form'
 export { VisualBuilderDialog } from './visual-builder-dialog'
