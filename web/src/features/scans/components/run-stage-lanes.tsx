@@ -152,7 +152,7 @@ function StageLane({ lane, names }: { lane: RunStage; names: Record<string, stri
               {lane.sensors!.map((s, i) => (
                 <li key={s.sensor_id ?? `platform-${i}`} className="flex items-center gap-2">
                   {s.platform ? (
-                    <span>Platform sensors</span>
+                    <span>Platform scanning</span>
                   ) : (
                     <TruncatedText
                       value={s.sensor_name || s.sensor_id || 'Sensor'}

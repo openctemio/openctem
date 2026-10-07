@@ -889,7 +889,6 @@ export function SensorDetailSheet({
           badges={
             <>
               <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
-              {sensor.is_platform_sensor && <SensorTag>Platform</SensorTag>}
               <ProtocolTag sensor={sensor} />
               <ConfigHealthTag health={sensor.config_health} />
             </>
@@ -945,7 +944,7 @@ export function SensorDetailSheet({
               <SensorControlSection sensor={sensor} now={now} history={heartbeatHistory} />
             )}
             {sensor.local_policy && <SensorLocalPolicySection sensor={sensor} />}
-            {!sensor.is_platform_sensor && <SensorGrantSection sensorId={sensor.id} />}
+            <SensorGrantSection sensorId={sensor.id} />
             <SensorRecentActivity ref={activityRef} sensorId={sensor.id} sensorName={sensor.name} />
             <ConnectionAndIdentity
               sensor={sensor}

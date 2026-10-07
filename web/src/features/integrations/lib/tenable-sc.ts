@@ -210,10 +210,10 @@ export interface ConnectorSensorOption {
   runsConnector: boolean
 }
 
-/** The tenant's own active sensors, those that run the connector first. Platform sensors never run a tenant's connector. */
+/** The tenant's own active sensors (the API lists no other), those that run the connector first. */
 export function connectorSensorOptions(sensors: Sensor[] | undefined): ConnectorSensorOption[] {
   return (sensors ?? [])
-    .filter((s) => !s.is_platform_sensor && s.status === 'active')
+    .filter((s) => s.status === 'active')
     .map((sensor) => ({
       sensor,
       runsConnector:

@@ -236,7 +236,7 @@ type Handlers struct {
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
 
 	// Platform Stats handler (tenant-scoped platform sensor stats)
-	PlatformStats *handler.PlatformStatsHandler
+	PlatformScanning *handler.PlatformScanningHandler
 
 	// WebSocket handler for real-time communication
 	WebSocket *websocket.Handler
@@ -896,8 +896,8 @@ func Register(
 	}
 
 	// Platform Stats routes (tenant-scoped platform sensor statistics)
-	if h.PlatformStats != nil {
-		registerPlatformStatsRoutes(router, h.PlatformStats, authMiddleware, userSync)
+	if h.PlatformScanning != nil {
+		registerPlatformScanningRoutes(router, h.PlatformScanning, authMiddleware, userSync)
 	}
 
 	// ==========================================================================

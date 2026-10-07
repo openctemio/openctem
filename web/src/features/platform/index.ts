@@ -1,9 +1,7 @@
 /**
- * Platform sensors: the shared scanning pool the platform operator runs, as
- * one organization sees it (GET /api/v1/platform/stats).
+ * Platform scanning: the platform operator's shared sensors as a service the
+ * organization may send scans to (GET /api/v1/platform/scanning). Tenants
+ * never see or manage a platform sensor; that is the admin console's job.
  */
 
-export { PlatformStatsCard } from './components/platform-stats-card'
-export { PlatformSensorsPage, PlatformSensorsLink } from './components/platform-sensors-page'
-export { PoolCallout, PoolStatePill } from './components/pool-state'
-export { summarizePlatformPool, type PlatformPool, type PoolState } from './lib/pool'
+export { PlatformScanningCard, PlatformStatusPill } from './components/platform-scanning-card'
