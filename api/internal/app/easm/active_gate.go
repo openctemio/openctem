@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
@@ -107,6 +108,42 @@ func (g *ActiveGate) CoverOf(ctx context.Context, tenantID shared.ID, targets []
 			}
 			out[t] = v
 		}
+	}
+	return out, nil
+}
+
+// AssetTargets names what a probe of each asset targets (the dry run's
+// asset_ids, RFC-054 §6.4): the asset name first, then the other values an
+// exclusion of the asset also matches. Only the tenant's live assets are
+// answered; another tenant's, a deleted or an unknown id is absent.
+// Implements scan.AssetTargetResolver.
+func (g *ActiveGate) AssetTargets(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID][]string, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	out := make(map[shared.ID][]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	if len(ids) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many assets for one lookup", shared.ErrValidation)
+	}
+	found, err := g.assets.GetByIDs(ctx, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load assets: %w", err)
+	}
+	for _, id := range ids {
+		a := found[id.String()]
+		if a == nil || !a.TenantID().Equals(tenantID) || strings.TrimSpace(a.Name()) == "" {
+			continue
+		}
+		values := []string{a.Name()}
+		for _, v := range scopeapp.AssetExclusionValues(string(a.Type()), a.Name(), a.Properties()) {
+			if v = strings.TrimSpace(v); v != "" && !strings.EqualFold(v, a.Name()) {
+				values = append(values, v)
+			}
+		}
+		out[id] = values
 	}
 	return out, nil
 }

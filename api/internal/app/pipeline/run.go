@@ -649,7 +649,11 @@ func (s *Service) recordScanRun(ctx context.Context, run *pipeline.Run, status s
 // finished, so when two callers race (parallel final steps, a completion
 // against a cancel or the timeout reaper) exactly one of them records the
 // outcome on the scan, in metrics and in the audit log.
-func (s *Service) finishRun(ctx context.Context, run *pipeline.Run, status pipeline.RunStatus, message string) bool {
+//
+// A run that settles completed, partial or failed is handed to the
+// run-settled callback (the `scan_completed` automation trigger, which
+// filters on the outcome), with findings as its finding count.
+func (s *Service) finishRun(ctx context.Context, run *pipeline.Run, status pipeline.RunStatus, message string, findings int) bool {
 	err := s.runRepo.UpdateStatus(ctx, run.ID, status, message)
 	if errors.Is(err, pipeline.ErrRunAlreadyFinished) {
 		s.logger.Info("run already finished; not recording it again",
@@ -663,6 +667,11 @@ func (s *Service) finishRun(ctx context.Context, run *pipeline.Run, status pipel
 	metrics.PipelineRunsInProgress.WithLabelValues().Dec()
 	metrics.PipelineRunsTotal.WithLabelValues(string(status)).Inc()
 	s.recordScanRun(ctx, run, string(status))
+	if s.runCompleted != nil {
+		run.Status = status
+		run.TotalFindings = findings
+		s.runCompleted(ctx, run)
+	}
 	return true
 }
 
@@ -881,7 +890,7 @@ func (s *Service) failStep(ctx context.Context, run *pipeline.Run, stepRun *pipe
 		s.refreshStepRuns(ctx, run)
 		st := s.calculateRunStats(run)
 		s.updateRunStats(ctx, run, st)
-		s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline failed: "+errorMessage)
+		s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline failed: "+errorMessage, st.findings)
 		return nil
 	}
 
@@ -937,13 +946,8 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 
 	switch outcome {
 	case pipeline.RunStatusCompleted:
-		if !s.finishRun(ctx, run, pipeline.RunStatusCompleted, "") {
+		if !s.finishRun(ctx, run, pipeline.RunStatusCompleted, "", st.findings) {
 			return
-		}
-		if s.runCompleted != nil {
-			run.Status = pipeline.RunStatusCompleted
-			run.TotalFindings = st.findings
-			s.runCompleted(ctx, run)
 		}
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
 			NewSuccessEvent(audit.ActionPipelineRunCompleted, audit.ResourceTypePipelineRun, run.ID.String()).
@@ -952,7 +956,7 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	case pipeline.RunStatusPartial:
-		if !s.finishRun(ctx, run, pipeline.RunStatusPartial, partialMsg) {
+		if !s.finishRun(ctx, run, pipeline.RunStatusPartial, partialMsg, st.findings) {
 			return
 		}
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
@@ -966,7 +970,7 @@ func (s *Service) settleRun(ctx context.Context, run *pipeline.Run, st runStats)
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	default:
-		if !s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline completed with failures") {
+		if !s.finishRun(ctx, run, pipeline.RunStatusFailed, "Pipeline completed with failures", st.findings) {
 			return
 		}
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
