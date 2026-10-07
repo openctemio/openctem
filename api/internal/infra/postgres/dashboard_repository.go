@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // DashboardRepository implements app.DashboardStatsRepository using PostgreSQL.
@@ -27,7 +28,7 @@ var _ module.DashboardStatsRepository = (*DashboardRepository)(nil)
 // GetFindingStats returns finding statistics for a tenant.
 func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shared.ID) (module.FindingStatsData, error) {
 	stats := module.FindingStatsData{
-		BySeverity: make(map[string]int),
+		BySeverity: newSeverityCounts(),
 		ByStatus:   make(map[string]int),
 	}
 
@@ -71,7 +72,7 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 		case "total":
 			stats.Total = int(value)
 		case "severity":
-			stats.BySeverity[key] = int(value)
+			stats.BySeverity[vulnerability.SeverityBucket(key)] += int(value)
 		case "status":
 			stats.ByStatus[key] = int(value)
 		case "avg_cvss":
@@ -171,7 +172,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			ByStatus: make(map[string]int),
 		},
 		Findings: module.FindingStatsData{
-			BySeverity: make(map[string]int),
+			BySeverity: newSeverityCounts(),
 			ByStatus:   make(map[string]int),
 		},
 	}
@@ -256,7 +257,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		case "finding_total":
 			result.Findings.Total = cnt
 		case "fsev":
-			result.Findings.BySeverity[key] = cnt
+			result.Findings.BySeverity[vulnerability.SeverityBucket(key)] += cnt
 		case "fstatus":
 			result.Findings.ByStatus[key] = cnt
 		case "avg_cvss":
@@ -336,7 +337,7 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 				COUNT(*) FILTER (WHERE f.severity = 'high') AS high,
 				COUNT(*) FILTER (WHERE f.severity = 'medium') AS medium,
 				COUNT(*) FILTER (WHERE f.severity = 'low') AS low,
-				COUNT(*) FILTER (WHERE f.severity = 'info') AS info
+				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) AS info
 			FROM findings f
 			WHERE f.tenant_id = $1
 				AND f.created_at >= date_trunc('month', NOW()) - ($2::int - 1) * interval '1 month'
@@ -389,8 +390,9 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 	// A non-nil scope averages only findings on the viewer's in-scope assets.
 	args := []any{tenantID.String(), days}
 	inScope, args := dataScopeCond("asset_id", scope, args)
+	// none (CVSS 0.0) is averaged inside info, matching every by-severity count.
 	query := `SELECT
-		severity,
+		CASE WHEN severity = 'none' THEN 'info' ELSE severity END AS sev,
 		COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) as avg_hours
 		FROM findings
 		WHERE tenant_id = $1
@@ -400,7 +402,7 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 		AND resolved_at >= first_detected_at
 		AND resolved_at >= NOW() - ($2::int || ' days')::interval
 		AND ` + inScope + `
-		GROUP BY severity`
+		GROUP BY 1`
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -792,6 +794,8 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
 				FILTER(WHERE severity = 'low' AND first_detected_at IS NOT NULL), 0) AS mttr_low,
 			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE severity IN ('info', 'none') AND first_detected_at IS NOT NULL), 0) AS mttr_info,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
 				FILTER(WHERE priority_class = 'P0' AND first_detected_at IS NOT NULL), 0) AS mttr_p0,
 			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
 				FILTER(WHERE priority_class = 'P1' AND first_detected_at IS NOT NULL), 0) AS mttr_p1,
@@ -814,14 +818,14 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 	`
 
 	var (
-		mttrCritical, mttrHigh, mttrMedium, mttrLow float64
-		mttrP0, mttrP1, mttrP2, mttrP3              float64
-		mttrOverall                                 float64
-		sampleSize                                  int
+		mttrCritical, mttrHigh, mttrMedium, mttrLow, mttrInfo float64
+		mttrP0, mttrP1, mttrP2, mttrP3                        float64
+		mttrOverall                                           float64
+		sampleSize                                            int
 	)
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
-		&mttrCritical, &mttrHigh, &mttrMedium, &mttrLow,
+		&mttrCritical, &mttrHigh, &mttrMedium, &mttrLow, &mttrInfo,
 		&mttrP0, &mttrP1, &mttrP2, &mttrP3,
 		&mttrOverall, &sampleSize,
 	)
@@ -835,6 +839,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 			"high":     mttrHigh,
 			"medium":   mttrMedium,
 			"low":      mttrLow,
+			"info":     mttrInfo,
 		},
 		ByPriorityClass: map[string]float64{
 			"P0": mttrP0,
@@ -896,4 +901,15 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 		return nil, fmt.Errorf("process metrics: %w", err)
 	}
 	return &m, nil
+}
+
+// newSeverityCounts returns a by-severity count map with every reporting
+// bucket present at zero, so a client always gets an info key (and never has
+// to guess whether a missing key means zero or "not reported").
+func newSeverityCounts() map[string]int {
+	m := make(map[string]int, len(vulnerability.ReportingSeverities()))
+	for _, s := range vulnerability.ReportingSeverities() {
+		m[s] = 0
+	}
+	return m
 }

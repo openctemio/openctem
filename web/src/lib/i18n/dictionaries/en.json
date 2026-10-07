@@ -509,5 +509,20 @@
   "actor.system.system": "OpenCTEM (automatic)",
   "actor.former": "Former member",
   "actor.member": "A team member",
-  "nav.item.scope": "Scope"
+  "nav.item.scope": "Scope",
+  "severity.critical": "Critical",
+  "severity.high": "High",
+  "severity.medium": "Medium",
+  "severity.low": "Low",
+  "severity.info": "Info",
+  "severity.informational": "Informational",
+  "criticality.critical": "Critical",
+  "criticality.high": "High",
+  "criticality.medium": "Medium",
+  "criticality.low": "Low",
+  "criticality.none": "Not rated",
+  "findings.hideInformational": "Hide informational",
+  "findings.hideInformational.hint": "Hide info findings from the list. Saved on this browser.",
+  "assets.properties.title": "Properties",
+  "assets.properties.other": "Other"
 }

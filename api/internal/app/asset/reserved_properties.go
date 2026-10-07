@@ -21,7 +21,7 @@ func isReservedUserPropertyKey(k string) bool {
 		return true
 	}
 	return assetdom.IsReservedPropertyKey(k) ||
-		assetdom.IsReservedPropertyKey(normalizePropertyAlias(camelToSnakeCase(k)))
+		assetdom.IsReservedPropertyKey(assetdom.CanonicalPropertyKey(camelToSnakeCase(k)))
 }
 
 // errReservedProperty is the 400 for a platform-owned key in properties.
@@ -91,4 +91,21 @@ func normalizeJSON(v any) (any, error) {
 	var out any
 	err = json.Unmarshal(raw, &out)
 	return out, err
+}
+
+// rejectMisplacedProperties refuses a key the property schema gives only to
+// assets of other classes (a port on a domain; RFC-042 §6.3.9): it describes
+// another asset and would be shown, and matched, as this one's.
+func rejectMisplacedProperties(t assetdom.AssetType, subType string, props map[string]any) error {
+	keys := assetdom.MisplacedPropertyKeys(t, subType, props)
+	if len(keys) == 0 {
+		return nil
+	}
+	def, _ := assetdom.LookupProperty(keys[0])
+	classes := make([]string, len(def.Classes))
+	for i, c := range def.Classes {
+		classes[i] = string(c)
+	}
+	return fmt.Errorf("%w: property %q applies only to %s assets, not to a %s",
+		shared.ErrValidation, keys[0], strings.Join(classes, " or "), t)
 }
