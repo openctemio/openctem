@@ -232,8 +232,9 @@ func TestGateDB_OtherTenantsPolicyDoesNotApply(t *testing.T) {
 }
 
 // An internet-facing asset with no attribution record outside every scope
-// target and seed is not probed (RFC-036 §6.3, research/22b S1); the same
-// asset is probed once a person confirms it.
+// target and seed is not probed (RFC-036 §6.3, research/22b S1). A person
+// confirming it records ownership but does not authorize the probe (RFC-054
+// §4.2): it is probed once a scope target covers it.
 func TestGateDB_UnattributedAssetIsNotProbed(t *testing.T) {
 	fx := newFixture(t)
 	asset := fx.newAsset("shop.unlisted.net")
@@ -246,7 +247,15 @@ func TestGateDB_UnattributedAssetIsNotProbed(t *testing.T) {
 	}
 	fx.exec(`INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, decided_at) VALUES ($1, $2, 'confirmed', 0, now())`,
 		asset.String(), fx.tenant.String())
+	if _, err := fx.runService().ValidateFinding(context.Background(), fx.tenant, f); err == nil {
+		t.Fatal("a confirmed asset outside every scope entry was probed (ownership is not authority)")
+	}
+	if n := fx.commandCount(); n != 0 {
+		t.Fatalf("%d command(s) created for a confirmed asset outside scope", n)
+	}
+	fx.exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1, 'domain', '*.unlisted.net', 'active')`,
+		fx.tenant.String())
 	if _, err := fx.runService().ValidateFinding(context.Background(), fx.tenant, f); err != nil {
-		t.Fatalf("a confirmed asset was refused: %v", err)
+		t.Fatalf("a confirmed asset inside a scope target was refused: %v", err)
 	}
 }

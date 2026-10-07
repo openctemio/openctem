@@ -30,6 +30,7 @@ import {
   FindingImportError,
   importFindings,
   type FindingImportResponse,
+  type ImportMinSeverity,
   type ImportFileResponse,
 } from '../api/finding-import-api'
 import {
@@ -47,9 +48,16 @@ interface ImportResultsDialogProps {
   onOpenChange: (open: boolean) => void
   /** Called after a successful import (not after a preview). */
   onImported?: () => void
+  /** Drop findings below this severity (e.g. 'low' skips informational results). */
+  minSeverity?: ImportMinSeverity
 }
 
-export function ImportResultsDialog({ open, onOpenChange, onImported }: ImportResultsDialogProps) {
+export function ImportResultsDialog({
+  open,
+  onOpenChange,
+  onImported,
+  minSeverity,
+}: ImportResultsDialogProps) {
   const [file, setFile] = useState<File | null>(null)
   const [kb, setKb] = useState<File | null>(null)
   const [busy, setBusy] = useState<'preview' | 'import' | null>(null)
@@ -70,7 +78,7 @@ export function ImportResultsDialog({ open, onOpenChange, onImported }: ImportRe
     setBusy(dryRun ? 'preview' : 'import')
     setError(null)
     try {
-      const resp = await importFindings({ file, knowledgeBase: kb, dryRun })
+      const resp = await importFindings({ file, knowledgeBase: kb, dryRun, minSeverity })
       if (dryRun) {
         setPreview(resp)
       } else {
