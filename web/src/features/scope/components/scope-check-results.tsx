@@ -154,7 +154,12 @@ export function ScopeFixButtons({ fixes, rule, onApplied, size = 'xs' }: ScopeFi
       <div className="flex flex-wrap items-center gap-1.5">
         {fixes.map((fix, i) => {
           const key = `${fix.action}-${i}`
-          const label = scopeFixLabel(t, fix)
+          // Several fixes of one kind (add this IP, add the /24 around it):
+          // name what each adds.
+          const label =
+            fix.pattern && fixes.filter((f) => f.action === fix.action).length > 1
+              ? `${scopeFixLabel(t, fix)}: ${fix.pattern}`
+              : scopeFixLabel(t, fix)
           if (HINT_ONLY.has(fix.action ?? '')) {
             return (
               <span key={key} className="text-xs text-muted-foreground">
