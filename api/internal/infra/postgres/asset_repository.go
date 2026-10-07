@@ -477,7 +477,7 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'high') as finding_high,
 				COUNT(*) FILTER (WHERE f.severity = 'medium') as finding_medium,
 				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
-				COUNT(*) FILTER (WHERE f.severity = 'info') as finding_info
+				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info
 			FROM findings f
 			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only
 		) fc ON true
