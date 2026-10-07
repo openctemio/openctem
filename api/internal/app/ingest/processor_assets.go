@@ -352,6 +352,13 @@ func (p *AssetProcessor) processBatch(
 	if n := expandOpenPorts(report); n > 0 {
 		p.logger.Debug("expanded open ports into port assets", "count", n)
 	}
+	// One key per concept, and a key on the wrong asset (a port on a
+	// domain) moved to the asset it belongs on (RFC-042 §6.3.9).
+	if added, dropped, unknown := routeMisplacedProperties(report); added > 0 || dropped > 0 || len(unknown) > 0 {
+		p.logger.Warn("report asset properties outside the asset type schema",
+			"routed_services", added, "dropped_keys", dropped,
+			"unknown_keys", logger.SanitizeValue(strings.Join(unknown, ",")))
+	}
 
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
@@ -795,14 +802,9 @@ func (p *AssetProcessor) processBatch(
 		p.createSubdomainRelationships(ctx, tenantID, report, existingMap)
 	}
 
-	// Step 7: Create resolves_to relationships for DNS records (domain/subdomain → IP)
-	if p.relRepo != nil {
-		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered, excl)
-	}
-
-	// Step 9: Ports: address → port edges, host name → address, and ports a
-	// port scan no longer sees are closed (research/22 P0-6).
-	p.surfacePorts(ctx, tenantID, report, existingMap, func(id shared.ID) bool {
+	// mayChange says whether this report may change an existing asset
+	// (RFC-040 §5.3): derived edges change their source.
+	mayChange := func(id shared.ID) bool {
 		if scope == nil || scope.all {
 			return true
 		}
@@ -812,7 +814,16 @@ func (p *AssetProcessor) processBatch(
 			}
 		}
 		return false
-	})
+	}
+
+	// Step 7: Create resolves_to relationships for DNS records (domain/subdomain → IP)
+	if p.relRepo != nil {
+		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered, excl, mayChange)
+	}
+
+	// Step 9: Ports: address → port edges, host name → address, and ports a
+	// port scan no longer sees are closed (research/22 P0-6).
+	p.surfacePorts(ctx, tenantID, report, existingMap, mayChange)
 
 	// Step 8: Typed edges from related_assets (service -> the certificate
 	// it served).
@@ -1134,7 +1145,10 @@ func (p *AssetProcessor) createSubdomainRelationships(
 
 // createDNSResolvesToRelationships creates resolves_to relationships between domain/subdomain
 // assets and their resolved IP addresses. If IP assets don't exist yet, they are auto-created.
-// This maps the DNS resolution graph for attack surface analysis.
+// This maps the DNS resolution graph for attack surface analysis: the domain's
+// ip_addresses property is the summary, the edges (first seen = created_at,
+// last seen = last_verified) are the record. An edge changes its domain, so
+// a report that may not change the domain (RFC-040 §5.3) adds none.
 func (p *AssetProcessor) createDNSResolvesToRelationships(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -1143,6 +1157,7 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 	output *Output,
 	discovered *[]*asset.Asset,
 	excl *scopeapp.ExclusionMatcher,
+	mayChange func(shared.ID) bool,
 ) {
 	// Collect domain→IP mappings from report assets
 	type dnsMapping struct {
@@ -1154,38 +1169,25 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
-		if ctisAsset.Type != ctis.AssetTypeDomain && ctisAsset.Type != ctis.AssetTypeSubdomain {
+		name := getAssetName(ctisAsset)
+		if name == "" {
+			continue
+		}
+		// The stored asset decides: a report asset of another type that
+		// landed on a domain by name (a nuclei result named by its host)
+		// carries that domain's addresses too.
+		rt := resolveCTISAssetType(ctisAsset)
+		domainName := asset.NormalizeName(name, rt.normType, rt.normSubType)
+		stored, ok := existingMap[domainName]
+		if !ok || (stored.Type() != asset.AssetTypeDomain && stored.Type() != asset.AssetTypeSubdomain) {
+			continue
+		}
+		if mayChange != nil && !mayChange(stored.ID()) {
 			continue
 		}
 
-		domainName := getAssetName(ctisAsset)
-		if domainName == "" {
-			continue
-		}
-
-		// Check if domain exists in our map
-		if _, ok := existingMap[domainName]; !ok {
-			continue
-		}
-
-		// Extract resolved IPs from properties
-		ips, ok := ctisAsset.Properties["resolved_ips"].([]string)
-		if !ok {
-			// Try []any (JSON unmarshaling produces this)
-			if ifaces, ok := ctisAsset.Properties["resolved_ips"].([]any); ok {
-				ips = make([]string, 0, len(ifaces))
-				for _, iface := range ifaces {
-					if s, ok := iface.(string); ok && s != "" {
-						ips = append(ips, s)
-					}
-				}
-			}
-		}
-
-		for _, ip := range ips {
-			if ip == "" || !isValidIP(ip) {
-				continue
-			}
+		// ip_addresses and every synonym of it (resolved_ips, ip, ...).
+		for _, ip := range asset.IPAddresses(ctisAsset.Properties) {
 			mappings = append(mappings, dnsMapping{domainName: domainName, ip: ip})
 			ipSet[ip] = true
 		}
@@ -1269,6 +1271,7 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 		}
 		rel.SetDescription(fmt.Sprintf("%s resolves to %s", m.domainName, m.ip))
 		_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)
+		rel.Verify() // seen now: refreshes last_verified on an existing edge
 		rels = append(rels, rel)
 	}
 
@@ -1288,15 +1291,6 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 			"skipped", len(rels)-created,
 		)
 	}
-}
-
-// isValidIP performs basic IP address validation (IPv4 and IPv6).
-func isValidIP(ip string) bool {
-	if ip == "" {
-		return false
-	}
-	// Simple validation: must contain dots (IPv4) or colons (IPv6)
-	return strings.Contains(ip, ".") || strings.Contains(ip, ":")
 }
 
 // isValidDomainName validates a basic domain name format.
@@ -1862,6 +1856,7 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	// Build and set properties (with validation), then what the input type
 	// implied (sub-type, provider, attributes) where nothing is set.
 	properties := p.buildPropertiesFromCTIS(ctisAsset)
+	dropMisplacedProperties(newAsset.Type(), newAsset.SubType(), properties)
 	newAsset.SetProperties(properties)
 	newAsset.ApplyResolvedType(rt.stored)
 
@@ -1977,6 +1972,11 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	existingProps := existing.Properties()
 	newProps := p.buildPropertiesFromCTIS(ctisAsset)
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
+	// The stored asset's schema decides (the report asset may be of another
+	// type that landed here by name): synonyms an older row still holds
+	// fold, and a key only another class may hold is not kept here.
+	asset.NormalizeProperties(mergedProps)
+	dropMisplacedProperties(existing.Type(), existing.SubType(), mergedProps)
 	existing.SetProperties(mergedProps)
 
 	// Re-apply the scanner's explicit CTEM signals on re-scan (compliance /
@@ -2052,11 +2052,14 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 		}
 	}
 
-	// Normalize IP storage for host assets:
-	// - Convert properties.ip (string) → properties.ip_addresses (array)
-	// - Extract IP from asset value/name if host type
-	// - Extract hostname from ip_address.hostname into top-level hostname
-	if ctisAsset.Type == ctis.AssetTypeHost || ctisAsset.Type == "host" {
+	// One key per concept (RFC-042 §6.3.9): ip, ips, resolved_ips, a plain
+	// ip_address string, the technical ip_address block's address, ... all
+	// fold into ip_addresses; nameserver into nameservers, and so on.
+	asset.NormalizeProperties(props)
+
+	// A host also records the address it is named by, and the hostname of
+	// its technical ip_address block.
+	if ctisAsset.Type == ctis.AssetTypeHost {
 		normalizeHostIPProperties(props, getAssetName(ctisAsset))
 	}
 
@@ -2066,10 +2069,13 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 	// Keep it in ip_addresses, the array IP correlation searches.
 	if ctisAsset.Type == ctis.AssetTypeHost || ctisAsset.Type == ctis.AssetTypeIPAddress {
 		if v := strings.TrimSpace(ctisAsset.Value); v != "" && v != getAssetName(ctisAsset) {
-			if ip := net.ParseIP(v); ip != nil {
-				addIPAddress(props, ip.String())
-			}
+			asset.AddIPAddress(props, v)
 		}
+	}
+
+	// An IP address asset is its own address: ip_addresses lists only others.
+	if ctisAsset.Type == ctis.AssetTypeIPAddress {
+		dropOwnAddress(props, getAssetName(ctisAsset))
 	}
 
 	// Validate properties based on asset type
@@ -2112,90 +2118,53 @@ func (p *AssetProcessor) extractOwnerRef(ctisAsset *ctis.Asset) string {
 	return ""
 }
 
-// normalizeHostIPProperties standardizes IP storage for host assets.
-// Ensures all IPs are in `ip_addresses` (array), removes legacy `ip` (string).
-// Promotes ip_address.hostname to top-level `hostname`.
+// normalizeHostIPProperties completes a host's properties once synonyms
+// are folded (asset.NormalizeProperties): the hostname of its technical
+// ip_address block becomes the top-level hostname, and a host named by an
+// address records that address in ip_addresses.
 func normalizeHostIPProperties(props map[string]any, assetName string) {
-	// Collect all known IPs into a set
-	ipSet := make(map[string]bool)
-
-	// From legacy properties.ip (string)
-	if ip, ok := props["ip"].(string); ok && ip != "" {
-		ipSet[ip] = true
-		delete(props, "ip") // Remove legacy key
-	}
-
-	// From existing ip_addresses array
-	if ips, ok := props["ip_addresses"].([]any); ok {
-		for _, v := range ips {
-			if s, ok := v.(string); ok && s != "" {
-				ipSet[s] = true
-			}
-		}
-	}
-	if ips, ok := props["ip_addresses"].([]string); ok {
-		for _, s := range ips {
-			if s != "" {
-				ipSet[s] = true
-			}
-		}
-	}
-
-	// From ip_address as a plain string (sdk-go's Nessus / Tenable parser).
-	// The key is left in place; only the index array gains the address, so IP
-	// correlation can find this host after it is renamed.
-	if ip, ok := props["ip_address"].(string); ok && net.ParseIP(ip) != nil {
-		ipSet[ip] = true
-	}
-
-	// From ip_address technical data (structured object)
 	if ipAddr, ok := props["ip_address"].(map[string]any); ok {
-		if addr, ok := ipAddr["address"].(string); ok && addr != "" {
-			ipSet[addr] = true
-		}
-		// Promote hostname to top-level if not already set
 		if hostname, ok := ipAddr["hostname"].(string); ok && hostname != "" {
 			if _, exists := props["hostname"]; !exists {
 				props["hostname"] = hostname
 			}
 		}
 	}
-
-	// From asset name if it looks like an IP
 	if looksLikeIPv4(assetName) {
-		ipSet[assetName] = true
-	}
-
-	// Write back as standardized array
-	if len(ipSet) > 0 {
-		ips := make([]string, 0, len(ipSet))
-		for ip := range ipSet {
-			ips = append(ips, ip)
-		}
-		props["ip_addresses"] = ips
+		asset.AddIPAddress(props, assetName)
 	}
 }
 
-// addIPAddress adds ip to props["ip_addresses"], keeping the array free of
-// duplicates whichever slice type it currently holds.
-func addIPAddress(props map[string]any, ip string) {
-	var ips []string
-	switch v := props["ip_addresses"].(type) {
-	case []string:
-		ips = append(ips, v...)
-	case []any:
-		for _, item := range v {
-			if s, ok := item.(string); ok && s != "" {
-				ips = append(ips, s)
-			}
+// dropMisplacedProperties removes the keys only assets of other classes may
+// hold (routeMisplacedProperties moved the report's own to their asset).
+func dropMisplacedProperties(t asset.AssetType, subType string, props map[string]any) {
+	for _, k := range asset.MisplacedPropertyKeys(t, subType, props) {
+		delete(props, k)
+	}
+}
+
+// dropOwnAddress removes an IP address asset's own address from its
+// ip_addresses (the key goes when nothing else is left).
+func dropOwnAddress(props map[string]any, assetName string) {
+	own := net.ParseIP(strings.TrimSpace(assetName))
+	if own == nil {
+		return
+	}
+	ips := asset.IPAddresses(props)
+	if len(ips) == 0 {
+		return
+	}
+	rest := make([]any, 0, len(ips))
+	for _, ip := range ips {
+		if ip != own.String() {
+			rest = append(rest, ip)
 		}
 	}
-	for _, existing := range ips {
-		if existing == ip {
-			return
-		}
+	if len(rest) == 0 {
+		delete(props, asset.PropKeyIPAddresses)
+		return
 	}
-	props["ip_addresses"] = append(ips, ip)
+	props[asset.PropKeyIPAddresses] = rest
 }
 
 // looksLikeIPv4 returns true if s matches basic IPv4 pattern.

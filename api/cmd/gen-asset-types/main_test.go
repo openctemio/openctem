@@ -132,6 +132,10 @@ sections: [{ id: overview, label: Overview }]
 core_fields: [name, findings.open]
 identity_kinds: [scm_repo_id]
 virtual_types: [{ name: container_image, type: repository, sub_type: image }]
+common_properties: [discovery_tool]
+properties:
+  provider: { label: Provider, label_vi: Nhà cung cấp }
+  discovery_tool: { label: Discovery tool, label_vi: Công cụ phát hiện, synonyms: [tool] }
 types:
   - type: repository
     label: Repository
@@ -212,6 +216,16 @@ func TestResolve_RejectsInvalidRegistries(t *testing.T) {
 		{"sub-type input to an alias", "sub_types: [image]", "sub_types: [image]\n    sub_type_inputs:\n      gh: { type: unclassified2 }", "", "unknown type"},
 		{"virtual type to an undeclared sub-type", "virtual_types: [{ name: container_image, type: repository, sub_type: image }]", "virtual_types: [{ name: container_image, type: repository, sub_type: layer }]", "", "not in repository's sub_types"},
 		{"unmodelled virtual type with a type", "virtual_types: [{ name: container_image, type: repository, sub_type: image }]", "virtual_types: [{ name: container_image, type: repository, unmodelled: true }]", "", "unmodelled name has no type"},
+		// RFC-042 §6.3.9: the property schema.
+		{"attribute missing from properties", "{ name: provider, type: enum, values: [github], facet: true }", "{ name: provider, type: enum, values: [github], facet: true }\n      - { name: stars, type: int }", "", "not in properties"},
+		{"property without a Vietnamese label", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider }", "", "label_vi"},
+		{"unknown format", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp, format: html }", "", "unknown format"},
+		{"unused property", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp }\n  orphan: { label: Orphan, label_vi: Mồ côi }", "", "no type declares it"},
+		{"synonym that is an attribute", "synonyms: [tool]", "synonyms: [provider]", "", "is an attribute of a type"},
+		{"synonyms on a non-list attribute", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp, synonyms: [tool] }", "", "a property with synonyms is a list"},
+		{"class restriction a type breaks", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp, classes: [other] }", "", "restricted to classes"},
+		{"common property restricted to classes", "synonyms: [tool]", "synonyms: [tool], classes: [other]", "", "common property cannot be restricted"},
+		{"common property missing from properties", "common_properties: [discovery_tool]", "common_properties: [discovery_tool, aliases]", "", "not in properties"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
