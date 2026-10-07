@@ -1487,6 +1487,11 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// their code so the client can explain them.
 		e := apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
 			cleanErrorMessage(err, "Invalid request"))
+		// A refusal of targets lists each with its code and fixes (RFC-054 §6.5).
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Details != nil {
+			e = e.WithDetails(de.Details)
+		}
 		if d := toolUnavailableDetails(err); d != nil {
 			e.Details = d
 		}

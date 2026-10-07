@@ -109,7 +109,10 @@ trigger):
 5. its attribution record, if any, is `confirmed`;
 6. **authority**: an internet-facing target is covered by an *active* scope
    entry (approved, unexpired) with `max_tier` at or above the probe's tier, or
-   sits at or under a root-domain seed or verified domain (T1 at most);
+   sits at or under a root-domain seed or a verified domain of purpose `easm`
+   (T1 at most). A domain verified for SSO sign-in (purpose `sso`, set up by
+   a platform administrator) never authorizes; it counts only as proof
+   (step 7);
 7. proof, when §8.1 requires it: the target sits at or under a verified domain;
 8. the actor may act on it (D9: data scope; restricted members only their
    assets);
@@ -191,7 +194,7 @@ trends, and attack-surface "recent changes". A change event whose asset is not
 in the inventory is still listed in recent changes, but carries its
 attribution state so the UI shows "Added · needs review" instead of "Added".
 
-## 5. Data model (migration `001149`)
+## 5. Data model (migration `001198`)
 
 `scope_targets` gains:
 
@@ -275,6 +278,17 @@ Response (`ScopeTargetResponse`, also for list/get/update):
 `covers` is `name`, `domain_and_subdomains`, `addresses` or `pattern`.
 `status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
 
+**Seeds** (`POST /api/v1/easm/seeds`, `scope:approve` + **step-up**): a
+root-domain seed authorizes T1 probes of every name under it and confirms
+them (§4.3), so a new seed is created as the permanent entry `*.<domain>`
+through the path above (approval count, guardrails, notification, audit
+`scope_target.created` with `via: easm_seed`). The answer is the entry:
+`201` when it is active, `202` when it is pending. A member gets `403
+WIDENING_NEEDS_APPROVER` (members request one-off entries here). Turning a
+seed's discovery on (`PATCH /easm/seeds/{id}`) needs `scope:approve` and
+step-up and notifies the administrators. Seed rows created before this rule
+keep working until they fold into entries.
+
 **`POST /targets/{id}/approve`** (`scope:approve`, **step-up**): records the
 caller's approval. The requester cannot approve; nobody approves twice. When
 the distinct approvals reach `approvals_required`, the entry becomes `active`.
@@ -290,9 +304,21 @@ A **widening** change (a later or removed expiry, a higher tier) needs
 `approvals_required` > 0 (as an exclusion's extended window does). A narrowing
 change (earlier expiry, lower tier) applies at once.
 
-**`POST /targets/{id}/activate`**: widening. With `scope:approve`: step-up,
-then `active` or `pending` as for create. Without it: a request (`pending`,
-at least one approval).
+**`POST /targets/{id}/activate`**: widening. It needs `scope:approve`
+(`403 WIDENING_NEEDS_APPROVER` otherwise) and step-up, then the entry is
+`active` or `pending` as for create. An expired entry is renewed with a new
+expiry through `PUT` instead (`409 ENTRY_EXPIRED`).
+
+While a widened entry is `pending` it authorizes nothing (as an exclusion
+whose window was extended); the UI says so before the change.
+
+Errors carry their code: `ONE_OFF_TOO_LONG`, `ONE_OFF_DISABLED`,
+`REQUEST_NOT_ALLOWED` (403), `REQUEST_MUST_BE_ONE_OFF`,
+`REQUEST_MUST_BE_SINGLE`, `REQUEST_TIER`, `REASON_REQUIRED`,
+`INTRUSIVE_NEEDS_EXPIRY`, `WIDENING_NEEDS_APPROVER` (403),
+`ENTRY_SELF_APPROVAL` (403), `ENTRY_ALREADY_APPROVED`, `ENTRY_NOT_PENDING`,
+`ENTRY_EXPIRED`, `ENTRY_REJECTED` (409), and `STEP_UP_REQUIRED` /
+`STEP_UP_UNAVAILABLE` (403).
 
 `POST /targets/{id}/deactivate`, `DELETE /targets/{id}`,
 `POST /targets/bulk/delete`: narrowing, unchanged.
@@ -318,8 +344,7 @@ the window. The approval rule (approver ≠ requester) stays.
   "default_max_tier": "t1",
 
   "effective_widening_approvals": 1,
-  "admin_count": 2,
-  "active_proof": "platform_sensors"
+  "admin_count": 2
 }
 ```
 
@@ -331,22 +356,28 @@ the window. The approval rule (approver ≠ requester) stays.
 | `widening_approvals` | `null` (default), 0, 1, 2 | `null` → `min(1, admins − 1)` |
 | `default_max_tier` | `t0`, `t1` | `t1` |
 
-The last three fields are read-only. `effective_widening_approvals` never
-exceeds `admin_count − 1` for a value the tenant could not satisfy; a tenant
-with two or more admins cannot go below 1 (S3). `active_proof` is the
-operator's setting (§8.1). `t2` is never a default.
+The last two fields are read-only. `effective_widening_approvals` is capped
+at `admin_count − 1` (the administrators other than the requester can always
+satisfy it), and an organization with two or more admins cannot go below 1
+(S3); intrusive entries always need 1. Unset fields fall back to their
+default on `PUT`. The operator's `active_proof` (§8.1) is added to this
+response by the guardrails PR. `t2` is never a default.
 
 ### 6.4 Dry run: `POST /check` (`scope:read`)
 
 ```json
 { "targets": ["vndirect.com.vn", "promo-landing.net"],
-  "asset_ids": [],
   "sensor_preference": "auto",
   "tier": 1 }
 ```
 
-At most 200 targets. Runs §4.2 steps 1–9 for the caller (act scope included)
-without dispatching, auditing or logging a refusal.
+At most 200 targets (an inventory asset is checked by its name). Runs §4.2
+steps 1–9 for the caller (act scope included) without dispatching, auditing
+or logging a refusal. The act scope answers first for a restricted member
+(`not_an_asset`, `out_of_data_scope`), so the dry run tells them nothing
+about assets outside their data scope; `proof_required` applies with
+`sensor_preference=platform` under the operator's proof mode and to
+`tier: 2`.
 
 ```json
 { "results": [
@@ -364,9 +395,10 @@ without dispatching, auditing or logging a refusal.
 ] }
 ```
 
-`via.kind`: `scope_target`, `seed`, `verified_domain`, `internal` (zone-gated),
-`not_applicable` (repository, cloud resource). `via.proof`: `verified` or
-`asserted`. `rule` names the caller's own rule that refused: `{"kind":
+`via.kind`: `scope_target`, `seed`, `verified_domain`, or `internal` (a
+private target routed by its zone, or a target no authority needs to cover).
+`via.proof`: `verified` or `asserted`. `zone` is set for zone-routed
+targets. `rule` names the caller's own rule that refused: `{"kind":
 "exclusion"|"scope_target"|"tombstone"|"asset", "id", "pattern"}`; for
 platform policy it is `{"kind": "platform_policy"}` with no detail.
 
@@ -391,7 +423,9 @@ platform policy it is `{"kind": "platform_policy"}` with no detail.
 | `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
 
 Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
-"domain"?}`. Fixes are filtered by the caller's permissions.
+"domain"?, "requires"?}`; `requires` is the permission the action needs. The
+dry run keeps only the fixes the caller may take (an approver gets
+`allow_temporarily`, a member `request_access`, never both).
 
 The same `code` (and `fixes`) appear on every refusal the API returns:
 `TARGET_OUT_OF_SCOPE` errors list `details.refused[]` as
@@ -574,8 +608,23 @@ None of these is a tenant setting; nothing a tenant sends turns them off.
 | `all` | every active probe needs a verified root (internal, zone-gated targets excepted) |
 
 Unset: `platform_sensors` when `TENANT_CREATION_MODE=self_service`, else
-`off`. Intrusive (T2) probes always need a verified root. IP targets have no
-proof kind yet, so they are refused where proof is required.
+`off`; any other value fails startup. Intrusive (T2) probes always need a
+verified root. IP targets have no proof kind yet, so they are refused where
+proof is required.
+
+Where it is enforced:
+
+- `platform_sensors` (and `all`): the scan trigger sends a job to platform
+  sensors only when every target is at or under a verified domain. An
+  explicit `sensor_preference=platform` with an unproven target is refused
+  (`400 PROOF_REQUIRED`, the unproven targets named); `auto` keeps the job on
+  tenant sensors.
+- `all`: the ownership gate refuses an unproven internet target on every
+  path (never-stored state `proof_required`, refusal code `proof_required`).
+- Intrusive: scan create, quick scan and every single-scanner run refuse a
+  scan whose tool only implements T2 stages (for example `zap`) when a target
+  is unproven (`PROOF_REQUIRED`). Workflow scans keep RFC-036's rule that an
+  intrusive stage never takes discovered targets; per-step proof is P1.
 
 ### 8.2 Deny list and public suffixes
 
@@ -591,13 +640,22 @@ Checked when an entry is created or widened and again at dispatch:
   allowed;
 - `0.0.0.0/0`, `::/0`, link-local and cloud metadata addresses;
 - the operator's own ranges and names, `SCOPE_DENY_EXTRA` (comma-separated
-  domains and CIDRs).
+  domains and CIDRs; an entry that is neither fails startup).
+
+A new entry that hits them is refused (`400 PUBLIC_SUFFIX`, `DENY_LIST`). At
+dispatch the ownership gate refuses a deny-listed target on every path,
+even inside the tenant's own scope target or after a person confirmed it
+(never-stored state `platform_denied`, refusal code `deny_list`). The
+refusal names no rule: "the platform does not allow this target".
 
 ### 8.3 CIDR caps
 
 A public IPv4 range larger than `/SCOPE_MAX_PUBLIC_CIDR_V4` (default 16) or
-IPv6 larger than `/SCOPE_MAX_PUBLIC_CIDR_V6` (default 32) is refused. Private
-ranges are gated by zones and are not capped.
+IPv6 larger than `/SCOPE_MAX_PUBLIC_CIDR_V6` (default 32) is refused
+(`400 CIDR_TOO_LARGE`), including `a-b` ranges by their size. Private ranges
+are gated by zones and are not capped.
+
+`GET /scope/settings` shows the operator's `active_proof` (read-only).
 
 ## 9. Rollout and upgrade
 
@@ -624,7 +682,7 @@ ranges are gated by zones and are not capped.
 | S1 | matcher, tests, docs, this RFC |
 | Authority | one authority check for typed and inventory targets; Ownership-tab bypass removed |
 | Guardrails | PSL, deny list, CIDR caps, `SCOPE_ACTIVE_PROOF` |
-| Entries | migration `001149`, expiry, requests, approvals, step-up, notification, settings, sweep |
+| Entries | migration `001198`, expiry, requests, approvals, step-up, notification, settings, sweep |
 | Discovery | `matches_scope_target` + backfill |
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
