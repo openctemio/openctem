@@ -103,6 +103,10 @@ func (f *gateFixture) VerifiedDomainNames(_ context.Context, t shared.ID) ([]str
 	return f.vds, nil
 }
 
+func (f *gateFixture) EASMVerifiedDomainNames(ctx context.Context, t shared.ID) ([]string, error) {
+	return f.VerifiedDomainNames(ctx, t)
+}
+
 func (f *gateFixture) add(t *testing.T, name string, typ asset.AssetType) *asset.Asset {
 	t.Helper()
 	a, err := asset.NewAsset(name, typ, asset.CriticalityMedium)

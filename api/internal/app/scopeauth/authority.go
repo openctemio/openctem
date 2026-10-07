@@ -8,7 +8,11 @@
 //
 //   - its active scope targets (domain, IP, CIDR, URL, repository, …), matched
 //     with pkg/domain/scope (a "*.x" target covers x and everything below it);
-//   - its root-domain seeds and verified domains: a name at or under one.
+//   - its root-domain seeds and the domains it verified for attack-surface
+//     work (purpose easm): a name at or under one. A domain verified for SSO
+//     sign-in (purpose sso, set up by a platform administrator) never
+//     authorizes; it still counts as proof of control (§8.1), which only
+//     ever adds a requirement and never grants anything on its own.
 //
 // Every lookup is tenant-scoped; any lookup error refuses (the caller
 // dispatches nothing). Another tenant's targets, seeds and verified domains
@@ -36,7 +40,11 @@ type Targets interface {
 // (*postgres.EASMSeedRepository).
 type Roots interface {
 	RootDomainSeedNames(ctx context.Context, tenantID shared.ID) ([]string, error)
+	// VerifiedDomainNames: every verified domain, any purpose (proof).
 	VerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
+	// EASMVerifiedDomainNames: verified domains of purpose easm only
+	// (authority).
+	EASMVerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 }
 
 // Kinds of authority that cover a name.
@@ -64,8 +72,11 @@ type Via struct {
 
 // Authority is one tenant's loaded authority. Build it with Load.
 type Authority struct {
-	targets  []*scopedom.Target
-	seeds    []string
+	targets []*scopedom.Target
+	seeds   []string
+	// authorizing: verified domains that authorize (purpose easm).
+	authorizing []string
+	// verified: every verified domain, the proof of control.
 	verified []string
 }
 
@@ -90,7 +101,16 @@ func Load(ctx context.Context, tenantID shared.ID, targets Targets, roots Roots)
 	if err != nil {
 		return nil, fmt.Errorf("list verified domains: %w", err)
 	}
+	authorizing, err := roots.EASMVerifiedDomainNames(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list easm verified domains: %w", err)
+	}
 	a := &Authority{targets: ts}
+	for _, r := range authorizing {
+		if r = normalizeRoot(r); r != "" {
+			a.authorizing = append(a.authorizing, r)
+		}
+	}
 	for _, r := range seeds {
 		if r = normalizeRoot(r); r != "" {
 			a.seeds = append(a.seeds, r)
@@ -107,7 +127,9 @@ func Load(ctx context.Context, tenantID shared.ID, targets Targets, roots Roots)
 // Covers reports whether the tenant authorized active probes of name (an
 // address, CIDR, host, host:port, URL or repository name) and what covers it.
 // A verified domain is preferred over a seed, and a seed over a scope target,
-// so Via names the strongest authority.
+// so Via names the strongest authority. Only a verified domain of purpose
+// easm authorizes; a scope target or seed under an SSO-verified domain
+// reports proof "verified".
 func (a *Authority) Covers(name string) (Via, bool) {
 	if a == nil {
 		return Via{}, false
@@ -115,8 +137,11 @@ func (a *Authority) Covers(name string) (Via, bool) {
 	host := Host(name)
 	proof := ProofAsserted
 	if host != "" {
-		if r, ok := underAny(host, a.verified); ok {
+		if r, ok := underAny(host, a.authorizing); ok {
 			return Via{Kind: KindVerifiedDomain, Pattern: r, Proof: ProofVerified}, true
+		}
+		if _, ok := underAny(host, a.verified); ok {
+			proof = ProofVerified
 		}
 		if r, ok := underAny(host, a.seeds); ok {
 			return Via{Kind: KindSeed, Pattern: r, Proof: proof}, true
