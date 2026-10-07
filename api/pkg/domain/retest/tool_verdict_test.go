@@ -76,9 +76,9 @@ func TestDecideToolVerdictFirstMatchingRefWins(t *testing.T) {
 }
 
 func TestCleanDetail(t *testing.T) {
-	in := "line1\nline2\x00‮ evil\t" + strings.Repeat("é", 400)
+	in := "line1\nline2\x00\u202e evil\t" + strings.Repeat("é", 400)
 	out := CleanDetail(in)
-	if strings.ContainsAny(out, "\n\x00‮\t") {
+	if strings.ContainsAny(out, "\n\x00\u202e\t") {
 		t.Fatalf("control characters kept: %q", out)
 	}
 	if len(out) > maxVerdictDetail {
