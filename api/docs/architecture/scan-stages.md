@@ -180,6 +180,24 @@ single check. An integration test checks that each passes the graph check
 and resolves a seeded platform tool for every step. The presets they replace
 are deactivated, not deleted.
 
+### 1.4 Workflow preview
+
+`POST /api/v1/scans/workflow-preview` (`scans:write`) answers what a workflow
+scan would do if it started now, without creating anything
+(`internal/app/scan/workflow_preview.go`):
+
+- **Per step:** the capability, the tier, the tool `ResolveStepTool` picks, and the
+  tool's sensor availability in the scan's zone. The step is blocking when the
+  trigger's `NO_SENSOR_FOR_TOOL` check would refuse it. The code and message are
+  the trigger's, and a unit test asserts this parity.
+- **Targets:** the zone routing preview with scan type `workflow`, which runs the
+  trigger's target resolution, scope exclusions and zone plan. The sample is cut
+  to 20 targets.
+- **Freeze:** a freeze window active now for the scan's zone, for active work.
+
+The workflow must be the organization's own or a system workflow (otherwise
+404). The new-scan wizard shows the preview on its last step.
+
 ## 2. The planner: one dispatcher, capability → tool
 
 Every pipeline step command is built on one path:

@@ -601,8 +601,23 @@ None of these is a tenant setting; nothing a tenant sends turns them off.
 | `all` | every active probe needs a verified root (internal, zone-gated targets excepted) |
 
 Unset: `platform_sensors` when `TENANT_CREATION_MODE=self_service`, else
-`off`. Intrusive (T2) probes always need a verified root. IP targets have no
-proof kind yet, so they are refused where proof is required.
+`off`; any other value fails startup. Intrusive (T2) probes always need a
+verified root. IP targets have no proof kind yet, so they are refused where
+proof is required.
+
+Where it is enforced:
+
+- `platform_sensors` (and `all`): the scan trigger sends a job to platform
+  sensors only when every target is at or under a verified domain. An
+  explicit `sensor_preference=platform` with an unproven target is refused
+  (`400 PROOF_REQUIRED`, the unproven targets named); `auto` keeps the job on
+  tenant sensors.
+- `all`: the ownership gate refuses an unproven internet target on every
+  path (never-stored state `proof_required`, refusal code `proof_required`).
+- Intrusive: scan create, quick scan and every single-scanner run refuse a
+  scan whose tool only implements T2 stages (for example `zap`) when a target
+  is unproven (`PROOF_REQUIRED`). Workflow scans keep RFC-036's rule that an
+  intrusive stage never takes discovered targets; per-step proof is P1.
 
 ### 8.2 Deny list and public suffixes
 
@@ -618,13 +633,22 @@ Checked when an entry is created or widened and again at dispatch:
   allowed;
 - `0.0.0.0/0`, `::/0`, link-local and cloud metadata addresses;
 - the operator's own ranges and names, `SCOPE_DENY_EXTRA` (comma-separated
-  domains and CIDRs).
+  domains and CIDRs; an entry that is neither fails startup).
+
+A new entry that hits them is refused (`400 PUBLIC_SUFFIX`, `DENY_LIST`). At
+dispatch the ownership gate refuses a deny-listed target on every path,
+even inside the tenant's own scope target or after a person confirmed it
+(never-stored state `platform_denied`, refusal code `deny_list`). The
+refusal names no rule: "the platform does not allow this target".
 
 ### 8.3 CIDR caps
 
 A public IPv4 range larger than `/SCOPE_MAX_PUBLIC_CIDR_V4` (default 16) or
-IPv6 larger than `/SCOPE_MAX_PUBLIC_CIDR_V6` (default 32) is refused. Private
-ranges are gated by zones and are not capped.
+IPv6 larger than `/SCOPE_MAX_PUBLIC_CIDR_V6` (default 32) is refused
+(`400 CIDR_TOO_LARGE`), including `a-b` ranges by their size. Private ranges
+are gated by zones and are not capped.
+
+`GET /scope/settings` shows the operator's `active_proof` (read-only).
 
 ## 9. Rollout and upgrade
 

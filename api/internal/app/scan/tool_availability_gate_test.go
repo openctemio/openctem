@@ -125,3 +125,38 @@ func TestCheckScanToolsDispatchable(t *testing.T) {
 		t.Errorf("without the source: %v", err)
 	}
 }
+
+// Parity: a preview reports for a step exactly what the trigger refuses it
+// with (same code, same message), and nothing where the trigger passes.
+func TestPreviewStep_SameVerdictAsTrigger(t *testing.T) {
+	ctx := context.Background()
+	tenant := shared.NewID()
+	avail := &fakeAvailability{byTool: map[string]*sensordom.ToolAvailability{
+		"nuclei":  {Name: "nuclei", Enabled: true, Status: sensordom.ToolReady, SensorsOnline: 1, SensorsTotal: 1},
+		"checkov": {Name: "checkov", Enabled: true, Status: sensordom.ToolNoSensor},
+		"semgrep": {Name: "semgrep", Enabled: true, Status: sensordom.ToolOfflineOnly, SensorsTotal: 2},
+	}}
+	svc := &Service{toolRepo: &stubTools{tools: map[string]*tool.Tool{}}, toolAvailability: avail, logger: logger.NewNop()}
+	pid := shared.NewID()
+	for _, name := range []string{"nuclei", "checkov", "semgrep"} {
+		step := &pipeline.Step{StepKey: "s-" + name, Name: name, Tool: name}
+		svc.stepRepo = stubSteps{steps: []*pipeline.Step{step}}
+		wf := &scan.Scan{ID: shared.NewID(), TenantID: tenant, ScanType: scan.ScanTypeWorkflow, PipelineID: &pid}
+		triggerErr := svc.checkScanToolsDispatchable(ctx, wf)
+		node := svc.previewStep(ctx, tenant, nil, step)
+		if triggerErr == nil {
+			if node.Blocking != nil {
+				t.Errorf("%s: preview blocks (%s) where the trigger passes", name, node.Blocking.Message)
+			}
+			continue
+		}
+		var tu *ToolUnavailableError
+		if !errors.As(triggerErr, &tu) || node.Blocking == nil ||
+			node.Blocking.Code != CodeNoSensorForTool || node.Blocking.Message != tu.Domain.Message {
+			t.Errorf("%s: trigger %v, preview %+v", name, triggerErr, node.Blocking)
+		}
+		if node.Availability == nil || node.Availability.Status != string(avail.byTool[name].Status) {
+			t.Errorf("%s: availability %+v", name, node.Availability)
+		}
+	}
+}
