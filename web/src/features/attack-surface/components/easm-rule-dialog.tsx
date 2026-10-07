@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useId, useState } from 'react'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,7 +32,15 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { useDebounce } from '@/hooks/use-debounce'
-import { scopeErrorMessage, scopeErrorText, scopeRefusalLabel } from '@/features/scope'
+import { Permission, useHasPermission } from '@/lib/permissions'
+import {
+  coversText,
+  ScopeChangePreview,
+  scopeErrorMessage,
+  scopeErrorText,
+  scopeRefusalLabel,
+  type ScopeChangeLine,
+} from '@/features/scope'
 import {
   applyRule,
   previewRule,
@@ -48,34 +56,15 @@ interface EASMRuleDialogProps {
   onApplied: () => void
 }
 
-const SAMPLE = 8
-
-function NameList({ title, names, empty }: { title: string; names: string[]; empty?: string }) {
-  if (names.length === 0 && !empty) return null
-  return (
-    <div className="space-y-1">
-      <p className="text-sm font-medium">{title}</p>
-      {names.length === 0 ? (
-        <p className="text-xs text-muted-foreground">{empty}</p>
-      ) : (
-        <ul className="flex flex-wrap gap-1">
-          {names.slice(0, SAMPLE).map((n) => (
-            <li key={n} className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all">
-              {n}
-            </li>
-          ))}
-          {names.length > SAMPLE && (
-            <li className="text-xs text-muted-foreground">and {names.length - SAMPLE} more</li>
-          )}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-export function EASMRuleDialog({ suggestion, action, onOpenChange, onApplied }: EASMRuleDialogProps) {
+export function EASMRuleDialog({
+  suggestion,
+  action,
+  onOpenChange,
+  onApplied,
+}: EASMRuleDialogProps) {
   const { t } = useTranslation()
   const id = useId()
+  const canApprove = useHasPermission(Permission.ScopeApprove)
   const [reason, setReason] = useState('')
   const [preview, setPreview] = useState<EASMRulePreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -132,6 +121,39 @@ export function EASMRuleDialog({ suggestion, action, onOpenChange, onApplied }: 
   const confirm = (preview?.would_confirm ?? []).map((a) => a.name ?? '').filter(Boolean)
   const reject = (preview?.would_reject ?? []).map((a) => a.name ?? '').filter(Boolean)
   const blocked = preview?.stays_blocked ?? []
+  const lines: ScopeChangeLine[] = preview
+    ? [
+        {
+          key: 'rule',
+          mark: refusal ? 'refused' : 'add',
+          pattern: entry?.pattern ?? suggestion.pattern ?? '',
+          summary: refusal
+            ? undefined
+            : accept
+              ? `scope entry · covers ${coversText({ pattern: entry?.pattern ?? suggestion.pattern })} · permanent`
+              : 'exclusion · names it covers are marked not ours',
+          message: refusal ?? undefined,
+          impact: refusal
+            ? []
+            : [
+                accept
+                  ? { title: 'Confirmed as yours', names: confirm }
+                  : { title: 'Marked not ours', names: reject },
+                ...(blocked.length > 0
+                  ? [
+                      {
+                        title: 'Stay out',
+                        names: blocked.map((b) => b.name ?? ''),
+                        notes: Object.fromEntries(
+                          blocked.map((b) => [b.name ?? '', scopeRefusalLabel(t, b.code)])
+                        ),
+                      },
+                    ]
+                  : []),
+              ],
+        },
+      ]
+    : []
 
   const submit = async () => {
     if (!reason.trim()) return
@@ -151,7 +173,9 @@ export function EASMRuleDialog({ suggestion, action, onOpenChange, onApplied }: 
             : `${suggestion.pattern} is waiting for approval`,
           res?.entry?.status === 'active'
             ? undefined
-            : { description: 'The names it covers are confirmed once another approver approves it.' }
+            : {
+                description: 'The names it covers are confirmed once another approver approves it.',
+              }
         )
       } else {
         toast.success(`${changed} ${changed === 1 ? 'name' : 'names'} marked not ours`, {
@@ -194,56 +218,26 @@ export function EASMRuleDialog({ suggestion, action, onOpenChange, onApplied }: 
               {previewError}
             </p>
           )}
-          {refusal && (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{refusal}</span>
-            </div>
-          )}
           {loading && !preview ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Working out what changes…
             </p>
           ) : (
-            preview &&
-            !refusal && (
-              <>
-                {entry && (
-                  <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                    {entry.kind === 'exclusion' ? 'Exclusion' : 'Scope entry'}{' '}
-                    <code className="break-all">{entry.pattern}</code>:{' '}
-                    {entry.status === 'active'
-                      ? 'takes effect at once.'
-                      : (entry.approvals_required ?? 0) > 0
-                        ? `waits for ${entry.approvals_required} ${entry.approvals_required === 1 ? 'approval' : 'approvals'}; nothing changes for scans until then.`
-                        : 'waits for approval.'}
-                    {preview.step_up_required ? ' You will be asked to confirm your identity.' : ''}
-                  </p>
-                )}
-                <NameList
-                  title={accept ? `Confirms ${confirm.length}` : `Marks not ours: ${reject.length}`}
-                  names={accept ? confirm : reject}
-                  empty="No pending names right now."
-                />
-                {blocked.length > 0 && (
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Stay out: {blocked.length}</p>
-                    <ul className="space-y-0.5 text-xs">
-                      {blocked.slice(0, SAMPLE).map((b) => (
-                        <li key={b.asset_id ?? b.name} className="flex flex-wrap gap-x-2">
-                          <span className="font-mono break-all">{b.name}</span>
-                          <span className="text-muted-foreground">
-                            {scopeRefusalLabel(t, b.code)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
+            preview && (
+              <ScopeChangePreview
+                lines={lines}
+                loading={loading}
+                consequence={
+                  refusal
+                    ? undefined
+                    : {
+                        approvalsRequired:
+                          entry?.status === 'active' ? 0 : (entry?.approvals_required ?? 0),
+                        isRequest: accept && !canApprove,
+                        stepUp: preview.step_up_required,
+                      }
+                }
+              />
             )
           )}
 

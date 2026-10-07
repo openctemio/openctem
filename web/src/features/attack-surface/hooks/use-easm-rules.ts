@@ -20,7 +20,8 @@ export type EASMRuleSuggestions =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestions']
 export type EASMRuleSuggestion =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestion']
-export type EASMRulePreview = Schemas['github_com_openctemio_openctem_api_internal_app_easm.RulePreview']
+export type EASMRulePreview =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.RulePreview']
 
 export type EASMRuleAction = 'accept_rule' | 'accept_selected' | 'reject_rule'
 
