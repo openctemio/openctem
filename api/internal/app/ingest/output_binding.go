@@ -245,6 +245,11 @@ func (sp *contractSplit) anyHeld() bool {
 func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, binding Binding,
 	report *ctis.Report, opts Options,
 ) *ctis.Report {
+	if report != nil && binding.Kind != BindingCommand {
+		// Only a command binds a report to a capability; a claim alone
+		// never drives capability-specific handling.
+		report.Metadata.Capability = ""
+	}
 	if binding.Kind != BindingCommand || report == nil ||
 		(len(report.Assets) == 0 && len(report.Findings) == 0 && len(report.Dependencies) == 0) {
 		return report
@@ -254,6 +259,10 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 		tool = report.Tool.Name
 	}
 	rules := outputRules{stages: outputContract(tool), declared: s.declaredContract(ctx, agt, tool)}
+	// The capability the report answers is the platform's, from the
+	// command's tool: the sensor's metadata.capability is only a hint.
+	report.Metadata.Capability = boundCapability(rules, report.Metadata.Capability)
+	s.checkCapabilityContract(agt, tenantID, tool, report)
 	if rules.empty() {
 		return report // no contract: a tool the catalog does not know, without a declaration
 	}
