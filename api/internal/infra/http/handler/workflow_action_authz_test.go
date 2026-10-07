@@ -34,7 +34,7 @@ func TestWorkflowActionAuthz_DeniesWithoutResourcePermission(t *testing.T) {
 		{"create_ticket", permission.FindingsWrite},
 		{"trigger_ai_triage", permission.FindingsWrite},
 		{"trigger_scan", permission.ScansWrite},
-		{"trigger_pipeline", permission.PipelinesWrite},
+		{"trigger_pipeline", permission.ScanWorkflowsWrite},
 	}
 	for _, tc := range cases {
 		perm, ok := authorizeActionConfigs(ctx, actionCfg(tc.action))
@@ -53,7 +53,7 @@ func TestWorkflowActionAuthz_AllowsWithResourcePermission(t *testing.T) {
 		string(permission.WorkflowsWrite),
 		string(permission.FindingsWrite),
 		string(permission.ScansWrite),
-		string(permission.PipelinesWrite),
+		string(permission.ScanWorkflowsWrite),
 	)
 	if _, ok := authorizeActionConfigs(ctx,
 		actionCfg("update_status"), actionCfg("trigger_scan"), actionCfg("trigger_pipeline")); !ok {

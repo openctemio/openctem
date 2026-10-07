@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
@@ -18,14 +21,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -58,7 +59,7 @@ type CommandHandler struct {
 	service          *command.Service
 	scanGate         scanCommandGate
 	audit            *auditsvc.AuditService
-	pipelineService  *pipelinesvc.Service
+	scanRunService   *scanrun.Service
 	validationIngest validationEvidenceIngester
 	retestEvidence   retestEvidenceRecorder
 	retestSettler    retestSettler
@@ -102,9 +103,9 @@ func (h *CommandHandler) SetScanCommandGate(g scanCommandGate) {
 	h.scanGate = g
 }
 
-// SetPipelineService sets the pipeline service for triggering pipeline progression.
-func (h *CommandHandler) SetPipelineService(svc *pipelinesvc.Service) {
-	h.pipelineService = svc
+// SetScanRunService sets the scan run service for triggering scan workflow progression.
+func (h *CommandHandler) SetScanRunService(svc *scanrun.Service) {
+	h.scanRunService = svc
 }
 
 // SetValidationIngest wires the validation evidence ingester used to map a
@@ -777,46 +778,46 @@ func parseOptionalID(s string) shared.ID {
 	return id
 }
 
-// triggerPipelineStarted marks the command's pipeline step as running. It runs
+// triggerScanRunStarted marks the command's workflow step as running. It runs
 // in the request, before the sensor gets its answer: the sensor reports the
 // result only after that, so the start is recorded before the asynchronous
 // completion can be. Best-effort: a failure is logged and the start stands.
-func (h *CommandHandler) triggerPipelineStarted(ctx context.Context, cmd *commanddom.Command) {
-	if h.pipelineService == nil || cmd == nil || cmd.SensorID == nil {
+func (h *CommandHandler) triggerScanRunStarted(ctx context.Context, cmd *commanddom.Command) {
+	if h.scanRunService == nil || cmd == nil || cmd.SensorID == nil {
 		return
 	}
-	var payload pipelinedom.StepCommandPayload
+	var payload scanrundom.StepCommandPayload
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || !payload.IsRoutable() {
 		return
 	}
-	if err := h.pipelineService.OnStepStarted(ctx, payload.PipelineRunID, payload.StepKey, *cmd.SensorID, cmd.ID); err != nil {
+	if err := h.scanRunService.OnStepStarted(ctx, payload.ScanRunID, payload.StepKey, *cmd.SensorID, cmd.ID); err != nil {
 		h.logger.Warn("failed to mark pipeline step started",
-			"pipeline_run_id", payload.PipelineRunID,
+			"scan_run_id", payload.ScanRunID,
 			"step_key", payload.StepKey,
 			"error", err,
 		)
 	}
 }
 
-// triggerPipelineProgression triggers pipeline progression when a command completes.
-// It extracts pipeline info from the command payload and calls OnStepCompleted.
-func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *commanddom.Command) {
-	if h.pipelineService == nil {
+// triggerScanRunProgression triggers scan workflow progression when a command completes.
+// It extracts scan workflow info from the command payload and calls OnStepCompleted.
+func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *commanddom.Command) {
+	if h.scanRunService == nil {
 		return
 	}
 
-	// Parse command payload to get pipeline info. The shape is shared with the
+	// Parse command payload to get scan workflow info. The shape is shared with the
 	// dispatcher so the two cannot drift apart again — see
-	// pipeline.StepCommandPayload.
-	var payload pipelinedom.StepCommandPayload
+	// scanrun.StepCommandPayload.
+	var payload scanrundom.StepCommandPayload
 
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
-		return // Not a pipeline command
+		return // Not a scan workflow command
 	}
 
 	if !payload.IsRoutable() {
 		// A command that carries no run/step cannot be reported back. This is
-		// legitimate for non-pipeline commands, but it also silently swallowed
+		// legitimate for non-scan workflow commands, but it also silently swallowed
 		// every scan command for as long as the dispatcher wrote the wrong key,
 		// so say so at debug level rather than vanishing.
 		h.logger.Debug("command carries no pipeline routing keys; not progressing",
@@ -838,18 +839,18 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 	if cmd.Result != nil {
 		_ = json.Unmarshal(cmd.Result, &result)
 	}
-	skipped, skippedTotal := pipelinedom.ParseSkippedTargets(result.Metadata.RefusedTargets, result.Metadata.RefusedTargetsTotal)
-	skippedSummary := pipelinedom.SkippedSummary(skipped, skippedTotal)
+	skipped, skippedTotal := scanrundom.ParseSkippedTargets(result.Metadata.RefusedTargets, result.Metadata.RefusedTargetsTotal)
+	skippedSummary := scanrundom.SkippedSummary(skipped, skippedTotal)
 
-	// Trigger pipeline progression asynchronously with independent context
+	// Trigger scan workflow progression asynchronously with independent context
 	// Use background context since the HTTP request context will be canceled after response
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := h.pipelineService.OnStepCompletedWithSkips(bgCtx, payload.PipelineRunID, payload.StepKey, result.FindingsCount, result.Output, skippedTotal, skippedSummary); err != nil {
+		if err := h.scanRunService.OnStepCompletedWithSkips(bgCtx, payload.ScanRunID, payload.StepKey, result.FindingsCount, result.Output, skippedTotal, skippedSummary); err != nil {
 			h.logger.Error("failed to trigger pipeline progression",
-				"pipeline_run_id", payload.PipelineRunID,
+				"scan_run_id", payload.ScanRunID,
 				"step_key", payload.StepKey,
 				"error", err,
 			)
@@ -857,20 +858,20 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 	}()
 }
 
-// triggerPipelineFailed triggers pipeline failure when a command fails.
-func (h *CommandHandler) triggerPipelineFailed(ctx context.Context, cmd *commanddom.Command, errorMessage string) {
-	if h.pipelineService == nil {
+// triggerScanRunFailed triggers scan workflow failure when a command fails.
+func (h *CommandHandler) triggerScanRunFailed(ctx context.Context, cmd *commanddom.Command, errorMessage string) {
+	if h.scanRunService == nil {
 		return
 	}
 
-	// Parse command payload to get pipeline info. Same shared shape as the
+	// Parse command payload to get scan workflow info. Same shared shape as the
 	// success path — a failure that cannot be routed loses the scanner's real
 	// error message, which is how "scanner not found: nuclei" reached users as
 	// "scan exceeded configured timeout".
-	var payload pipelinedom.StepCommandPayload
+	var payload scanrundom.StepCommandPayload
 
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
-		return // Not a pipeline command
+		return // Not a scan workflow command
 	}
 
 	if !payload.IsRoutable() {
@@ -879,14 +880,14 @@ func (h *CommandHandler) triggerPipelineFailed(ctx context.Context, cmd *command
 		return
 	}
 
-	// Trigger pipeline failure asynchronously with independent context
+	// Trigger scan workflow failure asynchronously with independent context
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := h.pipelineService.OnStepFailed(bgCtx, payload.PipelineRunID, payload.StepKey, errorMessage, "COMMAND_FAILED"); err != nil {
+		if err := h.scanRunService.OnStepFailed(bgCtx, payload.ScanRunID, payload.StepKey, errorMessage, "COMMAND_FAILED"); err != nil {
 			h.logger.Error("failed to trigger pipeline failure",
-				"pipeline_run_id", payload.PipelineRunID,
+				"scan_run_id", payload.ScanRunID,
 				"step_key", payload.StepKey,
 				"error", err,
 			)

@@ -47,7 +47,7 @@ type CIPipelineResponse struct {
 	Mode              string `json:"mode" enums:"runner"`
 	Kind              string `json:"kind" enums:"ci_pipeline"`
 	Role              string `json:"role" enums:"scanner"`
-	Provider          string `json:"provider" enums:"github,gitlab"`
+	Provider          string `json:"provider" enums:"github,gitlab,azure_devops,bitbucket,circleci,jenkins"`
 	RepositoryAssetID string `json:"repository_asset_id"`
 	Repository        string `json:"repository"`
 	WorkflowPath      string `json:"workflow_path"`
@@ -179,7 +179,7 @@ func parsePipelineStatuses(raw string) ([]cirun.PipelineStatus, bool) {
 // @Security     BearerAuth
 // @Param        status query string false "Comma-separated statuses (revoked, failing, degraded, stale, running, fresh, never, archived)"
 // @Param        include_inactive query bool false "Also list archived, revoked and never-run pipelines"
-// @Param        provider query string false "github or gitlab"
+// @Param        provider query string false "github, gitlab, azure_devops, bitbucket, circleci or jenkins"
 // @Param        repository_asset_id query string false "Repository asset"
 // @Param        search query string false "Repository, workflow path or name"
 // @Param        page query int false "Page (default 1)"
@@ -206,7 +206,7 @@ func (h *CIAdminHandler) ListPipelines(w http.ResponseWriter, r *http.Request) {
 		Search: truncateQuery(q.Get("search"), 255)}
 	in.Filter.Provider = q.Get("provider")
 	if in.Filter.Provider != "" && !cirun.Provider(in.Filter.Provider).IsValid() {
-		apierror.BadRequest("provider must be github or gitlab").WriteJSON(w)
+		apierror.BadRequest("provider must be github, gitlab, azure_devops, bitbucket, circleci or jenkins").WriteJSON(w)
 		return
 	}
 	if v := q.Get("repository_asset_id"); v != "" {

@@ -51,11 +51,11 @@ func newRefusalFixture(t *testing.T, sensorCount int) (*refusalFixture, []shared
 	return f, ids
 }
 
-// routedJob creates a zone scan command of a pipeline run (routed work).
+// routedJob creates a zone scan command of a scan run (routed work).
 func (f *refusalFixture) routedJob(routed bool) shared.ID {
 	payload := map[string]any{"scanner": "nuclei", "targets": []string{"10.60.0.5"}}
 	if routed {
-		payload["pipeline_run_id"] = shared.NewID().String()
+		payload["scan_run_id"] = shared.NewID().String()
 	}
 	return createPayloadCommand(f.ctx, f.t, f.cmds, f.tenant, &f.zone, payload)
 }
@@ -144,7 +144,7 @@ func TestRefusal_FailsAfterThreeRefusals(t *testing.T) {
 	}
 }
 
-// Only routed scan work moves: a command a person addressed (no pipeline
+// Only routed scan work moves: a command a person addressed (no scan workflow
 // run) fails at once, as before.
 func TestRefusal_UnroutedCommandFails(t *testing.T) {
 	f, ids := newRefusalFixture(t, 2)

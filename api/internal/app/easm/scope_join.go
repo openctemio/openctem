@@ -3,13 +3,13 @@ package easm
 // Discovered names that a declared scope entry covers join the inventory
 // (RFC-054 §4.3, owner decision S4 as refined 2026-10-07).
 //
-// A tenant that declares a permanent scope target (`x`, `*.x`) or a
-// root-domain seed claims the names under it as its own, with step-up and
+// A tenant that declares a permanent scope entry (`x`, `*.x`) claims the
+// names under it as its own, with step-up and
 // approval. So a discovered name such an entry covers gets the strong rule
 // matches_scope_target and the attribution engine confirms it, without the
 // review queue:
 //
-//   - names only from domain entries and seeds; an IP address only from an
+//   - names only from domain entries; an IP address only from an
 //     IP, range or CIDR entry that contains it (a name never lends its
 //     address anything); a service follows its host;
 //   - expiring (one-off) entries authorize scanning only and never confirm;
@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"net/netip"
 	"sort"
-	"strings"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -57,12 +56,6 @@ type JoinItem struct {
 // ScopeJoinTargets lists the tenant's active scope targets (*scope.Service).
 type ScopeJoinTargets interface {
 	ListActiveTargets(ctx context.Context, tenantID string) ([]*scopedom.Target, error)
-}
-
-// ScopeJoinSeeds lists the tenant's root-domain seeds
-// (*postgres.EASMSeedRepository).
-type ScopeJoinSeeds interface {
-	RootDomainSeedNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 }
 
 // ScopeJoinExclusions reports which candidates an active exclusion matches,
@@ -98,7 +91,6 @@ type ScopeJoinAudit interface {
 // ScopeJoin applies matches_scope_target.
 type ScopeJoin struct {
 	targets    ScopeJoinTargets
-	seeds      ScopeJoinSeeds
 	exclusions ScopeJoinExclusions
 	store      ScopeJoinStore
 	assets     ActiveGateAssets
@@ -109,13 +101,13 @@ type ScopeJoin struct {
 
 // NewScopeJoin wires the join. Every source is required; with a nil one the
 // join confirms nothing and reports an error.
-func NewScopeJoin(targets ScopeJoinTargets, seeds ScopeJoinSeeds, exclusions ScopeJoinExclusions,
+func NewScopeJoin(targets ScopeJoinTargets, exclusions ScopeJoinExclusions,
 	store ScopeJoinStore, assets ActiveGateAssets, log *logger.Logger,
 ) *ScopeJoin {
 	if log == nil {
 		log = logger.NewNop()
 	}
-	return &ScopeJoin{targets: targets, seeds: seeds, exclusions: exclusions, store: store, assets: assets,
+	return &ScopeJoin{targets: targets, exclusions: exclusions, store: store, assets: assets,
 		log: log.With("component", "scope-join")}
 }
 
@@ -126,27 +118,22 @@ func (j *ScopeJoin) SetSettings(s ScopeJoinSettings) { j.settings = s }
 func (j *ScopeJoin) SetAudit(a ScopeJoinAudit) { j.audit = a }
 
 func (j *ScopeJoin) ready() error {
-	if j == nil || j.targets == nil || j.seeds == nil || j.exclusions == nil || j.store == nil || j.assets == nil {
+	if j == nil || j.targets == nil || j.exclusions == nil || j.store == nil || j.assets == nil {
 		return fmt.Errorf("scope join is not configured")
 	}
 	return nil
 }
 
-// joinRoots is what may confirm: permanent active scope targets and seeds.
+// joinRoots is what may confirm: permanent active scope entries.
 type joinRoots struct {
 	domainTargets []*scopedom.Target
 	ipTargets     []*scopedom.Target
-	seeds         []string
 }
 
 func (j *ScopeJoin) loadRoots(ctx context.Context, tenantID shared.ID) (*joinRoots, error) {
 	targets, err := j.targets.ListActiveTargets(ctx, tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("list scope targets: %w", err)
-	}
-	seeds, err := j.seeds.RootDomainSeedNames(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list root-domain seeds: %w", err)
 	}
 	r := &joinRoots{}
 	for _, t := range targets {
@@ -158,11 +145,6 @@ func (j *ScopeJoin) loadRoots(ctx context.Context, tenantID shared.ID) (*joinRoo
 			r.domainTargets = append(r.domainTargets, t)
 		case scopedom.TargetTypeIPAddress, scopedom.TargetTypeIPRange, scopedom.TargetTypeCIDR:
 			r.ipTargets = append(r.ipTargets, t)
-		}
-	}
-	for _, s := range seeds {
-		if s = normalizeHost(s); s != "" {
-			r.seeds = append(r.seeds, s)
 		}
 	}
 	return r, nil
@@ -197,11 +179,6 @@ func (r *joinRoots) match(it JoinItem) string {
 	for _, t := range r.domainTargets {
 		if t.Matches(host) {
 			return "scope_target:" + t.ID().String()
-		}
-	}
-	for _, s := range r.seeds {
-		if host == s || strings.HasSuffix(host, "."+s) {
-			return "easm_seed:" + s
 		}
 	}
 	return ""

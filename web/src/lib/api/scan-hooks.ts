@@ -24,8 +24,8 @@ import type {
   CloneScanConfigRequest,
   BulkActionRequest,
   BulkActionResponse,
-  PipelineRun,
-  PipelineRunWithFiltering,
+  ScanRun,
+  ScanRunWithFiltering,
 } from './scan-types'
 
 // ============================================
@@ -228,7 +228,7 @@ export function useDisableScanConfig(configId: string) {
 
 /**
  * Trigger scan execution
- * Returns PipelineRunWithFiltering which includes filtering_result for smart filtering
+ * Returns ScanRunWithFiltering which includes filtering_result for smart filtering
  */
 export function useTriggerScan(configId: string) {
   const { currentTenant } = useTenant()
@@ -236,7 +236,7 @@ export function useTriggerScan(configId: string) {
   return useSWRMutation(
     currentTenant && configId ? scanEndpoints.trigger(configId) : null,
     async (url: string, { arg }: { arg?: TriggerScanRequest }) => {
-      return post<PipelineRunWithFiltering>(url, arg || {})
+      return post<ScanRunWithFiltering>(url, arg || {})
     }
   )
 }
@@ -334,14 +334,14 @@ export function useBulkDeleteScanConfigs() {
 // ============================================
 
 interface ScanRunsResponse {
-  data: PipelineRun[]
+  data: ScanRun[]
   total: number
   page: number
   per_page: number
   total_pages: number
 }
 
-/** Runs of one scan (pipeline runs carry the scan id). */
+/** Runs of one scan (workflow runs carry the scan id). */
 export function useScanRuns(
   scanId: string | null,
   page = 1,

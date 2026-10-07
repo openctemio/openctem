@@ -83,7 +83,7 @@ func TestResolveScanTargets_SkipsUnownedDirectTargets(t *testing.T) {
 	}
 }
 
-// The dispatch gate (pipelines, coverage, validation, retests, simulations,
+// The dispatch gate (scan workflows, coverage, validation, retests, simulations,
 // connector scans) refuses typed targets the ownership gate refuses.
 func TestResolveDispatchTargets_TypedOwnership(t *testing.T) {
 	gate := &stubGate{blockedTyped: map[string]attribution.State{"www.rejected.com": attribution.StateRejected}}

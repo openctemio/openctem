@@ -24,7 +24,7 @@ const (
 	// DefaultCommandTTL is the expiry every command gets unless the caller asks
 	// for a different one. It is a BACKSTOP, not a scheduling knob: it exists so
 	// a command that nothing ever answers eventually reaches
-	// ExpirationChecker -> pipeline.OnStepFailed("COMMAND_EXPIRED") instead of
+	// ExpirationChecker -> scanrun.OnStepFailed("COMMAND_EXPIRED") instead of
 	// leaving the owning run waiting forever.
 	//
 	// Every command used to be created with expires_at NULL, and both consumers
@@ -133,8 +133,8 @@ type Command struct {
 	ScheduledAt *time.Time
 	ScheduleID  *shared.ID
 
-	// Pipeline tracking
-	StepRunID *shared.ID // Reference to pipeline step run (for progression tracking)
+	// Scan workflow tracking
+	StepRunID *shared.ID // Reference to workflow step run (for progression tracking)
 
 	// ScanZoneID is the scan zone the command was routed to (RFC-023). When
 	// set, only a sensor assigned to that zone may poll or claim it, even after
@@ -209,7 +209,7 @@ type Command struct {
 //
 // The expiry default is applied here rather than at the call sites because this
 // constructor is the single seam every command creation goes through
-// (scan/trigger, scan/coverage dispatch, pipeline/run, validation/dispatcher and
+// (scan/trigger, scan/coverage dispatch, scan workflow/run, validation/dispatcher and
 // the command service). Setting it per-site is what left expires_at NULL
 // everywhere. Callers that need a different deadline override it afterwards with
 // SetExpiration.
@@ -247,7 +247,7 @@ func (c *Command) SetScanZone(zoneID shared.ID) {
 	c.ScanZoneID = &zoneID
 }
 
-// SetStepRunID sets the pipeline step run ID for tracking.
+// SetStepRunID sets the workflow step run ID for tracking.
 func (c *Command) SetStepRunID(stepRunID shared.ID) {
 	c.StepRunID = &stepRunID
 }

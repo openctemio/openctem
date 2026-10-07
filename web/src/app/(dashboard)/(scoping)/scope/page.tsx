@@ -33,10 +33,10 @@ import { ScopeExclusionsTable } from '@/features/scope/components/scope-exclusio
 import { ScopeExclusionDialog } from '@/features/scope/components/scope-exclusion-dialog'
 import { ScopeApprovals, usePendingScopeChanges } from '@/features/scope/components/scope-approvals'
 import { ScopeOnboarding } from '@/features/scope/components/scope-onboarding'
-import { EASMSeedsPanel } from '@/features/attack-surface/components/easm-seeds'
+import { EASMDomainProofPanel } from '@/features/attack-surface/components/easm-domain-proof'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 
-const TABS = ['in', 'out', 'approvals', 'seeds'] as const
+const TABS = ['in', 'out', 'approvals', 'proof'] as const
 type ScopeTab = (typeof TABS)[number]
 
 export default function ScopePage() {
@@ -47,9 +47,9 @@ export default function ScopePage() {
 
   const [tabParam, setTabParam] = useUrlFilter('tab', 'in')
   const { moduleIds } = useTenantModules()
-  const seedsVisible = moduleIds.includes('attack_surface')
+  const proofVisible = moduleIds.includes('attack_surface')
   const tab: ScopeTab =
-    (TABS as readonly string[]).includes(tabParam) && (tabParam !== 'seeds' || seedsVisible)
+    (TABS as readonly string[]).includes(tabParam) && (tabParam !== 'proof' || proofVisible)
       ? (tabParam as ScopeTab)
       : 'in'
 
@@ -137,7 +137,7 @@ export default function ScopePage() {
             Put out of scope
           </Button>
         )
-      : tab === 'seeds'
+      : tab === 'proof'
         ? null
         : canWrite &&
           (canApprove || membersMayRequest) && (
@@ -178,7 +178,7 @@ export default function ScopePage() {
             <TabsTrigger value="approvals">
               Approvals <TabsCount value={pending} />
             </TabsTrigger>
-            {seedsVisible && <TabsTrigger value="seeds">Seeds</TabsTrigger>}
+            {proofVisible && <TabsTrigger value="proof">Domain proof</TabsTrigger>}
           </TabsList>
         </div>
 
@@ -220,9 +220,9 @@ export default function ScopePage() {
         <TabsContent value="approvals" className="mt-5">
           <ScopeApprovals />
         </TabsContent>
-        {seedsVisible && (
-          <TabsContent value="seeds" className="mt-5">
-            <EASMSeedsPanel />
+        {proofVisible && (
+          <TabsContent value="proof" className="mt-5">
+            <EASMDomainProofPanel />
           </TabsContent>
         )}
       </Tabs>

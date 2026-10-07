@@ -49,7 +49,7 @@ var assetMergeRefs = []mergeRef{
 	{table: "exposures", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "suppression_rules", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "sla_policies", column: "asset_id", tenantCol: "tenant_id"},
-	{table: "pipeline_runs", column: "asset_id", tenantCol: "tenant_id"},
+	{table: "scan_runs", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "exposure_events", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "runtime_telemetry_events", column: "endpoint_asset_id", tenantCol: "tenant_id"},
 	{table: "attack_path_nodes", column: "asset_id"},
@@ -123,7 +123,7 @@ var assetMergeRefs = []mergeRef{
 	// the asset (one row per step run and asset), and a run's target
 	// provenance names the kept asset.
 	{table: "scan_step_outputs", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
-		keys: []mergeKey{{cols: []string{"step_run_id"}}}},
+		keys: []mergeKey{{cols: []string{"scan_run_step_id"}}}},
 	{table: "scan_run_targets", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "scan_run_targets", column: "parent_asset_id", tenantCol: "tenant_id"},
 }

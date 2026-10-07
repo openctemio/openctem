@@ -6,7 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -45,14 +47,14 @@ func TestRolloverFirst(t *testing.T) {
 // rolloverRunRepo is a RunRepository that also serves rollovers, and records
 // the tenant and scan it was asked about.
 type rolloverRunRepo struct {
-	pipeline.RunRepository
-	ro                 *pipeline.Rollover
+	scanrun.RunRepository
+	ro                 *scanrun.Rollover
 	err                error
 	gotTenant, gotScan shared.ID
 	calls              int
 }
 
-func (r *rolloverRunRepo) LatestRollover(_ context.Context, tenantID, scanID shared.ID) (*pipeline.Rollover, error) {
+func (r *rolloverRunRepo) LatestRollover(_ context.Context, tenantID, scanID shared.ID) (*scanrun.Rollover, error) {
 	r.calls++
 	r.gotTenant, r.gotScan = tenantID, scanID
 	return r.ro, r.err
@@ -67,11 +69,11 @@ func TestPlanRolloverFirst(t *testing.T) {
 	sc := &scan.Scan{ID: shared.NewID(), TenantID: shared.NewID()}
 
 	t.Run("scheduled run plans the leftovers first, asking for its own tenant and scan", func(t *testing.T) {
-		repo := &rolloverRunRepo{ro: &pipeline.Rollover{FromRunID: from, Targets: []string{"c"}}}
+		repo := &rolloverRunRepo{ro: &scanrun.Rollover{FromRunID: from, Targets: []string{"c"}}}
 		svc := &Service{runRepo: repo, logger: logger.NewNop()}
 		resolved := &resolvedTargets{Targets: []string{"a", "b", "c"}}
 		rc := map[string]any{}
-		svc.planRolloverFirst(context.Background(), sc, pipeline.TriggerTypeSchedule, resolved, rc)
+		svc.planRolloverFirst(context.Background(), sc, scanworkflow.TriggerTypeSchedule, resolved, rc)
 		if !reflect.DeepEqual(resolved.Targets, []string{"c", "a", "b"}) {
 			t.Fatalf("targets = %v, want c first", resolved.Targets)
 		}
@@ -83,9 +85,9 @@ func TestPlanRolloverFirst(t *testing.T) {
 		}
 	})
 
-	for _, trig := range []pipeline.TriggerType{pipeline.TriggerTypeManual, pipeline.TriggerTypeAPI} {
+	for _, trig := range []scanworkflow.TriggerType{scanworkflow.TriggerTypeManual, scanworkflow.TriggerTypeAPI} {
 		t.Run("no rollover for "+string(trig), func(t *testing.T) {
-			repo := &rolloverRunRepo{ro: &pipeline.Rollover{FromRunID: from, Targets: []string{"c"}}}
+			repo := &rolloverRunRepo{ro: &scanrun.Rollover{FromRunID: from, Targets: []string{"c"}}}
 			svc := &Service{runRepo: repo, logger: logger.NewNop()}
 			resolved := &resolvedTargets{Targets: []string{"a", "c"}}
 			rc := map[string]any{}
@@ -100,7 +102,7 @@ func TestPlanRolloverFirst(t *testing.T) {
 		repo := &rolloverRunRepo{err: errors.New("db down")}
 		svc := &Service{runRepo: repo, logger: logger.NewNop()}
 		resolved := &resolvedTargets{Targets: []string{"a", "c"}}
-		svc.planRolloverFirst(context.Background(), sc, pipeline.TriggerTypeSchedule, resolved, map[string]any{})
+		svc.planRolloverFirst(context.Background(), sc, scanworkflow.TriggerTypeSchedule, resolved, map[string]any{})
 		if !reflect.DeepEqual(resolved.Targets, []string{"a", "c"}) {
 			t.Fatalf("targets = %v", resolved.Targets)
 		}

@@ -39,7 +39,6 @@ export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/pentest',
   '/pentest/findings',
   '/pentest/findings/[id]',
-  '/pipelines/[id]',
   '/settings/tenant',
   '/settings/pentest/templates/[id]',
   '/settings/scanning',

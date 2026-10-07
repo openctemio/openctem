@@ -13,8 +13,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanfreeze"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -64,7 +65,7 @@ func AsFrozen(err error) *FrozenError {
 
 // freezeRequest is what the trigger knows about who asked.
 type freezeRequest struct {
-	triggerType pipeline.TriggerType
+	triggerType scanworkflow.TriggerType
 	triggeredBy string
 	// override: the caller asked to override and holds the permission
 	// (decided by the HTTP layer).
@@ -90,7 +91,7 @@ func (s *Service) checkFreeze(ctx context.Context, sc *scan.Scan, fr freezeReque
 	}
 	frozen := &FrozenError{WindowID: w.ID, WindowName: w.Name, Until: *w.ActiveUntil}
 	actx := AuditContext{TenantID: sc.TenantID.String(), ActorID: fr.triggeredBy}
-	if fr.override && fr.triggerType != pipeline.TriggerTypeSchedule {
+	if fr.override && fr.triggerType != scanworkflow.TriggerTypeSchedule {
 		s.logAudit(ctx, actx,
 			NewSuccessEvent(audit.ActionScanFreezeOverridden, audit.ResourceTypeScanConfig, sc.ID.String()).
 				WithResourceName(sc.Name).
@@ -100,7 +101,7 @@ func (s *Service) checkFreeze(ctx context.Context, sc *scan.Scan, fr freezeReque
 				WithMetadata("active_until", w.ActiveUntil.UTC().Format(time.RFC3339)))
 		return true, nil
 	}
-	if fr.triggerType != pipeline.TriggerTypeSchedule {
+	if fr.triggerType != scanworkflow.TriggerTypeSchedule {
 		s.logAudit(ctx, actx,
 			NewFailureEvent(audit.ActionScanFreezeRefused, audit.ResourceTypeScanConfig, sc.ID.String(), frozen).
 				WithResourceName(sc.Name).
@@ -119,7 +120,7 @@ func singleScanActive(sc *scan.Scan) bool {
 
 // workflowActive reports whether any step of a workflow is active work. A
 // step whose stage cannot be told is active.
-func workflowActive(steps []*pipeline.Step) bool {
+func workflowActive(steps []*scanworkflow.Step) bool {
 	for _, st := range steps {
 		if st.Tool != "" {
 			if !stage.PassiveTool(st.Tool) {

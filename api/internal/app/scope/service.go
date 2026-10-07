@@ -73,6 +73,9 @@ type CreateTargetInput struct {
 	// Origin is the creating path (empty: manual, request or system from
 	// the actor).
 	Origin scopedom.Origin
+	// Discovery: discovery from the entry (nil: on). It runs only for a
+	// permanent domain entry (research/53 SC1).
+	Discovery *bool
 }
 
 // CreateTarget creates a scope entry: effective at once, pending approval,
@@ -129,6 +132,9 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		target.UpdateTags(input.Tags)
 	}
 	target.SetOrigin(entryOrigin(input.Origin, input.Actor, d.request))
+	if input.Discovery != nil {
+		target.SetDiscovery(*input.Discovery)
+	}
 
 	if err := s.targetRepo.Create(ctx, target); err != nil {
 		return nil, fmt.Errorf("failed to create scope target: %w", err)
@@ -171,7 +177,12 @@ type UpdateTargetInput struct {
 	ExpiresInDays *int
 	ClearExpiry   bool
 	MaxTier       *string `validate:"omitempty,oneof=t0 t1 t2 T0 T1 T2"`
-	Actor         Actor
+	// Discovery switches discovery on or off. Turning it on widens what is
+	// discovered (names under the entry join the inventory): approvers
+	// only, with step-up, and every administrator is told; it does not send
+	// the entry back to review (discovery is passive).
+	Discovery *bool
+	Actor     Actor
 }
 
 // UpdateTarget updates an existing scope target.
@@ -201,6 +212,10 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 	if input.Tags != nil {
 		target.UpdateTags(input.Tags)
 	}
+	discoveryOn, err := s.applyDiscovery(ctx, target, input)
+	if err != nil {
+		return nil, err
+	}
 	widened, err := s.applyEntryUpdate(ctx, target, input)
 	if err != nil {
 		return nil, err
@@ -215,10 +230,32 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 		} else if !input.Actor.system() {
 			s.notifyWidened(ctx, target, "Scope entry widened")
 		}
+	} else if discoveryOn && !input.Actor.system() {
+		s.notifyWidened(ctx, target, "Discovery turned on for a scope entry")
 	}
 
 	s.logger.Info("scope target updated", "id", logSafe(targetID), "widened", widened)
 	return target, nil
+}
+
+// applyDiscovery applies a discovery switch and reports whether it went from
+// off to on (a widening: approvers with step-up only).
+func (s *Service) applyDiscovery(ctx context.Context, t *scopedom.Target, in UpdateTargetInput) (bool, error) {
+	if in.Discovery == nil || *in.Discovery == t.DiscoverySetting() {
+		return false, nil
+	}
+	if !*in.Discovery {
+		t.SetDiscovery(false) // narrowing
+		return false, nil
+	}
+	if !in.Actor.system() && !in.Actor.CanApprove {
+		return false, ErrWideningNeedsApprove
+	}
+	if err := s.requireStepUp(ctx, in.Actor); err != nil {
+		return false, err
+	}
+	t.SetDiscovery(true)
+	return true, nil
 }
 
 // applyEntryUpdate applies the entry fields of an update and reports whether

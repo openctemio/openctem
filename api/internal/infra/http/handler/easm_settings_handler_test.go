@@ -10,6 +10,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -103,4 +104,11 @@ type settingsAudit struct{ actions []auditdom.Action }
 func (c *settingsAudit) LogEvent(_ context.Context, _ auditapp.AuditContext, e auditapp.AuditEvent) error {
 	c.actions = append(c.actions, e.Action)
 	return nil
+}
+
+func seedReq(method, target, body string, tenant shared.ID, user string) *http.Request {
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String())
+	ctx = context.WithValue(ctx, middleware.UserIDKey, user)
+	return req.WithContext(ctx)
 }

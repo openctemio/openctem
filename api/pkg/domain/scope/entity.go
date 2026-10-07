@@ -37,6 +37,9 @@ type Target struct {
 	rejectedAt        *time.Time
 
 	origin Origin
+	// discoveryOff: discovery switched off (discovery.go); the zero value
+	// is on.
+	discoveryOff bool
 }
 
 // NewTarget creates a new scope target: active, permanent, t1.

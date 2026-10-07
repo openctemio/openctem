@@ -25,7 +25,7 @@ const (
 
 // GraphNode is one node of a workflow graph.
 type GraphNode struct {
-	// ID is the node's id in the graph (a pipeline step's step_key).
+	// ID is the node's id in the graph (a workflow step's step_key).
 	ID   string
 	Kind NodeKind
 	// Capability is the node's capability (NodeCapability only).

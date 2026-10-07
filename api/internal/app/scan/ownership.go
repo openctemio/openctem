@@ -5,7 +5,7 @@ package scan
 // entry point asks the AttributionGate about the targets it names: scan
 // create, update, clone and import, quick scan and POST /commands refuse
 // the request as a whole; a scan run (manual, scheduled, retry, workflow)
-// skips the target with a run warning; the dispatch gate (pipelines,
+// skips the target with a run warning; the dispatch gate (scan workflows,
 // coverage, validation, retests, simulations, connector scans) refuses it.
 //
 // The reason the caller sees is generic. The specific state (rejected,
@@ -26,7 +26,7 @@ import (
 
 // ReasonOwnershipNotConfirmed is the reason shown for any target the
 // ownership gate refuses.
-const ReasonOwnershipNotConfirmed = "it is not authorized for active scanning: its ownership is not confirmed, or no scope target, seed or verified domain covers it; check the asset's Ownership tab and Scoping > Targets"
+const ReasonOwnershipNotConfirmed = "it is not authorized for active scanning: its ownership is not confirmed, or no scope entry covers it; check the asset's Ownership tab and Scoping > Targets"
 
 // refuseUnownedTargets refuses a target list (scan create, update, clone,
 // import, quick scan, a scan command) when any target is one the tenant has

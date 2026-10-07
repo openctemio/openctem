@@ -57,10 +57,10 @@ type Repository interface {
 	// This is the ONLY expiry path. A second reaper (ExpireOldCommands, a raw
 	// `UPDATE commands SET status='expired'`) used to sit alongside it and won
 	// the race often enough that FindExpired no longer matched the row — so the
-	// command died and the owning pipeline run was never told. It was removed
+	// command died and the owning scan run was never told. It was removed
 	// from JobRecoveryController for that reason and has been deleted outright;
 	// do not reintroduce an expiry that does not go through ExpirationChecker,
-	// which calls pipeline.OnStepFailed.
+	// which calls scanrun.OnStepFailed.
 	FindExpired(ctx context.Context) ([]*Command, error)
 
 	// ==========================================================================
@@ -102,7 +102,7 @@ type Repository interface {
 	// queue longer than maxQueueMinutes.
 	//
 	// It returns the jobs rather than expiring them: the caller must expire each
-	// one *and* notify the owning pipeline run, otherwise the run waits on a
+	// one *and* notify the owning scan run, otherwise the run waits on a
 	// step that is already dead. A raw UPDATE here is what left scans hanging
 	// until an unrelated timeout controller reported a generic failure.
 	FindQueueExpiredPlatformJobs(ctx context.Context, maxQueueMinutes int) ([]*Command, error)
@@ -144,10 +144,10 @@ type Repository interface {
 	// This is optimized to avoid N queries when fetching stats.
 	GetStatsByTenant(ctx context.Context, tenantID shared.ID) (CommandStats, error)
 
-	// CancelByPipelineRunID marks all non-terminal commands for a pipeline run as canceled.
+	// CancelByScanRunID marks all non-terminal commands for a scan run as canceled.
 	// Used when a scan is cancelled by the user to abort in-flight commands.
 	// Returns the number of commands canceled.
-	CancelByPipelineRunID(ctx context.Context, tenantID shared.ID, runID shared.ID) (int64, error)
+	CancelByScanRunID(ctx context.Context, tenantID shared.ID, runID shared.ID) (int64, error)
 }
 
 // CommandStats represents aggregated command statistics.
@@ -160,7 +160,7 @@ type CommandStats struct {
 	Canceled  int64
 }
 
-// StepBatch summarizes the commands that share one pipeline step run. A
+// StepBatch summarizes the commands that share one workflow step run. A
 // zone-routed scan (RFC-023) dispatches one command per zone batch under a
 // single step run, so the step may only finish when the last batch does.
 type StepBatch struct {
@@ -219,7 +219,7 @@ type StepShareReader interface {
 
 // ExhaustedFailer fails the commands that were handed out max-dispatch times
 // and never finished (poison commands), and returns them, so the owning
-// pipeline run can be told which step died and why. FailExhaustedCommands
+// scan run can be told which step died and why. FailExhaustedCommands
 // only returns a count. Optional extension of Repository, asserted where
 // needed.
 type ExhaustedFailer interface {
