@@ -295,7 +295,7 @@ suspended); a user who left, or an id that is not a member, is a
 `origin` is how the row came to exist: `manual`, `request` (a member's
 request), `import`, `review_rule`, `refusal_fix` (the one value a client may
 send on create, when it fixes a refused scan target), `seed`,
-`seed_migration` or `system` (migration `001241`, existing rows `manual`,
+`seed_migration` or `system` (migration `001244`, existing rows `manual`,
 platform rows `system`). Audit records keep the reference without the name.
 `status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
 
