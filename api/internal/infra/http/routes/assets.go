@@ -448,6 +448,23 @@ func registerBranchRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerWebEndpointRoutes registers the web surface sub-inventory
+// (RFC-056): endpoints under their origin asset, scoped by the origin's data
+// scope.
+func registerWebEndpointRoutes(router Router, h *handler.WebEndpointHandler, authMiddleware Middleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/web-endpoints", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+		r.GET("/{id}/parameters", h.Parameters, middleware.Require(permission.AssetsRead))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/assets/{id}/web-endpoints", func(r Router) {
+		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
 // registerAssetServiceRoutes registers asset service endpoints.
 // Services are network services discovered on assets (ports, protocols).
 // Part of the CTEM Discovery phase.
