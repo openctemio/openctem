@@ -219,8 +219,20 @@ func StepCommandPayload(run *pipeline.Run, step *pipeline.Step, toolName, stepRu
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
 	}
+	// A capability job (RFC-055): the sensor checks that the tool implements
+	// the capability, checks the output against its contract and stamps it
+	// in the provenance; the platform's grant check applies the
+	// capability's tier floor. The settings stay in config, mapped to the
+	// tool's keys as before, so an older sensor runs the step unchanged.
+	if st, ok := stage.ForStep(toolName, step.Capabilities); ok && stage.TakesCapabilityJobs(st, toolName) {
+		payload[PayloadKeyCapability] = st.ID()
+	}
 	return payload, nil
 }
+
+// PayloadKeyCapability is the command payload key of a capability job's
+// capability ("scan.ports@1"; sdk-go ScanCommandPayload.Capability).
+const PayloadKeyCapability = "capability"
 
 // StepQueuer queues one step of a run on the pipeline service's dispatcher
 // (*pipeline.Service): the one path every step command is created on.

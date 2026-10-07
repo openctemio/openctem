@@ -444,6 +444,11 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	for _, chunk := range chunks {
 		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
 		if err == nil {
+			// An active stage holds its hosts while a sensor runs the
+			// chunk, so no other sensor hits them at the same time.
+			cmd.HostKeys = chunkHostKeys(resolved.Stage, resolved.HasStage, chunkTargets(chunk, run.Context))
+		}
+		if err == nil {
 			if zoneID != nil {
 				cmd.SetScanZone(*zoneID)
 			} else if usePlatform {
