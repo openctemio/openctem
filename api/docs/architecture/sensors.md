@@ -326,12 +326,47 @@ host shows the container network's gateway address, which is where it really
 connects from.
 
 **Stats** count the same rows the list returns: the tenant's own sensors.
-Shared platform sensors (`is_platform_sensor`) are in neither; their capacity
-is `GET /api/v1/platform/stats`, shown on its own page. Their queue
+Shared platform sensors (`is_platform_sensor`) are in neither. Their queue
 (`get_next_platform_job`) is shared fairly across tenants: within a priority
 class, the tenant with the fewest platform jobs in flight goes first
 (migration 000461, RFC-030 §5.7). The stats also add `by_state` (every state, zeros included), `by_version_status`,
 `needs_attention`, `can_take_jobs`, `jobs_running` and `job_slots`.
+
+## Platform sensors on the tenant plane
+
+A platform sensor's row carries a `tenant_id` (the operator's), but it is
+never that tenant's sensor. Managing platform sensors belongs to the platform
+admin console (RFC-022); on the tenant plane they do not exist:
+
+- **Lookups.** `GetByTenantAndID`, the list filter, the dispatch finders
+  (`FindAvailable*`, `HasSensorFor*`), tool and capability availability, grant
+  summaries and manifests all add `NOT is_platform_sensor`.
+- **One guard for every route on one sensor.** Every `/api/v1/sensors/{id}...`
+  route ends with `SensorHandler.OwnSensor`: a sensor that is not one of the
+  organization's own (another organization's, or a platform sensor) answers
+  404 before the handler runs, reads and writes alike, today's routes and any
+  added later. `platform_sensor_tenant_plane_db_test.go` walks the router and
+  checks each one.
+- **Platform scanning.** `GET /api/v1/platform/scanning` (sensors:read or
+  scans:read) shows the service, not the sensors: whether the organization may
+  use it (`offered`, the scan trigger's own `PlatformSensorsAllowed` rule;
+  false says nothing else), each region's state (`available`, `busy`,
+  `unavailable`), the tools online platform sensors run, the organization's
+  own queued and running platform jobs, and the queue limit. No sensor id,
+  name, host, address, version, node count, capacity or other organization's
+  load.
+- **Platform jobs.** A command, run task or run stage of a platform job never
+  carries a sensor id or name (`platform: true` instead). Text the platform
+  sensor wrote (command logs, error message, result, run task error) is read
+  through `sensordom.RedactPlatformText`: private, loopback, link-local and
+  shared (100.64/10) addresses and absolute host paths become `[platform]`.
+  Platform sensors scan public targets only, so a public address or a host
+  name in their output is the tenant's own target and is kept.
+- **Evidence.** A platform sensor's sighting is recorded with the source
+  `sensor:platform` and no `observed.sensor_id`; the review queue labels it
+  "platform sensor".
+- **Events.** The health controller writes no tenant audit row or
+  notification for a platform sensor going offline.
 
 ## Build information
 

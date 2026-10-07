@@ -143,7 +143,7 @@ func (r *SensorRepository) CurrentManifestsByTenant(ctx context.Context, tenantI
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT `+sensorManifestColumns+`
 		FROM sensor_manifests m
-		JOIN sensors s ON s.id = m.sensor_id AND s.manifest_digest = m.digest AND s.tenant_id = $1
+		JOIN sensors s ON s.id = m.sensor_id AND s.manifest_digest = m.digest AND s.tenant_id = $1 AND NOT s.is_platform_sensor
 		WHERE m.tenant_id = $1
 	`, tenantID.String())
 	if err != nil {

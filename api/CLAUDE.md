@@ -576,7 +576,7 @@ POST /api/v1/invitations/accept-with-refresh   {"token": "..."}
 | **Sensor** | Customer-side software that authenticates *to* the platform with its own key (`octs_…`; legacy `rda_…`) and heartbeat. Umbrella term; one row in `sensors`. |
 | Scanner / Agent / Collector | Sensor **roles** (RFC-023 D18). *Agent* now means only the endpoint role. |
 | `type` | Legacy v1 value (`worker`, `scanner`, `sensor`, `collector`, `runner`), kept as input and storage. |
-| Platform sensor | `is_platform_sensor = true`: shared infrastructure, no tenant. |
+| Platform sensor | `is_platform_sensor = true`: shared infrastructure run by the platform operator. Never one of a tenant's sensors: every tenant route answers 404 for it, and tenants see only the aggregated platform scanning service. |
 | AI agent | AI-triage mode `agent` (`AIModeAgent`, module `ai_triage.agent`) — an LLM agent, not a sensor. |
 | Protocol v1 | `/api/v1/agent/*`: retired 2026-10-05. Sensors speak protocol v2 (`/api/v2/sensor/*`) only; a sensor older than v0.9.0 must be upgraded. |
 

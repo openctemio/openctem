@@ -112,11 +112,11 @@ func (r *CommandLogRepository) Append(ctx context.Context, b commandlog.Batch, a
 // maxLines. The command must be a task of runID in tenantID (the run id its
 // dispatcher wrote into the payload, as the run's task list reads it).
 func (r *CommandLogRepository) ListForRunTask(ctx context.Context, tenantID, runID, commandID shared.ID, maxLines int) (commandlog.Page, error) {
-	var one int
+	var platform bool
 	err := r.db.QueryRowContext(ctx, `
-		SELECT 1 FROM commands
+		SELECT COALESCE(is_platform_job, FALSE) FROM commands
 		WHERE tenant_id = $1 AND id = $2 AND (payload->>'scan_run_id') = $3::text`,
-		tenantID.String(), commandID.String(), runID.String()).Scan(&one)
+		tenantID.String(), commandID.String(), runID.String()).Scan(&platform)
 	if errors.Is(err, sql.ErrNoRows) {
 		return commandlog.Page{}, commandlog.ErrNotFound
 	}
@@ -124,22 +124,26 @@ func (r *CommandLogRepository) ListForRunTask(ctx context.Context, tenantID, run
 		return commandlog.Page{}, fmt.Errorf("read task: %w", err)
 	}
 
-	return r.readLogs(ctx, tenantID, commandID, maxLines)
+	page, err := r.readLogs(ctx, tenantID, commandID, maxLines)
+	page.Platform = platform
+	return page, err
 }
 
 // ListForCommand returns a command's logs, for any command kind (scan,
 // retest, validate, system). A command of another tenant is not found.
 func (r *CommandLogRepository) ListForCommand(ctx context.Context, tenantID, commandID shared.ID, maxLines int) (commandlog.Page, error) {
-	var one int
-	err := r.db.QueryRowContext(ctx, `SELECT 1 FROM commands WHERE tenant_id = $1 AND id = $2`,
-		tenantID.String(), commandID.String()).Scan(&one)
+	var platform bool
+	err := r.db.QueryRowContext(ctx, `SELECT COALESCE(is_platform_job, FALSE) FROM commands WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), commandID.String()).Scan(&platform)
 	if errors.Is(err, sql.ErrNoRows) {
 		return commandlog.Page{}, commandlog.ErrNotFound
 	}
 	if err != nil {
 		return commandlog.Page{}, fmt.Errorf("read command: %w", err)
 	}
-	return r.readLogs(ctx, tenantID, commandID, maxLines)
+	page, err := r.readLogs(ctx, tenantID, commandID, maxLines)
+	page.Platform = platform
+	return page, err
 }
 
 // SubjectFinding is the finding a command is about, when it has one: the

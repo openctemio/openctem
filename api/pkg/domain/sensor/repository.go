@@ -11,19 +11,18 @@ import (
 
 // Filter represents filter options for listing sensors.
 type Filter struct {
-	TenantID *shared.ID
-	// ExcludePlatform leaves out shared platform sensors (is_platform_sensor):
-	// a tenant's sensor list shows the tenant's own sensors only.
-	ExcludePlatform bool
-	Type            *SensorType
-	Status          *SensorStatus // Admin-controlled: active, disabled, revoked
-	Health          *SensorHealth // Automatic: unknown, online, late, stale, offline, error
-	ExecutionMode   *ExecutionMode
-	Capabilities    []string
-	Tools           []string
-	Labels          map[string]string
-	Search          string
-	HasCapacity     *bool // Filter by sensors that have job capacity
+	// TenantID lists the tenant's own sensors; shared platform sensors are
+	// never among them.
+	TenantID      *shared.ID
+	Type          *SensorType
+	Status        *SensorStatus // Admin-controlled: active, disabled, revoked
+	Health        *SensorHealth // Automatic: unknown, online, late, stale, offline, error
+	ExecutionMode *ExecutionMode
+	Capabilities  []string
+	Tools         []string
+	Labels        map[string]string
+	Search        string
+	HasCapacity   *bool // Filter by sensors that have job capacity
 	// SDKVersion filters on the reported SDK version (normalized); "" matches
 	// sensors whose SDK version is unknown. nil: no filter.
 	SDKVersion *string
@@ -257,13 +256,6 @@ type Repository interface {
 	// platform only) and which of the given capability names are in the
 	// capability registry. Used to sanitize a sensor's capability report.
 	KnownCapabilityNames(ctx context.Context, tenantID *shared.ID, tools, capabilities []string) (knownTools, knownCaps map[string]bool, err error)
-
-	// ==========================================================================
-	// Platform Sensor Statistics
-	// ==========================================================================
-
-	// GetPlatformSensorStats returns aggregate statistics for platform sensors.
-	GetPlatformSensorStats(ctx context.Context, tenantID shared.ID) (*PlatformSensorStatsResult, error)
 
 	// GetTenantSensorStats returns aggregate statistics for the tenant's sensors,
 	// grouped by status, health, type, and execution mode. Computed via SQL
