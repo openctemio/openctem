@@ -365,17 +365,27 @@ func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModu
 	}, nil
 }
 
-// maxModuleUpdatesPerRequest limits batch size to prevent abuse.
+// maxModuleUpdatesPerRequest limits the size of a caller-supplied toggle
+// batch so one API request cannot make the server validate and upsert an
+// unbounded list. Presets are not subject to it: their update set is built
+// server-side from the static preset catalog, so it is bounded by the
+// module catalog, and it must be applied as one set for the dependency
+// check to see the preset's target state.
 const maxModuleUpdatesPerRequest = 50
 
-// UpdateTenantModules toggles modules for a tenant.
+// UpdateTenantModules toggles modules for a tenant on behalf of an API caller.
 func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string, updates []moduledom.TenantModuleUpdate, actx auditapp.AuditContext) (*TenantModuleConfigOutput, error) {
-	if s.tenantModuleRepo == nil {
-		return nil, fmt.Errorf("%w: tenant module management not configured", shared.ErrInternal)
-	}
-
 	if len(updates) > maxModuleUpdatesPerRequest {
 		return nil, fmt.Errorf("%w: too many module updates (max %d)", shared.ErrValidation, maxModuleUpdatesPerRequest)
+	}
+	return s.applyTenantModuleUpdates(ctx, tenantID, updates, actx)
+}
+
+// applyTenantModuleUpdates validates the whole update set against the
+// post-update state and persists it in one upsert. Callers bound the size.
+func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID string, updates []moduledom.TenantModuleUpdate, actx auditapp.AuditContext) (*TenantModuleConfigOutput, error) {
+	if s.tenantModuleRepo == nil {
+		return nil, fmt.Errorf("%w: tenant module management not configured", shared.ErrInternal)
 	}
 
 	parsedTenantID, err := shared.IDFromString(tenantID)
@@ -981,7 +991,7 @@ func (s *ModuleService) PreviewPreset(ctx context.Context, tenantID, presetID st
 }
 
 // ApplyPreset materialises the preset into tenant_modules. Diff is
-// computed, then turned into UpdateTenantModules calls so the
+// computed, then applied as one update set so the
 // dependency-graph validation and audit logging run exactly as if the
 // admin had toggled each module manually. Same locking semantics too.
 //
@@ -1016,9 +1026,10 @@ func (s *ModuleService) ApplyPreset(ctx context.Context, tenantID, presetID stri
 		updates = append(updates, moduledom.TenantModuleUpdate{ModuleID: r.ModuleID, IsEnabled: false})
 	}
 
-	// Stamp the preset ID into the audit metadata so operators can
-	// later grep "which tenants applied the compliance preset".
-	cfg, err := s.UpdateTenantModules(ctx, tenantID, updates, actx)
+	// The update set comes from the server-side preset catalog, not the
+	// caller, so the per-request cap does not apply (a preset like
+	// "minimal" disables most of the catalog in one go).
+	cfg, err := s.applyTenantModuleUpdates(ctx, tenantID, updates, actx)
 	if err != nil {
 		return nil, err
 	}

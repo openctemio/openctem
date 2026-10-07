@@ -60,6 +60,8 @@ func TestScopeCoverageRepository(t *testing.T) {
 	other := asset(tenantA, "ip_address", "198.51.100.7", "confirmed")        // not covered
 	asset(tenantA, "domain", "secret.acme.com", "confirmed")                  // excluded
 	asset(tenantA, "domain", "old.inactive.example", "confirmed")             // its target is inactive
+	asset(tenantA, "service", "mail.acme.com:25:tcp", "")                     // covered: a stored service name
+	asset(tenantA, "service", "10.0.0.6:22:tcp", "")                          // internal service
 	asset(tenantA, "ip_address", "10.0.0.5", "")                              // internal
 	asset(tenantA, "domain", "build.corp.internal", "")                       // internal
 	asset(tenantA, "domain", "review.acme.com", "needs_review")               // not in the inventory
@@ -75,11 +77,11 @@ func TestScopeCoverageRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := scopedom.InventoryCoverage{InternetFacing: 7, InScope: 4, Internal: 2}
+	want := scopedom.InventoryCoverage{InternetFacing: 8, InScope: 5, Internal: 3}
 	if got != want {
 		t.Fatalf("tenant-wide = %+v, want %+v", got, want)
 	}
-	if p := got.Percent(); p != 57.14 {
+	if p := got.Percent(); p != 62.5 {
 		t.Fatalf("percent = %v", p)
 	}
 

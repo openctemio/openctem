@@ -366,6 +366,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// step and the identity recipes read them.
 	for i := range report.Findings {
 		fillFromInterop(&report.Findings[i])
+		webLocationFallback(&report.Findings[i])
 	}
 	// Cap sensor-supplied text before anything is stored or fingerprinted:
 	// an oversized value is cut with a marker, the finding still lands

@@ -129,12 +129,18 @@ export function detectScopeKind(raw: string): ScopeKind | undefined {
 }
 
 /** The stored type names a kind filter matches (older rows included). */
-export function storedTypesFor(kind: ScopeKind): string {
+export function storedTypesFor(
+  kind: ScopeKind,
+  list: 'entries' | 'exclusions' = 'entries'
+): string {
   const legacy = Object.entries(LEGACY_KIND)
-    .filter(([, k]) => k === kind)
+    .filter(([t, k]) => k === kind && (list === 'entries' || EXCLUSION_LEGACY.has(t)))
     .map(([t]) => t)
   return [kind, ...legacy].join(',')
 }
+
+/** Older type names that exclusions also used (the API refuses the rest there). */
+const EXCLUSION_LEGACY = new Set(['subdomain', 'cidr'])
 
 /** Kinds a member may request (one name or one address, RFC-054 §6.1). */
 export const REQUESTABLE_TARGET_TYPES: ScopeKind[] = ['domain', 'ip_address']
