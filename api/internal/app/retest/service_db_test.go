@@ -136,7 +136,7 @@ func (fx *fixture) gate() *scanapp.Service {
 	log := logger.NewNop()
 	scope := scopeapp.NewService(postgres.NewScopeTargetRepository(fx.pg), postgres.NewScopeExclusionRepository(fx.pg),
 		postgres.NewAssetRepository(fx.pg), log)
-	return scanapp.NewTargetGate(scope, easmapp.NewActiveGate(postgres.NewAttributionRepository(fx.pg), postgres.NewAssetRepository(fx.pg), scope, postgres.NewEASMSeedRepository(fx.pg)), postgres.NewScanZoneRepository(fx.pg), nil, log)
+	return scanapp.NewTargetGate(scope, easmapp.NewActiveGate(postgres.NewAttributionRepository(fx.pg), postgres.NewAssetRepository(fx.pg), scope, postgres.NewVerifiedDomainNameRepository(fx.pg)), postgres.NewScanZoneRepository(fx.pg), nil, log)
 }
 
 // finish reports a sensor result for a command: completed with an outcome, or

@@ -66,7 +66,6 @@ type Handlers struct {
 	AssetType     *handler.AssetTypeHandler     // nil if not initialized (no database)
 	AttackSurface *handler.AttackSurfaceHandler // nil if not initialized (no database)
 	EASM          *handler.EASMHandler          // RFC-036 overview; nil if not initialized
-	EASMSeed      *handler.EASMSeedHandler      // RFC-036 seeds; nil if not initialized
 	// EASMVerifiedDomain is tenant self-service domain verification
 	// (research/22 P0-10); nil if not initialized.
 	EASMVerifiedDomain *handler.EASMVerifiedDomainHandler
@@ -704,9 +703,6 @@ func Register(
 	}
 	if h.EASMSettings != nil {
 		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
-	}
-	if h.EASMSeed != nil {
-		registerEASMSeedRoutes(router, h.EASMSeed, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Command routes (tenant from JWT token)

@@ -1,7 +1,7 @@
 package scan
 
 // Tier ceilings at dispatch (RFC-054 §4.2 step 6): a scope entry authorizes
-// probes up to its max_tier, a root-domain seed or verified domain up to t1.
+// probes up to its max_tier; nothing else authorizes (verified domains prove).
 // A target the tenant's authority covers only below the probe's tier is
 // refused with tier_exceeds on every dispatch path: scan create and quick
 // scan refuse the request, a run leaves the target out with a warning, a
