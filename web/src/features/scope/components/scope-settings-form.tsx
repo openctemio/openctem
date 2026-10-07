@@ -57,7 +57,7 @@ export const ACTIVE_PROOF_TEXT: Record<string, { label: string; hint: string }> 
 
 const ONE_OFF_TEXT: Record<ScopeOneOffPolicy, { label: string; hint: string }> = {
   admins_and_requests: {
-    label: 'Approvers add them, members request them',
+    label: 'Approvers; members request',
     hint: 'A member asks for one name or address for a few days; an approver approves it.',
   },
   admins: {
@@ -144,7 +144,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
         description="Read-only. These follow from your settings and the platform's configuration."
       >
         <Card>
-          <CardContent className="grid gap-4 pt-6 sm:grid-cols-3">
+          <CardContent className="grid gap-4 sm:grid-cols-3">
             <Fact
               label="Approvals a widening needs"
               value={String(saved.effective_widening_approvals ?? 0)}
@@ -183,7 +183,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
         }
       >
         <Card>
-          <CardContent className="divide-y pt-2">
+          <CardContent className="divide-y">
             <Row
               label="Approvals for widening"
               htmlFor={`${id}-approvals`}
@@ -203,12 +203,12 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 }
                 disabled={disabled}
               >
-                <SelectTrigger id={`${id}-approvals`} className="w-full sm:w-64">
+                <SelectTrigger id={`${id}-approvals`} className="w-full sm:w-72">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={DEFAULT_SENTINEL}>
-                    Default (one when you have two admins)
+                    Default (one with 2+ admins)
                   </SelectItem>
                   <SelectItem value="0">None</SelectItem>
                   <SelectItem value="1">One approver</SelectItem>
@@ -227,7 +227,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 onValueChange={(v) => setForm({ ...form, one_off_targets: v as ScopeOneOffPolicy })}
                 disabled={disabled}
               >
-                <SelectTrigger id={`${id}-oneoff`} className="w-full sm:w-64">
+                <SelectTrigger id={`${id}-oneoff`} className="w-full sm:w-72">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -270,7 +270,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 onValueChange={(v) => setForm({ ...form, default_max_tier: v as 't0' | 't1' })}
                 disabled={disabled}
               >
-                <SelectTrigger id={`${id}-tier`} className="w-full sm:w-64">
+                <SelectTrigger id={`${id}-tier`} className="w-full sm:w-72">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
