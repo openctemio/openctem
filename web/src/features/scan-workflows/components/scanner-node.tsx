@@ -37,7 +37,7 @@ function formatTimeout(seconds: number): string {
 }
 
 // =============================================================================
-// SCANNER NODE - Main pipeline step node with full inline editing
+// SCANNER NODE - Main workflow step node with full inline editing
 // =============================================================================
 
 export type ScannerNodeData = {
@@ -57,7 +57,7 @@ export type ScannerNodeData = {
   validationMessage?: string
   // Available tools for selection (with capabilities for auto-setting)
   availableTools?: Array<{ name: string; displayName: string; capabilities?: string[] }>
-  // Available steps for dependencies (other steps in the pipeline)
+  // Available steps for dependencies (other steps in the workflow)
   availableSteps?: Array<{ stepKey: string; name: string }>
   // The capability contract the step runs (GET /scans/stages): its typed
   // ports. Absent for a step the catalog cannot place (no typed ports).
@@ -461,7 +461,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
 export const ScannerNode = ScannerNodeComponent
 
 // =============================================================================
-// START NODE - Entry point of the pipeline
+// START NODE - Entry point of the workflow
 // =============================================================================
 
 export type StartNodeData = {
@@ -493,7 +493,7 @@ function StartNodeComponent({ selected }: NodeProps<StartNode>) {
 export const StartNode = memo(StartNodeComponent)
 
 // =============================================================================
-// END NODE - Exit point of the pipeline
+// END NODE - Exit point of the workflow
 // =============================================================================
 
 export type EndNodeData = {

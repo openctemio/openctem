@@ -1,12 +1,12 @@
 'use client'
 
 /**
- * Scans › Runs: every run the tenant's scans (and pipelines) started.
+ * Scans › Runs: every run the tenant's scans (and workflows) started.
  *
- * Reads pipeline runs (GET /api/v1/scan-runs, paged on the server) — the
+ * Reads workflow runs (GET /api/v1/scan-runs, paged on the server) — the
  * table every scan trigger writes. The tab used to read scan sessions, which
  * only CI/sensor-pushed runs create, so it stayed empty while scans ran.
- * Counts come from GET /api/v1/scans/overview-stats (`pipelines`).
+ * Counts come from GET /api/v1/scans/overview-stats (`workflows`).
  */
 
 import { useCallback, useMemo, useState } from 'react'
@@ -31,8 +31,8 @@ import {
 } from '@/components/ui/select'
 import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
 import { Can, Permission } from '@/lib/permissions'
-import { usePipelineRuns, useScanManagementStats } from '@/lib/api/pipeline-hooks'
-import type { PipelineRun, PipelineRunListFilters } from '@/lib/api/pipeline-types'
+import { useScanRuns, useScanManagementStats } from '@/lib/api/scan-workflow-hooks'
+import type { ScanRun, ScanRunListFilters } from '@/lib/api/scan-workflow-types'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
 import {
@@ -55,7 +55,7 @@ import {
   fetchRunsForExport,
 } from '@/features/scans/lib/export-runs'
 
-/** Run statuses as the API stores them (pipeline.RunStatus). */
+/** Run statuses as the API stores them (workflow.RunStatus). */
 export const RUN_STATUS_FILTERS = [
   { value: 'all', label: 'All statuses' },
   { value: 'running', label: 'Running' },
@@ -114,14 +114,14 @@ function ScanRunsTable() {
 
   // Statuses are typed as the API stores them, so the filter value goes
   // through unchanged.
-  const filters: PipelineRunListFilters = {
+  const filters: ScanRunListFilters = {
     status: statusFilter === 'all' ? undefined : statusFilter,
     sort: toSortParam(sorting, RUN_SORT_FIELDS, DEFAULT_RUN_SORT),
     page: pageParam,
     per_page: perPage,
   }
 
-  const { data, isLoading, error } = usePipelineRuns(filters, swrConfig)
+  const { data, isLoading, error } = useScanRuns(filters, swrConfig)
   const { data: overview, isLoading: isLoadingStats } = useScanManagementStats(swrConfig)
   const runs = data?.items ?? []
   const counts = overview?.scan_runs
@@ -135,7 +135,7 @@ function ScanRunsTable() {
   )
   const toggleStatus = (v: RunStatusFilterValue) => setStatus(statusFilter === v ? 'all' : v)
 
-  const columns: ColumnDef<PipelineRun>[] = useMemo(
+  const columns: ColumnDef<ScanRun>[] = useMemo(
     () => [
       {
         id: 'scan',
@@ -144,7 +144,7 @@ function ScanRunsTable() {
         cell: ({ row }) => {
           const run = row.original
           if (!run.scan_id) {
-            return <span className="text-muted-foreground">Pipeline run</span>
+            return <span className="text-muted-foreground">Scan run</span>
           }
           // Named by the server (quick scans and every page included); a run
           // whose scan was deleted keeps its row.

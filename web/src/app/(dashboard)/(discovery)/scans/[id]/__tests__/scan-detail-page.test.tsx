@@ -160,8 +160,8 @@ describe('Scan page', () => {
     render(<ScanDetailPage />)
     expect(screen.getByRole('link', { name: 'Open scan workflow' })).toHaveAttribute(
       'href',
-      '/pipelines/wf-1/builder'
+      '/scans/workflows/wf-1'
     )
-    expect(screen.queryByText('Pipeline ID')).toBeNull()
+    expect(screen.queryByText('Workflow ID')).toBeNull()
   })
 })

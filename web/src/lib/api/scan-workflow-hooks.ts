@@ -1,7 +1,7 @@
 /**
- * Pipeline API Hooks
+ * Workflow API Hooks
  *
- * SWR hooks for Pipeline Management (Workflow Orchestration)
+ * SWR hooks for Workflow Management (Workflow Orchestration)
  */
 
 'use client'
@@ -13,21 +13,21 @@ import { handleApiError } from './error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import { scanWorkflowEndpoints, scanRunEndpoints, scanManagementEndpoints } from './endpoints'
 import type {
-  PipelineTemplate,
-  PipelineListResponse,
-  PipelineListFilters,
-  PipelineRun,
-  PipelineRunListResponse,
-  PipelineRunListFilters,
-  PipelineStep,
-  CreatePipelineRequest,
-  UpdatePipelineRequest,
+  ScanWorkflow,
+  ScanWorkflowListResponse,
+  ScanWorkflowListFilters,
+  ScanRun,
+  ScanRunListResponse,
+  ScanRunListFilters,
+  ScanWorkflowStep,
+  CreateScanWorkflowRequest,
+  UpdateScanWorkflowRequest,
   CreateStepRequest,
   UpdateStepRequest,
   QuickScanRequest,
   QuickScanResponse,
   ScanManagementOverview,
-} from './pipeline-types'
+} from './scan-workflow-types'
 
 // ============================================
 // SWR CONFIGURATION
@@ -57,20 +57,20 @@ const defaultConfig: SWRConfiguration = {
 // CACHE KEYS
 // ============================================
 
-export const pipelineKeys = {
-  all: ['pipelines'] as const,
-  lists: () => [...pipelineKeys.all, 'list'] as const,
-  list: (filters?: PipelineListFilters) => [...pipelineKeys.lists(), filters] as const,
-  details: () => [...pipelineKeys.all, 'detail'] as const,
-  detail: (id: string) => [...pipelineKeys.details(), id] as const,
+export const scanWorkflowKeys = {
+  all: ['scan-workflows'] as const,
+  lists: () => [...scanWorkflowKeys.all, 'list'] as const,
+  list: (filters?: ScanWorkflowListFilters) => [...scanWorkflowKeys.lists(), filters] as const,
+  details: () => [...scanWorkflowKeys.all, 'detail'] as const,
+  detail: (id: string) => [...scanWorkflowKeys.details(), id] as const,
 }
 
-export const pipelineRunKeys = {
+export const scanRunKeys = {
   all: ['scan-runs'] as const,
-  lists: () => [...pipelineRunKeys.all, 'list'] as const,
-  list: (filters?: PipelineRunListFilters) => [...pipelineRunKeys.lists(), filters] as const,
-  details: () => [...pipelineRunKeys.all, 'detail'] as const,
-  detail: (id: string) => [...pipelineRunKeys.details(), id] as const,
+  lists: () => [...scanRunKeys.all, 'list'] as const,
+  list: (filters?: ScanRunListFilters) => [...scanRunKeys.lists(), filters] as const,
+  details: () => [...scanRunKeys.all, 'detail'] as const,
+  detail: (id: string) => [...scanRunKeys.details(), id] as const,
 }
 
 export const scanManagementKeys = {
@@ -81,20 +81,20 @@ export const scanManagementKeys = {
 // FETCHER FUNCTIONS
 // ============================================
 
-async function fetchPipelines(url: string): Promise<PipelineListResponse> {
-  return get<PipelineListResponse>(url)
+async function fetchWorkflows(url: string): Promise<ScanWorkflowListResponse> {
+  return get<ScanWorkflowListResponse>(url)
 }
 
-async function fetchPipeline(url: string): Promise<PipelineTemplate> {
-  return get<PipelineTemplate>(url)
+async function fetchWorkflow(url: string): Promise<ScanWorkflow> {
+  return get<ScanWorkflow>(url)
 }
 
-async function fetchPipelineRuns(url: string): Promise<PipelineRunListResponse> {
-  return get<PipelineRunListResponse>(url)
+async function fetchWorkflowRuns(url: string): Promise<ScanRunListResponse> {
+  return get<ScanRunListResponse>(url)
 }
 
-async function fetchPipelineRun(url: string): Promise<PipelineRun> {
-  return get<PipelineRun>(url)
+async function fetchWorkflowRun(url: string): Promise<ScanRun> {
+  return get<ScanRun>(url)
 }
 
 async function fetchScanManagementStats(url: string): Promise<ScanManagementOverview> {
@@ -102,73 +102,73 @@ async function fetchScanManagementStats(url: string): Promise<ScanManagementOver
 }
 
 // ============================================
-// PIPELINE TEMPLATE HOOKS
+// SCAN_WORKFLOW TEMPLATE HOOKS
 // ============================================
 
 /**
- * Fetch pipelines list
+ * Fetch workflows list
  */
-export function usePipelines(filters?: PipelineListFilters, config?: SWRConfiguration) {
+export function useScanWorkflows(filters?: ScanWorkflowListFilters, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
 
   const key = currentTenant ? scanWorkflowEndpoints.list(filters) : null
 
-  return useSWR<PipelineListResponse>(key, fetchPipelines, {
+  return useSWR<ScanWorkflowListResponse>(key, fetchWorkflows, {
     ...defaultConfig,
     ...config,
   })
 }
 
 /**
- * Fetch a single pipeline by ID
+ * Fetch a single workflow by ID
  */
-export function usePipeline(pipelineId: string | null, config?: SWRConfiguration) {
+export function useScanWorkflow(workflowId: string | null, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
 
-  const key = currentTenant && pipelineId ? scanWorkflowEndpoints.get(pipelineId) : null
+  const key = currentTenant && workflowId ? scanWorkflowEndpoints.get(workflowId) : null
 
-  return useSWR<PipelineTemplate>(key, fetchPipeline, {
+  return useSWR<ScanWorkflow>(key, fetchWorkflow, {
     ...defaultConfig,
     ...config,
   })
 }
 
 /**
- * Create a new pipeline
+ * Create a new workflow
  */
-export function useCreatePipeline() {
+export function useCreateScanWorkflow() {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
     currentTenant ? scanWorkflowEndpoints.create() : null,
-    async (url: string, { arg }: { arg: CreatePipelineRequest }) => {
-      return post<PipelineTemplate>(url, arg)
+    async (url: string, { arg }: { arg: CreateScanWorkflowRequest }) => {
+      return post<ScanWorkflow>(url, arg)
     }
   )
 }
 
 /**
- * Update a pipeline
+ * Update a workflow
  */
-export function useUpdatePipeline(pipelineId: string) {
+export function useUpdateScanWorkflow(workflowId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && pipelineId ? scanWorkflowEndpoints.update(pipelineId) : null,
-    async (url: string, { arg }: { arg: UpdatePipelineRequest }) => {
-      return put<PipelineTemplate>(url, arg)
+    currentTenant && workflowId ? scanWorkflowEndpoints.update(workflowId) : null,
+    async (url: string, { arg }: { arg: UpdateScanWorkflowRequest }) => {
+      return put<ScanWorkflow>(url, arg)
     }
   )
 }
 
 /**
- * Delete a pipeline
+ * Delete a workflow
  */
-export function useDeletePipeline(pipelineId: string) {
+export function useDeleteScanWorkflow(workflowId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && pipelineId ? scanWorkflowEndpoints.delete(pipelineId) : null,
+    currentTenant && workflowId ? scanWorkflowEndpoints.delete(workflowId) : null,
     async (url: string) => {
       return del<void>(url)
     }
@@ -176,61 +176,61 @@ export function useDeletePipeline(pipelineId: string) {
 }
 
 /**
- * Activate a pipeline
+ * Activate a workflow
  */
-export function useActivatePipeline(pipelineId: string) {
+export function useActivateScanWorkflow(workflowId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && pipelineId ? scanWorkflowEndpoints.activate(pipelineId) : null,
+    currentTenant && workflowId ? scanWorkflowEndpoints.activate(workflowId) : null,
     async (url: string) => {
-      return post<PipelineTemplate>(url, {})
+      return post<ScanWorkflow>(url, {})
     }
   )
 }
 
 /**
- * Deactivate a pipeline
+ * Deactivate a workflow
  */
-export function useDeactivatePipeline(pipelineId: string) {
+export function useDeactivateScanWorkflow(workflowId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && pipelineId ? scanWorkflowEndpoints.deactivate(pipelineId) : null,
+    currentTenant && workflowId ? scanWorkflowEndpoints.deactivate(workflowId) : null,
     async (url: string) => {
-      return post<PipelineTemplate>(url, {})
+      return post<ScanWorkflow>(url, {})
     }
   )
 }
 
 /**
- * Clone a pipeline
+ * Clone a workflow
  */
-export function useClonePipeline(pipelineId: string) {
+export function useCloneScanWorkflow(workflowId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && pipelineId ? scanWorkflowEndpoints.clone(pipelineId) : null,
+    currentTenant && workflowId ? scanWorkflowEndpoints.clone(workflowId) : null,
     async (url: string, { arg }: { arg: { name: string } }) => {
-      return post<PipelineTemplate>(url, arg)
+      return post<ScanWorkflow>(url, arg)
     }
   )
 }
 
 // ============================================
-// PIPELINE STEP HOOKS
+// SCAN_WORKFLOW STEP HOOKS
 // ============================================
 
 /**
- * Add step to pipeline
+ * Add step to workflow
  */
-export function useAddStep(pipelineId: string) {
+export function useAddStep(workflowId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && pipelineId ? scanWorkflowEndpoints.addStep(pipelineId) : null,
+    currentTenant && workflowId ? scanWorkflowEndpoints.addStep(workflowId) : null,
     async (url: string, { arg }: { arg: CreateStepRequest }) => {
-      return post<PipelineStep>(url, arg)
+      return post<ScanWorkflowStep>(url, arg)
     }
   )
 }
@@ -238,15 +238,15 @@ export function useAddStep(pipelineId: string) {
 /**
  * Update a step
  */
-export function useUpdateStep(pipelineId: string, stepId: string) {
+export function useUpdateStep(workflowId: string, stepId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && pipelineId && stepId
-      ? scanWorkflowEndpoints.updateStep(pipelineId, stepId)
+    currentTenant && workflowId && stepId
+      ? scanWorkflowEndpoints.updateStep(workflowId, stepId)
       : null,
     async (url: string, { arg }: { arg: UpdateStepRequest }) => {
-      return put<PipelineStep>(url, arg)
+      return put<ScanWorkflowStep>(url, arg)
     }
   )
 }
@@ -254,12 +254,12 @@ export function useUpdateStep(pipelineId: string, stepId: string) {
 /**
  * Delete a step
  */
-export function useDeleteStep(pipelineId: string, stepId: string) {
+export function useDeleteStep(workflowId: string, stepId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && pipelineId && stepId
-      ? scanWorkflowEndpoints.deleteStep(pipelineId, stepId)
+    currentTenant && workflowId && stepId
+      ? scanWorkflowEndpoints.deleteStep(workflowId, stepId)
       : null,
     async (url: string) => {
       return del<void>(url)
@@ -268,47 +268,47 @@ export function useDeleteStep(pipelineId: string, stepId: string) {
 }
 
 // ============================================
-// PIPELINE RUN HOOKS
+// SCAN_WORKFLOW RUN HOOKS
 // ============================================
 
 /**
- * Fetch pipeline runs list
+ * Fetch workflow runs list
  */
-export function usePipelineRuns(filters?: PipelineRunListFilters, config?: SWRConfiguration) {
+export function useScanRuns(filters?: ScanRunListFilters, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
 
   const key = currentTenant ? scanRunEndpoints.list(filters) : null
 
-  return useSWR<PipelineRunListResponse>(key, fetchPipelineRuns, {
+  return useSWR<ScanRunListResponse>(key, fetchWorkflowRuns, {
     ...defaultConfig,
     ...config,
   })
 }
 
 /**
- * Fetch a single pipeline run by ID
+ * Fetch a single workflow run by ID
  */
-export function usePipelineRun(runId: string | null, config?: SWRConfiguration) {
+export function useScanRun(runId: string | null, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
 
   const key = currentTenant && runId ? scanRunEndpoints.get(runId) : null
 
-  return useSWR<PipelineRun>(key, fetchPipelineRun, {
+  return useSWR<ScanRun>(key, fetchWorkflowRun, {
     ...defaultConfig,
     ...config,
   })
 }
 
 /**
- * Cancel a running pipeline
+ * Cancel a running workflow
  */
-export function useCancelPipelineRun(runId: string) {
+export function useCancelScanRun(runId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
     currentTenant && runId ? scanRunEndpoints.cancel(runId) : null,
     async (url: string) => {
-      return post<PipelineRun>(url, {})
+      return post<ScanRun>(url, {})
     }
   )
 }
@@ -351,9 +351,9 @@ export function useQuickScan() {
 // ============================================
 
 /**
- * Invalidate pipelines cache
+ * Invalidate workflows cache
  */
-export async function invalidatePipelinesCache() {
+export async function invalidateScanWorkflowsCache() {
   const { mutate } = await import('swr')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/api/v1/scan-workflows'),
@@ -365,9 +365,9 @@ export async function invalidatePipelinesCache() {
 }
 
 /**
- * Invalidate pipeline runs cache
+ * Invalidate workflow runs cache
  */
-export async function invalidatePipelineRunsCache() {
+export async function invalidateScanRunsCache() {
   const { mutate } = await import('swr')
   await mutate((key) => typeof key === 'string' && key.includes('/api/v1/scan-runs'), undefined, {
     revalidate: true,
@@ -389,12 +389,12 @@ export async function invalidateScanManagementStatsCache() {
 }
 
 /**
- * Invalidate all pipeline-related caches
+ * Invalidate all workflow-related caches
  */
-export async function invalidateAllPipelineCaches() {
+export async function invalidateAllScanWorkflowCaches() {
   await Promise.all([
-    invalidatePipelinesCache(),
-    invalidatePipelineRunsCache(),
+    invalidateScanWorkflowsCache(),
+    invalidateScanRunsCache(),
     invalidateScanManagementStatsCache(),
   ])
 }

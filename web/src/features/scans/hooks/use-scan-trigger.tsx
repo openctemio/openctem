@@ -39,7 +39,7 @@ import { scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import type { PipelineRun } from '@/lib/api/scan-types'
+import type { ScanRun } from '@/lib/api/scan-types'
 import { formatScanDate } from '../lib/format'
 import { isRunInProgress, runTaskProgress } from '../lib/run-display'
 
@@ -86,9 +86,9 @@ function isNotFound(err: unknown): boolean {
 }
 
 /** The scan's latest run when it is still pending or running, else null. */
-async function activeRunOf(scanId: string): Promise<PipelineRun | null> {
+async function activeRunOf(scanId: string): Promise<ScanRun | null> {
   try {
-    const run = await get<PipelineRun>(scanEndpoints.latestRun(scanId))
+    const run = await get<ScanRun>(scanEndpoints.latestRun(scanId))
     return run && isRunInProgress(run) ? run : null
   } catch (err) {
     // No run yet is a 404. Any other failure must not block the trigger:
@@ -107,7 +107,7 @@ export interface UseScanTriggerOptions {
 
 export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions = {}) {
   const busy = useSyncExternalStore(subscribe, getSnapshot, () => '')
-  const [pending, setPending] = useState<{ scan: TriggerableScan; run: PipelineRun } | null>(null)
+  const [pending, setPending] = useState<{ scan: TriggerableScan; run: ScanRun } | null>(null)
   // A trigger refused by an active scan freeze window, offered to override
   // to members holding scans:freeze:override (the API checks it again and
   // audits the override).

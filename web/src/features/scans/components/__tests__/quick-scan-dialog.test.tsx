@@ -9,9 +9,9 @@ import { QuickScanDialog, defaultSaveName } from '../quick-scan-dialog'
 const quickScan = vi.fn()
 const saveQuickScan = vi.fn()
 const saveHookIds: Array<string | null> = []
-vi.mock('@/lib/api/pipeline-hooks', () => ({
+vi.mock('@/lib/api/scan-workflow-hooks', () => ({
   useQuickScan: () => ({ trigger: quickScan }),
-  invalidatePipelineRunsCache: vi.fn(),
+  invalidateScanRunsCache: vi.fn(),
   invalidateScanManagementStatsCache: vi.fn(),
 }))
 vi.mock('@/lib/api/scan-hooks', () => ({

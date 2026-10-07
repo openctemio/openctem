@@ -5,13 +5,13 @@
  * offers the contract's params only, so an unknown key cannot be entered.
  */
 
-import type { PipelineStep } from '@/lib/api'
+import type { ScanWorkflowStep } from '@/lib/api'
 import type { Capability, CapabilityParam } from './capability-graph'
 
 export type ToolSelection = 'auto' | 'prefer' | 'pin'
 
 /** How a step picks its tool, as the API derives it. */
-export function selectionOf(step: Pick<PipelineStep, 'tool' | 'prefer_tools'>): ToolSelection {
+export function selectionOf(step: Pick<ScanWorkflowStep, 'tool' | 'prefer_tools'>): ToolSelection {
   if (step.tool && step.tool.trim() !== '') return 'pin'
   if (step.prefer_tools && step.prefer_tools.length > 0) return 'prefer'
   return 'auto'
@@ -24,11 +24,11 @@ export function selectionOf(step: Pick<PipelineStep, 'tool' | 'prefer_tools'>): 
  * keys): they would reach other tools.
  */
 export function withSelection(
-  step: PipelineStep,
+  step: ScanWorkflowStep,
   capability: Capability,
   mode: ToolSelection,
   tools: string[]
-): PipelineStep {
+): ScanWorkflowStep {
   const base = {
     ...step,
     capabilities: [capability.key],

@@ -7,7 +7,7 @@ import { Can, Permission } from '@/lib/permissions'
 
 /**
  * The "create a scan workflow" button. It is gated on the scan workflows write
- * permission (the one POST /pipelines checks), not on the automations
+ * permission (the one POST /scan-workflows checks), not on the automations
  * permission: a member who can write scan workflows can create one, and a member
  * who can only edit automations cannot.
  */
