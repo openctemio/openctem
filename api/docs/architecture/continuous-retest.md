@@ -9,7 +9,8 @@
 ## What a retest is
 
 A retest re-runs **the exact check that produced a finding** — in Phase 1 the
-nuclei template (`findings.rule_id`) against the finding's own target — plus a
+nuclei template (`findings.rule_id`) against the finding's own target (the
+origin of its matched-at URL, see below) — plus a
 **reachability probe** of the same target, and settles the finding:
 
 | Template re-run | Target reachable? | Outcome | Finding |
@@ -57,6 +58,18 @@ RetestScheduler (controller, every minute, every replica)
        └─ winner queues min(daily budget left, in-flight room, per-pass cap)
           oldest-retested eligible findings, through the same Request path
 ```
+
+## Target: the origin, never the matched-at URL
+
+The re-run's input is the origin (`scheme://host[:port]`) of the finding's
+matched-at URL when its host is the asset's host, else the asset name
+(`retest.ResolveTarget`). A template appends its own path to the input
+(`{{BaseURL}}/wp-admin/js/theme.js`); with the matched-at URL as the input the
+re-run requested `/wp-admin/js/theme.js/wp-admin/js/theme.js`, got a 404 and
+reported "did not match", which settled as `fixed`. Migration 001175 voided
+those outcomes: each finding a path-target retest resolved, and that nothing
+changed since, returns to its prior status and the retest reads `unknown`
+with a `voided:` reason.
 
 ## Template digest drift (research/18 O6)
 

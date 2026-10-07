@@ -2,7 +2,7 @@ package handler
 
 // Query-param drift check for the list query contract (RFC-048 §3.10): the
 // swag @Param blocks are generated from the field registries, and the
-// committed OpenAPI spec documents exactly the params the parser accepts
+// generated OpenAPI spec documents exactly the params the parser accepts
 // for each registry-backed operation. A failure names the fix.
 
 import (
@@ -69,7 +69,7 @@ func TestFilterParamBlocksAreGenerated(t *testing.T) {
 func TestOpenAPIDocumentsFilterParams(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "api", "openapi", "swagger.yaml"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
 	}
 	var spec struct {
 		Paths map[string]map[string]struct {

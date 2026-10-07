@@ -32,7 +32,7 @@ import {
 } from '@/lib/api'
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { generateTempStepId, generateStepKey } from '@/lib/utils'
+import { generateTempStepId, generateStepKey, isTempStepId } from '@/lib/utils'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -64,10 +64,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
 
   // Fetch tools for selection
-  const { data: toolsData } = useToolsWithConfig({
-    is_active: true,
-    per_page: 100,
-  })
+  const { data: toolsData } = useToolsWithConfig()
 
   // Convert tools to AvailableTool format for inline editing (including capabilities)
   // Capabilities are now sourced from the normalized tool_capabilities junction table
@@ -263,6 +260,9 @@ export default function PipelineBuilderPage({ params }: PageProps) {
       const updateData: UpdatePipelineRequest = {
         // Don't send capabilities - backend will derive them from the selected tool
         steps: localSteps.map((s, idx) => ({
+          // A saved step keeps its id, so the save updates it in place and
+          // its run history stays attached. New steps carry a temp id only.
+          ...(isTempStepId(s.id) ? {} : { id: s.id }),
           step_key: s.step_key,
           name: s.name,
           description: s.description || undefined,

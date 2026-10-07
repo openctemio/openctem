@@ -41,7 +41,7 @@ func paths(t *testing.T) (handlerDir, routesDir, spec, baseline string) {
 
 // TestSpecMatchesAnnotations is what makes the spec a generated artifact rather
 // than a hand-maintained document. It fails if a path was hand-added to
-// swagger.yaml, and if a handler's @Router changed without `make swagger`.
+// swagger.yaml, and if swag skipped a handler's @Router.
 //
 // This replaces a byte-for-byte diff of the regenerated spec. That was tried
 // and does not hold: swag emits `format: int64` for some map[string]int64
@@ -62,7 +62,7 @@ func TestSpecMatchesAnnotations(t *testing.T) {
 
 	specOps, err := openapicontract.SpecOps(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
 	}
 	if len(specOps) == 0 {
 		t.Fatal("spec declares no operations — the parse is broken, not the code")
@@ -75,8 +75,8 @@ func TestSpecMatchesAnnotations(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		t.Errorf("%d operation(s) are annotated but absent from the committed spec.\n"+
-			"The spec is generated: run `make swagger` and commit the result.\n  %s",
+		t.Errorf("%d operation(s) are annotated but absent from the generated spec.\n"+
+			"swag did not read them: regenerate (`make swagger`) and check its log.\n  %s",
 			len(missing), strings.Join(missing, "\n  "))
 	}
 
@@ -87,11 +87,11 @@ func TestSpecMatchesAnnotations(t *testing.T) {
 		}
 	}
 	if len(extra) > 0 {
-		t.Errorf("%d operation(s) are in the committed spec with no @Router annotation.\n"+
+		t.Errorf("%d operation(s) are in the spec with no @Router annotation.\n"+
 			"swagger.yaml is a GENERATED file — never hand-edit it. A path here that\n"+
 			"no handler declares is exactly how the UI came to call\n"+
 			"GET /api/v1/me/event-types against a server that never had it.\n"+
-			"Run `make swagger` and commit the result.\n  %s",
+			"Regenerate it with `make swagger`.\n  %s",
 			len(extra), strings.Join(extra, "\n  "))
 	}
 }
@@ -106,7 +106,7 @@ func TestEveryDocumentedPathIsRouted(t *testing.T) {
 
 	specOps, err := openapicontract.SpecOps(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
 	}
 	routes, err := openapicontract.Routes(routesDir)
 	if err != nil {
@@ -129,8 +129,7 @@ func TestEveryDocumentedPathIsRouted(t *testing.T) {
 	if len(phantom) > 0 {
 		t.Errorf("%d documented operation(s) have no registered route — a client\n"+
 			"calling them gets a 404. Either register the route, or correct the\n"+
-			"handler's @Router to the path it is really served on and rerun\n"+
-			"`make swagger`.\n  %s",
+			"handler's @Router to the path it is really served on.\n  %s",
 			len(phantom), strings.Join(phantom, "\n  "))
 	}
 }
@@ -149,7 +148,7 @@ func TestEveryRouteIsDocumentedOrBaselined(t *testing.T) {
 
 	specOps, err := openapicontract.SpecOps(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
 	}
 	routes, err := openapicontract.Routes(routesDir)
 	if err != nil {
@@ -266,7 +265,7 @@ func TestSpecParamNamesMatchRoutes(t *testing.T) {
 
 	specRaw, err := openapicontract.SpecRawPaths(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
 	}
 	routeRaw, err := openapicontract.RawRoutes(routesDir)
 	if err != nil {
@@ -294,8 +293,7 @@ func TestSpecParamNamesMatchRoutes(t *testing.T) {
 	}
 	if len(fresh) > 0 {
 		t.Errorf("%d documented operation(s) name their path parameters differently in the spec\n"+
-			"and in the router. Make the handler's @Router use the route's names and run\n"+
-			"`make swagger`:\n  %s", len(fresh), strings.Join(fresh, "\n  "))
+			"and in the router. Make the handler's @Router use the route's names:\n  %s", len(fresh), strings.Join(fresh, "\n  "))
 	}
 	var stale []string
 	for _, op := range openapicontract.SortedOps(baseline) {
@@ -313,8 +311,8 @@ func TestSpecParamNamesMatchRoutes(t *testing.T) {
 // operation with its path parameters written {}. The web's endpoint check
 // (web/src/lib/api/__tests__/endpoints-target-routes.test.ts) reads it.
 //
-// The file is generated, never committed: Web CI writes it from the router
-// before the web tests run. A committed copy went stale every time two pull
+// The file is generated, never committed: `make contract` in api/ (and the
+// Web CI contract job) writes it from the router before the web tests run. A committed copy went stale every time two pull
 // requests that add routes were in flight together, and each one then failed
 // in the merge queue until it was regenerated.
 //

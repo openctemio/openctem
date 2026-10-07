@@ -199,7 +199,7 @@ fi
 
 print_test "Get tool by name"
 if [ -n "$TOOL_NAME" ]; then
-    do_request "GET" "/api/v1/tools/name/$TOOL_NAME" "" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "GET" "/api/v1/tools?q=$TOOL_NAME" "" "Authorization: Bearer $ACCESS_TOKEN"
     if [ "$HTTP_CODE" = "200" ]; then
         print_success "Get tool by name"
     else
@@ -244,7 +244,7 @@ if ! check_critical "Tool Lifecycle"; then :; else
 
 print_test "Deactivate tool"
 if [ -n "$TOOL_ID" ] && [ "$TOOL_ID" != "null" ]; then
-    do_request "POST" "/api/v1/tools/$TOOL_ID/deactivate" "" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "PATCH" "/api/v1/tools/$TOOL_ID/settings" "{\"is_enabled\":false}" "Authorization: Bearer $ACCESS_TOKEN"
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
         print_success "Tool deactivated"
     else
@@ -256,7 +256,7 @@ fi
 
 print_test "Activate tool"
 if [ -n "$TOOL_ID" ] && [ "$TOOL_ID" != "null" ]; then
-    do_request "POST" "/api/v1/tools/$TOOL_ID/activate" "" "Authorization: Bearer $ACCESS_TOKEN"
+    do_request "PATCH" "/api/v1/tools/$TOOL_ID/settings" "{\"is_enabled\":true}" "Authorization: Bearer $ACCESS_TOKEN"
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
         print_success "Tool activated"
     else
@@ -276,7 +276,7 @@ print_header "Section 7: Platform Tools & Categories"
 if ! check_critical "Platform Tools"; then :; else
 
 print_test "List platform tools"
-do_request "GET" "/api/v1/tools/platform" "" "Authorization: Bearer $ACCESS_TOKEN"
+do_request "GET" "/api/v1/tools?source=platform" "" "Authorization: Bearer $ACCESS_TOKEN"
 if [ "$HTTP_CODE" = "200" ]; then
     print_success "Platform tools listed"
 else
@@ -284,7 +284,7 @@ else
 fi
 
 print_test "List all tool categories"
-do_request "GET" "/api/v1/tool-categories/all" "" "Authorization: Bearer $ACCESS_TOKEN"
+do_request "GET" "/api/v1/tool-categories?per_page=100" "" "Authorization: Bearer $ACCESS_TOKEN"
 if [ "$HTTP_CODE" = "200" ]; then
     print_success "Tool categories listed"
 else
@@ -292,7 +292,7 @@ else
 fi
 
 print_test "Create custom tool category"
-do_request "POST" "/api/v1/custom-tool-categories" "{
+do_request "POST" "/api/v1/tool-categories" "{
     \"name\": \"e2e-cat-${TIMESTAMP}\",
     \"display_name\": \"E2E Category ${TIMESTAMP}\",
     \"description\": \"E2E test category\"
@@ -341,7 +341,7 @@ print_header "Section 9: Tenant Tools & Stats"
 if ! check_critical "Tenant Tools"; then :; else
 
 print_test "List all tenant tools"
-do_request "GET" "/api/v1/tenant-tools/all-tools" "" "Authorization: Bearer $ACCESS_TOKEN"
+do_request "GET" "/api/v1/tools?include=settings,availability" "" "Authorization: Bearer $ACCESS_TOKEN"
 if [ "$HTTP_CODE" = "200" ]; then
     print_success "All tenant tools listed"
 else
@@ -349,7 +349,7 @@ else
 fi
 
 print_test "Get tool stats"
-do_request "GET" "/api/v1/tool-stats" "" "Authorization: Bearer $ACCESS_TOKEN"
+do_request "GET" "/api/v1/tools?include=stats" "" "Authorization: Bearer $ACCESS_TOKEN"
 if [ "$HTTP_CODE" = "200" ]; then
     print_success "Tool stats retrieved"
 else
