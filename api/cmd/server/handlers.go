@@ -319,6 +319,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:            findingActionsHandler,
 		FindingRetest:             handler.NewFindingRetestHandler(svc.Retest, log),
+		FindingEvidenceItems:      handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             githubWebhookHandler,

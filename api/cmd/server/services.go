@@ -51,6 +51,7 @@ import (
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
+	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -726,6 +727,8 @@ type Services struct {
 	ValidationEvidence *validation.EvidenceIngestService
 	// Retest runs continuous retests (RFC-039): Retest now, settle, auto ticks.
 	Retest *retestapp.Service
+	// Evidence: masked finding evidence, encrypted secret values, audited reveal.
+	Evidence *evidenceapp.Service
 
 	// ValidationRun dispatches validation (safe-check) jobs for findings.
 	ValidationRun *validation.RunService
@@ -1320,6 +1323,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Retest.SetAuditLogger(s.Audit)
 
+	// Finding evidence (docs/architecture/finding-evidence.md): secret values
+	// are sealed with the platform key (re-keyed by cmd/rekey).
+	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
+
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
@@ -1629,6 +1636,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 	}
 	// Open ports a port scan no longer sees are closed (research/22 P0-6).
+	s.Ingest.SetEvidenceStore(s.Evidence)
 	s.Ingest.SetPortReconciler(postgres.NewEASMPortRepository(&postgres.DB{DB: deps.DB}))
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
