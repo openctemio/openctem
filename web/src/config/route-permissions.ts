@@ -522,6 +522,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.CIRead,
     module: Module.Scans,
   },
+  // Scope policy (RFC-054 §6.3): readable with scope:read; saving needs
+  // scope:approve and step-up, enforced by the API.
+  '/settings/scope': {
+    permission: Permission.ScopeRead,
+    module: Module.ScopeConfig,
+  },
   '/settings/scanning/freeze-windows': {
     permission: Permission.ScansRead,
     module: Module.Scans,

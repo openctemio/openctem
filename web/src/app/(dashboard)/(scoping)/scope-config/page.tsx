@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
@@ -28,56 +29,40 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Globe,
-  Shield,
-  Plus,
-  Pencil,
-  Trash2,
-  Server,
-  Code,
-  Cloud,
-  GitBranch,
-  Ban,
-  Search as SearchIcon,
   AlertTriangle,
-  Database,
-  Box,
-  Mail,
-  Folder,
-  Link,
+  Ban,
   Loader2,
+  Pencil,
+  Plus,
+  Search as SearchIcon,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   type ScopeTargetType,
   getScopeTypeConfig,
-  // API hooks
   useScopeTargetsApi,
   useScopeExclusionsApi,
   useScopeStatsApi,
-  useCreateScopeTargetApi,
-  useUpdateScopeTargetApi,
-  useDeleteScopeTargetApi,
+  useScopeSettingsApi,
   useCreateScopeExclusionApi,
   useUpdateScopeExclusionApi,
   useDeleteScopeExclusionApi,
   invalidateScopeCache,
-  invalidateScopeTargetsCache,
   invalidateScopeExclusionsCache,
   invalidateScopeStatsCache,
-  // API types
-  type ApiScopeTarget,
+  ScopeEntryDialog,
+  ScopeTargetTypeSelect,
+  SCOPE_TARGET_TYPE_ICON,
+  scopeTargetTypeLabel,
   type ApiScopeExclusion,
 } from '@/features/scope'
+import {
+  ScopeTargetsPanel,
+  SCOPE_PAGE_SIZES as PAGE_SIZES,
+} from '@/features/scope/components/scope-targets-panel'
 import { post } from '@/lib/api/client'
 import { EASMSeedsPanel } from '@/features/attack-surface/components/easm-seeds'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
@@ -119,72 +104,17 @@ const validatePattern = (
   return { valid: true }
 }
 
-// Extended icon mapping for all scope target types
-const targetTypeIcons: Record<string, React.ReactNode> = {
-  // Network & External
-  domain: <Globe className="h-4 w-4" />,
-  subdomain: <Globe className="h-4 w-4" />,
-  ip_address: <Server className="h-4 w-4" />,
-  ip_range: <Server className="h-4 w-4" />,
-  certificate: <Shield className="h-4 w-4" />,
-  // Applications
-  api: <Code className="h-4 w-4" />,
-  website: <Globe className="h-4 w-4" />,
-  mobile_app: <Box className="h-4 w-4" />,
-  // Cloud
-  cloud_account: <Cloud className="h-4 w-4" />,
-  cloud_resource: <Cloud className="h-4 w-4" />,
-  // Infrastructure
-  database: <Database className="h-4 w-4" />,
-  container: <Box className="h-4 w-4" />,
-  host: <Server className="h-4 w-4" />,
-  network: <Link className="h-4 w-4" />,
-  // Code & CI/CD
-  project: <GitBranch className="h-4 w-4" />,
-  repository: <GitBranch className="h-4 w-4" />,
-  // Generic
-  path: <Folder className="h-4 w-4" />,
-  email_domain: <Mail className="h-4 w-4" />,
-}
-
-// Type categories for grouped dropdown
-const targetTypeCategories = [
-  {
-    label: 'Network & External',
-    types: ['domain', 'subdomain', 'ip_address', 'ip_range', 'certificate'],
-  },
-  {
-    label: 'Applications',
-    types: ['api', 'website', 'mobile_app'],
-  },
-  {
-    label: 'Cloud',
-    types: ['cloud_account', 'cloud_resource'],
-  },
-  {
-    label: 'Infrastructure',
-    types: ['database', 'container', 'host', 'network'],
-  },
-  {
-    label: 'Code & CI/CD',
-    types: ['repository'],
-  },
-  {
-    label: 'Other',
-    types: ['path', 'email_domain'],
-  },
-]
-
 // Targets | Exclusions. The old Overview tab charted the whole inventory and the
 // Schedules tab never ran (nothing executes scope schedules; Scans owns
 // scheduling), so an old `?tab=overview` or `?tab=schedules` link lands on Targets.
 const SCOPE_TABS = ['targets', 'exclusions', 'seeds'] as const
 type ScopeTab = (typeof SCOPE_TABS)[number]
-const PAGE_SIZES = [10, 20, 30, 50, 100]
 
 export default function ScopeConfigPage() {
   // Permission check for write operations
   const canWriteScope = useHasPermission(Permission.ScopeWrite)
+  // Scope approvers add effective entries and approve requests (RFC-054 §6.1).
+  const canApproveScope = useHasPermission(Permission.ScopeApprove)
   // A new exclusion is pending until someone else holding this approves it.
   const canApproveExclusions = useHasPermission(Permission.ScopeExclusionsApprove)
 
@@ -198,6 +128,7 @@ export default function ScopeConfigPage() {
     : 'targets'
   const [searchParam, setSearchParam] = useUrlFilter('q', '')
   const [typeFilter, setTypeFilter] = useUrlFilter('type', 'all')
+  const [statusFilter, setStatusFilter] = useUrlFilter('status', 'all')
   const [page, setPage] = useUrlFilterNumber('page', 1)
   const [perPageParam, setPerPage] = useUrlFilterNumber('per_page', 20)
   const perPage = PAGE_SIZES.includes(perPageParam) ? perPageParam : 20
@@ -225,6 +156,7 @@ export default function ScopeConfigPage() {
     setSearchValue('')
     setSearchParam('')
     setTypeFilter('all')
+    setStatusFilter('all')
     setPage(1)
     setTabParam(next)
   }
@@ -232,11 +164,19 @@ export default function ScopeConfigPage() {
     setTypeFilter(v)
     setPage(1)
   }
+  const setStatusFilterAndReset = (v: string) => {
+    setStatusFilter(v)
+    setPage(1)
+  }
+  const showPending = () => {
+    if (tab !== 'targets') selectTab('targets')
+    setStatusFilter('pending')
+    setPage(1)
+  }
   const listParams = (forTab: ScopeTab) =>
     tab === forTab
       ? { search: searchParam || undefined, type: typeFilter !== 'all' ? typeFilter : undefined }
       : { search: undefined, type: undefined }
-  const targetParams = listParams('targets')
   const exclusionParams = listParams('exclusions')
 
   // Validation error state
@@ -245,20 +185,10 @@ export default function ScopeConfigPage() {
   // Dialog states
   const [isAddTargetOpen, setIsAddTargetOpen] = useState(false)
   const [isAddExclusionOpen, setIsAddExclusionOpen] = useState(false)
-  const [editTarget, setEditTarget] = useState<ApiScopeTarget | null>(null)
   const [editExclusion, setEditExclusion] = useState<ApiScopeExclusion | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<ApiScopeTarget | null>(null)
   const [deleteExclusion, setDeleteExclusion] = useState<ApiScopeExclusion | null>(null)
 
   // Form states
-  const [targetForm, setTargetForm] = useState({
-    type: 'domain' as ScopeTargetType,
-    pattern: '',
-    description: '',
-    priority: 0,
-    tags: [] as string[],
-  })
-
   const [exclusionForm, setExclusionForm] = useState({
     type: 'domain' as ScopeTargetType,
     pattern: '',
@@ -266,12 +196,12 @@ export default function ScopeConfigPage() {
   })
 
   // API hooks for fetching data (using debounced search values)
-  const { data: targetsData, isLoading: targetsLoading } = useScopeTargetsApi({
-    search: targetParams.search,
-    target_type: targetParams.type,
-    page: tab === 'targets' ? page : 1,
-    per_page: tab === 'targets' ? perPage : 20,
-  })
+  const { data: targetsData, isLoading: targetsLoading } = useScopeTargetsApi({ per_page: 1 })
+  // Entries waiting for approval, for the approvers' banner and the metric.
+  const { data: pendingData } = useScopeTargetsApi({ status: 'pending', per_page: 1 })
+  const pendingCount = pendingData?.total ?? 0
+  const { data: scopeSettings } = useScopeSettingsApi()
+  const membersMayRequest = scopeSettings?.one_off_targets === 'admins_and_requests'
 
   const { data: exclusionsData, isLoading: exclusionsLoading } = useScopeExclusionsApi({
     search: exclusionParams.search,
@@ -283,14 +213,6 @@ export default function ScopeConfigPage() {
   const { data: statsData, isLoading: statsLoading } = useScopeStatsApi()
 
   // Mutation hooks
-  const { trigger: createTarget, isMutating: isCreatingTarget } = useCreateScopeTargetApi()
-  const { trigger: updateTarget, isMutating: isUpdatingTarget } = useUpdateScopeTargetApi(
-    editTarget?.id || ''
-  )
-  const { trigger: removeTarget, isMutating: isRemovingTarget } = useDeleteScopeTargetApi(
-    deleteTarget?.id || ''
-  )
-
   const { trigger: createExclusion, isMutating: isCreatingExclusion } = useCreateScopeExclusionApi()
   const { trigger: updateExclusion, isMutating: isUpdatingExclusion } = useUpdateScopeExclusionApi(
     editExclusion?.id || ''
@@ -300,7 +222,6 @@ export default function ScopeConfigPage() {
   )
 
   // Extracted data - memoized for stable references
-  const targets = useMemo(() => targetsData?.data || [], [targetsData?.data])
   const exclusions = useMemo(() => exclusionsData?.data || [], [exclusionsData?.data])
 
   // Stats (with fallback to 0 for undefined values)
@@ -325,20 +246,12 @@ export default function ScopeConfigPage() {
     // takes over with authoritative numbers.
     return {
       targets: targetsData?.total ?? 0,
-      activeTargets: targets.filter((t) => t.status === 'active').length,
+      activeTargets: 0,
       exclusions: exclusionsData?.total ?? 0,
       // Only the API knows how much of the inventory the targets cover.
       coverage: 0,
     }
-  }, [statsData, targetsData, exclusionsData, targets])
-
-  // Duplicate check helpers
-  const checkDuplicateTarget = useCallback(
-    (pattern: string, excludeId?: string): boolean => {
-      return targets.some((t) => t.pattern === pattern && t.id !== excludeId)
-    },
-    [targets]
-  )
+  }, [statsData, targetsData, exclusionsData])
 
   const checkDuplicateExclusion = useCallback(
     (pattern: string, excludeId?: string): boolean => {
@@ -346,19 +259,6 @@ export default function ScopeConfigPage() {
     },
     [exclusions]
   )
-
-  // Toggle target status using activate/deactivate endpoints
-  const toggleTargetStatus = async (target: ApiScopeTarget) => {
-    try {
-      const action = target.status === 'active' ? 'deactivate' : 'activate'
-      await post<ApiScopeTarget>(`/api/v1/scope/targets/${target.id}/${action}`)
-      await invalidateScopeTargetsCache()
-      await invalidateScopeStatsCache()
-      toast.success(`Target ${action}d successfully`)
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to update target status'))
-    }
-  }
 
   // Toggle exclusion status using activate/deactivate endpoints
   const toggleExclusionStatus = async (exclusion: ApiScopeExclusion) => {
@@ -384,100 +284,6 @@ export default function ScopeConfigPage() {
     } catch (err) {
       toast.error(getErrorMessage(err, `Failed to ${action} exclusion`))
     }
-  }
-
-  // Target handlers
-  const resetTargetForm = () => {
-    setTargetForm({ type: 'domain', pattern: '', description: '', priority: 0, tags: [] })
-    setValidationError(null)
-  }
-
-  const handleAddTarget = async () => {
-    // Validate pattern format
-    const validation = validatePattern(targetForm.type, targetForm.pattern)
-    if (!validation.valid) {
-      setValidationError(validation.error || 'Invalid pattern')
-      return
-    }
-
-    // Check for duplicates
-    if (checkDuplicateTarget(targetForm.pattern)) {
-      setValidationError('This pattern already exists in targets')
-      return
-    }
-
-    try {
-      const result = await createTarget({
-        target_type: targetForm.type,
-        pattern: targetForm.pattern,
-        description: targetForm.description,
-      })
-      await invalidateScopeCache()
-      toast.success('Target added successfully')
-      // Show overlap warnings if any
-      const warnings = (result as unknown as { warnings?: string[] })?.warnings
-      if (warnings && warnings.length > 0) {
-        warnings.forEach((w) => toast.warning(w))
-      }
-      setIsAddTargetOpen(false)
-      resetTargetForm()
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to add target'))
-    }
-  }
-
-  const handleEditTarget = async () => {
-    if (!editTarget) return
-
-    // Validate pattern format
-    const validation = validatePattern(targetForm.type, targetForm.pattern)
-    if (!validation.valid) {
-      setValidationError(validation.error || 'Invalid pattern')
-      return
-    }
-
-    // Check for duplicates (exclude current target)
-    if (checkDuplicateTarget(targetForm.pattern, editTarget.id)) {
-      setValidationError('This pattern already exists in targets')
-      return
-    }
-
-    try {
-      await updateTarget({
-        description: targetForm.description,
-        priority: targetForm.priority,
-        tags: targetForm.tags,
-      })
-      await invalidateScopeCache()
-      toast.success('Target updated successfully')
-      setEditTarget(null)
-      resetTargetForm()
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to update target'))
-    }
-  }
-
-  const handleDeleteTarget = async () => {
-    if (!deleteTarget) return
-    try {
-      await removeTarget()
-      await invalidateScopeCache()
-      toast.success('Target removed successfully')
-      setDeleteTarget(null)
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to remove target'))
-    }
-  }
-
-  const openEditTarget = (target: ApiScopeTarget) => {
-    setTargetForm({
-      type: (target.target_type ?? '') as ScopeTargetType,
-      pattern: target.pattern ?? '',
-      description: target.description ?? '',
-      priority: target.priority ?? 0,
-      tags: target.tags ?? [],
-    })
-    setEditTarget(target)
   }
 
   // Exclusion handlers
@@ -574,83 +380,6 @@ export default function ScopeConfigPage() {
     }
   }
 
-  // Format type label for display
-  const formatTypeLabel = (type: string): string => {
-    return type
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ')
-  }
-
-  // Form JSX
-  const targetFormFields = (
-    <div className="space-y-4">
-      {validationError && (
-        <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4" />
-          {validationError}
-        </div>
-      )}
-      <div className="space-y-2">
-        <Label>Type</Label>
-        <Select
-          value={targetForm.type}
-          disabled={!!editTarget}
-          onValueChange={(v) => {
-            setTargetForm({ ...targetForm, type: v as ScopeTargetType })
-            setValidationError(null)
-          }}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="max-h-80">
-            {targetTypeCategories.map((category) => (
-              <div key={category.label}>
-                <div className="text-muted-foreground px-2 py-1.5 text-xs font-semibold">
-                  {category.label}
-                </div>
-                {category.types.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {targetTypeIcons[type]}
-                      {formatTypeLabel(type)}
-                    </div>
-                  </SelectItem>
-                ))}
-              </div>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label>Pattern *</Label>
-        <Input
-          placeholder={getTypeConfig(targetForm.type).placeholder}
-          value={targetForm.pattern}
-          disabled={!!editTarget}
-          onChange={(e) => {
-            setTargetForm({ ...targetForm, pattern: e.target.value })
-            setValidationError(null)
-          }}
-        />
-        <p className="text-muted-foreground text-xs">
-          {editTarget
-            ? 'Type and pattern identify the target and cannot be changed after creation. Remove and re-add to change them.'
-            : getTypeConfig(targetForm.type).helpText}
-        </p>
-      </div>
-      <div className="space-y-2">
-        <Label>Description</Label>
-        <Input
-          placeholder="Description of this target"
-          value={targetForm.description}
-          onChange={(e) => setTargetForm({ ...targetForm, description: e.target.value })}
-        />
-      </div>
-    </div>
-  )
-
   const exclusionFormFields = (
     <div className="space-y-4">
       {validationError && (
@@ -661,35 +390,14 @@ export default function ScopeConfigPage() {
       )}
       <div className="space-y-2">
         <Label>Type</Label>
-        <Select
+        <ScopeTargetTypeSelect
           value={exclusionForm.type}
           disabled={!!editExclusion}
           onValueChange={(v) => {
             setExclusionForm({ ...exclusionForm, type: v as ScopeTargetType })
             setValidationError(null)
           }}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="max-h-80">
-            {targetTypeCategories.map((category) => (
-              <div key={category.label}>
-                <div className="text-muted-foreground px-2 py-1.5 text-xs font-semibold">
-                  {category.label}
-                </div>
-                {category.types.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {targetTypeIcons[type]}
-                      {formatTypeLabel(type)}
-                    </div>
-                  </SelectItem>
-                ))}
-              </div>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
       <div className="space-y-2">
         <Label>Pattern *</Label>
@@ -719,45 +427,25 @@ export default function ScopeConfigPage() {
     </div>
   )
 
-  const typeFilterSelect = (
-    <Select value={typeFilter} onValueChange={setTypeFilterAndReset}>
-      <SelectTrigger className="h-9 w-auto min-w-36" aria-label="Filter by type">
-        <SelectValue placeholder="Filter by type" />
-      </SelectTrigger>
-      <SelectContent className="max-h-80">
-        <SelectItem value="all">All types</SelectItem>
-        {targetTypeCategories.map((category) => (
-          <div key={category.label}>
-            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-              {category.label}
-            </div>
-            {category.types.map((type) => (
-              <SelectItem key={type} value={type}>
-                <div className="flex flex-wrap items-center gap-2">
-                  {targetTypeIcons[type]}
-                  {formatTypeLabel(type)}
-                </div>
-              </SelectItem>
-            ))}
-          </div>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-
   const toolbarStart = (
     <>
       <div className="relative min-w-0 flex-1 sm:max-w-sm">
         <SearchIcon className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder={tab === 'targets' ? 'Search targets…' : 'Search exclusions…'}
+          placeholder="Search exclusions…"
           aria-label={`Search ${tab}`}
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
           className="h-9 ps-9"
         />
       </div>
-      {typeFilterSelect}
+      <ScopeTargetTypeSelect
+        value={typeFilter}
+        onValueChange={setTypeFilterAndReset}
+        withAll
+        className="h-9 w-auto min-w-36"
+        aria-label="Filter by type"
+      />
     </>
   )
 
@@ -771,93 +459,6 @@ export default function ScopeConfigPage() {
   }
 
   const filtersActive = !!searchParam || typeFilter !== 'all'
-
-  const targetColumns: ColumnDef<ApiScopeTarget>[] = [
-    {
-      accessorKey: 'pattern',
-      header: 'Pattern',
-      enableHiding: false,
-      cell: ({ row }) => (
-        <code className="rounded bg-muted px-2 py-1 text-sm">{row.original.pattern}</code>
-      ),
-    },
-    {
-      accessorKey: 'target_type',
-      header: 'Type',
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          {targetTypeIcons[row.original.target_type ?? '']}
-          <span className="text-sm capitalize text-foreground">
-            {(row.original.target_type ?? '').replace('_', ' ')}
-          </span>
-        </div>
-      ),
-    },
-    {
-      accessorKey: 'description',
-      header: 'Description',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">{row.original.description}</span>
-      ),
-    },
-    {
-      accessorKey: 'status',
-      header: 'Status',
-      cell: ({ row }) => {
-        const target = row.original
-        return (
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={target.status === 'active'}
-              onCheckedChange={() => toggleTargetStatus(target)}
-              disabled={!canWriteScope}
-              aria-label={`Toggle ${target.pattern}`}
-            />
-            <span
-              className={cn(
-                'text-xs capitalize',
-                target.status !== 'active' && 'text-muted-foreground'
-              )}
-            >
-              {target.status}
-            </span>
-          </div>
-        )
-      },
-    },
-    {
-      accessorKey: 'created_by',
-      header: 'Created by',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">{row.original.created_by}</span>
-      ),
-    },
-    {
-      id: 'actions',
-      enableHiding: false,
-      cell: ({ row }) => (
-        <Can permission={[Permission.ScopeWrite, Permission.ScopeDelete]}>
-          <DataTableRowActions
-            actions={[
-              {
-                label: 'Edit',
-                icon: Pencil,
-                onClick: () => openEditTarget(row.original),
-                permission: Permission.ScopeWrite,
-              },
-              {
-                label: 'Remove',
-                icon: Trash2,
-                onClick: () => setDeleteTarget(row.original),
-                destructive: true,
-                permission: Permission.ScopeDelete,
-              },
-            ]}
-          />
-        </Can>
-      ),
-    },
-  ]
 
   const exclusionColumns: ColumnDef<ApiScopeExclusion>[] = [
     {
@@ -873,9 +474,9 @@ export default function ScopeConfigPage() {
       header: 'Type',
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-muted-foreground">
-          {targetTypeIcons[row.original.exclusion_type ?? ''] || <Ban className="h-4 w-4" />}
-          <span className="text-sm capitalize text-foreground">
-            {(row.original.exclusion_type ?? '').replace('_', ' ')}
+          {SCOPE_TARGET_TYPE_ICON[row.original.exclusion_type ?? ''] || <Ban className="h-4 w-4" />}
+          <span className="text-sm text-foreground">
+            {scopeTargetTypeLabel(row.original.exclusion_type ?? '')}
           </span>
         </div>
       ),
@@ -987,10 +588,21 @@ export default function ScopeConfigPage() {
   const metrics: MetricStripItem[] = [
     {
       key: 'targets',
-      label: 'In-scope targets',
+      label: 'Scope entries',
       value: stats.targets,
       hint: `${stats.activeTargets} active`,
-      onClick: () => selectTab('targets'),
+      onClick: () => {
+        selectTab('targets')
+      },
+    },
+    {
+      key: 'pending',
+      label: 'Pending approval',
+      value: pendingCount,
+      tone: pendingCount > 0 ? 'warning' : 'default',
+      hint: pendingCount > 0 ? 'authorize nothing until approved' : undefined,
+      onClick: showPending,
+      active: tab === 'targets' && statusFilter === 'pending',
     },
     {
       key: 'exclusions',
@@ -1002,41 +614,64 @@ export default function ScopeConfigPage() {
       key: 'coverage',
       label: 'Inventory in scope',
       value: `${stats.coverage}%`,
-      hint: 'of discovered assets match an active target',
+      hint: 'of discovered assets match an active entry',
     },
   ]
 
+  // Approvers add entries; anyone else with scope:write requests a one-off
+  // when the organization accepts requests (RFC-054 §6.1).
   const addButton =
     tab === 'seeds' ? null : tab === 'exclusions' ? (
       <Button size="sm" onClick={() => setIsAddExclusionOpen(true)}>
         <Plus className="me-2 h-4 w-4" />
         Add exclusion
       </Button>
-    ) : (
+    ) : canApproveScope ? (
       <Button size="sm" onClick={() => setIsAddTargetOpen(true)}>
         <Plus className="me-2 h-4 w-4" />
-        Add target
+        Add to scope
       </Button>
-    )
+    ) : membersMayRequest ? (
+      <Button size="sm" onClick={() => setIsAddTargetOpen(true)}>
+        <Plus className="me-2 h-4 w-4" />
+        Request access
+      </Button>
+    ) : null
 
   return (
     <>
       <Main>
         <PageHeader
           title="Boundaries"
-          description="What the program covers, and what scans must never touch. Exclusions are enforced on every scan; schedule scans on the Scans page."
+          description="What your organization may probe, and what scans must never touch. *.example.com covers example.com and every name below it; exclusions win over every entry."
         >
           <Can permission={Permission.ScopeWrite}>{addButton}</Can>
         </PageHeader>
 
         <MetricStrip className="mt-5" loading={statsLoading} items={metrics} />
 
+        {canApproveScope &&
+          pendingCount > 0 &&
+          !(tab === 'targets' && statusFilter === 'pending') && (
+            <Alert className="mt-5">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {pendingCount} scope {pendingCount === 1 ? 'entry waits' : 'entries wait'} for
+                  approval. They authorize nothing until approved.
+                </span>
+                <Button size="sm" variant="outline" onClick={showPending}>
+                  Review
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
         <Tabs value={tab} onValueChange={selectTab} className="mt-5">
           <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
             <TabsList>
               <TabsTrigger value="targets">
-                Targets{' '}
-                <TabsCount value={targetsLoading ? '…' : (targetsData?.total ?? targets.length)} />
+                Targets <TabsCount value={targetsLoading ? '…' : (targetsData?.total ?? 0)} />
               </TabsTrigger>
               <TabsTrigger value="exclusions">
                 Exclusions{' '}
@@ -1049,27 +684,20 @@ export default function ScopeConfigPage() {
           </div>
 
           <TabsContent value="targets" className="mt-5">
-            {targetsLoading && !targetsData ? (
-              tableSkeleton
-            ) : (
-              <DataTable
-                columns={targetColumns}
-                data={targets}
-                showSearch={false}
-                toolbarStart={toolbarStart}
-                manualPagination
-                rowCount={targetsData?.total ?? 0}
-                pagination={{ pageIndex: page - 1, pageSize: perPage }}
-                onPaginationChange={onTablePagination}
-                pageSizeOptions={PAGE_SIZES}
-                emptyMessage={filtersActive ? 'No targets match' : 'No targets configured yet'}
-                emptyDescription={
-                  filtersActive
-                    ? 'Try adjusting your search or type filter.'
-                    : 'Add a target to bring it into scope.'
-                }
-              />
-            )}
+            <ScopeTargetsPanel
+              query={{
+                search: tab === 'targets' ? searchParam : '',
+                type: tab === 'targets' ? typeFilter : 'all',
+                status: tab === 'targets' ? statusFilter : 'all',
+                page: tab === 'targets' ? page : 1,
+                perPage,
+              }}
+              searchInput={searchValue}
+              onSearchInput={setSearchValue}
+              onTypeChange={setTypeFilterAndReset}
+              onStatusChange={setStatusFilterAndReset}
+              onPagination={onTablePagination}
+            />
           </TabsContent>
 
           <TabsContent value="exclusions" className="mt-5">
@@ -1106,73 +734,7 @@ export default function ScopeConfigPage() {
         </Tabs>
       </Main>
 
-      {/* Add Target Dialog */}
-      <Dialog
-        open={isAddTargetOpen}
-        onOpenChange={(open) => {
-          setIsAddTargetOpen(open)
-          if (!open) {
-            resetTargetForm()
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add target</DialogTitle>
-            <DialogDescription>Add a new target to the scope</DialogDescription>
-          </DialogHeader>
-          {targetFormFields}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddTargetOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddTarget} disabled={isCreatingTarget}>
-              {isCreatingTarget && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Add Target
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Target Dialog */}
-      <Dialog
-        open={!!editTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditTarget(null)
-            resetTargetForm()
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit target</DialogTitle>
-            <DialogDescription>Update target information</DialogDescription>
-          </DialogHeader>
-          {targetFormFields}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditTarget(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleEditTarget} disabled={isUpdatingTarget}>
-              {isUpdatingTarget && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Target Dialog */}
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Remove target?"
-        desc={<>Remove &quot;{deleteTarget?.pattern}&quot; from scope?</>}
-        confirmText="Remove"
-        destructive
-        isLoading={isRemovingTarget}
-        handleConfirm={handleDeleteTarget}
-      />
+      <ScopeEntryDialog open={isAddTargetOpen} onOpenChange={setIsAddTargetOpen} />
 
       {/* Add Exclusion Dialog */}
       <Dialog

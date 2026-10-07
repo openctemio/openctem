@@ -295,6 +295,16 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['stale', 'retire', 'archive'],
       },
       {
+        id: 'scope-policy',
+        title: 'Scope policy',
+        description: 'Who widens scope, how many approve, one-off entries and discovered names.',
+        url: '/settings/scope',
+        icon: Crosshair,
+        permission: Permission.ScopeRead,
+        module: 'scope_config',
+        keywords: ['scope', 'approvals', 'one-off', 'exception', 'tier', 'auto-join', 'proof'],
+      },
+      {
         id: 'freeze-windows',
         title: 'Scan freeze windows',
         description: 'When active scans pause for maintenance or a change freeze.',
