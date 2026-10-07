@@ -19,7 +19,7 @@
   `POST /api/v1/findings/{id}/ai-triage`.
 - **Upgrade note:** a client that called a removed route gets 404 or 405.
 
-### Removed: the findings:vulnerabilities:write and :delete permissions (migration 001178)
+### Removed: the findings:vulnerabilities:write and :delete permissions (migration 001184)
 
 - With the refusal stubs gone nothing checks them (the shared CVE catalog has
   no tenant writes), so they are removed from the catalog and from the owner
