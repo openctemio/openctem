@@ -492,6 +492,21 @@ func registerWebEndpointRoutes(router Router, h *handler.WebEndpointHandler, aut
 	}, tenantMiddlewares...)
 }
 
+// registerAPISpecRoutes registers the API descriptions of web origins and
+// their drift (RFC-056).
+func registerAPISpecRoutes(router Router, h *handler.APISpecHandler, authMiddleware Middleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/assets/{id}/api-specs", func(r Router) {
+		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
+		r.POST("/", h.Upload, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/api-specs", func(r Router) {
+		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+		r.GET("/{id}/drift", h.Drift, middleware.Require(permission.AssetsRead))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerAssetServiceRoutes registers asset service endpoints.
 // Services are network services discovered on assets (ports, protocols).
 // Part of the CTEM Discovery phase.

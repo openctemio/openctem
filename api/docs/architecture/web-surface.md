@@ -112,3 +112,23 @@ always in the WHERE, for the list and the stats alike.
   from the example path with typed placeholders, never recorded values, and
   pass the same per-hop gate (path exclusions included). The setting is the
   platform's and never reaches the sensor.
+
+## API descriptions and drift
+
+- `POST /api/v1/assets/{id}/api-specs` (multipart `file`, at most 10 MB,
+  `assets:write`, an origin asset the caller may see) reads an OpenAPI 3 or
+  Swagger 2 document (JSON or YAML), a Postman 2.1 collection, a HAR 1.2
+  capture or a GraphQL introspection result (`pkg/domain/apispec`).
+- Only the declared operations (method, path, parameter names, deprecated) and
+  the document's sha256 are stored (`api_specs`, `api_spec_operations`,
+  migration 001209). The document, its examples and a capture's values
+  (tokens, cookies, headers) are never stored. No remote `$ref` is fetched;
+  YAML alias bombs are refused; operations are capped at 5,000.
+- `GET /api/v1/api-specs/{id}/drift` compares the declaration with the
+  origin's observed endpoints (spec variables match scan variables,
+  `/users/{userId}` = `/users/{int}`): `shadow` (observed, not declared),
+  `orphan` (declared, never observed), `zombie` (deprecated, still 2xx) and
+  `param_drift` (parameters seen but not declared).
+- The parsers live in the platform for now: YAML needs a dependency the ctis
+  schema module does not take. A sensor-side `import.api_spec` can move the
+  JSON formats to `ctis/importer` later without changing this API.
