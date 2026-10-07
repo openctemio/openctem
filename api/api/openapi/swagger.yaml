@@ -13407,6 +13407,11 @@ definitions:
         type: string
       quality_gate_result:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult'
+      refusal_code:
+        description: |-
+          RefusalCode says why a blocked run was refused (status blocked only),
+          e.g. ALL_TARGETS_EXCLUDED, SCAN_FREEZE_ACTIVE, NO_SENSOR_AVAILABLE.
+        type: string
       scan_id:
         type: string
       scan_name:
@@ -13579,6 +13584,16 @@ definitions:
         type: string
       sensor_name:
         type: string
+      skipped_targets:
+        description: |-
+          SkippedTargets are the targets the sensor's local policy skipped in a
+          task that completed on the rest (at most 20; sensor-supplied text,
+          show as plain text). SkippedTargetsTotal counts all of them.
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunTaskSkippedTarget'
+        type: array
+      skipped_targets_total:
+        type: integer
       started_at:
         type: string
       status:
@@ -13591,6 +13606,17 @@ definitions:
       targets:
         type: integer
       tool:
+        type: string
+    type: object
+  internal_infra_http_handler.RunTaskSkippedTarget:
+    properties:
+      detail:
+        type: string
+      reason:
+        type: string
+      rule:
+        type: string
+      target:
         type: string
     type: object
   internal_infra_http_handler.RunTaskSummaryResponse:
@@ -13918,6 +13944,15 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.ScanAdapterResponse:
+    properties:
+      capability:
+        type: string
+      from:
+        type: string
+      to:
+        type: string
+    type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
       ad_hoc:
@@ -13932,6 +13967,11 @@ definitions:
         items:
           type: string
         type: array
+      blocked_runs:
+        description: |-
+          BlockedRuns: triggers refused before anything was dispatched; each
+          is a run with status blocked and its refusal_code.
+        type: integer
       created_at:
         type: string
       created_by:
@@ -13944,6 +13984,13 @@ definitions:
         type: integer
       id:
         type: string
+      last_run:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ScanLastRunResponse'
+        description: |-
+          LastRun is the scan's latest run: its real state (running with
+          progress, completed, partial, failed, blocked with the reason, ...).
+          Absent before the first run.
       last_run_at:
         type: string
       last_run_id:
@@ -13961,6 +14008,9 @@ definitions:
           D5).'
         type: integer
       pipeline_id:
+        type: string
+      pipeline_name:
+        description: PipelineName names the workflow a workflow scan runs.
         type: string
       profile_id:
         type: string
@@ -14077,6 +14127,44 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.ScanLastRunResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error_message:
+        type: string
+      id:
+        type: string
+      progress:
+        description: 'Progress is 0-100 for a live run: finished tasks of all tasks.'
+        type: integer
+      refusal_code:
+        description: RefusalCode and ErrorMessage say why a blocked or failed run
+          ended.
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      task_summary:
+        $ref: '#/definitions/internal_infra_http_handler.RunTaskSummaryResponse'
+      trigger_type:
+        type: string
+    type: object
+  internal_infra_http_handler.ScanPortTypeResponse:
+    properties:
+      carries:
+        description: Carries are the stored type labels a stream of this type holds.
+        items:
+          type: string
+        type: array
+      label:
+        type: string
+      type:
+        type: string
+    type: object
   internal_infra_http_handler.ScanProfileResponse:
     properties:
       created_at:
@@ -14130,32 +14218,91 @@ definitions:
     type: object
   internal_infra_http_handler.ScanStageImplementationResponse:
     properties:
+      batch:
+        description: 'Batch: the tool takes a list of targets per task.'
+        type: boolean
       default:
         type: boolean
+      params:
+        additionalProperties:
+          type: string
+        description: |-
+          Params maps the standard params this tool accepts to its own config
+          key.
+        type: object
       tool:
         type: string
     type: object
   internal_infra_http_handler.ScanStageListResponse:
     properties:
+      adapters:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanAdapterResponse'
+        type: array
       max_hops:
         description: |-
           MaxHops is how many discovery hops a derived target may be from the
           run's seeds.
         type: integer
+      port_types:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanPortTypeResponse'
+        type: array
       stages:
         items:
           $ref: '#/definitions/internal_infra_http_handler.ScanStageResponse'
         type: array
     type: object
+  internal_infra_http_handler.ScanStageParamResponse:
+    properties:
+      description:
+        type: string
+      enum:
+        items:
+          type: string
+        type: array
+      max:
+        type: integer
+      min:
+        type: integer
+      name:
+        type: string
+      type:
+        enum:
+        - string
+        - string_list
+        - integer
+        - boolean
+        - port_list
+        type: string
+    type: object
   internal_infra_http_handler.ScanStageResponse:
     properties:
+      available:
+        description: |-
+          Available: the platform routes the capability today. A planned one
+          has a contract and no implementation yet.
+        type: boolean
+      cross_cutting:
+        description: CrossCutting capabilities (verify.finding) are not workflow nodes.
+        type: boolean
       description:
         type: string
       findings:
         type: boolean
+      id:
+        description: ID is the versioned capability id ("scan.ports@1").
+        type: string
       implementations:
         items:
           $ref: '#/definitions/internal_infra_http_handler.ScanStageImplementationResponse'
+        type: array
+      in_ports:
+        description: |-
+          InPorts and OutPorts are port types (port_types[].type): an edge
+          connects an output port to an input port of the same type.
+        items:
+          type: string
         type: array
       inputs:
         description: |-
@@ -14170,11 +14317,23 @@ definitions:
         type: integer
       name:
         type: string
+      out_ports:
+        items:
+          type: string
+        type: array
       outputs:
         items:
           type: string
         type: array
+      params:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanStageParamResponse'
+        type: array
       relations:
+        items:
+          type: string
+        type: array
+      required_output_fields:
         items:
           type: string
         type: array
@@ -14184,6 +14343,8 @@ definitions:
         - T1
         - T2
         type: string
+      version:
+        type: integer
     type: object
   internal_infra_http_handler.ScanStatsResponse:
     properties:
@@ -15691,8 +15852,15 @@ definitions:
       status:
         type: string
       step_id:
+        description: |-
+          StepID is empty once the step was removed from the pipeline; the step
+          run keeps its key, name and tool.
         type: string
       step_key:
+        type: string
+      step_name:
+        type: string
+      tool:
         type: string
     type: object
   internal_infra_http_handler.StepUpRequest:
@@ -34637,9 +34805,9 @@ paths:
       - Scans
   /scans/stages:
     get:
-      description: 'The scan stage catalog: each capability with the asset types it
-        consumes and produces, its intrusiveness tier and the tools that implement
-        it.'
+      description: 'The scan capability catalog: each capability with its contract
+        (typed ports, standard params, required output fields, version), its intrusiveness
+        tier and the tools that implement it; the port types and the adapter table.'
       produces:
       - application/json
       responses:
@@ -34649,7 +34817,7 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScanStageListResponse'
       security:
       - BearerAuth: []
-      summary: List scan stages
+      summary: List scan capabilities
       tags:
       - Scans
   /scans/stats:

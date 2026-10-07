@@ -21,12 +21,16 @@ const (
 	RunStatusFailed   RunStatus = "failed"
 	RunStatusCanceled RunStatus = "canceled"
 	RunStatusTimeout  RunStatus = "timeout"
+	// RunStatusBlocked: the trigger was refused before anything was
+	// dispatched (scope gate, freeze window, unavailable tool or sensor, no
+	// target). Terminal and never retried; RefusalCode says why.
+	RunStatusBlocked RunStatus = "blocked"
 )
 
 // IsValid checks if the run status is valid.
 func (s RunStatus) IsValid() bool {
 	switch s {
-	case RunStatusPending, RunStatusRunning, RunStatusCompleted, RunStatusPartial, RunStatusFailed, RunStatusCanceled, RunStatusTimeout:
+	case RunStatusPending, RunStatusRunning, RunStatusCompleted, RunStatusPartial, RunStatusFailed, RunStatusCanceled, RunStatusTimeout, RunStatusBlocked:
 		return true
 	}
 	return false
@@ -35,7 +39,7 @@ func (s RunStatus) IsValid() bool {
 // IsTerminal checks if the status is terminal (no more state changes).
 func (s RunStatus) IsTerminal() bool {
 	switch s {
-	case RunStatusCompleted, RunStatusPartial, RunStatusFailed, RunStatusCanceled, RunStatusTimeout:
+	case RunStatusCompleted, RunStatusPartial, RunStatusFailed, RunStatusCanceled, RunStatusTimeout, RunStatusBlocked:
 		return true
 	}
 	return false
@@ -93,6 +97,9 @@ type Run struct {
 
 	// Error info
 	ErrorMessage string
+	// RefusalCode is the machine-readable reason of a blocked run: the
+	// domain error code of the refused trigger (e.g. ALL_TARGETS_EXCLUDED).
+	RefusalCode string
 
 	// Scan Profile and Quality Gate
 	ScanProfileID     *shared.ID                     // Reference to the scan profile used
@@ -182,6 +189,16 @@ func (r *Run) Cancel() {
 	now := time.Now()
 	r.CompletedAt = &now
 	r.Status = RunStatusCanceled
+}
+
+// Block records a trigger that was refused before anything was dispatched:
+// the run is terminal at once, with the refusal's code and message.
+func (r *Run) Block(code, message string) {
+	now := time.Now()
+	r.CompletedAt = &now
+	r.Status = RunStatusBlocked
+	r.RefusalCode = code
+	r.ErrorMessage = message
 }
 
 // Timeout marks the run as timed out.
