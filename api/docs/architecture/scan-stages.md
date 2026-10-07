@@ -210,9 +210,21 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `crawl.web` and `dast.web` 10; the code, image and connector capabilities
   are not cut. A one-target tool keeps one command per step. If a later
   chunk cannot be created, the ones already created are canceled.
+- **One sensor per host** (platform-side politeness, migration 001164). A
+  chunk of an active stage (T1 and above) records the hosts it sends traffic
+  to in `commands.host_keys` (lower-case name or address, no scheme, port or
+  path). The poll offers, and a claim takes, such a chunk only while no other
+  acknowledged or running command of the tenant holds one of its hosts
+  (`hostFreePredicate`). Claims serialize on the keys with transaction
+  advisory locks (`lockHostKeys`), and a batch claim takes one chunk per
+  host. Only acknowledged and running commands count, so a finish, a failure,
+  a release or an expired lease frees the hosts with nothing to clean up.
+  Passive stages carry no keys. Keys are tenant-scoped, so another tenant's
+  work never holds a tenant back. The sensor's own `PerHostConcurrency` stays
+  as defense in depth. Platform jobs (`get_next_platform_job`) do not check
+  host keys yet.
   Not yet: the candidate tool list per chunk (claim by any candidate),
-  placement modes, a spread cap and platform-side per-host leases
-  (research/49 §3.12.3).
+  placement modes and a spread cap (research/49 §3.12.3).
 
 ## 4. Report output-type binding (owner decision G12)
 
