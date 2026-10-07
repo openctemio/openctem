@@ -25,7 +25,6 @@ package ingest
 import (
 	"fmt"
 	"net"
-	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -209,17 +208,7 @@ func portNumber(v any) (int, bool) {
 // hostOf is the host a report asset names: the host of a URL, an address,
 // or a DNS name ("" when it is none of them).
 func hostOf(name string) string {
-	name = strings.TrimSpace(name)
-	if strings.Contains(name, "://") {
-		u, err := url.Parse(name)
-		if err != nil {
-			return ""
-		}
-		name = u.Hostname()
-	} else if h, _, err := net.SplitHostPort(name); err == nil {
-		name = h
-	}
-	name = strings.ToLower(strings.TrimSuffix(name, "."))
+	name = asset.HostOf(name)
 	if net.ParseIP(name) != nil {
 		return name
 	}

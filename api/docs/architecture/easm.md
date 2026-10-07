@@ -105,7 +105,7 @@ API connector already uses (`pkg/httpsec`).
 | `/assets/changes` (What changed) | Real |
 | `/attack-paths`, `/exposure-chains`, `/exposures` | Real |
 | `/exposures/{vulnerabilities,secrets,code,misconfigurations}` | Partial: side cards show tenant-wide numbers |
-| `/scope-config`, `/scoping` | Real |
+| `/scope`, `/scoping` | Real |
 
 No EASM page is a `useDashboardStats` scaffold. The planned pages (§7) must
 each have their own endpoint. The UI CI test `sidebar-no-scaffolds` enforces
@@ -148,7 +148,7 @@ nothing about another tenant's seed or verification is ever shown. Code:
 `pkg/domain/easmseed`, `internal/app/easm/seeds.go`,
 `internal/infra/postgres/easm_seed_repository.go`.
 
-**Web.** Scoping › Boundaries (`/scope-config?tab=seeds`) has a **Seeds** tab
+**Web.** Scoping › Scope (`/scope?tab=seeds`) has a **Seeds** tab
 when the `attack_surface` module is on: the list with ownership (verified by a
 DNS TXT record, or asserted), a discovery switch, and Add seed, which stays
 disabled until the attestation box is ticked. Code:
@@ -260,6 +260,29 @@ inventory (`/assets`) shows only the organisation's assets by default
 behind a "Show all" link, and the filter panel has an Attribution facet.
 Code: `web/src/features/attack-surface/components/easm-review-queue.tsx`,
 `web/src/features/assets/lib/inventory-url.ts` (`attributionQuery`).
+
+**Inventory membership (RFC-054 §4.4).** One definition everywhere: an asset
+is in the inventory when its attribution is confirmed (or it has no record),
+`dependency` or `monitor_only` (`attribution.InInventory`,
+`attribution=approved`, SQL `postgres.InInventorySQL`). The review queue and
+rejected assets are not counted by the Assets list default, the dashboard
+asset totals, the attack-surface stats or the EASM surface, new-asset and
+exposed-service counts. Attack-surface recent changes still list them, with
+`attribution_state` and `in_inventory: false` ("Added · needs review"). The
+review queue answers `covered_by` per item and filters by `reason`; the
+summary adds `review_by_reason`; the attribution view adds `scope_status`,
+`covered_by` and `blocked_code`.
+
+**Review by rule (RFC-054 §6.7).** `GET /easm/candidates/suggestions` groups
+the caller's pending items into candidate rules: wildcards at each label
+level up to the registrable domain (never a public suffix or a deny-listed
+name), /24 or /48 ranges (never shared, CDN or cloud space: those are listed
+individually), each with covered and blocked items, hints and a strength.
+`POST /easm/candidates/rules/preview` and `POST /easm/candidates/rules` take
+`accept_rule` (a scope entry through the scope service: guardrails, step-up,
+approvals, notification; then the scope join confirms), `accept_selected`
+(confirm only the given items) and `reject_rule` (a pending exclusion and the
+covered items rejected). Code: `internal/app/easm/review_rules.go`.
 
 ## 4c. Alerts (built, P0-7)
 
