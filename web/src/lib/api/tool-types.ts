@@ -129,26 +129,28 @@ export interface UpdateToolRequest {
   tags?: string[]
 }
 
-/**
- * Tool list response
- */
-export interface ToolListResponse {
-  items: Tool[]
-  total: number
-  page: number
-  per_page: number
-}
+/** Settings, availability and run statistics a tool read can include. */
+export type ToolInclude = 'settings' | 'availability' | 'stats'
 
 /**
- * Tool list filters
+ * Tool list filters (GET /api/v1/tools). include values need
+ * scans:tenant_tools:read; one the caller may not read is left out and named
+ * in meta.omitted_includes. per_page is capped at 100, and at 50 with
+ * availability or stats.
  */
 export interface ToolListFilters {
-  category?: ToolCategory
-  capabilities?: string[]
-  is_active?: boolean
-  is_builtin?: boolean
-  search?: string
-  tags?: string[]
+  source?: 'platform' | 'custom'
+  category?: string
+  q?: string
+  /** Active in the catalog and switched on for the organization. */
+  enabled?: boolean
+  /** A scan job can be dispatched now. */
+  available?: boolean
+  zone_id?: string
+  /** Comma-separated ToolInclude values (at most 3). */
+  include?: string
+  days?: number
+  sort?: string
   page?: number
   per_page?: number
 }
@@ -170,81 +172,32 @@ export interface CustomPattern {
   pattern: string
 }
 
-/**
- * Tenant Tool Config - Tenant-specific tool configuration
- */
-export interface TenantToolConfig {
-  id: string
-  tenant_id: string
-  tool_id: string
+/** The organization's settings of one tool (include=settings). */
+export interface ToolSettings {
+  is_enabled: boolean
+  /** The organization's overrides (credential-like values masked). */
   config: Record<string, unknown>
+  effective_config: Record<string, unknown>
   custom_templates?: CustomTemplate[]
   custom_patterns?: CustomPattern[]
-  is_enabled: boolean
   updated_by?: string
-  created_at: string
-  updated_at: string
+  updated_at?: string
 }
 
-/**
- * Create/Update tenant tool config request
- */
-export interface TenantToolConfigRequest {
-  config?: Record<string, unknown>
-  is_enabled: boolean
-}
-
-/**
- * Tenant tool config list response
- */
-export interface TenantToolConfigListResponse {
-  items: TenantToolConfig[]
-  total: number
-  page: number
-  per_page: number
-}
-
-/**
- * Tenant tool config list filters
- */
-export interface TenantToolConfigListFilters {
-  tool_id?: string
+/** PATCH /api/v1/tools/{id}/settings: an omitted field is left as it is. */
+export interface ToolSettingsRequest {
   is_enabled?: boolean
-  page?: number
-  per_page?: number
+  /** {} clears the overrides. */
+  config?: Record<string, unknown>
 }
 
-/**
- * Tool with tenant config
- */
-export interface ToolWithConfig {
-  tool: Tool
-  tenant_config?: TenantToolConfig
-  effective_config: Record<string, unknown>
-  is_enabled: boolean
-  is_available: boolean // True if at least one sensor (tenant or platform) supports this tool
-}
-
-/**
- * Tools with config list response (from /tenant-tools/all-tools)
- */
-export interface ToolsWithConfigListResponse {
-  items: ToolWithConfig[]
-  total: number
-  page: number
-  per_page: number
-}
-
-/**
- * Bulk tool IDs request
- */
-export interface BulkToolIDsRequest {
+/** PATCH /api/v1/tools/settings */
+export interface BulkToolSettingsRequest {
   tool_ids: string[]
+  is_enabled: boolean
 }
 
-/**
- * Tool stats
- */
+/** Tool run statistics (include=stats). */
 export interface ToolStats {
   tool_id: string
   total_runs: number
@@ -254,60 +207,51 @@ export interface ToolStats {
   avg_duration_ms: number
 }
 
-/**
- * Tenant tool stats
- */
-export interface TenantToolStats {
-  tenant_id: string
-  total_runs: number
-  successful_runs: number
-  failed_runs: number
-  total_findings: number
-  tool_breakdown: ToolStats[]
+/** One tool of the organization's view of the catalog. */
+export interface ToolView extends Tool {
+  source: 'platform' | 'custom'
+  settings?: ToolSettings
+  availability?: ToolAvailabilityInfo
+  stats?: ToolStats
 }
 
-/**
- * Tool execution
- */
-export interface ToolExecution {
-  id: string
-  tenant_id: string
-  tool_id: string
-  sensor_id?: string
-  pipeline_run_id?: string
-  step_run_id?: string
-  status: ExecutionStatus
-  input_config?: Record<string, unknown>
-  targets_count: number
-  findings_count: number
-  output_summary?: Record<string, unknown>
-  error_message?: string
-  started_at: string
-  completed_at?: string
-  duration_ms: number
-  created_at: string
+export interface IncludeMeta {
+  omitted_includes: string[]
 }
 
-/**
- * Tool execution list response
- */
-export interface ToolExecutionListResponse {
-  items: ToolExecution[]
+/** GET /api/v1/tools */
+export interface ToolListResponse {
+  items: ToolView[]
   total: number
   page: number
   per_page: number
+  total_pages: number
+  /** include=availability: the whole view's summary and the unlisted tools. */
+  availability?: {
+    summary: Record<ToolAvailabilityStatus, number>
+    zone_id?: string
+    computed_at: string
+    unlisted: (ToolAvailabilityInfo & { name: string })[]
+  }
+  meta: IncludeMeta
 }
 
 /**
- * Tool execution list filters
+ * A tool with the organization's settings, as the workflow pickers read it
+ * (built from GET /api/v1/tools?include=settings,availability).
  */
-export interface ToolExecutionListFilters {
-  tool_id?: string
-  sensor_id?: string
-  pipeline_run_id?: string
-  status?: ExecutionStatus
-  page?: number
-  per_page?: number
+export interface ToolWithConfig {
+  tool: ToolView
+  effective_config: Record<string, unknown>
+  /** The organization's switch; null when the settings were left out (unknown, never assumed on). */
+  is_enabled: boolean | null
+  /** A scan job for the tool can be dispatched now; null when unknown. */
+  is_available: boolean | null
+}
+
+export interface ToolsWithConfigListResponse {
+  items: ToolWithConfig[]
+  total: number
 }
 
 // Helper to get category display name
@@ -332,7 +276,7 @@ export const INSTALL_METHOD_DISPLAY_NAMES: Record<InstallMethod, string> = {
 }
 
 // ============================================
-// TOOL AVAILABILITY (GET /api/v1/tenant-tools/availability)
+// TOOL AVAILABILITY (GET /api/v1/tools?include=availability)
 // api/docs/architecture/tool-availability.md
 // ============================================
 
@@ -356,12 +300,8 @@ export interface ToolAvailabilitySensor {
   excluded_detail?: string
 }
 
-/** One tool of the availability view. */
-export interface ToolAvailabilityItem {
-  name: string
-  /** The catalog entry; null for a tool a sensor reports that the catalog does not list. */
-  tool: Tool | null
-  in_catalog: boolean
+/** One tool's availability from the organization's sensors (include=availability). */
+export interface ToolAvailabilityInfo {
   /** Active in the catalog and switched on for the organization. */
   enabled: boolean
   status: ToolAvailabilityStatus
@@ -382,6 +322,15 @@ export interface ToolAvailabilityItem {
   last_reported_at?: string
 }
 
+/** One tool of the availability view: a catalog tool or one only the sensors report. */
+export interface ToolAvailabilityItem extends ToolAvailabilityInfo {
+  name: string
+  /** The catalog entry; null for a tool a sensor reports that the catalog does not list. */
+  tool: ToolView | null
+  in_catalog: boolean
+}
+
+/** The availability view as the Tools page and the pickers read it. */
 export interface ToolAvailabilityResponse {
   items: ToolAvailabilityItem[]
   summary: Record<ToolAvailabilityStatus, number>
