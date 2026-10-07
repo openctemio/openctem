@@ -332,6 +332,7 @@ func (p *AssetProcessor) linkPorts(ctx context.Context, tenantID shared.ID, host
 			if rel, err := asset.NewRelationship(tenantID, n.ID(), ipAsset.ID(), asset.RelTypeResolvesTo); err == nil {
 				rel.SetDescription(fmt.Sprintf("%s resolves to %s", h.hostname, h.host))
 				_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)
+				rel.Verify()
 				rels = append(rels, rel)
 			}
 		}
