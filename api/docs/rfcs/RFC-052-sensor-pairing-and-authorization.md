@@ -315,7 +315,7 @@ A profile that may scan may also validate and retest: a validate or retest
 command re-runs one check of a tool the sensor scans with, on a target the
 grant already covers, and is held to the same zones, target network, target
 scope and tier ceiling (a retest is rated at the tier of the detection it
-repeats, §5.3). Migration 001261 added `retest` (and `validate` where it was
+repeats, §5.3). Migration 001263 added `retest` (and `validate` where it was
 missing) to every grant still on one of these profiles and to the insert
 trigger's default; a grant an administrator edited (`custom`) keeps its job
 types.

@@ -5,7 +5,7 @@
   `retest` job type, so the dispatch gate never offered the command.
 - Every grant profile that may scan now also lists `validate` and `retest`
   (RFC-052 §5.2), with the same zones, target network, target scope and tier
-  ceiling. Migration 001261 adds them to the default grant a new sensor gets
+  ceiling. Migration 001263 adds them to the default grant a new sensor gets
   and to every grant still on one of those profiles. A grant an administrator
   edited (profile `custom`) keeps its job types; `retest` can be added to it on
   the sensor page.
