@@ -1,6 +1,6 @@
 -- Retire discovered_url assets (docs/rfcs/RFC-056-web-attack-surface.md WS2).
 --
--- A crawled URL is a web endpoint under its origin now (migration 001230);
+-- A crawled URL is a web endpoint under its origin now (migration 001270);
 -- ingest no longer creates discovered_url assets. Existing ones become
 -- endpoints, then are deleted (one-step upgrade, minimal back-compat):
 --
