@@ -79,7 +79,7 @@ import {
   type ApiScopeExclusion,
 } from '@/features/scope'
 import { post } from '@/lib/api/client'
-import { EASMSeedsPanel } from '@/features/attack-surface/components/easm-seeds'
+import { EASMDomainProofPanel } from '@/features/attack-surface/components/easm-domain-proof'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { actorLabel } from '@/features/scope/lib/actor'
@@ -179,7 +179,7 @@ const targetTypeCategories = [
 // Targets | Exclusions. The old Overview tab charted the whole inventory and the
 // Schedules tab never ran (nothing executes scope schedules; Scans owns
 // scheduling), so an old `?tab=overview` or `?tab=schedules` link lands on Targets.
-const SCOPE_TABS = ['targets', 'exclusions', 'seeds'] as const
+const SCOPE_TABS = ['targets', 'exclusions', 'proof'] as const
 type ScopeTab = (typeof SCOPE_TABS)[number]
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 
@@ -217,9 +217,9 @@ export default function ScopeConfigPage() {
     commitSearch(debouncedSearch)
   }, [debouncedSearch])
 
-  // Seeds belong to the Attack surface module (RFC-036 §6.3).
+  // Domain proof belongs to the Attack surface module (RFC-036 §6.3).
   const { moduleIds } = useTenantModules()
-  const seedsTabVisible = moduleIds.includes('attack_surface')
+  const proofTabVisible = moduleIds.includes('attack_surface')
 
   const selectTab = (next: string) => {
     if (next === tab) return
@@ -1008,7 +1008,7 @@ export default function ScopeConfigPage() {
   ]
 
   const addButton =
-    tab === 'seeds' ? null : tab === 'exclusions' ? (
+    tab === 'proof' ? null : tab === 'exclusions' ? (
       <Button size="sm" onClick={() => setIsAddExclusionOpen(true)}>
         <Plus className="me-2 h-4 w-4" />
         Add exclusion
@@ -1045,7 +1045,7 @@ export default function ScopeConfigPage() {
                   value={exclusionsLoading ? '…' : (exclusionsData?.total ?? exclusions.length)}
                 />
               </TabsTrigger>
-              {seedsTabVisible && <TabsTrigger value="seeds">Seeds</TabsTrigger>}
+              {proofTabVisible && <TabsTrigger value="proof">Domain proof</TabsTrigger>}
             </TabsList>
           </div>
 
@@ -1099,9 +1099,9 @@ export default function ScopeConfigPage() {
             )}
           </TabsContent>
 
-          {seedsTabVisible && (
-            <TabsContent value="seeds" className="mt-5">
-              <EASMSeedsPanel />
+          {proofTabVisible && (
+            <TabsContent value="proof" className="mt-5">
+              <EASMDomainProofPanel />
             </TabsContent>
           )}
         </Tabs>
