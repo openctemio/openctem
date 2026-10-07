@@ -30,6 +30,7 @@ func unsupportedCases() []struct {
 		{"finding_age trigger", workflow.NodeConfig{TriggerType: workflow.TriggerTypeFindingAge}, "trigger:finding_age"},
 		{"assign_team action", workflow.NodeConfig{ActionType: workflow.ActionTypeAssignTeam}, "action:assign_team"},
 		{"update_priority action", workflow.NodeConfig{ActionType: workflow.ActionTypeUpdatePriority}, "action:update_priority"},
+		{"run_script action", workflow.NodeConfig{ActionType: workflow.ActionTypeRunScript}, "action:run_script"},
 	}
 }
 
