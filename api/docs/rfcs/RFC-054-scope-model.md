@@ -470,7 +470,40 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   `source`, `weight`, `observed`, `first_observed_at`, `last_observed_at`),
   and `covered_by` (new: the caller's scope entry, seed or verified domain
   that covers the name, or null; a null `covered_by` on approval means
-  widening, so the UI offers "add scope entry" first).
+  widening, so the UI offers "add scope entry" first). Evidence from a sensor
+  (`source: "sensor:<id>"`) carries `source_label` and
+  `observed.sensor_name`: the caller's own sensor's name, `platform sensor`
+  for a platform sensor, never another organization's sensor.
+
+  **Address rows** (an `ip_address`, or a service on an address) stay in
+  review even when every name resolving to them is in scope: a name grant
+  never becomes an IP grant (§4.3). Such a row explains itself:
+
+  ```json
+  { "name": "202.160.124.20", "type": "ip_address", "covered_by": null,
+    "hint": "ip_needs_ip_entry",
+    "resolved_from": ["vndirect.com.vn", "www.vndirect.com.vn"],
+    "network": {"asn": "AS131386", "org": "VNDIRECT Securities Corporation",
+                "shared": false, "org_matches": true},
+    "fixes": [
+      {"action": "add_entry", "target_type": "ip_address", "pattern": "202.160.124.20",
+       "requires": "attack_surface:scope:approve"},
+      {"action": "add_entry", "target_type": "cidr", "pattern": "202.160.124.0/24",
+       "requires": "attack_surface:scope:approve"}] }
+  ```
+
+  - `resolved_from`: the caller's in-scope names with a `resolves_to` edge to
+    the address (at most 10, within the caller's data scope).
+  - `network`: the ASN and organization the inventory already holds (no
+    lookup at request time); `shared` for CDN or cloud-provider space;
+    `org_matches` when a distinctive word of the organization's name is in
+    the ASN organization.
+  - `fixes` go through `POST /scope/targets` (step-up, approvals, guardrails,
+    audit). An approver gets "add this IP" and, only when `org_matches`, "add
+    the /24 (IPv4) or /48 (IPv6) around it"; a member with `scope:write`
+    gets `request_access` (a 7-day one-off for the address); anyone else
+    none. Shared space gets no fix: those addresses serve other
+    organizations. A covered row gets neither `hint` nor `fixes`.
 - **`GET /api/v1/easm/summary`** (`assets:read`): `attribution` already
   counts `needs_review` and `candidate`; it adds `review_by_reason`
   (`{rule: count}`) for the caller's data scope. `surface` (by type), `new`
