@@ -185,7 +185,7 @@ export function AssetAttributionSection({
                     <Button
                       size="sm"
                       variant={d === 'confirmed' ? 'default' : 'outline'}
-                      className="h-7 shrink-0 sm:min-w-44 sm:justify-start"
+                      className="h-7 shrink-0 sm:w-64 sm:justify-start"
                       disabled={saving}
                       aria-describedby={`decision-hint-${d}`}
                       onClick={() => onDecide(d)}
