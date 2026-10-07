@@ -471,6 +471,36 @@ export function updateScopeTarget(id: string, input: UpdateScopeTargetInput) {
 }
 
 // ============================================
+// EXCLUSION DECISIONS (RFC-054 §6.2)
+//
+// Lifting an exclusion (deactivate, remove, an earlier end) widens scope and
+// needs the exclusion-approve permission and step-up; the shared client
+// handles step-up. Approving needs someone other than the requester.
+// ============================================
+
+export function createScopeExclusion(input: CreateScopeExclusionInput) {
+  return post<ApiScopeExclusion>(`${BASE_URL}/exclusions`, input)
+}
+
+export function updateScopeExclusion(id: string, input: UpdateScopeExclusionInput) {
+  return put<ApiScopeExclusion>(`${BASE_URL}/exclusions/${encodeURIComponent(id)}`, input)
+}
+
+export function decideScopeExclusion(id: string, approve: boolean) {
+  const action = approve ? 'approve' : 'reject'
+  return post<ApiScopeExclusion>(`${BASE_URL}/exclusions/${encodeURIComponent(id)}/${action}`, {})
+}
+
+export function setScopeExclusionActive(id: string, active: boolean) {
+  const action = active ? 'activate' : 'deactivate'
+  return post<ApiScopeExclusion>(`${BASE_URL}/exclusions/${encodeURIComponent(id)}/${action}`, {})
+}
+
+export function deleteScopeExclusion(id: string) {
+  return del<void>(`${BASE_URL}/exclusions/${encodeURIComponent(id)}`)
+}
+
+// ============================================
 // SETTINGS (RFC-054 §6.3)
 // ============================================
 

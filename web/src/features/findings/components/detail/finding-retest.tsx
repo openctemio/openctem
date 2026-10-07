@@ -5,18 +5,21 @@
  * finding drawer, on the shared detail frame (DetailSection).
  *
  *   Retest                                   [Retest now]
- *   ● Fixed — no longer detected · 3 min ago
- *     template did not match and the target answered
+ *   ● Verified fixed — awaiting confirmation · 3 min ago   View evidence
+ *     https://h/admin answered 404 and the check did not match
  *   Earlier: Still present · 2 d ago, Unknown · 9 d ago
  *
- * "Retest now" re-runs the nuclei template that produced the finding against
- * its own target, with a reachability probe. Fixed resolves the finding; still
- * present keeps it (or reopens a resolved one); an unreachable target is
- * "unknown" and changes nothing. Needs findings:verify (the API is the
- * authority; this only hides a button the API would refuse).
+ * "Retest now" re-runs the check that produced the finding against the origin
+ * of its matched-at URL. A verified fix (the endpoint answered and the check
+ * did not match) moves the finding to validated_fixed, or resolves it when the
+ * organization auto-resolves; still vulnerable keeps it (or reopens a resolved
+ * one); not reproduced and inconclusive change nothing. Each attempt's
+ * request and response are shown under "View evidence". Needs
+ * findings:verify (the API is the authority; this only hides a button the API
+ * would refuse).
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSWRConfig } from 'swr'
 import { toast } from 'sonner'
 import { Loader2, RefreshCw } from 'lucide-react'
@@ -27,6 +30,7 @@ import { RelativeTime } from '@/features/shared/components/relative-time'
 import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { usePermissions } from '@/context/permission-provider'
 import {
   isRetestable,
@@ -34,29 +38,58 @@ import {
   useRequestRetest,
   type FindingRetest,
 } from '../../api/use-finding-retests'
+import { useFindingEvidenceItems } from '../../api/use-finding-evidence-items'
+import { FindingEvidenceItems } from './finding-evidence-items'
 
 interface RetestMeta {
   label: string
   className: string
 }
 
-/** How a retest reads, from its status, outcome and what it did to the finding. */
+const SUCCESS_SOFT = 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' // palette-ok: success accent — the theme has no semantic "success" token
+
+/** Why a retest was inconclusive, in words. */
+const INCONCLUSIVE_TEXT: Record<string, string> = {
+  unreachable: 'target unreachable',
+  blocked: 'blocked',
+  auth_changed: 'authentication required',
+  server_error: 'server error',
+  endpoint_mismatch: 'another endpoint was checked',
+  template_changed: 'template changed',
+  no_result: 'no result',
+  error: 'error',
+}
+
+/**
+ * How a retest reads, from its status, outcome and what it did to the
+ * finding. A non-match is never shown as "Fixed" on its own (RFC-057): only a
+ * confirmed fix (the endpoint answered and the check did not match) is.
+ */
 export function retestMeta(rt: FindingRetest): RetestMeta {
   if (rt.status === 'pending') {
     return { label: 'Retest running', className: 'bg-muted text-muted-foreground' }
   }
   switch (rt.outcome) {
-    case 'fixed':
-      return {
-        label: 'Fixed — no longer detected',
-        className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', // palette-ok: success accent — the theme has no semantic "success" token
-      }
-    case 'still_present':
+    case 'confirmed_fixed':
+      return rt.result_status === 'resolved'
+        ? { label: 'Fixed — verified and resolved', className: SUCCESS_SOFT }
+        : { label: 'Verified fixed — awaiting confirmation', className: SUCCESS_SOFT }
+    case 'still_vulnerable':
       return rt.prior_status === 'resolved' && rt.result_status !== 'resolved'
         ? { label: 'Regression — reopened', className: SEVERITY_BADGE_SOFT.high }
-        : { label: 'Still present', className: SEVERITY_BADGE_SOFT.medium }
-    default:
-      return { label: 'Unknown', className: 'bg-muted text-muted-foreground' }
+        : { label: 'Still vulnerable', className: SEVERITY_BADGE_SOFT.medium }
+    case 'not_reproduced':
+      return {
+        label: 'Not reproduced — not confirmed',
+        className: 'bg-muted text-muted-foreground',
+      }
+    default: {
+      const why = INCONCLUSIVE_TEXT[rt.reason_code ?? ''] ?? ''
+      return {
+        label: why ? `Inconclusive: ${why}` : 'Inconclusive',
+        className: 'bg-muted text-muted-foreground',
+      }
+    }
   }
 }
 
@@ -137,7 +170,7 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
       }
     >
       {latest ? (
-        <RetestLine retest={latest} />
+        <RetestLine retest={latest} findingId={finding.id} />
       ) : (
         <p className="text-sm text-muted-foreground">
           Not retested yet. A retest re-runs template{' '}
@@ -160,8 +193,9 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
   )
 }
 
-function RetestLine({ retest }: { retest: FindingRetest }) {
+function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: string }) {
   const meta = retestMeta(retest)
+  const [open, setOpen] = useState(false)
   return (
     <div className="space-y-1" data-slot="retest-latest">
       <div className="flex flex-wrap items-center gap-2">
@@ -171,8 +205,36 @@ function RetestLine({ retest }: { retest: FindingRetest }) {
         </Badge>
         <RelativeTime date={retest.completed_at ?? retest.created_at} className="text-xs" />
         {retest.trigger === 'auto' && <span className="text-xs text-muted-foreground">· auto</span>}
+        {retest.status === 'completed' && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+          >
+            {open ? 'Hide evidence' : 'View evidence'}
+          </button>
+        )}
       </div>
-      {retest.reason && <p className="text-xs text-muted-foreground">{retest.reason}</p>}
+      {retest.reason && (
+        <p className="text-xs text-muted-foreground">{toDisplayText(retest.reason, 600)}</p>
+      )}
+      {open && <RetestEvidence findingId={findingId} retestId={retest.id ?? ''} />}
     </div>
   )
+}
+
+/** The attempt's proof: what the re-run requested and what came back. */
+function RetestEvidence({ findingId, retestId }: { findingId: string; retestId: string }) {
+  const { data, isLoading } = useFindingEvidenceItems(findingId, retestId)
+  const items = data?.data ?? []
+  if (isLoading) return <p className="text-xs text-muted-foreground">Loading evidence…</p>
+  if (items.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        The sensor reported no request evidence for this attempt.
+      </p>
+    )
+  }
+  return <FindingEvidenceItems findingId={findingId} items={items} className="pt-1" />
 }

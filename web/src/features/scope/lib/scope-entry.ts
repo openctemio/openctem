@@ -79,7 +79,7 @@ export function coversText(e: { pattern?: string; covers?: string; target_type?:
       return `${pattern} only`
     case 'addresses':
       return pattern.includes('/') || pattern.includes('-')
-        ? `Every address in ${pattern}`
+        ? `every address in ${pattern}`
         : `${pattern} only`
     default:
       return pattern ? `Names matching ${pattern}` : ''
