@@ -248,6 +248,19 @@ type Evidence struct {
 	Observed  map[string]any
 }
 
+// InInventory reports whether an asset with this recorded state is in the
+// inventory (RFC-054 §4.4): confirmed, dependency, monitor_only, or no record
+// (""). The review queue (needs_review, candidate) and rejected assets are
+// not. Every surface counts and lists with this one definition
+// (FilterApproved is the same set as an asset-list filter).
+func InInventory(s State) bool {
+	switch s {
+	case "", StateConfirmed, StateDependency, StateMonitorOnly:
+		return true
+	}
+	return false
+}
+
 // Filter values accepted by the asset list (?attribution=) besides the six
 // states. Unrecorded matches assets with no attribution record (legacy:
 // in the inventory before EASM, counted as confirmed). Unconfirmed is the

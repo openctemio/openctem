@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
+
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -93,6 +95,50 @@ func TestQueue_DefaultsAndScope(t *testing.T) {
 	}
 	if _, err := svc.Queue(context.Background(), shared.NewID(), ReviewQuery{States: []attribution.State{"bogus"}}); !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("bogus state: %v", err)
+	}
+}
+
+type coverItemsStore struct{ fakeReviewStore }
+
+func (c *coverItemsStore) ListForReview(_ context.Context, _ shared.ID, _ *shared.ID, q ReviewQuery) (*ReviewPage, error) {
+	c.query = q
+	return &ReviewPage{Items: []ReviewItem{{AssetID: "1", Name: "a.ours.example"}, {AssetID: "2", Name: "x.theirs.example"}}, Total: 2}, nil
+}
+
+type fakeCover struct{}
+
+func (fakeCover) CoverOf(_ context.Context, _ shared.ID, names []string) (map[string]scopeauth.Via, error) {
+	out := map[string]scopeauth.Via{}
+	for _, n := range names {
+		if n == "a.ours.example" {
+			out[n] = scopeauth.Via{Kind: scopeauth.KindScopeTarget, Pattern: "*.ours.example", Proof: scopeauth.ProofAsserted}
+		}
+	}
+	return out, nil
+}
+
+// Queue items say which scope entry covers them; null means confirming the
+// name widens scope (RFC-054 §6.6).
+func TestQueue_CoveredBy(t *testing.T) {
+	store := &coverItemsStore{}
+	svc := NewReviewService(store, nil)
+	svc.SetCoverage(fakeCover{})
+	page, err := svc.Queue(context.Background(), shared.NewID(), ReviewQuery{Reason: "fqdn_under_asserted_root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.query.Reason != "fqdn_under_asserted_root" {
+		t.Errorf("reason not passed: %q", store.query.Reason)
+	}
+	if page.Items[0].CoveredBy == nil || page.Items[0].CoveredBy.Pattern != "*.ours.example" || page.Items[1].CoveredBy != nil {
+		t.Errorf("covered_by = %+v / %+v", page.Items[0].CoveredBy, page.Items[1].CoveredBy)
+	}
+	long := make([]byte, 101)
+	for i := range long {
+		long[i] = 'a'
+	}
+	if _, err := svc.Queue(context.Background(), shared.NewID(), ReviewQuery{Reason: string(long)}); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("long reason: %v", err)
 	}
 }
 
