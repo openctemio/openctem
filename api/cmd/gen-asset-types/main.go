@@ -205,7 +205,31 @@ type config struct {
 	// but is no type of its own, to what it is stored as (RFC-042 §6.3.8:
 	// web_application is stored as (application, website), O3).
 	TypeInputs map[string]inputCfg `yaml:"type_inputs"`
-	Types      []typeCfg           `yaml:"types"`
+	// CommonProperties are the property keys every type may hold (platform
+	// keys and the CTIS technical blocks), Properties the dictionary of every
+	// property key (RFC-042 §6.3.9).
+	CommonProperties []string           `yaml:"common_properties"`
+	Properties       map[string]propCfg `yaml:"properties"`
+	Types            []typeCfg          `yaml:"types"`
+}
+
+// propCfg is one property dictionary entry.
+type propCfg struct {
+	Label    string   `yaml:"label"`
+	LabelVI  string   `yaml:"label_vi"`
+	Format   string   `yaml:"format"`
+	Synonyms []string `yaml:"synonyms"`
+	Classes  []string `yaml:"classes"`
+}
+
+// propOut is one property of the resolved model, in key order.
+type propOut struct {
+	Key      string   `json:"key"`
+	Label    string   `json:"label"`
+	LabelVI  string   `json:"label_vi"`
+	Format   string   `json:"format,omitempty"`
+	Synonyms []string `json:"synonyms,omitempty"`
+	Classes  []string `json:"classes,omitempty"`
 }
 
 type idLabel struct {
@@ -319,6 +343,8 @@ type model struct {
 	Cards            []string     `json:"cards"`
 	CoreFields       []string     `json:"core_fields"`
 	LegacyCategories []idLabel    `json:"legacy_categories"`
+	Properties       []propOut    `json:"properties"`
+	CommonProperties []string     `json:"common_properties"`
 	VirtualTypes     []virtualCfg `json:"-"`
 }
 
@@ -704,6 +730,9 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 	if err := resolveRelationships(m, types, rel); err != nil {
 		return nil, err
 	}
+	if err := resolveProperties(m, cfg); err != nil {
+		return nil, err
+	}
 
 	raw, err := json.Marshal(m)
 	if err != nil {
@@ -712,6 +741,111 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 	sum := sha256.Sum256(raw)
 	m.Version = hex.EncodeToString(sum[:8])
 	return m, nil
+}
+
+// propertyFormats are the display formats a property may declare.
+var propertyFormats = set([]string{"", "ip", "url", "code"})
+
+// resolveProperties validates the property dictionary against the types'
+// attributes and builds model.Properties (RFC-042 §6.3.9):
+//
+//   - every attribute and common key has an entry, and every entry is used;
+//   - a synonym is never stored: no type declares it as an attribute, it
+//     names one canonical key only, and it may share its name with a
+//     dictionary key only when that key is a common one (an object such as
+//     the CTIS `ip_address` block, which never folds);
+//   - a key restricted to classes is declared only by types of those
+//     classes and is not common.
+func resolveProperties(m *model, cfg *config) error { //nolint:gocognit,gocyclo,cyclop // one linear validation pass
+	if len(cfg.Properties) == 0 {
+		return errors.New("no properties defined")
+	}
+	if err := dup("common property", cfg.CommonProperties); err != nil {
+		return err
+	}
+	classes := map[string]bool{}
+	for _, c := range m.Classes {
+		classes[c.ID] = true
+	}
+	common := set(cfg.CommonProperties)
+	used := map[string]bool{}
+	attrClasses := map[string]map[string]bool{}
+	for _, t := range m.Types {
+		for _, a := range t.Attributes {
+			// Synonyms fold into a list: the canonical key is one on every type.
+			if len(cfg.Properties[a.Name].Synonyms) > 0 && a.Type != "list" {
+				return fmt.Errorf("type %s attribute %q: a property with synonyms is a list", t.Type, a.Name)
+			}
+			used[a.Name] = true
+			if attrClasses[a.Name] == nil {
+				attrClasses[a.Name] = map[string]bool{}
+			}
+			attrClasses[a.Name][t.Class] = true
+		}
+	}
+	for _, k := range cfg.CommonProperties {
+		used[k] = true
+	}
+	for k := range used {
+		if _, ok := cfg.Properties[k]; !ok {
+			return fmt.Errorf("property %q: used by a type or common_properties but not in properties", k)
+		}
+	}
+	synonymOf := map[string]string{}
+	for _, k := range sortedKeys(cfg.Properties) {
+		p := cfg.Properties[k]
+		where := fmt.Sprintf("property %q", k)
+		switch {
+		case !identRe.MatchString(k):
+			return fmt.Errorf("%s: must be lower snake_case", where)
+		case !used[k]:
+			return fmt.Errorf("%s: no type declares it and it is not common", where)
+		case p.Label == "" || p.LabelVI == "":
+			return fmt.Errorf("%s: label and label_vi are required", where)
+		case !propertyFormats[p.Format]:
+			return fmt.Errorf("%s: unknown format %q", where, p.Format)
+		case len(p.Classes) > 0 && common[k]:
+			return fmt.Errorf("%s: a common property cannot be restricted to classes", where)
+		}
+		if err := dup(where+" synonym", p.Synonyms); err != nil {
+			return err
+		}
+		for _, syn := range p.Synonyms {
+			_, isKey := cfg.Properties[syn]
+			switch {
+			case syn == k:
+				return fmt.Errorf("%s: is its own synonym", where)
+			case synonymOf[syn] != "":
+				return fmt.Errorf("%s: synonym %q is already a synonym of %q", where, syn, synonymOf[syn])
+			case attrClasses[syn] != nil:
+				return fmt.Errorf("%s: synonym %q is an attribute of a type; a synonym is never stored", where, syn)
+			case isKey && !common[syn]:
+				return fmt.Errorf("%s: synonym %q is also a property; only a common one (an object that never folds) may be", where, syn)
+			}
+			synonymOf[syn] = k
+		}
+		if err := dup(where+" class", p.Classes); err != nil {
+			return err
+		}
+		for _, c := range p.Classes {
+			if !classes[c] {
+				return fmt.Errorf("%s: unknown class %q", where, c)
+			}
+		}
+		if len(p.Classes) > 0 {
+			for c := range attrClasses[k] {
+				if !slices.Contains(p.Classes, c) {
+					return fmt.Errorf("%s: restricted to classes %v but a type of class %q declares it", where, p.Classes, c)
+				}
+			}
+		}
+		m.Properties = append(m.Properties, propOut{
+			Key: k, Label: p.Label, LabelVI: p.LabelVI, Format: p.Format,
+			Synonyms: p.Synonyms, Classes: p.Classes,
+		})
+	}
+	m.CommonProperties = cfg.CommonProperties
+	return nil
 }
 
 // resolveRelationships turns the constraints of relationship-types.yaml into
@@ -1125,6 +1259,22 @@ func renderGo(m *model) ([]byte, error) {
 		w("{ID: %s, Label: %q},\n", goIdent("Category", c.ID), c.Label)
 	}
 	w("}\n\n")
+	w("var registryProperties = []PropertyDefinition{\n")
+	for _, p := range m.Properties {
+		w("{Key: %q, Label: %q, LabelVI: %q", p.Key, p.Label, p.LabelVI)
+		if p.Format != "" {
+			w(", Format: %q", p.Format)
+		}
+		if len(p.Synonyms) > 0 {
+			w(", Synonyms: %s", goStrings(p.Synonyms))
+		}
+		if len(p.Classes) > 0 {
+			w(", Classes: %s", goTyped("Class", "Class", p.Classes))
+		}
+		w("},\n")
+	}
+	w("}\n\n")
+	w("var registryCommonProperties = %s\n\n", goStrings(m.CommonProperties))
 	w("// TypeAliases maps legacy types to their consolidated core type + sub_type,\n")
 	w("// from the `alias_of` entries and the `type_inputs` of the registry. Used by\n// ingest to normalize incoming data.\n")
 	w("var TypeAliases = map[AssetType]struct {\nCoreType AssetType\nSubType  string\n}{\n")
@@ -1365,8 +1515,75 @@ func renderTS(m *model) string {
 		}
 		w("  %s: { type: '%s', subType: '%s' },\n", in.From.Type, in.To.Type, in.To.SubType)
 	}
-	w("}\n")
+	w("}\n\n")
+	renderTSProperties(w, m)
 	return b.String()
+}
+
+// renderTSProperties writes the property schema (RFC-042 §6.3.9): the
+// dictionary, the common keys and each type's attribute keys, so the web can
+// label and group an asset's properties without waiting for the registry.
+func renderTSProperties(w func(string, ...any), m *model) {
+	w("export type AssetPropertyFormat = 'ip' | 'url' | 'code'\n\n")
+	w("export interface AssetPropertyDefinition {\n  label: string\n  labelVi: string\n")
+	w("  format?: AssetPropertyFormat\n  synonyms?: readonly string[]\n  classes?: readonly AssetClass[]\n}\n\n")
+	w("/** Every property key of the schema, with its labels and display format. */\n")
+	w("export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>> = {\n")
+	quoted := func(items []string) string {
+		q := make([]string, len(items))
+		for i, s := range items {
+			q[i] = "'" + s + "'"
+		}
+		return "[" + strings.Join(q, ", ") + "]"
+	}
+	for _, p := range m.Properties {
+		fields := []string{"label: " + tsString(p.Label), "labelVi: " + tsString(p.LabelVI)}
+		if p.Format != "" {
+			fields = append(fields, "format: '"+p.Format+"'")
+		}
+		if len(p.Synonyms) > 0 {
+			fields = append(fields, "synonyms: "+quoted(p.Synonyms))
+		}
+		if len(p.Classes) > 0 {
+			fields = append(fields, "classes: "+quoted(p.Classes))
+		}
+		line := fmt.Sprintf("  %s: { %s },", p.Key, strings.Join(fields, ", "))
+		if len(line) <= 100 {
+			w("%s\n", line)
+			continue
+		}
+		w("  %s: {\n", p.Key)
+		for _, f := range fields {
+			w("    %s,\n", f)
+		}
+		w("  },\n")
+	}
+	w("}\n\n")
+	w("/** The property keys every type may hold (platform keys, CTIS technical blocks). */\n")
+	w("export const ASSET_COMMON_PROPERTIES: readonly string[] = [\n")
+	for _, k := range m.CommonProperties {
+		w("  '%s',\n", k)
+	}
+	w("]\n\n")
+	w("/** The attribute keys of each type, in display order. */\n")
+	w("export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly string[]>> = {\n")
+	for _, t := range m.Types {
+		keys := make([]string, len(t.Attributes))
+		for i, a := range t.Attributes {
+			keys[i] = a.Name
+		}
+		line := fmt.Sprintf("  %s: %s,", t.Type, quoted(keys))
+		if len(line) <= 100 {
+			w("%s\n", line)
+			continue
+		}
+		w("  %s: [\n", t.Type)
+		for _, k := range keys {
+			w("    '%s',\n", k)
+		}
+		w("  ],\n")
+	}
+	w("}\n")
 }
 
 // =============================================================================

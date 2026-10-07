@@ -79,7 +79,12 @@ type StepRun struct {
 	StepKey   string
 	StepOrder int
 	StepName  string
-	Tool      string
+	// Tool is the tool the step run ran: the pinned tool at creation, the
+	// resolved one once the step is queued.
+	Tool string
+	// Capability is the versioned capability it ran ("scan.ports@1"),
+	// recorded when the step is queued.
+	Capability string
 
 	// Execution
 	Status StepRunStatus

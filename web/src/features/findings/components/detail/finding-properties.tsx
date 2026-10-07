@@ -26,6 +26,7 @@ import { PriorityClassBadge } from '../priority-class-badge'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
+import { CRITICALITY_LABELS } from '@/lib/criticality'
 
 const CLOSED = new Set([
   'resolved',
@@ -124,9 +125,11 @@ export function FindingProperties({
         findingAssetTypeLabel(asset.type),
         crit === 'critical'
           ? 'Critical asset'
-          : crit && crit !== 'info'
-            ? `${crit.charAt(0).toUpperCase()}${crit.slice(1)} criticality`
-            : null,
+          : crit === 'none'
+            ? 'Criticality not rated'
+            : crit
+              ? `${CRITICALITY_LABELS[crit]} criticality`
+              : null,
         asset.exposure && asset.exposure !== 'unknown'
           ? asset.exposure.charAt(0).toUpperCase() + asset.exposure.slice(1)
           : null,

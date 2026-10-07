@@ -57,6 +57,15 @@ import {
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
+import {
+  ACTIONABLE_SEVERITIES,
+  SEVERITY_LEVELS,
+  highestSeverity,
+  severityCounts,
+  type SeverityLevel,
+} from '@/lib/severity'
+import { useSeverityLabel } from '@/hooks/use-scale-labels'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
@@ -311,8 +320,7 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
 // Loading Skeleton
 // ============================================
 
-const SEVERITY_VALUES = ['critical', 'high', 'medium', 'low', 'info'] as const
-type FacetSeverity = (typeof SEVERITY_VALUES)[number]
+type FacetSeverity = SeverityLevel
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 /** Short option labels — the trigger's layers icon already says "group by". */
 const GROUP_BY_LABELS: Record<GroupByDimension, string> = {
@@ -327,13 +335,8 @@ const GROUP_BY_LABELS: Record<GroupByDimension, string> = {
   family: 'Family',
 }
 const FILTERS_OPEN_KEY = 'openctem:findings-filters-open'
-const SEVERITY_LABELS: Record<FacetSeverity, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-}
+/** Saved per browser: hide informational findings when no severity is picked. */
+const HIDE_INFO_KEY = 'openctem:findings-hide-info'
 const OPEN_STATUSES: string[] = [...FINDINGS_OPEN_STATUSES]
 const STATUS_GROUPS = [
   { label: 'Open', values: OPEN_STATUSES },
@@ -506,7 +509,7 @@ function FindingsContent() {
   const severities = useMemo(
     () =>
       severityParam.filter((v): v is FacetSeverity =>
-        (SEVERITY_VALUES as readonly string[]).includes(v)
+        (SEVERITY_LEVELS as readonly string[]).includes(v)
       ),
     [severityParam]
   )
@@ -624,6 +627,30 @@ function FindingsContent() {
       return value
     })
   }, [])
+  const { t } = useTranslation()
+  const severityLabel = useSeverityLabel()
+  // "Hide informational": a saved per-browser view preference. It applies only
+  // while no severity is picked; an explicit severity choice always wins.
+  const [hideInfo, setHideInfoState] = useState(false)
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(HIDE_INFO_KEY) === '1') setHideInfoState(true)
+    } catch {
+      // storage unavailable — show everything
+    }
+  }, [])
+  const setHideInfo = useCallback((value: boolean) => {
+    setHideInfoState(value)
+    try {
+      window.localStorage.setItem(HIDE_INFO_KEY, value ? '1' : '0')
+    } catch {
+      // best-effort
+    }
+  }, [])
+  const effectiveSeverities = useMemo<FacetSeverity[]>(
+    () => (severities.length > 0 ? severities : hideInfo ? [...ACTIONABLE_SEVERITIES] : []),
+    [severities, hideInfo]
+  )
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [markFixedGroup, setMarkFixedGroup] = useState<FindingGroup | null>(null)
   const [ticketFinding, setTicketFinding] = useState<Finding | null>(null)
@@ -699,7 +726,7 @@ function FindingsContent() {
     if (componentParam) filters.component_id = componentParam
     if (ownerParam) filters.asset_owner_id = ownerParam
     if (ownerUnassigned) filters.asset_owner_unassigned = true
-    if (severities.length > 0) filters.severities = severities
+    if (effectiveSeverities.length > 0) filters.severities = effectiveSeverities
     if (savedId) filters.view = savedId
     if (!savedId || rawLens) filters.state = lens
     if (statuses.length > 0) {
@@ -736,7 +763,7 @@ function FindingsContent() {
     componentParam,
     ownerParam,
     ownerUnassigned,
-    severities,
+    effectiveSeverities,
     statuses,
     sourceFilter,
     priorityClasses,
@@ -787,7 +814,7 @@ function FindingsContent() {
     groupParam,
     viewParam,
     lens,
-    severities.join(),
+    effectiveSeverities.join(),
     statuses.join(),
     sourceFilter.join(),
     priorityClasses.join(),
@@ -873,13 +900,10 @@ function FindingsContent() {
       }
     }
 
+    // none (CVSS 0.0) is shown as info.
     const bySeverity: Record<Severity, number> = {
-      critical: findingStats.by_severity?.critical || 0,
-      high: findingStats.by_severity?.high || 0,
-      medium: findingStats.by_severity?.medium || 0,
-      low: findingStats.by_severity?.low || 0,
-      info: findingStats.by_severity?.info || 0,
-      none: findingStats.by_severity?.none || 0,
+      ...severityCounts(findingStats.by_severity),
+      none: 0,
     }
 
     return {
@@ -1064,11 +1088,11 @@ function FindingsContent() {
   // the mobilise step is one click from where a finding lives.
   const openRemediationFor = useCallback((selected: Finding[]) => {
     if (selected.length === 0) return
-    const order = ['critical', 'high', 'medium', 'low']
-    const top = [...selected]
-      .map((f) => String(f.severity))
-      .sort((a, b) => order.indexOf(a) - order.indexOf(b))[0]
-    const priority = top === 'critical' ? 'urgent' : order.includes(top) ? top : 'medium'
+    // Most severe selected finding sets the priority; informational-only
+    // selections get the lowest priority rather than a medium default.
+    const top = highestSeverity(selected.map((f) => f.severity))
+    const priority =
+      top === 'critical' ? 'urgent' : top === undefined ? 'medium' : top === 'info' ? 'low' : top
     const name =
       selected.length === 1 ? `Fix: ${selected[0].title}` : `Remediate ${selected.length} findings`
     setRemedContext({ ids: selected.map((f) => f.id), name, priority })
@@ -1557,10 +1581,10 @@ function FindingsContent() {
         onCheckedChange={(v) => setMineFilter(v ? 'true' : 'false')}
       />
       <FacetSection title="Severity" selectedCount={severities.length}>
-        {SEVERITY_VALUES.map((v) => (
+        {SEVERITY_LEVELS.map((v) => (
           <FacetOption
             key={v}
-            label={SEVERITY_LABELS[v]}
+            label={severityLabel(v)}
             checked={severities.includes(v)}
             onCheckedChange={() => setSeverities(toggleIn(severities, v))}
             adornment={
@@ -1569,6 +1593,15 @@ function FindingsContent() {
           />
         ))}
       </FacetSection>
+      <FacetToggle
+        label={t('findings.hideInformational', 'Hide informational')}
+        description={t(
+          'findings.hideInformational.hint',
+          'Hide info findings from the list. Saved on this browser.'
+        )}
+        checked={hideInfo}
+        onCheckedChange={setHideInfo}
+      />
       <FacetSection
         title="Priority"
         selectedCount={priorityClasses.length + (kevActive ? 1 : 0) + (reachableActive ? 1 : 0)}
@@ -2022,7 +2055,7 @@ function FindingsContent() {
                   {...groupedProps}
                   dimension={groupBy}
                   filters={{
-                    severities: severities.join(',') || undefined,
+                    severities: effectiveSeverities.join(',') || undefined,
                     statuses: statuses.join(',') || undefined,
                     sources: sourceFilter.join(',') || undefined,
                     assignedToMe: mineActive,

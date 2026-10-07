@@ -48,6 +48,8 @@ import { Can, Permission } from '@/lib/permissions'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
 import { DryRunDialog, type DryRunRule } from './dry-run-dialog'
+import { SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
+import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
 
 type FieldKey =
   | 'is_in_kev'
@@ -83,7 +85,10 @@ interface ListResponse {
   data?: PriorityRule[]
 }
 
-const FIELD_CONFIG: Record<FieldKey, { label: string; type: FieldType; options?: string[] }> = {
+const FIELD_CONFIG: Record<
+  FieldKey,
+  { label: string; type: FieldType; options?: string[]; optionLabels?: Record<string, string> }
+> = {
   is_in_kev: { label: 'Is in KEV catalog', type: 'bool' },
   is_reachable: { label: 'Is reachable', type: 'bool' },
   asset_is_crown_jewel: { label: 'Asset is crown jewel', type: 'bool' },
@@ -91,12 +96,14 @@ const FIELD_CONFIG: Record<FieldKey, { label: string; type: FieldType; options?:
   severity: {
     label: 'Severity',
     type: 'string',
-    options: ['critical', 'high', 'medium', 'low', 'info'],
+    options: [...SEVERITY_LEVELS],
+    optionLabels: SEVERITY_LABELS,
   },
   asset_criticality: {
     label: 'Asset criticality',
     type: 'string',
-    options: ['critical', 'high', 'medium', 'low'],
+    options: [...ASSET_CRITICALITY_LEVELS],
+    optionLabels: CRITICALITY_LABELS,
   },
 }
 
@@ -517,7 +524,7 @@ export default function PriorityRulesPage() {
           <SelectContent>
             {cfg.options.map((opt) => (
               <SelectItem key={opt} value={opt}>
-                {opt}
+                {cfg.optionLabels?.[opt] ?? opt}
               </SelectItem>
             ))}
           </SelectContent>
