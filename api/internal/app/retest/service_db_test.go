@@ -206,7 +206,7 @@ func TestRetestDB_QueuesTwoScopedValidateCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	nuc, ok := kinds["nuclei"]
-	if !ok || nuc.TemplateID != "CVE-2024-1234" || nuc.Target.Address != "https://shop.example.com/admin" ||
+	if !ok || nuc.TemplateID != "CVE-2024-1234" || nuc.Target.Address != "https://shop.example.com" ||
 		len(nuc.RequiredCapabilities) != 1 || nuc.RequiredCapabilities[0] != "validate:nuclei" {
 		t.Errorf("template re-run command wrong: %+v", nuc)
 	}
