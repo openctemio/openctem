@@ -63,8 +63,8 @@ directly once the API pins that CTIS version.
    tenant, item and placeholder (`evidence:v1|tenant|item|placeholder|value`):
    a ciphertext copied to another row does not open.
 5. **Store**: `finding_evidence` (masked item, migration 001196) and
-   `finding_evidence_secrets` (ciphertexts, expiring). A detection whose
-   proof equals the finding's newest one is not stored again.
+   `finding_evidence_secrets` (ciphertexts, expiring). A detection item
+   the finding already holds (same content hash) is not stored again.
 
 A secret finding keeps no evidence (its evidence is the leaked value itself).
 
@@ -72,7 +72,7 @@ A secret finding keeps no evidence (its evidence is the leaked value itself).
 
 | | |
 |---|---|
-| detection items per finding | newest 5 |
+| detection items per finding | newest 20 (a repeated item is not stored again) |
 | retest-attempt items per finding | newest 20 |
 | items per finding per report / per retest attempt | 20 / 5 |
 | new items per tenant per 24 h | 20,000 (excess dropped, logged) |

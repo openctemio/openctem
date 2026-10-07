@@ -62,11 +62,12 @@ func (r *FindingEvidenceRepository) InsertForFingerprints(ctx context.Context, t
 		touched := make([]string, 0)
 		for fp, ts := range targets {
 			for _, t := range ts {
-				for i, nr := range byFingerprint[fp] {
-					if i == 0 && nr.Record.ContentSHA256 == t.latest {
-						// Same proof as last time: nothing new to keep.
+				for _, nr := range byFingerprint[fp] {
+					if t.known[nr.Record.ContentSHA256] {
+						// The finding already holds this proof: nothing new to keep.
 						continue
 					}
+					t.known[nr.Record.ContentSHA256] = true
 					rec := nr
 					rec.Record.FindingID = t.id
 					if len(ts) > 1 {
@@ -88,19 +89,18 @@ func (r *FindingEvidenceRepository) InsertForFingerprints(ctx context.Context, t
 }
 
 // evidenceTarget is a finding a fingerprint resolves to, with the content
-// hash of its newest detection evidence.
+// hashes of the detection evidence it holds.
 type evidenceTarget struct {
-	id     shared.ID
-	latest string
+	id    shared.ID
+	known map[string]bool
 }
 
 // evidenceTargets resolves fingerprints to the tenant's findings.
 func evidenceTargets(ctx context.Context, tx *sql.Tx, tenantID shared.ID, fps []string) (map[string][]evidenceTarget, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT f.id, f.fingerprint,
-			(SELECT e.content_sha256 FROM finding_evidence e
-			 WHERE e.tenant_id = f.tenant_id AND e.finding_id = f.id AND e.origin = 'detection'
-			 ORDER BY e.created_at DESC LIMIT 1)
+			COALESCE((SELECT array_agg(e.content_sha256) FROM finding_evidence e
+			 WHERE e.tenant_id = f.tenant_id AND e.finding_id = f.id AND e.origin = 'detection'), '{}')
 		FROM findings f
 		WHERE f.tenant_id = $1 AND f.fingerprint = ANY($2)`, tenantID.String(), pq.Array(fps))
 	if err != nil {
@@ -110,15 +110,19 @@ func evidenceTargets(ctx context.Context, tx *sql.Tx, tenantID shared.ID, fps []
 	targets := map[string][]evidenceTarget{}
 	for rows.Next() {
 		var id, fp string
-		var latest sql.NullString
-		if err := rows.Scan(&id, &fp, &latest); err != nil {
+		var known pq.StringArray
+		if err := rows.Scan(&id, &fp, &known); err != nil {
 			return nil, err
 		}
 		fid, err := shared.IDFromString(id)
 		if err != nil {
 			continue
 		}
-		targets[fp] = append(targets[fp], evidenceTarget{id: fid, latest: latest.String})
+		set := make(map[string]bool, len(known))
+		for _, h := range known {
+			set[h] = true
+		}
+		targets[fp] = append(targets[fp], evidenceTarget{id: fid, known: set})
 	}
 	return targets, rows.Err()
 }
