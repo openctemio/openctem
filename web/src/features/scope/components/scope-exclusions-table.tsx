@@ -6,11 +6,22 @@
  * needs the exclusion-approve permission and step-up, and the menu says so;
  * putting one back narrows and applies at once. Pending exclusions are
  * decided on the Approvals tab.
+ *
+ * A path exclusion (RFC-056 §5) also shows its testing mode; "Testing
+ * mode…" opens the two-step dialog (exclusion approvers only, step-up).
  */
 
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Ban, Power, PowerOff, Search as SearchIcon, Trash2 } from 'lucide-react'
+import {
+  Ban,
+  FlaskConical,
+  Power,
+  PowerOff,
+  Route,
+  Search as SearchIcon,
+  Trash2,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -34,6 +45,17 @@ import {
 import type { ApiScopeExclusion } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { coversText, expiryText } from '../lib/scope-entry'
+import {
+  effectiveTesting,
+  isPathExclusion,
+  methodsText,
+  pathRuleLabel,
+  TESTING_HINT,
+  TESTING_LABEL,
+  TESTING_TONE,
+  type PathExclusion,
+} from '../lib/path-exclusion'
+import { ExclusionTestingDialog } from './exclusion-testing-dialog'
 import {
   scopeKindIcon,
   scopeKindOf,
@@ -87,6 +109,7 @@ export function ScopeExclusionsTable({
   const rows = data?.data ?? []
   const [removing, setRemoving] = useState<ApiScopeExclusion | null>(null)
   const [busy, setBusy] = useState(false)
+  const [testing, setTesting] = useState<PathExclusion | null>(null)
 
   const act = async (fn: () => Promise<unknown>, done: string) => {
     try {
@@ -101,6 +124,15 @@ export function ScopeExclusionsTable({
   const actionsFor = (x: ApiScopeExclusion): RowAction[] => {
     const id = x.id ?? ''
     const out: RowAction[] = []
+    if (isPathExclusion(x) && x.status === 'active') {
+      out.push({
+        label: 'Testing mode…',
+        icon: FlaskConical,
+        onClick: () => setTesting(x as PathExclusion),
+        disabled: !canLift,
+        disabledReason: 'Changing how a path may be tested needs the exclusion approve permission.',
+      })
+    }
     if (x.status === 'active') {
       out.push({
         label: 'Lift (scans may reach it)',
@@ -138,29 +170,43 @@ export function ScopeExclusionsTable({
       accessorKey: 'pattern',
       header: 'Out of scope',
       enableHiding: false,
-      cell: ({ row }) => (
-        <div className="min-w-0 space-y-0.5">
-          <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
-            {row.original.pattern}
-          </code>
-          <p className="text-xs text-muted-foreground">
-            Covers{' '}
-            {coversText({
-              pattern: row.original.pattern,
-              target_type: row.original.exclusion_type,
-            })}
-          </p>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const x = row.original as PathExclusion
+        if (isPathExclusion(x))
+          return (
+            <div className="min-w-0 space-y-0.5">
+              <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
+                {pathRuleLabel(x)}
+              </code>
+              <p className="text-xs text-muted-foreground">
+                Blocks {methodsText(x.methods)} under this path; the rest of the host stays in scope
+              </p>
+            </div>
+          )
+        return (
+          <div className="min-w-0 space-y-0.5">
+            <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">{x.pattern}</code>
+            <p className="text-xs text-muted-foreground">
+              Covers {coversText({ pattern: x.pattern, target_type: x.exclusion_type })}
+            </p>
+          </div>
+        )
+      },
     },
     {
       accessorKey: 'exclusion_type',
       header: 'Kind',
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-muted-foreground">
-          {scopeKindIcon(row.original.exclusion_type) ?? <Ban className="h-4 w-4" />}
+          {isPathExclusion(row.original) ? (
+            <Route className="h-4 w-4" />
+          ) : (
+            (scopeKindIcon(row.original.exclusion_type) ?? <Ban className="h-4 w-4" />)
+          )}
           <span className="text-sm text-foreground">
-            {scopeTargetTypeLabel(row.original.exclusion_type ?? '')}
+            {isPathExclusion(row.original)
+              ? 'Web path'
+              : scopeTargetTypeLabel(row.original.exclusion_type ?? '')}
           </span>
         </div>
       ),
@@ -169,15 +215,32 @@ export function ScopeExclusionsTable({
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }) => {
-        const s = EXCLUSION_STATUS[row.original.status ?? ''] ?? EXCLUSION_STATUS.inactive
+        const x = row.original as PathExclusion
+        const s = EXCLUSION_STATUS[x.status ?? ''] ?? EXCLUSION_STATUS.inactive
+        const mode = effectiveTesting(x)
         return (
-          <TonePill
-            tone={s.tone}
-            label={s.label}
-            title={s.hint}
-            detail={row.original.expires_at ? expiryText(row.original.expires_at) : undefined}
-            state={row.original.status}
-          />
+          <div className="flex flex-col items-start gap-1">
+            <TonePill
+              tone={s.tone}
+              label={s.label}
+              title={s.hint}
+              detail={x.expires_at ? expiryText(x.expires_at) : undefined}
+              state={x.status}
+            />
+            {isPathExclusion(x) && x.status === 'active' && (
+              <TonePill
+                tone={TESTING_TONE[mode]}
+                label={`Testing: ${TESTING_LABEL[mode].toLowerCase()}`}
+                title={TESTING_HINT[mode]}
+                detail={
+                  mode !== 'blocked' && x.testing_until
+                    ? expiryText(x.testing_until).replace('Expires in', 'Blocked again in')
+                    : undefined
+                }
+                state={`testing-${mode}`}
+              />
+            )}
+          </div>
         )
       },
     },
@@ -258,6 +321,7 @@ export function ScopeExclusionsTable({
           }
         />
       )}
+      <ExclusionTestingDialog exclusion={testing} onOpenChange={(o) => !o && setTesting(null)} />
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
