@@ -49,6 +49,45 @@ type Config struct {
 	// AuditRetention controls the tenant audit log retention (hash-chain
 	// prefix archive and prune).
 	AuditRetention AuditRetentionConfig
+
+	// Scope is the platform's scope guardrails (RFC-054 §8): operator-level,
+	// never tenant-overridable.
+	Scope ScopeConfig
+}
+
+// Active-probe proof modes, SCOPE_ACTIVE_PROOF (RFC-054 §8.1).
+const (
+	// ScopeProofOff: no proof needed (self-hosted default: the operator is
+	// the tenant). Intrusive probes still need a verified domain.
+	ScopeProofOff = "off"
+	// ScopeProofPlatformSensors: a job on shared platform sensors needs every
+	// target at or under a verified domain of the tenant (SaaS default).
+	ScopeProofPlatformSensors = "platform_sensors"
+	// ScopeProofAll: every active probe needs a verified domain.
+	ScopeProofAll = "all"
+)
+
+// ScopeConfig is the operator's scope guardrails.
+type ScopeConfig struct {
+	// ActiveProof is off, platform_sensors or all. Unset: platform_sensors
+	// when organizations are self-service (SaaS), otherwise off.
+	ActiveProof string
+	// MaxPublicCIDRv4 / v6 cap a public scope range (SCOPE_MAX_PUBLIC_CIDR_V4,
+	// default 16; SCOPE_MAX_PUBLIC_CIDR_V6, default 32).
+	MaxPublicCIDRv4 int
+	MaxPublicCIDRv6 int
+	// DenyExtra are the operator's own names and ranges no tenant may
+	// target (SCOPE_DENY_EXTRA, comma-separated domains and CIDRs).
+	DenyExtra []string
+}
+
+// validate checks the proof mode.
+func (s ScopeConfig) validate() error {
+	switch s.ActiveProof {
+	case ScopeProofOff, ScopeProofPlatformSensors, ScopeProofAll:
+		return nil
+	}
+	return fmt.Errorf("SCOPE_ACTIVE_PROOF must be off, platform_sensors or all, got %q", s.ActiveProof)
 }
 
 // AuditRetentionConfig controls tenant audit-log retention. Entries older than
@@ -1219,6 +1258,12 @@ func Load() (*Config, error) {
 			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
 			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
 		},
+		Scope: ScopeConfig{
+			ActiveProof:     getEnv("SCOPE_ACTIVE_PROOF", ""),
+			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
+			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
+			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
+		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
 			// Default TRUE: never start deleting audit history on upgrade.
@@ -1333,6 +1378,15 @@ func (c *Config) validateStorage() error {
 
 // validateBasic validates basic configuration regardless of environment.
 func (c *Config) validateBasic() error {
+	if c.Scope.ActiveProof == "" {
+		c.Scope.ActiveProof = ScopeProofOff
+		if c.Auth.SelfServiceTenantCreation() {
+			c.Scope.ActiveProof = ScopeProofPlatformSensors
+		}
+	}
+	if err := c.Scope.validate(); err != nil {
+		return err
+	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("invalid server port: %d", c.Server.Port)
 	}
