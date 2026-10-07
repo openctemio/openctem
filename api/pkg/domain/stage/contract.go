@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/openctemio/ctis/capability"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
@@ -118,8 +120,6 @@ type Param struct {
 	Max  *int     `json:"max,omitempty"`
 }
 
-func intPtr(n int) *int { return &n }
-
 // Adapter is the capability that turns one port type into another: what the
 // editor offers to insert when two incompatible ports are wired.
 type Adapter struct {
@@ -154,134 +154,49 @@ func AdapterFor(from, to PortType) (Adapter, bool) {
 
 // contract is the typed interface of one capability.
 type contract struct {
-	in, out  []PortType
-	params   []Param
-	required []string
+	in, out   []PortType
+	params    []Param
+	required  []string
+	tier      Tier
+	phase     string
+	ctemStage string
+	attack    []string
+	d3fend    []string
+	rules     []capability.Rule
 	// chunk is how many targets one task of a list-taking tool gets when a
 	// workflow step's targets are cut into chunks (0: never cut).
 	chunk int
 }
 
-// Shared standard params.
-var (
-	paramRate = Param{Name: "rate", Type: ParamInteger, Description: "Maximum requests per second.", Min: intPtr(1), Max: intPtr(100000)}
-)
+// requiredFields are the display names of the fields a report of each
+// routed capability must carry. The checked rules are the capability's
+// required output in ctis/capability (RequiredOutput).
+var requiredFields = map[Key][]string{
+	DiscoverSubdomains: []string{"name", "root_domain", "discovery_method"},
+	ResolveDNS:         []string{"name", "resolves_to"},
+	ScanPorts:          []string{"host", "port", "protocol"},
+	ProbeHTTP:          []string{"url", "status_code", "title"},
+	CrawlWeb:           []string{"url", "parent_url"},
+	VulnTemplates:      []string{"rule_id", "severity", "location", "evidence"},
+	DASTWeb:            []string{"rule_id", "severity", "url", "evidence"},
+	SecretsCode:        []string{"rule_id", "file", "line", "masked_value"},
+	SASTCode:           []string{"rule_id", "file", "line", "severity"},
+	SCADeps:            []string{"purl", "version", "cve"},
+	IaCMisconfig:       []string{"rule_id", "file", "resource"},
+	ContainerImage:     []string{"purl", "version", "cve", "image_digest"},
+	NetworkVAConnector: []string{"plugin_id", "host", "severity"},
+}
 
-// contracts of the routed catalog stages (version 1).
-var contracts = map[Key]contract{
-	DiscoverSubdomains: {
-		chunk: 50,
-		in:    []PortType{PortRootDomain}, out: []PortType{PortHostname},
-		params: []Param{
-			{Name: "sources", Type: ParamStringList, Description: "Passive sources to query; empty means the tool's defaults."},
-			{Name: "recursive", Type: ParamBoolean, Description: "Also enumerate subdomains of found subdomains."},
-			{Name: "max_results", Type: ParamInteger, Description: "Stop after this many names per root domain.", Min: intPtr(1), Max: intPtr(DefaultPerParent)},
-		},
-		required: []string{"name", "root_domain", "discovery_method"},
-	},
-	ResolveDNS: {
-		chunk: 200,
-		in:    []PortType{PortHostname}, out: []PortType{PortHostname, PortIP},
-		params: []Param{
-			{Name: "record_types", Type: ParamStringList, Description: "DNS record types to query.", Enum: []string{"a", "aaaa", "cname", "mx", "ns", "txt"}},
-			{Name: "wildcard_filter", Type: ParamBoolean, Description: "Drop names that only resolve through a wildcard record."},
-		},
-		required: []string{"name", "resolves_to"},
-	},
-	ScanPorts: {
-		chunk: 50,
-		in:    []PortType{PortHostname, PortIP}, out: []PortType{PortService, PortIP},
-		params: []Param{
-			{Name: "ports", Type: ParamPortList, Description: "Ports and port ranges to scan."},
-			{Name: "top_n", Type: ParamInteger, Description: "Scan the N most common ports instead of a list.", Min: intPtr(1), Max: intPtr(65535)},
-			{Name: "protocol", Type: ParamString, Description: "Transport protocol.", Enum: []string{"tcp"}},
-			paramRate,
-		},
-		required: []string{"host", "port", "protocol"},
-	},
-	ProbeHTTP: {
-		chunk: 200,
-		in:    []PortType{PortHostname, PortIP, PortService, PortURL}, out: []PortType{PortURL, PortIP},
-		params: []Param{
-			{Name: "ports", Type: ParamPortList, Description: "Ports to probe when the input is a hostname or an address."},
-			{Name: "follow_redirects", Type: ParamBoolean, Description: "Follow redirects on the same host."},
-			{Name: "tech_detect", Type: ParamBoolean, Description: "Detect the technologies a page uses."},
-			{Name: "tls_grab", Type: ParamBoolean, Description: "Record the TLS certificate."},
-		},
-		required: []string{"url", "status_code", "title"},
-	},
-	CrawlWeb: {
-		chunk: 10,
-		in:    []PortType{PortURL}, out: []PortType{PortURL},
-		params: []Param{
-			{Name: "depth", Type: ParamInteger, Description: "Maximum crawl depth.", Min: intPtr(1), Max: intPtr(10)},
-			{Name: "js_parse", Type: ParamBoolean, Description: "Parse JavaScript for endpoints."},
-			{Name: "max_urls", Type: ParamInteger, Description: "Stop after this many URLs per start URL.", Min: intPtr(1), Max: intPtr(webFanoutCap)},
-		},
-		required: []string{"url", "parent_url"},
-	},
-	VulnTemplates: {
-		chunk: 25,
-		in:    []PortType{PortURL, PortService, PortHostname, PortIP}, out: []PortType{PortFinding},
-		params: []Param{
-			{Name: "severity", Type: ParamStringList, Description: "Only templates of these severities.", Enum: []string{"info", "low", "medium", "high", "critical", "unknown"}},
-			{Name: "tags", Type: ParamStringList, Description: "Only templates with these tags."},
-			{Name: "exclude_tags", Type: ParamStringList, Description: "Skip templates with these tags."},
-			paramRate,
-		},
-		required: []string{"rule_id", "severity", "location", "evidence"},
-	},
-	DASTWeb: {
-		chunk: 10,
-		in:    []PortType{PortURL}, out: []PortType{PortFinding},
-		params: []Param{
-			{Name: "profile", Type: ParamString, Description: "Scan depth.", Enum: []string{"crawl_only", "high_risk", "full"}},
-			{Name: "max_duration_minutes", Type: ParamInteger, Description: "Stop the scan after this many minutes.", Min: intPtr(1), Max: intPtr(1440)},
-		},
-		required: []string{"rule_id", "severity", "url", "evidence"},
-	},
-	SecretsCode: {
-		in: []PortType{PortRepository}, out: []PortType{PortFinding},
-		params: []Param{
-			{Name: "history", Type: ParamBoolean, Description: "Scan the commit history, not only the current tree."},
-		},
-		required: []string{"rule_id", "file", "line", "masked_value"},
-	},
-	SASTCode: {
-		in: []PortType{PortRepository}, out: []PortType{PortFinding},
-		params: []Param{
-			{Name: "languages", Type: ParamStringList, Description: "Only analyze these languages."},
-		},
-		required: []string{"rule_id", "file", "line", "severity"},
-	},
-	SCADeps: {
-		in: []PortType{PortRepository, PortContainerImage}, out: []PortType{PortFinding},
-		params: []Param{
-			{Name: "dev_deps", Type: ParamBoolean, Description: "Include development dependencies."},
-		},
-		required: []string{"purl", "version", "cve"},
-	},
-	IaCMisconfig: {
-		in: []PortType{PortRepository}, out: []PortType{PortFinding},
-		params: []Param{
-			{Name: "frameworks", Type: ParamStringList, Description: "Only these IaC frameworks."},
-		},
-		required: []string{"rule_id", "file", "resource"},
-	},
-	ContainerImage: {
-		in: []PortType{PortContainerImage}, out: []PortType{PortFinding},
-		params: []Param{
-			{Name: "os_pkgs", Type: ParamBoolean, Description: "Include operating-system packages."},
-		},
-		required: []string{"purl", "version", "cve", "image_digest"},
-	},
-	NetworkVAConnector: {
-		in: []PortType{PortIP, PortCIDR}, out: []PortType{PortFinding},
-		params: []Param{
-			{Name: "policy", Type: ParamString, Description: "Scan policy name in the connected product."},
-		},
-		required: []string{"plugin_id", "host", "severity"},
-	},
+// chunkSizes are how many targets one task of a list-taking tool gets when
+// a workflow step of the capability is cut into chunks (absent: never cut).
+var chunkSizes = map[Key]int{
+	DiscoverSubdomains: 50,
+	ResolveDNS:         200,
+	ScanPorts:          50,
+	ProbeHTTP:          200,
+	CrawlWeb:           10,
+	VulnTemplates:      25,
+	DASTWeb:            10,
 }
 
 // toolParams maps a tool's standard params to its own config keys: the keys
@@ -324,9 +239,10 @@ const ContractVersion = 1
 
 func init() {
 	for i := range catalog {
-		c, ok := contracts[catalog[i].Key]
-		if !ok {
-			panic(fmt.Sprintf("stage %s has no contract", catalog[i].Key))
+		c := contractOf(catalog[i].Key, requiredFields[catalog[i].Key])
+		c.chunk = chunkSizes[catalog[i].Key]
+		if catalog[i].Tier != c.tier {
+			panic(fmt.Sprintf("stage %s: tier %s, the capability's floor is %s", catalog[i].Key, catalog[i].Tier, c.tier))
 		}
 		catalog[i].applyContract(c)
 		for j := range catalog[i].Implementations {
@@ -335,9 +251,7 @@ func init() {
 			impl.Params = toolParamsFor(impl.Tool, c.params)
 		}
 	}
-	for i := range planned {
-		planned[i].Version = ContractVersion
-	}
+	planned = plannedStages()
 }
 
 func (s *Stage) applyContract(c contract) {
@@ -346,6 +260,9 @@ func (s *Stage) applyContract(c contract) {
 	s.OutPorts = c.out
 	s.Params = c.params
 	s.RequiredOutputFields = c.required
+	s.Phase, s.CTEMStage = c.phase, c.ctemStage
+	s.Attack, s.D3FEND = c.attack, c.d3fend
+	s.RequiredOutput = c.rules
 	s.ChunkSize = c.chunk
 }
 
@@ -402,62 +319,26 @@ func AcceptsTargetList(tool string) bool { return batchTools[normalizeTool(tool)
 // implementation yet. They are listed (so the editor can show them as
 // coming) and never planned: Lookup, ForTool and ForCapabilities do not see
 // them, so no step can run one.
-var planned = []Stage{
-	{
-		Key: "intel.passive", Name: "Passive intelligence",
-		Description: "Names, ranges and addresses from certificate transparency, RDAP and ASN data.",
-		InPorts:     []PortType{PortRootDomain, PortIP, PortCIDR}, OutPorts: []PortType{PortHostname, PortCIDR, PortIP},
-		Tier: TierPassive, RequiredOutputFields: []string{"discovery_method", "source"},
-	},
-	{
-		Key: "check.takeover", Name: "Subdomain takeover check",
-		Description: "Find names whose alias points at an unclaimed third-party resource.",
-		InPorts:     []PortType{PortHostname}, OutPorts: []PortType{PortFinding},
-		Tier: TierActive, Findings: true, RequiredOutputFields: []string{"host", "provider", "evidence"},
-	},
-	{
-		Key: "detect.services", Name: "Service detection",
-		Description: "Identify the service, product and version behind an open port.",
-		InPorts:     []PortType{PortService}, OutPorts: []PortType{PortService},
-		Tier: TierActive, RequiredOutputFields: []string{"port", "protocol", "service_name"},
-	},
-	{
-		Key: "fingerprint.tech", Name: "Technology fingerprint",
-		Description: "Identify the technologies a web service or service runs.",
-		InPorts:     []PortType{PortURL, PortService}, OutPorts: []PortType{PortURL, PortService},
-		Tier: TierActive, RequiredOutputFields: []string{"technologies"},
-	},
-	{
-		Key: "check.tls", Name: "TLS check",
-		Description: "Check certificates, protocols and ciphers.",
-		InPorts:     []PortType{PortService, PortURL}, OutPorts: []PortType{PortFinding},
-		Tier: TierActive, Findings: true, RequiredOutputFields: []string{"fingerprint", "not_after", "issuer"},
-	},
-	{
-		Key: "capture.screenshot", Name: "Screenshot",
-		Description: "Capture a screenshot of a web page.",
-		InPorts:     []PortType{PortURL}, OutPorts: []PortType{PortURL},
-		Tier: TierActive, RequiredOutputFields: []string{"artifact_sha256", "media_type"},
-	},
-	{
-		Key: "host.credentialed", Name: "Credentialed host scan",
-		Description: "Authenticated vulnerability scan of a host.",
-		InPorts:     []PortType{PortIP, PortHostname}, OutPorts: []PortType{PortFinding},
-		Tier: TierActive, Findings: true, RequiredOutputFields: []string{"host", "plugin_id"},
-	},
-	{
-		Key: "cloud.posture", Name: "Cloud posture",
-		Description: "Read-only configuration review of a cloud account.",
-		InPorts:     []PortType{PortCloudAccount}, OutPorts: []PortType{PortFinding},
-		Tier: TierPassive, Findings: true, RequiredOutputFields: []string{"rule_id", "resource_id", "severity"},
-	},
-	{
-		Key: "verify.finding", Name: "Verify a finding",
-		Description: "Retest a finding with a tool that can reproduce it. Used by retests, not as a workflow node.",
-		InPorts:     []PortType{PortFinding}, OutPorts: []PortType{PortFinding},
-		Tier: TierPassive, RequiredOutputFields: []string{"finding_id", "status"},
-		CrossCutting: true,
-	},
+var planned []Stage
+
+// plannedFields are the planned capabilities, in display order, with the
+// display names of their required fields.
+var plannedFields = []struct {
+	key      Key
+	required []string
+}{
+	{"intel.passive", []string{"discovery_method", "source"}},
+	{"check.takeover", []string{"host", "provider", "evidence"}},
+	{"detect.services", []string{"port", "protocol", "service_name"}},
+	{"fingerprint.tech", []string{"technologies"}},
+	{"check.tls", []string{"fingerprint", "not_after", "issuer"}},
+	{"capture.screenshot", []string{"artifact_sha256", "media_type"}},
+	{"host.credentialed", []string{"host", "plugin_id"}},
+	{"cloud.posture", []string{"rule_id", "resource_id", "severity"}},
+	{"verify.finding", []string{"finding_id", "status"}},
+	{"discover.cloud", []string{"provider", "resource_id"}},
+	{"sbom.generate", []string{"name", "version"}},
+	{"import.file", []string{"assets", "findings", "dependencies"}},
 }
 
 // Taxonomy returns every capability of taxonomy v1: the routed catalog
