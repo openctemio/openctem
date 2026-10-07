@@ -74,9 +74,16 @@ type ExposedServiceResponse struct {
 // AssetChangeResponse represents a recent asset change.
 type AssetChangeResponse struct {
 	Type      string `json:"type" example:"added"`
+	AssetID   string `json:"asset_id,omitempty"`
 	AssetName string `json:"asset_name" example:"new-api.example.com"`
 	AssetType string `json:"asset_type" example:"service"`
 	Timestamp string `json:"timestamp" example:"2024-01-15T10:30:00Z"`
+	// AttributionState: confirmed, needs_review, candidate, dependency,
+	// monitor_only, rejected, or empty for an asset with no record (legacy,
+	// confirmed). InInventory is false for the review queue and rejected
+	// assets, so the UI shows "Added · needs review" (RFC-054 §4.4).
+	AttributionState string `json:"attribution_state,omitempty" example:"needs_review"`
+	InInventory      bool   `json:"in_inventory"`
 }
 
 // GetStats returns attack surface statistics for the current tenant.
@@ -275,10 +282,13 @@ func (h *AttackSurfaceHandler) toStatsResponse(stats *attack.SurfaceStats) Attac
 	changes := make([]AssetChangeResponse, len(stats.RecentChanges))
 	for i, c := range stats.RecentChanges {
 		changes[i] = AssetChangeResponse{
-			Type:      c.Type,
-			AssetName: c.AssetName,
-			AssetType: c.AssetType,
-			Timestamp: c.Timestamp.Format("2006-01-02T15:04:05Z"),
+			Type:             c.Type,
+			AssetID:          c.AssetID,
+			AssetName:        c.AssetName,
+			AssetType:        c.AssetType,
+			Timestamp:        c.Timestamp.Format("2006-01-02T15:04:05Z"),
+			AttributionState: c.AttributionState,
+			InInventory:      c.InInventory,
 		}
 	}
 

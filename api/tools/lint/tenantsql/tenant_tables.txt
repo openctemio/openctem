@@ -38,6 +38,7 @@ ci_gate_overrides
 ci_gate_policies
 ci_pipelines
 ci_run_findings
+ci_run_tokens
 ci_runs
 ci_trust_configs
 command_logs

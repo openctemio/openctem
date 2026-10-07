@@ -47,6 +47,9 @@ func registerCommandRoutes(
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.CommandsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.CommandsRead))
+		// Any command's logs (research/62); a command about a finding also
+		// needs findings:read and the finding in scope (in the handler).
+		r.GET("/{id}/logs", h.GetLogs, middleware.Require(permission.CommandsRead))
 
 		// Write operations
 		r.POST("/", h.Create, middleware.Require(permission.CommandsWrite))
