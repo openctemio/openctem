@@ -63,6 +63,9 @@ type Job struct {
 	// Tool is the canonical, lower-case tool name; "" when the job names
 	// none.
 	Tool string
+	// Capability is the capability the job runs ("scan.ports@1"), as the
+	// payload names it; "" for a job that names none.
+	Capability string
 	// Interactsh: the job turns out-of-band callbacks on (config
 	// allow_interactsh is boolean true, the only value the sensor honors).
 	Interactsh bool
@@ -108,6 +111,7 @@ func JobOf(cmdType string, payload json.RawMessage) Job {
 		ExecutorKind    string            `json:"executor_kind"`
 		Config          map[string]any    `json:"config"`
 		CustomTemplates []json.RawMessage `json:"custom_templates"`
+		Capability      string            `json:"capability"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		job.Private = true // unreadable: fail closed, as HasPrivateTarget does
@@ -129,6 +133,7 @@ func JobOf(cmdType string, payload json.RawMessage) Job {
 			}
 		}
 	}
+	job.Capability = strings.TrimSpace(p.Capability)
 	job.Interactsh = ConfigAsksInteractsh(p.Config)
 	job.CustomTemplates = len(p.CustomTemplates)
 	job.Ports = portSetting(p.Config["ports"])
