@@ -13,15 +13,66 @@ sanitized tools of the current manifest on the sensor row (`sensors.reported_too
 
 The availability view joins the two, per tenant.
 
-## Endpoint
+## The tool resource
 
-`GET /api/v1/tenant-tools/availability[?zone_id=<scan zone>]`, gated by
-`scans:tenant_tools:read`.
+Tools are one resource, `/api/v1/tools`: the organization's view of the
+catalog, platform tools plus its own custom tools (another tenant's custom
+tools never appear).
+
+| Route | Permission | What |
+|---|---|---|
+| `GET /tools` | `scans:tools:read` | Filters `source=platform\|custom`, `category`, `q`, `enabled`, `available`, `zone_id`; `sort=name\|created_at\|updated_at` (`-` descending); `page`, `per_page` (max 100, 50 with availability or stats). |
+| `GET /tools/{id}` | `scans:tools:read` | A platform tool or the tenant's own custom tool; any other id is 404. |
+| `PATCH /tools/{id}/settings` | `scans:tenant_tools:write`; with `config`, also `scans:tools:write` | The tenant's switch and config overrides; an omitted field is left as it is, `"config": {}` clears the overrides. Overrides change what the sensors run, hence the admin-level permission. A config with a secret-shaped key or value is refused: credentials live in the secret store, referenced by id. |
+| `PATCH /tools/settings` | `scans:tenant_tools:write` | `{"tool_ids": [...], "is_enabled": bool}`; ids the tenant cannot see are ignored. |
+| `POST /tools` | `scans:tools:write` | Creates a custom tool of the tenant (the tenant comes from the token). |
+| `PUT`/`DELETE /tools/{id}` | `scans:tools:write` / `scans:tools:delete` | The tenant's own custom tools only; a platform tool or another tenant's is 404 (the service reads the tool by tenant and id). |
+| `GET /tool-categories[?source=]`, `GET /tool-categories/{id}` | `scans:tools:read` | Platform categories plus the tenant's own. |
+| `POST`/`PUT`/`DELETE /tool-categories[/{id}]` | `scans:tools:write` / `scans:tools:delete` | The tenant's own custom categories only (others 404). |
+
+Platform tools are managed by the platform (migrations and the seed). No
+tenant route changes them; there is no platform-admin tool route either.
+
+### include=
+
+`include=settings,availability,stats` adds the tenant's data to each tool. The
+shared package `internal/infra/http/include` applies one model to every
+resource that offers includes; each resource
+runs its conformance suite (`include/includetest.RunConformance`) from its
+DB-backed route test:
+
+- a whitelist per resource; an unknown value, a nested one (`settings.config`)
+  or more than 3 values is refused with `400 INVALID_INCLUDE` before any read;
+- each include needs the permission of its former standalone route
+  (`scans:tenant_tools:read`; `stats` also `scans:read`, as the counts are
+  tenant-wide over every scan, not limited to a data scope); one the caller
+  lacks is left out and named in `meta.omitted_includes` (no 403, so no
+  oracle); include names that would expose secrets, credentials, audit
+  internals or personal data cannot be registered;
+- each include is loaded once for the whole page (one availability
+  computation, one statistics query), never per row; `availability` and
+  `stats` are expensive: `per_page` is capped at 50 and each costs 2 more
+  read-limiter tokens;
+- the projection is an explicit response type: `settings` never takes a
+  secret (refused at write; older rows masked); `availability.sensors`
+  (names, zones) needs `sensors:read`, otherwise only the counts are given;
+- a response that took `include=` is `Cache-Control: private, no-store`, and
+  nothing is cached server-side;
+- the included objects are optional in the OpenAPI and web types; the web
+  treats an absent one as unknown, never as a default.
+
+The `enabled` and `available` filters read the same data and need
+`scans:tenant_tools:read` (403 without it: a filter cannot be left out).
+
+## Availability
+
+`GET /api/v1/tools?include=availability[&zone_id=<scan zone>]`.
 
 Every catalog tool the tenant sees (platform tools plus its own custom tools,
 active or not) is listed. So is every tool one of its sensors reports that the
 catalog does not list (`in_catalog: false`, never enabled). For each tool the
-response gives:
+response gives (per tool in `availability`; the tools only the sensors report
+are in `availability.unlisted`):
 
 | Field | Meaning |
 |---|---|
@@ -37,8 +88,9 @@ response gives:
 | `update_available` | A runnable sensor reports a version below `latest_version`. |
 | `last_reported_at` | The newest manifest among the sensors listed. |
 
-`summary` counts the tools per status. `zone_id` limits the view to the sensors
-assigned to that scan zone. A zone of another tenant answers 404.
+`availability.summary` counts every tool per status (filters not applied).
+`zone_id` limits the view to the sensors assigned to that scan zone. A zone of
+another tenant answers 404.
 
 ### Status
 
@@ -51,8 +103,7 @@ assigned to that scan zone. A zone of another tenant answers 404.
 | `ready` | Enabled, and at least one online sensor runs it at an accepted version. |
 
 `ready` and `outdated` are *runnable*: a scan job for the tool can be dispatched
-now. The `is_available` flag on `GET /api/v1/tenant-tools/all-tools` and
-`/{toolId}/with-config` is the same answer.
+now. The `available=true` filter on `GET /api/v1/tools` is the same answer.
 
 ### Online
 
@@ -97,6 +148,28 @@ Some cases are left to the checks that already own them:
 The trigger codes `NO_SENSOR_FOR_TOOL`, `NO_SENSOR_AVAILABLE`, `TOOL_NOT_FOUND`,
 `TOOL_DISABLED` and `TOOL_NOT_SCANNER` now reach the client in the error body's
 `code`. They used to be reported as `BAD_REQUEST`.
+
+## Web console
+
+Every screen that shows or picks a tool reads this one endpoint, through `useToolAvailability`
+(`web/src/lib/api/tool-hooks.ts`). The helpers live in `web/src/features/tools/lib/availability.ts`:
+status labels, `isRunnable` and `toolUnavailableReason`. The shared pieces are in
+`web/src/features/tools/components/tool-availability.tsx`: the status pill, the "n/m online" cell
+with its sensor popover, and the sensor list.
+
+- **Settings > Scanning > Tools**
+  - **Columns:** Tool, Category, Status (with a tooltip), Sensors (n/m online, with a popover listing each sensor, its zone, version and exclusion), Version(s) (with an update badge), Last reported, Enabled.
+  - **Default filter:** the tools at least one sensor reports. "Show full catalog" adds the rest.
+  - **Metrics:** Ready, Offline only, No sensor, Outdated, Disabled and Updates available. Each one filters the table.
+  - **Enabled switch:** the organization's own on/off per tool (`PATCH /api/v1/tools/settings`).
+  - **Tool detail:**
+    - an "On your sensors" section with sensors, versions, content and last report;
+    - the install details, under "How to add this tool to a sensor";
+    - a callout with the reason when a scan cannot run.
+- **Scan builder** (New/Edit scan, Quick scan): a scanner no online sensor may run is listed, disabled, with the reason. Availability is judged in the scan's zone when one is selected. A scan's current scanner stays selectable, with a warning.
+- **Workflow builder:** the node palette and the step tool picker grey out such tools with the same reason.
+- **Sensor detail:** the tool list marks an installed tool the grant or local policy refuses.
+- **Capabilities page:** the tool tooltip says which of a capability's tools are ready on your sensors.
 
 ## Trust and isolation
 

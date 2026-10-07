@@ -12,34 +12,25 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // maxResolvedTargets bounds how many targets one scan run may dispatch. Larger
 // sets must be split (zone routing with TargetsPerJob batching, RFC-023).
 const maxResolvedTargets = 10000
 
-// listTargetScanners are the scanners whose executors on deployed sensors read
-// the full `targets` list from the payload (nuclei via the vulnscan executor,
-// the Tenable bridge, the recon tools through the SDK's recon scanner, which
-// runs the tool on each target and reports one CTIS report). Every other
+// legacyListScanners are scanner names outside the stage catalog whose
+// sensor executors read the full `targets` list (the Tenable bridge). The
+// catalog's tools say it themselves (stage.AcceptsTargetList); every other
 // scanner reads only the single `target` field, so a run of such a scanner
-// gets one command per target, zoned or not (RFC-030 B4; zones did this
-// already).
-var listTargetScanners = map[string]bool{
-	"nuclei":  true,
+// gets one command per target, zoned or not (RFC-030 B4).
+var legacyListScanners = map[string]bool{
 	"tenable": true,
 	"nessus":  true,
-	// The recon tools (api RFC-036 EASM discovery). No sensor ran them before
-	// the SDK's recon scanner, which takes a list, so none reads only `target`.
-	"subfinder": true,
-	"dnsx":      true,
-	"naabu":     true,
-	"httpx":     true,
-	"katana":    true,
 }
 
 func scannerAcceptsTargetList(scanner string) bool {
-	return listTargetScanners[strings.ToLower(strings.TrimSpace(scanner))]
+	return stage.AcceptsTargetList(scanner) || legacyListScanners[strings.ToLower(strings.TrimSpace(scanner))]
 }
 
 // singleTargetWarningPrefix starts the warning for a single-target scanner in

@@ -698,52 +698,7 @@ func NewPipelineStepRepository(db *DB) *PipelineStepRepository {
 
 // Create persists a new step.
 func (r *PipelineStepRepository) Create(ctx context.Context, s *pipeline.Step) error {
-	config, err := json.Marshal(s.Config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	query := `
-		INSERT INTO pipeline_steps (
-			id, pipeline_id, step_key, name, description, step_order,
-			ui_position_x, ui_position_y,
-			tool, tool_id, capabilities, config, timeout_seconds,
-			depends_on, condition_type, condition_value,
-			max_retries, retry_delay_seconds, created_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-	`
-
-	_, err = r.db.ExecContext(ctx, query,
-		s.ID.String(),
-		s.PipelineID.String(),
-		s.StepKey,
-		s.Name,
-		s.Description,
-		s.StepOrder,
-		s.UIPosition.X,
-		s.UIPosition.Y,
-		nullString(s.Tool),
-		nullID(s.ToolID),
-		pq.Array(s.Capabilities),
-		config,
-		s.TimeoutSeconds,
-		pq.Array(s.DependsOn),
-		nullString(string(s.Condition.Type)),
-		nullString(s.Condition.Value),
-		s.MaxRetries,
-		s.RetryDelaySeconds,
-		s.CreatedAt,
-	)
-
-	if err != nil {
-		if isUniqueViolation(err) {
-			return shared.NewDomainError("ALREADY_EXISTS", "step already exists", shared.ErrAlreadyExists)
-		}
-		return fmt.Errorf("failed to create pipeline step: %w", err)
-	}
-
-	return nil
+	return insertStep(ctx, r.db, s)
 }
 
 // CreateBatch creates multiple steps.

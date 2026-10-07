@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -186,7 +187,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerPipelineInpu
 
 	// Create step runs
 	for _, step := range template.Steps {
-		stepRun := pipeline.NewStepRun(run.ID, step.ID, step.StepKey, step.StepOrder, step.MaxRetries)
+		stepRun := pipeline.NewStepRunForStep(run.ID, step)
 		if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
 			return nil, err
 		}
@@ -608,16 +609,16 @@ func (s *Service) skipBlockedSteps(ctx context.Context, run *pipeline.Run, templ
 	}
 }
 
-// recordScanRun writes a pipeline run's terminal outcome back onto the scan that
-// spawned it, so the scan's own last_run_at/last_run_status/counters stop
-// reading "never run" after a run that just finished. No-op for workflow runs
-// with no ScanID or when no recorder is wired; best-effort, since the run itself
-// is already recorded and a scan-summary write must not fail the completion.
+// recordScanRun refreshes the run summary of the scan that spawned a run that
+// just finished (the summary is recomputed from the runs, so status is only
+// logged). No-op for workflow runs with no ScanID or when no recorder is
+// wired; best-effort, since the run itself is already recorded and a
+// scan-summary write must not fail the completion.
 func (s *Service) recordScanRun(ctx context.Context, run *pipeline.Run, status string) {
 	if s.scanRunRecorder == nil || run == nil || run.ScanID == nil {
 		return
 	}
-	if err := s.scanRunRecorder.RecordRun(ctx, run.TenantID, *run.ScanID, run.ID, status); err != nil {
+	if err := s.scanRunRecorder.RefreshRunSummary(ctx, run.TenantID, *run.ScanID); err != nil {
 		s.logger.Warn("failed to record run outcome on scan",
 			"scan_id", run.ScanID.String(), "run_id", run.ID.String(), "status", status, "error", err)
 	}
@@ -668,12 +669,24 @@ func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sens
 // OnStepCompleted is called when a sensor reports step completion.
 // This triggers scheduling of dependent steps.
 func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any) error {
-	s.logger.Info("step completed", "run_id", runID, "step_key", stepKey, "findings", findingsCount)
+	return s.OnStepCompletedWithSkips(ctx, runID, stepKey, findingsCount, output, 0, "")
+}
 
+// OnStepCompletedWithSkips is OnStepCompleted for a command that completed
+// with skipped targets: its sensor's local policy removed skipped of them
+// (refused, or a name that did not resolve) and ran on the rest. The step
+// ends partial with skippedSummary as its message (the results are kept),
+// and so does the run; a skipped target is not retried, since the sensor
+// would refuse it again.
+func (s *Service) OnStepCompletedWithSkips(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any, skipped int, skippedSummary string) error {
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
 		return err
 	}
+	// The run id is parsed and the step key cleaned: both come from the
+	// sensor's command result.
+	s.logger.Info("step completed", "run_id", rid.String(), "step_key", logger.SanitizeValue(stepKey),
+		"findings", findingsCount, "skipped_targets", skipped)
 
 	// Get the run with step runs
 	run, err := s.runRepo.GetWithStepRuns(ctx, rid)
@@ -709,9 +722,19 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 			return s.settleBatchedStep(ctx, run, stepRun, b)
 		}
 		findingsCount = b.findings
+		skipped = b.skipped
+		if skipped > 0 {
+			skippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", skipped)
+		}
 	}
 
-	if stepRun != nil {
+	if stepRun != nil && skipped > 0 {
+		stepRun.Partial(findingsCount, skippedSummary, pipeline.ErrCodeTargetsSkipped)
+		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+			s.logger.Error("failed to record partial step run", "step_key", stepKey, "error", err)
+		}
+		metrics.StepRunsTotal.WithLabelValues(stepKey, "partial").Inc()
+	} else if stepRun != nil {
 		stepRun.Complete(findingsCount, output)
 		// FIXED: Don't silently suppress errors - log them instead
 		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
@@ -979,6 +1002,7 @@ type stepBatches struct {
 	total      int
 	failed     int
 	findings   int
+	skipped    int // targets the completed batches' sensors skipped
 	firstError string
 }
 
@@ -986,6 +1010,9 @@ func (b stepBatches) summary() string {
 	msg := fmt.Sprintf("%d of %d scan batches failed", b.failed, b.total)
 	if b.firstError != "" {
 		msg += ": " + b.firstError
+	}
+	if b.skipped > 0 {
+		msg += fmt.Sprintf("; %d target(s) skipped by the sensor's local policy", b.skipped)
 	}
 	return msg
 }
@@ -1007,7 +1034,7 @@ func (s *Service) checkStepBatches(ctx context.Context, run *pipeline.Run, stepR
 	if st.Total <= 1 {
 		return stepBatches{}
 	}
-	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, firstError: st.FirstError}
+	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, firstError: st.FirstError}
 	if st.Active > 0 {
 		s.logger.Info("scan batch finished; waiting for the others",
 			"run_id", run.ID.String(), "step_key", stepRun.StepKey, "active", st.Active, "total", st.Total)

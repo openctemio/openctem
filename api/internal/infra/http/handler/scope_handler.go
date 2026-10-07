@@ -321,6 +321,32 @@ func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
 	return out
 }
 
+// writeScopeEntryError answers the errors of the scope entry path (step-up
+// and the coded entry errors, RFC-054 §6.1) and reports whether it did. Every
+// route that creates or widens a scope entry answers them the same way.
+func writeScopeEntryError(w http.ResponseWriter, err error) bool {
+	if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+		return true
+	}
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code == "" {
+		return false
+	}
+	if de.Code == "STEP_UP_UNAVAILABLE" {
+		apierror.New(http.StatusForbidden, middleware.CodeStepUpUnavailable, de.Message).WriteJSON(w)
+		return true
+	}
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, shared.ErrForbidden):
+		status = http.StatusForbidden
+	case errors.Is(err, shared.ErrConflict):
+		status = http.StatusConflict
+	}
+	apierror.New(status, apierror.Code(de.Code), de.Message).WriteJSON(w)
+	return true
+}
+
 // scopeActor is the caller as a scope actor.
 func scopeActor(r *http.Request) scope.Actor {
 	ctx := r.Context()
@@ -368,23 +394,7 @@ func (h *ScopeHandler) handleValidationError(w http.ResponseWriter, err error) {
 }
 
 func (h *ScopeHandler) handleServiceError(w http.ResponseWriter, resource string, err error) {
-	if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
-		return
-	}
-	var de *shared.DomainError
-	if errors.As(err, &de) && de.Code != "" && de.Code != "STEP_UP_UNAVAILABLE" {
-		status := http.StatusBadRequest
-		switch {
-		case errors.Is(err, shared.ErrForbidden):
-			status = http.StatusForbidden
-		case errors.Is(err, shared.ErrConflict):
-			status = http.StatusConflict
-		}
-		apierror.New(status, apierror.Code(de.Code), de.Message).WriteJSON(w)
-		return
-	}
-	if errors.As(err, &de) && de.Code == "STEP_UP_UNAVAILABLE" {
-		apierror.New(http.StatusForbidden, middleware.CodeStepUpUnavailable, de.Message).WriteJSON(w)
+	if writeScopeEntryError(w, err) {
 		return
 	}
 	switch {

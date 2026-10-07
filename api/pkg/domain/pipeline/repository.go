@@ -91,7 +91,25 @@ type StepRepository interface {
 	// FindPipelineIDsByToolName finds all active pipeline IDs that use a specific tool.
 	// Used for cascade deactivation when a tool is deactivated or deleted.
 	FindPipelineIDsByToolName(ctx context.Context, tenantID shared.ID, toolName string) ([]shared.ID, error)
+
+	// MutateSteps changes the steps of the tenant's pipeline in one
+	// transaction. It locks the pipeline, refuses with ErrPipelineRunActive
+	// while a run of it is pending or running, reads the current steps and
+	// passes them to mutate, then stores what mutate returns: a step whose
+	// ID is already one of the pipeline's steps is updated in place (its ID,
+	// and so its run history, stays), a new ID is inserted, and the
+	// pipeline's other steps are deleted. Deleting a step keeps its step runs
+	// (step_runs.step_id becomes NULL). A pipeline outside the tenant is
+	// ErrNotFound.
+	MutateSteps(ctx context.Context, tenantID, pipelineID shared.ID, mutate func(current []*Step) ([]*Step, error)) ([]*Step, error)
 }
+
+// ErrPipelineRunActive refuses a change to a pipeline's steps while a run of
+// the pipeline is pending or running. A running run reads the step
+// definitions as it advances, so editing them mid-run would change what the
+// rest of that run does.
+var ErrPipelineRunActive = shared.NewDomainError("PIPELINE_RUN_ACTIVE",
+	"this pipeline has a run in progress; wait for it to finish or cancel it, then save the steps", shared.ErrConflict)
 
 // RunFilter represents filter options for listing runs.
 type RunFilter struct {

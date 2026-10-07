@@ -256,18 +256,10 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 			"error", err,
 		)
 		metrics.ScanScheduleOutcomes.WithLabelValues("failed").Inc()
-		// Record the failure in the scan's own state. next_run_at was already
-		// advanced above (to avoid re-trigger storms), so without this a scan
-		// that can never start — e.g. NO_SENSOR_AVAILABLE, which recurred silently
-		// for three nights on the demo deployment — looks identical to one that
-		// simply has not run yet: next run scheduled, last run blank. Best-effort;
-		// a failure to record must not mask the original trigger error.
-		if recErr := s.scanRepo.RecordTriggerFailure(ctx, sc.TenantID, sc.ID, "failed"); recErr != nil {
-			s.logger.Error("failed to record scan trigger failure",
-				"scan_id", sc.ID.String(), "error", recErr)
-		}
-		// And in the audit log, with the reason: the scan's state only says
-		// "failed", and the server log is not where a tenant looks.
+		// A refusal (e.g. NO_SENSOR_AVAILABLE) is already a blocked run of the
+		// scan, with its reason, recorded by TriggerScan: the scan shows it
+		// as its last run instead of looking as if it had not run yet.
+		// Also in the audit log, with the reason.
 		s.scanService.recordScheduledOutcome(ctx, sc, "Scheduled run could not start: "+err.Error(), err)
 		return
 	}

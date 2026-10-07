@@ -95,15 +95,7 @@ func (m *ciMockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _
 	return nil
 }
 
-func (m *ciMockScanRepository) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID) error {
-	return nil
-}
-
-func (m *ciMockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID, _ string) error {
-	return nil
-}
-
-func (m *ciMockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
+func (m *ciMockScanRepository) RefreshRunSummary(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 

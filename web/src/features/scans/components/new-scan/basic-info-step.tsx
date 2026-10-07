@@ -86,10 +86,11 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
             value={data.scannerName}
             onChange={(scannerName) => onChange({ scannerName })}
             allowConnectors={TENABLE_CONNECTOR_ENABLED}
+            zoneId={data.scanZoneId}
           />
           <p className="text-muted-foreground text-xs">
-            Active scanners in the tool registry. Use Workflow mode (Advanced options) to chain
-            several tools.
+            Active scanners in the tool registry. A scanner no online sensor can run is listed but
+            off. Use Workflow mode (Advanced options) to chain several tools.
           </p>
         </div>
       )}
