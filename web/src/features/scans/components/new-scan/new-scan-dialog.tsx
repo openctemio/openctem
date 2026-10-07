@@ -33,6 +33,13 @@ import { basicInfoError, formDataToCreateRequest } from '../../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../../lib/scanner-config-warnings'
 import { useCreateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
+import { useTranslation } from '@/context/i18n-provider'
+import {
+  refusedFromError,
+  scopeRefusalSummary,
+  ScopeRefusalPanel,
+  type ScopeRefusal,
+} from '@/features/scope'
 
 interface NewScanDialogProps {
   open: boolean
@@ -46,6 +53,9 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const [currentStep, setCurrentStep] = useState<ScanWizardStep>('basic')
   const [formData, setFormData] = useState<NewScanFormData>(DEFAULT_NEW_SCAN)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Targets the server refused on create (TARGET_OUT_OF_SCOPE details).
+  const [refused, setRefused] = useState<ScopeRefusal[]>([])
+  const { t } = useTranslation()
 
   // Store created scan config ID for triggering
   const createdConfigIdRef = useRef<string | null>(null)
@@ -69,6 +79,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
 
   const handleDataChange = (data: Partial<NewScanFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }))
+    if (data.targets) setRefused([])
   }
 
   const validateCurrentStep = (): boolean => {
@@ -174,7 +185,11 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           toast.success(`Scan "${formData.name}" started successfully`)
         } catch (triggerError) {
           // Scan config was created but trigger failed - show specific error
-          const triggerErrorMsg = getErrorMessage(triggerError, 'Unknown error')
+          const triggerRefused = refusedFromError(triggerError)
+          const triggerErrorMsg =
+            triggerRefused.length > 0
+              ? scopeRefusalSummary(t, triggerRefused)
+              : getErrorMessage(triggerError, 'Unknown error')
           console.error('Failed to trigger scan:', triggerError)
 
           // Show a persistent error toast with action buttons
@@ -220,6 +235,13 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       createdConfigIdRef.current = null
       onOpenChange(false)
     } catch (error) {
+      const scopeRefused = refusedFromError(error)
+      if (scopeRefused.length > 0) {
+        // Show each refused target with its fixes, on the step that owns them.
+        setRefused(scopeRefused)
+        setCurrentStep('targets')
+        return
+      }
       console.error('Failed to create scan:', error)
       toast.error(getErrorMessage(error, 'Failed to create scan. Please try again.'))
     } finally {
@@ -228,6 +250,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   }
 
   const handleClose = () => {
+    setRefused([])
     setFormData(DEFAULT_NEW_SCAN)
     setCurrentStep('basic')
     createdConfigIdRef.current = null
@@ -239,7 +262,12 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       case 'basic':
         return <BasicInfoStep data={formData} onChange={handleDataChange} />
       case 'targets':
-        return <TargetsStep data={formData} onChange={handleDataChange} />
+        return (
+          <>
+            {refused.length > 0 && <ScopeRefusalPanel refused={refused} className="mx-4 mt-4" />}
+            <TargetsStep data={formData} onChange={handleDataChange} />
+          </>
+        )
       case 'options':
         return <OptionsStep data={formData} onChange={handleDataChange} />
       case 'schedule':

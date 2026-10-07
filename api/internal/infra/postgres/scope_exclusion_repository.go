@@ -28,7 +28,7 @@ func NewScopeExclusionRepository(db *DB) *ScopeExclusionRepository {
 const scopeExclusionSelectQuery = `
 	SELECT id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
 	       approved_by, approved_at, created_by, created_at, updated_at,
-	       rejected_by, rejected_at,
+	       rejected_by, rejected_at, origin,
 	       path_prefix, methods, testing, testing_until, testing_changed_by, testing_changed_at
 	FROM scope_exclusions
 `
@@ -55,12 +55,13 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		testingUntil  sql.NullTime
 		testingBy     sql.NullString
 		testingAt     sql.NullTime
+		origin        string
 	)
 
 	err := row.Scan(
 		&id, &tenantID, &exclusionType, &pattern, &reason, &status, &expiresAt,
 		&approvedBy, &approvedAt, &createdBy, &createdAt, &updatedAt,
-		&rejectedBy, &rejectedAt,
+		&rejectedBy, &rejectedAt, &origin,
 		&pathPrefix, &methods, &testing, &testingUntil, &testingBy, &testingAt,
 	)
 	if err != nil {
@@ -114,6 +115,7 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		}
 		e.SetWeb(web)
 	}
+	e.SetOrigin(scope.Origin(origin))
 	return e, nil
 }
 
@@ -140,8 +142,8 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		INSERT INTO scope_exclusions (
 			id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
 			approved_by, approved_at, created_by, created_at, updated_at,
-			rejected_by, rejected_at, path_prefix, methods
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			rejected_by, rejected_at, origin, path_prefix, methods
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 	var pathPrefix sql.NullString
 	methods := []string{}
@@ -167,6 +169,7 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		exclusion.UpdatedAt(),
 		nullString(exclusion.RejectedBy()),
 		nullTime(exclusion.RejectedAt()),
+		string(exclusion.Origin()),
 		pathPrefix,
 		pq.Array(methods),
 	)

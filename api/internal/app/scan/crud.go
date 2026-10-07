@@ -95,6 +95,9 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	if err := s.refuseUnprovenIntrusive(ctx, tenantID, input.ScannerName, validatedTargets); err != nil {
 		return nil, err
 	}
+	if err := s.refuseTierExceeded(ctx, tenantID, input.ScannerName, validatedTargets); err != nil {
+		return nil, err
+	}
 
 	// Parse and validate asset groups
 	assetGroupID, assetGroupIDs, err := s.validateScanAssetGroups(ctx, tenantID, input)

@@ -35,6 +35,8 @@ type Target struct {
 	approvedAt        *time.Time
 	rejectedBy        string
 	rejectedAt        *time.Time
+
+	origin Origin
 }
 
 // NewTarget creates a new scope target: active, permanent, t1.
@@ -192,7 +194,8 @@ type Exclusion struct {
 	createdAt     time.Time
 	updatedAt     time.Time
 	// web is the path rule of a `path` exclusion (web_rule.go).
-	web *WebRule
+	web    *WebRule
+	origin Origin
 }
 
 // NewExclusion creates a new scope exclusion awaiting approval.
