@@ -11,7 +11,7 @@
 - **Port-closure reconciliation** (a port missing from the next scan is closed) now applies to any report bound to `scan.ports`, not only to tools on a name list.
 - **Required output.** A report that misses the required output of its capability is logged and counted (`capability_contract_warned`) and applied as before. This is warn first, per decision TC13 of RFC-055.
 
-### Security
+### Security: a report's capability comes from the platform, never from the sensor alone
 
 - The capability that drives capability-specific handling is never taken from the sensor alone, and never from another tenant's manifest.
 - A tool contract whose `implements` names an unknown capability, a reference without its major, or a look-alike is dropped whole, as any invalid contract is.
