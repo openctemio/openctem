@@ -46,6 +46,8 @@ describe('scope kinds', () => {
     expect(scopeTargetTypeLabel('cidr')).toBe('IP range')
     expect(scopeKindOf('website')).toBe('url')
     expect(storedTypesFor('domain').split(',')).toContain('subdomain')
+    expect(storedTypesFor('domain', 'exclusions')).toBe('domain,subdomain')
+    expect(storedTypesFor('ip_range', 'exclusions')).toBe('ip_range,cidr')
   })
 
   it('defaults coverage by depth: a registrable domain covers below it, a host only itself', () => {

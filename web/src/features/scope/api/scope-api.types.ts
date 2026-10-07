@@ -119,6 +119,39 @@ export interface CreateScopeExclusionInput {
   pattern: string
   reason: string
   expires_at?: string
+  /** `path` exclusions (RFC-056): the pattern is a host pattern. */
+  path_prefix?: string
+  /** Methods the path rule blocks; empty blocks every method. */
+  methods?: string[]
+}
+
+/**
+ * How a path exclusion may be tested (RFC-056 §5, RFC-054 §6.2):
+ * blocked (nothing is sent), read_only (GET and HEAD), allowed (in scope
+ * until testing_until).
+ */
+export type ExclusionTesting = 'blocked' | 'read_only' | 'allowed'
+
+/**
+ * The path-exclusion fields of an exclusion response. Declared here until
+ * the generated contract carries them (they arrive with the API's path
+ * exclusions, #1326).
+ */
+export interface PathExclusionFields {
+  host_pattern?: string
+  path_prefix?: string
+  methods?: string[]
+  testing?: ExclusionTesting
+  testing_effective?: ExclusionTesting
+  testing_until?: string
+  testing_changed_by?: string
+  testing_changed_at?: string
+}
+
+/** PUT /scope/exclusions/{id}/testing */
+export interface SetExclusionTestingInput {
+  testing: ExclusionTesting
+  testing_until?: string
 }
 
 /**

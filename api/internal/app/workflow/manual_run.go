@@ -109,12 +109,20 @@ func (s *WorkflowService) TriggerManualRun(ctx context.Context, input ManualRunI
 		return nil, err
 	}
 
+	var subject *shared.ID
+	switch {
+	case len(findingIDs) == 1:
+		subject = &findingIDs[0]
+	case len(assetIDs) == 1:
+		subject = &assetIDs[0]
+	}
 	return s.TriggerWorkflow(ctx, TriggerWorkflowInput{
 		TenantID:    input.TenantID,
 		UserID:      input.UserID,
 		WorkflowID:  input.WorkflowID,
 		TriggerType: workflowdom.TriggerTypeManual,
 		TriggerData: data,
+		SubjectID:   subject,
 	})
 }
 

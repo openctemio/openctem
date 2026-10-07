@@ -54,6 +54,9 @@ WITH inv AS (
 		lower(rtrim(trim(both '[]' from CASE
 			WHEN a.name ~ '://' THEN substring(a.name from '://(?:[^@/]*@)?(\[[^\]]+\]|[^/:?#]+)')
 			WHEN a.name ~ '^\[[^\]]+\]' THEN substring(a.name from '^(\[[^\]]+\])')
+			-- A service, stored as host:port:proto (also host:port/proto and the
+			-- unbracketed IPv6 v6:port:proto): the host (asset.SplitServiceName).
+			WHEN a.name ~ ':[0-9]{1,5}[:/](tcp|udp|sctp)$' THEN regexp_replace(a.name, ':[0-9]{1,5}[:/](tcp|udp|sctp)$', '')
 			WHEN a.name ~ '^[^:/]+:[0-9]+$' THEN split_part(a.name, ':', 1)
 			ELSE a.name END), '.')) AS host
 	FROM assets a

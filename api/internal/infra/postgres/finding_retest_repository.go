@@ -38,7 +38,7 @@ func NewFindingRetestRepository(db *DB) *FindingRetestRepository {
 }
 
 const findingRetestColumns = `id, tenant_id, finding_id, asset_id, trigger, requested_by, status, outcome, reason,
-	prior_status, result_status, template_id, target, check_command_id, reach_command_id,
+	reason_code, sensor_id, prior_status, result_status, template_id, target, check_command_id, reach_command_id,
 	deadline_at, created_at, completed_at`
 
 // Create inserts a pending retest. A second pending retest of the same finding
@@ -247,10 +247,11 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE finding_retests
-			SET status = 'completed', outcome = $3, reason = $4, result_status = $5, completed_at = NOW()
+			SET status = 'completed', outcome = $3, reason = $4, result_status = $5, reason_code = $6, sensor_id = $7,
+				completed_at = NOW()
 			WHERE tenant_id = $1 AND id = $2`,
 			in.TenantID.String(), in.RetestID.String(), string(in.Outcome), truncateReason(in.Reason),
-			nullString(string(res.ResultStatus))); err != nil {
+			nullString(string(res.ResultStatus)), nullString(string(in.ReasonCode)), nullIDPtr(in.SensorID)); err != nil {
 			return fmt.Errorf("complete retest: %w", err)
 		}
 
@@ -469,6 +470,7 @@ func scanRetest(s retestScanner) (*retest.Retest, error) {
 	var (
 		id, tenantID, findingID                string
 		assetID, requestedBy, outcome, reason  sql.NullString
+		reasonCode, sensorID                   sql.NullString
 		resultStatus, checkCmd, reachCmd       sql.NullString
 		trigger, status, priorStatus, template string
 		target                                 string
@@ -476,7 +478,7 @@ func scanRetest(s retestScanner) (*retest.Retest, error) {
 		completed                              sql.NullTime
 	)
 	if err := s.Scan(&id, &tenantID, &findingID, &assetID, &trigger, &requestedBy, &status, &outcome, &reason,
-		&priorStatus, &resultStatus, &template, &target, &checkCmd, &reachCmd, &deadline, &created, &completed); err != nil {
+		&reasonCode, &sensorID, &priorStatus, &resultStatus, &template, &target, &checkCmd, &reachCmd, &deadline, &created, &completed); err != nil {
 		return nil, err
 	}
 	rt := &retest.Retest{
@@ -484,6 +486,8 @@ func scanRetest(s retestScanner) (*retest.Retest, error) {
 		Status:       retest.Status(status),
 		Outcome:      retest.Outcome(outcome.String),
 		Reason:       reason.String,
+		ReasonCode:   retest.ReasonCode(reasonCode.String),
+		SensorID:     optionalID(sensorID),
 		PriorStatus:  vulnerability.FindingStatus(priorStatus),
 		ResultStatus: vulnerability.FindingStatus(resultStatus.String),
 		TemplateID:   template,
