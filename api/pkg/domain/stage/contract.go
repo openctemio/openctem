@@ -157,6 +157,9 @@ type contract struct {
 	in, out  []PortType
 	params   []Param
 	required []string
+	// chunk is how many targets one task of a list-taking tool gets when a
+	// workflow step's targets are cut into chunks (0: never cut).
+	chunk int
 }
 
 // Shared standard params.
@@ -167,7 +170,8 @@ var (
 // contracts of the routed catalog stages (version 1).
 var contracts = map[Key]contract{
 	DiscoverSubdomains: {
-		in: []PortType{PortRootDomain}, out: []PortType{PortHostname},
+		chunk: 50,
+		in:    []PortType{PortRootDomain}, out: []PortType{PortHostname},
 		params: []Param{
 			{Name: "sources", Type: ParamStringList, Description: "Passive sources to query; empty means the tool's defaults."},
 			{Name: "recursive", Type: ParamBoolean, Description: "Also enumerate subdomains of found subdomains."},
@@ -176,7 +180,8 @@ var contracts = map[Key]contract{
 		required: []string{"name", "root_domain", "discovery_method"},
 	},
 	ResolveDNS: {
-		in: []PortType{PortHostname}, out: []PortType{PortHostname, PortIP},
+		chunk: 200,
+		in:    []PortType{PortHostname}, out: []PortType{PortHostname, PortIP},
 		params: []Param{
 			{Name: "record_types", Type: ParamStringList, Description: "DNS record types to query.", Enum: []string{"a", "aaaa", "cname", "mx", "ns", "txt"}},
 			{Name: "wildcard_filter", Type: ParamBoolean, Description: "Drop names that only resolve through a wildcard record."},
@@ -184,7 +189,8 @@ var contracts = map[Key]contract{
 		required: []string{"name", "resolves_to"},
 	},
 	ScanPorts: {
-		in: []PortType{PortHostname, PortIP}, out: []PortType{PortService, PortIP},
+		chunk: 50,
+		in:    []PortType{PortHostname, PortIP}, out: []PortType{PortService, PortIP},
 		params: []Param{
 			{Name: "ports", Type: ParamPortList, Description: "Ports and port ranges to scan."},
 			{Name: "top_n", Type: ParamInteger, Description: "Scan the N most common ports instead of a list.", Min: intPtr(1), Max: intPtr(65535)},
@@ -194,7 +200,8 @@ var contracts = map[Key]contract{
 		required: []string{"host", "port", "protocol"},
 	},
 	ProbeHTTP: {
-		in: []PortType{PortHostname, PortIP, PortService, PortURL}, out: []PortType{PortURL, PortIP},
+		chunk: 200,
+		in:    []PortType{PortHostname, PortIP, PortService, PortURL}, out: []PortType{PortURL, PortIP},
 		params: []Param{
 			{Name: "ports", Type: ParamPortList, Description: "Ports to probe when the input is a hostname or an address."},
 			{Name: "follow_redirects", Type: ParamBoolean, Description: "Follow redirects on the same host."},
@@ -204,7 +211,8 @@ var contracts = map[Key]contract{
 		required: []string{"url", "status_code", "title"},
 	},
 	CrawlWeb: {
-		in: []PortType{PortURL}, out: []PortType{PortURL},
+		chunk: 10,
+		in:    []PortType{PortURL}, out: []PortType{PortURL},
 		params: []Param{
 			{Name: "depth", Type: ParamInteger, Description: "Maximum crawl depth.", Min: intPtr(1), Max: intPtr(10)},
 			{Name: "js_parse", Type: ParamBoolean, Description: "Parse JavaScript for endpoints."},
@@ -213,7 +221,8 @@ var contracts = map[Key]contract{
 		required: []string{"url", "parent_url"},
 	},
 	VulnTemplates: {
-		in: []PortType{PortURL, PortService, PortHostname, PortIP}, out: []PortType{PortFinding},
+		chunk: 25,
+		in:    []PortType{PortURL, PortService, PortHostname, PortIP}, out: []PortType{PortFinding},
 		params: []Param{
 			{Name: "severity", Type: ParamStringList, Description: "Only templates of these severities.", Enum: []string{"info", "low", "medium", "high", "critical", "unknown"}},
 			{Name: "tags", Type: ParamStringList, Description: "Only templates with these tags."},
@@ -223,7 +232,8 @@ var contracts = map[Key]contract{
 		required: []string{"rule_id", "severity", "location", "evidence"},
 	},
 	DASTWeb: {
-		in: []PortType{PortURL}, out: []PortType{PortFinding},
+		chunk: 10,
+		in:    []PortType{PortURL}, out: []PortType{PortFinding},
 		params: []Param{
 			{Name: "profile", Type: ParamString, Description: "Scan depth.", Enum: []string{"crawl_only", "high_risk", "full"}},
 			{Name: "max_duration_minutes", Type: ParamInteger, Description: "Stop the scan after this many minutes.", Min: intPtr(1), Max: intPtr(1440)},
@@ -317,6 +327,27 @@ func (s *Stage) applyContract(c contract) {
 	s.OutPorts = c.out
 	s.Params = c.params
 	s.RequiredOutputFields = c.required
+	s.ChunkSize = c.chunk
+}
+
+// ChunkSizeFor is how many targets one task of tool gets when a workflow
+// step of this capability is cut into chunks: the capability's chunk size
+// when tool implements it and takes a target list, else 0 (one task for the
+// whole step).
+func (s Stage) ChunkSizeFor(tool string) int {
+	if s.ChunkSize <= 0 {
+		return 0
+	}
+	name := normalizeTool(tool)
+	for _, impl := range s.Implementations {
+		if impl.Tool == name {
+			if impl.Batch {
+				return s.ChunkSize
+			}
+			return 0
+		}
+	}
+	return 0
 }
 
 // toolParamsFor is the tool's mapping restricted to the capability's params.

@@ -178,6 +178,26 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `tenant_runner_only` in its run context; the dispatcher never sends any of
   its steps to platform sensors, whatever the template prefers. (Steps after
   the first used to ignore it.)
+- **No step is pinned to one sensor** (research/49 W27). A step command goes
+  to the run's zone (stamped with it), to the platform queue, or to the
+  tenant's sensors, and is left unpinned: the claim predicates (zone, tool,
+  grant, refusals, freeze) decide which sensor takes it. `SelectSensor` only
+  decides platform versus tenant now; it no longer picks a sensor.
+- **Chunks.** A step whose tool takes a target list (the catalogue's `batch`
+  flag) and whose planned targets exceed its capability's `chunk_size` is cut
+  into chunks of that size, one unpinned command each, all naming the step
+  run. Every eligible sensor takes a share by pull, a lease that runs out puts
+  a chunk back in the pool for another sensor, and the step settles with its
+  last chunk through the batch logic (`checkStepBatches`: every chunk failed
+  means failed, some failed means partial). Sizes come from the capability
+  contract, not from the tool: `resolve.dns` and `probe.http` 200,
+  `discover.subdomains` and `scan.ports` 50, `vuln.templates` 25,
+  `crawl.web` and `dast.web` 10; the code, image and connector capabilities
+  are not cut. A one-target tool keeps one command per step. If a later
+  chunk cannot be created, the ones already created are canceled.
+  Not yet: the candidate tool list per chunk (claim by any candidate),
+  placement modes, a spread cap and platform-side per-host leases
+  (research/49 §3.12.3).
 
 ## 4. Report output-type binding (owner decision G12)
 
