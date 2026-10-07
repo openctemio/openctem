@@ -28,8 +28,8 @@ export function TypedHandle({
       title={`${label}: ${text}`}
       data-ports={ports.join(',')}
       className={cn(
-        '!h-3 !w-3 !border-2 !border-white dark:!border-slate-800',
-        ports.length === 0 ? '!bg-slate-400' : isTarget ? '!bg-sky-500' : '!bg-violet-500',
+        '!h-3 !w-3 !border-2 !border-background',
+        ports.length === 0 ? '!bg-muted-foreground' : isTarget ? '!bg-info' : '!bg-primary',
         isTarget ? '!-left-1.5' : '!-right-1.5'
       )}
     />
