@@ -375,6 +375,7 @@ export function getRepositoryStats(
     high: 0,
     medium: 0,
     low: 0,
+    none: 0,
   }
 
   const byVisibility: Record<RepoVisibility, number> = {

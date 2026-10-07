@@ -148,6 +148,37 @@ traversable relationship types, for example
 
 with data scope applied at every hop.
 
+## The property schema
+
+An asset's free-form `properties` follow one schema per type
+([RFC-042 §6.3.9](../rfcs/RFC-042-asset-inventory-v2.md#639-the-property-schema-amendment-2026-10-07)),
+declared in `api/configs/asset-types.yaml`:
+
+- `properties`: every key once, with `label`, `label_vi`, `format` (`ip`,
+  `url`, `code`), `synonyms` and, when restricted, `classes`;
+- each type's `attributes`, plus `common_properties` for every type.
+
+| Concept | Canonical key | Folded synonyms |
+|---|---|---|
+| The asset's addresses | `ip_addresses` (list) | `ip`, `ips`, `ip_address` (string), `resolved_ip`, `resolved_ips`, `addresses` |
+| Name servers | `nameservers` | `nameserver` |
+| Technologies | `technologies` | `technology` |
+| Certificate SANs | `sans` | `san` |
+
+Writers fold synonyms with `asset.NormalizeProperties` (ingest, REST,
+import). Readers use `asset.IPAddresses` / `asset.PropertyStrings`, which
+also read a synonym an older row still holds; SQL builds its predicate from
+`asset.AddressPropertyKeys`. A key restricted to classes (`port`, HTTP
+status, banner, ...) is never stored on another class: ingest routes a port
+on a domain, host or address to that asset's `host:port/proto` open-port
+service (`exposes`), REST and import refuse it. A domain's addresses are
+also `resolves_to` edges to IP assets (first seen `created_at`, last seen
+`last_verified`).
+
+The web Properties section renders from the generated schema: labels in
+the viewer's language, addresses linked to their IP assets, unknown keys
+under "Other".
+
 ## Three layers: source record, link, canonical row
 
 | Layer | Asset | Service |

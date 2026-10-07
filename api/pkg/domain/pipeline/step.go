@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -83,10 +84,16 @@ type Step struct {
 	// Visual workflow builder
 	UIPosition UIPosition
 
-	// Tool requirements
-	Tool         string     // Preferred tool name (optional)
-	ToolID       *shared.ID // Preferred tool ID (FK reference to tools table, optional)
+	// Tool requirements. A step is a capability node; how it picks its tool
+	// (ToolSelection):
+	//   - pin:    Tool names the one tool it runs (strict);
+	//   - prefer: PreferTools lists the tools to try, in order;
+	//   - auto:   any implementation of the capability, the catalog default
+	//             first.
+	Tool         string     // Pinned tool name (optional)
+	ToolID       *shared.ID // Pinned tool ID (FK reference to tools table, optional)
 	Capabilities []string   // Required capabilities
+	PreferTools  []string   // Ordered tools to try when no tool is pinned
 
 	// Configuration
 	Config         map[string]any
@@ -145,6 +152,27 @@ func NewStep(
 // SetTool sets the preferred tool for the step.
 func (s *Step) SetTool(tool string) {
 	s.Tool = tool
+}
+
+// ToolSelection is how a step picks its tool.
+type ToolSelection string
+
+const (
+	ToolSelectionAuto   ToolSelection = "auto"
+	ToolSelectionPrefer ToolSelection = "prefer"
+	ToolSelectionPin    ToolSelection = "pin"
+)
+
+// Selection is the step's tool selection mode: pin when it names a tool,
+// prefer when it lists tools to try, auto otherwise.
+func (s *Step) Selection() ToolSelection {
+	switch {
+	case strings.TrimSpace(s.Tool) != "":
+		return ToolSelectionPin
+	case len(s.PreferTools) > 0:
+		return ToolSelectionPrefer
+	}
+	return ToolSelectionAuto
 }
 
 // SetToolID sets the preferred tool ID (FK reference to tools table).

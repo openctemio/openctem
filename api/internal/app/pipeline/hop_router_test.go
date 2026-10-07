@@ -261,6 +261,25 @@ func (f *chainFixture) commandTargets(t *testing.T, n int) []string {
 	return p.Targets
 }
 
+// allCommandTargets is the union of the targets of every created command,
+// sorted; it fails on a target carried by two commands.
+func (f *chainFixture) allCommandTargets(t *testing.T) []string {
+	t.Helper()
+	var all []string
+	seen := map[string]bool{}
+	for i := range f.cmds.created {
+		for _, x := range f.commandTargets(t, i) {
+			if seen[x] {
+				t.Fatalf("target %s is in two commands", x)
+			}
+			seen[x] = true
+			all = append(all, x)
+		}
+	}
+	sort.Strings(all)
+	return all
+}
+
 func contains(xs []string, x string) bool {
 	for _, v := range xs {
 		if v == x {
@@ -358,9 +377,19 @@ func TestHopRouter_FanOutCapped(t *testing.T) {
 		f.output("subs", fmt.Sprintf("h%05d.acme.com", i), "subdomain", "", "")
 	}
 	f.schedule(t)
-	dns := f.commandTargets(t, 0)
+	dns := f.allCommandTargets(t)
 	if len(dns) != 5001 {
 		t.Fatalf("dnsx got %d targets, want 5000 derived + the seed", len(dns))
+	}
+	// Cut into chunks of the capability's size (resolve.dns: 200), one
+	// unpinned command each, so every eligible sensor takes a share.
+	if len(f.cmds.created) != 26 {
+		t.Fatalf("commands = %d, want 26 chunks of at most 200", len(f.cmds.created))
+	}
+	for i := range f.cmds.created {
+		if n := len(f.commandTargets(t, i)); n > 200 {
+			t.Fatalf("chunk %d has %d targets", i, n)
+		}
 	}
 	p := f.hops.plan(t, f.run.ID, "dns")
 	if p.Planned != 5001 || p.Skipped[pipelinedom.ReasonOverCap] != 15001 || p.Inputs != 20002 {

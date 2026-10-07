@@ -71,6 +71,7 @@ import {
   type OwnershipType,
   type UpdateAssetInput,
 } from '../../types/asset.types'
+import { ASSET_CRITICALITY_LEVELS } from '@/lib/criticality'
 
 interface BulkBarProps {
   selected: Asset[]
@@ -110,8 +111,6 @@ function fullUpdate(a: Asset, overrides: Partial<UpdateAssetInput>): UpdateAsset
     ...overrides,
   }
 }
-
-const CRITICALITY_ORDER: Criticality[] = ['critical', 'high', 'medium', 'low']
 
 type PickerOption =
   | { kind: 'user'; id: string; label: string; sublabel?: string }
@@ -328,7 +327,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CRITICALITY_ORDER.map((c) => (
+                {ASSET_CRITICALITY_LEVELS.map((c) => (
                   <SelectItem key={c} value={c}>
                     {CRITICALITY_LABELS[c]}
                   </SelectItem>
