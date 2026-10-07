@@ -213,4 +213,63 @@ describe('review queue', () => {
       ).toBe(true)
     )
   })
+
+  it('an address row says why it waits, what resolves to it, and offers the server fixes', async () => {
+    api.get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes('/candidates/suggestions')
+          ? { suggestions: [] }
+          : url.includes('/easm/summary')
+            ? { attribution: { review_by_reason: {} } }
+            : {
+                total: 2,
+                data: [
+                  {
+                    asset_id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a60',
+                    name: '202.160.124.20',
+                    type: 'ip_address',
+                    state: 'needs_review',
+                    hint: 'ip_needs_ip_entry',
+                    resolved_from: ['vndirect.com.vn', 'www.vndirect.com.vn'],
+                    network: { asn: 'AS131386', org: 'VNDIRECT', shared: false, org_matches: true },
+                    fixes: [
+                      { action: 'add_entry', target_type: 'ip_address', pattern: '202.160.124.20' },
+                      { action: 'add_entry', target_type: 'cidr', pattern: '202.160.124.0/24' },
+                    ],
+                  },
+                  {
+                    asset_id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a61',
+                    name: '104.16.1.2',
+                    type: 'ip_address',
+                    state: 'needs_review',
+                    hint: 'ip_needs_ip_entry',
+                    network: {
+                      asn: 'AS13335',
+                      org: 'CLOUDFLARENET',
+                      shared: true,
+                      shared_provider: 'Cloudflare',
+                    },
+                  },
+                ],
+              }
+      )
+    )
+    wrap(<EASMReviewQueue />)
+    const ip = (await screen.findByText('202.160.124.20')).closest('tr')!
+    expect(within(ip).getByText(/Names never grant their addresses/)).toBeInTheDocument()
+    expect(within(ip).getByText('www.vndirect.com.vn')).toBeInTheDocument()
+    expect(within(ip).getByText(/matches your organization/)).toBeInTheDocument()
+    expect(
+      within(ip).getByRole('button', { name: 'Add to scope: 202.160.124.20' })
+    ).toBeInTheDocument()
+    expect(
+      within(ip).getByRole('button', { name: 'Add to scope: 202.160.124.0/24' })
+    ).toBeInTheDocument()
+
+    const cdn = screen.getByText('104.16.1.2').closest('tr')!
+    expect(
+      within(cdn).getByText(/shared provider space \(Cloudflare\); it cannot be added/)
+    ).toBeInTheDocument()
+    expect(within(cdn).queryByRole('button', { name: /Add/ })).not.toBeInTheDocument()
+  })
 })

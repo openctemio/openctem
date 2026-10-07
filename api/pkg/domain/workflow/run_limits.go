@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -54,4 +55,34 @@ func IsRunThrottled(err error) bool {
 func (r *Run) SetSubject(subjectID *shared.ID, idempotencyKey string) {
 	r.SubjectID = subjectID
 	r.IdempotencyKey = idempotencyKey
+}
+
+// ErrRunCooldown: the automation already ran for this subject and trigger
+// within the cooldown (the loop guard); the event does not start it again.
+var ErrRunCooldown = errors.New("automation already ran for this subject within the cooldown")
+
+// RecentSubjectRunChecker answers the subject cooldown. Optional extension
+// of RunRepository.
+type RecentSubjectRunChecker interface {
+	// HasRecentSubjectRun reports whether workflowID (in tenantID) has a run
+	// for subjectID and triggerType created after since.
+	HasRecentSubjectRun(ctx context.Context, tenantID, workflowID, subjectID shared.ID, triggerType TriggerType, since time.Time) (bool, error)
+}
+
+// RunOutcomeReader reads the latest outcomes of a workflow's runs. Optional
+// extension of RunRepository, used to pause an automation that keeps failing.
+type RunOutcomeReader interface {
+	// LatestOutcomes returns the statuses of the workflow's latest n finished
+	// runs (completed or failed, newest first), leaving out the records of
+	// throttled events.
+	LatestOutcomes(ctx context.Context, tenantID, workflowID shared.ID, n int) ([]RunStatus, error)
+}
+
+// StaleRunReaper ends runs nothing will finish. Optional extension of
+// RunRepository.
+type StaleRunReaper interface {
+	// FailStaleRuns fails the pending and running runs created before
+	// before (across tenants: a maintenance job), with their open steps,
+	// and returns how many runs it ended.
+	FailStaleRuns(ctx context.Context, before time.Time, reason string) (int64, error)
 }

@@ -62,7 +62,7 @@ func (h *ScopeHandler) ApproveTarget(w http.ResponseWriter, r *http.Request) {
 		h.reevaluate(tenantID, target)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toScopeTargetResponse(target))
+	_ = json.NewEncoder(w).Encode(h.targetOut(r, target))
 }
 
 // RejectTarget handles POST /api/v1/scope/targets/{id}/reject
@@ -91,7 +91,7 @@ func (h *ScopeHandler) RejectTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditTarget(r, audit.ActionScopeTargetRejected, targetID, before, target)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toScopeTargetResponse(target))
+	_ = json.NewEncoder(w).Encode(h.targetOut(r, target))
 }
 
 // ScopeSettingsResponse is the organization's scope settings (RFC-054 §6.3).

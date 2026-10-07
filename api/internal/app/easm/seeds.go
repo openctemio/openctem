@@ -191,6 +191,7 @@ func (s *SeedService) Create(ctx context.Context, tenantID shared.ID, in CreateS
 		Reason:      "Root-domain seed " + value + ": the requester attested that the organization is authorized to have it discovered and checked",
 		CreatedBy:   in.Actor.UserID,
 		Actor:       in.Actor,
+		Origin:      scopedom.OriginSeed,
 	})
 }
 
