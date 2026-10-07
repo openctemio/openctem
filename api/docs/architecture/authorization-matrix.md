@@ -117,7 +117,6 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `DELETE /api/v1/tenants/{tenant}`
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
-- `POST /api/v1/audit-logs/rebaseline`
 - `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
 - `PATCH /api/v1/attachments/storage-config`
 
@@ -393,7 +392,7 @@ create's target validator, exclusions, zone routing) in one call.
 | `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) |
 | `GET /api/v1/audit-logs/user/{id}` | `audit:read`, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
 | `GET /api/v1/audit-logs/verify` | owner/admin (`RequireAdmin`) |
-| `POST /api/v1/audit-logs/rebaseline` | **owner only** (`RequireOwner`) |
+| (no tenant rebaseline) | the audit-chain rebaseline is admin-console only: `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` |
 
 > The organization audit log (actor emails, IPs, every action) is owner/admin
 > only: migration `000246` removed `audit:read` from member and viewer.
@@ -560,7 +559,6 @@ the billing page in the UI.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/dashboard/stats` | `dashboard:read` |
-| `GET /api/v1/dashboard/stats/global` | `dashboard:read` |
 
 ### URL-Tenant Routes (Tenant from URL)
 
@@ -1197,7 +1195,6 @@ the default member list (`?status=offboarded|all` shows them) and out of SCIM.
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
 | `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
 | `GET /dashboard/executive-summary` (+ export) `top_risks` | bypass | filtered |
-| `GET /dashboard/stats/global` recent activity | bypass | per organization: filtered where the caller is restricted there |
 | `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |
@@ -1747,6 +1744,7 @@ These tests fail the build if the model erodes. Treat them as executable spec:
 | Invariant | Test | What it guarantees |
 |-----------|------|--------------------|
 | **Every route is gated or explicitly allowlisted** | `tests/unit/route_authz_coverage_test.go` (AUTHZ-02) | A go/ast walk of `routes/*.go` resolves chi `.Group` nesting + inherited gates; any route with no `Require*`/`RequireTeam*`/`RequireRole` and not in `allowlistPrefixes` fails the build, naming the route. Removing one `Require(...)` → red. |
+| **Every permission gates something** | `tests/unit/permission_checked_test.go` | The inverse: a permission in the catalog that no code under `internal/` or `cmd/` references fails the build (the role editor would offer a capability that does not exist), unless it is listed in `reservedPermissions` with its decision (today `assets:export`, kept for server-side asset export). Each permission string has exactly one Go constant. |
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
 | **No tenantless by-id statement on a tenant-scoped table** | `tools/lint/tenantsql` (D-11) | Folds the SQL each `internal/infra/postgres` function sends and fails on `WHERE id = $n` against a table with a `tenant_id` column when the statement has no tenant predicate, unless the method is named `...ForPlatform`/`...Unscoped` (never callable from an HTTP handler) or the shrink-only `allowlist.txt` records why. See `tools/lint/tenantsql/README.md`. |
 | **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |
@@ -1806,8 +1804,8 @@ The web console shows a mutating control (Save, Delete, Add, Test, Sync) only
 when the caller passes the gate of the API route it calls. The gates come from
 `web/src/config/api-route-permissions.json`, which
 `tests/unit/route_permission_map_test.go` generates from the route source
-(`UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run TestRoutePermissionMapIsCurrent`;
-CI fails when it is stale). Components call `useCanMutate("METHOD /path")`
+(`make generate` at the repository root; the file is not committed, so it
+cannot go stale, and CI and image builds generate it before the web build). Components call `useCanMutate("METHOD /path")`
 (`web/src/lib/permissions/can-mutate.ts`) instead of picking a permission by
 hand, which is how about 15 settings controls drifted from the API (shown and
 then 403, or hidden although allowed). This is UX only; the API gate stays the

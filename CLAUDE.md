@@ -11,9 +11,12 @@ CLAUDE.md — read the one for the directory you are changing:
 
 - Branches: PRs target `develop`; `main` is the release branch. Merge with a
   merge commit or squash, never "rebase and merge" for branches containing merges.
-- One PR may change both sides. If you change a handler's request/response, run
-  `make -C api swagger` then `make api-types` and commit both: CI fails if
-  `web/src/lib/api/generated/api.types.ts` does not match `api/api/openapi/swagger.yaml`.
+- One PR may change both sides. The contract files (the OpenAPI spec, the web
+  API types, the web route permission map, the route manifest) are generated,
+  NOT committed: run `make generate` after pulling or after changing a
+  handler, a route or its gate (`make generate-docker` if Go or Node is
+  missing). Web CI type-checks the web against the fresh contract and posts the
+  contract diff (breaking changes, route gate changes) on the pull request.
 - Go: run tools from `api/` with `GOWORK=off`; module path is
   `github.com/openctemio/openctem/api`.
 - Release: one `vX.Y.Z` tag on `main` publishes all six images from one commit

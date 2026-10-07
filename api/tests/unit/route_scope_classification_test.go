@@ -69,8 +69,8 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/module-presets":           {classSystem, "module preset catalog"},
 	"/api/v1/permissions":              {classSystem, "permission catalog"},
 	"/api/v1/asset-types":              {classSystem, "asset type registry"},
-	"/api/v1/tools":                    {classSystem, "tool catalog"},
-	"/api/v1/tool-categories":          {classSystem, "tool catalog"},
+	"/api/v1/tools":                    {classConfig, "tool catalog (platform + own custom tools) with the tenant's settings of it"},
+	"/api/v1/tool-categories":          {classConfig, "tool categories (platform + own custom)"},
 	"/api/v1/capabilities":             {classSystem, "capability catalog"},
 	"/api/v1/finding-sources":          {classSystem, "finding source catalog"},
 	"/api/v1/threat-intel":             {classSystem, "global EPSS/KEV feeds"},
@@ -112,9 +112,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scan-profiles":                   {classConfig, "scan profiles"},
 	"/api/v1/scanner-templates":               {classConfig, "scanner templates"},
 	"/api/v1/template-sources":                {classConfig, "template sources"},
-	"/api/v1/tenant-tools":                    {classConfig, "tenant tool configuration"},
-	"/api/v1/custom-tools":                    {classConfig, "custom tools"},
-	"/api/v1/custom-tool-categories":          {classConfig, "custom tool categories"},
 	"/api/v1/custom-capabilities":             {classConfig, "custom capabilities"},
 	// Not catalog data: the stats name the caller's own sensors and custom tools
 	// (tenant-filtered in SQL; platform tools are the only shared rows, 23b SC-H1).

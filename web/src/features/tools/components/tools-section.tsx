@@ -41,8 +41,7 @@ import {
   useDeleteCustomTool,
   useEnableTool,
   useDisableTool,
-  invalidateCustomToolsCache,
-  invalidateTenantToolsCache,
+  invalidateToolsCache,
 } from '@/lib/api/tool-hooks'
 import { useAllToolCategories, getCategoryNameById } from '@/lib/api/tool-category-hooks'
 import type { Tool, ToolAvailabilityItem, ToolAvailabilityStatus } from '@/lib/api/tool-types'
@@ -140,7 +139,7 @@ export function ToolsSection() {
   const { trigger: disableTool } = useDisableTool()
 
   const refresh = useCallback(async () => {
-    await invalidateTenantToolsCache()
+    await invalidateToolsCache()
     await mutate()
   }, [mutate])
 
@@ -180,7 +179,6 @@ export function ToolsSection() {
     try {
       await deleteCustomTool()
       toast.success(`Tool "${deletingTool.display_name}" deleted`)
-      await invalidateCustomToolsCache()
       await refresh()
       setDeleteDialogOpen(false)
       setDeletingTool(null)
@@ -218,9 +216,9 @@ export function ToolsSection() {
     toast.success('Tools exported')
   }, [visible, categoriesData])
 
-  const canEditTool = useCanMutate('PUT /api/v1/custom-tools/{id}')
-  const canDeleteTool = useCanMutate('DELETE /api/v1/custom-tools/{id}')
-  const canToggle = useCanMutate('POST /api/v1/tenant-tools/bulk/enable')
+  const canEditTool = useCanMutate('PUT /api/v1/tools/{id}')
+  const canDeleteTool = useCanMutate('DELETE /api/v1/tools/{id}')
+  const canToggle = useCanMutate('PATCH /api/v1/tools/settings')
 
   // Each metric's count is exactly what its filter shows.
   const countOf = (st: ToolAvailabilityStatus) => narrowed.filter((i) => i.status === st).length
@@ -374,7 +372,7 @@ export function ToolsSection() {
           <Download className="h-4 w-4" />
           Export
         </Button>
-        <Can route="POST /api/v1/custom-tools">
+        <Can route="POST /api/v1/tools">
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
             <Plus className="h-4 w-4" />
             Add tool
