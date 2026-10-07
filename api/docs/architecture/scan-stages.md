@@ -162,6 +162,24 @@ When a step is queued, its step run records the **capability it ran**
 picked** (`step_runs.tool`). The tier of a capability node is the tier of its
 capability: every built-in implementation shares it.
 
+### 1.3 Starter workflows
+
+Migration 001201 seeds five system workflows built only from capability steps
+(no pinned tool), so any available implementation runs them:
+
+| Workflow | Steps |
+|---|---|
+| Discover | `discover.subdomains` → `resolve.dns` → `probe.http` |
+| Discover + Vuln | `discover.subdomains` → `resolve.dns` → `scan.ports` → `probe.http` → `vuln.templates` (fed by the probe and the ports) |
+| Web app | `probe.http` → `crawl.web` → `vuln.templates` |
+| Network | `scan.ports` → `probe.http` → `vuln.templates` |
+| Code / CI | `secrets.code`, `sast.code`, `sca.deps` and `iac.misconfig`, in parallel |
+
+They are tagged `starter`. The new-scan wizard offers them first, next to a
+single check. An integration test checks that each passes the graph check
+and resolves a seeded platform tool for every step. The presets they replace
+are deactivated, not deleted.
+
 ## 2. The planner: one dispatcher, capability → tool
 
 Every pipeline step command is built on one path:
@@ -210,9 +228,21 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `crawl.web` and `dast.web` 10; the code, image and connector capabilities
   are not cut. A one-target tool keeps one command per step. If a later
   chunk cannot be created, the ones already created are canceled.
+- **One sensor per host** (platform-side politeness, migration 001186). A
+  chunk of an active stage (T1 and above) records the hosts it sends traffic
+  to in `commands.host_keys` (lower-case name or address, no scheme, port or
+  path). The poll offers, and a claim takes, such a chunk only while no other
+  acknowledged or running command of the tenant holds one of its hosts
+  (`hostFreePredicate`). Claims serialize on the keys with transaction
+  advisory locks (`lockHostKeys`), and a batch claim takes one chunk per
+  host. Only acknowledged and running commands count, so a finish, a failure,
+  a release or an expired lease frees the hosts with nothing to clean up.
+  Passive stages carry no keys. Keys are tenant-scoped, so another tenant's
+  work never holds a tenant back. The sensor's own `PerHostConcurrency` stays
+  as defense in depth. Platform jobs (`get_next_platform_job`) do not check
+  host keys yet.
   Not yet: the candidate tool list per chunk (claim by any candidate),
-  placement modes, a spread cap and platform-side per-host leases
-  (research/49 §3.12.3).
+  placement modes and a spread cap (research/49 §3.12.3).
 
 ## 4. Report output-type binding (owner decision G12)
 
