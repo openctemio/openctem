@@ -53,6 +53,13 @@ func (s State) Valid() bool {
 // not probed until a person confirms it or a scope target covers it.
 const StateUnattributed State = "unattributed"
 
+// StateOutOfScope is never stored either: the active-scan gate's answer for
+// an internet-facing asset whose record is confirmed but that no active scope
+// target, root-domain seed or verified domain of the tenant covers (RFC-054
+// §4.2). Confirmation records ownership; it does not authorize active probes
+// by itself. The asset, its history and findings stay.
+const StateOutOfScope State = "out_of_scope"
+
 // AllowsActiveChecks reports whether a recorded state lets a sensor touch an
 // asset (RFC-036 §6.3 active_allowed: confirmed only). The empty state (no
 // record) answers true here only as far as the record goes: the active-scan
@@ -95,6 +102,11 @@ const (
 	// named in a result). Medium: it brings a name to review, and never
 	// confirms one on its own (research/22 E7).
 	RuleScanDiscovered Rule = "tenant_scan_discovered"
+	// RuleMatchesScopeTarget: an active, permanent scope target of the
+	// tenant (or a root-domain seed) covers the name; an IP address only
+	// through an IP, range or CIDR entry that contains it. A declared scope
+	// entry is an intentional ownership claim, so it confirms (RFC-054 §4.3).
+	RuleMatchesScopeTarget Rule = "matches_scope_target"
 )
 
 // Class is the strength class of a rule.
@@ -112,10 +124,11 @@ type ruleDef struct {
 }
 
 var rules = map[Rule]ruleDef{
-	RuleVerifiedRoot:   {0.99, ClassStrong},
-	RuleTenantScanned:  {0.95, ClassStrong},
-	RuleAssertedRoot:   {0.85, ClassMedium},
-	RuleScanDiscovered: {0.60, ClassMedium},
+	RuleVerifiedRoot:       {0.99, ClassStrong},
+	RuleMatchesScopeTarget: {0.99, ClassStrong},
+	RuleTenantScanned:      {0.95, ClassStrong},
+	RuleAssertedRoot:       {0.85, ClassMedium},
+	RuleScanDiscovered:     {0.60, ClassMedium},
 }
 
 // Weight returns the base weight and class of a rule.

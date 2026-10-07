@@ -235,15 +235,13 @@ func (d *Doorbell) seconds(v time.Duration) int {
 }
 
 // ConfigVersion is an opaque, stable digest of what the platform governs
-// about a sensor: capabilities, tools, concurrency, execution mode, the
+// about a sensor: capabilities, concurrency, execution mode, the
 // operator-set config, the presented key's expiry and the assigned zones
 // (each with its last change). It changes when any of those changes and only
 // then; heartbeat metrics and last-seen times are not part of it.
 func ConfigVersion(a *sensordom.Sensor, keyExpiresAt *time.Time, zoneFingerprint string) string {
 	caps := append([]string(nil), a.Capabilities...)
-	tools := append([]string(nil), a.Tools...)
 	sort.Strings(caps)
-	sort.Strings(tools)
 	cfg, _ := json.Marshal(a.Config) // map keys are emitted sorted
 	exp := ""
 	if keyExpiresAt != nil {
@@ -252,7 +250,6 @@ func ConfigVersion(a *sensordom.Sensor, keyExpiresAt *time.Time, zoneFingerprint
 	var b strings.Builder
 	for _, part := range []string{
 		"caps=" + strings.Join(caps, ","),
-		"tools=" + strings.Join(tools, ","),
 		"max_jobs=" + strconv.Itoa(a.MaxConcurrentJobs),
 		"mode=" + string(a.ExecutionMode),
 		"config=" + string(cfg),

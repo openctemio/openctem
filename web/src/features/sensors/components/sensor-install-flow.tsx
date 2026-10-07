@@ -73,7 +73,7 @@ const STEPS = [
   {
     key: 'review',
     title: 'Review what it reported',
-    text: 'When its first heartbeat arrives: its host, version and tools. Choose which tools jobs may use.',
+    text: 'When its first heartbeat arrives: its host, version and tools.',
   },
 ] as const
 
@@ -210,8 +210,7 @@ export interface SensorInstallFlowProps {
 /**
  * Install a sensor (mockup frame C): name and role, then the commands with the
  * key already in them (shown once), a live wait for the first heartbeat, then
- * what the sensor reported, where the admin chooses which of its tools jobs
- * may use. Creating a sensor issues a credential, so this is for admins
+ * what the sensor reported. Creating a sensor issues a credential, so this is for admins
  * (sensors:write).
  */
 export function SensorInstallFlow({
@@ -270,8 +269,8 @@ export function SensorInstallFlow({
     const r = INSTALL_ROLES[role]
     try {
       // No tools or capabilities: the sensor reports what it has on its
-      // first heartbeat, and every reported tool is allowed until the admin
-      // narrows the list in step 3.
+      // first heartbeat, and jobs use every installed tool it reports (the
+      // sensor grant narrows them).
       const res = await createSensor({ name: trimmed, type: r.type, execution_mode: r.mode })
       if (!res?.api_key || !res.sensor) throw new Error('The response had no key')
       setCreated({ sensor: res.sensor, apiKey: res.api_key })
@@ -420,7 +419,8 @@ export function SensorInstallFlow({
 
             {role !== 'collector' && (
               <p className="text-xs text-muted-foreground">
-                You choose its tools after it connects: the sensor reports which scanners it has.
+                The sensor reports which scanners it has when it connects; jobs use every one of
+                them.
               </p>
             )}
 

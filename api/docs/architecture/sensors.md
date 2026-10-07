@@ -599,9 +599,9 @@ signing is iteration 2.
 `internal/app/ingest/v2_receiver.go`: command binding, replay versus
 conflict, every segment carries the same tool and metadata
 (`409 segment-header-mismatch`), the same binding (`409 binding-mismatch`),
-the report's tool is one the sensor declared (`422 tool-not-permitted`; a
-sensor with no declared tools may report none, reserved names such as
-`pentest` never), at most 8 open reports per sensor
+the report's tool is one the sensor reported installed (`422
+tool-not-permitted`; a sensor that reported no tool may report no result,
+reserved names such as `pentest` never), at most 8 open reports per sensor
 (`429 too-many-open-reports`), the tenant's queue depth
 (`INGEST_MAX_PENDING_PER_TENANT`, `429 queue-full`), and at most 100,000
 assets and findings per report, reserved in one conditional `UPDATE` so
@@ -800,25 +800,27 @@ The heartbeat can carry what the sensor really has: `tools`
 v0.13+) says what that tool serves besides its name (`nuclei` → `dast`,
 `validate:nuclei`), so the flat list can be traced to a tool; `kind` is
 `scanner` or `collector`. Both are sanitized like the flat list (known names
-only, at most 32 per tool) and kept in `reported_tools`. The sensor's report is the truth. The administrator's `tools`,
+only, at most 32 per tool) and kept in `reported_tools`. The sensor's report is the truth. The administrator's
 `capabilities` and `max_concurrent_jobs` on the sensor are **limits** that can
-only narrow it:
+only narrow it; the tools have no limit on the sensor (the sensor grant,
+`sensor_grants.tools`, narrows them at admission, RFC-052):
 
-- effective tools = reported installed tools ∩ `tools` (empty `tools`: all reported)
-- effective capabilities = reported ∩ `capabilities` (likewise)
+- effective tools = the reported installed tools (none before the first report)
+- effective capabilities = reported ∩ `capabilities` (empty `capabilities`: all reported)
 - effective concurrency = the smallest of the reported ceiling
   (`max_concurrent_jobs`), the administrator's `max_concurrent_jobs` and the
   reported slots (`capacity.slots_total`, see "Load, capacity and release")
   that is set (RFC-033 §6.1)
-- not reported (old SDK): the administrator's values, unchanged, except that
-  **dispatch sends such a sensor no tool**: a declared tool is unverified (see below)
+- not reported (old SDK): the administrator's capabilities and concurrency,
+  and **no tool**: dispatch sends such a sensor no tool job (see below)
 
 Storage (migration 000253): `reported_tools` (jsonb), `reported_tool_names`,
 `reported_capabilities`, `reported_max_jobs`, `reported_os`, `reported_arch`,
-`reported_at`, and the generated columns `effective_tools`,
-`effective_capabilities`, `effective_max_jobs`, built with
-`sensor_effective_list(declared, reported)` and (000257)
-`sensor_effective_max_jobs(admin, reported, capacity)`. Every dispatch query reads the
+`reported_at`, and the generated columns `effective_tools`
+(`COALESCE(reported_tool_names, '{}')`, migration 001149, which dropped the
+stale declared `sensors.tools`), `effective_capabilities`
+(`sensor_effective_list(declared, reported)`) and `effective_max_jobs` (000257,
+`sensor_effective_max_jobs(admin, reported, capacity)`). Every dispatch query reads the
 `effective_*` columns: selector, `ClaimJob`, tool and capability
 availability, list filters and platform capacity. The command poll's capability
 gate and the API use `Sensor.EffectiveCapabilities()` and the other
@@ -828,13 +830,13 @@ methods agree across a matrix of inputs.
 
 RFC-030's tool gate on the command poll, the claim, the doorbell count and
 the zone predicate (`sensorDispatchTools` in `command_repository.go`) reads
-the sensor's **verified** tools: `effective_tools` when the sensor reported
-its tools, none when it never did. The selector, `FindAvailableWithTool`,
+the sensor's **verified** tools: `effective_tools`, none when it never
+reported. The selector, `FindAvailableWithTool`,
 `HasSensorForTool` (the trigger's availability check) and
 `GetAvailableToolsForTenant` use the same expression. A command that names a
-tool reaches only sensors whose own probe found it installed; a tool the
-administrator merely declared on a sensor that never reported gets no work
-(it used to, and failed with "scanner not found"). Tool-less and
+tool reaches only sensors whose own probe found it installed; a sensor that
+never reported gets no tool work (a tool typed at creation used to get it, and
+failed with "scanner not found"). Tool-less and
 capability-scoped commands are unaffected.
 
 **Capacity vs slots** (total capacity vs what is allocatable now). The reported
@@ -987,6 +989,11 @@ Code: `pkg/domain/sensor/manifest.go`, `internal/app/sensor/manifest.go`,
 `internal/infra/http/handler/sensor_control_v2_handler.go` (`PutManifest`),
 `sensor_manifest_handler.go`. Migration 000258. Tests:
 `routes/sensor_manifest_db_test.go`, `sensor/manifest_test.go`.
+
+
+### Tool availability
+
+The Tools page, the scan builder and the workflow step pickers read the tools of the current manifests through one view, `GET /api/v1/tenant-tools/availability`. It joins them with the catalog per tenant and derives a status per tool: ready, no_sensor, offline_only, outdated or disabled. See [tool-availability.md](tool-availability.md).
 
 ## Collector sensors
 

@@ -41,7 +41,7 @@ outbox:
 # renewal has retired.
 
 scanners:
-{{- with tools .Sensor.Tools}}
+{{- with tools .Sensor.EffectiveTools}}
 {{- range .}}
   - name: {{toScannerName .}}
     enabled: true
@@ -61,7 +61,7 @@ export API_KEY={{shellQuote .APIKey}}
 export API_URL={{shellQuote .BaseURL}}
 export API_KEY='octs_...'
 {{- end}}
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
 export SENSOR_TOOLS={{.}}
 {{- end}}
 {{- if .CACert}}
@@ -119,7 +119,7 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 {{- else}}
   -e API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
 {{- end}}
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
   -e SENSOR_TOOLS={{.}} \
 {{- end}}
   -e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml \
@@ -154,7 +154,7 @@ docker run --rm \
 {{- end}}
   -v "$PWD":/scan \
   {{.Image}} \
-  -tool {{firstTool .Sensor.Tools}} -target /scan -push
+  -tool {{firstTool .Sensor.EffectiveTools}} -target /scan -push
 {{- end}}
 `,
 	"cli": `# Sensor binary commands for {{slugify .Sensor.Name}}
@@ -174,10 +174,10 @@ export SSL_CERT_DIR=/etc/openctem/certs
 # Long-running: run the scans the platform dispatches. The sensor keeps its
 # state, including the API key it renews on its own, in SENSOR_STATE_DIR
 # (default /var/lib/openctem/state when writable, else ~/.openctem).
-./openctemio-sensor -daemon -enable-commands{{with toolList .Sensor.Tools}} -tools {{.}}{{end}}
+./openctemio-sensor -daemon -enable-commands{{with toolList .Sensor.EffectiveTools}} -tools {{.}}{{end}}
 
 # One-shot: scan a directory once and send the results
-./openctemio-sensor -tool {{firstTool .Sensor.Tools}} -target . -push
+./openctemio-sensor -tool {{firstTool .Sensor.EffectiveTools}} -target . -push
 `,
 	"compose": `{{- $slug := slugify .Sensor.Name -}}
 # OpenCTEM sensor "{{$slug}}": Docker Compose
@@ -216,7 +216,7 @@ services:
     restart: {{if isDaemon .Sensor}}unless-stopped{{else}}"no"{{end}}
 {{- if not (isDaemon .Sensor)}}
     # A one-shot sensor: scans ./src once and sends the results.
-    command: ["-tool", "{{firstTool .Sensor.Tools}}", "-target", "/scan", "-push"]
+    command: ["-tool", "{{firstTool .Sensor.EffectiveTools}}", "-target", "/scan", "-push"]
 {{- end}}
 {{- if isDaemon .Sensor}}
     # Hardened: read-only root filesystem, no capabilities, no privilege
@@ -229,7 +229,7 @@ services:
     environment:
       API_URL: {{yamlQuote .BaseURL}}
       API_KEY: ${OPENCTEM_API_KEY:?set OPENCTEM_API_KEY in .env}
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
       SENSOR_TOOLS: {{yamlQuote .}}
 {{- end}}
 {{- if isDaemon .Sensor}}
@@ -410,7 +410,7 @@ spec:
                 secretKeyRef:
                   name: {{$slug}}
                   key: api-key
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
             - name: SENSOR_TOOLS
               value: {{yamlQuote .}}
 {{- end}}
@@ -505,7 +505,7 @@ spec:
       containers:
         - name: sensor
           image: {{.Image}}
-          args: ["-tool", "{{firstTool .Sensor.Tools}}", "-target", "/scan", "-push"]
+          args: ["-tool", "{{firstTool .Sensor.EffectiveTools}}", "-target", "/scan", "-push"]
           env:
             - name: API_URL
               value: {{yamlQuote .BaseURL}}
@@ -578,7 +578,7 @@ helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.mode=daemon \
   --set sensor.image.tag={{imageTag .Image}} \
   --set sensor.existingSecret={{$slug}}-key \
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
   --set sensor.outbox.persistence.enabled=true \
@@ -634,7 +634,7 @@ targets:
   # RFC 1918 / ULA ranges. The sensor must also run with
   # SENSOR_ALLOW_PRIVATE_TARGETS=1: the policy only narrows.
   allow_private: {{.Policy.AllowPrivate}}
-{{- with tools .Sensor.Tools}}
+{{- with tools .Sensor.EffectiveTools}}
 
 tools:
   # The tools this sensor may run.

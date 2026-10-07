@@ -285,3 +285,61 @@ func TestPromote_OffWithoutWiring(t *testing.T) {
 		t.Fatalf("n=%d err=%v", n, err)
 	}
 }
+
+// fakeJoin covers the names under one root; err makes it fail.
+type fakeJoin struct {
+	root  string
+	err   error
+	asked map[string]string
+}
+
+func (f *fakeJoin) JoinEvidence(_ context.Context, _ shared.ID, names map[string]string) ([]attribution.Evidence, error) {
+	f.asked = names
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []attribution.Evidence
+	for id, n := range names {
+		if strings.HasSuffix(n, "."+f.root) {
+			out = append(out, attribution.Evidence{AssetID: id, Rule: attribution.RuleMatchesScopeTarget, Weight: 0.99, Source: "scope_target:x"})
+		}
+	}
+	return out, nil
+}
+
+// A promoted name a permanent scope target covers is confirmed without
+// review (RFC-054 §4.3); a name it does not cover still waits; a failing
+// join confirms nothing.
+func TestPromote_ScopeJoinConfirms(t *testing.T) {
+	tenant := shared.NewID()
+	srv := ctNames(t, "www")
+	defer srv.Close()
+	listed := mustDomainAsset(t, tenant, "listed.com")
+	other := mustDomainAsset(t, tenant, "other.com")
+	svc, inv, attr := promotionService(t, srv.URL, srv.Client(), tenant, []*assetdom.Asset{listed, other})
+	join := &fakeJoin{root: "listed.com"}
+	svc.SetScopeJoin(join)
+	if _, err := svc.MonitorTenant(context.Background(), tenant); err != nil {
+		t.Fatal(err)
+	}
+	if got := attr.records[inv.byName["www.listed.com"].ID().String()].State; got != attribution.StateConfirmed {
+		t.Errorf("www.listed.com = %q, want confirmed through matches_scope_target", got)
+	}
+	if got := attr.records[inv.byName["www.other.com"].ID().String()].State; got != attribution.StateNeedsReview {
+		t.Errorf("www.other.com = %q, want needs_review", got)
+	}
+	if len(join.asked) == 0 {
+		t.Fatal("the join was not asked")
+	}
+
+	tenant2 := shared.NewID()
+	listed2 := mustDomainAsset(t, tenant2, "listed.com")
+	svc2, inv2, attr2 := promotionService(t, srv.URL, srv.Client(), tenant2, []*assetdom.Asset{listed2})
+	svc2.SetScopeJoin(&fakeJoin{root: "listed.com", err: fmt.Errorf("db down")})
+	if _, err := svc2.MonitorTenant(context.Background(), tenant2); err != nil {
+		t.Fatal(err)
+	}
+	if got := attr2.records[inv2.byName["www.listed.com"].ID().String()].State; got != attribution.StateNeedsReview {
+		t.Errorf("a failing join confirmed a name: %q", got)
+	}
+}
