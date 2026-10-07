@@ -987,7 +987,7 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	default:
-		if !s.finishRun(ctx, run, scanrun.RunStatusFailed, "Pipeline completed with failures", st.findings) {
+		if !s.finishRun(ctx, run, scanrun.RunStatusFailed, failedRunMessage(run), st.findings) {
 			return
 		}
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
@@ -999,6 +999,30 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	}
+}
+
+// failedRunMessage says why a run failed: the first failed step, its reason
+// and its code (NO_MATCHING_TOOL, INCOMPATIBLE_TARGETS, ...), so the run
+// shows the cause without opening its steps.
+func failedRunMessage(run *scanrun.Run) string {
+	for _, sr := range run.StepRuns {
+		if sr == nil || sr.Status != scanrun.StepRunStatusFailed {
+			continue
+		}
+		name := sr.StepName
+		if name == "" {
+			name = sr.StepKey
+		}
+		msg := fmt.Sprintf("Step %q failed", name)
+		if sr.ErrorMessage != "" {
+			msg += ": " + sr.ErrorMessage
+		}
+		if sr.ErrorCode != "" {
+			msg += " (" + sr.ErrorCode + ")"
+		}
+		return msg
+	}
+	return "Scan run completed with failures"
 }
 
 // uncoveredTargetCount is how many targets the run's zone routing could not
@@ -1572,6 +1596,24 @@ func (s *Service) FailStepRun(ctx context.Context, stepRunID, errorMessage, erro
 func tenantRunnerOnly(runContext map[string]any) bool {
 	v, _ := runContext["tenant_runner_only"].(bool)
 	return v
+}
+
+// AdvanceRun re-evaluates a run right after its trigger queued the first
+// steps (scan.RunAdvancer): a step that could not be queued is failed, its
+// dependents are skipped, and a run in which nothing else can run settles at
+// once with that step's reason.
+func (s *Service) AdvanceRun(ctx context.Context, run *scanrun.Run) error {
+	if run == nil {
+		return fmt.Errorf("%w: run is required", shared.ErrValidation)
+	}
+	template, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+	if err != nil {
+		return fmt.Errorf("load the run's workflow: %w", err)
+	}
+	if template == nil {
+		return fmt.Errorf("%w: the run's workflow", shared.ErrNotFound)
+	}
+	return s.advanceRun(ctx, run, template)
 }
 
 // QueueRunStep queues one step of a run: the dispatcher a scan's workflow
