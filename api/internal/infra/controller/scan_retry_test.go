@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -17,20 +18,20 @@ import (
 // ReleaseFailedRetryDispatch re-arms the candidate (clears the claim) and
 // spends the attempt.
 type fakeRetryRepo struct {
-	cand      pipeline.RetryCandidate
+	cand      scanrun.RetryCandidate
 	claimed   bool // true once listed and not yet reset (retry_dispatched_at set)
 	resetCall int  // number of ReleaseFailedRetryDispatch calls
 	resetID   shared.ID
 }
 
-func (r *fakeRetryRepo) ListPendingRetries(_ context.Context, _ int) ([]pipeline.RetryCandidate, error) {
+func (r *fakeRetryRepo) ListPendingRetries(_ context.Context, _ int) ([]scanrun.RetryCandidate, error) {
 	if r.claimed {
 		// Already claimed and not reset: the SQL filter (retry_dispatched_at IS
 		// NULL) excludes it, so nothing eligible.
 		return nil, nil
 	}
 	r.claimed = true
-	return []pipeline.RetryCandidate{r.cand}, nil
+	return []scanrun.RetryCandidate{r.cand}, nil
 }
 
 func (r *fakeRetryRepo) ReleaseFailedRetryDispatch(_ context.Context, runID shared.ID) error {
@@ -48,9 +49,9 @@ func (f dispatcherFunc) RetryScanRun(ctx context.Context, tenantID, scanID share
 	return f(ctx, tenantID, scanID, retryAttempt)
 }
 
-func newCandidate(t *testing.T) pipeline.RetryCandidate {
+func newCandidate(t *testing.T) scanrun.RetryCandidate {
 	t.Helper()
-	return pipeline.RetryCandidate{
+	return scanrun.RetryCandidate{
 		RunID:               shared.NewID(),
 		ScanID:              shared.NewID(),
 		TenantID:            shared.NewID(),

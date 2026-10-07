@@ -21,8 +21,9 @@ This RFC makes one model out of them:
    `x` carves the apex out.
 2. **One authority check** decides for every target, typed or inventory, on
    every path. An asset's ownership record alone never authorizes an active
-   probe; a scope entry, seed or verified domain must cover it.
-3. **Names covered by a permanent scope entry or seed are confirmed** into the
+   probe; a scope entry must cover it. Seeds fold into entries and a verified
+   domain is proof only (research/53 SC1, SC2; §6.1 "One concept").
+3. **Names covered by a permanent scope entry are confirmed** into the
    inventory (S4): IP addresses only through IP entries; expiring entries
    never confirm; tombstones and exclusions win.
 4. **Expiring entries** replace "exceptions" (S6): `expires_at` + `reason`,
@@ -80,7 +81,7 @@ Every lookup error refuses (fail closed).
 
 Matching is case-insensitive, ignores one trailing dot and compares IDNA ASCII
 forms. Scope targets and exclusions use the same matcher
-(`pkg/domain/scope.matchDomain`), and so do seeds, verified domains and the
+(`pkg/domain/scope.matchDomain`), and so do verified domains (proof) and the
 active-scan gate.
 
 **Upgrade note.** Existing `*.x` scope targets start covering their apex, and
@@ -108,12 +109,10 @@ trigger):
    asset);
 5. its attribution record, if any, is `confirmed`;
 6. **authority**: an internet-facing target is covered by an *active* scope
-   entry (approved, unexpired) with `max_tier` at or above the probe's tier, or
-   sits at or under a root-domain seed or a verified domain of purpose `easm`
-   (T1 at most). A domain verified for SSO sign-in (purpose `sso`, set up by
-   a platform administrator) never authorizes; it counts only as proof
-   (step 7). A target covered only below the probe's tier is refused
-   `tier_exceeds`. The
+   entry (approved, unexpired) with `max_tier` at or above the probe's tier.
+   Nothing else authorizes: a verified domain of any purpose is proof only
+   (step 7), and root-domain seeds are entries since migration `001262`. A
+   target covered only below the probe's tier is refused `tier_exceeds`. The
    probe's tier is its tool's highest stage tier (an unknown tool is T1): scan
    create and quick scan refuse the request, a run leaves the target out with
    a warning (`TIER_EXCEEDS` when nothing is left), a workflow step is checked
@@ -136,8 +135,8 @@ stages keep only steps 1–4.
 
 **Ownership tab.** Before this RFC, a person confirming an asset on its
 Ownership tab authorized it for active checks even outside every root. Now
-confirmation records ownership only; a scope entry, seed or verified domain
-must still cover the name. The refusal offers "add scope entry".
+confirmation records ownership only; a scope entry must still cover the
+name. The refusal offers "add scope entry".
 
 ### 4.3 Discovered names (S4, owner refinement 2026-10-07)
 
@@ -146,7 +145,7 @@ step-up and approval (§6.1, §7). So:
 
 - **Rule `matches_scope_target`** (strong, weight 0.99): a domain name that a
   tenant **active, non-expiring** domain scope target covers (`x`, or `*.x` /
-  `**.x` under §4.1), or that sits at or under one of its root-domain seeds, is
+  `**.x` under §4.1) is
   **confirmed** into the inventory. No review queue. The decision is recorded
   as automatic (not human), with the matching entry in the evidence, and is
   audited as a system decision.
@@ -175,7 +174,7 @@ refusal code `no_entry`.
 
 **Backfill.** A one-shot job re-evaluates the records that are `needs_review`
 (for example reason `fqdn_under_asserted_root`) and not human-decided: each
-name now covered by an active, non-expiring scope target or a root-domain seed
+name now covered by an active, non-expiring scope target
 of the **same tenant** (and not excluded, not tombstoned, not under a rejected
 name, `auto_join_discovered` on) gets the `matches_scope_target` evidence and
 is re-evaluated, which confirms it. Idempotent (evidence upserted per asset,
@@ -306,16 +305,28 @@ send on create, when it fixes a refused scan target), `seed`,
 platform rows `system`). Audit records keep the reference without the name.
 `status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
 
-**Seeds** (`POST /api/v1/easm/seeds`, `scope:approve` + **step-up**): a
-root-domain seed authorizes T1 probes of every name under it and confirms
-them (§4.3), so a new seed is created as the permanent entry `*.<domain>`
-through the path above (approval count, guardrails, notification, audit
-`scope_target.created` with `via: easm_seed`). The answer is the entry:
-`201` when it is active, `202` when it is pending. A member gets `403
-WIDENING_NEEDS_APPROVER` (members request one-off entries here). Turning a
-seed's discovery on (`PATCH /easm/seeds/{id}`) needs `scope:approve` and
-step-up and notifies the administrators. Seed rows created before this rule
-keep working until they fold into entries.
+**One concept: scope entries** (research/53 SC1, SC2; migration `001262`).
+Seeds are folded into entries and `/api/v1/easm/seeds` is removed: a root
+domain to discover from is the permanent entry `*.example.com` with
+`discovery` on, created like any entry (approvers, step-up, approvals,
+guardrails, notification, audit). Each `root_domain` seed became `*.v`
+(`origin: seed_migration`, `t1`, active, no approvals) unless an active
+permanent wildcard entry already covered it; an exact `*.v` entry took the
+seed's discovery and at least `t1`, and one that did not authorize was put
+back into effect (the seed authorized it). Each `easm`-purpose verified
+domain that no entry covered became `*.d` the same way. A domain verified
+for SSO sign-in got no entry. After this, **only entries authorize**; a
+verified domain (any purpose) is proof only and puts `proof: verified` on
+every entry at or under it.
+
+`discovery` (bool, default true) on create and update, and in every
+response: names under the entry are discovered (Certificate Transparency,
+DNS checks) and join the inventory (§4.3). It runs only for a permanent
+domain entry: a one-off or non-domain entry never discovers. Turning it on
+widens what is discovered: `scope:approve` and step-up, every administrator
+notified; it does not send the entry back for approval (discovery is
+passive). Turning it off narrows. An entry that comes into effect with
+discovery on starts a discovery sweep at once.
 
 **`POST /targets/{id}/approve`** (`scope:approve`, **step-up**): records the
 caller's approval. The requester cannot approve; nobody approves twice. When
@@ -420,7 +431,7 @@ about assets outside their data scope; `proof_required` applies with
     "zone": null },
   { "target": "promo-landing.net", "allowed": false,
     "code": "no_entry",
-    "message": "No scope entry, seed or verified domain covers this name.",
+    "message": "No scope entry covers this name.",
     "rule": null,
     "fixes": [
       {"action": "allow_temporarily", "pattern": "promo-landing.net", "target_type": "domain", "days": 7},
@@ -429,7 +440,7 @@ about assets outside their data scope; `proof_required` applies with
 ] }
 ```
 
-`via.kind`: `scope_target`, `seed`, `verified_domain`, or `internal` (a
+`via.kind`: `scope_target`, or `internal` (a
 private target routed by its zone, or a target no authority needs to cover).
 `via.proof`: `verified` or `asserted`. `zone` is set for zone-routed
 targets. `rule` names the caller's own rule that refused: `{"kind":
@@ -460,8 +471,7 @@ Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
 "domain"?, "tier"?, "requires"?}`; `requires` is the permission the action
 needs. A `tier_exceeds` refusal offers `raise_tier` with the `id` of the
 caller's covering entry with the highest ceiling and the `tier` the probe
-needs; when only a seed or verified domain covers the target (T1 at most),
-`allow_temporarily` at that `tier` instead. The
+needs. The
 dry run keeps only the fixes the caller may take (an approver gets
 `allow_temporarily`, a member `request_access`, never both).
 
@@ -480,7 +490,7 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   `per_page` ≤ 100. Each item: `asset_id`, `name`, `type`, `state`,
   `confidence`, `reason`, `human_decided`, `evidence[]` (`rule`, `technique`,
   `source`, `weight`, `observed`, `first_observed_at`, `last_observed_at`),
-  and `covered_by` (new: the caller's scope entry, seed or verified domain
+  and `covered_by` (new: the caller's scope entry
   that covers the name, or null; a null `covered_by` on approval means
   widening, so the UI offers "add scope entry" first). Evidence from a sensor
   (`source: "sensor:<id>"`) carries `source_label` and
@@ -561,7 +571,7 @@ query `states` default `needs_review`, `limit` ≤ 50):
     "blocked": 1,
     "blocked_sample": [{"name": "old.dev.ipas.com.vn", "code": "rejected"}],
     "hints": [
-      {"kind": "discovering_seed", "value": "ipas.com.vn"},
+      {"kind": "discovering_scope_target", "value": "ipas.com.vn"},
       {"kind": "cert_org", "value": "IPAS JSC"},
       {"kind": "same_ns_as_verified", "value": "ns1.ipas.com.vn"}
     ] },
@@ -588,12 +598,12 @@ query `states` default `needs_review`, `limit` ≤ 50):
   items it covers that an exclusion, tombstone or rejected parent keeps out
   (they stay out; codes from §6.5).
 - **Hints** are evidence we already hold: the root that discovered the names
-  (`discovering_<origin>`: `easm_seed`, `scope_target`, `domain_asset`,
-  `verified_domain`), a `verified_domain` or `seed` at or above the pattern,
+  (`discovering_<origin>`: `scope_target`, `domain_asset`,
+  `verified_domain`), a `verified_domain` at or above the pattern,
   and the address's `asn` (number and organization). Certificate
   organizations, NS/SOA and RDAP allocations join when we store them (no new
   outbound call). Strength: `strong` with a verified domain, `medium` with a
-  discovering root, seed or ASN, otherwise `weak`. Order: by strength, then
+  discovering root or ASN, otherwise `weak`. Order: by strength, then
   from the most specific rule to the broadest, then by items covered. A
   broader pattern covering exactly the same items as a narrower one is
   dropped.
@@ -754,8 +764,8 @@ are gated by zones and are not capped.
 - One release, no flag. Changelog fragments describe each behaviour change.
 - Existing entries keep working: they are `active`, permanent, `t1`, with
   `approved_at = created_at`.
-- Assets confirmed on the Ownership tab but outside every entry, seed and
-  verified domain stop being probed; runs say so in their warnings, and the
+- Assets confirmed on the Ownership tab but outside every entry stop being
+  probed; runs say so in their warnings, and the
   refusal offers `add_entry`.
 - Members who created scope targets directly now create requests.
 
@@ -763,8 +773,8 @@ are gated by zones and are not capped.
 
 | Phase | Items |
 |---|---|
-| P0 (this RFC) | S1 matcher; one authority check (I2/I3); expiring entries + requests + approvals + step-up + notification; settings; S4 rule; structured refusals + dry run; proof setting, deny list, PSL, CIDR caps |
-| P1 | proof kinds (HTTP file, cloud connector, platform-reviewed LOA); seeds folded into scope entries; `commands.authorizing_entry_id`; platform deny list as a table with a console; velocity signals; sensor-local policy aligned with §4.1 |
+| P0 (this RFC) | S1 matcher; seeds folded into entries and verified domains proof only (research/53 SC1, SC2); one authority check (I2/I3); expiring entries + requests + approvals + step-up + notification; settings; S4 rule; structured refusals + dry run; proof setting, deny list, PSL, CIDR caps |
+| P1 | proof kinds (HTTP file, cloud connector, platform-reviewed LOA); `commands.authorizing_entry_id`; platform deny list as a table with a console; velocity signals; sensor-local policy aligned with §4.1 |
 | P2 | T2 grants with engagement labels; name-vs-IP grants in signed jobs; opt-out registry |
 
 ## 11. Implementation

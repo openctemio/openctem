@@ -32,7 +32,7 @@ describe('RunTaskLogsDialog', () => {
     fresh(<RunTaskLogsDialog runId="r 1" taskId="t1" tool="nuclei" open onOpenChange={() => {}} />)
 
     const list = await screen.findByRole('list', { name: 'Log lines' })
-    expect(getMock).toHaveBeenCalledWith('/api/v1/pipeline-runs/r%201/tasks/t1/logs')
+    expect(getMock).toHaveBeenCalledWith('/api/v1/scan-runs/r%201/tasks/t1/logs')
     const items = within(list).getAllByRole('listitem')
     expect(items).toHaveLength(2)
     // Markup in a line is text, never an element; a bidi override is shown as an escape.
@@ -149,6 +149,6 @@ describe('RunTasksTable logs action', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: 'Logs of the httpx task' }))
     expect(await screen.findByText('hello')).toBeInTheDocument()
-    expect(getMock).toHaveBeenCalledWith('/api/v1/pipeline-runs/r1/tasks/t9/logs')
+    expect(getMock).toHaveBeenCalledWith('/api/v1/scan-runs/r1/tasks/t9/logs')
   })
 })

@@ -347,8 +347,8 @@ func (s *RuleService) groupAddress(g *grouping, it ReviewItem, addr netip.Addr, 
 	g.add("ip_cidr", string(scopedom.TargetTypeCIDR), pattern, it, hints)
 }
 
-// addCoverageHints marks domain patterns at or under a verified domain or
-// seed of the tenant.
+// addCoverageHints marks domain patterns at or under a verified domain of
+// the tenant.
 func (s *RuleService) addCoverageHints(ctx context.Context, tenantID shared.ID, byPattern map[string]*RuleSuggestion) error {
 	patterns := make([]string, 0, len(byPattern))
 	for p, sg := range byPattern {
@@ -370,8 +370,6 @@ func (s *RuleService) addCoverageHints(ctx context.Context, tenantID shared.ID, 
 		}
 		if v.Proof == "verified" {
 			sg.Hints = append(sg.Hints, RuleHint{Kind: "verified_domain", Value: v.Pattern})
-		} else if v.Kind == "seed" {
-			sg.Hints = append(sg.Hints, RuleHint{Kind: "seed", Value: v.Pattern})
 		}
 	}
 	return nil
@@ -476,7 +474,7 @@ func strengthOf(hints []RuleHint) string {
 		switch {
 		case h.Kind == "verified_domain" || h.Kind == "discovering_verified_domain":
 			return StrengthStrong
-		case strings.HasPrefix(h.Kind, "discovering_") || h.Kind == "seed" || h.Kind == "asn":
+		case strings.HasPrefix(h.Kind, "discovering_") || h.Kind == "asn":
 			s = StrengthMedium
 		}
 	}

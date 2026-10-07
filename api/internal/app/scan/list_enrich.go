@@ -3,7 +3,8 @@ package scan
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -15,8 +16,8 @@ import (
 // LastRun is a scan's latest run with its task counts (nil before any task
 // was dispatched).
 type LastRun struct {
-	Run   *pipeline.Run
-	Tasks *pipeline.TaskSummary
+	Run   *scanrun.Run
+	Tasks *scanrun.TaskSummary
 }
 
 // Progress is how far a live run is, 0-100: finished tasks of all tasks, or
@@ -33,13 +34,13 @@ func (l LastRun) Progress() int {
 }
 
 // runBatchReader reads runs by id for one tenant
-// (postgres.PipelineRunRepository).
+// (postgres.ScanRunRepository).
 type runBatchReader interface {
-	ListByTenantAndIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]*pipeline.Run, error)
+	ListByTenantAndIDs(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]*scanrun.Run, error)
 }
 
 // templateNamer names templates a tenant may use
-// (postgres.PipelineTemplateRepository).
+// (postgres.ScanWorkflowRepository).
 type templateNamer interface {
 	TemplateNames(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]string, error)
 }
@@ -68,8 +69,8 @@ func (s *Service) LastRuns(ctx context.Context, tenantID shared.ID, scans []*sca
 		s.logger.Warn("failed to read the scans' last runs", "error", err)
 		return nil
 	}
-	var tasks map[shared.ID]pipeline.TaskSummary
-	if tr, ok := s.commandRepo.(pipeline.TaskReader); ok {
+	var tasks map[shared.ID]scanrun.TaskSummary
+	if tr, ok := s.commandRepo.(scanrun.TaskReader); ok {
 		if tasks, err = tr.TaskSummaries(ctx, tenantID, ids); err != nil {
 			s.logger.Warn("failed to read the scans' last run tasks", "error", err)
 		}
@@ -89,9 +90,9 @@ func (s *Service) LastRuns(ctx context.Context, tenantID shared.ID, scans []*sca
 	return out
 }
 
-// PipelineNames returns the name of each workflow scan's template, keyed by
+// ScanWorkflowNames returns the name of each workflow scan's template, keyed by
 // template id. Best-effort like LastRuns.
-func (s *Service) PipelineNames(ctx context.Context, tenantID shared.ID, scans []*scan.Scan) map[shared.ID]string {
+func (s *Service) ScanWorkflowNames(ctx context.Context, tenantID shared.ID, scans []*scan.Scan) map[shared.ID]string {
 	namer, ok := s.templateRepo.(templateNamer)
 	if !ok {
 		return nil
@@ -99,9 +100,9 @@ func (s *Service) PipelineNames(ctx context.Context, tenantID shared.ID, scans [
 	seen := map[shared.ID]bool{}
 	var ids []shared.ID
 	for _, sc := range scans {
-		if sc.PipelineID != nil && !seen[*sc.PipelineID] {
-			seen[*sc.PipelineID] = true
-			ids = append(ids, *sc.PipelineID)
+		if sc.ScanWorkflowID != nil && !seen[*sc.ScanWorkflowID] {
+			seen[*sc.ScanWorkflowID] = true
+			ids = append(ids, *sc.ScanWorkflowID)
 		}
 	}
 	if len(ids) == 0 {

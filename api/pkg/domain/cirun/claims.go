@@ -2,6 +2,7 @@ package cirun
 
 import (
 	"fmt"
+	"net/url"
 	"path"
 	"regexp"
 	"slices"
@@ -16,9 +17,27 @@ type Claims struct {
 	Issuer   string
 	Subject  string
 	JTI      string
-	// Repository is "owner/name" (GitLab: the full project path), lower case.
-	Repository   string
+	// Repository is "owner/name" (GitLab: the full project path; Azure
+	// Repos: "org/project/repo"), lower case, without the code host.
+	Repository string
+	// RepositoryHost is the code host of Repository when the token names it
+	// (Azure Pipelines, CircleCI, Jenkins: from the repository URL;
+	// Bitbucket: bitbucket.org). Empty for GitHub (github.com) and GitLab
+	// (the issuer's host).
+	RepositoryHost string
+	// RepositoryID is the provider's immutable repository id (GitHub
+	// repository_id, GitLab project_id, Bitbucket repositoryUuid, Azure
+	// rpo_id; Jenkins: derived from the repository claim).
 	RepositoryID string
+	// OrgID is the CI organization the token says it comes from (Azure
+	// org_id, CircleCI org-id, Bitbucket workspaceUuid); it must match the
+	// organization the trust configuration names.
+	OrgID string
+	// ProjectID and DefinitionID identify the pipeline where the provider
+	// keys it by project and definition (Azure prj_id and def_id, CircleCI
+	// project-id and pipeline-definition-id).
+	ProjectID    string
+	DefinitionID string
 	// Ref is the full ref the job runs on ("refs/heads/main",
 	// "refs/pull/7/merge", "refs/tags/v1"; GitLab bare names are expanded).
 	Ref          string
@@ -31,9 +50,16 @@ type Claims struct {
 	// one.
 	PullRequest string
 	SHA         string
-	Actor       string
-	RunID       string // GitHub run_id, GitLab pipeline_id
-	RunAttempt  string
+	// CommitVerified: SHA comes from the signed token. False when the
+	// provider signs no commit and SHA is the job's own report (Hints); such
+	// a commit never matches a break-glass override.
+	CommitVerified bool
+	// SSHRerun: a CircleCI job re-run with SSH access, where a person can
+	// run anything with the job's identity. Never admitted.
+	SSHRerun   bool
+	Actor      string
+	RunID      string // GitHub run_id, GitLab pipeline_id
+	RunAttempt string
 	// JobID is the job within the pipeline run: GitHub check_run_id, GitLab
 	// job_id. A run token is renewed only for the job it was issued to.
 	JobID    string
@@ -51,6 +77,10 @@ type Claims struct {
 	Environment    string
 	// Audience is the audience the token was verified for.
 	Audience string
+
+	// Azure organization and project names from the subject, for the run's
+	// web address only.
+	azureOrg, azureProject string
 }
 
 // Owner is the first path segment of the repository: the GitHub
@@ -81,8 +111,21 @@ var forkEvents = map[string]bool{
 	"external_pull_request_event": true, // GitLab: a pull request on an external repository
 }
 
-// IsForkEvent reports whether the job's trigger can run code from a fork.
-func (c Claims) IsForkEvent() bool { return forkEvents[c.Event] }
+// IsForkEvent reports whether the job's trigger can run code from a fork
+// with the repository's identity. GitHub and GitLab name such events. Azure
+// Pipelines, CircleCI and Jenkins tokens cannot tell a fork's pull request
+// from the repository's own, so every pull request build counts as one.
+// Bitbucket runs a fork's pipelines in the fork's own repository, under its
+// own repository id.
+func (c Claims) IsForkEvent() bool {
+	switch c.Provider {
+	case ProviderAzureDevOps, ProviderCircleCI, ProviderJenkins:
+		return c.PullRequest != ""
+	case ProviderBitbucket:
+		return false
+	}
+	return forkEvents[c.Event]
+}
 
 // Refusal is why a trust configuration did not admit a job. Code is stable
 // (audit metadata, tests); the caller never sees it.
@@ -103,6 +146,12 @@ const (
 	RefuseEvent           = "event_not_allowed"
 	RefuseForkPullRequest = "fork_pull_request"
 	RefuseRefNotProtected = "ref_not_protected"
+	// RefuseOrganization: the token's organization claim is not the one the
+	// trust configuration names (Azure org_id, CircleCI org-id, Bitbucket
+	// workspaceUuid).
+	RefuseOrganization = "organization_mismatch"
+	// RefuseSSHRerun: a CircleCI job re-run with SSH access.
+	RefuseSSHRerun = "ssh_rerun"
 )
 
 func refuse(code, format string, a ...any) *Refusal {
@@ -114,13 +163,23 @@ func (r Rules) Admit(c Claims) *Refusal {
 	if c.Repository == "" || c.SHA == "" || c.Ref == "" || c.JTI == "" {
 		return refuse(RefuseMissingClaims, "the token lacks repository, sha, ref or jti")
 	}
+	if c.SSHRerun {
+		return refuse(RefuseSSHRerun, "the job is a re-run with SSH access")
+	}
+	if r := r.admitOrganization(c); r != nil {
+		return r
+	}
 	if c.IsForkEvent() && !r.AllowForkPullRequests {
 		return refuse(RefuseForkPullRequest, "event %q can run fork code; this configuration does not admit fork pull requests", c.Event)
 	}
 	if len(r.Owners) > 0 && !slices.Contains(r.Owners, c.Owner()) {
 		return refuse(RefuseOwner, "owner %q is not listed", c.Owner())
 	}
-	if len(r.Repositories) > 0 && !slices.ContainsFunc(r.Repositories, func(p string) bool { return repoMatch(p, c.Repository) }) {
+	if len(r.Repositories) > 0 && repositoriesByID(c.Provider) {
+		if !slices.Contains(r.Repositories, NormalizeUUID(c.RepositoryID)) {
+			return refuse(RefuseRepository, "repository id %q is not listed", c.RepositoryID)
+		}
+	} else if len(r.Repositories) > 0 && !slices.ContainsFunc(r.Repositories, func(p string) bool { return repoMatch(p, c.Repository) }) {
 		return refuse(RefuseRepository, "repository %q is not listed", c.Repository)
 	}
 	if len(r.Refs) > 0 && !slices.ContainsFunc(r.Refs, func(p string) bool { return refMatch(p, c.Ref) || refMatch(p, c.RefName()) }) {
@@ -144,10 +203,37 @@ func (r Rules) Admit(c Claims) *Refusal {
 // deployment branch rules admit only protected branches and tags (Validate
 // requires the list when the switch is on).
 func (r Rules) protectedRef(c Claims) bool {
-	if c.Provider == ProviderGitHub {
+	switch protectedRefFrom(c.Provider) {
+	case protectedRefEnvironment:
 		return c.Environment != "" && slices.Contains(r.Environments, c.Environment)
+	case protectedRefClaim:
+		return c.RefProtected
 	}
-	return c.RefProtected
+	return false
+}
+
+// admitOrganization checks the token's organization claim against the
+// organization the configuration trusts. Azure Pipelines signs every
+// organization's tokens with one key set, so its org_id must be the one in
+// the issuer; CircleCI's org-id likewise (when the token carries it).
+// Bitbucket's issuer names a workspace by its slug, which a renamed
+// workspace gives up: the immutable workspace UUID is pinned in the rules.
+func (r Rules) admitOrganization(c Claims) *Refusal {
+	switch c.Provider {
+	case ProviderAzureDevOps:
+		if want := IssuerOrganization(c.Provider, c.Issuer); want == "" || c.OrgID != want {
+			return refuse(RefuseOrganization, "organization %q is not the issuer's", c.OrgID)
+		}
+	case ProviderCircleCI:
+		if want := IssuerOrganization(c.Provider, c.Issuer); want == "" || (c.OrgID != "" && c.OrgID != want) {
+			return refuse(RefuseOrganization, "organization %q is not the issuer's", c.OrgID)
+		}
+	case ProviderBitbucket:
+		if r.WorkspaceUUID == "" || c.OrgID != r.WorkspaceUUID {
+			return refuse(RefuseOrganization, "workspace %q is not the configured workspace", c.OrgID)
+		}
+	}
+	return nil
 }
 
 // repoMatch matches "owner/name", "owner/*" (one level) and "owner/**"
@@ -202,6 +288,7 @@ func ParseGitHubClaims(m map[string]any) Claims {
 		JobWorkflowRef: str(m, "job_workflow_ref"),
 		JobWorkflowSHA: strings.ToLower(str(m, "job_workflow_sha")),
 	}
+	c.CommitVerified = c.SHA != ""
 	switch {
 	case pullRefRE.MatchString(c.Ref):
 		c.PullRequest = pullRefRE.FindStringSubmatch(c.Ref)[1]
@@ -235,6 +322,7 @@ func ParseGitLabClaims(m map[string]any) Claims {
 		// user_email is never read: a person's address is not needed to
 		// identify a pipeline or a run (the login is).
 	}
+	c.CommitVerified = c.SHA != ""
 	ref := str(m, "ref")
 	switch {
 	case mergeRequestRefRE.MatchString(ref):
@@ -287,6 +375,15 @@ func CanonicalRepository(provider Provider, issuer, repository string) string {
 	return strings.ToLower(host + "/" + strings.Trim(repository, "/"))
 }
 
+// CanonicalRepository is the repository asset name for the job: its code
+// host (from the token when it names one) and the repository path.
+func (c Claims) CanonicalRepository() string {
+	if c.RepositoryHost != "" {
+		return strings.ToLower(c.RepositoryHost + "/" + strings.Trim(c.Repository, "/"))
+	}
+	return CanonicalRepository(c.Provider, c.Issuer, c.Repository)
+}
+
 // PipelineURL is the web address of the job's pipeline, built from the
 // verified claims only.
 func PipelineURL(provider Provider, issuer string, c Claims) string {
@@ -298,6 +395,28 @@ func PipelineURL(provider Provider, issuer string, c Claims) string {
 		return "https://github.com/" + c.Repository + "/actions/runs/" + c.RunID
 	case ProviderGitLab:
 		return strings.TrimRight(issuer, "/") + "/" + c.Repository + "/-/pipelines/" + c.RunID
+	case ProviderAzureDevOps:
+		if c.azureOrg == "" || !isDigits(c.RunID) {
+			return ""
+		}
+		return "https://dev.azure.com/" + url.PathEscape(c.azureOrg) + "/" + url.PathEscape(c.azureProject) +
+			"/_build/results?buildId=" + c.RunID
+	case ProviderCircleCI:
+		if !uuidRE.MatchString(c.RunID) {
+			return ""
+		}
+		return "https://app.circleci.com/pipelines/workflows/" + c.RunID
+	case ProviderBitbucket:
+		if !uuidRE.MatchString(c.RunID) {
+			return ""
+		}
+		return "https://bitbucket.org/" + c.Repository + "/pipelines/results/%7B" + c.RunID + "%7D"
+	case ProviderJenkins:
+		u, err := url.Parse(c.Subject)
+		if err != nil || u.Scheme != schemeHTTPS || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || !isDigits(c.RunID) {
+			return ""
+		}
+		return strings.TrimRight(u.String(), "/") + "/" + c.RunID + "/"
 	}
 	return ""
 }

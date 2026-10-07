@@ -259,14 +259,14 @@ export interface StepRun {
 // ============================================
 
 /**
- * A pipeline run as GET /pipeline-runs and GET /pipeline-runs/{id} return it.
+ * A pipeline run as GET /scan-runs and GET /scan-runs/{id} return it.
  * Scan runs are pipeline runs: this is the one run type of the web (scan-types
  * re-exports it). List rows carry no step runs or tasks; the run read does.
  */
 export interface PipelineRun {
   id: string
   tenant_id: string
-  pipeline_id: string
+  scan_workflow_id: string
   asset_id?: string
   scan_id?: string
   /** The run's scan, named by the server on list rows (empty when deleted). */
@@ -294,11 +294,11 @@ export interface PipelineRun {
   dispatch?: RunDispatch
   /** Tasks (dispatched commands) by status, once the run has any. RFC-046. */
   task_summary?: RunTaskSummary
-  /** The run's tasks, in dispatch order (GET /pipeline-runs/{id} only). */
+  /** The run's tasks, in dispatch order (GET /scan-runs/{id} only). */
   tasks?: RunTask[]
   /** True when the run has more tasks than `tasks` lists. */
   tasks_truncated?: boolean
-  /** Continues the task list after `tasks` (GET /pipeline-runs/{id}/tasks?cursor=). */
+  /** Continues the task list after `tasks` (GET /scan-runs/{id}/tasks?cursor=). */
   tasks_next_cursor?: string
 }
 
@@ -367,13 +367,6 @@ export interface UpdateStepRequest {
   retry_delay_seconds?: number
 }
 
-export interface TriggerPipelineRunRequest {
-  template_id: string
-  asset_id?: string
-  trigger_type?: PipelineTriggerType
-  context?: Record<string, unknown>
-}
-
 export interface QuickScanRequest {
   targets: string[]
   scanner_name?: string
@@ -382,7 +375,7 @@ export interface QuickScanRequest {
 
 /** POST /scans/quick: the run started and the (unsaved) scan it belongs to. */
 export interface QuickScanResponse {
-  pipeline_run_id: string
+  scan_run_id: string
   scan_id: string
   /** Always empty: quick scans no longer create an asset group. */
   asset_group_id?: string
@@ -403,7 +396,7 @@ export interface PipelineListFilters {
 }
 
 export interface PipelineRunListFilters {
-  pipeline_id?: string
+  scan_workflow_id?: string
   asset_id?: string
   status?: PipelineRunStatus
   trigger_type?: PipelineTriggerType
@@ -449,7 +442,7 @@ export interface StatusCounts {
 }
 
 export interface ScanManagementOverview {
-  pipelines: StatusCounts
+  scan_runs: StatusCounts
   scans: StatusCounts
   jobs: StatusCounts
 }

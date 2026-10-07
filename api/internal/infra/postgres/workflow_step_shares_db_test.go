@@ -20,7 +20,7 @@ func TestWorkflowStepChunks_SensorShares(t *testing.T) {
 	other := seedTestTenant(ctx, t, sqlDB)
 	stepRun := seedChunkStepRun(ctx, t, sqlDB, tenant)
 	var runIDStr string
-	if err := sqlDB.QueryRowContext(ctx, `SELECT pipeline_run_id FROM step_runs WHERE id = $1`, stepRun.String()).Scan(&runIDStr); err != nil {
+	if err := sqlDB.QueryRowContext(ctx, `SELECT scan_run_id FROM scan_run_steps WHERE id = $1`, stepRun.String()).Scan(&runIDStr); err != nil {
 		t.Fatal(err)
 	}
 	runID, _ := shared.IDFromString(runIDStr)

@@ -39,7 +39,7 @@ OpenCTEM's scan orchestration system manages the complete lifecycle of security 
 │  3. STEP EXECUTION                                                           │
 │  ┌─────────────────┐                                                        │
 │  │ Pipeline Service│ ──► QueueStep() finds agent with matching tool         │
-│  │ (pipeline_      │     Creates Command with step_run_id, payload          │
+│  │ (pipeline_      │     Creates Command with scan_run_step_id, payload          │
 │  │  service.go)    │     Agent polls and executes command                   │
 │  └────────┬────────┘                                                        │
 │           │                                                                  │
@@ -204,7 +204,7 @@ func (s *PipelineService) OnStepCompleted(ctx, pipelineRunID, stepKey string, fi
 ### 6. Editing a pipeline keeps its run history
 
 A pipeline's steps are edited in place. Every write (the builder's full save,
-`PUT /api/v1/pipelines/{id}` with `steps`, and the single-step add, update and
+`PUT /api/v1/scan-workflows/{id}` with `steps`, and the single-step add, update and
 delete endpoints) goes through one repository call, `StepRepository.MutateSteps`
 (`internal/infra/postgres/pipeline_step_mutate.go`), in one transaction:
 
@@ -222,7 +222,7 @@ delete endpoints) goes through one repository call, `StepRepository.MutateSteps`
    and chaining inputs in `scan_step_outputs` stay attached), insert new ones,
    delete the rest.
 
-Deleting a step never deletes history: `step_runs.step_id` is
+Deleting a step never deletes history: `scan_run_steps.step_id` is
 `ON DELETE SET NULL` (migration 001159), and each step run carries the step's
 `step_key`, `step_name` and `tool` as they were when it was created. The run
 detail shows a removed step's runs by that snapshot.
@@ -266,7 +266,7 @@ CREATE TABLE scans (
     id UUID PRIMARY KEY,
     tenant_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
-    pipeline_template_id UUID REFERENCES pipeline_templates(id),
+    pipeline_template_id UUID REFERENCES scan_workflows(id),
     schedule_type VARCHAR(20),  -- manual, daily, weekly, cron
     cron_expression VARCHAR(100),
     next_run_at TIMESTAMP,
@@ -274,7 +274,7 @@ CREATE TABLE scans (
 );
 
 -- Pipeline Runs
-CREATE TABLE pipeline_runs (
+CREATE TABLE scan_runs (
     id UUID PRIMARY KEY,
     tenant_id UUID NOT NULL,
     pipeline_template_id UUID NOT NULL,
@@ -287,10 +287,10 @@ CREATE TABLE pipeline_runs (
 );
 
 -- Step Runs
-CREATE TABLE step_runs (
+CREATE TABLE scan_run_steps (
     id UUID PRIMARY KEY,
-    pipeline_run_id UUID REFERENCES pipeline_runs(id),
-    step_id UUID REFERENCES pipeline_steps(id) ON DELETE SET NULL,  -- NULL once the step is removed
+    scan_run_id UUID REFERENCES scan_runs(id),
+    step_id UUID REFERENCES scan_workflow_steps(id) ON DELETE SET NULL,  -- NULL once the step is removed
     step_key VARCHAR(100) NOT NULL,
     step_name VARCHAR(255),  -- copied from the step when the step run is created
     tool VARCHAR(100),       -- copied from the step when the step run is created
@@ -306,8 +306,8 @@ CREATE TABLE commands (
     id UUID PRIMARY KEY,
     tenant_id UUID NOT NULL,
     agent_id UUID REFERENCES agents(id),
-    pipeline_run_id UUID REFERENCES pipeline_runs(id),
-    step_run_id UUID REFERENCES step_runs(id),
+    scan_run_id UUID REFERENCES scan_runs(id),
+    scan_run_step_id UUID REFERENCES scan_run_steps(id),
     source_type VARCHAR(20),  -- scan, pipeline
     action VARCHAR(50),
     status VARCHAR(20) DEFAULT 'pending',
@@ -335,8 +335,8 @@ ON scans(next_run_at)
 WHERE status = 'active' AND schedule_type != 'manual' AND next_run_at IS NOT NULL;
 
 -- Command lookup by step
-CREATE INDEX idx_commands_step_run_id
-ON commands(step_run_id) WHERE step_run_id IS NOT NULL;
+CREATE INDEX idx_commands_scan_run_step_id
+ON commands(scan_run_step_id) WHERE scan_run_step_id IS NOT NULL;
 ```
 
 ## Prometheus Metrics
@@ -347,9 +347,9 @@ come from logs (`tenant_id`, `run_id`) and traces.
 
 | Metric | Labels | What |
 |---|---|---|
-| `pipeline_runs_total` | `status` | runs started and settled |
-| `pipeline_runs_in_progress` | — | runs in progress (this replica) |
-| `step_runs_total` | `step_key`, `status` | step outcomes |
+| `scan_runs_total` | `status` | runs started and settled |
+| `scan_runs_in_progress` | — | runs in progress (this replica) |
+| `scan_run_steps_total` | `step_key`, `status` | step outcomes |
 | `commands_total`, `commands_expired_total` | `type`, `status` / — | command outcomes, expiries |
 | `command_claims_total` | `mode` (`claim`, `claim_n`) | commands sensors claimed |
 | `command_leases_expired_total` | — | commands re-queued after their lease ran out |
@@ -361,10 +361,10 @@ come from logs (`tenant_id`, `run_id`) and traces.
 ### Retry Configuration
 
 ```go
-// In pipeline_steps table
+// In scan_workflow_steps table
 max_retries INT DEFAULT 3
 
-// In step_runs table
+// In scan_run_steps table
 retry_count INT DEFAULT 0
 ```
 
@@ -443,9 +443,9 @@ POST   /api/v1/scans/{id}/trigger       # Manually trigger scan
 
 ```
 GET    /api/v1/pipeline-templates       # List templates
-GET    /api/v1/pipeline-runs            # List runs
-GET    /api/v1/pipeline-runs/{id}       # Get run details
-GET    /api/v1/pipeline-runs/{id}/steps # Get step runs
+GET    /api/v1/scan-runs            # List runs
+GET    /api/v1/scan-runs/{id}       # Get run details
+GET    /api/v1/scan-runs/{id}/steps # Get step runs
 ```
 
 ### Sensor API (protocol v2)

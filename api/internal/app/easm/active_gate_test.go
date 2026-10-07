@@ -149,9 +149,11 @@ func TestActiveGate_Assets(t *testing.T) {
 	}{
 		{"unrecorded inside a scope target", func() *asset.Asset { return f.add(t, "app.scoped.com", asset.AssetTypeSubdomain) }, ""},
 		{"unrecorded IP inside a scope CIDR", func() *asset.Asset { return f.add(t, "198.51.100.7", asset.AssetTypeIPAddress) }, ""},
-		{"unrecorded under a seed", func() *asset.Asset { return f.add(t, "www.seeded.com", asset.AssetTypeSubdomain) }, ""},
-		{"unrecorded seed apex", func() *asset.Asset { return f.add(t, "seeded.com", asset.AssetTypeDomain) }, ""},
-		{"unrecorded under a verified domain", func() *asset.Asset { return f.add(t, "a.b.verified.com", asset.AssetTypeSubdomain) }, ""},
+		// Only scope entries authorize (research/53 SC1, SC2): a former seed
+		// is an entry; a verified domain alone is proof, never authority.
+		{"unrecorded under a verified domain only", func() *asset.Asset {
+			return f.add(t, "a.b.verified.com", asset.AssetTypeSubdomain)
+		}, attribution.StateUnattributed},
 		{"unrecorded outside everything", func() *asset.Asset { return f.add(t, "manual.example.net", asset.AssetTypeDomain) }, attribution.StateUnattributed},
 		{"unrecorded public IP outside everything", func() *asset.Asset { return f.add(t, "203.0.113.5", asset.AssetTypeIPAddress) }, attribution.StateUnattributed},
 		{"unrecorded private address: zones decide", func() *asset.Asset { return f.add(t, "10.0.0.5", asset.AssetTypeIPAddress) }, ""},
@@ -263,7 +265,7 @@ func TestActiveGate_BlockedTargets(t *testing.T) {
 		"api.www.scoped.com",           // free text under a rejected asset
 		"a.dead.example.org",           // free text under a tombstone
 		"free.example.com",             // free text outside every scope entry
-		"https://new.seeded.com/x",     // free text under a seed: allowed
+		"https://new.seeded.com/x",     // free text under a former seed with no entry: refused
 		"203.0.113.9",                  // public address outside every range
 		"198.51.100.9:443",             // address inside a scope CIDR: allowed
 		"10.1.2.3",                     // private: zones decide
@@ -283,6 +285,7 @@ func TestActiveGate_BlockedTargets(t *testing.T) {
 		"free.example.com":             attribution.StateUnattributed,
 		"203.0.113.9":                  attribution.StateUnattributed,
 		"github.com/org/repo-x":        attribution.StateUnattributed,
+		"https://new.seeded.com/x":     attribution.StateUnattributed,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -382,6 +385,13 @@ func TestActiveGate_PlatformPolicy(t *testing.T) {
 		t.Errorf("app.scoped.com refused: %v", typed)
 	}
 
+	// A verified domain is proof, not authority: www.verified.com needs an
+	// entry too (research/53 SC2).
+	vt, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "*.verified.com", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.targets = append(f.targets, vt)
 	all := NewActiveGate(f, f, f, f).WithPlatformPolicy(gr, true)
 	typed, err = all.BlockedTargets(context.Background(), f.tenant, []string{"app.scoped.com", "www.verified.com", "198.51.100.7"})
 	if err != nil {
@@ -459,16 +469,17 @@ func TestActiveGate_TierExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"app.low.example", "app.scoped.com", "www.seeded.com", "www.verified.com"} {
-		if _, ok := got[want]; !ok {
-			t.Errorf("t2: %s not listed (%v)", want, got)
+	for _, want := range []string{"app.low.example", "app.scoped.com"} {
+		if r := got[want]; r == nil {
+			t.Errorf("t2: %s not listed with its entry (%v)", want, got)
 		}
 	}
-	if r := got["www.seeded.com"]; r != nil {
-		t.Errorf("a seed has no entry to raise: %+v", r)
-	}
-	if _, ok := got["nothing.example"]; ok {
-		t.Error("an uncovered name is the ownership gate's answer, not tier_exceeds")
+	// Only entries authorize (research/53 SC1, SC2): a name under a former
+	// seed or a verified domain is uncovered, the ownership gate's answer.
+	for _, n := range []string{"www.seeded.com", "www.verified.com", "nothing.example"} {
+		if _, ok := got[n]; ok {
+			t.Errorf("%s: an uncovered name is the ownership gate's answer, not tier_exceeds", n)
+		}
 	}
 	if _, ok := got["10.0.0.5"]; ok {
 		t.Error("a private address is gated by zones")

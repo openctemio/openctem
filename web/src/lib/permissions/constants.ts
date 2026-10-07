@@ -276,11 +276,10 @@ export const Permission = {
   ApiKeysWrite: 'integrations:api_keys:write',
   ApiKeysDelete: 'integrations:api_keys:delete',
 
-  // Pipelines (integrations:pipelines:*)
-  PipelinesRead: 'integrations:pipelines:read',
-  PipelinesWrite: 'integrations:pipelines:write',
-  PipelinesDelete: 'integrations:pipelines:delete',
-  PipelinesExecute: 'integrations:pipelines:execute',
+  // Scan workflows (scans:workflows:*)
+  ScanWorkflowsRead: 'scans:workflows:read',
+  ScanWorkflowsWrite: 'scans:workflows:write',
+  ScanWorkflowsDelete: 'scans:workflows:delete',
 
   // ===========================================
 
@@ -453,7 +452,7 @@ export const PermissionGroups = {
     Permission.ScmConnectionsRead,
     Permission.NotificationsRead,
     Permission.ApiKeysRead,
-    Permission.PipelinesRead,
+    Permission.ScanWorkflowsRead,
     Permission.SLARead,
     Permission.ScopeRead,
     Permission.ValidationRead,
@@ -503,7 +502,7 @@ export const PermissionGroups = {
     Permission.ScmConnectionsWrite,
     Permission.NotificationsWrite,
     Permission.ApiKeysWrite,
-    Permission.PipelinesWrite,
+    Permission.ScanWorkflowsWrite,
     Permission.SLAWrite,
     Permission.ScopeWrite,
     Permission.ValidationWrite,
@@ -543,7 +542,7 @@ export const PermissionGroups = {
     Permission.ScmConnectionsDelete,
     Permission.NotificationsDelete,
     Permission.ApiKeysDelete,
-    Permission.PipelinesDelete,
+    Permission.ScanWorkflowsDelete,
     Permission.SLADelete,
     Permission.ScopeDelete,
     Permission.PentestCampaignsDelete,
@@ -712,10 +711,9 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ApiKeysRead]: 'View API Keys',
   [Permission.ApiKeysWrite]: 'Manage API Keys',
   [Permission.ApiKeysDelete]: 'Delete API Keys',
-  [Permission.PipelinesRead]: 'View Pipelines',
-  [Permission.PipelinesWrite]: 'Manage Pipelines',
-  [Permission.PipelinesDelete]: 'Delete Pipelines',
-  [Permission.PipelinesExecute]: 'Execute Pipelines',
+  [Permission.ScanWorkflowsRead]: 'View Scan Workflows',
+  [Permission.ScanWorkflowsWrite]: 'Manage Scan Workflows',
+  [Permission.ScanWorkflowsDelete]: 'Delete Scan Workflows',
 
   // Settings
   [Permission.SLARead]: 'View SLA',
@@ -907,10 +905,9 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ApiKeysRead,
     Permission.ApiKeysWrite,
     Permission.ApiKeysDelete,
-    Permission.PipelinesRead,
-    Permission.PipelinesWrite,
-    Permission.PipelinesDelete,
-    Permission.PipelinesExecute,
+    Permission.ScanWorkflowsRead,
+    Permission.ScanWorkflowsWrite,
+    Permission.ScanWorkflowsDelete,
     // Settings
     Permission.SLARead,
     Permission.SLAWrite,
@@ -1067,10 +1064,9 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ApiKeysRead,
     Permission.ApiKeysWrite,
     Permission.ApiKeysDelete,
-    Permission.PipelinesRead,
-    Permission.PipelinesWrite,
-    Permission.PipelinesDelete,
-    Permission.PipelinesExecute,
+    Permission.ScanWorkflowsRead,
+    Permission.ScanWorkflowsWrite,
+    Permission.ScanWorkflowsDelete,
     // Settings (billing read only)
     Permission.SLARead,
     Permission.SLAWrite,
@@ -1169,8 +1165,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScmConnectionsWrite,
     Permission.NotificationsRead,
     Permission.ApiKeysRead,
-    Permission.PipelinesRead,
-    Permission.PipelinesWrite,
+    Permission.ScanWorkflowsRead,
+    Permission.ScanWorkflowsWrite,
     // Settings (read only; billing is owner/admin only)
     Permission.SLARead,
     // Attack Surface (read + write)
@@ -1244,7 +1240,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScmConnectionsRead,
     Permission.NotificationsRead,
     Permission.ApiKeysRead,
-    Permission.PipelinesRead,
+    Permission.ScanWorkflowsRead,
     // Settings (read only; billing is owner/admin only)
     Permission.SLARead,
     // Attack Surface (read only)

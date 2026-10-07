@@ -127,7 +127,7 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	exec(`INSERT INTO compensating_controls (id, tenant_id, name, control_type) VALUES ($1,$2,'cc','other')`, newID("cc"), T)
 	exec(`INSERT INTO attack_paths (id, tenant_id, name) VALUES ($1,$2,'ap')`, newID("ap"), T)
 	exec(`INSERT INTO threat_models (id, tenant_id, scope_type, name) VALUES ($1,$2,'tenant','tm')`, newID("tm"), T)
-	exec(`INSERT INTO pipeline_templates (id, tenant_id, name) VALUES ($1,$2,'pt')`, newID("pt"), T)
+	exec(`INSERT INTO scan_workflows (id, tenant_id, name) VALUES ($1,$2,'pt')`, newID("pt"), T)
 	exec(`INSERT INTO components (id, purl, name, ecosystem) VALUES ($1,'pkg:npm/m-'||md5(random()::text),'m','npm')`, newID("comp"))
 
 	// One row per reference for the merged asset ($2); where noted, the kept
@@ -165,7 +165,7 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	exec(`INSERT INTO compensating_control_assets (control_id, asset_id) VALUES ($1,$2)`, ids["cc"], M)
 	exec(`INSERT INTO attack_path_nodes (attack_path_id, asset_id, node_order, node_type) VALUES ($1,$2,1,'entry')`, ids["ap"], M)
 	exec(`INSERT INTO threat_model_threats (tenant_id, threat_model_id, entry_point_asset_id, hop_asset_id, target_asset_id) VALUES ($1,$2,$3,$3,$3)`, T, ids["tm"], M)
-	exec(`INSERT INTO pipeline_runs (tenant_id, pipeline_id, trigger_type, asset_id) VALUES ($1,$2,'manual',$3)`, T, ids["pt"], M)
+	exec(`INSERT INTO scan_runs (tenant_id, scan_workflow_id, trigger_type, asset_id) VALUES ($1,$2,'manual',$3)`, T, ids["pt"], M)
 	exec(`INSERT INTO asset_components (tenant_id, asset_id, component_id, path, name, ecosystem) VALUES ($1,$2,$3,'/m','m','npm')`, T, M, ids["comp"])
 	exec(`INSERT INTO pentest_campaigns (tenant_id, name, asset_ids) VALUES ($1,'pc',$2)`, T, pq.Array([]string{M, O}))
 
@@ -225,7 +225,7 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		`SELECT count(*) FROM sla_policies WHERE asset_id = $1`:                                                                    1,
 		`SELECT count(*) FROM exposure_events WHERE asset_id = $1`:                                                                 1,
 		`SELECT count(*) FROM runtime_telemetry_events WHERE endpoint_asset_id = $1`:                                               1,
-		`SELECT count(*) FROM pipeline_runs WHERE asset_id = $1`:                                                                   1,
+		`SELECT count(*) FROM scan_runs WHERE asset_id = $1`:                                                                       1,
 		`SELECT count(*) FROM attack_path_nodes WHERE asset_id = $1`:                                                               1,
 		`SELECT count(*) FROM threat_model_threats WHERE entry_point_asset_id = $1 AND hop_asset_id = $1 AND target_asset_id = $1`: 1,
 		`SELECT count(*) FROM asset_owners WHERE asset_id = $1`:                                                                    2, // user (kept's own) + group

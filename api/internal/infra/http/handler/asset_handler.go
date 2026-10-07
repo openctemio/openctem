@@ -2101,7 +2101,7 @@ func (h *AssetHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Scan jobs are queued via the pipeline system (POST /scans/{id}/trigger).
+	// Scan jobs are queued via the scan workflow system (POST /scans/{id}/trigger).
 	// This endpoint records the ad-hoc scan request and returns success.
 
 	response := ScanResponse{

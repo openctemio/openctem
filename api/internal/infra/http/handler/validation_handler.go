@@ -399,7 +399,7 @@ type storedEvidenceOut struct {
 	// client cannot get the comparison wrong.
 	DetectionIsGap bool `json:"detection_is_gap"`
 	// DetectionDetail explains how the verdict was reached (match mode,
-	// window bounds, pipeline liveness).
+	// window bounds, scan workflow liveness).
 	DetectionDetail map[string]any `json:"detection_detail,omitempty"`
 }
 
