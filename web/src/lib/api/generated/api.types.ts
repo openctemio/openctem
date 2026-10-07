@@ -20655,7 +20655,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/pipelines/validate': {
+  '/pipelines/verify': {
     parameters: {
       query?: never
       header?: never
