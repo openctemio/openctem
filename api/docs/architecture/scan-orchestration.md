@@ -223,7 +223,7 @@ delete endpoints) goes through one repository call, `StepRepository.MutateSteps`
    delete the rest.
 
 Deleting a step never deletes history: `step_runs.step_id` is
-`ON DELETE SET NULL` (migration 001155), and each step run carries the step's
+`ON DELETE SET NULL` (migration 001156), and each step run carries the step's
 `step_key`, `step_name` and `tool` as they were when it was created. The run
 detail shows a removed step's runs by that snapshot.
 
