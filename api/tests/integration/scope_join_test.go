@@ -56,6 +56,8 @@ func TestScopeJoin(t *testing.T) {
 	exec(`INSERT INTO scope_exclusions (tenant_id, exclusion_type, pattern, reason, status, approved_by, approved_at, created_by)
 		VALUES ($1, 'domain', 'excl.join-a.example', 'not ours', 'active', 'approver', now(), 'requester')`, tenantA.String())
 	exec(`INSERT INTO easm_tombstones (tenant_id, name) VALUES ($1, 'dead.join-a.example')`, tenantA.String())
+	// A one-off (expiring) entry authorizes scanning only, never inventory.
+	exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status, expires_at, reason) VALUES ($1, 'domain', '*.oneoff-a.example', 'active', now() + interval '1 day', 'one-off')`, tenantA.String())
 	// Tenant B declares what tenant A does not.
 	seedScopeTarget(t, db, tenantB, "domain", "*.join-b.example")
 
@@ -71,6 +73,7 @@ func TestScopeJoin(t *testing.T) {
 	ipOut := pending("203.0.113.7", "ip_address")
 	other := pending("other.example.net", "domain")
 	paused := pending("app.paused-a.example", "subdomain")
+	oneOff := pending("app.oneoff-a.example", "subdomain")
 	excluded := pending("excl.join-a.example", "subdomain")
 	tomb := pending("x.dead.join-a.example", "subdomain")
 	foreign := pending("api.join-b.example", "subdomain")
@@ -98,7 +101,8 @@ func TestScopeJoin(t *testing.T) {
 	}
 	for name, id := range map[string]shared.ID{
 		"IP outside every IP entry": ipOut, "name outside everything": other, "under an inactive target": paused,
-		"excluded": excluded, "under a tombstone": tomb, "under another tenant's target": foreign,
+		"under an expiring (one-off) entry": oneOff,
+		"excluded":                          excluded, "under a tombstone": tomb, "under another tenant's target": foreign,
 		"a person's needs_review decision": human,
 	} {
 		if st := attributionState(t, db, tenantA, id); st != attribution.StateNeedsReview {
