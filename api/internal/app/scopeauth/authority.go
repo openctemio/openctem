@@ -22,10 +22,11 @@ package scopeauth
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/netip"
 	"net/url"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -242,20 +243,11 @@ func normalizeRoot(s string) string {
 func Host(s string) string {
 	h := strings.TrimSpace(s)
 	if strings.Contains(h, "://") {
-		u, err := url.Parse(h)
-		if err != nil {
+		if _, err := url.Parse(h); err != nil {
 			return ""
 		}
-		h = u.Hostname()
-	} else {
-		if i := strings.IndexAny(h, "/?#"); i >= 0 {
-			h = h[:i]
-		}
-		if host, _, err := net.SplitHostPort(h); err == nil {
-			h = host
-		}
 	}
-	h = normalizeRoot(h)
+	h = normalizeRoot(asset.HostOf(h))
 	if h == "" || !strings.Contains(h, ".") {
 		return ""
 	}
@@ -283,12 +275,8 @@ func MatchForms(target string) []string {
 		out = append(out, s)
 	}
 	add(strings.ToLower(v))
-	if strings.Contains(v, "://") {
-		if u, err := url.Parse(v); err == nil {
-			add(strings.ToLower(u.Hostname()))
-		}
-	} else if h, _, err := net.SplitHostPort(v); err == nil {
-		add(strings.ToLower(h))
+	if h := asset.HostOf(v); !strings.EqualFold(h, v) {
+		add(h)
 	}
 	return out
 }

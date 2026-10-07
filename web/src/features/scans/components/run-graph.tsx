@@ -124,6 +124,12 @@ const RunStepNode = memo(function RunStepNode({ data }: NodeProps<OverlayNode>) 
         </div>
       )}
       {!n.lane && n.findings > 0 && <div className="mt-1 tabular-nums">findings {n.findings}</div>}
+      {(n.lane?.chunks?.total ?? 0) > 1 && (
+        <div className="mt-0.5 tabular-nums text-muted-foreground" data-testid="run-graph-chunks">
+          chunks {n.lane!.chunks!.completed ?? 0}/{n.lane!.chunks!.total} on{' '}
+          {n.lane!.sensors?.length ?? 0} sensor(s)
+        </div>
+      )}
       {reasons.length > 0 && (
         <ul className="mt-1 flex flex-wrap gap-1" aria-label="Skipped targets by reason">
           {reasons.slice(0, 3).map(([reason, count]) => (
