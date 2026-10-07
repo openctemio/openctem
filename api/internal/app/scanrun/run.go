@@ -118,6 +118,10 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 		}
 	}
 
+	if template.RetiredAt != nil {
+		return nil, scanworkflow.ErrScanWorkflowRetired
+	}
+
 	// Verify template is active
 	if !template.IsActive {
 		return nil, shared.NewDomainError("INACTIVE", "pipeline template is not active", shared.ErrValidation)
