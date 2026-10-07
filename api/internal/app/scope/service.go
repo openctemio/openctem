@@ -725,34 +725,14 @@ func AssetMatchValues(assetType, name string, props map[string]any) []string {
 }
 
 // AssetExclusionValues is AssetMatchValues plus the addresses the asset is
-// known to resolve to (properties.ip_addresses, and the legacy
-// properties.ip). A scanner handed the asset's name reaches those addresses,
-// so an exclusion of any of them must exclude the asset. Matching more
-// values can only exclude more (fail closed); it is used for exclusions only,
-// never to put an asset in scope.
+// known to resolve to (asset.IPAddresses: ip_addresses and every synonym of
+// it). A scanner handed the asset's name reaches those addresses, so an
+// exclusion of any of them must exclude the asset. Matching more values can
+// only exclude more (fail closed); it is used for exclusions only, never to
+// put an asset in scope.
 func AssetExclusionValues(assetType, name string, props map[string]any) []string {
 	values := AssetMatchValues(assetType, name, props)
-	if props == nil {
-		return values
-	}
-	if ip, ok := props["ip"].(string); ok && ip != "" {
-		values = append(values, ip)
-	}
-	switch ips := props["ip_addresses"].(type) {
-	case []string:
-		for _, ip := range ips {
-			if ip != "" {
-				values = append(values, ip)
-			}
-		}
-	case []any:
-		for _, v := range ips {
-			if ip, ok := v.(string); ok && ip != "" {
-				values = append(values, ip)
-			}
-		}
-	}
-	return values
+	return append(values, asset.IPAddresses(props)...)
 }
 
 // effectiveExclusions returns the tenant's exclusions that are in effect:

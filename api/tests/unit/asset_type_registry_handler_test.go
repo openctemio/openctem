@@ -71,12 +71,27 @@ func TestAssetTypesEndpoint_ServesTheRegistry(t *testing.T) {
 		t.Errorf("serverless: %+v", fn)
 	}
 
+	// The property schema (RFC-042 §6.3.9): ip_addresses with its labels,
+	// format and synonyms.
+	var ips *asset.PropertyDefinition
+	for i := range body.Properties {
+		if body.Properties[i].Key == asset.PropKeyIPAddresses {
+			ips = &body.Properties[i]
+		}
+	}
+	if ips == nil || ips.Label == "" || ips.LabelVI == "" || ips.Format != asset.PropertyFormatIP || len(ips.Synonyms) == 0 {
+		t.Errorf("ip_addresses property = %+v", ips)
+	}
+	if len(body.CommonProperties) == 0 {
+		t.Error("common_properties must be served")
+	}
+
 	// The wire names the web relies on.
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"version", "lenses", "classes", "types", "sections", "cards", "core_fields", "data", "total"} {
+	for _, k := range []string{"version", "lenses", "classes", "types", "sections", "cards", "core_fields", "properties", "common_properties", "data", "total"} {
 		if _, ok := raw[k]; !ok {
 			t.Errorf("response has no %q", k)
 		}
