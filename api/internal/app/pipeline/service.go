@@ -43,16 +43,13 @@ type ScanDeactivator interface {
 	DeactivateScansByPipeline(ctx context.Context, pipelineID shared.ID) (int, error)
 }
 
-// ScanRunRecorder records a run's terminal outcome back onto the scan that
-// spawned it, so a scan's own last_run_at/last_run_status/counters reflect
-// reality. Optional: a workflow run with no ScanID (or no recorder wired)
-// simply skips it. Satisfied by *postgres.ScanRepository.RecordRun.
-//
-// Without this a pipeline_run reaching `completed` updated only the run row —
-// the scan it belongs to still read last_run_status NULL, i.e. "never run",
-// after a scan that had just finished and produced findings.
+// ScanRunRecorder refreshes the run summary of the scan that spawned a run
+// (last run, counters) from its runs once the run has finished, so the scan
+// never reads "never run" after a run that just completed. Optional: a
+// workflow run with no ScanID (or no recorder wired) skips it. Satisfied by
+// *postgres.ScanRepository.RefreshRunSummary.
 type ScanRunRecorder interface {
-	RecordRun(ctx context.Context, tenantID, scanID shared.ID, runID shared.ID, status string) error
+	RefreshRunSummary(ctx context.Context, tenantID, scanID shared.ID) error
 }
 
 // SecurityValidator interface for security validation.
