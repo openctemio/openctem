@@ -11,6 +11,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { AlertTriangle, Gauge, ListTree, Radar, ShieldHalf, UserRound } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -22,6 +23,15 @@ import {
   RiskScoreBadge,
   SeverityStrip,
 } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import {
+  groupProperties,
+  propertyLabel,
+  type PropertyEntry,
+} from '@/features/asset-types/lib/property-schema'
+import type { AssetPropertyFormat } from '@/features/asset-types/registry.generated'
+import { serializeInventoryFilters } from '../lib/inventory-url'
 import type { Asset } from '../types/asset.types'
 
 // Assets not observed for this long are flagged as possibly stale.
@@ -250,41 +260,121 @@ export function DiscoverySection({ asset }: { asset: Asset }) {
 // Properties
 // ============================================
 
-function formatValue(value: unknown): React.ReactNode {
-  if (value === null || value === undefined || value === '') return undefined
+/** The inventory query that finds the IP address asset with this address. */
+function ipAssetQuery(ip: string): string {
+  return serializeInventoryFilters({ types: ['ip_address'], search: ip }).toString()
+}
+
+function formatScalar(
+  value: string | number | boolean,
+  format?: AssetPropertyFormat
+): React.ReactNode {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-  if (typeof value === 'number' || typeof value === 'string') return String(value)
+  const text = String(value)
+  switch (format) {
+    case 'ip':
+      return (
+        <Link
+          href={`/assets?${ipAssetQuery(text)}`}
+          className="font-mono text-xs text-primary hover:underline"
+        >
+          {text}
+        </Link>
+      )
+    case 'url':
+      return (
+        <SafeExternalLink href={text} className="break-all text-primary hover:underline">
+          {text}
+        </SafeExternalLink>
+      )
+    case 'code':
+      return <code className="font-mono text-xs break-all">{text}</code>
+    default:
+      return text
+  }
+}
+
+function formatValue(value: unknown, format?: AssetPropertyFormat): React.ReactNode {
+  if (value === null || value === undefined || value === '') return undefined
+  if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+    return formatScalar(value, format)
+  }
   if (Array.isArray(value)) {
     if (value.length === 0) return undefined
     if (value.every((v) => ['string', 'number', 'boolean'].includes(typeof v))) {
-      return value.join(', ')
+      if (!format) return value.join(', ')
+      return (
+        <span className="flex flex-wrap gap-x-2 gap-y-1">
+          {value.map((v) => (
+            <span key={String(v)}>{formatScalar(v as string | number | boolean, format)}</span>
+          ))}
+        </span>
+      )
     }
   }
   return <code className="font-mono text-xs break-all">{JSON.stringify(value)}</code>
 }
 
-/**
- * Type-specific attributes the scanner or integration recorded (asset
- * `properties`). Rendered generically so every asset type shows what the API
- * actually holds instead of nothing.
- */
-export function PropertiesSection({ properties }: { properties?: Record<string, unknown> }) {
-  const entries = Object.entries(properties ?? {})
-    .map(([k, v]) => [k, formatValue(v)] as const)
+function renderEntries(entries: PropertyEntry[]) {
+  return entries
+    .map((e) => [e, formatValue(e.value, e.format)] as const)
     .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => a.localeCompare(b))
+}
 
-  if (entries.length === 0) return null
+/**
+ * The asset's `properties`, rendered from the property schema of its type
+ * (RFC-042 §6.3.9): labels in the viewer's language and in schema order,
+ * addresses linked to their IP assets, synonyms an older row still holds
+ * shown once under the canonical key, and keys outside the schema
+ * (third-party or custom) under "Other".
+ */
+export function PropertiesSection({
+  properties,
+  type,
+  subType,
+}: {
+  properties?: Record<string, unknown>
+  /** The asset's stored type and sub-type; without them every key is "Other". */
+  type?: string
+  subType?: string | null
+}) {
+  const { locale, t } = useTranslation()
+  const { known, other } = React.useMemo(
+    () => groupProperties(properties, type ?? '', subType),
+    [properties, type, subType]
+  )
+  const knownRows = renderEntries(known)
+  const otherRows = renderEntries(other)
+  const count = knownRows.length + otherRows.length
+  if (count === 0) return null
 
   return (
-    <DetailSection title="Properties" icon={ListTree} count={entries.length}>
-      <DetailFieldGrid>
-        {entries.map(([key, value]) => (
-          <DetailField key={key} label={humanize(key)}>
-            {value}
-          </DetailField>
-        ))}
-      </DetailFieldGrid>
+    <DetailSection title={t('assets.properties.title', 'Properties')} icon={ListTree} count={count}>
+      {knownRows.length > 0 && (
+        <DetailFieldGrid>
+          {knownRows.map(([e, value]) => (
+            <DetailField key={e.key} label={propertyLabel(e.key, locale)}>
+              {value}
+            </DetailField>
+          ))}
+        </DetailFieldGrid>
+      )}
+      {otherRows.length > 0 && (
+        <div className="space-y-2">
+          {knownRows.length > 0 && (
+            <p className="text-xs font-medium text-muted-foreground">
+              {t('assets.properties.other', 'Other')}
+            </p>
+          )}
+          <DetailFieldGrid>
+            {otherRows.map(([e, value]) => (
+              <DetailField key={e.key} label={propertyLabel(e.key, locale)}>
+                {value}
+              </DetailField>
+            ))}
+          </DetailFieldGrid>
+        </div>
+      )}
     </DetailSection>
   )
 }
