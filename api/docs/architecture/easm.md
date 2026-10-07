@@ -127,7 +127,7 @@ Exclusions always win, as today. An asset is actively scanned only when it is
 attributed `confirmed` and inside a scope entry.
 Candidates and dependencies get passive (T0) checks only.
 
-**Seeds are scope entries (migration 001245, research/53 SC1, SC2).** The
+**Seeds are scope entries (migration 001262, research/53 SC1, SC2).** The
 separate `easm_seeds` table and `/api/v1/easm/seeds` are gone. A root domain
 to discover from is the permanent scope entry `*.example.com` with
 `discovery` on (`POST /api/v1/scope/targets`: approvers, step-up, approvals,

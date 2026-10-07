@@ -111,7 +111,7 @@ trigger):
 6. **authority**: an internet-facing target is covered by an *active* scope
    entry (approved, unexpired) with `max_tier` at or above the probe's tier.
    Nothing else authorizes: a verified domain of any purpose is proof only
-   (step 7), and root-domain seeds are entries since migration `001245`. A
+   (step 7), and root-domain seeds are entries since migration `001262`. A
    target covered only below the probe's tier is refused `tier_exceeds`. The
    probe's tier is its tool's highest stage tier (an unknown tool is T1): scan
    create and quick scan refuse the request, a run leaves the target out with
@@ -332,7 +332,7 @@ send on create, when it fixes a refused scan target), `seed`,
 platform rows `system`). Audit records keep the reference without the name.
 `status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
 
-**One concept: scope entries** (research/53 SC1, SC2; migration `001245`).
+**One concept: scope entries** (research/53 SC1, SC2; migration `001262`).
 Seeds are folded into entries and `/api/v1/easm/seeds` is removed: a root
 domain to discover from is the permanent entry `*.example.com` with
 `discovery` on, created like any entry (approvers, step-up, approvals,
