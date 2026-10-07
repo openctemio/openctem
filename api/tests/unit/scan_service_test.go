@@ -882,7 +882,7 @@ type testScanServiceDeps struct {
 	auditSvc       *mockAuditService
 }
 
-func newTestScanService() (*scanservice.Service, *testScanServiceDeps) {
+func newTestScanService(opts ...scanservice.ServiceOption) (*scanservice.Service, *testScanServiceDeps) {
 	deps := &testScanServiceDeps{
 		scanRepo:       newMockScanRepo(),
 		templateRepo:   newMockTemplateRepo(),
@@ -915,7 +915,7 @@ func newTestScanService() (*scanservice.Service, *testScanServiceDeps) {
 		deps.sensorSelector,
 		deps.secValidator,
 		log,
-		scanservice.WithAuditService(deps.auditSvc),
+		append([]scanservice.ServiceOption{scanservice.WithAuditService(deps.auditSvc)}, opts...)...,
 	)
 	// A workflow scan's first steps are queued by the pipeline service, the
 	// one step dispatcher (research/27 P0-2), as in production.

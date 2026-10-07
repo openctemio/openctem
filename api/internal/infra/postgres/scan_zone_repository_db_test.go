@@ -432,15 +432,16 @@ func TestCommandRepository_StepBatchGate(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mk("completed", `{"findings_count": 3}`, "")
+	mk("completed", `{"findings_count": 3, "metadata": {"refused_targets_total": 2}}`, "")
 	mk("running", "", "")
-	mk("failed", "", "nuclei crashed")
+	mk("failed", `{"metadata": {"refused_targets_total": 7}}`, "nuclei crashed")
 
 	b, err := cmds.StepBatchState(ctx, tenant, srID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.Total != 3 || b.Active != 1 || b.Failed != 1 || b.Findings != 3 || b.FirstError != "nuclei crashed" {
+	// Skipped counts the completed batches' skipped targets only.
+	if b.Total != 3 || b.Active != 1 || b.Failed != 1 || b.Findings != 3 || b.Skipped != 2 || b.FirstError != "nuclei crashed" {
 		t.Errorf("batch state = %+v", b)
 	}
 	if other, _ := cmds.StepBatchState(ctx, seedTestTenant(ctx, t, sqlDB), srID); other.Total != 0 {
