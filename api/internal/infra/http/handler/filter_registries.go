@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
@@ -9,6 +10,7 @@ import (
 // generated into swag annotations ("// filterspec-params: <name> ...").
 func FilterRegistries() map[string]*filterspec.Registry {
 	return map[string]*filterspec.Registry{
-		"findings": vulnerability.FindingFields,
+		"findings":      vulnerability.FindingFields,
+		"web_endpoints": webendpoint.Fields,
 	}
 }

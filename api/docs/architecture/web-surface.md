@@ -51,3 +51,18 @@ The ingest output reports `endpoints_created`, `endpoints_updated`,
 
 A crawl step's outputs are its origin assets, so a chained template scan
 runs per origin, not once per crawled URL.
+
+## API
+
+| Route | Permission | Notes |
+|---|---|---|
+| `GET /api/v1/web-endpoints` | `assets:read` | list query contract (RFC-048, strict: an unknown param is 400); filters `origin_asset_id`, `method`, `kind`, `auth_state`, `state`, `in_scope`, `source`, `label`, `catalog_key`, `path_hash`, `path_template_contains`, `last_status`, `param_count`, seen and changed times; `q` searches the template |
+| `GET /api/v1/web-endpoints/stats` | `assets:read` | the same WHERE: counts by method, kind, auth state and state, and `excluded_untested` |
+| `GET /api/v1/web-endpoints/{id}` | `assets:read` | 404 for another tenant's id and for an origin outside the caller's data scope |
+| `GET /api/v1/web-endpoints/{id}/parameters` | `assets:read` | names, locations, risk hints; never a value |
+| `PATCH /api/v1/web-endpoints/{id}` | `assets:write` | `state` (active, ignored) and `labels`; audit-logged on the origin asset |
+| `GET /api/v1/assets/{id}/web-endpoints` | `assets:read` | one origin's endpoints; the `/assets/{id}` data-scope guard applies |
+
+The list compiles through `pkg/filterspec` with the caller as the actor, so
+the tenant predicate and the caller's data scope (on `origin_asset_id`) are
+always in the WHERE, for the list and the stats alike.
