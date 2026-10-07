@@ -19,3 +19,10 @@
   and `/api/v1/custom-capabilities[/{id}]`.
 - **Upgrade note:** clients move to the routes above (`/all` is the list with
   `per_page=100`; `by-category` is `category=`; usage is `include=usage`).
+
+### Removed: the scans:tenant_tools:delete permission (migration 001167)
+
+- Nothing checks it any more (tool settings have no delete; custom
+  capabilities are deleted with `scans:tools:delete`), so it is removed from
+  the catalog and from the owner and admin roles. No role loses access to
+  anything. The rows are archived and the down migration restores them.
