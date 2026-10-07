@@ -42909,8 +42909,14 @@ export interface components {
       max_attempts?: number
       started_at?: string
       status?: string
+      /**
+       * @description StepID is empty once the step was removed from the pipeline; the step
+       *     run keeps its key, name and tool.
+       */
       step_id?: string
       step_key?: string
+      step_name?: string
+      tool?: string
     }
     'internal_infra_http_handler.StepUpRequest': {
       password?: string
