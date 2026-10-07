@@ -191,6 +191,10 @@ export interface PipelineStep {
   node_type?: PipelineNodeType // Visual builder node type
   tool?: string
   capabilities: string[]
+  /** Tools to try, in order, when no tool is pinned (capability nodes). */
+  prefer_tools?: string[]
+  /** How the step picks its tool: pin (tool), prefer (prefer_tools) or auto. */
+  tool_selection?: 'auto' | 'prefer' | 'pin'
   config?: Record<string, unknown>
   timeout_seconds?: number
   depends_on?: string[]
@@ -320,6 +324,7 @@ export interface CreateStepRequest {
   ui_position?: UIPosition
   tool?: string
   capabilities?: string[] // Optional - backend derives from tool if not provided
+  prefer_tools?: string[]
   config?: Record<string, unknown>
   timeout_seconds?: number
   depends_on?: string[]
