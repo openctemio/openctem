@@ -405,79 +405,6 @@ func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, tenantID, id share
 	return nil
 }
 
-// RecordRunStarted records a newly created run as the scan's last run, with
-// status 'running'. One narrow UPDATE: the trigger path used to write the
-// whole scan row back from the copy it read before dispatching, which undid
-// any edit made meanwhile (a pause, a config change) and never stored the
-// 'running' status anyway. Counters are not touched here; RecordRun counts
-// the run when it finishes.
-func (r *ScanRepository) RecordRunStarted(ctx context.Context, tenantID, id shared.ID, runID shared.ID) error {
-	const query = `
-		UPDATE scans
-		SET last_run_id = $2,
-		    last_run_at = NOW(),
-		    last_run_status = 'running',
-		    updated_at = NOW()
-		WHERE id = $1 AND tenant_id = $3
-	`
-	if _, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), tenantID.String()); err != nil {
-		return fmt.Errorf("failed to record run start: %w", err)
-	}
-	return nil
-}
-
-// RecordRun records a run's terminal outcome on its scan and counts the run.
-// last_run_status follows only while this run is still the scan's latest: an
-// older run finishing late must not relabel a newer one that is running.
-func (r *ScanRepository) RecordRun(ctx context.Context, tenantID, id shared.ID, runID shared.ID, status string) error {
-	var successIncrement, failedIncrement, partialIncrement int
-	switch status {
-	case "completed", "success":
-		successIncrement = 1
-	case "partial":
-		partialIncrement = 1
-	case "failed", "error", "timeout":
-		failedIncrement = 1
-	}
-
-	query := `
-		UPDATE scans
-		SET last_run_status = CASE WHEN last_run_id IS NULL OR last_run_id = $2 THEN $3 ELSE last_run_status END,
-		    last_run_id = COALESCE(last_run_id, $2),
-		    last_run_at = CASE WHEN last_run_id IS NULL THEN NOW() ELSE last_run_at END,
-		    total_runs = total_runs + 1,
-		    successful_runs = successful_runs + $4,
-		    failed_runs = failed_runs + $5,
-		    partial_runs = partial_runs + $6,
-		    updated_at = NOW()
-		WHERE id = $1 AND tenant_id = $7
-	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), status, successIncrement, failedIncrement, partialIncrement, tenantID.String())
-	if err != nil {
-		return fmt.Errorf("failed to record run: %w", err)
-	}
-	return nil
-}
-
-// RecordTriggerFailure records a scheduled-trigger failure that happened before
-// any run was created. It sets last_run_at/last_run_status only — no last_run_id
-// (there is no run) and no counter changes (there was no run to count). Makes a
-// scan that failed to dispatch visible instead of indistinguishable from one
-// that has not run yet.
-func (r *ScanRepository) RecordTriggerFailure(ctx context.Context, tenantID, id shared.ID, status string) error {
-	const query = `
-		UPDATE scans
-		SET last_run_at = NOW(),
-		    last_run_status = $2,
-		    updated_at = NOW()
-		WHERE id = $1 AND tenant_id = $3
-	`
-	if _, err := r.db.ExecContext(ctx, query, id.String(), status, tenantID.String()); err != nil {
-		return fmt.Errorf("failed to record trigger failure: %w", err)
-	}
-	return nil
-}
-
 // GetStats returns aggregated statistics for scans.
 func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*scan.Stats, error) {
 	stats := &scan.Stats{
@@ -704,7 +631,7 @@ func (r *ScanRepository) selectQuery() string {
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
 		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs,
-		       COALESCE(schedule_rrule, '')
+		       COALESCE(schedule_rrule, ''), blocked_runs
 		FROM scans
 	`
 }
@@ -785,6 +712,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.AdHoc,
 		&s.PartialRuns,
 		&s.ScheduleRRule,
+		&s.BlockedRuns,
 	)
 	if err != nil {
 		return nil, err
@@ -919,6 +847,8 @@ func (r *ScanRepository) buildWhereClause(filter scan.Filter) (string, []any) {
 	if filter.ExcludeAdHoc {
 		conditions = append(conditions, "ad_hoc = false")
 	}
+	// Archived one-off scans are never listed.
+	conditions = append(conditions, "archived_at IS NULL")
 
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex))
