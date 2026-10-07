@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import useSWRInfinite from 'swr/infinite'
-import { FileText, Info, Loader2 } from 'lucide-react'
+import { AlertTriangle, FileText, Info, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { RunStatusBadge, TruncatedText } from '@/features/shared'
@@ -47,6 +47,40 @@ export function taskStatusNote(
     }
   }
   return { kind: 'error', text: msg }
+}
+
+/** How a skipped target's reason reads. */
+const SKIP_REASON_LABELS: Record<string, string> = {
+  unresolvable: 'does not resolve',
+  wildcard_pattern: 'wildcard pattern',
+  denied_by_policy: "outside the sensor's policy",
+  invalid_target: 'not a valid target',
+}
+
+/** Skipped targets named in the note before "and N more". */
+const SKIPPED_NAMED = 3
+
+/**
+ * The note of a task that completed with targets its sensor's local policy
+ * skipped (a name that does not resolve, a wildcard pattern, a target
+ * outside the policy): "Completed with 2 targets skipped: api.example.com
+ * (does not resolve), …". Null when nothing was skipped. The targets are
+ * sensor-supplied text; TruncatedText shows them as plain text.
+ */
+export function taskSkippedNote(
+  task: Pick<RunTask, 'skipped_targets' | 'skipped_targets_total'>
+): string | null {
+  const list = task.skipped_targets ?? []
+  const total = Math.max(task.skipped_targets_total ?? 0, list.length)
+  if (total <= 0) return null
+  const named = list
+    .slice(0, SKIPPED_NAMED)
+    .map((s) => `${s.target ?? '?'} (${SKIP_REASON_LABELS[s.reason ?? ''] ?? 'refused'})`)
+  const more = total - named.length
+  let text = `Completed with ${total} target${total === 1 ? '' : 's'} skipped`
+  if (named.length > 0) text += `: ${named.join(', ')}`
+  if (named.length > 0 && more > 0) text += `, and ${more} more`
+  return text
 }
 
 /** Tasks per "Load more" page. */
@@ -123,6 +157,7 @@ export function RunTasksTable({
             {rows.map((t, i) => {
               const ms = elapsedMs(t)
               const note = taskStatusNote(t)
+              const skipped = taskSkippedNote(t)
               return (
                 <tr key={t.id ?? i} className="border-t align-top">
                   <td className="px-3 py-2">
@@ -139,6 +174,12 @@ export function RunTasksTable({
                         label="Task error"
                         className="mt-1 max-w-[220px] text-xs text-muted-foreground"
                       />
+                    )}
+                    {skipped && (
+                      <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                        <TruncatedText value={skipped} label="Skipped targets" />
+                      </div>
                     )}
                   </td>
                   <td className="px-3 py-2">{t.tool || '-'}</td>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -61,7 +61,8 @@ import {
   type UIPosition,
   DEFAULT_PIPELINE_SETTINGS,
 } from '@/lib/api'
-import { useToolsWithConfig } from '@/lib/api/tool-hooks'
+import { useToolAvailability, useToolsWithConfig } from '@/lib/api/tool-hooks'
+import { availabilityByName, toolUnavailableReason } from '@/features/tools/lib/availability'
 import type { ToolWithConfig } from '@/lib/api/tool-types'
 
 interface StepFormData {
@@ -132,6 +133,9 @@ function SortableStepItem({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: step.id,
   })
+  // Why a tool cannot run now (one request, shared through SWR).
+  const { data: availData } = useToolAvailability()
+  const availability = useMemo(() => availabilityByName(availData?.items), [availData])
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -213,18 +217,36 @@ function SortableStepItem({
                 </SelectItem>
                 {tools
                   .filter((t) => t.is_enabled && t.tool.is_active)
-                  .map((t) => (
-                    <SelectItem key={t.tool.id} value={t.tool.name}>
-                      <div className="flex items-center gap-2">
-                        <span>{t.tool.display_name || t.tool.name}</span>
-                        {t.tool.capabilities && t.tool.capabilities.length > 0 && (
-                          <span className="text-[10px] text-muted-foreground">
-                            ({t.tool.capabilities.slice(0, 2).join(', ')})
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
+                  .map((t) => {
+                    // A tool no online sensor may run is listed but off, with
+                    // why; the step's current tool stays selectable.
+                    const reason = t.is_available
+                      ? null
+                      : (toolUnavailableReason(availability.get(t.tool.name)) ??
+                        'No online sensor can run it')
+                    return (
+                      <SelectItem
+                        key={t.tool.id}
+                        value={t.tool.name}
+                        disabled={!!reason && t.tool.name !== step.tool}
+                        title={reason ?? undefined}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{t.tool.display_name || t.tool.name}</span>
+                          {reason ? (
+                            <span className="text-[10px] text-muted-foreground">{reason}</span>
+                          ) : (
+                            t.tool.capabilities &&
+                            t.tool.capabilities.length > 0 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                ({t.tool.capabilities.slice(0, 2).join(', ')})
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
               </SelectContent>
             </Select>
           </div>
@@ -249,10 +271,7 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
   const [currentStep, setCurrentStep] = useState<WizardStep>('basics')
 
   // Fetch tools for selection
-  const { data: toolsData, isLoading: toolsLoading } = useToolsWithConfig({
-    is_active: true,
-    per_page: 100,
-  })
+  const { data: toolsData, isLoading: toolsLoading } = useToolsWithConfig()
 
   // Form state
   const [name, setName] = useState(pipeline?.name || '')

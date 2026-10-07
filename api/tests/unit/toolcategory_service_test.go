@@ -319,21 +319,25 @@ func TestToolCatListCategories_WithSearch(t *testing.T) {
 	}
 }
 
-func TestToolCatListCategories_WithIsBuiltinFilter(t *testing.T) {
+func TestToolCatListCategories_SourceFilter(t *testing.T) {
 	svc, repo := newToolCatTestService()
 	ctx := context.Background()
 
-	isBuiltin := true
-	_, err := svc.ListCategories(ctx, tool.ListCategoriesInput{
-		IsBuiltin: &isBuiltin,
-		Page:      1,
-		PerPage:   20,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	tenantID := shared.NewID()
+	if _, err := svc.ListCategories(ctx, tool.ListCategoriesInput{TenantID: tenantID.String(), Source: "platform"}); err != nil {
+		t.Fatal(err)
 	}
-	if repo.lastFilter.IsBuiltin == nil || *repo.lastFilter.IsBuiltin != true {
-		t.Fatal("expected IsBuiltin filter to be true")
+	if repo.lastFilter.TenantID != nil || repo.lastFilter.OnlyCustom {
+		t.Fatalf("source=platform: filter %+v, want the platform categories only", repo.lastFilter)
+	}
+	if _, err := svc.ListCategories(ctx, tool.ListCategoriesInput{TenantID: tenantID.String(), Source: "custom"}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.lastFilter.TenantID == nil || *repo.lastFilter.TenantID != tenantID || !repo.lastFilter.OnlyCustom {
+		t.Fatalf("source=custom: filter %+v, want the tenant's own only", repo.lastFilter)
+	}
+	if _, err := svc.ListCategories(ctx, tool.ListCategoriesInput{Source: "everything"}); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("unknown source: %v, want ErrValidation", err)
 	}
 }
 
@@ -407,7 +411,7 @@ func TestToolCatGetCategory_Success(t *testing.T) {
 
 	cat := toolCatCreatePlatformCategory(repo, "dast", "DAST")
 
-	result, err := svc.GetCategory(ctx, cat.ID.String())
+	result, err := svc.GetCategory(ctx, shared.NewID().String(), cat.ID.String())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -423,7 +427,7 @@ func TestToolCatGetCategory_InvalidID(t *testing.T) {
 	svc, _ := newToolCatTestService()
 	ctx := context.Background()
 
-	_, err := svc.GetCategory(ctx, "invalid")
+	_, err := svc.GetCategory(ctx, shared.NewID().String(), "invalid")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -436,9 +440,26 @@ func TestToolCatGetCategory_NotFound(t *testing.T) {
 	svc, _ := newToolCatTestService()
 	ctx := context.Background()
 
-	_, err := svc.GetCategory(ctx, shared.NewID().String())
+	_, err := svc.GetCategory(ctx, shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error for not found")
+	}
+}
+
+// Another tenant's custom category reads as not found, never as forbidden:
+// its existence does not cross the tenant boundary.
+func TestToolCatGetCategory_OtherTenantCategoryNotFound(t *testing.T) {
+	svc, repo := newToolCatTestService()
+	ctx := context.Background()
+
+	owner := shared.NewID()
+	cat := toolCatCreateTenantCategory(repo, owner, "mine", "Mine")
+
+	if _, err := svc.GetCategory(ctx, shared.NewID().String(), cat.ID.String()); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("other tenant: %v, want ErrNotFound", err)
+	}
+	if got, err := svc.GetCategory(ctx, owner.String(), cat.ID.String()); err != nil || got.ID != cat.ID {
+		t.Fatalf("owner: %v %v", got, err)
 	}
 }
 
@@ -448,7 +469,7 @@ func TestToolCatGetCategory_RepoError(t *testing.T) {
 
 	repo.getByIDErr = errors.New("db error")
 
-	_, err := svc.GetCategory(ctx, shared.NewID().String())
+	_, err := svc.GetCategory(ctx, shared.NewID().String(), shared.NewID().String())
 	if err == nil {
 		t.Fatal("expected error from repo")
 	}
@@ -765,8 +786,8 @@ func TestToolCatUpdateCategory_CannotModifyPlatformCategory(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for modifying platform category")
 	}
-	if !errors.Is(err, shared.ErrForbidden) {
-		t.Fatalf("expected ErrForbidden, got: %v", err)
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
 	}
 }
 
@@ -786,8 +807,8 @@ func TestToolCatUpdateCategory_CannotModifyOtherTenantCategory(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for modifying another tenant's category")
 	}
-	if !errors.Is(err, shared.ErrForbidden) {
-		t.Fatalf("expected ErrForbidden, got: %v", err)
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
 	}
 }
 
@@ -875,8 +896,8 @@ func TestToolCatDeleteCategory_CannotDeletePlatformCategory(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for deleting platform category")
 	}
-	if !errors.Is(err, shared.ErrForbidden) {
-		t.Fatalf("expected ErrForbidden, got: %v", err)
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
 	}
 }
 
@@ -892,8 +913,8 @@ func TestToolCatDeleteCategory_CannotDeleteOtherTenantCategory(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for deleting another tenant's category")
 	}
-	if !errors.Is(err, shared.ErrForbidden) {
-		t.Fatalf("expected ErrForbidden, got: %v", err)
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
 	}
 }
 

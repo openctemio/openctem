@@ -50,6 +50,11 @@ type TriggerScanExecInput struct {
 	// scans:freeze:override; it is audited and never honored for a
 	// scheduled run.
 	FreezeOverride bool `json:"-"`
+	// Interactive is a member's own "Run now" (POST /scans/{id}/trigger).
+	// Pausing a scan turns its schedule off; it does not stop a member from
+	// running it by hand. Automatic triggers (schedule, retry, automations)
+	// still need the scan active. A disabled scan runs for nobody.
+	Interactive bool `json:"-"`
 }
 
 // ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
@@ -121,13 +126,43 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	if err != nil {
 		return nil, err
 	}
+	if input.TriggerType == "" {
+		input.TriggerType = pipeline.TriggerTypeManual
+	}
 
-	if !sc.CanTrigger() {
+	run, err := s.triggerLoadedScan(ctx, sc, input)
+	if err != nil {
+		// A refusal becomes a blocked run with its reason; either way the
+		// scan's summary is recomputed from its runs (a run that failed
+		// while starting is one of them).
+		s.recordBlockedRun(ctx, sc, input, input.TriggerType, err)
+		s.refreshRunSummary(ctx, sc)
+		return nil, err
+	}
+	s.refreshRunSummary(ctx, sc)
+
+	// Audit log: scan triggered
+	s.logAudit(ctx, AuditContext{TenantID: input.TenantID, ActorID: input.TriggeredBy},
+		NewSuccessEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String()).
+			WithResourceName(sc.Name).
+			WithMessage(fmt.Sprintf("Scan config '%s' triggered", sc.Name)).
+			WithMetadata("run_id", run.ID.String()).
+			WithMetadata("scan_type", string(sc.ScanType)))
+
+	s.logger.Info("scan triggered", "scan_id", sc.ID.String(), "run_id", run.ID.String())
+	return run, nil
+}
+
+// triggerLoadedScan runs every trigger gate and dispatches the scan's run.
+// An error before the run exists is a refusal (TriggerScan records it as a
+// blocked run); one after is wrapped with afterRunCreated.
+func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input TriggerScanExecInput) (*pipeline.Run, error) {
+	if !sc.CanTrigger() && !(input.Interactive && sc.Status == scan.StatusPaused) {
 		// Give the user a specific, actionable error message based on the current state.
 		var msg string
 		switch sc.Status {
 		case scan.StatusPaused:
-			msg = fmt.Sprintf("Cannot trigger scan '%s' because it is paused. Resume the scan first to trigger it.", sc.Name)
+			msg = fmt.Sprintf("Scan '%s' is paused: its schedule is off and automatic runs are refused. Resume it, or run it by hand.", sc.Name)
 		case scan.StatusDisabled:
 			msg = fmt.Sprintf("Cannot trigger scan '%s' because it is disabled. Activate the scan first to trigger it.", sc.Name)
 		default:
@@ -151,9 +186,6 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 		}
 	}
 	triggerType := input.TriggerType
-	if triggerType == "" {
-		triggerType = pipeline.TriggerTypeManual
-	}
 	// A scheduled run acts as the scan's owner: refuse when there is none
 	// and pause when the owner is no longer an active member.
 	if triggerType == pipeline.TriggerTypeSchedule {
@@ -208,38 +240,11 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 		)
 	}
 
-	var run *pipeline.Run
-
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		run, err = s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor, input.FreezeOverride)
-	} else {
-		run, err = s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor, input.FreezeOverride)
+		return s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor, input.FreezeOverride)
 	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Record the run on the scan with one narrow UPDATE. Writing the whole scan
-	// row back from the copy read above undid any edit made while the trigger
-	// ran (a pause, a config change), and never stored the run status anyway
-	// (the generic Update does not carry the run columns). The run is counted
-	// when it finishes (RecordRun / the timeout reaper).
-	if err := s.scanRepo.RecordRunStarted(ctx, sc.TenantID, sc.ID, run.ID); err != nil {
-		s.logger.Warn("failed to record run in scan", "error", err)
-	}
-
-	// Audit log: scan triggered
-	s.logAudit(ctx, AuditContext{TenantID: input.TenantID, ActorID: input.TriggeredBy},
-		NewSuccessEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String()).
-			WithResourceName(sc.Name).
-			WithMessage(fmt.Sprintf("Scan config '%s' triggered", sc.Name)).
-			WithMetadata("run_id", run.ID.String()).
-			WithMetadata("scan_type", string(sc.ScanType)))
-
-	s.logger.Info("scan triggered", "scan_id", sc.ID.String(), "run_id", run.ID.String())
-	return run, nil
+	return s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor, input.FreezeOverride)
 }
 
 // triggerWorkflow triggers a workflow pipeline execution.
@@ -360,7 +365,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 
 	// Create step runs
 	for _, step := range steps {
-		stepRun := pipeline.NewStepRun(run.ID, step.ID, step.StepKey, step.StepOrder, step.MaxRetries)
+		stepRun := pipeline.NewStepRunForStep(run.ID, step)
 		if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
 			s.logger.Warn("failed to create step run", "error", err)
 		}
@@ -377,7 +382,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := s.scheduleWorkflowSteps(ctx, run, steps, template.Settings.MaxParallelSteps); err != nil {
 		var de *shared.DomainError
 		if errors.As(err, &de) && de.Code == codeWorkflowCannotStart {
-			return nil, err // the run is already failed with the reason
+			return nil, afterRunCreated(err) // the run is already failed with the reason
 		}
 		s.logger.Warn("failed to schedule workflow steps", "error", err)
 	}
@@ -534,7 +539,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err != nil {
 		run.Fail("Failed to create command: " + err.Error())
 		_ = s.runRepo.Update(ctx, run)
-		return nil, fmt.Errorf("failed to create scanner command: %w", err)
+		return nil, afterRunCreated(fmt.Errorf("failed to create scanner command: %w", err))
 	}
 
 	return run, nil
@@ -559,7 +564,7 @@ func (s *Service) createSingleScanStepRun(ctx context.Context, run *pipeline.Run
 	// scan dispatches one scanner command, so one step run is what completion
 	// is measured against — matching the SetTotalSteps(1) above.
 	step := steps[0]
-	stepRun := pipeline.NewStepRun(run.ID, step.ID, step.StepKey, step.StepOrder, step.MaxRetries)
+	stepRun := pipeline.NewStepRunForStep(run.ID, step)
 	if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
 		s.logger.Warn("failed to create step run for single scan",
 			"run_id", run.ID.String(), "error", err)

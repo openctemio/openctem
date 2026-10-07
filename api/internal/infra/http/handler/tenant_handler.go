@@ -944,29 +944,6 @@ func (h *TenantHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(toMemberResponse(membership))
 }
 
-// RemoveMember handles DELETE /api/v1/tenants/{tenant}/members/{memberId}
-func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
-	memberID := r.PathValue("userId")
-	if memberID == "" {
-		apierror.BadRequest("Member ID is required").WriteJSON(w)
-		return
-	}
-
-	actx := h.buildAuditContext(r)
-	if actx.ActorID == "" {
-		// The peer-administrator rule needs to know who is acting; an empty
-		// actor means a system path in the service.
-		apierror.Unauthorized("Authentication required").WriteJSON(w)
-		return
-	}
-	if err := h.service.RemoveMember(r.Context(), memberID, actx); err != nil {
-		h.writeLifecycleError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // SuspendMember handles POST /api/v1/tenants/{tenant}/members/{memberId}/suspend
 func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
 	memberID := r.PathValue("userId")
