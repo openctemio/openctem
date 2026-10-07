@@ -4,5 +4,5 @@
   document for a web origin; `GET /api/v1/assets/{id}/api-specs`, `GET /api/v1/api-specs/{id}`,
   `GET /api/v1/api-specs/{id}/drift` (shadow, orphan, zombie, parameter drift) and `DELETE /api/v1/api-specs/{id}`.
 - Only the declared operations (method, path, parameter names, deprecated) and the document's digest are stored
-  (migration 001233); the document, its examples and captured values are not. No remote reference is fetched.
+  (migration 001273); the document, its examples and captured values are not. No remote reference is fetched.
   Design: RFC-056.
