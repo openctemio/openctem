@@ -1015,3 +1015,27 @@ func TestH2_ShadowScoreComparison(t *testing.T) {
 			mulPinned, ampPinned)
 	}
 }
+
+// Informational findings are not weaknesses: in the count model they add no
+// points, so an asset with only info findings scores like one with none, and
+// info findings never push an asset's finding component up.
+func TestRiskScoringEngine_CountModeIgnoresInformational(t *testing.T) {
+	config := asset.LegacyRiskScoringConfig()
+	config.FindingImpact.Mode = "count"
+	engine := asset.NewRiskScoringEngine(config)
+
+	none := makeTestAssetWithSeverity(t, asset.ExposurePublic, asset.CriticalityHigh, asset.FindingSeverityCounts{})
+	infoOnly := makeTestAssetWithSeverity(t, asset.ExposurePublic, asset.CriticalityHigh, asset.FindingSeverityCounts{Info: 8})
+	if got, want := engine.CalculateScore(infoOnly), engine.CalculateScore(none); got != want {
+		t.Errorf("8 info findings scored %d, want the zero-finding score %d", got, want)
+	}
+
+	oneHigh := makeTestAssetWithSeverity(t, asset.ExposurePublic, asset.CriticalityHigh, asset.FindingSeverityCounts{High: 1})
+	oneHighPlusInfo := makeTestAssetWithSeverity(t, asset.ExposurePublic, asset.CriticalityHigh, asset.FindingSeverityCounts{High: 1, Info: 5})
+	if got, want := engine.CalculateScore(oneHighPlusInfo), engine.CalculateScore(oneHigh); got != want {
+		t.Errorf("1 high + 5 info scored %d, want the 1-high score %d", got, want)
+	}
+	if engine.CalculateScore(oneHigh) <= engine.CalculateScore(none) {
+		t.Error("a real finding must still add points in the count model")
+	}
+}

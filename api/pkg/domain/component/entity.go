@@ -70,6 +70,7 @@ type VulnerableComponent struct {
 	HighCount     int  `json:"high_count"`
 	MediumCount   int  `json:"medium_count"`
 	LowCount      int  `json:"low_count"`
+	InfoCount     int  `json:"info_count"`
 	TotalCount    int  `json:"total_count"`
 	InCisaKev     bool `json:"in_cisa_kev"`
 }

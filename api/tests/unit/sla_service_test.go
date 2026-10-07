@@ -1064,7 +1064,8 @@ func TestCalculateSLADeadline_DifferentSeverities(t *testing.T) {
 		{vulnerability.SeverityHigh, 15},
 		{vulnerability.SeverityMedium, 30},
 		{vulnerability.SeverityLow, 60},
-		{vulnerability.SeverityInfo, 90},
+		{vulnerability.SeverityInfo, 0}, // informational: no SLA by default
+		{vulnerability.SeverityNone, 0},
 	}
 
 	for _, tt := range tests {
@@ -1072,6 +1073,12 @@ func TestCalculateSLADeadline_DifferentSeverities(t *testing.T) {
 			deadline, err := svc.CalculateSLADeadline(context.Background(), tenantID.String(), "", tt.severity, detectedAt)
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
+			}
+			if tt.days == 0 {
+				if !deadline.IsZero() {
+					t.Errorf("expected no deadline, got %v", deadline)
+				}
+				return
 			}
 			expected := detectedAt.Add(time.Duration(tt.days) * 24 * time.Hour)
 			if !deadline.Equal(expected) {
@@ -1287,5 +1294,51 @@ func TestCreateSLAPolicy_EscalationDefaultsOn(t *testing.T) {
 	}
 	if !policy.EscalationEnabled() {
 		t.Fatal("escalation omitted on create must default to on")
+	}
+}
+
+// Informational findings get no SLA by default: no policy, a fresh default
+// policy, any priority class. The applier therefore leaves sla_deadline NULL.
+func TestCalculateSLADeadlineForPriority_InformationalNoSLA(t *testing.T) {
+	detectedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	tenantID := shared.NewID()
+
+	// No policy configured.
+	svc := newTestSLAService(newMockSLARepo())
+	for _, sev := range []vulnerability.Severity{vulnerability.SeverityInfo, vulnerability.SeverityNone} {
+		for _, class := range []string{"", "P0", "P3"} {
+			d, err := svc.CalculateSLADeadlineForPriority(context.Background(), tenantID.String(), "", class, sev, detectedAt)
+			if err != nil || !d.IsZero() {
+				t.Errorf("no policy, %s/%q: deadline=%v err=%v, want no deadline", sev, class, d, err)
+			}
+		}
+	}
+	// A low finding still gets one.
+	if d, _ := svc.CalculateSLADeadlineForPriority(context.Background(), tenantID.String(), "", "P3", vulnerability.SeverityLow, detectedAt); d.IsZero() {
+		t.Error("low finding got no deadline")
+	}
+
+	// Compliance of a no-SLA finding is not_applicable, never overdue.
+	res, err := svc.CheckSLACompliance(context.Background(), tenantID.String(), "", vulnerability.SeverityInfo, detectedAt.AddDate(-1, 0, 0), nil)
+	if err != nil || res.Status != "not_applicable" || !res.IsCompliant || res.EscalationNeeded {
+		t.Errorf("info compliance = %+v err=%v, want not_applicable", res, err)
+	}
+}
+
+func TestCreateSLAPolicy_InfoNoSLAAccepted(t *testing.T) {
+	svc := newTestSLAService(newMockSLARepo())
+	input := validSLACreateInput(shared.NewID().String())
+	input.InfoDays = 0
+	p, err := svc.CreateSLAPolicy(context.Background(), input)
+	if err != nil {
+		t.Fatalf("info days 0 rejected: %v", err)
+	}
+	if p.InformationalHasSLA() {
+		t.Error("policy with info days 0 gives informational findings an SLA")
+	}
+	// A positive info window still has to be >= low.
+	input.InfoDays = 30
+	if _, err := svc.CreateSLAPolicy(context.Background(), input); err == nil {
+		t.Error("info days 30 < low days 60 accepted")
 	}
 }
