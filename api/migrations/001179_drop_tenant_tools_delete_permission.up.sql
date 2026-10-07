@@ -9,18 +9,18 @@
 -- access_control_removed_archive first; the down migration restores them.
 
 -- A temp table: gone at the end of the session.
-CREATE TEMP TABLE IF NOT EXISTS removed_permission_ids_001167 (id VARCHAR(100) PRIMARY KEY);
-INSERT INTO removed_permission_ids_001167 (id) VALUES
+CREATE TEMP TABLE IF NOT EXISTS removed_permission_ids_001179 (id VARCHAR(100) PRIMARY KEY);
+INSERT INTO removed_permission_ids_001179 (id) VALUES
     ('scans:tenant_tools:delete')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO access_control_removed_archive (source_table, row_data)
-SELECT 'permissions:001167', to_jsonb(t) FROM permissions t
-WHERE t.id IN (SELECT id FROM removed_permission_ids_001167);
+SELECT 'permissions:001179', to_jsonb(t) FROM permissions t
+WHERE t.id IN (SELECT id FROM removed_permission_ids_001179);
 
 INSERT INTO access_control_removed_archive (source_table, row_data)
-SELECT 'role_permissions:001167', to_jsonb(t) FROM role_permissions t
-WHERE t.permission_id IN (SELECT id FROM removed_permission_ids_001167);
+SELECT 'role_permissions:001179', to_jsonb(t) FROM role_permissions t
+WHERE t.permission_id IN (SELECT id FROM removed_permission_ids_001179);
 
 -- role_permissions rows go with the catalog row (ON DELETE CASCADE).
-DELETE FROM permissions WHERE id IN (SELECT id FROM removed_permission_ids_001167);
+DELETE FROM permissions WHERE id IN (SELECT id FROM removed_permission_ids_001179);

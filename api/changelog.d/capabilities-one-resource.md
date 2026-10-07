@@ -20,7 +20,7 @@
 - **Upgrade note:** clients move to the routes above (`/all` is the list with
   `per_page=100`; `by-category` is `category=`; usage is `include=usage`).
 
-### Removed: the scans:tenant_tools:delete permission (migration 001167)
+### Removed: the scans:tenant_tools:delete permission (migration 001179)
 
 - Nothing checks it any more (tool settings have no delete; custom
   capabilities are deleted with `scans:tools:delete`), so it is removed from
