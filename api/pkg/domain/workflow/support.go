@@ -14,7 +14,13 @@ import (
 //   - the assign_team and update_priority actions have no backing service and
 //     fail every time they run;
 //   - the run_script action is disabled (there is no sandbox to run a
-//     tenant-supplied script in), so it fails every time it runs.
+//     tenant-supplied script in), so it fails every time it runs;
+//   - the http_request action is retired for new automations: it sends run
+//     data to any address, and its headers (often credentials) would be
+//     stored in plain node config. Outbound calls go through a notification
+//     integration, whose credentials are stored encrypted. A stored
+//     http_request node still runs while its automation stays on, and only
+//     when the person the run acts as holds integrations:manage.
 //
 // They stay in the enum so stored workflows that use them still load, read
 // and render. New writes are refused: creating a workflow, replacing its
@@ -38,7 +44,7 @@ func (t TriggerType) IsSupported() bool {
 // IsSupported reports whether the platform actually executes this action type.
 func (t ActionType) IsSupported() bool {
 	switch t {
-	case ActionTypeAssignTeam, ActionTypeUpdatePriority, ActionTypeRunScript:
+	case ActionTypeAssignTeam, ActionTypeUpdatePriority, ActionTypeRunScript, ActionTypeHTTPRequest:
 		return false
 	}
 	return true

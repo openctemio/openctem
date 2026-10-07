@@ -111,6 +111,18 @@ func (m *MockWorkflowRepository) Update(ctx context.Context, wf *workflow.Workfl
 	return nil
 }
 
+// SetOwner implements workflow.OwnerSetter.
+func (m *MockWorkflowRepository) SetOwner(ctx context.Context, tenantID, id, ownerID shared.ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	wf, ok := m.workflows[id.String()]
+	if !ok || wf.TenantID != tenantID {
+		return shared.ErrNotFound
+	}
+	wf.SetCreatedBy(ownerID)
+	return nil
+}
+
 func (m *MockWorkflowRepository) Delete(ctx context.Context, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr

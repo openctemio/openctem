@@ -411,6 +411,16 @@ func wfExecBuildRun(wf *workflow.Workflow, tenantID shared.ID) *workflow.Run {
 	return run
 }
 
+// wfExecAllowAll is a StepAuthorizer that lets every step run. The
+// executor refuses every action and notification step without one (fail
+// closed); the principal checks themselves are tested in
+// workflow_run_authz_test.go and against Postgres.
+type wfExecAllowAll struct{}
+
+func (wfExecAllowAll) AuthorizeStep(ctx context.Context, _ workflowsvc.StepAuthorization) (context.Context, error) {
+	return ctx, nil
+}
+
 // wfExecNewExecutor creates a WorkflowExecutor with test mocks.
 func wfExecNewExecutor(
 	workflowRepo *wfExecMockWorkflowRepo,
@@ -418,7 +428,8 @@ func wfExecNewExecutor(
 	nodeRunRepo *wfExecMockNodeRunRepo,
 ) *workflowsvc.WorkflowExecutor {
 	log := logger.NewNop()
-	return workflowsvc.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, log)
+	return workflowsvc.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, log,
+		workflowsvc.WithExecutorStepAuthorizer(wfExecAllowAll{}))
 }
 
 // =============================================================================
