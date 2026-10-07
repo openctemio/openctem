@@ -480,6 +480,14 @@ func (m *mockStepRepo) Reorder(_ context.Context, _ shared.ID, _ map[string]int)
 func (m *mockStepRepo) FindPipelineIDsByToolName(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
 	return nil, nil
 }
+func (m *mockStepRepo) MutateSteps(_ context.Context, _, pipelineID shared.ID, mutate func([]*pipeline.Step) ([]*pipeline.Step, error)) ([]*pipeline.Step, error) {
+	next, err := mutate(m.steps[pipelineID.String()])
+	if err != nil {
+		return nil, err
+	}
+	m.steps[pipelineID.String()] = next
+	return next, nil
+}
 
 // =============================================================================
 // Mock: pipeline.StepRunRepository
