@@ -22,7 +22,7 @@ CREATE TABLE api_specs (
     digest          character(64) NOT NULL,
     size_bytes      integer NOT NULL,
     operation_count integer NOT NULL DEFAULT 0,
-    truncated       integer NOT NULL DEFAULT 0,
+    operations_over_cap integer NOT NULL DEFAULT 0,
     uploaded_by     uuid,
     created_at      timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT uq_api_specs_tenant_id UNIQUE (tenant_id, id),

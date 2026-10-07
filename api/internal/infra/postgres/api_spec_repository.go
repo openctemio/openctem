@@ -26,7 +26,7 @@ func NewAPISpecRepository(db *DB) *APISpecRepository { return &APISpecRepository
 var _ apispec.Repository = (*APISpecRepository)(nil)
 
 const apiSpecColumns = `id, tenant_id, origin_asset_id, name, format, COALESCE(title, ''), COALESCE(spec_version, ''),
-	digest, size_bytes, operation_count, truncated, uploaded_by, created_at`
+	digest, size_bytes, operation_count, operations_over_cap, uploaded_by, created_at`
 
 func scanAPISpec(s interface{ Scan(...any) error }) (*apispec.Record, error) {
 	var r apispec.Record
@@ -57,7 +57,7 @@ func (r *APISpecRepository) Create(ctx context.Context, rec *apispec.Record, ops
 	defer func() { _ = tx.Rollback() }()
 	var newID string
 	if err := tx.QueryRowContext(ctx, `INSERT INTO api_specs (tenant_id, origin_asset_id, name, format, title, spec_version,
-			digest, size_bytes, operation_count, truncated, uploaded_by)
+			digest, size_bytes, operation_count, operations_over_cap, uploaded_by)
 		VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), $7, $8, $9, $10, $11)
 		RETURNING id, created_at`,
 		rec.TenantID.String(), rec.OriginAssetID.String(), rec.Name, string(rec.Format), rec.Title, rec.SpecVersion,
