@@ -83,3 +83,22 @@ func typedEvidence(in []ctis.EvidenceItem) []evidencedom.Item {
 	}
 	return out
 }
+
+// webLocationFallback gives a CTIS 1.6 web finding (finding.web, no
+// location) its URL as the location path, where a pre-1.6 report put the
+// matched-at. The finding's endpoint is what a retest re-checks and must
+// prove it requested (RFC-057 R2), and the fingerprint of a re-sighting
+// stays the one an older report produced. The URL is the redacted one (no
+// query values, user info or fragment).
+func webLocationFallback(f *ctis.Finding) {
+	if f == nil || f.Web == nil || f.Web.URL == "" {
+		return
+	}
+	if f.Location != nil && f.Location.Path != "" {
+		return
+	}
+	if f.Location == nil {
+		f.Location = &ctis.FindingLocation{}
+	}
+	f.Location.Path = f.Web.URL
+}
