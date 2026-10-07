@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
@@ -485,8 +486,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ThreatModel:           newThreatModelHandler(svc, log),
 		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log),
 
-		// Platform Stats (tenant-scoped platform sensor statistics)
-		PlatformStats: handler.NewPlatformStatsHandler(svc.Sensor, log),
+		// Platform scanning: the shared platform sensors as a service the
+		// tenant may use, never the sensors themselves.
+		PlatformScanning: handler.NewPlatformScanningHandler(
+			sensor.NewPlatformScanningService(repos.Sensor, app.PlatformSensorsAllowed), log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),

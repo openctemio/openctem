@@ -50,13 +50,13 @@ export const SENSOR_PREFERENCE_CONFIG: Record<
     icon: 'sparkles',
   },
   tenant: {
-    label: 'Your Sensor',
-    description: "Use only your organization's deployed sensor",
+    label: 'Your sensors',
+    description: "Use only your organization's deployed sensors",
     icon: 'server',
   },
   platform: {
-    label: 'Platform Sensor',
-    description: "Use OpenCTEM's managed cloud sensors for faster execution",
+    label: 'Platform scanning',
+    description: "Use the platform's shared scanning (public targets only)",
     icon: 'cloud',
   },
 }

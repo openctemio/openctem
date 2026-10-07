@@ -69,7 +69,7 @@ import { useSensorGrantSummaries } from '@/lib/api/sensor-grant-hooks'
 import { useSensorIdentityPolicy } from '@/lib/api/sensor-pairing-hooks'
 import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
 import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { PlatformSensorsLink } from '@/features/platform'
+import { PlatformScanningCard } from '@/features/platform'
 import {
   BulkActionBar,
   EmptyState,
@@ -104,7 +104,6 @@ import {
   filterSensors,
   groupSensors,
   summarizeFleet,
-  tenantSensors,
   type FleetFilters,
   type FleetGroupBy,
   type ReleaseChannel,
@@ -410,8 +409,8 @@ export function SensorsSection({
   const { trigger: deactivateSensorTrigger } = useDeactivateSensor()
   const { trigger: revokeSensorTrigger } = useRevokeSensor()
 
-  // The tenant's own sensors (platform sensors have their own page).
-  const scopedSensors = useMemo(() => tenantSensors(sensors), [sensors])
+  // The tenant's own sensors: the API never lists a platform sensor.
+  const scopedSensors = sensors
 
   const summary = useMemo(
     () => summarizeFleet(scopedSensors, now, thresholds, channel, zones),
@@ -822,9 +821,6 @@ export function SensorsSection({
           </Can>
         ) : (
           <>
-            {/* Shared platform sensors have their own page, linked only where
-                the tenant has them (the same condition the old card used). */}
-            <PlatformSensorsLink />
             {fleetMode === 'daemon' && (
               <Button
                 variant="outline"
@@ -891,6 +887,9 @@ export function SensorsSection({
       ) : (
         <>
           {canRunner && <CICDLinkCard className="mt-4" count={runnerCount} />}
+          {/* Where else scans can run: the platform's shared scanning, shown
+              only when the organization may use it. */}
+          <PlatformScanningCard className="mt-4" />
           {!fleetEmpty && (
             <FleetHealthStrip
               className="mt-5"

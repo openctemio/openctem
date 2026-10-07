@@ -203,7 +203,7 @@ func (r *SensorResultRepository) List(ctx context.Context, tenantID shared.ID, f
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT `+sensorResultColumns+`
 		FROM sensor_result_quarantine q
-		LEFT JOIN sensors s ON s.id = q.sensor_id
+		LEFT JOIN sensors s ON s.id = q.sensor_id AND s.tenant_id = q.tenant_id AND NOT s.is_platform_sensor
 		WHERE `+where+fmt.Sprintf(` ORDER BY q.created_at DESC, q.id LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list quarantined results: %w", err)
@@ -226,7 +226,7 @@ func (r *SensorResultRepository) Get(ctx context.Context, tenantID, id shared.ID
 	row := r.db.QueryRowContext(ctx, `
 		SELECT `+sensorResultColumns+`, q.payload
 		FROM sensor_result_quarantine q
-		LEFT JOIN sensors s ON s.id = q.sensor_id
+		LEFT JOIN sensors s ON s.id = q.sensor_id AND s.tenant_id = q.tenant_id AND NOT s.is_platform_sensor
 		WHERE q.tenant_id = $1 AND q.id = $2`, tenantID.String(), id.String())
 	it, err := scanSensorResultItem(row, &payload)
 	if errors.Is(err, sql.ErrNoRows) {

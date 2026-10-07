@@ -459,7 +459,7 @@ func (r *CapabilityRepository) GetUsageStats(ctx context.Context, tenantID, capa
 	// Count sensors with this capability (via array)
 	sensorQuery := `
 		SELECT name FROM sensors
-		WHERE tenant_id = $2 AND $1 = ANY(capabilities)
+		WHERE tenant_id = $2 AND NOT is_platform_sensor AND $1 = ANY(capabilities)
 		ORDER BY name
 		LIMIT 10
 	`
@@ -584,7 +584,7 @@ func (r *CapabilityRepository) GetUsageStatsBatch(ctx context.Context, tenantID 
 		sensorQuery := `
 			SELECT cap_name, COUNT(DISTINCT a.id) as sensor_count
 			FROM UNNEST(ARRAY[` + strings.Join(namePlaceholders, ", ") + `]::text[]) AS cap_name
-			LEFT JOIN sensors a ON cap_name = ANY(a.capabilities) AND a.tenant_id = ` + sensorTenantParam + `
+			LEFT JOIN sensors a ON cap_name = ANY(a.capabilities) AND NOT a.is_platform_sensor AND a.tenant_id = ` + sensorTenantParam + `
 			GROUP BY cap_name
 		`
 		nameArgs = append(nameArgs, tenantID.String())

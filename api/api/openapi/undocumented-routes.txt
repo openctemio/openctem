@@ -169,7 +169,6 @@ GET /api/v1/scan-runs
 GET /api/v1/scan-runs/{}
 GET /api/v1/scan-workflows
 GET /api/v1/scan-workflows/{}
-GET /api/v1/platform/stats
 GET /api/v1/priority-rules
 GET /api/v1/priority-rules/{}
 GET /api/v1/relationships/suggestions

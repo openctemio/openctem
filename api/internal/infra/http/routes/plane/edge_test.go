@@ -84,7 +84,7 @@ func TestEdgeOf(t *testing.T) {
 		{"/api/v1/admin/tenants", EdgeWeb},
 		{"/api/v1/findings", EdgeWeb},
 		// The stale protocol-v0 rule is gone: these are user-plane paths now.
-		{"/api/v1/platform/stats", EdgeWeb},
+		{"/api/v1/platform/scanning", EdgeWeb},
 	} {
 		got, ok := EdgeOf(tc.path)
 		if !ok || got != tc.want {
