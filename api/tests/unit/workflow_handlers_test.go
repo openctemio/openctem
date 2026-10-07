@@ -772,15 +772,12 @@ func TestWfHandlerHTTPRequestInvalidMethod(t *testing.T) {
 	}
 }
 
-func TestWfHandlerHTTPRequestResponseBodyInOutput(t *testing.T) {
-	responsePayload := map[string]any{
-		"id":     42,
-		"status": "active",
-	}
+func TestWfHandlerHTTPRequestResponseBodyNotKept(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Set-Cookie", "session=remote-secret")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(responsePayload)
+		_ = json.NewEncoder(w).Encode(map[string]any{"token": "remote-secret"})
 	}))
 	defer ts.Close()
 
@@ -794,19 +791,18 @@ func TestWfHandlerHTTPRequestResponseBodyInOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	body, ok := output["body"]
-	if !ok {
-		t.Fatal("expected 'body' key in output")
+	// The step output is stored with the run and shown to every reader:
+	// the remote response (body, headers) never is.
+	for _, k := range []string{"body", "headers"} {
+		if _, ok := output[k]; ok {
+			t.Errorf("output keeps the response %s: %v", k, output)
+		}
 	}
-
-	// Body should be parsed as JSON map
-	bodyMap, ok := body.(map[string]any)
-	if !ok {
-		t.Fatalf("expected body to be map[string]any, got %T", body)
+	if strings.Contains(fmt.Sprintf("%v", output), "remote-secret") {
+		t.Errorf("output carries the remote response: %v", output)
 	}
-	if fmt.Sprintf("%v", bodyMap["status"]) != "active" {
-		t.Errorf("expected status=active in body, got %v", bodyMap["status"])
+	if output["status_code"] != http.StatusOK {
+		t.Errorf("status_code = %v, want 200", output["status_code"])
 	}
 }
 

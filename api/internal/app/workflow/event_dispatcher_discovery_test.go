@@ -189,3 +189,40 @@ func TestDispatchScanCompleted(t *testing.T) {
 		t.Fatalf("scan payload = %v", scan)
 	}
 }
+
+// A failed or partial run fires only the automations that ask for that
+// outcome; without a status_filter only completed runs fire (as before).
+func TestDispatchScanCompleted_StatusFilter(t *testing.T) {
+	tenant := shared.NewID()
+	plain := newWorkflow(tenant, workflowdom.TriggerTypeScanCompleted, nil)
+	onFailure := newWorkflow(tenant, workflowdom.TriggerTypeScanCompleted, map[string]any{"status_filter": []any{"failed", "partial"}})
+	onAny := newWorkflow(tenant, workflowdom.TriggerTypeScanCompleted, map[string]any{"status_filter": []any{"completed", "partial", "failed"}})
+	repo := &fakeWorkflowRepo{byTenant: map[shared.ID][]*workflowdom.Workflow{tenant: {plain, onFailure, onAny}}}
+
+	cases := []struct {
+		status pipeline.RunStatus
+		want   []*workflowdom.Workflow
+	}{
+		{pipeline.RunStatusCompleted, []*workflowdom.Workflow{plain, onAny}},
+		{pipeline.RunStatusPartial, []*workflowdom.Workflow{onFailure, onAny}},
+		{pipeline.RunStatusFailed, []*workflowdom.Workflow{onFailure, onAny}},
+		{pipeline.RunStatusCanceled, nil},
+	}
+	for _, tc := range cases {
+		rec := &triggerRecorder{}
+		d := newTestDispatcher(repo, rec)
+		run := &pipeline.Run{ID: shared.NewID(), TenantID: tenant, PipelineID: shared.NewID(), Status: tc.status}
+		if n := d.dispatchScanCompleted(context.Background(), run); n != len(tc.want) {
+			t.Errorf("%s: triggered %d, want %d", tc.status, n, len(tc.want))
+			continue
+		}
+		for i, wf := range tc.want {
+			if rec.calls[i].WorkflowID != wf.ID {
+				t.Errorf("%s: call %d ran %s, want %s", tc.status, i, rec.calls[i].WorkflowID, wf.Name)
+			}
+			if got := rec.calls[i].TriggerData["scan"].(map[string]any)["status"]; got != string(tc.status) {
+				t.Errorf("%s: payload status = %v", tc.status, got)
+			}
+		}
+	}
+}
