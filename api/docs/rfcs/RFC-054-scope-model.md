@@ -330,7 +330,7 @@ Unchanged, except that the widening exclusion routes require **step-up**:
 `POST /exclusions/bulk/delete`, and `PUT /exclusions/{id}` when it shortens
 the window. The approval rule (approver ≠ requester) stays.
 
-**Path exclusions (RFC-056 §5, migration `001207`).** An exclusion of type
+**Path exclusions (RFC-056 §5, migration `001231`).** An exclusion of type
 `path` is a web rule, not an asset exclusion:
 
 - `POST /exclusions` with `exclusion_type: "path"` takes `pattern` as a host
