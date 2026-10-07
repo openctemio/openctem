@@ -622,6 +622,7 @@ func scanStep(rows *sql.Rows) (*pipeline.Step, error) {
 		toolID        sql.NullString
 		uiPosX        sql.NullFloat64
 		uiPosY        sql.NullFloat64
+		description   sql.NullString
 		preferTools   pq.StringArray
 	)
 
@@ -630,7 +631,7 @@ func scanStep(rows *sql.Rows) (*pipeline.Step, error) {
 		&pipelineID,
 		&s.StepKey,
 		&s.Name,
-		&s.Description,
+		&description,
 		&s.StepOrder,
 		&uiPosX,
 		&uiPosY,
@@ -652,6 +653,7 @@ func scanStep(rows *sql.Rows) (*pipeline.Step, error) {
 		return nil, fmt.Errorf("failed to scan pipeline step: %w", err)
 	}
 	s.PreferTools = preferTools
+	s.Description = description.String
 
 	s.ID, _ = shared.IDFromString(id)
 	s.PipelineID, _ = shared.IDFromString(pipelineID)
