@@ -14,6 +14,17 @@ vi.mock('@/lib/api/pipeline-hooks', () => ({
         ? {
             items: [
               {
+                id: 'starter-discover',
+                name: 'Discover',
+                description: 'Find subdomains, resolve them, probe web services.',
+                is_system_template: true,
+                tags: ['starter', 'discovery'],
+                steps: [
+                  { id: 'a1', name: 'Subdomain discovery', tool: '' },
+                  { id: 'a2', name: 'DNS resolution', tool: '' },
+                ],
+              },
+              {
                 id: 'p1',
                 name: 'External discovery',
                 description: 'subfinder then httpx',
@@ -57,8 +68,38 @@ describe('BasicInfoStep', () => {
     expect(screen.getByLabelText('Scanner')).toBeInTheDocument()
     expect(screen.queryByText('Full Scan')).not.toBeInTheDocument()
     expect(screen.queryByText('Compliance')).not.toBeInTheDocument()
-    // Pipelines are not fetched outside workflow mode.
-    expect(pipelineCalls.every((f) => f === undefined)).toBe(true)
+  })
+
+  it('offers a single check and the starter workflows first', () => {
+    render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={vi.fn()} />)
+    expect(screen.getByRole('radio', { name: 'Single check' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Discover' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Another workflow' })).toBeInTheDocument()
+    // A tenant workflow is not a starter.
+    expect(screen.queryByRole('radio', { name: 'External discovery' })).toBeNull()
+    expect(screen.getByText('Subdomain discovery')).toBeInTheDocument()
+  })
+
+  it('choosing a starter makes a workflow scan of that template', async () => {
+    const onChange = vi.fn()
+    render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={onChange} />)
+    await userEvent.click(screen.getByRole('radio', { name: 'Discover' }))
+    expect(onChange).toHaveBeenLastCalledWith({
+      mode: 'workflow',
+      scannerName: '',
+      workflowId: 'starter-discover',
+    })
+  })
+
+  it('a chosen starter needs no further workflow pick', () => {
+    render(
+      <BasicInfoStep
+        data={{ ...DEFAULT_NEW_SCAN, mode: 'workflow', workflowId: 'starter-discover' }}
+        onChange={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('radio', { name: 'Discover' })).toBeChecked()
+    expect(screen.queryByLabelText('Workflow')).toBeNull()
   })
 
   it('choosing a scanner reports its registry name', async () => {
@@ -85,8 +126,11 @@ describe('BasicInfoStep', () => {
 
   it('Edit (lockMode) does not offer switching between single and workflow', async () => {
     render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={vi.fn()} lockMode />)
+    expect(screen.queryByRole('radio', { name: 'Single check' })).toBeNull()
     await userEvent.click(screen.getByText('Advanced Options'))
     expect(screen.queryByText('Workflow Scan')).not.toBeInTheDocument()
     expect(screen.getByText('Sensor Preference')).toBeInTheDocument()
+    // Nothing to offer: the workflows are not fetched.
+    expect(pipelineCalls.every((f) => f === undefined)).toBe(true)
   })
 })
