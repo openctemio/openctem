@@ -35,8 +35,7 @@ export interface RunExport {
 export async function fetchRunsForExport(
   filters: Pick<ScanRunListFilters, 'status' | 'sort'>,
   cap: number = RUN_EXPORT_CAP,
-  fetchPage: (url: string) => Promise<ScanRunListResponse> = (url) =>
-    get<ScanRunListResponse>(url)
+  fetchPage: (url: string) => Promise<ScanRunListResponse> = (url) => get<ScanRunListResponse>(url)
 ): Promise<RunExport> {
   const runs: ScanRun[] = []
   let total = 0

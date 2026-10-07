@@ -17,7 +17,8 @@ import type { AddNodeData, AvailableTool } from '@/features/scan-workflows'
 // Lazy-load the visual builder so @xyflow/react stays out of this route's
 // initial bundle until the builder renders.
 const WorkflowBuilder = dynamic(
-  () => import('@/features/scan-workflows/components/workflow-builder').then((m) => m.WorkflowBuilder),
+  () =>
+    import('@/features/scan-workflows/components/workflow-builder').then((m) => m.WorkflowBuilder),
   { ssr: false }
 )
 import {

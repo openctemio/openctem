@@ -27,19 +27,49 @@ const ALLOWED: { path: RegExp; why: string }[] = [
   { path: /^src\/config\/api-route-permissions\.json$/, why: 'generated route map (CI routes)' },
   { path: /^src\/features\/sensors\//, why: 'runner-mode sensors run inside a CI pipeline' },
   { path: /^src\/features\/shared\/components\/tone-pill\.tsx$/, why: 'a CI pipeline status' },
-  { path: /^src\/features\/assets\/types\/asset\.types\.ts$/, why: 'repositories and their CI pipelines' },
-  { path: /^src\/features\/integrations\/types\/integration\.types\.ts$/, why: 'SCM CI pipeline feature' },
-  { path: /^src\/features\/access-control\/api\/use-tenant-permissions\.ts$/, why: 'integrations.pipelines (CI) module' },
-  { path: /^src\/config\/__tests__\/settings-route-guards\.test\.ts$/, why: 'pipelines_int (CI) module slug' },
-  { path: /^src\/config\/(settings-nav|help-links|legacy-routes|sidebar-data)\.ts$/, why: 'CI/CD integration copy' },
+  {
+    path: /^src\/features\/assets\/types\/asset\.types\.ts$/,
+    why: 'repositories and their CI pipelines',
+  },
+  {
+    path: /^src\/features\/integrations\/types\/integration\.types\.ts$/,
+    why: 'SCM CI pipeline feature',
+  },
+  {
+    path: /^src\/features\/access-control\/api\/use-tenant-permissions\.ts$/,
+    why: 'integrations.pipelines (CI) module',
+  },
+  {
+    path: /^src\/config\/__tests__\/settings-route-guards\.test\.ts$/,
+    why: 'pipelines_int (CI) module slug',
+  },
+  {
+    path: /^src\/config\/(settings-nav|help-links|legacy-routes|sidebar-data)\.ts$/,
+    why: 'CI/CD integration copy',
+  },
   { path: /^src\/lib\/i18n\/dictionaries\//, why: 'CI/CD integration copy' },
   { path: /^src\/app\/\(dashboard\)\/settings\/api-keys\//, why: 'example key name "CI pipeline"' },
-  { path: /^src\/app\/\(dashboard\)\/\(discovery\)\/components\/sbom-export\//, why: 'CI/CD pipelines consume SBOMs' },
+  {
+    path: /^src\/app\/\(dashboard\)\/\(discovery\)\/components\/sbom-export\//,
+    why: 'CI/CD pipelines consume SBOMs',
+  },
   { path: /^src\/lib\/sanitize-markdown/, why: 'the markdown rendering pipeline' },
-  { path: /^src\/components\/ui\/markdown-preview-xss\.test\.tsx$/, why: 'the markdown rendering pipeline' },
-  { path: /^src\/lib\/api\/(workflow-types\.ts|__tests__\/workflow-unsupported\.test\.ts)$/, why: 'stored automation action id trigger_pipeline' },
-  { path: /^src\/config\/section-tabs\.ts$/, why: 'command palette keyword for the older name (research/60 N12)' },
-  { path: /^src\/config\/__tests__\/scans-nav\.test\.ts$/, why: 'asserts the old /pipelines routes are gone' },
+  {
+    path: /^src\/components\/ui\/markdown-preview-xss\.test\.tsx$/,
+    why: 'the markdown rendering pipeline',
+  },
+  {
+    path: /^src\/lib\/api\/(workflow-types\.ts|__tests__\/workflow-unsupported\.test\.ts)$/,
+    why: 'stored automation action id trigger_pipeline',
+  },
+  {
+    path: /^src\/config\/section-tabs\.ts$/,
+    why: 'command palette keyword for the older name (research/60 N12)',
+  },
+  {
+    path: /^src\/config\/__tests__\/scans-nav\.test\.ts$/,
+    why: 'asserts the old /pipelines routes are gone',
+  },
   { path: /^src\/config\/__tests__\/pipeline-vocabulary\.test\.ts$/, why: 'this guard' },
 ]
 
