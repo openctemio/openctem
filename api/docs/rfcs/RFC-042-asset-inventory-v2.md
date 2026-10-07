@@ -957,6 +957,71 @@ first; T1 touches the same `POST /assets` path.
 9. **Deploy.** `air` does not run migrations: deploy with an explicit
    migrate step.
 
+#### 6.3.9 The property schema (amendment, 2026-10-07)
+
+**Problem.** The owner, on a domain's Properties ("Ip 202.160.124.20",
+"Ip addresses 202.160.124.20", "Port 443"): what are `ip` and
+`ip_address`? One concept, an asset's addresses, was stored under six keys
+(`ip`, `ip_address` as a string or an object, `ips`, `ip_addresses`,
+`resolved_ips`, `addresses`), and each reader (correlation, scope
+exclusions, relationship inference and suggestions, the IP lookups, scan
+dispatch) kept its own subset of them. A port, a service's attribute,
+landed on a domain: a nuclei result names the host it reached and adds the
+port, and names are unique per tenant, so it merged into the domain.
+
+**Design.**
+
+1. *One property schema, in the registry.* `api/configs/asset-types.yaml`
+   declares every property key once (`properties`): English and
+   Vietnamese labels, a display format (`ip`, `url`, `code`), the synonym
+   keys that fold into it and, for a key such as `port`, the classes whose
+   assets may hold it. A type's schema is its attributes plus
+   `common_properties` (platform keys and the CTIS technical blocks).
+   The generator checks that every attribute and common key is declared,
+   that no synonym is an attribute, and that a class-restricted key is
+   declared only by types of those classes. `GET /api/v1/asset-types`
+   serves the dictionary; the web gets it generated.
+2. *Canonical keys, folded on write.* An asset's addresses are
+   `ip_addresses` (a list, IPs in canonical form). Ingest, REST create and
+   update, and CSV import fold every synonym into its key
+   (`asset.NormalizeProperties`): string and list values merge, a
+   comma-separated string splits, a value that is not an address is
+   dropped. An object under a synonym name (the CTIS technical
+   `ip_address` block) never folds; only its address joins the list.
+3. *Never on the wrong type.* Before a report's assets are stored, a port
+   (with the open-port keys that came with it) on a domain, subdomain,
+   host or IP address becomes that asset's `host:port/proto` open-port
+   service, linked by `exposes`; other misplaced keys are dropped. The
+   routed service is an ordinary report asset: exclusions, attribution and
+   the bound command's targets apply to it (RFC-040 §5.3), so routing lets
+   a report write nothing it could not report directly. REST and import
+   refuse a misplaced key (400).
+4. *Addresses are relationships.* A domain `resolves_to` an IP asset per
+   address (the property is the summary); the edge's `created_at` is first
+   seen and `last_verified` last seen, refreshed by every sighting. An edge
+   changes its domain, so a report that may not change the domain adds
+   none.
+5. *One reader.* `asset.IPAddresses` / `asset.PropertyStrings` read the
+   canonical key and every synonym (rows not yet normalised); SQL reads
+   build their predicate from `asset.AddressPropertyKeys`. The scattered
+   key lists are gone.
+6. *Existing rows.* A migration folds the synonyms of every stored asset
+   and removes misplaced keys, keeping each changed row's previous
+   properties for the down migration.
+7. *Guards.* A source scan fails on any map index or map literal that uses
+   a synonym key outside its allow-list; tests check that every key ingest
+   writes itself is in the stored type's schema. A scanner key outside the
+   schema is kept, and ingest logs one warning per report listing such
+   keys; third-party and custom keys use the `x_` prefix.
+
+**Threat model.** Properties are tenant data written by sensors, importers
+and people. The schema adds no new input: synonyms fold within one asset,
+routing adds at most one service per report asset under the same
+exclusion, attribution and command-target rules, and every lookup stays
+tenant-scoped (the relationship upsert's conflict key includes
+`tenant_id`). Address matching for exclusions reads more keys, never fewer,
+so it can only exclude more (fail closed).
+
 ### 6.4 The services table (evolve `asset_services`)
 
 The table keeps its name, so the merge plan, RLS shadow policies and

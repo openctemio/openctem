@@ -1010,8 +1010,10 @@ func (p *FindingProcessor) buildFinding(
 	source := vulnerability.FindingSourceExternal
 	toolName := UnknownValue
 	toolVersion := ""
+	if report.Tool != nil || report.Metadata.Capability != "" {
+		source = reportFindingSource(report)
+	}
 	if report.Tool != nil {
-		source = detectFindingSource(report.Tool.Name, report.Tool.Capabilities)
 		toolName = report.Tool.Name
 		toolVersion = report.Tool.Version
 	}

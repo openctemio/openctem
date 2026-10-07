@@ -15,6 +15,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -180,9 +181,13 @@ func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID sha
 	}
 
 	// 3. If tool is selected, validate capabilities must match tool's capabilities
+	// (a catalog capability key matches when the tool implements it).
 	if toolName != "" && len(toolCapabilities) > 0 && len(capabilities) > 0 {
 		// Check that all provided capabilities are in the tool's capabilities
 		for _, cap := range capabilities {
+			if st, ok := stage.Lookup(stage.Key(strings.ToLower(cap))); ok && st.Implements(toolName) {
+				continue
+			}
 			if !slices.Contains(toolCapabilities, strings.ToLower(cap)) {
 				addValidationError(result, "capabilities", fmt.Sprintf("capability '%s' is not supported by tool '%s' (allowed: %v)", cap, toolName, toolCapabilities), "CAPABILITY_TOOL_MISMATCH")
 			}
@@ -331,7 +336,13 @@ func (v *SecurityValidator) validateToolNameAndGetCapabilities(ctx context.Conte
 // isValidCapability checks if a capability is in the allowed list.
 // Capabilities are loaded from the database and cached with periodic refresh.
 func (v *SecurityValidator) isValidCapability(cap string) bool {
-	return slices.Contains(v.getCapabilities(), strings.ToLower(cap))
+	cap = strings.ToLower(cap)
+	// A routed catalog capability key ("scan.ports") names a capability
+	// node; planned keys are not runnable and stay refused.
+	if _, ok := stage.Lookup(stage.Key(cap)); ok {
+		return true
+	}
+	return slices.Contains(v.getCapabilities(), cap)
 }
 
 // Dangerous config keys that could be used for command injection
