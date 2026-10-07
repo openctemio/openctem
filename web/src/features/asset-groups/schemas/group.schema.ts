@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
 
 /**
  * Zod Schemas for Asset Group validation
@@ -10,7 +11,7 @@ import { z } from 'zod'
 // Environment and Criticality enums
 export const environmentSchema = z.enum(['production', 'staging', 'development', 'testing'])
 
-export const criticalitySchema = z.enum(['critical', 'high', 'medium', 'low'])
+export const criticalitySchema = z.enum(RATED_CRITICALITY_LEVELS)
 
 // Create Asset Group Schema
 export const createAssetGroupSchema = z.object({

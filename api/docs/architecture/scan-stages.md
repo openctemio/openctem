@@ -47,11 +47,27 @@ platform data: a tenant, a sensor or a report cannot widen it.
 - **Registry outputs (research/27 F3).** `tools.output_types` (migration
   001040) records what each platform tool produces, backfilled from the
   catalogue. No API writes it; a DB test keeps it equal to the catalogue.
-- **Validation.** `stage.ValidateChain` checks an engine's stages: known
-  capabilities, unique ids, `from` naming only earlier stages or the seeds (no
-  cycle), and a stage that does not take the seeds must take a type its `from`
-  stages produce. It refuses T2 stages until the approval flow exists. The
-  engine spec (research/27 P1-1) calls it on save.
+- **Validation.** `stage.ValidateGraph` checks a workflow graph against the
+  capability contracts (§1.1). Every pipeline save calls it: full save, create,
+  and add, update or delete of a step, inside the save transaction. It also
+  backs `POST /api/v1/pipelines/verify` (`pipelines:write`), which checks a
+  draft and stores nothing. A pipeline's steps are the graph
+  (`pipeline.StepsGraph`): one node per step and one edge per dependency. A step
+  the catalogue places is a capability node, with its tool as the pin. A tenant
+  tool with no contract is **opaque**: an edge to or from it is a warning (it
+  orders the steps and passes no data). The errors, each anchored to a node or
+  an edge (422, `details.errors`):
+  - an unknown, planned or cross-cutting capability;
+  - a pinned tool that does not implement the node's capability;
+  - an empty or duplicate node id, an edge naming a missing step, a self-loop or a cycle;
+  - an edge whose port types do not meet, with the adapter that would connect them
+    (`subfinder → katana`: "insert HTTP probe");
+  - a port named on one side only, or a port the node does not have;
+  - derived targets fed into an intrusive (T2) node, which the router never feeds;
+  - more than 30 nodes or 120 edges.
+
+  Deleting a step drops it from the other steps' dependencies. Every seeded
+  system template passes (integration test).
 - **API.** `GET /api/v1/scans/stages` (`scans:read`) serves the catalogue with the
   capability contracts (§1.1). It is static platform data and reads nothing of
   the tenant.
@@ -115,6 +131,37 @@ their descriptor. The per-tool maps in `contract.go` (`toolParams`,
 behind the same functions. A built-in name fallback stays for sensors
 without descriptors, for one release train.
 
+### 1.2 Capability nodes: tool selection and settings
+
+A pipeline step is a **capability node**. It names a capability and picks its
+tool in one of three ways (`tool_selection` on the step response):
+
+- **auto** (no tool, no `prefer_tools`): any implementation of the capability,
+  in catalog order, with the default first;
+- **prefer** (`prefer_tools`, migration 001176): the listed tools, in that
+  order. Each must implement the capability;
+- **pin** (`tool`): that tool only (strict, G10).
+
+A pin and a prefer list together are refused.
+
+Settings (`config`) follow the contract:
+
+- **Standard params** are checked against their type, enum and bounds on every
+  save. Each tool receives them under its own config key. A tool that does not
+  take a standard param the step sets is **not eligible** for the node: the planner
+  skips it and says why (`NO_MATCHING_TOOL`), and never drops the value silently.
+- **Tool extras** go under `x.<tool>`, and only on a step pinned to that tool. On a
+  pinned step a plain key is also the pinned tool's own setting, as before
+  capabilities.
+- On an auto or prefer step, any other key is refused: it would reach only some
+  of the tools the platform may pick. `exclude` is read by the executor for
+  every tool.
+
+When a step is queued, its step run records the **capability it ran**
+(`step_runs.capability`, for example `scan.ports@1`) and the **tool the planner
+picked** (`step_runs.tool`). The tier of a capability node is the tier of its
+capability: every built-in implementation shares it.
+
 ## 2. The planner: one dispatcher, capability → tool
 
 Every pipeline step command is built on one path:
@@ -146,6 +193,26 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `tenant_runner_only` in its run context; the dispatcher never sends any of
   its steps to platform sensors, whatever the template prefers. (Steps after
   the first used to ignore it.)
+- **No step is pinned to one sensor** (research/49 W27). A step command goes
+  to the run's zone (stamped with it), to the platform queue, or to the
+  tenant's sensors, and is left unpinned: the claim predicates (zone, tool,
+  grant, refusals, freeze) decide which sensor takes it. `SelectSensor` only
+  decides platform versus tenant now; it no longer picks a sensor.
+- **Chunks.** A step whose tool takes a target list (the catalogue's `batch`
+  flag) and whose planned targets exceed its capability's `chunk_size` is cut
+  into chunks of that size, one unpinned command each, all naming the step
+  run. Every eligible sensor takes a share by pull, a lease that runs out puts
+  a chunk back in the pool for another sensor, and the step settles with its
+  last chunk through the batch logic (`checkStepBatches`: every chunk failed
+  means failed, some failed means partial). Sizes come from the capability
+  contract, not from the tool: `resolve.dns` and `probe.http` 200,
+  `discover.subdomains` and `scan.ports` 50, `vuln.templates` 25,
+  `crawl.web` and `dast.web` 10; the code, image and connector capabilities
+  are not cut. A one-target tool keeps one command per step. If a later
+  chunk cannot be created, the ones already created are canceled.
+  Not yet: the candidate tool list per chunk (claim by any candidate),
+  placement modes, a spread cap and platform-side per-host leases
+  (research/49 §3.12.3).
 
 ## 4. Report output-type binding (owner decision G12)
 

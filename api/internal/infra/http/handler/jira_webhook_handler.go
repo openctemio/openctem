@@ -75,66 +75,6 @@ type UnlinkTicketRequest struct {
 	TicketURL string `json:"ticket_url" validate:"required,url,max=1000"`
 }
 
-// LinkTicket handles POST /api/v1/findings/{id}/link-ticket.
-// Links a Jira ticket to a finding by storing its URL in work_item_uris.
-func (h *JiraWebhookHandler) LinkTicket(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	findingID := chi.URLParam(r, "id")
-	if findingID == "" {
-		apierror.BadRequest("finding id is required").WriteJSON(w)
-		return
-	}
-
-	var req LinkTicketRequest
-	if !h.decodeAndValidate(w, r, &req) {
-		return
-	}
-
-	input := jira.LinkTicketInput{
-		TenantID:  tenantID,
-		FindingID: findingID,
-		TicketKey: req.TicketKey,
-		TicketURL: req.TicketURL,
-	}
-
-	if err := h.service.LinkTicket(r.Context(), input); err != nil {
-		h.handleError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"finding_id": findingID,
-		"ticket_key": req.TicketKey,
-		"ticket_url": req.TicketURL,
-		"message":    "ticket linked successfully",
-	})
-}
-
-// UnlinkTicket handles DELETE /api/v1/findings/{id}/link-ticket.
-// Removes a Jira ticket reference from a finding's work_item_uris.
-func (h *JiraWebhookHandler) UnlinkTicket(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	findingID := chi.URLParam(r, "id")
-	if findingID == "" {
-		apierror.BadRequest("finding id is required").WriteJSON(w)
-		return
-	}
-
-	var req UnlinkTicketRequest
-	if !h.decodeAndValidate(w, r, &req) {
-		return
-	}
-
-	if err := h.service.UnlinkTicket(r.Context(), tenantID, findingID, req.TicketURL); err != nil {
-		h.handleError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // CreateTicketRequest is the request body for POST /api/v1/findings/{id}/create-ticket.
 type CreateTicketRequest struct {
 	// Provider selects the ticket backend: "jira" (default) or "github".

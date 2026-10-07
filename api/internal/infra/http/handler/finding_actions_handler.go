@@ -32,7 +32,6 @@ type ValidationRunner interface {
 type FindingActionsHandler struct {
 	service          *finding.FindingActionsService
 	validationRunner ValidationRunner
-	sourceAnalytics  *finding.SourceAnalyticsService
 	savedViews       *savedviewapp.Service
 	logger           *logger.Logger
 }
@@ -51,28 +50,6 @@ func (h *FindingActionsHandler) SetValidationRunner(r ValidationRunner) {
 // SetSavedViews wires saved views, for ?view=<id> on the grouped view.
 func (h *FindingActionsHandler) SetSavedViews(svc *savedviewapp.Service) {
 	h.savedViews = svc
-}
-
-// SetSourceAnalytics wires the finding source-analytics service (Tool Insights +
-// DefectDojo-dependency ratio). When unset, the endpoint responds 503.
-func (h *FindingActionsHandler) SetSourceAnalytics(s *finding.SourceAnalyticsService) {
-	h.sourceAnalytics = s
-}
-
-// SourceAnalytics handles GET /api/v1/findings/analytics/sources — per-source /
-// per-tool finding breakdown plus the DefectDojo-dependency ratio.
-func (h *FindingActionsHandler) SourceAnalytics(w http.ResponseWriter, r *http.Request) {
-	if h.sourceAnalytics == nil {
-		apierror.InternalServerError("source analytics not configured").WriteJSON(w)
-		return
-	}
-	tenantID := middleware.MustGetTenantID(r.Context())
-	result, err := h.sourceAnalytics.GetSourceAnalytics(r.Context(), tenantID)
-	if err != nil {
-		h.handleError(w, err)
-		return
-	}
-	h.writeJSON(w, http.StatusOK, result)
 }
 
 // --- Group View ---
@@ -181,8 +158,8 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  assigned_to  query  []string  false  "assigned to: any of (comma list)"  collectionFormat(csv)
 // @Param  assigned_to_null  query  boolean  false  "assigned to is unset (true) or set (false)"
 // @Param  assigned_to_not  query  []string  false  "assigned to: none of (comma list)"  collectionFormat(csv)
-// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
-// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
 // @Param  asset_owner_id  query  []string  false  "asset owner id: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_owner_id_null  query  boolean  false  "asset owner id is unset (true) or set (false)"
 // @Param  exploit_available  query  boolean  false  "exploit available equals"
@@ -332,8 +309,8 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  assigned_to  query  []string  false  "assigned to: any of (comma list)"  collectionFormat(csv)
 // @Param  assigned_to_null  query  boolean  false  "assigned to is unset (true) or set (false)"
 // @Param  assigned_to_not  query  []string  false  "assigned to: none of (comma list)"  collectionFormat(csv)
-// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
-// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low)
+// @Param  asset_criticality  query  []string  false  "asset criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  asset_criticality_not  query  []string  false  "asset criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
 // @Param  asset_owner_id  query  []string  false  "asset owner id: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_owner_id_null  query  boolean  false  "asset owner id is unset (true) or set (false)"
 // @Param  exploit_available  query  boolean  false  "exploit available equals"
