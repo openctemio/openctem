@@ -370,6 +370,19 @@ own custom tools). See `docs/architecture/tool-availability.md`.
 | GET | `/tool-categories/:id` | One category | `scans:tools:read` |
 | POST/PUT/DELETE | `/tool-categories[/:id]` | Own custom categories | `scans:tools:write` / `scans:tools:delete` |
 
+#### Capabilities
+
+One collection: the platform capabilities and the organization's own custom ones.
+
+| Method | Endpoint | Description | Permission |
+|--------|----------|-------------|------------|
+| GET | `/capabilities` | List; filters `source=platform\|custom`, `category`, `q`; `page`, `per_page` (max 100); `include=usage` (tool and sensor counts) | `scans:tools:read` (`usage` also `scans:tenant_tools:read`) |
+| GET | `/capabilities/categories` | The categories in use | `scans:tools:read` |
+| GET | `/capabilities/:id` | One capability (platform or own custom); `include=usage` adds the tool and sensor names (sensor names need `sensors:read`) | `scans:tools:read` |
+| POST | `/capabilities` | Create a custom capability | `scans:tools:write` |
+| PUT | `/capabilities/:id` | Update an own custom capability (others 404) | `scans:tools:write` |
+| DELETE | `/capabilities/:id[?force=true]` | Delete an own custom capability (others 404; in use: 409 unless `force`) | `scans:tools:delete` |
+
 #### Combined Tool with Config
 
 GET `/tools/:id?include=config` returns tool with tenant-specific config:

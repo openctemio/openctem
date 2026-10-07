@@ -36,6 +36,7 @@ export function validatePipelineSteps(steps: PipelineStep[]): Promise<GraphValid
       order: idx + 1,
       tool: s.tool,
       capabilities: s.capabilities,
+      prefer_tools: s.tool ? [] : (s.prefer_tools ?? []),
       depends_on: s.depends_on ?? [],
       ...(s.config ? { config: s.config } : {}),
     })),

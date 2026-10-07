@@ -6,16 +6,12 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useValidationCoverage, type SeverityCoverage } from '../api/use-validation-coverage'
+import { SEVERITY_LEVELS } from '@/lib/severity'
+import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 
 // Severity display order + accent (most-critical first).
-const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info']
-const SEVERITY_LABEL: Record<string, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-}
+const SEVERITY_ORDER: readonly string[] = SEVERITY_LEVELS
+const SEVERITY_LABEL: Record<string, string> = SHARED_SEVERITY_LABELS
 
 function sortBands(bands: SeverityCoverage[]): SeverityCoverage[] {
   return [...bands].sort((a, b) => {

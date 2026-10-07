@@ -15,9 +15,12 @@ package sensor
 // tool) and the contract's produces allow them.
 
 import (
+	"encoding/json"
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/openctemio/ctis/capability"
 )
 
 // ToolContractAPIVersion is the tool manifest format the platform reads.
@@ -51,6 +54,34 @@ type ToolContract struct {
 	Network    string   `json:"network,omitempty" enums:"none,targets,egress-proxy,vendor"`
 	Consumes   []string `json:"consumes,omitempty"`
 	Produces   []string `json:"produces"`
+	// Implements are the capabilities (ctis/capability references,
+	// "scan.ports@1") the tool's descriptor implements. Only references
+	// the taxonomy knows are kept.
+	Implements []string `json:"implements,omitempty"`
+	// Batch: the tool takes a list of targets per task.
+	Batch bool `json:"batch,omitempty"`
+	// Origin is how the sensor loaded the tool: "builtin" (compiled into
+	// the sensor) or "adapter" (installed by its operator). A sensor
+	// claim; trust is assigned by the platform.
+	Origin string `json:"origin,omitempty" enums:"builtin,adapter"`
+	// Descriptor is the full descriptor of the tool (canonical JSON of its
+	// tool.yaml), kept only when it hashes to Digest (SanitizeToolDescriptor).
+	Descriptor json.RawMessage `json:"descriptor,omitempty" swaggertype:"object"`
+}
+
+// Tool origins a sensor reports.
+const (
+	ToolOriginBuiltin = "builtin"
+	ToolOriginAdapter = "adapter"
+)
+
+// MaxToolContractImplements bounds a contract's implements list.
+const MaxToolContractImplements = 16
+
+// ImplementsCapability reports whether the contract implements the
+// capability reference ref ("scan.ports@1").
+func (c *ToolContract) ImplementsCapability(ref string) bool {
+	return c != nil && slices.Contains(c.Implements, ref)
 }
 
 var (
@@ -88,9 +119,26 @@ func SanitizeToolContract(c *ToolContract) (*ToolContract, string) {
 		return nil, "T2 is for target-scan tools only"
 	case len(c.Consumes) > MaxToolContractTypes || len(c.Produces) > MaxToolContractTypes:
 		return nil, "too many consumes or produces entries"
+	case len(c.Implements) > MaxToolContractImplements:
+		return nil, "too many implements entries"
+	case c.Origin != "" && c.Origin != ToolOriginBuiltin && c.Origin != ToolOriginAdapter:
+		return nil, "unknown origin"
 	}
 	out := &ToolContract{APIVersion: c.APIVersion, Digest: c.Digest, Version: c.Version, Class: c.Class,
-		Tier: c.Tier, Network: c.Network, Produces: []string{}}
+		Tier: c.Tier, Network: c.Network, Produces: []string{}, Batch: c.Batch, Origin: c.Origin}
+	for _, ref := range c.Implements {
+		// Matched exactly against the taxonomy: a look-alike or unknown
+		// capability drops the contract rather than being guessed.
+		if _, major, ok := capability.ParseRef(ref); !ok || major == 0 {
+			return nil, "invalid implements entry"
+		}
+		if _, ok := capability.Lookup(ref); !ok {
+			return nil, "unknown capability in implements"
+		}
+		if !slices.Contains(out.Implements, ref) {
+			out.Implements = append(out.Implements, ref)
+		}
+	}
 	for _, v := range c.Consumes {
 		if len(v) > maxToolContractEntry || !contractConsumeRe.MatchString(v) {
 			return nil, "invalid consumes entry"
