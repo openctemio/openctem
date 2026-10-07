@@ -140,6 +140,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/repositories":                                {classScoped, "repository must be in scope (L-10)"},
 	"/api/v1/relationships":                               {classScoped, "both ends in scope"},
 	"/api/v1/services":                                    {classScoped, "asset service handler scope"},
+	"/api/v1/api-specs":                                   {classScoped, "by-id reads assert the origin asset of the description (RFC-056)"},
 	"/api/v1/web-path-patterns":                           {classScoped, "grouped over the caller-scoped endpoint filter; never across tenants (RFC-056)"},
 	"/api/v1/web-origins":                                 {classScoped, "grouped over the caller-scoped endpoint filter (RFC-056)"},
 	"/api/v1/web-endpoint-events":                         {classScoped, "filter compiled with the caller data scope on the origin asset (RFC-056)"},
