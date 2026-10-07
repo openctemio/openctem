@@ -126,7 +126,7 @@ User plane (tenant from the session, as every user route):
 | `GET /api/v1/sensor-pairings/expectations/{id}` | `sensors:pair` | Poll an expectation: once the sensor connected, the SAS and host facts to compare. |
 | `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up | Bind the key to a new sensor (or to the registration being re-paired) with the chosen name, type, zones, grant profile. Requires `fingerprint_confirmed: true`. |
 | `POST /api/v1/sensor-pairings/{id}/deny` | `sensors:pair` | Refuse a pairing (audited). |
-| `GET/PUT /api/v1/sensors/identity-policy` | read: `sensors:read`; write: `sensors:grant:narrow` to require key-bound identity, `sensors:grant:widen` to allow bearer keys again | D-4 switch. |
+| `GET/PUT /api/v1/sensors/identity-policy` | read: `sensors:read`; write: `sensors:grant:narrow` to require key-bound identity, `sensors:grant:widen` and step-up to allow bearer keys again | D-4 switch. |
 
 ### 4.2 Exchange and the SAS
 
