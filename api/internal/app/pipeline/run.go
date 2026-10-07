@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -677,12 +678,14 @@ func (s *Service) OnStepCompleted(ctx context.Context, runID, stepKey string, fi
 // and so does the run; a skipped target is not retried, since the sensor
 // would refuse it again.
 func (s *Service) OnStepCompletedWithSkips(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any, skipped int, skippedSummary string) error {
-	s.logger.Info("step completed", "run_id", runID, "step_key", stepKey, "findings", findingsCount, "skipped_targets", skipped)
-
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
 		return err
 	}
+	// The run id is parsed and the step key cleaned: both come from the
+	// sensor's command result.
+	s.logger.Info("step completed", "run_id", rid.String(), "step_key", logger.SanitizeValue(stepKey),
+		"findings", findingsCount, "skipped_targets", skipped)
 
 	// Get the run with step runs
 	run, err := s.runRepo.GetWithStepRuns(ctx, rid)
