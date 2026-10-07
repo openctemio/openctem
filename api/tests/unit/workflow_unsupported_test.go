@@ -31,6 +31,7 @@ func unsupportedCases() []struct {
 		{"assign_team action", workflow.NodeConfig{ActionType: workflow.ActionTypeAssignTeam}, "action:assign_team"},
 		{"update_priority action", workflow.NodeConfig{ActionType: workflow.ActionTypeUpdatePriority}, "action:update_priority"},
 		{"run_script action", workflow.NodeConfig{ActionType: workflow.ActionTypeRunScript}, "action:run_script"},
+		{"http_request action", workflow.NodeConfig{ActionType: workflow.ActionTypeHTTPRequest}, "action:http_request"},
 	}
 }
 
@@ -65,7 +66,7 @@ func TestWorkflowSupport_TypeSets(t *testing.T) {
 	for _, a := range []workflow.ActionType{
 		workflow.ActionTypeAssignUser, workflow.ActionTypeUpdateStatus, workflow.ActionTypeAddTags,
 		workflow.ActionTypeRemoveTags, workflow.ActionTypeCreateTicket, workflow.ActionTypeUpdateTicket,
-		workflow.ActionTypeTriggerPipeline, workflow.ActionTypeTriggerScan, workflow.ActionTypeHTTPRequest,
+		workflow.ActionTypeTriggerPipeline, workflow.ActionTypeTriggerScan,
 		workflow.ActionTypeTriggerAITriage,
 	} {
 		if !a.IsSupported() {
