@@ -37,9 +37,7 @@ DELETE /api/v1/business-units/{}/assets/{}
 DELETE /api/v1/compensating-controls/{}
 DELETE /api/v1/compliance/findings/{}/controls/{}
 DELETE /api/v1/control-tests/{}
-DELETE /api/v1/custom-capabilities/{}
 DELETE /api/v1/findings/{}/evidence/notes/{}
-DELETE /api/v1/findings/{}/link-ticket
 DELETE /api/v1/groups/{}/scope-rules/{}
 DELETE /api/v1/iocs/{}
 DELETE /api/v1/pentest/campaigns/{}
@@ -99,11 +97,8 @@ GET /api/v1/business-services/{}/assets
 GET /api/v1/business-units
 GET /api/v1/business-units/{}
 GET /api/v1/capabilities
-GET /api/v1/capabilities/all
-GET /api/v1/capabilities/by-category/{}
 GET /api/v1/capabilities/categories
 GET /api/v1/capabilities/{}
-GET /api/v1/capabilities/{}/usage-stats
 GET /api/v1/compensating-controls
 GET /api/v1/compensating-controls/{}
 GET /api/v1/compliance/assessments
@@ -130,7 +125,6 @@ GET /api/v1/dashboard/process-metrics
 GET /api/v1/dashboard/risk-trend
 GET /api/v1/dashboard/velocity
 GET /api/v1/findings/ai-triage/config
-GET /api/v1/findings/analytics/sources
 GET /api/v1/findings/groups
 GET /api/v1/findings/{}/activities
 GET /api/v1/findings/{}/ai-triage
@@ -252,7 +246,6 @@ PATCH /api/v1/reports/schedules/{}/toggle
 PATCH /api/v1/tenants/{}
 PATCH /api/v1/tenants/{}/members/{}
 PATCH /api/v1/tenants/{}/settings/asset-identity
-PATCH /api/v1/tenants/{}/settings/branch
 PATCH /api/v1/tenants/{}/settings/branding
 PATCH /api/v1/tenants/{}/settings/general
 PATCH /api/v1/tenants/{}/settings/modules
@@ -268,7 +261,6 @@ POST /api/v1/approvals/{}/reject
 POST /api/v1/assets/dedup/reviews/{}/approve
 POST /api/v1/assets/dedup/reviews/{}/reject
 POST /api/v1/assets/import/csv
-POST /api/v1/assets/import/kubernetes
 POST /api/v1/assets/{}/lifecycle/snooze
 POST /api/v1/assets/{}/owners
 POST /api/v1/assets/{}/relationships
@@ -286,7 +278,6 @@ POST /api/v1/business-services
 POST /api/v1/business-services/{}/assets
 POST /api/v1/business-units
 POST /api/v1/business-units/{}/assets
-POST /api/v1/capabilities/usage-stats
 POST /api/v1/compensating-controls
 POST /api/v1/compensating-controls/{}/assets
 POST /api/v1/compensating-controls/{}/findings
@@ -301,7 +292,6 @@ POST /api/v1/ctem-cycles/{}/activate
 POST /api/v1/ctem-cycles/{}/profiles
 POST /api/v1/ctem-cycles/{}/scope-refinement
 POST /api/v1/ctem-cycles/{}/start-review
-POST /api/v1/custom-capabilities
 POST /api/v1/findings/actions/assign-to-owners
 POST /api/v1/findings/actions/fix-applied
 POST /api/v1/findings/actions/reject-fix
@@ -311,7 +301,6 @@ POST /api/v1/findings/{}/ai-triage
 POST /api/v1/findings/{}/approvals
 POST /api/v1/findings/{}/create-ticket
 POST /api/v1/findings/{}/evidence
-POST /api/v1/findings/{}/link-ticket
 POST /api/v1/findings/{}/remediation/steps
 POST /api/v1/findings/{}/validate
 POST /api/v1/groups/{}/assets/bulk
@@ -321,7 +310,6 @@ POST /api/v1/groups/{}/scope-rules/{}/preview
 POST /api/v1/integrations/defectdojo/sync
 POST /api/v1/integrations/github/webhook-secret/rotate
 POST /api/v1/integrations/jira/webhook-secret/rotate
-POST /api/v1/integrations/{}/import-repositories
 POST /api/v1/invitations/{}/accept
 POST /api/v1/invitations/{}/accept-with-refresh
 POST /api/v1/invitations/{}/decline
@@ -396,7 +384,6 @@ PUT /api/v1/business-services/{}
 PUT /api/v1/business-units/{}
 PUT /api/v1/compensating-controls/{}
 PUT /api/v1/ctem-cycles/{}
-PUT /api/v1/custom-capabilities/{}
 PUT /api/v1/exposures/{}/ctem-id
 PUT /api/v1/groups/{}/scope-rules/{}
 PUT /api/v1/pentest/campaigns/{}

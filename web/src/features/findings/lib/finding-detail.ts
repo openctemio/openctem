@@ -20,6 +20,7 @@ import type {
 } from '../types'
 import type { Severity } from '@/features/shared/types'
 import { findingAssetType } from './finding-asset-type'
+import { normalizeCriticality } from '@/lib/criticality'
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000'
 
@@ -45,8 +46,6 @@ const STATUS_MAP: Record<string, FindingStatus> = {
   accepted_risk: 'accepted_risk',
 }
 
-const CRITICALITIES = new Set(['critical', 'high', 'medium', 'low', 'info'])
-
 function mapAssets(api: ApiFinding): AffectedAsset[] {
   const assets: AffectedAsset[] = []
   const hasAsset = !!api.asset_id && api.asset_id !== NIL_UUID
@@ -57,7 +56,7 @@ function mapAssets(api: ApiFinding): AffectedAsset[] {
       type: findingAssetType(api),
       name: api.asset?.name || api.asset_id,
       url: api.asset?.web_url,
-      criticality: crit && CRITICALITIES.has(crit) ? (crit as Severity) : undefined,
+      criticality: normalizeCriticality(crit),
       exposure: api.asset?.exposure,
       isInternetAccessible: api.asset?.is_internet_accessible,
     })

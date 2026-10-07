@@ -2977,7 +2977,7 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.BySeverity[vulnerability.SeverityHigh] = high
 	stats.BySeverity[vulnerability.SeverityMedium] = medium
 	stats.BySeverity[vulnerability.SeverityLow] = low
-	stats.BySeverity[vulnerability.SeverityNone] = info // Map 'info' to SeverityNone
+	stats.BySeverity[vulnerability.SeverityInfo] = info // info + none (CVSS 0.0)
 
 	// By status (7 statuses: new, confirmed, in_progress, resolved, false_positive, accepted, duplicate)
 	stats.ByStatus[vulnerability.FindingStatusNew] = statusNew

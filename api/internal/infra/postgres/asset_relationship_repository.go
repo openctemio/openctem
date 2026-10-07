@@ -280,6 +280,11 @@ func (r *AssetRelationshipRepository) CountByAsset(ctx context.Context, tenantID
 }
 
 // CreateBatchIgnoreConflicts inserts multiple relationships, silently skipping duplicates.
+// A duplicate that carries a newer last_verified (an edge observed again, such
+// as a DNS resolution seen by a later scan) moves the stored edge's
+// last_verified forward; nothing else of an existing edge changes. The
+// conflict key includes tenant_id, so an edge of another tenant is never
+// touched. It returns how many edges were inserted (not refreshed).
 func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Context, rels []*asset.Relationship) (int, error) {
 	if len(rels) == 0 {
 		return 0, nil
@@ -293,7 +298,12 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 			is_control_plane
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (tenant_id, source_asset_id, target_asset_id, relationship_type) DO NOTHING
+		ON CONFLICT (tenant_id, source_asset_id, target_asset_id, relationship_type) DO UPDATE
+		SET last_verified = EXCLUDED.last_verified, updated_at = EXCLUDED.updated_at
+		WHERE EXCLUDED.last_verified IS NOT NULL
+		  AND (asset_relationships.last_verified IS NULL
+		       OR asset_relationships.last_verified < EXCLUDED.last_verified)
+		RETURNING (xmax = 0) AS inserted
 	`
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -310,7 +320,8 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 
 	created := 0
 	for _, rel := range rels {
-		result, err := stmt.ExecContext(ctx,
+		var inserted bool
+		err := stmt.QueryRowContext(ctx,
 			rel.ID().String(),
 			rel.TenantID().String(),
 			rel.SourceAssetID().String(),
@@ -325,12 +336,12 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 			rel.CreatedAt(),
 			rel.UpdatedAt(),
 			rel.IsControlPlane(),
-		)
-		if err != nil {
+		).Scan(&inserted)
+		switch {
+		case errors.Is(err, sql.ErrNoRows): // a duplicate with nothing newer
+		case err != nil:
 			return created, fmt.Errorf("failed to insert relationship: %w", err)
-		}
-		rowsAffected, _ := result.RowsAffected()
-		if rowsAffected > 0 {
+		case inserted:
 			created++
 		}
 	}
