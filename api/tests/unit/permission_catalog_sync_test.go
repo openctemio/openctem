@@ -41,6 +41,7 @@ var permRenameMigrations = []string{}
 // order, after the renames.
 var permRemoveMigrations = []string{
 	"001179_drop_tenant_tools_delete_permission.up.sql",
+	"001184_drop_vulnerability_write_permissions.up.sql",
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)

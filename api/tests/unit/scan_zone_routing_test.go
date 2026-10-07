@@ -501,6 +501,25 @@ func TestScanZones_WorkflowStaysInOneZone(t *testing.T) {
 	}
 }
 
+// A workflow scan has no scanner of its own: its steps plan their targets
+// (and cut them into chunks). It is never warned that only its first target
+// is scanned.
+func TestWorkflowScan_NoSingleTargetCaveat(t *testing.T) {
+	tenant := shared.NewID()
+	svc, deps := newZonedScanService(&fakeZoneDir{}, nil, nil)
+	s := createTestScanInRepo(deps, tenant, "wf", scan.ScanTypeWorkflow)
+	s.SetTargets([]string{"8.8.8.8", "1.1.1.1", "app.example.com"})
+	pid := *s.PipelineID
+	deps.stepRepo.steps[pid.String()] = []*pipeline.Step{{ID: shared.NewID(), PipelineID: pid, StepKey: "s", StepOrder: 1, Tool: "nuclei"}}
+	run, err := trigger(t, svc, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasWarning(warningsOf(run), "takes one target per job") {
+		t.Errorf("workflow scan warned that only one target is scanned: %v", warningsOf(run))
+	}
+}
+
 // RFC-023 D6: private targets are accepted at scan creation only where a zone
 // covers them.
 func TestScanZones_CreateScanAcceptsPrivateTargetsOnlyInZones(t *testing.T) {
