@@ -17,7 +17,8 @@
   require, but it no longer authorizes a scan by itself. Every `easm`
   verified domain that no entry covered became an entry `*.<domain>`, so
   nothing is lost; a domain verified for SSO sign-in got no entry.
-- Web: Scoping › Boundaries › Seeds is replaced by **Domain proof**
-  (`/scope-config?tab=proof`).
+- Web: the Seeds tab of Scoping › Scope is replaced by **Domain proof**
+  (`/scope?tab=proof`). The old `/settings/integrations/verified-domains`
+  redirect is removed (no redirects for moved pages).
 - **Upgrade note:** API clients that used `/api/v1/easm/seeds` create scope
   entries instead. No action is needed for existing seeds.
