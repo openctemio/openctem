@@ -48,7 +48,7 @@ type mockScanRepo struct {
 	listByPipelineE  error
 
 	updateCalls int         // full-row Update calls
-	startedRuns []shared.ID // RecordRunStarted calls
+	refreshes   []shared.ID // RefreshRunSummary calls (scan ids)
 }
 
 func newMockScanRepo() *mockScanRepo {
@@ -155,16 +155,8 @@ func (m *mockScanRepo) UpdateNextRunAt(_ context.Context, _ shared.ID, _ shared.
 	return nil
 }
 
-func (m *mockScanRepo) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID, runID shared.ID) error {
-	m.startedRuns = append(m.startedRuns, runID)
-	return nil
-}
-
-func (m *mockScanRepo) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID, _ string) error {
-	return nil
-}
-
-func (m *mockScanRepo) RecordTriggerFailure(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
+func (m *mockScanRepo) RefreshRunSummary(_ context.Context, _ shared.ID, scanID shared.ID) error {
+	m.refreshes = append(m.refreshes, scanID)
 	return nil
 }
 
@@ -1696,8 +1688,8 @@ func TestScanService_TriggerScan_SingleScanner_Success(t *testing.T) {
 
 // Triggering used to write the whole scan row back from the copy it read
 // before dispatching: a pause or config edit saved while the trigger ran was
-// silently undone. The trigger now records the run with one narrow call and
-// never rewrites the scan.
+// silently undone. The trigger now refreshes the run summary from the runs
+// and never rewrites the scan.
 func TestScanService_TriggerScan_DoesNotRewriteTheScanRow(t *testing.T) {
 	svc, deps := newTestScanService()
 	tenantID := shared.NewID()
@@ -1714,8 +1706,8 @@ func TestScanService_TriggerScan_DoesNotRewriteTheScanRow(t *testing.T) {
 	if got := deps.scanRepo.updateCalls - before; got != 0 {
 		t.Errorf("TriggerScan rewrote the scan row %d time(s); it must not (stale copy clobbers concurrent edits)", got)
 	}
-	if len(deps.scanRepo.startedRuns) != 1 || deps.scanRepo.startedRuns[0] != run.ID {
-		t.Errorf("RecordRunStarted calls = %v, want exactly [%s]", deps.scanRepo.startedRuns, run.ID)
+	if run == nil || len(deps.scanRepo.refreshes) != 1 || deps.scanRepo.refreshes[0] != s.ID {
+		t.Errorf("RefreshRunSummary calls = %v, want exactly [%s]", deps.scanRepo.refreshes, s.ID)
 	}
 }
 
@@ -2585,5 +2577,113 @@ func TestScanService_TriggerScan_ScheduledRunWithInactiveOwnerPauses(t *testing.
 		TenantID: tenantID.String(), ScanID: s2.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
 	}); err != nil {
 		t.Fatalf("scheduled run with an active owner: %v", err)
+	}
+}
+
+// =============================================================================
+// Tests: refused triggers are blocked runs
+// =============================================================================
+
+// dispatchedRuns counts the runs that are not blocked (a refused trigger
+// leaves only a blocked run behind).
+func dispatchedRuns(deps *testScanServiceDeps) int {
+	n := 0
+	for _, r := range deps.runRepo.runs {
+		if r.Status != pipeline.RunStatusBlocked {
+			n++
+		}
+	}
+	return n
+}
+
+// blockedRuns returns the runs of scanID recorded as blocked.
+func blockedRuns(deps *testScanServiceDeps, scanID shared.ID) []*pipeline.Run {
+	var out []*pipeline.Run
+	for _, r := range deps.runRepo.runs {
+		if r.ScanID != nil && *r.ScanID == scanID && r.Status == pipeline.RunStatusBlocked {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// A trigger refused before dispatch (here: no sensor online) is recorded as a
+// blocked run with the refusal code, and the scan's summary is refreshed.
+// Before, nothing was recorded for a manual trigger, and a scheduled one moved
+// last_run_at with no run behind it.
+func TestScanService_TriggerScan_RefusalRecordsBlockedRun(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	deps.sensorSelector.available = false
+	s := createTestScanInRepo(deps, tenantID, "Refused", scan.ScanTypeSingle)
+	userID := shared.NewID().String()
+
+	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggeredBy: userID,
+		Context: map[string]any{"caller": "supplied"},
+	})
+	if err == nil {
+		t.Fatal("expected the trigger to be refused")
+	}
+	got := blockedRuns(deps, s.ID)
+	if len(got) != 1 {
+		t.Fatalf("blocked runs = %d, want 1", len(got))
+	}
+	b := got[0]
+	if b.RefusalCode != "NO_SENSOR_AVAILABLE" || b.ErrorMessage == "" || b.TenantID != tenantID ||
+		b.TriggeredBy != userID || b.TriggerType != pipeline.TriggerTypeManual || b.StartedAt != nil || b.CompletedAt == nil {
+		t.Fatalf("blocked run = %+v", b)
+	}
+	if _, leaked := b.Context["caller"]; leaked {
+		t.Error("the blocked run stored the caller's trigger context")
+	}
+	if len(deps.scanRepo.refreshes) != 1 || deps.scanRepo.refreshes[0] != s.ID {
+		t.Errorf("RefreshRunSummary calls = %v, want [%s]", deps.scanRepo.refreshes, s.ID)
+	}
+}
+
+// A scan of another tenant is not found for the caller's tenant: no run is
+// written anywhere and no summary is touched.
+func TestScanService_TriggerScan_OtherTenantRecordsNothing(t *testing.T) {
+	svc, deps := newTestScanService()
+	victim := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	deps.sensorSelector.available = false
+	s := createTestScanInRepo(deps, victim, "Victim", scan.ScanTypeSingle)
+
+	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: shared.NewID().String(), ScanID: s.ID.String(),
+	})
+	if err == nil {
+		t.Fatal("another tenant triggered the scan")
+	}
+	if n := len(deps.runRepo.runs); n != 0 {
+		t.Fatalf("%d run(s) written for a scan the caller cannot see", n)
+	}
+	if len(deps.scanRepo.refreshes) != 0 {
+		t.Fatal("summary refreshed for a scan the caller cannot see")
+	}
+}
+
+// The overlap skip of a scheduled occurrence (D4) is recorded by the
+// scheduler as a skip, not as a blocked run.
+func TestScanService_TriggerScan_OverlapSkipIsNotBlocked(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	deps.toolRepo.addTool("nuclei", true)
+	deps.runRepo.activeByScanCount = 1
+	s := createTestScanInRepo(deps, tenantID, "Overlap", scan.ScanTypeSingle)
+	s.CreatedBy = &tenantID // a scheduled run needs an owner
+
+	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: s.ID.String(),
+		TriggerType: pipeline.TriggerTypeSchedule, SkipIfRunning: true,
+	})
+	if !errors.Is(err, scanservice.ErrScanRunInProgress) {
+		t.Fatalf("err = %v, want ErrScanRunInProgress", err)
+	}
+	if got := blockedRuns(deps, s.ID); len(got) != 0 {
+		t.Fatalf("overlap skip recorded %d blocked run(s)", len(got))
 	}
 }

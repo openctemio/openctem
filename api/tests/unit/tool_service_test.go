@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
@@ -502,91 +501,11 @@ func (m *toolSvcMockExecutionRepo) GetTenantStats(_ context.Context, tenantID sh
 	return &tooldom.TenantToolStats{TenantID: tenantID}, nil
 }
 
-// toolSvcMockSensorRepo is a minimal mock for sensor.Repository.
-type toolSvcMockSensorRepo struct {
-	availableTools []string
-}
+// toolSvcFailingSensors is a SensorLister whose reads fail.
+type toolSvcFailingSensors struct{}
 
-func newToolSvcMockSensorRepo() *toolSvcMockSensorRepo {
-	return &toolSvcMockSensorRepo{}
-}
-
-func (m *toolSvcMockSensorRepo) Create(_ context.Context, _ *sensor.Sensor) error { return nil }
-func (m *toolSvcMockSensorRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
-	return 0, nil
-}
-func (m *toolSvcMockSensorRepo) GetByID(_ context.Context, _ shared.ID) (*sensor.Sensor, error) {
-	return nil, shared.ErrNotFound
-}
-func (m *toolSvcMockSensorRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*sensor.Sensor, error) {
-	return nil, shared.ErrNotFound
-}
-func (m *toolSvcMockSensorRepo) GetByAPIKeyHash(_ context.Context, _ string) (*sensor.Sensor, error) {
-	return nil, shared.ErrNotFound
-}
-func (m *toolSvcMockSensorRepo) List(_ context.Context, _ sensor.Filter, _ pagination.Pagination) (pagination.Result[*sensor.Sensor], error) {
-	return pagination.Result[*sensor.Sensor]{}, nil
-}
-func (m *toolSvcMockSensorRepo) Update(_ context.Context, _ *sensor.Sensor) error { return nil }
-func (m *toolSvcMockSensorRepo) RetireInlineKey(_ context.Context, _ shared.ID, _ []string, _ time.Time) (bool, error) {
-	return false, nil
-}
-func (m *toolSvcMockSensorRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ sensor.HeartbeatUpdate) (bool, error) {
-	return true, nil
-}
-func (m *toolSvcMockSensorRepo) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
-	return true, nil
-}
-func (m *toolSvcMockSensorRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
-func (m *toolSvcMockSensorRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
-	return nil
-}
-func (m *toolSvcMockSensorRepo) IncrementStats(_ context.Context, _ shared.ID, _, _, _ int64) error {
-	return nil
-}
-func (m *toolSvcMockSensorRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*sensor.Sensor, error) {
-	return nil, shared.ErrNotFound
-}
-func (m *toolSvcMockSensorRepo) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
-	return 0, nil
-}
-func (m *toolSvcMockSensorRepo) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) ClaimJob(_ context.Context, _ shared.ID) error   { return nil }
-func (m *toolSvcMockSensorRepo) ReleaseJob(_ context.Context, _ shared.ID) error { return nil }
-func (m *toolSvcMockSensorRepo) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
-	return nil
-}
-func (m *toolSvcMockSensorRepo) MarkStaleSensorsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) GetSensorsOfflineSince(_ context.Context, _ time.Time) ([]*sensor.Sensor, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
-	return m.availableTools, nil
-}
-func (m *toolSvcMockSensorRepo) HasSensorForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
-	return false, nil
-}
-func (m *toolSvcMockSensorRepo) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) HasSensorForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
-	return false, nil
-}
-func (m *toolSvcMockSensorRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
-	return nil, nil
+func (toolSvcFailingSensors) ListAllSensors(_ context.Context, _ string) ([]*sensor.Sensor, error) {
+	return nil, errors.New("sensor store down")
 }
 
 // toolSvcMockCategoryRepo is a minimal mock for toolcategory.Repository.
@@ -2623,14 +2542,31 @@ func TestToolService_ListToolExecutions_InvalidTenantID(t *testing.T) {
 }
 
 // ============================================================================
-// Tests: SetSensorRepo / SetCategoryRepo / SetPipelineDeactivator
+// Tests: SetAvailabilitySources / SetCategoryRepo / SetPipelineDeactivator
 // ============================================================================
 
-func TestToolService_SetSensorRepo(t *testing.T) {
+// Availability that cannot be read never blocks a picker: the tools list
+// still answers and RunnableToolNames reports the error (trigger time
+// refuses for real).
+func TestToolService_AvailabilitySourcesFailing(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
-	sensorRepo := newToolSvcMockSensorRepo()
-	// Should not panic
-	svc.SetSensorRepo(sensorRepo)
+	svc.SetAvailabilitySources(toolSvcFailingSensors{}, nil, nil)
+	tenantID := shared.NewID().String()
+	if _, err := svc.ListToolsWithConfig(context.Background(), tool.ListToolsWithConfigInput{TenantID: tenantID, Page: 1, PerPage: 10}); err != nil {
+		t.Fatalf("tools list failed with the sensor store down: %v", err)
+	}
+	if _, err := svc.RunnableToolNames(context.Background(), tenantID); err == nil {
+		t.Fatal("RunnableToolNames hid the sensor store error")
+	}
+}
+
+// Without availability sources availability is unknown (nil), not "none".
+func TestToolService_RunnableToolNamesWithoutSources(t *testing.T) {
+	svc, _, _, _ := newToolSvcTestService()
+	got, err := svc.RunnableToolNames(context.Background(), shared.NewID().String())
+	if err != nil || got != nil {
+		t.Fatalf("RunnableToolNames = %v, %v; want nil, nil", got, err)
+	}
 }
 
 func TestToolService_SetCategoryRepo(t *testing.T) {
@@ -2991,10 +2927,6 @@ func TestToolService_ListTenantToolConfigs_WithToolFilter(t *testing.T) {
 	}
 }
 
-func (m *toolSvcMockSensorRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID, _, _ []string) (map[string]bool, map[string]bool, error) {
-	return map[string]bool{}, map[string]bool{}, nil
-}
-
 // A custom tool may not take a platform tool name: names resolve to the
 // platform tool first, so the custom one would never run (settings audit SC-M5).
 func TestToolService_CreateCustomTool_PlatformNameReserved(t *testing.T) {
@@ -3047,5 +2979,21 @@ func TestToolService_TenantToolEndpoints_HideOtherTenantsCustomTool(t *testing.T
 	}
 	if _, err := svc.GetEffectiveToolConfig(ctx, other.String(), platform.ID.String()); err != nil {
 		t.Errorf("any tenant reads a platform tool's effective config: %v", err)
+	}
+}
+
+// The catalog minimum version is a release version, stored normalized.
+func TestToolService_CustomToolMinVersion(t *testing.T) {
+	svc, _, _, _ := newToolSvcTestService()
+	tenantID := shared.NewID().String()
+	_, err := svc.CreateCustomTool(context.Background(), tool.CreateCustomToolInput{
+		TenantID: tenantID, Name: "min-bad", InstallMethod: "binary", MinVersion: "latest"})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("min_version \"latest\": err %v, want a validation error", err)
+	}
+	created, err := svc.CreateCustomTool(context.Background(), tool.CreateCustomToolInput{
+		TenantID: tenantID, Name: "min-ok", InstallMethod: "binary", MinVersion: "3.2"})
+	if err != nil || created.MinVersion != "v3.2.0" {
+		t.Fatalf("min_version 3.2: %v %q, want v3.2.0", err, created.MinVersion)
 	}
 }
