@@ -61,6 +61,15 @@ describe('ImportResultsDialog', () => {
     fetchMock.mockReset()
   })
 
+  it('sends the minimum severity a caller sets (the scanners page skips info)', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, previewBody))
+    render(<ImportResultsDialog open onOpenChange={vi.fn()} minSeverity="low" />)
+    await chooseFile()
+    await userEvent.click(screen.getByRole('button', { name: /Preview/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/findings/import?dry_run=true&min_severity=low')
+  })
+
   it('previews first and writes nothing until Import', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, previewBody))
     const onImported = vi.fn()

@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Box, Link2, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState, ErrorState } from '@/features/shared'
+import { DetailSheetFooter, EmptyState, ErrorState } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { LinkAssetsDialog } from './link-assets-dialog'
 
@@ -150,9 +150,11 @@ export function LinkedAssetsPanel({
       )}
 
       {viewAllHref && items && total !== undefined && total > items.length && (
-        <Button asChild variant="link" size="sm" className="px-0">
-          <Link href={viewAllHref}>View all {total} in the inventory</Link>
-        </Button>
+        <DetailSheetFooter>
+          <Button asChild variant="outline" className="w-full">
+            <Link href={viewAllHref}>View all {total} in the inventory</Link>
+          </Button>
+        </DetailSheetFooter>
       )}
 
       <LinkAssetsDialog
