@@ -204,7 +204,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 				COALESCE(AVG(risk_score), 0) AS avg_risk,
 				COUNT(*) FILTER (WHERE asset_type = 'repository') AS repo_cnt
 			FROM assets
-			WHERE deleted_at IS NULL AND tenant_id = $1 AND `+assetIn+`
+			WHERE deleted_at IS NULL AND tenant_id = $1 AND `+assetIn+InInventorySQL("assets.id")+`
 			GROUP BY GROUPING SETS ((asset_type), (status), (NULLIF(sub_type, '')), ())
 		),
 		avg_cvss AS (
