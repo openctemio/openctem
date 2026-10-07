@@ -50,6 +50,11 @@ type TriggerScanExecInput struct {
 	// scans:freeze:override; it is audited and never honored for a
 	// scheduled run.
 	FreezeOverride bool `json:"-"`
+	// Interactive is a member's own "Run now" (POST /scans/{id}/trigger).
+	// Pausing a scan turns its schedule off; it does not stop a member from
+	// running it by hand. Automatic triggers (schedule, retry, automations)
+	// still need the scan active. A disabled scan runs for nobody.
+	Interactive bool `json:"-"`
 }
 
 // ErrScanRunInProgress is returned when a trigger with SkipIfRunning finds
@@ -152,12 +157,12 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 // An error before the run exists is a refusal (TriggerScan records it as a
 // blocked run); one after is wrapped with afterRunCreated.
 func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input TriggerScanExecInput) (*pipeline.Run, error) {
-	if !sc.CanTrigger() {
+	if !sc.CanTrigger() && !(input.Interactive && sc.Status == scan.StatusPaused) {
 		// Give the user a specific, actionable error message based on the current state.
 		var msg string
 		switch sc.Status {
 		case scan.StatusPaused:
-			msg = fmt.Sprintf("Cannot trigger scan '%s' because it is paused. Resume the scan first to trigger it.", sc.Name)
+			msg = fmt.Sprintf("Scan '%s' is paused: its schedule is off and automatic runs are refused. Resume it, or run it by hand.", sc.Name)
 		case scan.StatusDisabled:
 			msg = fmt.Sprintf("Cannot trigger scan '%s' because it is disabled. Activate the scan first to trigger it.", sc.Name)
 		default:

@@ -136,9 +136,12 @@ func registerSensorManagementRoutes(
 		// sensors:delete are held by owners and administrators only — the
 		// member and viewer seeds do not grant them (owner decision 2026-10-02).
 		// Members and viewers keep the reads above.
-		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite))
+		// Creating a sensor and regenerating its key mint a persistent
+		// credential, so they need a recent sign-in (step-up), as an API key
+		// does. Revoking and deleting stay one click.
+		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite), requireStepUp())
 		r.PUT("/{id}", h.Update, middleware.Require(permission.SensorsWrite))
-		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite))
+		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp())
 
 		// Status operations (admin-controlled)
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.SensorsWrite))

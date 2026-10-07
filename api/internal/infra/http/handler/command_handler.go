@@ -821,15 +821,22 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 		return
 	}
 
-	// Parse result to get findings count and output
+	// Parse result to get findings count and output, and the targets the
+	// sensor's local policy skipped (sensor-supplied: bounded and cleaned).
 	var result struct {
 		FindingsCount int            `json:"findings_count"`
 		Output        map[string]any `json:"output"`
+		Metadata      struct {
+			RefusedTargets      json.RawMessage `json:"refused_targets"`
+			RefusedTargetsTotal int             `json:"refused_targets_total"`
+		} `json:"metadata"`
 	}
 
 	if cmd.Result != nil {
 		_ = json.Unmarshal(cmd.Result, &result)
 	}
+	skipped, skippedTotal := pipelinedom.ParseSkippedTargets(result.Metadata.RefusedTargets, result.Metadata.RefusedTargetsTotal)
+	skippedSummary := pipelinedom.SkippedSummary(skipped, skippedTotal)
 
 	// Trigger pipeline progression asynchronously with independent context
 	// Use background context since the HTTP request context will be canceled after response
@@ -837,7 +844,7 @@ func (h *CommandHandler) triggerPipelineProgression(ctx context.Context, cmd *co
 		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := h.pipelineService.OnStepCompleted(bgCtx, payload.PipelineRunID, payload.StepKey, result.FindingsCount, result.Output); err != nil {
+		if err := h.pipelineService.OnStepCompletedWithSkips(bgCtx, payload.PipelineRunID, payload.StepKey, result.FindingsCount, result.Output, skippedTotal, skippedSummary); err != nil {
 			h.logger.Error("failed to trigger pipeline progression",
 				"pipeline_run_id", payload.PipelineRunID,
 				"step_key", payload.StepKey,
