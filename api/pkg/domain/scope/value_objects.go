@@ -132,12 +132,14 @@ type Status string
 const (
 	StatusActive   Status = "active"
 	StatusInactive Status = "inactive"
-	StatusExpired  Status = "expired" // Only for exclusions
-	// StatusPending: an exclusion waiting for review. It does not take effect
-	// until a holder of attack_surface:scope:exclusions:approve approves it.
-	StatusPending Status = "pending" // Only for exclusions
-	// StatusRejected: a reviewer declined the exclusion. It never takes effect.
-	StatusRejected Status = "rejected" // Only for exclusions
+	// StatusExpired: the expiry passed (an exclusion, or an expiring scope
+	// entry, RFC-054). It is no longer in effect.
+	StatusExpired Status = "expired"
+	// StatusPending: an exclusion or a scope entry waiting for review. It does
+	// not take effect until enough approvers approve it.
+	StatusPending Status = "pending"
+	// StatusRejected: a reviewer declined it. It never takes effect.
+	StatusRejected Status = "rejected"
 )
 
 // String returns the string representation of the status.

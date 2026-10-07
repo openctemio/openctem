@@ -87,7 +87,7 @@ func newPathTestingHarness(t *testing.T) *pathTestingHarness {
 	db := &postgres.DB{DB: sqldb}
 	log := logger.NewNop()
 	svc := scopeapp.NewService(postgres.NewScopeTargetRepository(db), postgres.NewScopeExclusionRepository(db), postgres.NewAssetRepository(db), log)
-	svc.SetNotifications(fixedAdmins{ids: []shared.ID{shared.NewID(), shared.NewID()}}, h.notices)
+	svc.SetEntryPolicy(nil, fixedAdmins{ids: []shared.ID{shared.NewID(), shared.NewID()}}, h.notices)
 	sh := handler.NewScopeHandler(svc, validator.New(), log)
 	sh.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 

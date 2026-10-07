@@ -13,7 +13,6 @@ import (
 
 	"github.com/openctemio/ctis/weburl"
 
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -44,27 +43,8 @@ func webRuleFor(t scopedom.ExclusionType, pattern string, pathPrefix *string, me
 	return &scopedom.WebRule{PathPrefix: prefix, Methods: ms, Testing: scopedom.TestingBlocked}, nil
 }
 
-// AdminDirectory lists a tenant's active owners and administrators.
-type AdminDirectory interface {
-	ActiveAdminIDs(ctx context.Context, tenantID shared.ID) ([]shared.ID, error)
-}
-
-// InAppNotifier sends one in-app notification.
-type InAppNotifier interface {
-	Notify(ctx context.Context, p notificationdom.NotificationParams) error
-}
-
-// SetNotifications wires the notice the administrators get when a path
-// exclusion's testing mode changes.
-func (s *Service) SetNotifications(d AdminDirectory, n InAppNotifier) { s.admins, s.notifier = d, n }
-
 func (s *Service) notifyTestingChange(ctx context.Context, tenantID shared.ID, e *scopedom.Exclusion) {
-	if s.admins == nil || s.notifier == nil || e == nil || e.Web() == nil {
-		return
-	}
-	ids, err := s.admins.ActiveAdminIDs(ctx, tenantID)
-	if err != nil {
-		s.logger.Warn("list admins for a scope testing notice", "error", err)
+	if e == nil || e.Web() == nil {
 		return
 	}
 	web := e.Web()
@@ -72,17 +52,7 @@ func (s *Service) notifyTestingChange(ctx context.Context, tenantID shared.ID, e
 	if web.TestingUntil != nil {
 		body += " until " + web.TestingUntil.UTC().Format(time.RFC3339)
 	}
-	exclusionID := e.ID()
-	for _, id := range ids {
-		uid := id
-		if err := s.notifier.Notify(ctx, notificationdom.NotificationParams{
-			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeSystemAlert, Title: "Scope exclusion testing changed", Body: body,
-			Severity: "high", ResourceType: "scope_exclusion", ResourceID: &exclusionID, URL: "/scope",
-		}); err != nil {
-			s.logger.Warn("notify admin of a scope testing change", "error", err)
-		}
-	}
+	s.NotifyAdmins(ctx, tenantID, "Scope exclusion testing changed", body)
 }
 
 // ExclusionTestingRepository records a path exclusion's testing mode
