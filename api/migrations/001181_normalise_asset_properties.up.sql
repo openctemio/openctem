@@ -23,8 +23,11 @@
 -- are kept in asset_properties_pre_001181 for the down migration; names,
 -- ids and updated_at are not touched. No audit or history rows are written.
 
+-- A ledger of this migration, like asset_type_reclassifications (000684):
+-- no foreign key, so it never blocks or follows an asset delete or merge;
+-- the down migration restores only assets that still exist.
 CREATE TABLE asset_properties_pre_001181 (
-    asset_id   uuid PRIMARY KEY REFERENCES assets (id) ON DELETE CASCADE,
+    asset_id   uuid PRIMARY KEY,
     tenant_id  uuid NOT NULL,
     properties jsonb NOT NULL,
     saved_at   timestamptz NOT NULL DEFAULT now()
