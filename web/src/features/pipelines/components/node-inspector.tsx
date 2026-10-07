@@ -259,10 +259,7 @@ function ToolSelectionField({
       )}
 
       {Object.entries(missing).map(([tool, params]) => (
-        <p
-          key={tool}
-          className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400"
-        >
+        <p key={tool} className="flex items-start gap-1.5 text-xs text-warning">
           <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
           <span>
             {tool} does not take {params.join(', ')}, so it cannot run this step with these
