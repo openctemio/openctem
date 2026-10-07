@@ -171,7 +171,7 @@ func coverageService(t *testing.T, mode CoverageAutoResolveMode, declared []stri
 	tid, sensorID, assetID := shared.NewID(), shared.NewID(), shared.NewID()
 	repo := &coverageFindingRepo{cov: completedRun(t, sensorID, assetID), stale: []shared.ID{shared.NewID()}, open: 4}
 	sensors := &sensorRowRepo{rows: map[shared.ID]*sensor.Sensor{
-		sensorID: {ID: sensorID, TenantID: &tid, Tools: declared},
+		sensorID: {ID: sensorID, TenantID: &tid, Reported: sensor.ReportOf(declared...)},
 	}}
 	svc := &Service{logger: logger.NewNop(), findingRepo: repo, sensorRepo: sensors}
 	svc.SetCoverageAutoResolve(mode, DefaultBlindingGuard())

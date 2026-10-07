@@ -65,8 +65,10 @@ func TestIngest_CTIS14Interop_DB(t *testing.T) {
 	h.ingest.SetIdentityStore(postgres.NewAssetIdentifierRepository(pdb, postgres.NewAssetRepository(pdb)),
 		postgres.NewAssetDedupRepository(pdb))
 
-	// The harness sensor declares semgrep; this one also runs the two VA tools.
-	if _, err := h.db.ExecContext(ctx, `UPDATE sensors SET tools = ARRAY['semgrep','nessus','openvas']
+	// The harness sensor reports semgrep; this one also runs the two VA tools.
+	if _, err := h.db.ExecContext(ctx, `UPDATE sensors SET
+		reported_tools = '[{"name":"semgrep","installed":true},{"name":"nessus","installed":true},{"name":"openvas","installed":true}]',
+		reported_tool_names = ARRAY['semgrep','nessus','openvas'], reported_at = NOW()
 		WHERE id = $1`, h.sensorID); err != nil {
 		t.Fatal(err)
 	}

@@ -4,9 +4,11 @@
 //   - A target that is an inventory asset may be scanned only by an actor who
 //     can act on that asset (datascope.Enforcer.CanActOnAssets).
 //   - A free-text target that is not an inventory asset may be scanned only by
-//     an unrestricted actor, and only when it matches an active scope target
-//     of the tenant (the scoping allowlist). Exclusions are applied by the
-//     dispatch gate on top of this.
+//     an unrestricted actor, and only when the tenant's scope authority covers
+//     it: an active scope target, or a name at or under a root-domain seed or
+//     verified domain (scopeauth, the same answer the ownership gate gives an
+//     inventory asset; RFC-054 §4.2). Exclusions are applied by the dispatch
+//     gate on top of this.
 //   - A restricted actor may scan only inventory assets in their data scope.
 //
 // Every lookup error refuses (fail closed).
@@ -15,10 +17,9 @@ package actscope
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/url"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -39,6 +40,10 @@ type AssetNames interface {
 type ScopeTargets interface {
 	ListActiveTargets(ctx context.Context, tenantID string) ([]*scopedom.Target, error)
 }
+
+// ScopeRoots lists the tenant's root-domain seeds and verified domains
+// (*postgres.EASMSeedRepository).
+type ScopeRoots = scopeauth.Roots
 
 // Input is what an actor asks to scan.
 type Input struct {
@@ -65,7 +70,7 @@ func (d *Decision) Refused() bool {
 const (
 	ReasonOutOfDataScope = "the asset is outside your data scope"
 	ReasonNotAnAsset     = "not an asset in your data scope; restricted members may scan only their assets"
-	ReasonNoScopeTarget  = "matches no scope target; add it to Scoping > Targets before scanning it"
+	ReasonNoScopeTarget  = "no scope target, seed or verified domain covers it; add it to Scoping before scanning it"
 )
 
 // Checker implements the act-scope rule.
@@ -73,18 +78,19 @@ type Checker struct {
 	enforcer ActEnforcer
 	assets   AssetNames
 	targets  ScopeTargets
+	roots    ScopeRoots
 }
 
 // New wires the checker. Every dependency is required: a nil one refuses
 // every target (fail closed).
-func New(enforcer ActEnforcer, assets AssetNames, targets ScopeTargets) *Checker {
-	return &Checker{enforcer: enforcer, assets: assets, targets: targets}
+func New(enforcer ActEnforcer, assets AssetNames, targets ScopeTargets, roots ScopeRoots) *Checker {
+	return &Checker{enforcer: enforcer, assets: assets, targets: targets, roots: roots}
 }
 
 // Check decides which targets and assets the actor may scan. It returns an
 // error only when the decision cannot be made; nothing may be dispatched then.
 func (c *Checker) Check(ctx context.Context, in Input) (*Decision, error) {
-	if c == nil || c.enforcer == nil || c.assets == nil || c.targets == nil {
+	if c == nil || c.enforcer == nil || c.assets == nil || c.targets == nil || c.roots == nil {
 		return nil, fmt.Errorf("act-scope check is not configured; nothing dispatched")
 	}
 	if in.TenantID.IsZero() {
@@ -113,8 +119,7 @@ func (c *Checker) Check(ctx context.Context, in Input) (*Decision, error) {
 		}
 	}
 
-	var allowlist []*scopedom.Target
-	allowlistLoaded := false
+	var auth *scopeauth.Authority
 	for _, t := range in.Targets {
 		if strings.TrimSpace(t) == "" {
 			continue
@@ -129,14 +134,12 @@ func (c *Checker) Check(ctx context.Context, in Input) (*Decision, error) {
 			out.RefusedTargets[t] = ReasonNotAnAsset
 			continue
 		}
-		if !allowlistLoaded {
-			allowlist, err = c.targets.ListActiveTargets(ctx, in.TenantID.String())
-			if err != nil {
-				return nil, fmt.Errorf("list scope targets: %w", err)
+		if auth == nil {
+			if auth, err = scopeauth.Load(ctx, in.TenantID, c.targets, c.roots); err != nil {
+				return nil, err
 			}
-			allowlistLoaded = true
 		}
-		if !matchesAllowlist(allowlist, t) {
+		if _, ok := auth.Covers(t); !ok {
 			out.RefusedTargets[t] = ReasonNoScopeTarget
 		}
 	}
@@ -172,43 +175,6 @@ func (c *Checker) resolveAssets(ctx context.Context, tenantID shared.ID, targets
 	return out, nil
 }
 
-// matchesAllowlist reports whether the target (or the host it names) matches
-// an active scope target.
-func matchesAllowlist(allowlist []*scopedom.Target, target string) bool {
-	for _, f := range MatchForms(target) {
-		for _, st := range allowlist {
-			if st != nil && st.Matches(f) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // MatchForms is the target as typed, lower-cased, and the host of a URL or
-// host:port.
-func MatchForms(target string) []string {
-	v := strings.TrimSpace(target)
-	out := []string{v}
-	add := func(s string) {
-		s = strings.Trim(strings.TrimSpace(s), "[]")
-		if s == "" {
-			return
-		}
-		for _, have := range out {
-			if have == s {
-				return
-			}
-		}
-		out = append(out, s)
-	}
-	add(strings.ToLower(v))
-	if strings.Contains(v, "://") {
-		if u, err := url.Parse(v); err == nil {
-			add(strings.ToLower(u.Hostname()))
-		}
-	} else if h, _, err := net.SplitHostPort(v); err == nil {
-		add(strings.ToLower(h))
-	}
-	return out
-}
+// host:port (scopeauth.MatchForms).
+func MatchForms(target string) []string { return scopeauth.MatchForms(target) }

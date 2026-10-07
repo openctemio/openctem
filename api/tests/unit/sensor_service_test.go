@@ -474,7 +474,7 @@ func (m *sensorSvcMockRepo) GetTenantSensorStats(_ context.Context, _ shared.ID)
 
 // seedSensor creates and stores a sensor in the mock repo.
 func (m *sensorSvcMockRepo) seedSensor(tenantID shared.ID, name string, sensorType sensor.SensorType) *sensor.Sensor {
-	a, _ := sensor.NewSensor(tenantID, name, sensorType, "test sensor", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeStandalone)
+	a, _ := sensor.NewSensor(tenantID, name, sensorType, "test sensor", []string{"sast"}, sensor.ExecutionModeStandalone)
 	m.sensors[a.ID.String()] = a
 	return a
 }
@@ -506,7 +506,6 @@ func TestSensorService_CreateSensor_Success(t *testing.T) {
 		Type:         "worker",
 		Description:  "A test runner sensor",
 		Capabilities: []string{"sast", "sca"},
-		Tools:        []string{"semgrep", "trivy"},
 	}
 
 	out, err := svc.CreateSensor(context.Background(), input)
@@ -953,25 +952,6 @@ func TestSensorService_UpdateSensor_Capabilities(t *testing.T) {
 	}
 	if len(updated.Capabilities) != 2 || updated.Capabilities[0] != "dast" {
 		t.Errorf("expected capabilities [dast, api], got %v", updated.Capabilities)
-	}
-}
-
-func TestSensorService_UpdateSensor_Tools(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	svc := newSensorSvcTestService(repo)
-	tenantID := shared.NewID()
-	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
-
-	updated, err := svc.UpdateSensor(context.Background(), sensorapp.UpdateSensorInput{
-		TenantID: tenantID.String(),
-		SensorID: a.ID.String(),
-		Tools:    []string{"nuclei", "nmap"},
-	})
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if len(updated.Tools) != 2 || updated.Tools[0] != "nuclei" {
-		t.Errorf("expected tools [nuclei, nmap], got %v", updated.Tools)
 	}
 }
 

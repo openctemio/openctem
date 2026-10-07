@@ -251,6 +251,23 @@ func (a *Sensor) AssessHealth(now time.Time, p HealthPolicy) HealthAssessment {
 	return out
 }
 
+// TakesJobs reports whether a sensor in state st takes new work: online,
+// degraded (heartbeating with a problem) or late (past its deadline, still
+// dispatchable). It is the one definition of "online" the Sensors page, the
+// fleet stats and the tool availability view share.
+func (st State) TakesJobs() bool {
+	return st == StateOnline || st == StateDegraded || st == StateLate
+}
+
+// CanTakeJobs reports whether the sensor takes new work at now: its state
+// takes jobs and it is not a one-shot (CI) sensor, which only runs the job it
+// was started for. The health policy does not change the answer (it only
+// tells online from degraded and stale from offline), so the default one is
+// used.
+func (a *Sensor) CanTakeJobs(now time.Time) bool {
+	return !a.IsOneShot() && a.AssessHealth(now, DefaultHealthPolicy()).State.TakesJobs()
+}
+
 func hasReason(rs []HealthReason, code HealthReasonCode) bool {
 	for _, r := range rs {
 		if r.Code == code {
@@ -329,12 +346,13 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus, 
 			name, a.Build.SDKVersion, p.SDKMinVersion))
 	}
 
-	if len(a.EffectiveTools()) == 0 && !a.Type.IsCollector() && a.IsDaemon() {
-		msg := "No scan tools are configured, so the platform cannot dispatch scans to this sensor."
+	// A sensor that never connected has reported nothing yet: its state
+	// (never_connected) already says so.
+	if len(a.EffectiveTools()) == 0 && !a.Type.IsCollector() && a.IsDaemon() && a.LastSeenAt != nil {
+		msg := "The sensor has not reported its tools, so the platform cannot dispatch scans to it. Upgrade it to a build that reports its tool manifest."
 		if a.Reported.Tools != nil {
-			// The sensor reported its inventory: nothing it has installed is
-			// allowed by its tool limit (or it has nothing installed).
-			msg = "None of the sensor's installed tools is allowed by its tool limit (or none is installed), so the platform cannot dispatch scans to this sensor."
+			// The sensor reported its inventory and nothing in it is installed.
+			msg = "The sensor reports no installed scan tool, so the platform cannot dispatch scans to it."
 		}
 		add(ReasonNoTools, SeverityWarning, msg)
 	}

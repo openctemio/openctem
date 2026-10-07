@@ -28,6 +28,7 @@ type ScopeHandler struct {
 	audit     *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
+	scopeJoin ScopeJoinReevaluator
 }
 
 // NewScopeHandler creates a new scope handler.
@@ -43,6 +44,39 @@ func NewScopeHandler(svc *scope.Service, v *validator.Validator, log *logger.Log
 // the tenant's audit log, with the state before and after (RFC-040 §5.11).
 func (h *ScopeHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
+}
+
+// ScopeJoinReevaluator confirms the tenant's pending discovered names that
+// its permanent scope targets and seeds cover (*easm.ScopeJoin).
+type ScopeJoinReevaluator interface {
+	Reevaluate(ctx context.Context, tenantID shared.ID) ([]string, error)
+}
+
+// SetScopeJoin re-evaluates the review queue after a scope target becomes
+// active (RFC-054 §4.3). Nil: the periodic run picks the change up.
+func (h *ScopeHandler) SetScopeJoin(j ScopeJoinReevaluator) { h.scopeJoin = j }
+
+// scopeJoinTimeout bounds one background re-evaluation.
+const scopeJoinTimeout = 2 * time.Minute
+
+// reevaluate runs the scope join for the tenant in the background, detached
+// from the request (the change is committed; the join is idempotent and the
+// periodic run repeats it on failure).
+func (h *ScopeHandler) reevaluate(tenantID string, t *scopedom.Target) {
+	if h.scopeJoin == nil || t == nil || !t.IsActive() {
+		return
+	}
+	id, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), scopeJoinTimeout)
+		defer cancel()
+		if _, err := h.scopeJoin.Reevaluate(ctx, id); err != nil {
+			h.logger.Warn("scope join after a scope target change failed", "error", logger.SanitizeError(err))
+		}
+	}()
 }
 
 func (h *ScopeHandler) auditTarget(r *http.Request, action audit.Action, id string, before, after *scopedom.Target) {
@@ -406,6 +440,7 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditTarget(r, audit.ActionScopeTargetCreated, target.ID().String(), nil, target)
+	h.reevaluate(tenantID, target)
 
 	// Check for pattern overlaps (non-blocking warnings)
 	warnings, overlapErr := h.service.CheckPatternOverlaps(r.Context(), tenantID, req.TargetType, req.Pattern)
@@ -560,6 +595,7 @@ func (h *ScopeHandler) ActivateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditTarget(r, audit.ActionScopeTargetActivated, targetID, before, target)
+	h.reevaluate(tenantID, target)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeTargetResponse(target))

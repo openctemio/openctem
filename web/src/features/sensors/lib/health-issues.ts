@@ -56,7 +56,7 @@ function checkTitle(check: HealthCheck, state: ReturnType<typeof sensorState>): 
     case 'protocol':
       return 'Protocol v1 is deprecated'
     case 'tools':
-      return /not installed/i.test(check.text) ? 'Tools not installed' : 'No usable tool'
+      return /not reported/i.test(check.text) ? 'Tools not reported' : 'No installed tool'
     case 'error':
       return 'The sensor reported an error'
     default:

@@ -247,3 +247,27 @@ func (r *SensorGrantRepository) ListSummaries(ctx context.Context, tenantID shar
 	}
 	return out, rows.Err()
 }
+
+// ListByTenant returns the grant of every sensor of the tenant, by sensor id
+// (the tool availability view checks each sensor's grant without one query
+// per sensor).
+func (r *SensorGrantRepository) ListByTenant(ctx context.Context, tenantID shared.ID) (map[shared.ID]*sensordom.Grant, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT `+sensorGrantColumns+sensorGrantFrom+`
+		WHERE g.tenant_id = $1`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list sensor grants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[shared.ID]*sensordom.Grant{}
+	for rows.Next() {
+		g, err := scanSensorGrant(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[g.SensorID] = g
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list sensor grants: %w", err)
+	}
+	return out, nil
+}

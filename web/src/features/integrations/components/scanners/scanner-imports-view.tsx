@@ -29,10 +29,11 @@ import {
   invalidateIntegrationsCache,
 } from '@/features/integrations/api/use-integrations-api'
 import type { Integration } from '@/features/integrations/types/integration.types'
-import { ImportResultsDialog, StatusBadge, getConfigString } from './shared'
+import { StatusBadge, getConfigString } from './shared'
+import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { toast } from 'sonner'
 
-/** The .nessus import route requires both (api routes/assets.go). */
+/** POST /findings/import requires all three (api routes/finding_import.go). */
 const IMPORT_PERMISSIONS = [
   Permission.AssetsWrite,
   Permission.FindingsWrite,
@@ -221,7 +222,12 @@ export function ScannerImportsView() {
         )}
       </div>
 
-      <ImportResultsDialog open={importOpen} onOpenChange={setImportOpen} onSuccess={refresh} />
+      <ImportResultsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={refresh}
+        minSeverity="low"
+      />
     </Main>
   )
 }
