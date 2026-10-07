@@ -28,6 +28,11 @@ vi.mock('@/lib/api/tool-hooks', () => ({
   }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// The live scope preview has its own tests (new-scan/__tests__/scope-preview).
+vi.mock('../new-scan/scope-preview', () => ({ ScopePreview: () => null }))
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 't1', name: 'ORG' } }),
+}))
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -67,6 +72,30 @@ describe('QuickScanDialog', () => {
     })
     expect(await screen.findByText('Scan started on 2 target(s)')).toBeInTheDocument()
     expect(saveQuickScan).not.toHaveBeenCalled()
+  })
+
+  it('a start the scope gate refuses lists each target with its reason, not a toast', async () => {
+    quickScan.mockRejectedValue(
+      Object.assign(new Error('You may not scan these targets: promo.net (...)'), {
+        code: 'TARGET_OUT_OF_SCOPE',
+        statusCode: 400,
+        details: {
+          refused: [
+            { target: 'promo.net', code: 'no_entry', message: 'm', fixes: [] },
+            { target: 'old.example.com', code: 'rejected', message: 'm', fixes: [] },
+          ],
+        },
+      })
+    )
+    render(<QuickScanDialog open onOpenChange={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText('Targets'), 'promo.net, old.example.com')
+    await userEvent.click(screen.getByLabelText('Scanner'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
+    await userEvent.click(screen.getByRole('button', { name: /Start Scan/ }))
+
+    expect(await screen.findByText('2 targets may not be scanned')).toBeInTheDocument()
+    expect(screen.getByText('Not in scope')).toBeInTheDocument()
+    expect(screen.getByText('Marked not ours')).toBeInTheDocument()
   })
 
   it('"Save as scan" saves the started scan under the chosen name', async () => {
