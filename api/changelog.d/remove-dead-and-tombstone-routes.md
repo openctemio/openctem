@@ -18,3 +18,10 @@
   and `Sunset` (2027-01-15) headers. Triage one finding with
   `POST /api/v1/findings/{id}/ai-triage`.
 - **Upgrade note:** a client that called a removed route gets 404 or 405.
+
+### Removed: the findings:vulnerabilities:write and :delete permissions (migration 001168)
+
+- With the refusal stubs gone nothing checks them (the shared CVE catalog has
+  no tenant writes), so they are removed from the catalog and from the owner
+  and admin roles. No role loses access to anything. The rows are archived
+  and the down migration restores them.
