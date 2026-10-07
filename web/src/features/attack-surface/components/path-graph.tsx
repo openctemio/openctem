@@ -9,9 +9,9 @@ import {
   CRITICALITY_BADGE_SOFT,
   CRITICALITY_TEXT_COLORS,
   CRITICALITY_CHART_COLORS,
-  CRITICALITY_LABELS,
   type CriticalityLevel,
 } from '@/lib/criticality-colors'
+import { CRITICALITY_LABELS, normalizeCriticality as toCriticality } from '@/lib/criticality'
 import { SEVERITY_BADGE_SOFT, SEVERITY_CHART_COLORS } from '@/lib/severity-colors'
 import {
   Globe,
@@ -69,10 +69,7 @@ export interface PathGraphPath {
 // ============================================================
 
 function normalizeCriticality(value?: string): CriticalityLevel | undefined {
-  if (value === 'critical' || value === 'high' || value === 'medium' || value === 'low') {
-    return value
-  }
-  return undefined
+  return toCriticality(value)
 }
 
 function capitalize(s: string): string {

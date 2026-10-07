@@ -8,7 +8,8 @@ import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
 
 import { useAssetSlaPolicyApi, type SlaPolicy } from '../api/use-sla-policies-api'
-import { DEFAULT_SLA_FORM } from '../schemas/sla-policy-schema'
+import { DEFAULT_SLA_FORM, NO_SLA } from '../schemas/sla-policy-schema'
+import { SEVERITY_LABELS, SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 
 /** The windows a policy (or the platform default) sets, in days. */
 export type SlaWindowValues = Pick<
@@ -37,17 +38,21 @@ export const PRIORITY_WINDOWS: {
 ]
 
 export const SEVERITY_WINDOWS: {
-  key: 'critical_days' | 'high_days' | 'medium_days' | 'low_days' | 'info_days'
+  key: `${SeverityLevel}_days`
   label: string
   short: string
-  dot: 'critical' | 'high' | 'medium' | 'low' | 'info'
-}[] = [
-  { key: 'critical_days', label: 'Critical', short: 'C', dot: 'critical' },
-  { key: 'high_days', label: 'High', short: 'H', dot: 'high' },
-  { key: 'medium_days', label: 'Medium', short: 'M', dot: 'medium' },
-  { key: 'low_days', label: 'Low', short: 'L', dot: 'low' },
-  { key: 'info_days', label: 'Info', short: 'I', dot: 'info' },
-]
+  dot: SeverityLevel
+}[] = SEVERITY_LEVELS.map((s) => ({
+  key: `${s}_days` as const,
+  label: SEVERITY_LABELS[s],
+  short: SEVERITY_LABELS[s].charAt(0),
+  dot: s,
+}))
+
+/** "12d", or "no SLA" for an info window of 0. */
+export function formatSlaWindow(days: number): string {
+  return days === NO_SLA ? 'no SLA' : `${days}d`
+}
 
 /** Platform defaults when no policy governs an asset. */
 export const PLATFORM_DEFAULT_WINDOWS: SlaWindowValues = {
@@ -89,7 +94,7 @@ export function SlaWindows({ policy }: { policy: SlaWindowValues }) {
           >
             <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS[w.dot])} />
             <span>{w.short}</span>
-            <span>{policy[w.key]}d</span>
+            <span>{formatSlaWindow(policy[w.key])}</span>
           </div>
         ))}
       </div>

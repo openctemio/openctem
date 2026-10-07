@@ -528,7 +528,7 @@ function transformToRepositoryView(asset: ApiAssetResponse): RepositoryView {
     type: 'repository',
     name: asset.name,
     description: asset.description || repo?.description || '',
-    criticality: asset.criticality as 'critical' | 'high' | 'medium' | 'low',
+    criticality: asset.criticality as CriticalityLevel,
     status: asset.status as 'active' | 'inactive' | 'archived' | 'pending',
     scope: (scopeMap[asset.scope] || 'internal') as
       'internal' | 'external' | 'cloud' | 'partner' | 'vendor' | 'shadow',
@@ -601,6 +601,8 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeImageSrc } from '@/lib/safe-href'
+import { SEVERITY_LEVELS, compareSeverity } from '@/lib/severity'
+import type { CriticalityLevel } from '@/lib/criticality'
 
 // ============================================
 // Helper Components
@@ -729,9 +731,8 @@ function OverviewTab({
   const neverScanned = !repository.last_scanned_at && branches.length === 0
   // Real security posture always available from findings — used to fill the
   // left card even before any branch is scanned (no more empty dead-space).
-  const sevRank: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
   const topFindings = [...findings]
-    .sort((a, b) => sevRank.indexOf(a.severity) - sevRank.indexOf(b.severity))
+    .sort((a, b) => compareSeverity(a.severity, b.severity))
     .slice(0, 5)
 
   return (
@@ -889,30 +890,28 @@ function OverviewTab({
                     </span>
                   </div>
                   <div className="flex h-3 rounded-full overflow-hidden bg-muted">
-                    {(['critical', 'high', 'medium', 'low', 'info'] as Severity[]).map(
-                      (severity) => {
-                        const count = defaultBranch.findings_summary.by_severity[severity]
-                        const total = defaultBranch.findings_summary.total || 1
-                        const width = (count / total) * 100
-                        const colors: Record<Severity, string> = SEVERITY_DOT_COLORS
-                        if (count === 0) return null
-                        return (
-                          <TooltipProvider key={severity}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <div
-                                  className={cn(colors[severity])}
-                                  style={{ width: `${width}%` }}
-                                />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {SEVERITY_LABELS[severity]}: {count}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )
-                      }
-                    )}
+                    {SEVERITY_LEVELS.map((severity) => {
+                      const count = defaultBranch.findings_summary.by_severity[severity]
+                      const total = defaultBranch.findings_summary.total || 1
+                      const width = (count / total) * 100
+                      const colors: Record<Severity, string> = SEVERITY_DOT_COLORS
+                      if (count === 0) return null
+                      return (
+                        <TooltipProvider key={severity}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={cn(colors[severity])}
+                                style={{ width: `${width}%` }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {SEVERITY_LABELS[severity]}: {count}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )
+                    })}
                   </div>
                   <div className="flex gap-4 text-xs">
                     <span className="flex items-center gap-1">
@@ -961,20 +960,18 @@ function OverviewTab({
                     <span className="text-muted-foreground">{findings.length} total</span>
                   </div>
                   <div className="flex h-3 overflow-hidden rounded-full bg-muted">
-                    {(['critical', 'high', 'medium', 'low', 'info'] as Severity[]).map(
-                      (severity) => {
-                        const count = sevCounts[severity]
-                        if (count === 0) return null
-                        const colors: Record<Severity, string> = SEVERITY_DOT_COLORS
-                        return (
-                          <div
-                            key={severity}
-                            className={cn(colors[severity])}
-                            style={{ width: `${(count / (findings.length || 1)) * 100}%` }}
-                          />
-                        )
-                      }
-                    )}
+                    {SEVERITY_LEVELS.map((severity) => {
+                      const count = sevCounts[severity]
+                      if (count === 0) return null
+                      const colors: Record<Severity, string> = SEVERITY_DOT_COLORS
+                      return (
+                        <div
+                          key={severity}
+                          className={cn(colors[severity])}
+                          style={{ width: `${(count / (findings.length || 1)) * 100}%` }}
+                        />
+                      )
+                    })}
                   </div>
                   <div className="flex flex-wrap gap-4 text-xs">
                     <span className="flex items-center gap-1">
@@ -1566,10 +1563,11 @@ function FindingsTab({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Severities</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
+                  {SEVERITY_LEVELS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {SEVERITY_LABELS[s]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Select

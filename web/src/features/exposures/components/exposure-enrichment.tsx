@@ -25,19 +25,17 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
-import {
-  CRITICALITY_BADGE_LIGHT,
-  CRITICALITY_LABELS,
-  type CriticalityLevel,
-} from '@/lib/criticality-colors'
+import { CRITICALITY_BADGE_LIGHT, type CriticalityLevel } from '@/lib/criticality-colors'
+import { CRITICALITY_LABELS, normalizeCriticality } from '@/lib/criticality'
 import type { ExposureEvent } from '@/lib/api/exposure-types'
 
-/** Narrow the free-form API string to a known criticality key, or null. */
+/**
+ * Narrow the free-form API string to a known, RATED criticality key, or null.
+ * Not rated (none) is not a signal worth a chip.
+ */
 function asCriticalityLevel(value?: string): CriticalityLevel | null {
-  if (value && value in CRITICALITY_BADGE_LIGHT) {
-    return value as CriticalityLevel
-  }
-  return null
+  const c = normalizeCriticality(value)
+  return c && c !== 'none' ? c : null
 }
 
 /** True when the exposure carries at least one CTEM signal worth surfacing. */
