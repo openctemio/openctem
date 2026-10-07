@@ -109,7 +109,6 @@ func registerTenantRoutes(
 		// Settings management (admin+)
 		r.PATCH("/settings/general", h.UpdateGeneralSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.PATCH("/settings/branding", h.UpdateBrandingSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
-		r.PATCH("/settings/branch", h.UpdateBranchSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 
 		// Pentest settings (admin+)
 		r.GET("/settings/pentest", h.GetPentestSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))

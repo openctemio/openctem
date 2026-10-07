@@ -33,6 +33,15 @@ tools never appear).
 Platform tools are managed by the platform (migrations and the seed). No
 tenant route changes them; there is no platform-admin tool route either.
 
+Capabilities follow the same model, as one resource `/api/v1/capabilities`:
+platform capabilities plus the tenant's own (`source=platform|custom`,
+`category`, `q`), reads with `scans:tools:read`, custom capabilities created,
+changed and deleted with `scans:tools:write` / `scans:tools:delete` (another
+tenant's or a platform capability is 404, the service reads it by tenant and
+id), and `include=usage` (which of the tenant's tools and sensors have it:
+`scans:tenant_tools:read`; sensor names need `sensors:read`; counts on the
+list, names on one capability).
+
 ### include=
 
 `include=settings,availability,stats` adds the tenant's data to each tool. The

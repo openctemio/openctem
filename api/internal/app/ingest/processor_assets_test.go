@@ -424,7 +424,7 @@ func TestBuildPropertiesFromCTIS_KeepsAddressForCorrelation(t *testing.T) {
 			Properties: ctis.Properties{"ip_address": "10.0.0.9"},
 		})
 		assert.ElementsMatch(t, []string{"10.0.0.9"}, props["ip_addresses"])
-		assert.Equal(t, "10.0.0.9", props["ip_address"], "the scanner's own key is left in place")
+		assert.NotContains(t, props, "ip_address", "a synonym folds into ip_addresses (RFC-042 §6.3.9)")
 	})
 
 	t.Run("vuls: hostname as name, address as value", func(t *testing.T) {

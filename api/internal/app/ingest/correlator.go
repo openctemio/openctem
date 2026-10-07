@@ -400,62 +400,17 @@ func (c *AssetCorrelator) CorrelateRepository(
 	return &CorrelationResult{}, nil
 }
 
-// ExtractAllIPs extracts all IP addresses from asset properties and name.
+// ExtractAllIPs returns the IP addresses an asset is known by: its name when
+// it is one, and the addresses its properties record (asset.IPAddresses,
+// which reads ip_addresses and every synonym of it).
 func ExtractAllIPs(properties map[string]any, assetName string) []string {
 	ipSet := make(map[string]bool)
-
-	// From name if it looks like IP
 	if ip := net.ParseIP(assetName); ip != nil {
 		ipSet[ip.String()] = true
 	}
-
-	if properties == nil {
-		return mapKeys(ipSet)
+	for _, ip := range asset.IPAddresses(properties) {
+		ipSet[ip] = true
 	}
-
-	// From properties.ip (legacy string)
-	if ip, ok := properties["ip"].(string); ok && ip != "" {
-		if parsed := net.ParseIP(ip); parsed != nil {
-			ipSet[parsed.String()] = true
-		}
-	}
-
-	// From properties.ip_address as a plain string (the shape sdk-go's Nessus /
-	// Tenable parser emits); before this a renamed Nessus host matched nothing
-	// and became a second asset.
-	if ip, ok := properties["ip_address"].(string); ok && ip != "" {
-		if parsed := net.ParseIP(ip); parsed != nil {
-			ipSet[parsed.String()] = true
-		}
-	}
-
-	// From properties.ip_address.address (structured)
-	if ipAddr, ok := properties["ip_address"].(map[string]any); ok {
-		if addr, ok := ipAddr["address"].(string); ok && addr != "" {
-			if parsed := net.ParseIP(addr); parsed != nil {
-				ipSet[parsed.String()] = true
-			}
-		}
-	}
-
-	// From properties.ip_addresses (array)
-	if ips, ok := properties["ip_addresses"].([]any); ok {
-		for _, v := range ips {
-			if s, ok := v.(string); ok && s != "" {
-				if parsed := net.ParseIP(s); parsed != nil {
-					ipSet[parsed.String()] = true
-				}
-			}
-		}
-	}
-	if ips, ok := properties["ip_addresses"].([]string); ok {
-		for _, s := range ips {
-			if parsed := net.ParseIP(s); parsed != nil {
-				ipSet[parsed.String()] = true
-			}
-		}
-	}
-
 	return mapKeys(ipSet)
 }
 
