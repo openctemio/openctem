@@ -50,6 +50,13 @@ type WorkflowPreviewNode struct {
 	// Availability is the tool's sensor status (ready, offline_only,
 	// no_sensor, ...) with the counts behind it; nil when unknown.
 	Availability *WorkflowPreviewAvailability `json:"availability,omitempty"`
+	// ChunkSize is how many targets one command of the step takes when
+	// the step is cut into chunks (0: the step is one command).
+	ChunkSize int `json:"chunk_size,omitempty"`
+	// MaxParallelSensors is how many sensors can work on the step at once:
+	// every online sensor that may run the tool for a chunked step, one
+	// otherwise; 0 when none can (or availability is unknown).
+	MaxParallelSensors int `json:"max_parallel_sensors"`
 	// Blocking is what the trigger would refuse this step with.
 	Blocking *PreviewError `json:"blocking,omitempty"`
 }
@@ -145,6 +152,19 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 	return out, nil
 }
 
+// maxParallelSensors is how many sensors can work on a step at once: a
+// chunked step is shared by every online eligible sensor, an unchunked one
+// runs on one.
+func maxParallelSensors(chunkSize, online int) int {
+	if online <= 0 {
+		return 0
+	}
+	if chunkSize > 0 {
+		return online
+	}
+	return 1
+}
+
 // previewStep resolves one step as the trigger would.
 func (s *Service) previewStep(ctx context.Context, tenantID shared.ID, zoneID *shared.ID, step *pipeline.Step) WorkflowPreviewNode {
 	node := WorkflowPreviewNode{StepKey: step.StepKey, Name: step.Name, Candidates: []string{}}
@@ -160,6 +180,7 @@ func (s *Service) previewStep(ctx context.Context, tenantID shared.ID, zoneID *s
 	node.Candidates = append(node.Candidates, resolved.Candidates...)
 	if resolved.HasStage {
 		node.Capability, node.Tier = resolved.Capability(), resolved.Stage.Tier.String()
+		node.ChunkSize = resolved.Stage.ChunkSizeFor(resolved.Name)
 	}
 	if s.toolAvailability == nil {
 		return node
@@ -172,6 +193,7 @@ func (s *Service) previewStep(ctx context.Context, tenantID shared.ID, zoneID *s
 		Status: string(ta.Status), SensorsOnline: ta.SensorsOnline,
 		SensorsTotal: ta.SensorsTotal, SensorsExcluded: ta.SensorsExcluded,
 	}
+	node.MaxParallelSensors = maxParallelSensors(node.ChunkSize, ta.SensorsOnline)
 	if !ta.Runnable() && ta.Status != sensordom.ToolDisabled {
 		node.Blocking = &PreviewError{Code: CodeNoSensorForTool, Message: toolUnavailableMessage(ta, step.StepKey, zoneID != nil)}
 	}
