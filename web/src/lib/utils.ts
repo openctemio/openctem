@@ -75,6 +75,11 @@ export function generateTempStepId(): string {
   return `temp-${nanoid(12)}`
 }
 
+/** True for an id made by generateTempStepId (a step not saved yet). */
+export function isTempStepId(id: string | undefined): boolean {
+  return !id || id.startsWith('temp-')
+}
+
 /**
  * Sanitize an external URL to prevent XSS via javascript: or data: protocols.
  * Only allows http: and https: (a bare host gets https). Returns '#' for
