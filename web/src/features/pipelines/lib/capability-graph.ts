@@ -214,7 +214,8 @@ export function insertAdapterStep(
     order: steps.length + 1,
     node_type: 'scanner',
     tool: cap.defaultTool,
-    capabilities: [cap.key],
+    // The tool is pinned: the server derives its capabilities from it.
+    capabilities: [],
     timeout_seconds: 3600,
     depends_on: [source.step_key],
     ui_position: { x: (sp.x + tp.x) / 2, y: (sp.y + tp.y) / 2 + 120 },
