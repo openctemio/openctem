@@ -52,7 +52,7 @@ describe('Scoping rows', () => {
       ['Overview', '/scoping'],
       ['Cycles', '/cycles'],
       ['Business context', '/crown-jewels'],
-      ['Boundaries', '/scope-config'],
+      ['Scope', '/scope'],
       ['Threat model', '/threat-model'],
     ])
   })
@@ -132,7 +132,7 @@ describe('moves out of Scoping', () => {
     ['/crown-jewels', 'Scoping', 'Business context'],
     ['/business-services', 'Scoping', 'Business context'],
     ['/business-units', 'Scoping', 'Business context'],
-    ['/scope-config', 'Scoping', 'Boundaries'],
+    ['/scope', 'Scoping', 'Scope'],
     ['/threat-model', 'Scoping', 'Threat model'],
     ['/attacker-profiles', 'Scoping', 'Threat model'],
     ['/attack-surface', 'Discovery', 'Attack surface'],
