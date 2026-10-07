@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -120,6 +121,12 @@ func (h *EASMHandler) Candidates(w http.ResponseWriter, r *http.Request) {
 	page := parseQueryIntBounded(query.Get("page"), 1, 1, 100000)
 	q.Limit = parseQueryIntBounded(query.Get("per_page"), 50, 1, MaxPerPage)
 	q.Offset = (page - 1) * q.Limit
+	// Which fixes an address row offers depends on the caller's own
+	// permissions (taken from the token, never the request).
+	q.Caller = easmapp.ReviewCaller{
+		CanApprove: middleware.HasPermission(r.Context(), permission.ScopeApprove.String()),
+		CanRequest: middleware.HasPermission(r.Context(), permission.ScopeWrite.String()),
+	}
 	out, err := h.review.Queue(r.Context(), tenantID, q)
 	if err != nil {
 		if errors.Is(err, shared.ErrValidation) {
