@@ -41,3 +41,18 @@ func TestChunkHostKeys(t *testing.T) {
 		t.Fatalf("a step outside the catalog got host keys %v", got)
 	}
 }
+
+// A service in every name form leases its host (research/63 PR0).
+func TestHostKey_ServiceNames(t *testing.T) {
+	for in, want := range map[string]string{
+		"vndirect.com.vn:443:tcp": "vndirect.com.vn",
+		"vndirect.com.vn:443/tcp": "vndirect.com.vn",
+		"[2001:db8::1]:443/tcp":   "2001:db8::1",
+		"2001:db8::1:443:tcp":     "2001:db8::1",
+		"10.0.0.0/24":             "10.0.0.0/24",
+	} {
+		if got := hostKey(in); got != want {
+			t.Errorf("hostKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

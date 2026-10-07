@@ -31,13 +31,14 @@ var baselinePermissionRow = regexp.MustCompile(`^INSERT INTO public\.permissions
 // listed file must exist, so a typo fails loudly).
 var permSeedMigrations = []string{
 	"001198_scope_entries.up.sql", // attack_surface:scope:approve (RFC-054)
+	"001223_finding_evidence.up.sql",
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
 // a mapping table whose rows are ('old', 'new', ...). The renames are applied,
 // in order, on top of the seeded ids.
 var permRenameMigrations = []string{
-	"001240_scan_workflow_rename.up.sql", // integrations:pipelines:* -> scans:workflows:*
+	"001285_scan_workflow_rename.up.sql", // integrations:pipelines:* -> scans:workflows:*
 }
 
 // permRemoveMigrations delete permission ids. Each lists the removed ids as
@@ -46,7 +47,7 @@ var permRenameMigrations = []string{
 var permRemoveMigrations = []string{
 	"001179_drop_tenant_tools_delete_permission.up.sql",
 	"001184_drop_vulnerability_write_permissions.up.sql",
-	"001241_drop_scan_workflow_execute_permission.up.sql",
+	"001286_drop_scan_workflow_execute_permission.up.sql",
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)

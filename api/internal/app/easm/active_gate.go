@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
@@ -111,6 +112,42 @@ func (g *ActiveGate) CoverOf(ctx context.Context, tenantID shared.ID, targets []
 	return out, nil
 }
 
+// AssetTargets names what a probe of each asset targets (the dry run's
+// asset_ids, RFC-054 §6.4): the asset name first, then the other values an
+// exclusion of the asset also matches. Only the tenant's live assets are
+// answered; another tenant's, a deleted or an unknown id is absent.
+// Implements scan.AssetTargetResolver.
+func (g *ActiveGate) AssetTargets(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID][]string, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	out := make(map[shared.ID][]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	if len(ids) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many assets for one lookup", shared.ErrValidation)
+	}
+	found, err := g.assets.GetByIDs(ctx, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load assets: %w", err)
+	}
+	for _, id := range ids {
+		a := found[id.String()]
+		if a == nil || !a.TenantID().Equals(tenantID) || strings.TrimSpace(a.Name()) == "" {
+			continue
+		}
+		values := []string{a.Name()}
+		for _, v := range scopeapp.AssetExclusionValues(string(a.Type()), a.Name(), a.Properties()) {
+			if v = strings.TrimSpace(v); v != "" && !strings.EqualFold(v, a.Name()) {
+				values = append(values, v)
+			}
+		}
+		out[id] = values
+	}
+	return out, nil
+}
+
 // Scope statuses of an asset (RFC-054 §6.6).
 const (
 	ScopeStatusInScope       = "in_scope"
@@ -178,6 +215,50 @@ func (g *ActiveGate) UnverifiedTargets(ctx context.Context, tenantID shared.ID, 
 		if !auth.Verified(t) {
 			out = append(out, t)
 		}
+	}
+	return out, nil
+}
+
+// TierExceeded returns the targets the tenant's scope authority covers, but
+// not at tier (RFC-054 §4.2 step 6, refusal tier_exceeds): every covering
+// scope target has a lower max_tier, or only a seed or verified domain
+// covers it and tier is above t1. Each is mapped to the covering entry with
+// the highest ceiling (nil for a seed or verified domain). Targets nothing
+// covers, and private or internal targets (scan zones gate them), are not
+// listed: the ownership gate answers for them. Part of scan.AttributionGate.
+func (g *ActiveGate) TierExceeded(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	out := map[string]*scopedom.RuleRef{}
+	if tier <= scopedom.TierPassive || len(targets) == 0 {
+		return out, nil
+	}
+	if len(targets) > maxGateItems {
+		return nil, fmt.Errorf("%w: too many targets for one tier check", shared.ErrValidation)
+	}
+	var auth *scopeauth.Authority
+	for _, t := range targets {
+		if !needsAuthority(t) {
+			continue
+		}
+		if auth == nil {
+			var err error
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+				return nil, err
+			}
+		}
+		if _, covered := auth.Covers(t); !covered {
+			continue
+		}
+		if _, ok := auth.CoversAt(t, tier); ok {
+			continue
+		}
+		var rule *scopedom.RuleRef
+		if c := auth.Ceiling(t); c != nil {
+			rule = &scopedom.RuleRef{Kind: scopedom.RuleScopeTarget, ID: c.ID().String(), Pattern: c.Pattern()}
+		}
+		out[t] = rule
 	}
 	return out, nil
 }

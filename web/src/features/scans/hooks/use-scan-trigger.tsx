@@ -26,6 +26,14 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { isFreezeRefusal } from '@/features/scan-freeze'
 import { triggerErrorHint } from '@/features/scan-zones'
+import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { get, post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -104,6 +112,11 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
   // to members holding scans:freeze:override (the API checks it again and
   // audits the override).
   const [frozen, setFrozen] = useState<{ scan: TriggerableScan; message: string } | null>(null)
+  // A trigger the scope gate refused: each target, why, and the fixes
+  // (TARGET_OUT_OF_SCOPE details, RFC-054 §6.5), as in the scan dialogs.
+  const [refusal, setRefusal] = useState<{ scan: TriggerableScan; refused: ScopeRefusal[] } | null>(
+    null
+  )
   const canOverrideFreeze = useHasPermission(Permission.ScanFreezeOverride)
 
   const fire = useCallback(
@@ -121,6 +134,12 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
         if (!overrideFreeze && canOverrideFreeze && isFreezeRefusal(error)) {
           // Stays in flight until the user answers.
           setFrozen({ scan, message: getErrorMessage(error, 'A scan freeze window is active') })
+          return
+        }
+        const refused = refusedFromError(error)
+        if (refused.length > 0) {
+          setRefusal({ scan, refused })
+          setInFlight(scan.id, false)
           return
         }
         toast.error(getErrorMessage(error, `Failed to trigger scan "${scan.name}"`), {
@@ -240,6 +259,17 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
         }}
       />
       {freezeDialog}
+      <Dialog open={!!refusal} onOpenChange={(open) => !open && setRefusal(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{refusal ? `"${refusal.scan.name}" was not started` : ''}</DialogTitle>
+            <DialogDescription>
+              The scope check refused some targets. Fix them, then trigger the scan again.
+            </DialogDescription>
+          </DialogHeader>
+          {refusal && <ScopeRefusalPanel refused={refusal.refused} />}
+        </DialogContent>
+      </Dialog>
     </>
   )
 

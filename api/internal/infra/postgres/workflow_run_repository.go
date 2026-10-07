@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/workflow"
@@ -332,80 +333,149 @@ func (r *WorkflowRunRepository) UpdateStatus(ctx context.Context, id shared.ID, 
 	return nil
 }
 
-// CreateRunIfUnderLimit atomically checks concurrent run limits and creates run if under limit.
-// Uses a transaction with row-level locking to prevent race conditions.
-// This prevents TOCTOU (time-of-check-time-of-use) vulnerabilities where multiple concurrent
-// triggers could bypass the limits.
-func (r *WorkflowRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *workflow.Run, maxPerWorkflow, maxPerTenant int) error {
+// CreateRunIfUnderLimit creates run when the automation and the tenant are
+// under their limits, in one transaction that holds the workflow row lock,
+// so concurrent triggers cannot both pass a check (TOCTOU):
+//
+//   - a run with the idempotency key of an existing run of the same
+//     automation is not created: workflow.ErrRunDuplicate;
+//   - over maxActivePerWorkflow / maxActivePerTenant waiting or running
+//     runs: MAX_CONCURRENT_RUNS;
+//   - over workflow.MaxRunsPerWorkflowPerHour / MaxRunsPerTenantPerHour runs
+//     created in the last hour: workflow.ErrCodeRunThrottled. The first
+//     refusal of the window also records one failed "THROTTLED" run, so the
+//     automation's history shows that events were dropped.
+//
+//nolint:cyclop // one transaction: lock, dedupe, two caps, two quotas, insert
+func (r *WorkflowRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *workflow.Run, maxActivePerWorkflow, maxActivePerTenant int) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Lock the workflow row to serialize concurrent triggers for the same workflow
-	// This prevents race conditions where multiple triggers check limits simultaneously
-	lockQuery := `SELECT id FROM workflows WHERE id = $1 FOR UPDATE`
-	if _, err := tx.ExecContext(ctx, lockQuery, run.WorkflowID.String()); err != nil {
+	// Lock the workflow row (in the run's tenant) to serialize concurrent
+	// triggers for the same workflow.
+	var locked string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM workflows WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+		run.WorkflowID.String(), run.TenantID.String()).Scan(&locked); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return shared.ErrNotFound
+		}
 		return fmt.Errorf("failed to lock workflow: %w", err)
 	}
 
-	// Count active runs for this workflow (no FOR UPDATE needed - we already hold lock on workflows row)
-	var workflowActiveCount int
-	workflowCountQuery := `
-		SELECT COUNT(*) FROM workflow_runs
-		WHERE workflow_id = $1 AND status IN ('pending', 'running')
-	`
-	if err := tx.QueryRowContext(ctx, workflowCountQuery, run.WorkflowID.String()).Scan(&workflowActiveCount); err != nil {
-		return fmt.Errorf("failed to count active runs for workflow: %w", err)
-	}
-	if workflowActiveCount >= maxPerWorkflow {
-		return shared.NewDomainError(
-			"MAX_CONCURRENT_RUNS",
-			fmt.Sprintf("maximum concurrent runs (%d) reached for this workflow", maxPerWorkflow),
-			shared.ErrValidation,
-		)
+	if run.IdempotencyKey != "" {
+		var exists bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM workflow_runs WHERE workflow_id = $1 AND idempotency_key = $2)`,
+			run.WorkflowID.String(), run.IdempotencyKey).Scan(&exists); err != nil {
+			return fmt.Errorf("failed to check run idempotency: %w", err)
+		}
+		if exists {
+			return workflow.ErrRunDuplicate
+		}
 	}
 
-	// Count active runs for this tenant
-	var tenantActiveCount int
-	tenantCountQuery := `
-		SELECT COUNT(*) FROM workflow_runs
-		WHERE tenant_id = $1 AND status IN ('pending', 'running')
-	`
-	if err := tx.QueryRowContext(ctx, tenantCountQuery, run.TenantID.String()).Scan(&tenantActiveCount); err != nil {
-		return fmt.Errorf("failed to count active runs for tenant: %w", err)
+	var wfActive, wfHour, tenantActive, tenantHour int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE workflow_id = $1 AND status IN ('pending', 'running')),
+			COUNT(*) FILTER (WHERE workflow_id = $1 AND created_at > NOW() - $3::interval),
+			COUNT(*) FILTER (WHERE status IN ('pending', 'running')),
+			COUNT(*) FILTER (WHERE created_at > NOW() - $3::interval)
+		FROM workflow_runs
+		WHERE tenant_id = $2 AND (status IN ('pending', 'running') OR created_at > NOW() - $3::interval)`,
+		run.WorkflowID.String(), run.TenantID.String(), quotaWindow()).Scan(&wfActive, &wfHour, &tenantActive, &tenantHour); err != nil {
+		return fmt.Errorf("failed to count runs: %w", err)
 	}
-	if tenantActiveCount >= maxPerTenant {
-		return shared.NewDomainError(
-			"MAX_CONCURRENT_RUNS",
-			fmt.Sprintf("maximum concurrent workflow runs (%d) reached for tenant", maxPerTenant),
-			shared.ErrValidation,
-		)
+	if wfActive >= maxActivePerWorkflow {
+		return shared.NewDomainError("MAX_CONCURRENT_RUNS",
+			fmt.Sprintf("maximum concurrent runs (%d) reached for this workflow", maxActivePerWorkflow), shared.ErrValidation)
+	}
+	if tenantActive >= maxActivePerTenant {
+		return shared.NewDomainError("MAX_CONCURRENT_RUNS",
+			fmt.Sprintf("maximum concurrent workflow runs (%d) reached for tenant", maxActivePerTenant), shared.ErrValidation)
+	}
+	var throttled string
+	switch {
+	case wfHour >= workflow.MaxRunsPerWorkflowPerHour:
+		throttled = fmt.Sprintf("this automation started %d runs in the last hour (limit %d); later events are dropped until the hour passes",
+			wfHour, workflow.MaxRunsPerWorkflowPerHour)
+	case tenantHour >= workflow.MaxRunsPerTenantPerHour:
+		throttled = fmt.Sprintf("the organization started %d automation runs in the last hour (limit %d); later events are dropped until the hour passes",
+			tenantHour, workflow.MaxRunsPerTenantPerHour)
+	}
+	if throttled != "" {
+		if err := r.recordThrottled(ctx, tx, run, throttled); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+		return workflow.NewRunThrottledError(throttled)
 	}
 
-	// Create the run within the same transaction
+	if err := r.insertRun(ctx, tx, run); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return nil
+}
+
+// quotaWindow is workflow.RunQuotaWindow as a Postgres interval.
+func quotaWindow() string {
+	return fmt.Sprintf("%d seconds", int(workflow.RunQuotaWindow.Seconds()))
+}
+
+// recordThrottled writes, once per automation per quota window, a failed run
+// saying events were dropped (so throttling is visible in the run history,
+// not only in logs).
+func (r *WorkflowRunRepository) recordThrottled(ctx context.Context, tx *sql.Tx, run *workflow.Run, msg string) error {
+	var recorded bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM workflow_runs
+		 WHERE workflow_id = $1 AND status = 'failed' AND error_message LIKE $2
+		   AND created_at > NOW() - $3::interval)`,
+		run.WorkflowID.String(), workflow.ThrottledRunPrefix+"%", quotaWindow()).Scan(&recorded); err != nil {
+		return fmt.Errorf("failed to check throttled marker: %w", err)
+	}
+	if recorded {
+		return nil
+	}
+	marker, err := workflow.NewRun(run.WorkflowID, run.TenantID, run.TriggerType, map[string]any{"throttled": true})
+	if err != nil {
+		return err
+	}
+	marker.Fail(workflow.ThrottledRunPrefix + msg)
+	return r.insertRun(ctx, tx, marker)
+}
+
+// insertRun inserts run inside tx.
+func (r *WorkflowRunRepository) insertRun(ctx context.Context, tx *sql.Tx, run *workflow.Run) error {
 	triggerData, err := json.Marshal(run.TriggerData)
 	if err != nil {
 		return fmt.Errorf("failed to marshal trigger data: %w", err)
 	}
-
-	context, err := json.Marshal(run.Context)
+	runContext, err := json.Marshal(run.Context)
 	if err != nil {
 		return fmt.Errorf("failed to marshal context: %w", err)
 	}
-
-	insertQuery := `
+	var idemKey any
+	if run.IdempotencyKey != "" {
+		idemKey = run.IdempotencyKey
+	}
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO workflow_runs (
 			id, workflow_id, tenant_id, trigger_type, trigger_data,
 			status, error_message, context,
 			total_nodes, completed_nodes, failed_nodes,
-			started_at, completed_at, triggered_by, created_at
+			started_at, completed_at, triggered_by, created_at,
+			subject_id, idempotency_key
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-	`
-
-	_, err = tx.ExecContext(ctx, insertQuery,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
 		run.ID.String(),
 		run.WorkflowID.String(),
 		run.TenantID.String(),
@@ -413,7 +483,7 @@ func (r *WorkflowRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 		triggerData,
 		string(run.Status),
 		run.ErrorMessage,
-		context,
+		runContext,
 		run.TotalNodes,
 		run.CompletedNodes,
 		run.FailedNodes,
@@ -421,15 +491,15 @@ func (r *WorkflowRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *
 		run.CompletedAt,
 		nullID(run.TriggeredBy),
 		run.CreatedAt,
+		nullID(run.SubjectID),
+		idemKey,
 	)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return workflow.ErrRunDuplicate
+		}
 		return fmt.Errorf("failed to create workflow run: %w", err)
 	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
 	return nil
 }
 
@@ -664,4 +734,64 @@ func scanNodeRun(rows *sql.Rows) (*workflow.NodeRun, error) {
 	}
 
 	return nr, nil
+}
+
+// HasRecentSubjectRun implements workflow.RecentSubjectRunChecker.
+func (r *WorkflowRunRepository) HasRecentSubjectRun(ctx context.Context, tenantID, workflowID, subjectID shared.ID, triggerType workflow.TriggerType, since time.Time) (bool, error) {
+	var found bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM workflow_runs
+		 WHERE tenant_id = $1 AND workflow_id = $2 AND subject_id = $3
+		   AND trigger_type = $4 AND created_at > $5)`,
+		tenantID.String(), workflowID.String(), subjectID.String(), string(triggerType), since).Scan(&found)
+	if err != nil {
+		return false, fmt.Errorf("failed to check recent subject run: %w", err)
+	}
+	return found, nil
+}
+
+// LatestOutcomes implements workflow.RunOutcomeReader.
+func (r *WorkflowRunRepository) LatestOutcomes(ctx context.Context, tenantID, workflowID shared.ID, n int) ([]workflow.RunStatus, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT status FROM workflow_runs
+		 WHERE tenant_id = $1 AND workflow_id = $2 AND status IN ('completed', 'failed')
+		   AND COALESCE(error_message, '') NOT LIKE $3
+		 ORDER BY created_at DESC
+		 LIMIT $4`,
+		tenantID.String(), workflowID.String(), workflow.ThrottledRunPrefix+"%", n)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read latest run outcomes: %w", err)
+	}
+	defer rows.Close()
+	out := make([]workflow.RunStatus, 0, n)
+	for rows.Next() {
+		var st string
+		if err := rows.Scan(&st); err != nil {
+			return nil, fmt.Errorf("failed to scan run outcome: %w", err)
+		}
+		out = append(out, workflow.RunStatus(st))
+	}
+	return out, rows.Err()
+}
+
+// FailStaleRuns implements workflow.StaleRunReaper. The open steps of the
+// runs it ends fail with them, in the same statement.
+func (r *WorkflowRunRepository) FailStaleRuns(ctx context.Context, before time.Time, reason string) (int64, error) {
+	var n int64
+	err := r.db.QueryRowContext(ctx, `
+		WITH stale AS (
+			UPDATE workflow_runs
+			   SET status = 'failed', error_message = $2, completed_at = NOW()
+			 WHERE status IN ('pending', 'running') AND created_at < $1
+			RETURNING id
+		), steps AS (
+			UPDATE workflow_node_runs
+			   SET status = 'failed', error_message = $2, error_code = 'RUN_INTERRUPTED', completed_at = NOW()
+			 WHERE workflow_run_id IN (SELECT id FROM stale) AND status IN ('pending', 'running')
+		)
+		SELECT COUNT(*) FROM stale`, before, reason).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("failed to end stale workflow runs: %w", err)
+	}
+	return n, nil
 }

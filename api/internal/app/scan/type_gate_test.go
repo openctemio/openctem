@@ -178,7 +178,9 @@ func TestResolveScanTargets_ToolLookupErrorFailsClosed(t *testing.T) {
 // Each workflow step gets only the run's typed targets its own tool can
 // scan; direct (untyped) targets keep the checks they always had.
 func TestFilterStepTargets(t *testing.T) {
-	svc := &Service{toolRepo: gateTools, logger: logger.NewNop()}
+	// Every name proven: this test is about types (the per-step proof of
+	// intrusive tools is TestFilterStepTargets_IntrusiveNeedsProof).
+	svc := &Service{toolRepo: gateTools, attributionGate: allProven{}, logger: logger.NewNop()}
 	rc := map[string]any{
 		"targets": []string{"https://app.example.com", "github.com/acme/app", "typed-by-hand.example.com"},
 		RunContextKeyTargetTypes: map[string]string{

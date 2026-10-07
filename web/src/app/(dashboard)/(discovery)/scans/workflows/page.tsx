@@ -72,10 +72,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
-import { Can, Permission } from '@/lib/permissions'
 
 import { ScanWorkflowForm } from '@/features/scan-workflows/components/workflow-form'
 import { ScansPageHeader, ScansSectionTabs } from '@/features/scans/components/scans-section-tabs'
+import { NewScanWorkflowButton } from '@/features/scan-workflows/components/new-scan-workflow-button'
 import {
   useScanWorkflows,
   useScanManagementStats,
@@ -447,12 +447,7 @@ export default function ScanWorkflowsPage() {
     <>
       <Main>
         <ScansPageHeader>
-          <Can permission={Permission.ScanWorkflowsWrite} mode="disable">
-            <Button size="sm" onClick={handleOpenCreateForm}>
-              <Plus className="me-2 h-4 w-4" />
-              New workflow
-            </Button>
-          </Can>
+          <NewScanWorkflowButton label="New workflow" onClick={handleOpenCreateForm} />
         </ScansPageHeader>
         <ScansSectionTabs />
 
@@ -507,12 +502,7 @@ export default function ScanWorkflowsPage() {
               title="No workflows yet"
               description="Create a workflow to chain scan steps together."
               action={
-                <Can permission={Permission.ScanWorkflowsWrite} mode="disable">
-                  <Button size="sm" onClick={handleOpenCreateForm}>
-                    <Plus className="me-2 h-4 w-4" />
-                    Create workflow
-                  </Button>
-                </Can>
+                <NewScanWorkflowButton label="Create workflow" onClick={handleOpenCreateForm} />
               }
             />
           ) : (

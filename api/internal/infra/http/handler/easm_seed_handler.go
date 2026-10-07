@@ -33,7 +33,11 @@ type EASMSeedHandler struct {
 	sweeper   SeedSweeper
 	admins    SeedAdminNotifier
 	scopeJoin ScopeJoinReevaluator
+	actors    MemberNamer
 }
+
+// SetActorNamer names the people on the returned scope entry.
+func (h *EASMSeedHandler) SetActorNamer(n MemberNamer) { h.actors = n }
 
 // SeedAdminNotifier tells every administrator that scope grew
 // (*scope.Service).
@@ -201,7 +205,9 @@ func (h *EASMSeedHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(toScopeTargetResponse(t))
+	out := toScopeTargetResponse(t)
+	resolveActors(r.Context(), h.actors, h.logger, tenantID.String(), targetActorRefs(&out))
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // auditEntry records the seed's scope entry as a scope entry creation, with

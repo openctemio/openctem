@@ -124,6 +124,9 @@ func TestReviewByRule(t *testing.T) {
 	if err != nil || res.Target == nil {
 		t.Fatalf("accept_rule: %+v %v", res, err)
 	}
+	if n := countRows(t, db, `SELECT count(*) FROM scope_targets WHERE tenant_id = $1 AND origin = 'review_rule'`, tenantA); n != 1 {
+		t.Fatalf("accepted rule entries with origin review_rule = %d", n)
+	}
 	for id, want := range map[shared.ID]attribution.State{a: attribution.StateConfirmed, b: attribution.StateConfirmed, ex: attribution.StateNeedsReview, c: attribution.StateNeedsReview} {
 		if st := attributionState(t, db, tenantA, id); st != want {
 			t.Errorf("%s = %s, want %s", id, st, want)
@@ -138,6 +141,9 @@ func TestReviewByRule(t *testing.T) {
 	res, err = svc.Apply(ctx, tenantA, easmapp.RuleActionInput{Action: easmapp.RuleRejectRule, TargetType: "cidr", Pattern: "203.0.113.0/24", Reason: "provider range", Actor: admin})
 	if err != nil || res.Exclusion == nil || res.Exclusion.Status() != scopedom.StatusPending || len(res.Preview.Rejected) != 2 {
 		t.Fatalf("reject_rule: %+v %v", res, err)
+	}
+	if res.Exclusion.Origin() != scopedom.OriginReviewRule {
+		t.Fatalf("reject_rule exclusion origin = %s", res.Exclusion.Origin())
 	}
 	for _, id := range []shared.ID{ip1, ip2} {
 		if st := attributionState(t, db, tenantA, id); st != attribution.StateRejected {

@@ -1,8 +1,9 @@
 /**
  * Scope Feature - Barrel Export
  *
- * Provides shared scope management types, utilities, and components
- * that link Scope Config with Assets Inventory.
+ * Scope entries, exclusions and settings (RFC-054). Whether a target may be
+ * probed is answered by the server (POST /scope/check, `useScopeCheck`);
+ * nothing here matches patterns in the browser.
  */
 
 // Types
@@ -11,16 +12,28 @@ export * from './types'
 // API Types and Hooks
 export * from './api'
 
-// Utilities
-export * from './lib/scope-matcher'
-
-// Mock data removed — all pages use real API
+// Codes, entry helpers
+export * from './lib/scope-codes'
+export * from './lib/scope-entry'
 
 // Components
-export { ScopeBadge, ScopeBadgeSimple } from './components/scope-badge'
-export { ScopeCoverageCard, ScopeCoverageInline } from './components/scope-coverage-card'
+export * from './components/scope-target-type'
+export { ScopeEntryDialog, type ScopeEntryDraft } from './components/scope-entry-dialog'
 export {
-  ScopeErrorBoundary,
-  ScopeBadgeErrorBoundary,
-  withScopeErrorBoundary,
-} from './components/scope-error-boundary'
+  ScopeCheckList,
+  ScopeCheckRow,
+  ScopeFixButtons,
+  ScopeRefusalPanel,
+  scopeRefusalSummary,
+  refusedFromError,
+  viaText,
+  type ScopeRefusal,
+} from './components/scope-check-results'
+export { ScopeCheckBadge } from './components/scope-check-badge'
+export {
+  ScopeChangePreview,
+  consequenceText,
+  previewSummary,
+  type ScopeChangeLine,
+  type ScopeChangeMark,
+} from './components/scope-change-preview'

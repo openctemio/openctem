@@ -35,6 +35,8 @@ type Target struct {
 	approvedAt        *time.Time
 	rejectedBy        string
 	rejectedAt        *time.Time
+
+	origin Origin
 }
 
 // NewTarget creates a new scope target: active, permanent, t1.
@@ -191,6 +193,8 @@ type Exclusion struct {
 	createdBy     string
 	createdAt     time.Time
 	updatedAt     time.Time
+
+	origin Origin
 }
 
 // NewExclusion creates a new scope exclusion awaiting approval.

@@ -33,6 +33,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
 import { useUpdateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
 import type { ScanConfig } from '@/lib/api/scan-types'
+import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
 
 interface EditScanDialogProps {
   scanConfig: ScanConfig | null
@@ -83,6 +84,9 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
   const currentStepIndex = STEPS.indexOf(currentStep)
   const isFirstStep = currentStepIndex === 0
   const isLastStep = currentStepIndex === STEPS.length - 1
+
+  // Targets the server refused on save (TARGET_OUT_OF_SCOPE details).
+  const [refused, setRefused] = useState<ScopeRefusal[]>([])
 
   const handleDataChange = (data: Partial<NewScanFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }))
@@ -149,6 +153,12 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       onSuccess?.()
       onOpenChange(false)
     } catch (error) {
+      const scopeRefused = refusedFromError(error)
+      if (scopeRefused.length > 0) {
+        setRefused(scopeRefused)
+        setCurrentStep('targets')
+        return
+      }
       console.error('Failed to update scan:', error)
       toast.error(getErrorMessage(error, 'Failed to update scan. Please try again.'))
     } finally {
@@ -157,6 +167,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
   }
 
   const handleClose = () => {
+    setRefused([])
     setCurrentStep('basic')
     onOpenChange(false)
   }
@@ -172,7 +183,8 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
               Target changes require creating a new scan configuration. Targets shown here are
               read-only.
             </div>
-            <TargetsStep data={formData} onChange={handleDataChange} />
+            {refused.length > 0 && <ScopeRefusalPanel refused={refused} className="mx-6 mt-4" />}
+            <TargetsStep data={formData} onChange={handleDataChange} showCoverage={false} />
           </div>
         )
       case 'options':

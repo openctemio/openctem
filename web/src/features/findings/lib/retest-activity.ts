@@ -10,9 +10,14 @@
 import type { ActivityType } from '../types'
 
 const OUTCOME_TEXT: Record<string, string> = {
-  fixed: 'Fixed — no longer detected',
-  still_present: 'Still present',
-  unknown: 'Unknown',
+  confirmed_fixed: 'Verified fixed',
+  still_vulnerable: 'Still vulnerable',
+  not_reproduced: 'Not reproduced (not confirmed)',
+  inconclusive: 'Inconclusive',
+  // Timeline entries written before RFC-057 R2 keep their outcome words.
+  fixed: 'Fixed (unverified non-match)',
+  still_present: 'Still vulnerable',
+  unknown: 'Inconclusive',
 }
 
 /**
@@ -27,6 +32,18 @@ export function retestActivity(
 ): { type: ActivityType; content: string } | null {
   const template = typeof changes.template_id === 'string' ? changes.template_id : ''
   const via = template ? ` (template ${template})` : ''
+  if (apiType === 'evidence_revealed') {
+    // Who revealed which masked evidence values, and why. Never the values.
+    const n = Array.isArray(changes.placeholders) ? changes.placeholders.length : 0
+    const values = `${n} masked evidence value${n === 1 ? '' : 's'}`
+    const content =
+      changes.purpose === 'copy_curl'
+        ? `Copied the reproduction curl with ${values}`
+        : changes.purpose === 'copy'
+          ? `Copied ${values}`
+          : `Revealed ${values}`
+    return { type: 'evidence_added', content }
+  }
   if (apiType === 'retest_requested') {
     const auto = changes.trigger === 'auto'
     return { type: 'verified', content: `${auto ? 'Auto-retest' : 'Retest'} started${via}` }
