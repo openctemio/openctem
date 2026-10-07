@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import useSWR from 'swr'
 import { ArrowRight, Link2 } from 'lucide-react'
 
@@ -9,23 +10,7 @@ import { TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { pipelineRunEndpoints } from '@/lib/api/endpoints'
 import type { RunStage, RunStageList } from '@/lib/api/generated'
-
-/** Catalog stage labels (GET /api/v1/scans/stages names them the same way). */
-const STAGE_LABELS: Record<string, string> = {
-  'discover.subdomains': 'Subdomain discovery',
-  'resolve.dns': 'DNS resolution',
-  'scan.ports': 'Port scan',
-  'probe.http': 'HTTP probe',
-  'crawl.web': 'Web crawl',
-  'vuln.templates': 'Vulnerability templates',
-  'dast.web': 'Web application scan',
-  'secrets.code': 'Secrets in code',
-  'sast.code': 'Static analysis',
-  'sca.deps': 'Dependency scan',
-  'iac.misconfig': 'IaC misconfiguration',
-  'container.image': 'Container image scan',
-  'network_va.connector': 'Network VA (connector)',
-}
+import { useCapabilityTable } from '@/features/pipelines/lib/use-capability-table'
 
 /** Why the hop router left targets out (scan_run_targets reasons). */
 const SKIP_LABELS: Record<string, string> = {
@@ -46,9 +31,26 @@ const TIER_LABELS: Record<string, string> = {
   T2: 'Intrusive',
 }
 
-export function stageLabel(stage?: string): string {
+/**
+ * A stage's label: its capability name as GET /api/v1/scans/stages serves
+ * it, else the key itself.
+ */
+/**
+ * A stage's chunks in one line, from the API's counts: "3 of 10 chunks
+ * done, 2 running, 4 queued, 1 failed". Empty for a stage of one command.
+ */
+export function chunkSummary(c?: RunStage['chunks']): string {
+  if (!c || (c.total ?? 0) <= 1) return ''
+  const parts = [`${c.completed ?? 0} of ${c.total} chunks done`]
+  if (c.running) parts.push(`${c.running} running`)
+  if (c.queued) parts.push(`${c.queued} queued`)
+  if (c.failed) parts.push(`${c.failed} failed`)
+  return parts.join(', ')
+}
+
+export function stageLabel(stage?: string, names?: Record<string, string>): string {
   if (!stage) return 'Custom step'
-  return STAGE_LABELS[stage] ?? stage
+  return names?.[stage] ?? stage
 }
 
 export function skipLabel(reason: string): string {
@@ -75,6 +77,11 @@ export function RunStageLanes({
   runId: string
   refreshInterval?: number
 }) {
+  const { table } = useCapabilityTable()
+  const names = useMemo(
+    () => Object.fromEntries(table.capabilities.map((c) => [c.key, c.name])),
+    [table]
+  )
   const { data, error, isLoading } = useSWR<RunStageList>(
     pipelineRunEndpoints.stages(runId),
     (url: string) => get<RunStageList>(url),
@@ -92,19 +99,19 @@ export function RunStageLanes({
   return (
     <ol className="space-y-2" aria-label="Stages of this run">
       {lanes.map((lane) => (
-        <StageLane key={lane.stage_key} lane={lane} />
+        <StageLane key={lane.stage_key} lane={lane} names={names} />
       ))}
     </ol>
   )
 }
 
-function StageLane({ lane }: { lane: RunStage }) {
+function StageLane({ lane, names }: { lane: RunStage; names: Record<string, string> }) {
   const reasons = skippedReasons(lane.skipped)
   const tier = lane.tier ?? 'T0'
   return (
     <li className="rounded-md border p-3" data-testid="stage-lane">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium">{stageLabel(lane.stage)}</span>
+        <span className="font-medium">{stageLabel(lane.stage, names)}</span>
         <TruncatedText
           value={lane.tool}
           label="Tool"
@@ -137,6 +144,33 @@ function StageLane({ lane }: { lane: RunStage }) {
           </span>
         )}
       </div>
+      {chunkSummary(lane.chunks) && (
+        <div className="mt-2 text-xs" data-testid="stage-chunks">
+          <p className="tabular-nums text-muted-foreground">{chunkSummary(lane.chunks)}</p>
+          {(lane.sensors?.length ?? 0) > 0 && (
+            <ul className="mt-1 space-y-0.5" aria-label="Chunks by sensor">
+              {lane.sensors!.map((s, i) => (
+                <li key={s.sensor_id ?? `platform-${i}`} className="flex items-center gap-2">
+                  {s.platform ? (
+                    <span>Platform sensors</span>
+                  ) : (
+                    <TruncatedText
+                      value={s.sensor_name || s.sensor_id || 'Sensor'}
+                      label="Sensor"
+                      className="max-w-[180px]"
+                    />
+                  )}
+                  <span className="ms-auto tabular-nums text-muted-foreground">
+                    {s.total} chunk(s){s.completed ? `, ${s.completed} done` : ''}
+                    {s.running ? `, ${s.running} running` : ''}
+                    {s.failed ? `, ${s.failed} failed` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {reasons.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Skipped targets by reason">
           {reasons.map(([reason, n]) => (

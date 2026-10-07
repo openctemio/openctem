@@ -180,6 +180,24 @@ single check. An integration test checks that each passes the graph check
 and resolves a seeded platform tool for every step. The presets they replace
 are deactivated, not deleted.
 
+### 1.4 Workflow preview
+
+`POST /api/v1/scans/workflow-preview` (`scans:write`) answers what a workflow
+scan would do if it started now, without creating anything
+(`internal/app/scan/workflow_preview.go`):
+
+- **Per step:** the capability, the tier, the tool `ResolveStepTool` picks, and the
+  tool's sensor availability in the scan's zone. The step is blocking when the
+  trigger's `NO_SENSOR_FOR_TOOL` check would refuse it. The code and message are
+  the trigger's, and a unit test asserts this parity.
+- **Targets:** the zone routing preview with scan type `workflow`, which runs the
+  trigger's target resolution, scope exclusions and zone plan. The sample is cut
+  to 20 targets.
+- **Freeze:** a freeze window active now for the scan's zone, for active work.
+
+The workflow must be the organization's own or a system workflow (otherwise
+404). The new-scan wizard shows the preview on its last step.
+
 ## 2. The planner: one dispatcher, capability → tool
 
 Every pipeline step command is built on one path:
@@ -228,6 +246,14 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `crawl.web` and `dast.web` 10; the code, image and connector capabilities
   are not cut. A one-target tool keeps one command per step. If a later
   chunk cannot be created, the ones already created are canceled.
+  Where the chunks went: `GET /pipeline-runs/{id}/stages` gives each stage
+  its chunk counts by state and the share of each tenant sensor that took
+  one (`StepSensorShares`, tenant-scoped; platform jobs are counted as
+  platform without the platform sensor's identity). The run panel shows them
+  per lane and on the workflow graph, and the workflow preview shows each
+  step's chunk size and how many sensors can work on it at once
+  (`max_parallel_sensors`: every online eligible sensor for a chunked step,
+  one otherwise).
 - **One sensor per host** (platform-side politeness, migration 001186). A
   chunk of an active stage (T1 and above) records the hosts it sends traffic
   to in `commands.host_keys` (lower-case name or address, no scheme, port or

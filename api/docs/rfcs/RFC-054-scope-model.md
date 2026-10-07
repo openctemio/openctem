@@ -367,13 +367,17 @@ response by the guardrails PR. `t2` is never a default.
 
 ```json
 { "targets": ["vndirect.com.vn", "promo-landing.net"],
-  "asset_ids": [],
   "sensor_preference": "auto",
   "tier": 1 }
 ```
 
-At most 200 targets. Runs §4.2 steps 1–9 for the caller (act scope included)
-without dispatching, auditing or logging a refusal.
+At most 200 targets (an inventory asset is checked by its name). Runs §4.2
+steps 1–9 for the caller (act scope included) without dispatching, auditing
+or logging a refusal. The act scope answers first for a restricted member
+(`not_an_asset`, `out_of_data_scope`), so the dry run tells them nothing
+about assets outside their data scope; `proof_required` applies with
+`sensor_preference=platform` under the operator's proof mode and to
+`tier: 2`.
 
 ```json
 { "results": [
@@ -391,9 +395,10 @@ without dispatching, auditing or logging a refusal.
 ] }
 ```
 
-`via.kind`: `scope_target`, `seed`, `verified_domain`, `internal` (zone-gated),
-`not_applicable` (repository, cloud resource). `via.proof`: `verified` or
-`asserted`. `rule` names the caller's own rule that refused: `{"kind":
+`via.kind`: `scope_target`, `seed`, `verified_domain`, or `internal` (a
+private target routed by its zone, or a target no authority needs to cover).
+`via.proof`: `verified` or `asserted`. `zone` is set for zone-routed
+targets. `rule` names the caller's own rule that refused: `{"kind":
 "exclusion"|"scope_target"|"tombstone"|"asset", "id", "pattern"}`; for
 platform policy it is `{"kind": "platform_policy"}` with no detail.
 
@@ -418,7 +423,9 @@ platform policy it is `{"kind": "platform_policy"}` with no detail.
 | `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
 
 Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
-"domain"?}`. Fixes are filtered by the caller's permissions.
+"domain"?, "requires"?}`; `requires` is the permission the action needs. The
+dry run keeps only the fixes the caller may take (an approver gets
+`allow_temporarily`, a member `request_access`, never both).
 
 The same `code` (and `fixes`) appear on every refusal the API returns:
 `TARGET_OUT_OF_SCOPE` errors list `details.refused[]` as
@@ -601,8 +608,23 @@ None of these is a tenant setting; nothing a tenant sends turns them off.
 | `all` | every active probe needs a verified root (internal, zone-gated targets excepted) |
 
 Unset: `platform_sensors` when `TENANT_CREATION_MODE=self_service`, else
-`off`. Intrusive (T2) probes always need a verified root. IP targets have no
-proof kind yet, so they are refused where proof is required.
+`off`; any other value fails startup. Intrusive (T2) probes always need a
+verified root. IP targets have no proof kind yet, so they are refused where
+proof is required.
+
+Where it is enforced:
+
+- `platform_sensors` (and `all`): the scan trigger sends a job to platform
+  sensors only when every target is at or under a verified domain. An
+  explicit `sensor_preference=platform` with an unproven target is refused
+  (`400 PROOF_REQUIRED`, the unproven targets named); `auto` keeps the job on
+  tenant sensors.
+- `all`: the ownership gate refuses an unproven internet target on every
+  path (never-stored state `proof_required`, refusal code `proof_required`).
+- Intrusive: scan create, quick scan and every single-scanner run refuse a
+  scan whose tool only implements T2 stages (for example `zap`) when a target
+  is unproven (`PROOF_REQUIRED`). Workflow scans keep RFC-036's rule that an
+  intrusive stage never takes discovered targets; per-step proof is P1.
 
 ### 8.2 Deny list and public suffixes
 
@@ -618,13 +640,22 @@ Checked when an entry is created or widened and again at dispatch:
   allowed;
 - `0.0.0.0/0`, `::/0`, link-local and cloud metadata addresses;
 - the operator's own ranges and names, `SCOPE_DENY_EXTRA` (comma-separated
-  domains and CIDRs).
+  domains and CIDRs; an entry that is neither fails startup).
+
+A new entry that hits them is refused (`400 PUBLIC_SUFFIX`, `DENY_LIST`). At
+dispatch the ownership gate refuses a deny-listed target on every path,
+even inside the tenant's own scope target or after a person confirmed it
+(never-stored state `platform_denied`, refusal code `deny_list`). The
+refusal names no rule: "the platform does not allow this target".
 
 ### 8.3 CIDR caps
 
 A public IPv4 range larger than `/SCOPE_MAX_PUBLIC_CIDR_V4` (default 16) or
-IPv6 larger than `/SCOPE_MAX_PUBLIC_CIDR_V6` (default 32) is refused. Private
-ranges are gated by zones and are not capped.
+IPv6 larger than `/SCOPE_MAX_PUBLIC_CIDR_V6` (default 32) is refused
+(`400 CIDR_TOO_LARGE`), including `a-b` ranges by their size. Private ranges
+are gated by zones and are not capped.
+
+`GET /scope/settings` shows the operator's `active_proof` (read-only).
 
 ## 9. Rollout and upgrade
 
