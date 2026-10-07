@@ -116,6 +116,37 @@ tool runs it:
 `GET /api/v1/scans/stages` serves every capability with its contract and
 implementations, plus `port_types` and `adapters`.
 
+### 1.2 Capability nodes: tool selection and settings
+
+A pipeline step is a **capability node**. It names a capability and picks its
+tool in one of three ways (`tool_selection` on the step response):
+
+- **auto** (no tool, no `prefer_tools`): any implementation of the capability,
+  in catalog order, with the default first;
+- **prefer** (`prefer_tools`, migration 001162): the listed tools, in that
+  order. Each must implement the capability;
+- **pin** (`tool`): that tool only (strict, G10).
+
+A pin and a prefer list together are refused.
+
+Settings (`config`) follow the contract:
+
+- **Standard params** are checked against their type, enum and bounds on every
+  save. Each tool receives them under its own config key. A tool that does not
+  take a standard param the step sets is **not eligible** for the node: the planner
+  skips it and says why (`NO_MATCHING_TOOL`), and never drops the value silently.
+- **Tool extras** go under `x.<tool>`, and only on a step pinned to that tool. On a
+  pinned step a plain key is also the pinned tool's own setting, as before
+  capabilities.
+- On an auto or prefer step, any other key is refused: it would reach only some
+  of the tools the platform may pick. `exclude` is read by the executor for
+  every tool.
+
+When a step is queued, its step run records the **capability it ran**
+(`step_runs.capability`, for example `scan.ports@1`) and the **tool the planner
+picked** (`step_runs.tool`). The tier of a capability node is the tier of its
+capability: every built-in implementation shares it.
+
 ## 2. The planner: one dispatcher, capability → tool
 
 Every pipeline step command is built on one path:
