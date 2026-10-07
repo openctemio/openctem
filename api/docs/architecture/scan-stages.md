@@ -116,6 +116,21 @@ tool runs it:
 `GET /api/v1/scans/stages` serves every capability with its contract and
 implementations, plus `port_types` and `adapters`.
 
+**Tool Contract v1** ([RFC-055](../rfcs/RFC-055-tool-contract-v1.md),
+[tool-contract.md](tool-contract.md)) moves the contracts to one shared
+source, the `github.com/openctemio/ctis/capability` taxonomy, which the SDK
+and the sensor read too. The taxonomy keeps every id above. It adds:
+- phase and CTEM stage;
+- ATT&CK, D3FEND and CAPEC references;
+- required output as CTIS path rules, in place of the abstract field names;
+- `discover.cloud`, `sbom.generate` and `import.file`.
+
+Tools then declare `implements: [{capability: scan.ports@1, params: …}]` in
+their descriptor. The per-tool maps in `contract.go` (`toolParams`,
+`batchTools`) and `pipeline.stepToolSettings` become descriptor lookups
+behind the same functions. A built-in name fallback stays for sensors
+without descriptors, for one release train.
+
 ## 2. The planner: one dispatcher, capability → tool
 
 Every pipeline step command is built on one path:
