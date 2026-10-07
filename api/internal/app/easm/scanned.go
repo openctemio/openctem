@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -316,16 +318,7 @@ func (s *ScanStamper) scopeJoinEvidence(ctx context.Context, tenantID shared.ID,
 }
 
 // hostOf is the lower-case host an asset name names ("" for none).
-func hostOf(name string) string {
-	h := strings.ToLower(strings.TrimSpace(name))
-	if i := strings.Index(h, "://"); i >= 0 {
-		h = h[i+3:]
-	}
-	if i := strings.IndexAny(h, "/?#:"); i >= 0 {
-		h = h[:i]
-	}
-	return strings.TrimSuffix(h, ".")
-}
+func hostOf(name string) string { return asset.HostOf(name) }
 
 func truncate(s string, n int) string {
 	if len(s) <= n {
