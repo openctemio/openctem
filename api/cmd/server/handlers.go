@@ -830,6 +830,14 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	if svc.ActiveGate != nil {
 		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
 	}
+	// Address rows explain why they stay in review and offer the fix.
+	review.SetAddressExplainer(repos.Attribution, func(ctx context.Context, tenantID shared.ID) (string, error) {
+		t, err := repos.Tenant.GetByID(ctx, tenantID)
+		if err != nil {
+			return "", err
+		}
+		return t.Name(), nil
+	})
 	h.SetReview(review, audit)
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
