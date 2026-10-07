@@ -43,6 +43,11 @@ const (
 	PortCloudAccount   PortType = "cloud_account"
 	// PortFinding is an output sink (and an input only for enrichers).
 	PortFinding PortType = "finding"
+	// PortEndpoint is a stream of web endpoints (CTIS 1.6 endpoints[]). They
+	// are a sub-inventory of their origin, not assets (RFC-056), so the
+	// stream carries the origin: a consumer runs against the origin and the
+	// incremental selector expands it to the origin's endpoints.
+	PortEndpoint PortType = "endpoint"
 )
 
 // PortTypeInfo describes one port type.
@@ -66,6 +71,7 @@ var portTypes = []PortTypeInfo{
 	{Type: PortContainerImage, Label: "Container image", Carries: []asset.TypeRef{tContainer}},
 	{Type: PortCloudAccount, Label: "Cloud account", Carries: []asset.TypeRef{canonical(asset.AssetTypeCloudAccount)}},
 	{Type: PortFinding, Label: "Finding"},
+	{Type: PortEndpoint, Label: "Web endpoint", Carries: []asset.TypeRef{tHTTPService}},
 }
 
 // PortTypes returns the closed port type set, in display order.
