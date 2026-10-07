@@ -396,11 +396,12 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		st, ferr := f.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
 		if ferr != nil {
 			var de *shared.DomainError
-			if !chained || !errors.As(ferr, &de) || de.Code != "INCOMPATIBLE_TARGETS" {
+			if !chained || !errors.As(ferr, &de) || (de.Code != "INCOMPATIBLE_TARGETS" && de.Code != scanapp.CodeStepTargetsRefused) {
 				return fmt.Errorf("step %s: %w", step.StepKey, ferr)
 			}
 			// A chained step may take no seed: its targets come from
-			// what its predecessors found.
+			// what its predecessors found (the hop gate checks those at
+			// the step's tier).
 			st = &scanapp.StepTargets{Targets: []string{}}
 		}
 		stepTargets = st

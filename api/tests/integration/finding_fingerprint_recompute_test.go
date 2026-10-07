@@ -251,7 +251,7 @@ func TestApproveAndMerge_MovesRetestsWithOnePending(t *testing.T) {
 				template_id, target, deadline_at) VALUES ($1,$2,$3,'manual','pending','new','tpl','https://a.example',NOW()+interval '1 hour')`
 		if status == "completed" {
 			q = `INSERT INTO finding_retests (id, tenant_id, finding_id, trigger, status, outcome, completed_at,
-				prior_status, template_id, target, deadline_at) VALUES ($1,$2,$3,'manual','completed','fixed',NOW(),
+				prior_status, template_id, target, deadline_at) VALUES ($1,$2,$3,'manual','completed','not_reproduced',NOW(),
 				'new','tpl','https://a.example',NOW()-interval '1 hour')`
 		}
 		if _, err := f.db.Exec(q, id, f.tenant.String(), finding.String()); err != nil {
@@ -274,10 +274,10 @@ func TestApproveAndMerge_MovesRetestsWithOnePending(t *testing.T) {
 	if n := f.count(`SELECT count(*) FROM finding_retests WHERE id=$1 AND status='pending'`, survivorPending); n != 1 {
 		t.Error("the survivor's own pending retest must keep running")
 	}
-	if n := f.count(`SELECT count(*) FROM finding_retests WHERE id=$1 AND status='completed' AND outcome='unknown'`, loserPending); n != 1 {
+	if n := f.count(`SELECT count(*) FROM finding_retests WHERE id=$1 AND status='completed' AND outcome='inconclusive'`, loserPending); n != 1 {
 		t.Error("the loser's pending retest must be closed as unknown")
 	}
-	if n := f.count(`SELECT count(*) FROM finding_retests WHERE id=$1 AND outcome='fixed'`, loserDone); n != 1 {
+	if n := f.count(`SELECT count(*) FROM finding_retests WHERE id=$1 AND outcome='not_reproduced'`, loserDone); n != 1 {
 		t.Error("the loser's completed retest must keep its outcome")
 	}
 }

@@ -70,6 +70,9 @@ type CreateTargetInput struct {
 	MaxTier       string `validate:"omitempty,oneof=t0 t1 t2 T0 T1 T2"`
 	// Actor is the caller (zero: a system path, effective at once).
 	Actor Actor
+	// Origin is the creating path (empty: manual, request or system from
+	// the actor).
+	Origin scopedom.Origin
 }
 
 // CreateTarget creates a scope entry: effective at once, pending approval,
@@ -125,6 +128,7 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	if len(input.Tags) > 0 {
 		target.UpdateTags(input.Tags)
 	}
+	target.SetOrigin(entryOrigin(input.Origin, input.Actor, d.request))
 
 	if err := s.targetRepo.Create(ctx, target); err != nil {
 		return nil, fmt.Errorf("failed to create scope target: %w", err)
@@ -470,6 +474,22 @@ type CreateExclusionInput struct {
 	// the pattern is then a host pattern.
 	PathPrefix *string
 	Methods    []string
+	// Origin is the creating path (empty: manual).
+	Origin scopedom.Origin
+}
+
+// entryOrigin is the origin a new entry records: the path's own when it
+// names one, else a member's request, a system write, or a manual add.
+func entryOrigin(given scopedom.Origin, actor Actor, request bool) scopedom.Origin {
+	switch {
+	case given.Valid():
+		return given
+	case request:
+		return scopedom.OriginRequest
+	case actor.system():
+		return scopedom.OriginSystem
+	}
+	return scopedom.OriginManual
 }
 
 // CreateExclusion creates a new scope exclusion.
@@ -499,6 +519,7 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 		return nil, err
 	}
 	exclusion.SetWeb(web)
+	exclusion.SetOrigin(input.Origin)
 
 	if err := s.exclusionRepo.Create(ctx, exclusion); err != nil {
 		return nil, fmt.Errorf("failed to create scope exclusion: %w", err)
