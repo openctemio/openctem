@@ -181,6 +181,18 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	if err := s.validateToolsAtTriggerTime(ctx, sc); err != nil {
 		return nil, err
 	}
+	// A tool no online sensor may run refuses the trigger with the reason,
+	// rather than queueing jobs nobody claims.
+	if err := s.checkScanToolsDispatchable(ctx, sc); err != nil {
+		return nil, err
+	}
+
+	// A wildcard pattern: its root domain for a discovery tool, refused for
+	// any other (scans saved before this rule, or edited in the database).
+	sc, err = s.applyWildcardTargets(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
 
 	// Check sensor availability before triggering - must have an online sensor
 	toolToCheck := ""
