@@ -10,6 +10,7 @@ asset_groups
 asset_identifiers
 asset_identity_backfill
 asset_merge_log
+asset_properties_pre_001185
 asset_relationships
 asset_services
 asset_state_history
