@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import useSWR from 'swr'
 import { ArrowRight, Link2 } from 'lucide-react'
 
@@ -9,23 +10,7 @@ import { TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { pipelineRunEndpoints } from '@/lib/api/endpoints'
 import type { RunStage, RunStageList } from '@/lib/api/generated'
-
-/** Catalog stage labels (GET /api/v1/scans/stages names them the same way). */
-const STAGE_LABELS: Record<string, string> = {
-  'discover.subdomains': 'Subdomain discovery',
-  'resolve.dns': 'DNS resolution',
-  'scan.ports': 'Port scan',
-  'probe.http': 'HTTP probe',
-  'crawl.web': 'Web crawl',
-  'vuln.templates': 'Vulnerability templates',
-  'dast.web': 'Web application scan',
-  'secrets.code': 'Secrets in code',
-  'sast.code': 'Static analysis',
-  'sca.deps': 'Dependency scan',
-  'iac.misconfig': 'IaC misconfiguration',
-  'container.image': 'Container image scan',
-  'network_va.connector': 'Network VA (connector)',
-}
+import { useCapabilityTable } from '@/features/pipelines/lib/use-capability-table'
 
 /** Why the hop router left targets out (scan_run_targets reasons). */
 const SKIP_LABELS: Record<string, string> = {
@@ -46,9 +31,13 @@ const TIER_LABELS: Record<string, string> = {
   T2: 'Intrusive',
 }
 
-export function stageLabel(stage?: string): string {
+/**
+ * A stage's label: its capability name as GET /api/v1/scans/stages serves
+ * it, else the key itself.
+ */
+export function stageLabel(stage?: string, names?: Record<string, string>): string {
   if (!stage) return 'Custom step'
-  return STAGE_LABELS[stage] ?? stage
+  return names?.[stage] ?? stage
 }
 
 export function skipLabel(reason: string): string {
@@ -75,6 +64,11 @@ export function RunStageLanes({
   runId: string
   refreshInterval?: number
 }) {
+  const { table } = useCapabilityTable()
+  const names = useMemo(
+    () => Object.fromEntries(table.capabilities.map((c) => [c.key, c.name])),
+    [table]
+  )
   const { data, error, isLoading } = useSWR<RunStageList>(
     pipelineRunEndpoints.stages(runId),
     (url: string) => get<RunStageList>(url),
@@ -92,19 +86,19 @@ export function RunStageLanes({
   return (
     <ol className="space-y-2" aria-label="Stages of this run">
       {lanes.map((lane) => (
-        <StageLane key={lane.stage_key} lane={lane} />
+        <StageLane key={lane.stage_key} lane={lane} names={names} />
       ))}
     </ol>
   )
 }
 
-function StageLane({ lane }: { lane: RunStage }) {
+function StageLane({ lane, names }: { lane: RunStage; names: Record<string, string> }) {
   const reasons = skippedReasons(lane.skipped)
   const tier = lane.tier ?? 'T0'
   return (
     <li className="rounded-md border p-3" data-testid="stage-lane">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium">{stageLabel(lane.stage)}</span>
+        <span className="font-medium">{stageLabel(lane.stage, names)}</span>
         <TruncatedText
           value={lane.tool}
           label="Tool"

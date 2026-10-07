@@ -216,6 +216,11 @@ func registerScopeRoutes(
 
 		// Check scope endpoint
 		r.POST("/check", h.CheckScope, middleware.Require(permission.ScopeRead))
+
+		// Scope settings (RFC-054 §6.3). Changing them widens or narrows the
+		// friction on widening: approvers only, with step-up.
+		r.GET("/settings", h.GetSettings, middleware.Require(permission.ScopeRead))
+		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// Scope Target routes
@@ -229,6 +234,11 @@ func registerScopeRoutes(
 		r.PUT("/{id}", h.UpdateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/activate", h.ActivateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateTarget, middleware.Require(permission.ScopeWrite))
+		// Approving puts a pending entry (a request or a widening) into
+		// effect: approvers only, with step-up (RFC-054 §6.1). Create,
+		// update and activate ask for step-up in the service when they widen.
+		r.POST("/{id}/approve", h.ApproveTarget, middleware.Require(permission.ScopeApprove), requireStepUp())
+		r.POST("/{id}/reject", h.RejectTarget, middleware.Require(permission.ScopeApprove))
 
 		// Bulk operations
 		r.POST("/bulk/delete", h.BulkDeleteTargets, middleware.Require(permission.ScopeDelete))
@@ -251,13 +261,15 @@ func registerScopeRoutes(
 		r.POST("/{id}/approve", h.ApproveExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		r.POST("/{id}/reject", h.RejectExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		r.POST("/{id}/activate", h.ActivateExclusion, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite))
+		// Taking an exclusion out of effect widens scope: step-up
+		// (RFC-054 §6.2); shortening one asks in the service.
+		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite), requireStepUp())
 
 		// Bulk operations
-		r.POST("/bulk/delete", h.BulkDeleteExclusions, middleware.Require(permission.ScopeDelete))
+		r.POST("/bulk/delete", h.BulkDeleteExclusions, middleware.Require(permission.ScopeDelete), requireStepUp())
 
 		// Delete operations
-		r.DELETE("/{id}", h.DeleteExclusion, middleware.Require(permission.ScopeDelete))
+		r.DELETE("/{id}", h.DeleteExclusion, middleware.Require(permission.ScopeDelete), requireStepUp())
 	}, tenantMiddlewares...)
 }
 
@@ -352,7 +364,10 @@ func registerEASMRoutes(
 
 // registerEASMSeedRoutes registers the EASM seeds (RFC-036 §6.3, §6.10):
 // scope permissions, like the other boundary settings, behind the
-// attack_surface module.
+// attack_surface module. A seed authorizes active checks of every name under
+// it, so adding one or turning its discovery on widens scope: approvers only,
+// with step-up (RFC-054 §6.1); the service creates a new seed through the
+// scope entry path (approvals, guardrails, notification).
 func registerEASMSeedRoutes(
 	router Router,
 	h *handler.EASMSeedHandler,
@@ -363,8 +378,8 @@ func registerEASMSeedRoutes(
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 	router.Group("/api/v1/easm/seeds", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
-		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
-		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScopeWrite))
+		r.POST("/", h.Create, middleware.Require(permission.ScopeApprove), requireStepUp())
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ScopeApprove), requireStepUp())
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
 	}, tenantMiddlewares...)
 }
