@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-import { post, del } from '@/lib/api/client'
+import { post, put, del } from '@/lib/api/client'
+import { sensorEndpoints } from '@/lib/api/endpoints'
+import { SENSOR_IDENTITY_POLICY_PATH } from '@/lib/api/sensor-pairing-hooks'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { isStepUpRequired, registerStepUpHandler, requestStepUp } from '@/lib/api/step-up'
 
@@ -52,6 +54,29 @@ describe('step-up re-authentication (403 STEP_UP_REQUIRED)', () => {
     expect(second[0]).toBe(first[0])
     expect((second[1] as RequestInit).method).toBe('POST')
     expect((second[1] as RequestInit).body).toBe((first[1] as RequestInit).body)
+  })
+
+  // Minting a sensor key, revealing a leaked credential and allowing
+  // bearer-key sensors need step-up on the server: the requests the web
+  // sends for them go through the same prompt-and-retry.
+  it.each([
+    ['create a sensor', () => post(sensorEndpoints.create(), { name: 's', type: 'worker' })],
+    ['regenerate a sensor key', () => post(sensorEndpoints.regenerateKey('s1'), {})],
+    ['reveal a leaked credential', () => post('/api/v1/credentials/c1/reveal', {})],
+    [
+      'allow bearer-key sensors',
+      () => put(SENSOR_IDENTITY_POLICY_PATH, { bearer_keys_allowed: true }),
+    ],
+  ])('%s re-authenticates and retries', async (_name, send) => {
+    const handler = vi.fn(async () => true)
+    unregister = registerStepUpHandler(handler)
+    fetchMock
+      .mockResolvedValueOnce(stepUpRequired())
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }))
+
+    await expect(send()).resolves.toEqual({ ok: true })
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('cancelling throws the original STEP_UP_REQUIRED error and does not retry', async () => {

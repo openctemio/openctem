@@ -63,6 +63,8 @@ export function runOutcomeCallout(status: string): {
       return { tone: 'info', title: 'Run canceled' }
     case 'failed':
       return { tone: 'destructive', title: 'Run failed' }
+    case 'blocked':
+      return { tone: 'destructive', title: 'Blocked before anything ran' }
     default:
       return { tone: 'info', title: 'Run message' }
   }
@@ -138,6 +140,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               <span dir="auto" className="break-words [unicode-bidi:isolate]">
                 {toDisplayText(run.error_message)}
               </span>
+              {run.refusal_code && (
+                <span className="mt-1 block font-mono text-xs text-muted-foreground">
+                  {toDisplayText(run.refusal_code)}
+                </span>
+              )}
             </DetailCallout>
           )}
 

@@ -204,7 +204,7 @@ func (s *TenantService) SetPermissionServices(cacheSvc *accesscontrol.Permission
 }
 
 // SetSessionService injects the session service so SuspendMember and
-// RemoveMember can revoke all of the user's sessions immediately.
+// OffboardMember can revoke all of the user's sessions immediately.
 // Without it, suspended users can still hit JWT-claim-scoped routes
 // (e.g. /api/v1/me/*) until their JWT expires.
 func (s *TenantService) SetSessionService(sessionService *authapp.SessionService) {
@@ -723,76 +723,6 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	s.logAudit(ctx, actx, event)
 
 	return membership, nil
-}
-
-// RemoveMember removes a member from a tenant. With the member lifecycle
-// wired (production) it is an offboarding with no reassignment: it succeeds
-// when the member owns nothing that needs a new owner and otherwise returns
-// ErrReassignmentRequired (use OffboardMember with a plan). The membership
-// row is never deleted. The hard delete below remains only for a service
-// built without the lifecycle store.
-func (s *TenantService) RemoveMember(ctx context.Context, membershipID string, actx auditapp.AuditContext) error {
-	if s.lifecycle != nil {
-		_, err := s.OffboardMember(ctx, membershipID, OffboardMemberInput{}, actx)
-		return err
-	}
-	membership, err := s.getOwnMembership(ctx, membershipID, actx.TenantID)
-	if err != nil {
-		return err
-	}
-
-	// Prevent removing the owner
-	if membership.IsOwner() {
-		return fmt.Errorf("%w: cannot remove the owner", shared.ErrValidation)
-	}
-	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
-		return err
-	}
-
-	tenantID := membership.TenantID().String()
-	userID := membership.UserID().String()
-
-	if err := s.repo.DeleteMembership(ctx, membership.TenantID(), membership.ID()); err != nil {
-		return err
-	}
-
-	// Immediately invalidate permission cache, membership cache, and
-	// version to prevent stale access. This reduces the window of
-	// vulnerability from 5 minutes (cache TTL) to 0.
-	s.invalidateUserPermissions(ctx, tenantID, userID)
-	s.invalidateMembershipCache(ctx, tenantID, userID)
-
-	// Wipe any pending invitations the user still has in their inbox
-	// for this tenant. Without this they could re-accept the original
-	// invitation token to rejoin after the admin removed them — a
-	// real privilege escalation path. Best-effort: a failure here is
-	// logged but doesn't roll back the membership delete (the primary
-	// security goal — revoking access — has already succeeded).
-	if deleted, derr := s.repo.DeletePendingInvitationsByUserID(ctx, membership.TenantID(), membership.UserID()); derr != nil {
-		s.logger.Warn("failed to clean up pending invitations after member removal",
-			"tenant_id", tenantID,
-			"user_id", userID,
-			"error", derr,
-		)
-	} else if deleted > 0 {
-		s.logger.Info("invalidated pending invitations on member removal",
-			"tenant_id", tenantID,
-			"user_id", userID,
-			"deleted", deleted,
-		)
-	}
-
-	s.logger.Info("member removed", "membership_id", membershipID)
-
-	// Log audit event
-	actx.TenantID = tenantID
-	event := auditapp.NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeMembership, membershipID).
-		WithSeverity(audit.SeverityHigh).
-		WithMessage("Member removed from team").
-		WithMetadata("user_id", userID)
-	s.logAudit(ctx, actx, event)
-
-	return nil
 }
 
 // SuspendMember suspends a member's access to a tenant. The membership

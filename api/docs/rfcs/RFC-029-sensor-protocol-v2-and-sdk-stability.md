@@ -266,7 +266,7 @@ Representation (v2 `Command`; `sensor_id` replaces v1's `agent_id`):
 | `GET /commands?limit=n` | Commands this sensor may claim now (same predicate as v1 poll: pinned or unpinned, pending, not expired, zone claim predicate, capability gate). `limit` 1–100, default 10. | `200 {"commands": [Command…]}` |
 | `POST /commands/{command_id}/claim` | pending → acknowledged (atomic claim; v1 `acknowledge`). Empty body. | `200 Command` |
 | `POST /commands/{command_id}/start` | acknowledged → running. Empty body. | `200 Command` |
-| `POST /commands/{command_id}/complete` | running → completed. Body `{"result": <any JSON>}` (optional). | `200 Command` |
+| `POST /commands/{command_id}/complete` | running → completed. Body `{"result": <any JSON>}` (optional). A result whose `metadata` carries `refused_targets` (`[{target, reason, rule, detail}]`, at most 100) and `refused_targets_total` completed on some targets only: its sensor's local policy skipped the others (`reason`: `unresolvable`, `wildcard_pattern`, `denied_by_policy`, `invalid_target`). The step and the run end `partial`; the task lists the skipped targets (at most 20, cleaned). | `200 Command` |
 | `POST /commands/{command_id}/fail` | acknowledged/running (or pending and pinned to this sensor) → failed. Body `{"error_message": "…"}` (≤ 4 KiB stored, UTF-8-safe truncation as v1). | `200 Command` |
 
 Transition table (rows: current state; "mine" = the command's `sensor_id` is

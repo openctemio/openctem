@@ -55,6 +55,11 @@ type Task struct {
 	StartedAt    *time.Time
 	CompletedAt  *time.Time
 	ErrorMessage string
+	// Skipped are the targets the sensor's local policy skipped in a task
+	// that completed on the rest (at most MaxTaskSkippedTargets; cleaned);
+	// SkippedTotal counts all of them.
+	Skipped      []SkippedTarget
+	SkippedTotal int
 }
 
 // MaxRunTasks bounds the tasks one run read returns; the summary still counts

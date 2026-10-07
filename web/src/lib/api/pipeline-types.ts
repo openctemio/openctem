@@ -63,6 +63,8 @@ export const PIPELINE_RUN_STATUSES = [
   // Spelled as the API stores it (pipeline.RunStatusCanceled).
   'canceled',
   'timeout',
+  // A trigger refused before anything was dispatched; refusal_code says why.
+  'blocked',
 ] as const
 export type PipelineRunStatus = (typeof PIPELINE_RUN_STATUSES)[number]
 
@@ -74,6 +76,7 @@ export const PIPELINE_RUN_STATUS_LABELS: Record<PipelineRunStatus, string> = {
   failed: 'Failed',
   canceled: 'Canceled',
   timeout: 'Timed out',
+  blocked: 'Blocked',
 }
 
 export const STEP_RUN_STATUSES = [
@@ -191,6 +194,10 @@ export interface PipelineStep {
   node_type?: PipelineNodeType // Visual builder node type
   tool?: string
   capabilities: string[]
+  /** Tools to try, in order, when no tool is pinned (capability nodes). */
+  prefer_tools?: string[]
+  /** How the step picks its tool: pin (tool), prefer (prefer_tools) or auto. */
+  tool_selection?: 'auto' | 'prefer' | 'pin'
   config?: Record<string, unknown>
   timeout_seconds?: number
   depends_on?: string[]
@@ -278,6 +285,8 @@ export interface PipelineRun {
   total_findings: number
   step_runs?: StepRun[]
   error_message?: string
+  /** Why a blocked run was refused (e.g. ALL_TARGETS_EXCLUDED, WILDCARD_TARGET). */
+  refusal_code?: string
   created_at: string
   /** What the trigger dispatched (scope exclusions, zone routing). RFC-023. */
   dispatch?: RunDispatch
@@ -320,6 +329,7 @@ export interface CreateStepRequest {
   ui_position?: UIPosition
   tool?: string
   capabilities?: string[] // Optional - backend derives from tool if not provided
+  prefer_tools?: string[]
   config?: Record<string, unknown>
   timeout_seconds?: number
   depends_on?: string[]
