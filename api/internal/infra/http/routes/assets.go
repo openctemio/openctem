@@ -216,6 +216,11 @@ func registerScopeRoutes(
 
 		// Check scope endpoint
 		r.POST("/check", h.CheckScope, middleware.Require(permission.ScopeRead))
+
+		// Scope settings (RFC-054 §6.3). Changing them widens or narrows the
+		// friction on widening: approvers only, with step-up.
+		r.GET("/settings", h.GetSettings, middleware.Require(permission.ScopeRead))
+		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// Scope Target routes
@@ -229,6 +234,11 @@ func registerScopeRoutes(
 		r.PUT("/{id}", h.UpdateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/activate", h.ActivateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateTarget, middleware.Require(permission.ScopeWrite))
+		// Approving puts a pending entry (a request or a widening) into
+		// effect: approvers only, with step-up (RFC-054 §6.1). Create,
+		// update and activate ask for step-up in the service when they widen.
+		r.POST("/{id}/approve", h.ApproveTarget, middleware.Require(permission.ScopeApprove), requireStepUp())
+		r.POST("/{id}/reject", h.RejectTarget, middleware.Require(permission.ScopeApprove))
 
 		// Bulk operations
 		r.POST("/bulk/delete", h.BulkDeleteTargets, middleware.Require(permission.ScopeDelete))
@@ -251,13 +261,15 @@ func registerScopeRoutes(
 		r.POST("/{id}/approve", h.ApproveExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		r.POST("/{id}/reject", h.RejectExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		r.POST("/{id}/activate", h.ActivateExclusion, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite))
+		// Taking an exclusion out of effect widens scope: step-up
+		// (RFC-054 §6.2); shortening one asks in the service.
+		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite), requireStepUp())
 
 		// Bulk operations
-		r.POST("/bulk/delete", h.BulkDeleteExclusions, middleware.Require(permission.ScopeDelete))
+		r.POST("/bulk/delete", h.BulkDeleteExclusions, middleware.Require(permission.ScopeDelete), requireStepUp())
 
 		// Delete operations
-		r.DELETE("/{id}", h.DeleteExclusion, middleware.Require(permission.ScopeDelete))
+		r.DELETE("/{id}", h.DeleteExclusion, middleware.Require(permission.ScopeDelete), requireStepUp())
 	}, tenantMiddlewares...)
 }
 

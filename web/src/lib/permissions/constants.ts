@@ -298,6 +298,9 @@ export const Permission = {
   // Approve or reject a pending scope exclusion. scope:write only requests
   // one; owners and admins hold this by default.
   ScopeExclusionsApprove: 'attack_surface:scope:exclusions:approve',
+  // Create effective scope entries and approve or reject scope requests and
+  // widenings (RFC-054). Without it, scope:write only requests a one-off.
+  ScopeApprove: 'attack_surface:scope:approve',
 
   // ===========================================
   // VALIDATION MODULE (CTEM)
@@ -731,6 +734,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ScopeWrite]: 'Manage Scope',
   [Permission.ScopeDelete]: 'Delete Scope',
   [Permission.ScopeExclusionsApprove]: 'Approve Scope Exclusions',
+  [Permission.ScopeApprove]: 'Approve Scope Changes',
 
   // Validation (legacy)
   [Permission.ValidationRead]: 'View Validation',
@@ -926,6 +930,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScopeWrite,
     Permission.ScopeDelete,
     Permission.ScopeExclusionsApprove,
+    Permission.ScopeApprove,
     // Validation (legacy)
     Permission.ValidationRead,
     Permission.ValidationWrite,
@@ -1088,6 +1093,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScopeWrite,
     Permission.ScopeDelete,
     Permission.ScopeExclusionsApprove,
+    Permission.ScopeApprove,
     // Validation (legacy)
     Permission.ValidationRead,
     Permission.ValidationWrite,

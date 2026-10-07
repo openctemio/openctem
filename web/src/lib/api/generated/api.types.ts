@@ -25896,6 +25896,100 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/scope/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Scope settings
+     * @description The organization's scope knobs (RFC-054): auto-join of discovered names, who adds one-off entries, their maximum days, the widening approval count and the default tier, with the approval count in effect now.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScopeSettingsResponse']
+          }
+        }
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Change scope settings
+     * @description Replace the organization's scope knobs. Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED). An organization with two or more administrators cannot go below one approval, and intrusive entries always need one. Audited; every administrator is notified.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.ScopeSettingsRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScopeSettingsResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/scope/stats': {
     parameters: {
       query?: never
@@ -26027,7 +26121,7 @@ export interface paths {
     put?: never
     /**
      * Create scope target
-     * @description Create a new scope target
+     * @description Create a scope entry (RFC-054). With attack_surface:scope:approve it needs a recent re-authentication (403 STEP_UP_REQUIRED) and is active at once or pending the organization's approvals; without it, it is a pending request for a one-off entry of one name or address, with a reason
      */
     post: {
       parameters: {
@@ -26150,7 +26244,7 @@ export interface paths {
     }
     /**
      * Update scope target
-     * @description Update an existing scope target
+     * @description Update a scope entry. A later or removed expiry, or a higher tier, widens it: that needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED), and sends the entry back to pending when the organization requires approvals (RFC-054)
      */
     put: {
       parameters: {
@@ -26276,7 +26370,7 @@ export interface paths {
     put?: never
     /**
      * Activate scope target
-     * @description Activate a scope target
+     * @description Activate a scope entry. Widening: needs attack_surface:scope:approve and a recent re-authentication, then the organization's approvals
      */
     post: {
       parameters: {
@@ -26319,6 +26413,75 @@ export interface paths {
         }
         /** @description Internal Server Error */
         500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scope/targets/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Approve scope entry
+     * @description Record your approval of a pending scope entry (RFC-054). Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED). The requester cannot approve, and nobody approves twice; once the entry has its required approvals it is active. Audited; the administrators are notified when it takes effect.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Target ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScopeTargetResponse']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
           headers: {
             [name: string]: unknown
           }
@@ -26388,6 +26551,75 @@ export interface paths {
         }
         /** @description Internal Server Error */
         500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/scope/targets/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Reject scope entry
+     * @description Decline a pending scope entry; it never takes effect. Needs attack_surface:scope:approve. Audited.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Target ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScopeTargetResponse']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
           headers: {
             [name: string]: unknown
           }
@@ -39411,8 +39643,21 @@ export interface components {
     }
     'internal_infra_http_handler.CreateScopeTargetRequest': {
       description?: string
+      expires_at?: string
+      /** @description ExpiresInDays (1..one_off_max_days) or ExpiresAt makes a one-off entry. */
+      expires_in_days?: number
+      /**
+       * @description MaxTier: t0, t1 or t2 (default: the organization's default_max_tier).
+       * @enum {string}
+       */
+      max_tier?: 't0' | 't1' | 't2'
       pattern: string
       priority?: number
+      /**
+       * @description Reason is the authority statement; required for a one-off entry, a
+       *     request and a t2 entry.
+       */
+      reason?: string
       tags?: string[]
       target_type: string
     }
@@ -41994,6 +42239,10 @@ export interface components {
       /** @description Timezone the schedule is evaluated in (IANA; UTC when none was given). */
       timezone?: string
     }
+    'internal_infra_http_handler.ScopeApprovalResponse': {
+      approved_at?: string
+      user_id?: string
+    }
     'internal_infra_http_handler.ScopeBulkOperationResponse': {
       affected_count?: number
       errors?: {
@@ -42029,6 +42278,30 @@ export interface components {
       matched_exclusion_ids?: string[]
       matched_target_ids?: string[]
     }
+    'internal_infra_http_handler.ScopeSettingsRequest': {
+      auto_join_discovered?: boolean
+      /** @enum {string} */
+      default_max_tier?: 't0' | 't1'
+      one_off_max_days?: number
+      /** @enum {string} */
+      one_off_targets?: 'admins' | 'admins_and_requests' | 'disabled'
+      widening_approvals?: number
+    }
+    'internal_infra_http_handler.ScopeSettingsResponse': {
+      admin_count?: number
+      auto_join_discovered?: boolean
+      default_max_tier?: string
+      /**
+       * @description Read-only: the approvals a widening needs now, and the administrators
+       *     that count.
+       */
+      effective_widening_approvals?: number
+      one_off_max_days?: number
+      /** @description OneOffTargets: admins, admins_and_requests or disabled. */
+      one_off_targets?: string
+      /** @description WideningApprovals: null is the default min(1, admins-1). */
+      widening_approvals?: number
+    }
     'internal_infra_http_handler.ScopeStatsResponse': {
       active_exclusions?: number
       active_targets?: number
@@ -42037,12 +42310,29 @@ export interface components {
       total_targets?: number
     }
     'internal_infra_http_handler.ScopeTargetResponse': {
+      approvals?: components['schemas']['internal_infra_http_handler.ScopeApprovalResponse'][]
+      approvals_required?: number
+      approved_at?: string
+      /** @description Covers: name, domain_and_subdomains, addresses or pattern. */
+      covers?: string
       created_at?: string
+      /**
+       * @description CreatedBy is the requester: whoever created or last widened the entry.
+       *     They cannot approve it.
+       */
       created_by?: string
       description?: string
+      expires_at?: string
       id?: string
+      /** @description InEffect: the entry authorizes probes now (active, not expired). */
+      in_effect?: boolean
+      max_tier?: string
       pattern?: string
       priority?: number
+      reason?: string
+      rejected_at?: string
+      rejected_by?: string
+      /** @description Status: active, pending, inactive, rejected or expired. */
       status?: string
       tags?: string[]
       target_type?: string
@@ -43324,8 +43614,14 @@ export interface components {
       reason?: string
     }
     'internal_infra_http_handler.UpdateScopeTargetRequest': {
+      clear_expiry?: boolean
       description?: string
+      expires_at?: string
+      expires_in_days?: number
+      /** @enum {string} */
+      max_tier?: 't0' | 't1' | 't2'
       priority?: number
+      reason?: string
       tags?: string[]
     }
     'internal_infra_http_handler.UpdateSensorGrantRequest': {

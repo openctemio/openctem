@@ -19,6 +19,30 @@ The sensor-local policy still reads `*.x` as names below `x` (the stricter
 reading on its allow list); aligning it is a follow-up in sdk-go and the
 sensor.
 
+## Scope entries (RFC-054)
+
+A scope target authorizes probes only while it is **in effect**: status
+`active` and not past `expires_at`. The read of active targets filters on
+both, so an expired one-off stops authorizing at once; the data-expiration
+controller then marks it `expired`.
+
+- **One-off entries** carry `expires_at` (default 7 days, at most the
+  organization's `one_off_max_days`, 30 at most) and a `reason`.
+- **Who widens.** Creating, activating, extending or raising the tier of an
+  entry is widening. A holder of `attack_surface:scope:approve` re-authenticates
+  (step-up) and the entry needs the organization's approval count of other
+  approvers (`widening_approvals`, default `min(1, admins − 1)`, at least 1
+  with two or more admins and for `t2`); until then it is `pending` and
+  authorizes nothing. Anyone else with `scope:write` only **requests** a
+  one-off for one name or address, with a reason; it needs an approver.
+- **Approving** (`POST /scope/targets/{id}/approve`) needs the approval
+  permission and step-up; the requester never approves, nobody approves
+  twice. Exclusion removal, deactivation and shortening need step-up too.
+- Every widening that takes effect, every request, and every settings change
+  notifies all active owners and administrators in-app, and is audited.
+- Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one
+  click.
+
 ## What the gate checks
 
 For each target, in order:

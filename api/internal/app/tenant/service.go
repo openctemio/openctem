@@ -2164,6 +2164,47 @@ func (s *TenantService) GetEASMSettings(ctx context.Context, tenantID string) (*
 	return &es, nil
 }
 
+// GetScopeSettings returns the tenant's scope settings (RFC-054 §6.3).
+func (s *TenantService) GetScopeSettings(ctx context.Context, tenantID string) (*tenantdom.ScopeSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	ss := t.TypedSettings().Scope
+	return &ss, nil
+}
+
+// UpdateScopeSettings replaces the tenant's scope settings and audits the
+// before/after values. The route requires attack_surface:scope:approve and
+// step-up; the caller notifies the administrators.
+func (s *TenantService) UpdateScopeSettings(
+	ctx context.Context,
+	tenantID string,
+	ss tenantdom.ScopeSettings,
+	actx auditapp.AuditContext,
+) (*tenantdom.ScopeSettings, error) {
+	var before tenantdom.ScopeSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionScope, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Scope
+		return t.UpdateScopeSettings(ss)
+	})
+	if err != nil {
+		return nil, err
+	}
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionScopeSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Scope)).
+		WithMessage("Scope settings updated").
+		WithSeverity(audit.SeverityHigh)
+	s.logAudit(ctx, actx, event)
+	out := t.TypedSettings().Scope
+	return &out, nil
+}
+
 // UpdateEASMSettings replaces the tenant's EASM settings and audits the
 // before/after values.
 func (s *TenantService) UpdateEASMSettings(

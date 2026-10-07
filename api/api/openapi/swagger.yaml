@@ -9306,6 +9306,21 @@ definitions:
       description:
         maxLength: 1000
         type: string
+      expires_at:
+        type: string
+      expires_in_days:
+        description: ExpiresInDays (1..one_off_max_days) or ExpiresAt makes a one-off
+          entry.
+        maximum: 30
+        minimum: 1
+        type: integer
+      max_tier:
+        description: 'MaxTier: t0, t1 or t2 (default: the organization''s default_max_tier).'
+        enum:
+        - t0
+        - t1
+        - t2
+        type: string
       pattern:
         maxLength: 500
         type: string
@@ -9313,6 +9328,12 @@ definitions:
         maximum: 100
         minimum: 0
         type: integer
+      reason:
+        description: |-
+          Reason is the authority statement; required for a one-off entry, a
+          request and a t2 entry.
+        maxLength: 1000
+        type: string
       tags:
         items:
           type: string
@@ -14113,6 +14134,13 @@ definitions:
           given).
         type: string
     type: object
+  internal_infra_http_handler.ScopeApprovalResponse:
+    properties:
+      approved_at:
+        type: string
+      user_id:
+        type: string
+    type: object
   internal_infra_http_handler.ScopeBulkOperationResponse:
     properties:
       affected_count:
@@ -14179,6 +14207,52 @@ definitions:
           type: string
         type: array
     type: object
+  internal_infra_http_handler.ScopeSettingsRequest:
+    properties:
+      auto_join_discovered:
+        type: boolean
+      default_max_tier:
+        enum:
+        - t0
+        - t1
+        type: string
+      one_off_max_days:
+        maximum: 30
+        minimum: 1
+        type: integer
+      one_off_targets:
+        enum:
+        - admins
+        - admins_and_requests
+        - disabled
+        type: string
+      widening_approvals:
+        maximum: 2
+        minimum: 0
+        type: integer
+    type: object
+  internal_infra_http_handler.ScopeSettingsResponse:
+    properties:
+      admin_count:
+        type: integer
+      auto_join_discovered:
+        type: boolean
+      default_max_tier:
+        type: string
+      effective_widening_approvals:
+        description: |-
+          Read-only: the approvals a widening needs now, and the administrators
+          that count.
+        type: integer
+      one_off_max_days:
+        type: integer
+      one_off_targets:
+        description: 'OneOffTargets: admins, admins_and_requests or disabled.'
+        type: string
+      widening_approvals:
+        description: 'WideningApprovals: null is the default min(1, admins-1).'
+        type: integer
+    type: object
   internal_infra_http_handler.ScopeStatsResponse:
     properties:
       active_exclusions:
@@ -14194,19 +14268,47 @@ definitions:
     type: object
   internal_infra_http_handler.ScopeTargetResponse:
     properties:
+      approvals:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScopeApprovalResponse'
+        type: array
+      approvals_required:
+        type: integer
+      approved_at:
+        type: string
+      covers:
+        description: 'Covers: name, domain_and_subdomains, addresses or pattern.'
+        type: string
       created_at:
         type: string
       created_by:
+        description: |-
+          CreatedBy is the requester: whoever created or last widened the entry.
+          They cannot approve it.
         type: string
       description:
         type: string
+      expires_at:
+        type: string
       id:
+        type: string
+      in_effect:
+        description: 'InEffect: the entry authorizes probes now (active, not expired).'
+        type: boolean
+      max_tier:
         type: string
       pattern:
         type: string
       priority:
         type: integer
+      reason:
+        type: string
+      rejected_at:
+        type: string
+      rejected_by:
+        type: string
       status:
+        description: 'Status: active, pending, inactive, rejected or expired.'
         type: string
       tags:
         items:
@@ -16500,13 +16602,30 @@ definitions:
     type: object
   internal_infra_http_handler.UpdateScopeTargetRequest:
     properties:
+      clear_expiry:
+        type: boolean
       description:
         maxLength: 1000
+        type: string
+      expires_at:
+        type: string
+      expires_in_days:
+        maximum: 30
+        minimum: 1
+        type: integer
+      max_tier:
+        enum:
+        - t0
+        - t1
+        - t2
         type: string
       priority:
         maximum: 100
         minimum: 0
         type: integer
+      reason:
+        maxLength: 1000
+        type: string
       tags:
         items:
           type: string
@@ -34439,6 +34558,61 @@ paths:
       summary: Bulk delete scope exclusions
       tags:
       - Scope
+  /scope/settings:
+    get:
+      description: 'The organization''s scope knobs (RFC-054): auto-join of discovered
+        names, who adds one-off entries, their maximum days, the widening approval
+        count and the default tier, with the approval count in effect now.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScopeSettingsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Scope settings
+      tags:
+      - Scope
+    put:
+      consumes:
+      - application/json
+      description: Replace the organization's scope knobs. Needs attack_surface:scope:approve
+        and a recent re-authentication (403 STEP_UP_REQUIRED). An organization with
+        two or more administrators cannot go below one approval, and intrusive entries
+        always need one. Audited; every administrator is notified.
+      parameters:
+      - description: Settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.ScopeSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScopeSettingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Change scope settings
+      tags:
+      - Scope
   /scope/stats:
     get:
       description: Get aggregate statistics for scope targets and exclusions
@@ -34521,7 +34695,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new scope target
+      description: Create a scope entry (RFC-054). With attack_surface:scope:approve
+        it needs a recent re-authentication (403 STEP_UP_REQUIRED) and is active at
+        once or pending the organization's approvals; without it, it is a pending
+        request for a one-off entry of one name or address, with a reason
       parameters:
       - description: Scope target data
         in: body
@@ -34623,7 +34800,10 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update an existing scope target
+      description: 'Update a scope entry. A later or removed expiry, or a higher tier,
+        widens it: that needs attack_surface:scope:approve and a recent re-authentication
+        (403 STEP_UP_REQUIRED), and sends the entry back to pending when the organization
+        requires approvals (RFC-054)'
       parameters:
       - description: Target ID
         in: path
@@ -34664,7 +34844,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Activate a scope target
+      description: 'Activate a scope entry. Widening: needs attack_surface:scope:approve
+        and a recent re-authentication, then the organization''s approvals'
       parameters:
       - description: Target ID
         in: path
@@ -34693,6 +34874,43 @@ paths:
       security:
       - BearerAuth: []
       summary: Activate scope target
+      tags:
+      - Scope
+  /scope/targets/{id}/approve:
+    post:
+      description: Record your approval of a pending scope entry (RFC-054). Needs
+        attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED).
+        The requester cannot approve, and nobody approves twice; once the entry has
+        its required approvals it is active. Audited; the administrators are notified
+        when it takes effect.
+      parameters:
+      - description: Target ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScopeTargetResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Approve scope entry
       tags:
       - Scope
   /scope/targets/{id}/deactivate:
@@ -34728,6 +34946,40 @@ paths:
       security:
       - BearerAuth: []
       summary: Deactivate scope target
+      tags:
+      - Scope
+  /scope/targets/{id}/reject:
+    post:
+      description: Decline a pending scope entry; it never takes effect. Needs attack_surface:scope:approve.
+        Audited.
+      parameters:
+      - description: Target ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScopeTargetResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reject scope entry
       tags:
       - Scope
   /scope/targets/bulk/delete:
