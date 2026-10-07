@@ -29,6 +29,15 @@ describe('what an entry covers (RFC-054 §4.1: *.x is x and every name below it)
     expect(coversText({ pattern: '203.0.113.7', covers: 'addresses' })).toBe('203.0.113.7 only')
   })
 
+  it('reads a plain domain or address by its kind when the server sent no covers', () => {
+    expect(coversText({ pattern: 'shop.globex.io', target_type: 'domain' })).toBe(
+      'shop.globex.io only'
+    )
+    expect(coversText({ pattern: '203.0.113.0/24', target_type: 'ip_range' })).toBe(
+      'Every address in 203.0.113.0/24'
+    )
+  })
+
   it('turns a coverage choice into the pattern the API stores', () => {
     expect(patternForCoverage('acme.io', 'subdomains')).toBe('*.acme.io')
     expect(patternForCoverage('acme.io', 'name')).toBe('acme.io')
