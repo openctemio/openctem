@@ -57,7 +57,7 @@ func TestScanTakeoverGate(t *testing.T) {
 
 	pg := &postgres.DB{DB: db}
 	gate := easmapp.NewActiveGate(postgres.NewAttributionRepository(pg), postgres.NewAssetRepository(pg),
-		scopeService(db), postgres.NewEASMSeedRepository(pg)).WithTakeoverEvidence(postgres.NewEASMDNSRepository(pg))
+		scopeService(db), postgres.NewVerifiedDomainNameRepository(pg)).WithTakeoverEvidence(postgres.NewEASMDNSRepository(pg))
 	svc := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)), scansvc.WithAttributionGate(gate))
 
 	create := func(scanner string, config map[string]any, target string) error {

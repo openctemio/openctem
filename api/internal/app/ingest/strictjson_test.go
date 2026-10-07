@@ -112,6 +112,10 @@ func TestParseV2Report(t *testing.T) {
 		{"missing title", replace(`"title": "SQL injection"`, `"title": ""`), protov2.ProblemSchemaInvalid, "/findings/0/title"},
 		{"bad asset type", replace(`"type": "repository"`, `"type": "spaceship"`), protov2.ProblemSchemaInvalid, "/assets/0/type"},
 		{"asset value missing", replace(`"value": "github.com/acme/app"`, `"value": ""`), protov2.ProblemSchemaInvalid, "/assets/0/value"},
+		// An endpoint parameter never carries a value: a value member is a
+		// schema error, not ignored (RFC-056).
+		{"endpoint param value", replace(`"version": "1.0",`, `"version": "1.0", "endpoints": [{"origin": "https://a.example.com", "path": "/x",
+			"params": [{"location": "query", "name": "token", "value": "SECRET"}]}],`), protov2.ProblemSchemaInvalid, ""},
 		{"duplicate asset id", replace(`"assets": [`, `"assets": [{"id": "a1", "type": "domain", "value": "x.example"},`), protov2.ProblemSchemaInvalid, "/assets/1/id"},
 	}
 	for _, c := range cases {

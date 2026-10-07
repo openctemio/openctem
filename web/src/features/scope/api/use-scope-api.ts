@@ -34,6 +34,8 @@ import type {
   BulkOperationResponse,
   ApiScopeSettings,
   UpdateScopeSettingsInput,
+  PathExclusionFields,
+  SetExclusionTestingInput,
 } from './scope-api.types'
 
 // ============================================
@@ -494,6 +496,19 @@ export function decideScopeExclusion(id: string, approve: boolean) {
 export function setScopeExclusionActive(id: string, active: boolean) {
   const action = active ? 'activate' : 'deactivate'
   return post<ApiScopeExclusion>(`${BASE_URL}/exclusions/${encodeURIComponent(id)}/${action}`, {})
+}
+
+/**
+ * PUT /scope/exclusions/{id}/testing: how a path exclusion may be tested.
+ * Needs the exclusion-approve permission and step-up; audited, and every
+ * administrator is notified. It never widens scope beyond the organization's
+ * in-scope assets.
+ */
+export function setScopeExclusionTesting(id: string, input: SetExclusionTestingInput) {
+  return put<ApiScopeExclusion & PathExclusionFields>(
+    `${BASE_URL}/exclusions/${encodeURIComponent(id)}/testing`,
+    input
+  )
 }
 
 export function deleteScopeExclusion(id: string) {

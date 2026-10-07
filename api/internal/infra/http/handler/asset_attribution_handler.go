@@ -97,8 +97,8 @@ type AssetAttributionResponse struct {
 	// active_checks_allowed is false: its state (needs_review, candidate,
 	// dependency, monitor_only, rejected; rejected also for a name under a
 	// rejected name), unattributed: no record, and neither inside a scope
-	// target nor under a root-domain seed or verified domain, or
-	// out_of_scope: confirmed, but no scope target, seed or verified domain
+	// entry, or
+	// out_of_scope: confirmed, but no scope entry
 	// covers it (confirmation alone does not authorize active checks).
 	ActiveChecksBlockedBy string `json:"active_checks_blocked_by,omitempty"`
 	// BlockedCode is the structured refusal code (RFC-054 §6.5) for

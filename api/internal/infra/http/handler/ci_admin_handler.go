@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
@@ -28,6 +29,7 @@ type CIAdminService interface {
 	CreateTrustConfig(ctx context.Context, tenantID shared.ID, in cirunapp.TrustConfigInput, a cirunapp.Actor) (*cirun.TrustConfig, error)
 	UpdateTrustConfig(ctx context.Context, tenantID, id shared.ID, in cirunapp.TrustConfigInput, a cirunapp.Actor) (*cirun.TrustConfig, error)
 	DeleteTrustConfig(ctx context.Context, tenantID, id shared.ID, a cirunapp.Actor) error
+	PreviewTrust(ctx context.Context, tenantID shared.ID, in cirunapp.PreviewInput) (*cirunapp.PreviewResult, error)
 	ListRuns(ctx context.Context, tenantID shared.ID, f cirun.RunFilter) ([]cirun.Run, int, error)
 	GetRun(ctx context.Context, tenantID, id shared.ID) (*cirun.Run, error)
 	ListGatePolicies(ctx context.Context, tenantID shared.ID) ([]cirun.GatePolicy, error)
@@ -82,11 +84,18 @@ func toCITrustResponse(c *cirun.TrustConfig) CITrustConfigResponse {
 // CITrustConfigRequest creates or changes a trust configuration.
 type CITrustConfigRequest struct {
 	Name     string `json:"name"`
-	Provider string `json:"provider"`
-	// Issuer defaults to the provider's public issuer; a self-managed
-	// GitLab is its external URL.
+	Provider string `json:"provider" enums:"github,gitlab,azure_devops,bitbucket,circleci,jenkins"`
+	// Issuer defaults to the provider's public issuer (GitHub, gitlab.com).
+	// A self-managed GitLab is its external URL; Azure Pipelines
+	// https://vstoken.dev.azure.com/<organization id>; CircleCI
+	// https://oidc.circleci.com/org/<organization id>; Bitbucket
+	// https://api.bitbucket.org/2.0/workspaces/<workspace>/pipelines-config/identity/oidc;
+	// Jenkins the plugin's issuer (<Jenkins URL>/oidc, or its alternate
+	// issuer).
 	Issuer string `json:"issuer,omitempty"`
-	// Audience defaults to openctem:tenant:<tenant id>.
+	// Audience defaults to openctem:tenant:<tenant id> (Azure Pipelines:
+	// api://AzureADTokenExchange, the only one it issues). Bitbucket,
+	// CircleCI and Jenkins audiences must contain the tenant id.
 	Audience      string      `json:"audience,omitempty"`
 	DefaultBranch string      `json:"default_branch,omitempty"`
 	Rules         cirun.Rules `json:"rules"`
@@ -108,19 +117,22 @@ type CIRunResponse struct {
 	Ref               string `json:"ref"`
 	Branch            string `json:"branch,omitempty"`
 	CommitSHA         string `json:"commit_sha"`
-	PullRequest       string `json:"pull_request,omitempty"`
-	DefaultBranch     string `json:"default_branch,omitempty"`
-	IsDefaultBranch   bool   `json:"is_default_branch"`
-	Event             string `json:"event,omitempty"`
-	Environment       string `json:"environment,omitempty"`
-	Actor             string `json:"actor,omitempty"`
-	ExternalRunID     string `json:"external_run_id,omitempty"`
-	RunAttempt        string `json:"run_attempt,omitempty"`
-	ExternalJobID     string `json:"external_job_id,omitempty"`
-	Workflow          string `json:"workflow,omitempty"`
-	PipelineURL       string `json:"pipeline_url,omitempty"`
-	Fork              bool   `json:"fork"`
-	PipelineID        string `json:"pipeline_id,omitempty"`
+	// CommitVerified: the commit comes from the signed token (false: the
+	// job reported it; its provider signs none).
+	CommitVerified  bool   `json:"commit_verified"`
+	PullRequest     string `json:"pull_request,omitempty"`
+	DefaultBranch   string `json:"default_branch,omitempty"`
+	IsDefaultBranch bool   `json:"is_default_branch"`
+	Event           string `json:"event,omitempty"`
+	Environment     string `json:"environment,omitempty"`
+	Actor           string `json:"actor,omitempty"`
+	ExternalRunID   string `json:"external_run_id,omitempty"`
+	RunAttempt      string `json:"run_attempt,omitempty"`
+	ExternalJobID   string `json:"external_job_id,omitempty"`
+	Workflow        string `json:"workflow,omitempty"`
+	PipelineURL     string `json:"pipeline_url,omitempty"`
+	Fork            bool   `json:"fork"`
+	PipelineID      string `json:"pipeline_id,omitempty"`
 	// SensorVersion is the runner's version; Tools what its reports
 	// declared; ScanFailures what it reported at evaluation. Labels only.
 	SensorVersion string        `json:"sensor_version,omitempty"`
@@ -140,8 +152,8 @@ type CIRunResponse struct {
 
 func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
 	out := CIRunResponse{ID: r.ID.String(), RepositoryAssetID: r.RepositoryAssetID.String(), Provider: string(r.Provider),
-		Repository: r.Repository, Ref: r.Ref, Branch: r.Branch, CommitSHA: r.CommitSHA, PullRequest: r.PullRequest,
-		DefaultBranch: r.DefaultBranch, IsDefaultBranch: r.IsDefaultBranch, Event: r.Event, Environment: r.Environment,
+		Repository: r.Repository, Ref: r.Ref, Branch: r.Branch, CommitSHA: r.CommitSHA, CommitVerified: r.CommitVerified,
+		PullRequest: r.PullRequest, DefaultBranch: r.DefaultBranch, IsDefaultBranch: r.IsDefaultBranch, Event: r.Event, Environment: r.Environment,
 		Actor: r.Actor, ExternalRunID: r.ExternalRunID, RunAttempt: r.RunAttempt,
 		ExternalJobID: r.ExternalJobID, Workflow: r.Workflow,
 		PipelineURL: r.PipelineURL, Fork: r.Fork, Status: r.Status, Verdict: r.Verdict, EvaluatedAt: r.EvaluatedAt,
@@ -461,7 +473,7 @@ func (h *CIAdminHandler) DeleteTrustConfig(w http.ResponseWriter, r *http.Reques
 // @Param        repository_asset_id query string false "Repository asset"
 // @Param        pipeline_id query string false "CI pipeline"
 // @Param        verdict query string false "pass, fail or none"
-// @Param        provider query string false "github or gitlab"
+// @Param        provider query string false "github, gitlab, azure_devops, bitbucket, circleci or jenkins"
 // @Param        page query int false "Page (default 1)"
 // @Param        per_page query int false "Per page (default 25, max 100)"
 // @Success      200  {object}  ListResponse[CIRunResponse]
@@ -478,7 +490,7 @@ func (h *CIAdminHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if f.Provider != "" && !cirun.Provider(f.Provider).IsValid() {
-		apierror.BadRequest("provider must be github or gitlab").WriteJSON(w)
+		apierror.BadRequest("provider must be github, gitlab, azure_devops, bitbucket, circleci or jenkins").WriteJSON(w)
 		return
 	}
 	if v := q.Get("repository_asset_id"); v != "" {
@@ -819,4 +831,54 @@ func (h *CIAdminHandler) RevokeOverride(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// CITrustPreviewRequest is a draft trust configuration and a sample token.
+type CITrustPreviewRequest struct {
+	Config CITrustConfigRequest `json:"config"`
+	// IDToken is a sample token from a CI job. It is never stored and its
+	// id is not recorded: the same token can still be exchanged.
+	IDToken string `json:"id_token"`
+	// CommitSHA and Repository are the job's own report, as an exchange
+	// would send them (used only where the token signs nothing).
+	CommitSHA  string `json:"commit_sha,omitempty"`
+	Repository string `json:"repository,omitempty"`
+}
+
+// PreviewTrustConfig handles POST /api/v1/ci/trust-configs/preview
+// @Summary      Preview a CI trust configuration against a sample token
+// @Description  Verifies a sample token's signature, issuer and audience against the draft configuration's issuer keys (judged at the token's own issue time, so an expired sample is still shown, flagged expired), shows its claims and the normalized repository, ref, commit and run, and whether the rules would admit it. Nothing is stored; the token's id is not recorded. Rate limited.
+// @Tags         CI
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body CITrustPreviewRequest true "Draft configuration and sample token"
+// @Success      200  {object}  cirunapp.PreviewResult
+// @Failure      400  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /ci/trust-configs/preview [post]
+func (h *CIAdminHandler) PreviewTrustConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	tenantID, ok := h.tenant(w, r)
+	if !ok {
+		return
+	}
+	limitBody(w, r)
+	var req CITrustPreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.IDToken) == "" {
+		apierror.BadRequest("config and id_token are required").WriteJSON(w)
+		return
+	}
+	c := req.Config
+	out, err := h.svc.PreviewTrust(r.Context(), tenantID, cirunapp.PreviewInput{
+		Config: cirunapp.TrustConfigInput{Name: c.Name, Provider: c.Provider, Issuer: c.Issuer, Audience: c.Audience,
+			DefaultBranch: c.DefaultBranch, Rules: c.Rules},
+		IDToken: strings.TrimSpace(req.IDToken),
+		Hints:   cirun.Hints{CommitSHA: req.CommitSHA, Repository: req.Repository},
+	})
+	if err != nil {
+		h.writeErr(w, err, "preview trust configuration", "CI trust configuration")
+		return
+	}
+	ciWriteJSON(w, http.StatusOK, out)
 }

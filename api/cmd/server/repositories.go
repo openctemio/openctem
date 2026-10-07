@@ -21,6 +21,7 @@ type Repositories struct {
 	ScopeTarget            *postgres.ScopeTargetRepository
 	ScopeExcl              *postgres.ScopeExclusionRepository
 	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
+	WebEndpoint            *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
 	RelationshipSuggestion *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
@@ -195,7 +196,7 @@ type Repositories struct {
 	CTMonitorState *postgres.CTMonitorStateRepository
 	Attribution    *postgres.AttributionRepository
 	EASMDNS        *postgres.EASMDNSRepository
-	EASMSeed       *postgres.EASMSeedRepository
+	VerifiedNames  *postgres.VerifiedDomainNameRepository
 	// CI runs, trust configurations and the gate (RFC-051)
 	CIRun       *postgres.CIRunRepository
 	EASMSummary *postgres.EASMSummaryRepository
@@ -273,7 +274,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetTypeCat:           postgres.NewAssetTypeCategoryRepository(db),
 		ScopeTarget:            postgres.NewScopeTargetRepository(db),
 		ScopeExcl:              postgres.NewScopeExclusionRepository(db),
-		AssetService:           postgres.NewAssetServiceRepository(db),           // CTEM: Network services
+		AssetService:           postgres.NewAssetServiceRepository(db), // CTEM: Network services
+		WebEndpoint:            postgres.NewWebEndpointRepository(db),
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
 		RelationshipSuggestion: postgres.NewRelationshipSuggestionRepository(db), // CTEM: Relationship suggestions
@@ -432,7 +434,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
-		EASMSeed:         postgres.NewEASMSeedRepository(db),
+		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 
