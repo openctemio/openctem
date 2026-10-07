@@ -83,9 +83,6 @@ const useAsset = vi.fn()
 vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAsset: (id: string | null) => useAsset(id),
 }))
-vi.mock('@/lib/api/scan-hooks', () => ({
-  useScanSession: () => ({ data: undefined, isLoading: false }),
-}))
 
 import FindingsPage from '../page'
 
