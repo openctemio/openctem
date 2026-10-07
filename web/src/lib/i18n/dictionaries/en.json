@@ -426,5 +426,7 @@
   "sensors.setup.noChecks": "The report has no checks.",
   "sensors.setup.loadError": "The setup report could not be loaded.",
   "sensors.setup.retry": "Retry",
-  "sensors.setup.empty": "This sensor has not sent a setup report yet. Sensors send one when they start and after a configuration change."
+  "sensors.setup.empty": "This sensor has not sent a setup report yet. Sensors send one when they start and after a configuration change.",
+  "assets.properties.title": "Properties",
+  "assets.properties.other": "Other"
 }

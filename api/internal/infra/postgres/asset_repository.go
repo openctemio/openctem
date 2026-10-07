@@ -2348,9 +2348,14 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 	return facets, nil
 }
 
-// formatPropertyLabel converts snake_case or camelCase key to Title Case label.
+// formatPropertyLabel is the facet label of a property key: the property
+// schema's label (RFC-042 §6.3.9), the same one the asset detail shows; for
+// a key outside the schema, the key in Title Case.
 // Handles: snake_case, camelCase, PascalCase, ALLCAPS, and mixtures.
 func formatPropertyLabel(key string) string {
+	if p, ok := asset.LookupProperty(key); ok {
+		return p.Label
+	}
 	// Step 1: insert space before uppercase letters in camelCase/PascalCase
 	// but NOT between consecutive uppercase (e.g., "BIOS" stays "BIOS")
 	var b strings.Builder
