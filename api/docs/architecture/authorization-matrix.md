@@ -342,7 +342,7 @@ create's target validator, exclusions, zone routing) in one call.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/{id}/config-report` (setup checklist, research/26) · `/available-capabilities` · `/content-policy` | `sensors:read` |
-| `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write` |
+| `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write`; creating a sensor and regenerating its key also need **step-up** (they mint a persistent key) |
 | `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
 | `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
 
@@ -373,7 +373,7 @@ create's target validator, exclusions, zone routing) in one call.
 | `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + `fingerprint_confirmed` |
 | `GET /api/v1/sensors/{id}/grant` · `GET /api/v1/sensors/grant-profiles` · `GET /api/v1/sensors/grant-summaries` · `GET /api/v1/sensors/identity-policy` | `sensors:read` |
 | `PUT /api/v1/sensors/{id}/grant` | `sensors:grant:narrow` when every dimension narrows or stays (demoting the trust level included); `sensors:grant:widen` otherwise, promoting to trusted included (checked in the service against the stored grant) |
-| `PUT /api/v1/sensors/identity-policy` | require key-bound identity: `sensors:grant:narrow`; allow bearer keys again: `sensors:grant:widen` |
+| `PUT /api/v1/sensors/identity-policy` | require key-bound identity: `sensors:grant:narrow`; allow bearer keys again: `sensors:grant:widen` + **step-up** |
 | `POST /api/v1/sensors/{id}/revoke` · `POST /{id}/keys/{keyId}/revoke` | `sensors:write` or `sensors:revoke` |
 
 > `sensors:pair`, `sensors:approve`, `sensors:grant:narrow`,
@@ -438,7 +438,7 @@ the billing page in the UI.
 | `GET /api/v1/credentials` · `/{id}` · `/{id}/related` · `/identities` · `/identities/{identity}/exposures` · `/stats` | `findings:credentials:read` |
 | `POST /api/v1/credentials/import` · `/import/csv` · `/{id}/resolve` · `/reactivate` | `findings:credentials:write` |
 | `POST /api/v1/credentials/{id}/accept` · `/{id}/false-positive` | `findings:credentials:write` **and** `findings:approve` (same dispositions as the exposure routes) |
-| `POST /api/v1/credentials/{id}/reveal` | `findings:credentials:reveal` |
+| `POST /api/v1/credentials/{id}/reveal` | `findings:credentials:reveal` + **step-up**; audited |
 
 > **The leaked secret is reveal-only.** Read endpoints (here and under
 > `/api/v1/exposures`) return `secret_masked` and `secret_fingerprint` (a
@@ -591,7 +591,6 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/members` | Team admin+ |
 | `PATCH /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator** |
 | `POST /api/v1/tenants/{tenant}/members/{id}/suspend` · `/reactivate` | Team admin+; **owner only when the target is an administrator** |
-| `DELETE /api/v1/tenants/{tenant}/members/{id}` | Team admin+; **owner only when the target is an administrator**. An **offboarding** with no reassignment plan (member lifecycle, RFC-050): 409 `reassignment_required` when the member owns work; the membership row is never deleted |
 | `GET /api/v1/tenants/{tenant}/members/{id}/access-report` | Team admin+ (`members:read`): what the member holds and owns |
 | `POST /api/v1/tenants/{tenant}/members/{id}/offboard` | Team admin+ (`members:write`); **owner only when the target is an administrator**; reassignment targets must be active members of the same organization |
 | `POST /api/v1/tenants/{tenant}/members/{id}/erase` | **Team owner only**; only after offboarding and when the person belongs to no other organization |
