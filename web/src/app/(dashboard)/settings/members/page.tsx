@@ -85,7 +85,7 @@ import {
   Eraser,
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { useUrlPagination } from '@/hooks/use-url-pagination'
+import { useListParams } from '@/hooks/use-list-params'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useTenant } from '@/context/tenant-provider'
 import {
@@ -506,10 +506,11 @@ export default function UsersPage() {
   // Paged, searched and filtered on the server. The list used to load one
   // capped page (100) and filter it in the browser, so every member past the
   // cap was unreachable (23a B20).
-  const { pagination, setPagination, resetPage, offset, limit } = useUrlPagination(
-    MEMBER_PAGE_SIZES,
-    20
-  )
+  const list = useListParams({ pageSizes: MEMBER_PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
+  const resetPage = useCallback(() => setPage(1), [setPage])
+  const offset = (list.page - 1) * list.perPage
+  const limit = list.perPage
   const setSearchQuery = (v: string) => {
     setSearchQueryParam(v)
     resetPage()

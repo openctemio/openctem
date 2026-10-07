@@ -47,7 +47,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { useDebounce } from '@/hooks/use-debounce'
-import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { Can, Permission } from '@/lib/permissions'
 import {
   useScanConfigs,
@@ -88,11 +88,7 @@ import {
   DEFAULT_SCAN_PAGE_SIZE,
   SCAN_CONFIG_SORT_FIELDS,
   SCAN_PAGE_SIZES,
-  parsePageSize,
-  parseSortParam,
-  toSortParam,
 } from '@/features/scans/lib/scans-url'
-import type { SortingState } from '@tanstack/react-table'
 
 // ============================================
 // CONFIGURATIONS TAB TYPES
@@ -315,38 +311,32 @@ function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActio
 function ConfigurationsTab() {
   const [selectedConfig, setSelectedConfig] = useState<ScanConfig | null>(null)
   // The whole view lives in the URL so a filtered list can be shared or
-  // bookmarked. The hook returns plain strings; the casts keep the narrower
-  // filter types downstream.
-  const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
+  // bookmarked: plain page / per_page / sort / q and field-named filters
+  // (useListParams). Paged and sorted on the server.
+  const list = useListParams({
+    pageSizes: SCAN_PAGE_SIZES,
+    defaultPageSize: DEFAULT_SCAN_PAGE_SIZE,
+    sortFields: SCAN_CONFIG_SORT_FIELDS,
+    defaultSort: DEFAULT_SCAN_CONFIG_SORT,
+    filters: { status: 'all', type: 'all', schedule: 'all', tag: '', one_off: '' },
+  })
+  const searchQuery = list.q
+  const setSearchQuery = list.setSearch
   const debouncedSearch = useDebounce(searchQuery, 300)
-  const [statusFilter, setStatusFilter] = useUrlFilter('status', 'all') as [
-    ConfigStatusFilter,
-    (v: ConfigStatusFilter) => void,
-  ]
-  const [typeFilter, setTypeFilter] = useUrlFilter('type', 'all') as [
-    ConfigTypeFilter,
-    (v: ConfigTypeFilter) => void,
-  ]
-  const [scheduleFilter, setScheduleFilter] = useUrlFilter('schedule', 'all') as [
-    ConfigScheduleFilter,
-    (v: ConfigScheduleFilter) => void,
-  ]
-  const [tagFilter, setTagFilter] = useUrlFilter('tag', '')
+  const statusFilter = list.filters.status as ConfigStatusFilter
+  const setStatusFilter = (v: ConfigStatusFilter) => list.setFilter('status', v)
+  const typeFilter = list.filters.type as ConfigTypeFilter
+  const setTypeFilter = (v: ConfigTypeFilter) => list.setFilter('type', v)
+  const scheduleFilter = list.filters.schedule as ConfigScheduleFilter
+  const setScheduleFilter = (v: ConfigScheduleFilter) => list.setFilter('schedule', v)
+  const tagFilter = list.filters.tag
+  const setTagFilter = (v: string) => list.setFilter('tag', v)
   const debouncedTag = useDebounce(tagFilter, 300)
   // One-off (quick) scans are hidden unless asked for.
-  const [oneOffParam, setOneOffParam] = useUrlFilter('one_off', '')
+  const oneOffParam = list.filters.one_off
+  const setOneOffParam = (v: string) => list.setFilter('one_off', v)
   const showOneOff = oneOffParam === '1'
-  // Paged and sorted on the server. The list used to fetch the API's default
-  // first page (20 scans) and page those on the client, so scan 21 and later
-  // could not be seen at all and the footer read "of 20".
-  const [pageParam, setPageParam] = useUrlFilterNumber('page', 1)
-  const [perPageParam, setPerPageParam] = useUrlFilterNumber('per_page', DEFAULT_SCAN_PAGE_SIZE)
-  const perPage = parsePageSize(perPageParam)
-  const [sortParam, setSortParam] = useUrlFilter('sort', DEFAULT_SCAN_CONFIG_SORT)
-  const sorting = useMemo<SortingState>(
-    () => parseSortParam(sortParam, SCAN_CONFIG_SORT_FIELDS, DEFAULT_SCAN_CONFIG_SORT),
-    [sortParam]
-  )
+  const { page: pageParam, setPage: setPageParam, perPage, sorting } = list
   // Selection is owned by the DataTable; we mirror the selected ids for the
   // bulk-action bar and bump the epoch to clear the table's own checkboxes.
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -382,7 +372,7 @@ function ConfigurationsTab() {
       tags: debouncedTag || undefined,
       search: debouncedSearch || undefined,
       include_ad_hoc: showOneOff || undefined,
-      sort: toSortParam(sorting, SCAN_CONFIG_SORT_FIELDS, DEFAULT_SCAN_CONFIG_SORT),
+      sort: list.sort,
       page: pageParam,
       per_page: perPage,
     }),
@@ -393,7 +383,7 @@ function ConfigurationsTab() {
       debouncedTag,
       debouncedSearch,
       showOneOff,
-      sorting,
+      list.sort,
       pageParam,
       perPage,
     ]
@@ -424,8 +414,8 @@ function ConfigurationsTab() {
 
   // Memoize configs array with stable reference
   const configs = useMemo((): ScanConfig[] => {
-    return configsResponse?.items ?? []
-  }, [configsResponse?.items])
+    return configsResponse?.data ?? []
+  }, [configsResponse?.data])
 
   // Sync selectedConfig with latest data from API
   // This ensures the detail popup shows updated status after actions
@@ -442,7 +432,7 @@ function ConfigurationsTab() {
   // goes to the last page that exists.
   const totalPages = configsResponse?.total_pages ?? 0
   useEffect(() => {
-    if (configsResponse && pageParam > 1 && configsResponse.items.length === 0) {
+    if (configsResponse && pageParam > 1 && configsResponse.data.length === 0) {
       setPageParam(Math.max(1, totalPages))
     }
   }, [configsResponse, pageParam, totalPages, setPageParam])
@@ -878,22 +868,12 @@ function ConfigurationsTab() {
               manualPagination
               rowCount={configsResponse?.total ?? 0}
               pagination={{ pageIndex: pageParam - 1, pageSize: perPage }}
-              onPaginationChange={(next) => {
-                if (next.pageSize !== perPage) {
-                  setPerPageParam(next.pageSize)
-                  setPageParam(1)
-                } else {
-                  setPageParam(next.pageIndex + 1)
-                }
-              }}
+              onPaginationChange={list.setPagination}
               pageSize={perPage}
               pageSizeOptions={[...SCAN_PAGE_SIZES]}
               paginationNoun="scans"
               sorting={sorting}
-              onSortingChange={(next) => {
-                setSortParam(toSortParam(next, SCAN_CONFIG_SORT_FIELDS, DEFAULT_SCAN_CONFIG_SORT))
-                setPageParam(1)
-              }}
+              onSortingChange={list.setSorting}
               getRowId={(c) => c.id}
               onRowClick={setSelectedConfig}
               onSelectionChange={(rows) => setSelectedIds(rows.map((c) => c.id))}

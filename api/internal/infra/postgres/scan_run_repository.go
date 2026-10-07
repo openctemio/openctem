@@ -844,7 +844,9 @@ func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAft
 			  AND NOT EXISTS (
 			        SELECT 1 FROM commands c
 			        WHERE c.tenant_id = pr.tenant_id AND c.payload->>'scan_run_id' = pr.id::text
-			          AND (c.status <> 'pending' OR c.acknowledged_at IS NOT NULL OR c.started_at IS NOT NULL))
+			          AND (c.status <> 'pending' OR c.acknowledged_at IS NOT NULL OR c.started_at IS NOT NULL
+			               -- a lease-lost requeue clears the timestamps but not the attempts
+			               OR c.dispatch_attempts > 0))
 		), unclaimed AS (
 			UPDATE scan_runs pr
 			SET status = 'failed',
@@ -1097,6 +1099,11 @@ func (r *ScanRunRepository) buildWhereClause(filter scanrun.RunFilter) (string, 
 	if filter.ScanWorkflowID != nil {
 		args = append(args, filter.ScanWorkflowID.String())
 		conditions = append(conditions, fmt.Sprintf("scan_workflow_id = $%d", len(args)))
+	}
+
+	if filter.ScanID != nil {
+		args = append(args, filter.ScanID.String())
+		conditions = append(conditions, fmt.Sprintf("scan_id = $%d", len(args)))
 	}
 
 	if filter.AssetID != nil {

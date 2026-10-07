@@ -5,7 +5,7 @@ import type { AutomationNode } from '../../lib/automation-graph'
 import { AutomationInspector, parseConfigJson, parseTags } from '../automation-inspector'
 
 vi.mock('@/lib/api/scan-hooks', () => ({
-  useScanConfigs: () => ({ data: { items: [{ id: 's1', name: 'Nightly' }] }, isLoading: false }),
+  useScanConfigs: () => ({ data: { data: [{ id: 's1', name: 'Nightly' }] }, isLoading: false }),
 }))
 
 function node(type: string, config: AutomationNode['data']['config']): AutomationNode {

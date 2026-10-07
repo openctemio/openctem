@@ -12,7 +12,7 @@ vi.mock('@/lib/api/scan-workflow-hooks', () => ({
     return {
       data: filters
         ? {
-            items: [
+            data: [
               {
                 id: 'starter-discover',
                 name: 'Discover',
