@@ -350,131 +350,27 @@ Agents are distributed components (scanners, collectors) that execute security t
 
 ### Tool Registry
 
-The Tool Registry manages security tools available for scanning. It consists of two parts:
-- **Tools**: Global tool definitions (system-wide)
-- **Tenant Tool Configs**: Tenant-specific tool configurations and overrides
+The Tool Registry manages security tools available for scanning: platform tools
+(shared, managed by the platform) and each organization's custom tools, with
+the organization's own settings (switch, config overrides) of each.
 
-#### Tools (Global Registry)
+#### Tools
 
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/tools` | List all tools | `tools:read` |
-| GET | `/tools/:id` | Get tool by ID | `tools:read` |
-| GET | `/tools/name/:name` | Get tool by name | `tools:read` |
-| GET | `/tools/category/:category` | List tools by category | `tools:read` |
-| GET | `/tools/capability/:capability` | List tools by capability | `tools:read` |
-| POST | `/tools` | Create tool | `tools:write` |
-| PUT | `/tools/:id` | Update tool | `tools:write` |
-| DELETE | `/tools/:id` | Delete tool (custom only) | `tools:delete` |
-| GET | `/tools/stats` | Get tool statistics | `tools:read` |
-
-#### Tool Categories
-
-| Category | Description |
-|----------|-------------|
-| `sast` | Static Application Security Testing |
-| `dast` | Dynamic Application Security Testing |
-| `sca` | Software Composition Analysis |
-| `secret` | Secret Detection |
-| `container` | Container Security |
-| `iac` | Infrastructure as Code scanning |
-| `network` | Network Security |
-| `osint` | Open Source Intelligence |
-| `recon` | Reconnaissance |
-| `exploit` | Exploitation Tools |
-| `other` | Other tools |
-
-#### Tool Response
-
-```json
-{
-  "id": "uuid",
-  "name": "semgrep",
-  "display_name": "Semgrep",
-  "description": "Fast, lightweight static analysis for finding bugs",
-  "logo_url": "https://example.com/semgrep.png",
-  "category": "sast",
-  "install_method": "binary",
-  "install_cmd": "pip install semgrep",
-  "update_cmd": "pip install --upgrade semgrep",
-  "version_cmd": "semgrep --version",
-  "version_regex": "semgrep ([0-9.]+)",
-  "current_version": "1.50.0",
-  "latest_version": "1.51.0",
-  "config_file_path": ".semgrep.yml",
-  "config_schema": {},
-  "default_config": {},
-  "capabilities": ["sast", "code-analysis"],
-  "supported_targets": ["repository", "directory"],
-  "output_formats": ["json", "sarif"],
-  "docs_url": "https://semgrep.dev/docs",
-  "github_url": "https://github.com/returntocorp/semgrep",
-  "is_active": true,
-  "is_builtin": true,
-  "has_update": true,
-  "tags": ["python", "security", "linting"],
-  "metadata": {},
-  "created_at": "2024-01-15T10:30:00Z",
-  "updated_at": "2024-01-15T10:30:00Z"
-}
-```
-
-#### Tool Statistics Response
-
-```json
-{
-  "total": 15,
-  "active": 12,
-  "inactive": 3,
-  "by_category": {
-    "sast": 4,
-    "sca": 3,
-    "secret": 2,
-    "container": 2,
-    "network": 2,
-    "recon": 2
-  },
-  "builtin": 10,
-  "custom": 5,
-  "with_updates": 3
-}
-```
-
-#### Tenant Tool Configs
+One resource: the organization's view of the catalog (platform tools plus its
+own custom tools). See `docs/architecture/tool-availability.md`.
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|------------|
-| GET | `/tenant-tools` | List tenant tool configs | `tenant-tools:read` |
-| GET | `/tenant-tools/:tool_id` | Get config for tool | `tenant-tools:read` |
-| POST | `/tenant-tools/:tool_id` | Create/update config | `tenant-tools:write` |
-| DELETE | `/tenant-tools/:tool_id` | Delete config (reset to default) | `tenant-tools:delete` |
-| POST | `/tenant-tools/:tool_id/activate` | Activate tool for tenant | `tenant-tools:write` |
-| POST | `/tenant-tools/:tool_id/deactivate` | Deactivate tool for tenant | `tenant-tools:write` |
-| GET | `/tenant-tools/active` | List active tools only | `tenant-tools:read` |
-
-#### Tenant Tool Config Response
-
-```json
-{
-  "id": "uuid",
-  "tenant_id": "uuid",
-  "tool_id": "uuid",
-  "tool_name": "semgrep",
-  "is_enabled": true,
-  "priority": 1,
-  "config_overrides": {
-    "severity_threshold": "warning",
-    "timeout_seconds": 600
-  },
-  "credentials": {
-    "api_key_ref": "vault:semgrep-api-key"
-  },
-  "schedule": "0 2 * * *",
-  "metadata": {},
-  "created_at": "2024-01-15T10:30:00Z",
-  "updated_at": "2024-01-15T10:30:00Z"
-}
-```
+| GET | `/tools` | List; filters `source`, `category`, `q`, `enabled`, `available`, `zone_id`, `sort`; `include=settings,availability,stats` | `scans:tools:read` (+ `scans:tenant_tools:read` per include) |
+| GET | `/tools/:id` | One tool (platform or own custom); `include=` as above | `scans:tools:read` |
+| POST | `/tools` | Create a custom tool | `scans:tools:write` |
+| PUT | `/tools/:id` | Update an own custom tool | `scans:tools:write` |
+| DELETE | `/tools/:id` | Delete an own custom tool | `scans:tools:delete` |
+| PATCH | `/tools/:id/settings` | The organization's switch and config overrides | `scans:tenant_tools:write` |
+| PATCH | `/tools/settings` | Switch several tools on or off | `scans:tenant_tools:write` |
+| GET | `/tool-categories` | Platform plus own categories (`source=`) | `scans:tools:read` |
+| GET | `/tool-categories/:id` | One category | `scans:tools:read` |
+| POST/PUT/DELETE | `/tool-categories[/:id]` | Own custom categories | `scans:tools:write` / `scans:tools:delete` |
 
 #### Combined Tool with Config
 
