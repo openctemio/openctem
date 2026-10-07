@@ -68,7 +68,8 @@ updates:
         dependency-type: "all"
 
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # The workflows, and the composite actions in .github/actions.
+    directories: ["/", "/.github/actions/*"]
     target-branch: "develop"
     schedule:
       interval: "weekly"

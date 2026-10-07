@@ -72,66 +72,6 @@ func (h *AuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(result)
 }
 
-// RebaselineChain handles POST /api/v1/audit-logs/rebaseline. Admin-only. It
-// re-signs the tenant's audit hash-chain from current data — used to clear breaks
-// from a known-benign hashing change (e.g. the timestamp-precision fix). This
-// overwrites the tamper-evident chain, so the old hashes are archived and the
-// action is recorded as a critical audit.chain_rebaselined event.
-//
-// 200 {ok, rebaseline_id, entries_total, entries_rewritten}; 409 when the chain
-// cannot be rebaselined as it stands (a source audit log is missing, or the
-// chain changed while the rebaseline ran) — nothing is rewritten in that case.
-func (h *AuditHandler) RebaselineChain(w http.ResponseWriter, r *http.Request) {
-	tenantIDStr := middleware.GetTenantID(r.Context())
-	if tenantIDStr == "" {
-		apierror.Unauthorized("tenant required").WriteJSON(w)
-		return
-	}
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.BadRequest("invalid tenant id").WriteJSON(w)
-		return
-	}
-
-	actx := auditsvc.AuditContext{
-		TenantID:   tenantIDStr,
-		ActorID:    middleware.GetUserID(r.Context()),
-		ActorEmail: auditActorEmail(r.Context()),
-		ActorIP:    getClientIP(r),
-		UserAgent:  r.UserAgent(),
-		RequestID:  middleware.GetRequestID(r.Context()),
-	}
-	result, err := h.service.RebaselineChain(r.Context(), tenantID, actx)
-	if err != nil {
-		h.logger.Error("audit chain rebaseline failed", "tenant_id", tenantIDStr, "error", err)
-		if errors.Is(err, shared.ErrConflict) {
-			apierror.Conflict("audit chain cannot be rebaselined as it stands; nothing was changed — run verify and chainaudit").WriteJSON(w)
-			return
-		}
-		apierror.InternalServerError("rebaseline failed").WriteJSON(w)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(RebaselineChainResponse{
-		OK:               true,
-		RebaselineID:     result.RebaselineID,
-		EntriesTotal:     result.EntriesTotal,
-		EntriesRewritten: result.EntriesRewritten,
-	})
-}
-
-// RebaselineChainResponse is the body of a successful POST /audit-logs/rebaseline.
-type RebaselineChainResponse struct {
-	OK bool `json:"ok"`
-	// RebaselineID keys the archive of overwritten hashes
-	// (audit_chain_rebaselines / audit_chain_rebaseline_entries).
-	RebaselineID     string `json:"rebaseline_id"`
-	EntriesTotal     int    `json:"entries_total"`
-	EntriesRewritten int    `json:"entries_rewritten"`
-}
-
 // =============================================================================
 // Response Types
 // =============================================================================
