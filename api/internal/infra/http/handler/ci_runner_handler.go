@@ -81,6 +81,10 @@ type CIExchangeRequest struct {
 	// already holds (same repository, commit and pipeline run; not yet
 	// evaluated).
 	RunID string `json:"run_id,omitempty"`
+	// Aggregate, optional, joins the run every capability job of the same
+	// pipeline run reports into (opening it for the first job); each job
+	// gets its own token for it, and one final job asks for the verdict.
+	Aggregate bool `json:"aggregate,omitempty"`
 }
 
 // CIExchangeResponse is a run and its upload token (shown once).
@@ -97,11 +101,13 @@ type CIExchangeResponse struct {
 	PullRequest       string    `json:"pull_request,omitempty"`
 	DefaultBranch     string    `json:"default_branch,omitempty"`
 	IsDefaultBranch   bool      `json:"is_default_branch"`
+	// Aggregate: the token belongs to the aggregate run of the pipeline run.
+	Aggregate bool `json:"aggregate"`
 }
 
 // Exchange handles POST /api/v1/ci/oidc/exchange
 // @Summary      Exchange a CI OIDC token for a run upload token
-// @Description  A GitHub Actions or GitLab CI job presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. Each OIDC token can be exchanged once. Every refusal answers the same 401.
+// @Description  A GitHub Actions or GitLab CI job presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. Each OIDC token can be exchanged once. With aggregate true, the jobs of one pipeline run (same pipeline, provider run id, attempt and commit, from the verified token) share one run, each with its own token, and one final job evaluates it. Every refusal answers the same 401.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
@@ -123,7 +129,7 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := h.svc.Exchange(r.Context(), cirunapp.ExchangeInput{TenantID: req.TenantID, IDToken: req.IDToken,
-		RunID: req.RunID, ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
+		RunID: req.RunID, Aggregate: req.Aggregate, ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
 	if err != nil {
 		if errors.Is(err, cirunapp.ErrExchangeRefused) {
 			apierror.Unauthorized("The CI token was not accepted").WriteJSON(w)
@@ -142,7 +148,8 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 	resp := CIExchangeResponse{RunID: run.ID.String(), Token: out.Token, TokenType: "Bearer", ExpiresAt: out.ExpiresAt,
 		ExpiresIn: int(time.Until(out.ExpiresAt).Seconds()), Repository: run.Repository,
 		RepositoryAssetID: run.RepositoryAssetID.String(), Branch: run.Branch, CommitSHA: run.CommitSHA,
-		PullRequest: run.PullRequest, DefaultBranch: run.DefaultBranch, IsDefaultBranch: run.IsDefaultBranch}
+		PullRequest: run.PullRequest, DefaultBranch: run.DefaultBranch, IsDefaultBranch: run.IsDefaultBranch,
+		Aggregate: run.Aggregate}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)

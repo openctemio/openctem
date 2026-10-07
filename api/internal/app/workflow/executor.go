@@ -39,6 +39,11 @@ type WorkflowExecutor struct {
 	integrationService  *integration.IntegrationService
 	auditService        *auditapp.AuditService
 
+	// authorizer checks, before every action and notification step, that
+	// the person the run acts as may run it (see authz.go). Nil refuses
+	// every such step (fail closed).
+	authorizer StepAuthorizer
+
 	logger *logger.Logger
 	mu     sync.RWMutex
 
@@ -106,6 +111,13 @@ func WithExecutorIntegrationService(svc *integration.IntegrationService) Workflo
 func WithExecutorAuditService(svc *auditapp.AuditService) WorkflowExecutorOption {
 	return func(e *WorkflowExecutor) {
 		e.auditService = svc
+	}
+}
+
+// WithExecutorStepAuthorizer sets the per-step principal check.
+func WithExecutorStepAuthorizer(a StepAuthorizer) WorkflowExecutorOption {
+	return func(e *WorkflowExecutor) {
+		e.authorizer = a
 	}
 }
 
@@ -239,6 +251,7 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 	workflowExecCtx := &ExecutionContext{
 		Run:               run,
 		Workflow:          wf,
+		PrincipalID:       runPrincipal(run, wf),
 		TriggerData:       run.TriggerData,
 		Context:           make(map[string]any),
 		CompletedNodeKeys: make(map[string]bool),
@@ -274,8 +287,11 @@ func (e *WorkflowExecutor) runCanceled(ctx context.Context, run *workflowdom.Run
 
 // ExecutionContext holds the state during workflow execution.
 type ExecutionContext struct {
-	Run               *workflowdom.Run
-	Workflow          *workflowdom.Workflow
+	Run      *workflowdom.Run
+	Workflow *workflowdom.Workflow
+	// PrincipalID is the person the run acts as (authz.go): the member who
+	// started a manual run, otherwise the automation's owner.
+	PrincipalID       shared.ID
 	TriggerData       map[string]any
 	Context           map[string]any // Shared context across nodes
 	CompletedNodeKeys map[string]bool
@@ -518,7 +534,11 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 
 	// Update node run result
 	if execErr != nil {
-		nodeRun.Fail(execErr.Error(), "EXECUTION_ERROR")
+		code := "EXECUTION_ERROR"
+		if IsRunNotAuthorized(execErr) {
+			code = ErrCodeRunNotAuthorized
+		}
+		nodeRun.Fail(execErr.Error(), code)
 		e.updateRunStats(execCtx, false)
 	} else {
 		nodeRun.Complete(output)
@@ -634,6 +654,11 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 		return nil, fmt.Errorf("no handler registered for action type: %s", actionType)
 	}
 
+	stepCtx, err := e.authorizeStep(ctx, execCtx, node.Config, node.Config.ActionConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	// Build action input
 	input := &ActionInput{
 		TenantID:     execCtx.Run.TenantID,
@@ -646,16 +671,44 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 		Context:      e.buildNodeInput(execCtx, node),
 	}
 
-	// Execute the action
-	// The events the step causes (a status change, a scan) carry the run as
-	// their cause, so they cannot start a loop (loop_guard.go).
-	return handler.Execute(WithAutomationCause(ctx, stepCause(execCtx.Run)), input)
+	// Execute the action as the run principal. The events the step causes
+	// (a status change, a scan) carry the run as their cause, so they cannot
+	// start a loop (loop_guard.go).
+	return handler.Execute(WithAutomationCause(stepCtx, stepCause(execCtx.Run)), input)
+}
+
+// authorizeStep checks that the run's principal may run a step with this
+// config on the run's subject, and returns the context to run it with.
+func (e *WorkflowExecutor) authorizeStep(ctx context.Context, execCtx *ExecutionContext, cfg workflowdom.NodeConfig, actionConfig map[string]any) (context.Context, error) {
+	if e.authorizer == nil {
+		return ctx, errNotAuthorized(shared.ErrForbidden, "automation run authorization is not configured")
+	}
+	perm, _ := NodePermission(cfg)
+	findings, assets := stepSubjects(actionConfig, execCtx.TriggerData)
+	stepCtx, err := e.authorizer.AuthorizeStep(ctx, StepAuthorization{
+		TenantID:    execCtx.Run.TenantID,
+		PrincipalID: execCtx.PrincipalID,
+		Permission:  perm,
+		FindingIDs:  findings,
+		AssetIDs:    assets,
+	})
+	if err != nil {
+		e.logger.Warn("automation step refused: the run's principal may not run it",
+			"run_id", execCtx.Run.ID, "workflow_id", execCtx.Workflow.ID,
+			"principal_id", execCtx.PrincipalID, "required_permission", string(perm), "error", err)
+		return ctx, err
+	}
+	return stepCtx, nil
 }
 
 // executeNotificationNode executes a notification node.
 func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx *ExecutionContext, node *workflowdom.Node) (map[string]any, error) {
 	if e.notificationHandler == nil {
 		return nil, fmt.Errorf("notification handler not configured")
+	}
+	stepCtx, err := e.authorizeStep(ctx, execCtx, node.Config, nil)
+	if err != nil {
+		return nil, err
 	}
 
 	// Build notification input
@@ -670,7 +723,7 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 		Context:            e.buildNodeInput(execCtx, node),
 	}
 
-	return e.notificationHandler.Send(WithAutomationCause(ctx, stepCause(execCtx.Run)), input)
+	return e.notificationHandler.Send(WithAutomationCause(stepCtx, stepCause(execCtx.Run)), input)
 }
 
 // updateRunStats updates the run statistics.

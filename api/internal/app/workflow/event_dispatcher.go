@@ -262,18 +262,9 @@ func (d *WorkflowEventDispatcher) matchesSourceFilter(config map[string]any, fin
 
 // buildFindingTriggerData builds trigger data from a finding event.
 func (d *WorkflowEventDispatcher) buildFindingTriggerData(event FindingEvent) map[string]any {
-	finding := event.Finding
 	data := map[string]any{
 		"event_type": string(event.EventType),
-		"finding": map[string]any{
-			"id":        finding.ID().String(),
-			"title":     finding.Title(),
-			"severity":  string(finding.Severity()),
-			"status":    string(finding.Status()),
-			"source":    string(finding.Source()),
-			"tool_name": finding.ToolName(),
-			"asset_id":  finding.AssetID().String(),
-		},
+		"finding":    findingTriggerSummary(event.Finding),
 	}
 
 	if event.Changes != nil {

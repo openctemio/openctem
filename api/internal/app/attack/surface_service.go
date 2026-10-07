@@ -66,9 +66,28 @@ type ExposedService struct {
 // AssetChange represents a recent asset change.
 type AssetChange struct {
 	Type      string    `json:"type"` // added, removed, changed
+	AssetID   string    `json:"asset_id,omitempty"`
 	AssetName string    `json:"asset_name"`
 	AssetType string    `json:"asset_type"`
 	Timestamp time.Time `json:"timestamp"`
+	// AttributionState is the asset's recorded attribution ("" = no record,
+	// a legacy confirmed asset), and InInventory whether that puts it in the
+	// inventory (RFC-054 §4.4): a name the scan found that waits for review
+	// is listed as "added" with needs_review and in_inventory false.
+	AttributionState string `json:"attribution_state,omitempty"`
+	InInventory      bool   `json:"in_inventory"`
+}
+
+// AttributionRecords reads the stored attribution of assets
+// (*postgres.AttributionRepository). Tenant-scoped.
+type AttributionRecords interface {
+	Records(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.Record, error)
+}
+
+// SetAttributionRecords annotates recent changes with each asset's
+// attribution state. Optional: without it every change says in_inventory.
+func (s *SurfaceService) SetAttributionRecords(r AttributionRecords) {
+	s.attribution = r
 }
 
 // SurfaceRepository defines the interface for attack surface data access.
@@ -112,6 +131,7 @@ type SurfaceService struct {
 	assetRepo   asset.Repository
 	relRepo     asset.RelationshipRepository
 	history     RecentChangeLister
+	attribution AttributionRecords
 	findingRisk FindingRiskCounter
 	dataScope   *datascope.Enforcer // Layer 2 narrowing of member-facing reads (nil = unrestricted)
 	logger      *logger.Logger
@@ -368,6 +388,7 @@ func (s *SurfaceService) getRecentChanges(ctx context.Context, tenantID shared.I
 			added[a.ID().String()] = struct{}{}
 			changes = append(changes, AssetChange{
 				Type:      "added",
+				AssetID:   a.ID().String(),
 				AssetName: a.Name(),
 				AssetType: a.Type().String(),
 				Timestamp: a.CreatedAt(),
@@ -385,7 +406,36 @@ func (s *SurfaceService) getRecentChanges(ctx context.Context, tenantID shared.I
 	if len(changes) > limit {
 		changes = changes[:limit]
 	}
+	s.annotateAttribution(ctx, tenantID, changes)
 	return changes
+}
+
+// annotateAttribution sets each change's attribution state and inventory
+// membership. A failed lookup leaves the states empty (logged).
+func (s *SurfaceService) annotateAttribution(ctx context.Context, tenantID shared.ID, changes []AssetChange) {
+	for i := range changes {
+		changes[i].InInventory = true
+	}
+	if s.attribution == nil || len(changes) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(changes))
+	for _, c := range changes {
+		if c.AssetID != "" {
+			ids = append(ids, c.AssetID)
+		}
+	}
+	recs, err := s.attribution.Records(ctx, tenantID, ids)
+	if err != nil {
+		s.logger.Warn("recent changes: attribution lookup failed", "error", err)
+		return
+	}
+	for i := range changes {
+		if r, ok := recs[changes[i].AssetID]; ok {
+			changes[i].AttributionState = string(r.State)
+			changes[i].InInventory = attribution.InInventory(r.State)
+		}
+	}
 }
 
 // historyChanges maps the newest state-history rows to removed/changed
@@ -425,6 +475,7 @@ func (s *SurfaceService) historyChanges(ctx context.Context, tenantID shared.ID,
 		}
 		out = append(out, AssetChange{
 			Type:      kind,
+			AssetID:   r.AssetID().String(),
 			AssetName: ref.Name,
 			AssetType: ref.Type,
 			Timestamp: r.ChangedAt(),

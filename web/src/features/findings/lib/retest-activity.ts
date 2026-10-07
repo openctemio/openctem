@@ -27,6 +27,18 @@ export function retestActivity(
 ): { type: ActivityType; content: string } | null {
   const template = typeof changes.template_id === 'string' ? changes.template_id : ''
   const via = template ? ` (template ${template})` : ''
+  if (apiType === 'evidence_revealed') {
+    // Who revealed which masked evidence values, and why. Never the values.
+    const n = Array.isArray(changes.placeholders) ? changes.placeholders.length : 0
+    const values = `${n} masked evidence value${n === 1 ? '' : 's'}`
+    const content =
+      changes.purpose === 'copy_curl'
+        ? `Copied the reproduction curl with ${values}`
+        : changes.purpose === 'copy'
+          ? `Copied ${values}`
+          : `Revealed ${values}`
+    return { type: 'evidence_added', content }
+  }
   if (apiType === 'retest_requested') {
     const auto = changes.trigger === 'auto'
     return { type: 'verified', content: `${auto ? 'Auto-retest' : 'Retest'} started${via}` }

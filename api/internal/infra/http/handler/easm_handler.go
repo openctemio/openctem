@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -26,6 +27,7 @@ type EASMSummarizer interface {
 type EASMHandler struct {
 	svc    EASMSummarizer
 	review EASMReviewer
+	rules  EASMRuleService
 	audit  AttributionAuditor
 	logger *logger.Logger
 }
@@ -83,6 +85,7 @@ func (h *EASMHandler) SetReview(rv EASMReviewer, audit AttributionAuditor) *EASM
 // @Param        types           query string false "Asset types (comma-separated)"
 // @Param        min_confidence  query int    false "Minimum confidence 0-100"
 // @Param        search          query string false "Substring of the asset name"
+// @Param        reason          query string false "Only rows set by this attribution rule (e.g. fqdn_under_asserted_root)"
 // @Param        page            query int    false "Page number" default(1)
 // @Param        per_page        query int    false "Items per page" default(50) maximum(100)
 // @Success      200  {object}  easmapp.ReviewPage
@@ -101,6 +104,7 @@ func (h *EASMHandler) Candidates(w http.ResponseWriter, r *http.Request) {
 		Types:         parseQueryArray(query.Get("types")),
 		MinConfidence: parseQueryIntBounded(query.Get("min_confidence"), 0, 0, 100),
 		Search:        query.Get("search"),
+		Reason:        query.Get("reason"),
 	}
 	if len(q.Search) > 255 {
 		apierror.BadRequest("search is too long").WriteJSON(w)
@@ -117,6 +121,12 @@ func (h *EASMHandler) Candidates(w http.ResponseWriter, r *http.Request) {
 	page := parseQueryIntBounded(query.Get("page"), 1, 1, 100000)
 	q.Limit = parseQueryIntBounded(query.Get("per_page"), 50, 1, MaxPerPage)
 	q.Offset = (page - 1) * q.Limit
+	// Which fixes an address row offers depends on the caller's own
+	// permissions (taken from the token, never the request).
+	q.Caller = easmapp.ReviewCaller{
+		CanApprove: middleware.HasPermission(r.Context(), permission.ScopeApprove.String()),
+		CanRequest: middleware.HasPermission(r.Context(), permission.ScopeWrite.String()),
+	}
 	out, err := h.review.Queue(r.Context(), tenantID, q)
 	if err != nil {
 		if errors.Is(err, shared.ErrValidation) {

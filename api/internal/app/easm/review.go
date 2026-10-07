@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -37,15 +39,24 @@ type ReviewQuery struct {
 	MinConfidence int
 	// Search is a substring of the asset name.
 	Search string
+	// Reason keeps rows whose record was set by this rule
+	// (e.g. fqdn_under_asserted_root); "" = any.
+	Reason string
 	Limit  int
 	Offset int
+	// Caller decides which fixes an address row offers (set by the handler
+	// from the token, never from the request).
+	Caller ReviewCaller
 }
 
 // ReviewEvidence is one reason in a queue row.
 type ReviewEvidence struct {
-	Rule            string         `json:"rule"`
-	Technique       string         `json:"technique"`
-	Source          string         `json:"source"`
+	Rule      string `json:"rule"`
+	Technique string `json:"technique"`
+	Source    string `json:"source"`
+	// SourceLabel names the source for people: a sensor's name for
+	// "sensor:<id>" (a platform sensor is "platform sensor").
+	SourceLabel     string         `json:"source_label,omitempty"`
 	Weight          float64        `json:"weight"`
 	Observed        map[string]any `json:"observed,omitempty"`
 	FirstObservedAt time.Time      `json:"first_observed_at"`
@@ -63,7 +74,29 @@ type ReviewItem struct {
 	InQueueAt  time.Time        `json:"in_queue_since"`
 	LastSeen   *time.Time       `json:"last_seen,omitempty"`
 	Evidence   []ReviewEvidence `json:"evidence"`
+	// CoveredBy is the caller's scope target, seed or verified domain that
+	// covers the name (RFC-054 §6.6); nil means confirming it widens scope,
+	// so the UI offers "add scope entry" first.
+	CoveredBy *scopeauth.Via `json:"covered_by"`
+	// Address rows (an IP, or a service on one): an address never inherits
+	// from the names that resolve to it (review_ip.go).
+	// ResolvedFrom: the caller's in-scope names that resolve to it.
+	ResolvedFrom []string `json:"resolved_from,omitempty"`
+	// Network: the ASN, its organization, and whether it is shared space.
+	Network *ReviewNetwork `json:"network,omitempty"`
+	// Hint: why the row stays in review (ip_needs_ip_entry).
+	Hint string `json:"hint,omitempty"`
+	// Fixes the caller may take (POST /scope/targets).
+	Fixes []scopedom.Fix `json:"fixes,omitempty"`
 }
+
+// ReviewCoverage names what covers each name (*ActiveGate).
+type ReviewCoverage interface {
+	CoverOf(ctx context.Context, tenantID shared.ID, targets []string) (map[string]scopeauth.Via, error)
+}
+
+// SetCoverage fills covered_by on queue items (nil: never filled).
+func (s *ReviewService) SetCoverage(c ReviewCoverage) { s.coverage = c }
 
 // ReviewPage is one page of the queue.
 type ReviewPage struct {
@@ -85,6 +118,9 @@ type ReviewService struct {
 	store     ReviewStore
 	dataScope *datascope.Enforcer
 	effects   *DecisionEffects
+	coverage  ReviewCoverage
+	addrs     ReviewAddressStore
+	orgName   OrgNamer
 }
 
 // SetDecisionEffects runs reclassification and rejection hygiene after each
@@ -130,11 +166,35 @@ func (s *ReviewService) Queue(ctx context.Context, tenantID shared.ID, q ReviewQ
 	if q.Offset < 0 {
 		q.Offset = 0
 	}
+	if len(q.Reason) > 100 {
+		return nil, fmt.Errorf("%w: reason is too long", shared.ErrValidation)
+	}
 	scopeUser, err := s.scopeUser(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListForReview(ctx, tenantID, scopeUser, q)
+	page, err := s.store.ListForReview(ctx, tenantID, scopeUser, q)
+	if err != nil || s.coverage == nil || len(page.Items) == 0 {
+		return page, err
+	}
+	names := make([]string, 0, len(page.Items))
+	for _, it := range page.Items {
+		names = append(names, it.Name)
+	}
+	cover, err := s.coverage.CoverOf(ctx, tenantID, names)
+	if err != nil {
+		return nil, fmt.Errorf("review coverage: %w", err)
+	}
+	for i := range page.Items {
+		if v, ok := cover[page.Items[i].Name]; ok {
+			v := v
+			page.Items[i].CoveredBy = &v
+		}
+	}
+	if err := s.explainAddresses(ctx, tenantID, scopeUser, q.Caller, page); err != nil {
+		return nil, err
+	}
+	return page, nil
 }
 
 // Decision is the outcome for one asset of a bulk decision.

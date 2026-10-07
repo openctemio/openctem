@@ -423,12 +423,9 @@ func (h *PipelineTriggerHandler) triggerPipeline(ctx context.Context, input *Act
 		}, nil
 	}
 
-	return map[string]any{
-		"pipeline_id": pipelineID,
-		"triggered":   false,
-		"error":       "pipeline service not available",
-		"action":      "trigger_pipeline",
-	}, nil
+	// No service: the step fails. A {"triggered": false} success would show
+	// a green run that started nothing.
+	return nil, fmt.Errorf("trigger_pipeline: pipeline service not available")
 }
 
 func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionInput) (map[string]any, error) {
@@ -466,12 +463,9 @@ func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionI
 		}, nil
 	}
 
-	return map[string]any{
-		"scan_id":   scanID,
-		"triggered": false,
-		"error":     "scan service not available",
-		"action":    "trigger_scan",
-	}, nil
+	// No service: the step fails. A {"triggered": false} success would show
+	// a green run that started nothing.
+	return nil, fmt.Errorf("trigger_scan: scan service not available")
 }
 
 // ----------------------------------------------------------------------------
@@ -660,12 +654,9 @@ func (h *AITriageActionHandler) triggerAITriage(ctx context.Context, input *Acti
 	)
 
 	if h.aiTriageService == nil {
-		return map[string]any{
-			"finding_id": findingID,
-			"triggered":  false,
-			"error":      "AI triage service not available",
-			"action":     "trigger_ai_triage",
-		}, nil
+		// No service: the step fails rather than report a run that
+		// requested nothing as a success.
+		return nil, fmt.Errorf("trigger_ai_triage: AI triage service not available")
 	}
 
 	// Request triage
