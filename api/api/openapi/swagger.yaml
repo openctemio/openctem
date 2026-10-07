@@ -13639,6 +13639,15 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.ScanAdapterResponse:
+    properties:
+      capability:
+        type: string
+      from:
+        type: string
+      to:
+        type: string
+    type: object
   internal_infra_http_handler.ScanDetailResponse:
     properties:
       ad_hoc:
@@ -13798,6 +13807,18 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_infra_http_handler.ScanPortTypeResponse:
+    properties:
+      carries:
+        description: Carries are the stored type labels a stream of this type holds.
+        items:
+          type: string
+        type: array
+      label:
+        type: string
+      type:
+        type: string
+    type: object
   internal_infra_http_handler.ScanProfileResponse:
     properties:
       created_at:
@@ -13851,32 +13872,91 @@ definitions:
     type: object
   internal_infra_http_handler.ScanStageImplementationResponse:
     properties:
+      batch:
+        description: 'Batch: the tool takes a list of targets per task.'
+        type: boolean
       default:
         type: boolean
+      params:
+        additionalProperties:
+          type: string
+        description: |-
+          Params maps the standard params this tool accepts to its own config
+          key.
+        type: object
       tool:
         type: string
     type: object
   internal_infra_http_handler.ScanStageListResponse:
     properties:
+      adapters:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanAdapterResponse'
+        type: array
       max_hops:
         description: |-
           MaxHops is how many discovery hops a derived target may be from the
           run's seeds.
         type: integer
+      port_types:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanPortTypeResponse'
+        type: array
       stages:
         items:
           $ref: '#/definitions/internal_infra_http_handler.ScanStageResponse'
         type: array
     type: object
+  internal_infra_http_handler.ScanStageParamResponse:
+    properties:
+      description:
+        type: string
+      enum:
+        items:
+          type: string
+        type: array
+      max:
+        type: integer
+      min:
+        type: integer
+      name:
+        type: string
+      type:
+        enum:
+        - string
+        - string_list
+        - integer
+        - boolean
+        - port_list
+        type: string
+    type: object
   internal_infra_http_handler.ScanStageResponse:
     properties:
+      available:
+        description: |-
+          Available: the platform routes the capability today. A planned one
+          has a contract and no implementation yet.
+        type: boolean
+      cross_cutting:
+        description: CrossCutting capabilities (verify.finding) are not workflow nodes.
+        type: boolean
       description:
         type: string
       findings:
         type: boolean
+      id:
+        description: ID is the versioned capability id ("scan.ports@1").
+        type: string
       implementations:
         items:
           $ref: '#/definitions/internal_infra_http_handler.ScanStageImplementationResponse'
+        type: array
+      in_ports:
+        description: |-
+          InPorts and OutPorts are port types (port_types[].type): an edge
+          connects an output port to an input port of the same type.
+        items:
+          type: string
         type: array
       inputs:
         description: |-
@@ -13891,11 +13971,23 @@ definitions:
         type: integer
       name:
         type: string
+      out_ports:
+        items:
+          type: string
+        type: array
       outputs:
         items:
           type: string
         type: array
+      params:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScanStageParamResponse'
+        type: array
       relations:
+        items:
+          type: string
+        type: array
+      required_output_fields:
         items:
           type: string
         type: array
@@ -13905,6 +13997,8 @@ definitions:
         - T1
         - T2
         type: string
+      version:
+        type: integer
     type: object
   internal_infra_http_handler.ScanStatsResponse:
     properties:
@@ -33959,9 +34053,9 @@ paths:
       - Scans
   /scans/stages:
     get:
-      description: 'The scan stage catalog: each capability with the asset types it
-        consumes and produces, its intrusiveness tier and the tools that implement
-        it.'
+      description: 'The scan capability catalog: each capability with its contract
+        (typed ports, standard params, required output fields, version), its intrusiveness
+        tier and the tools that implement it; the port types and the adapter table.'
       produces:
       - application/json
       responses:
@@ -33971,7 +34065,7 @@ paths:
             $ref: '#/definitions/internal_infra_http_handler.ScanStageListResponse'
       security:
       - BearerAuth: []
-      summary: List scan stages
+      summary: List scan capabilities
       tags:
       - Scans
   /scans/stats:
