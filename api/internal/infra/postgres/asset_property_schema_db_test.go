@@ -106,3 +106,16 @@ func TestAssetPropertySchema_IPLookupsAndEdgeRefresh(t *testing.T) {
 		t.Error("another tenant's edge changed")
 	}
 }
+
+// Facets carry the property schema's label, the one the detail view shows.
+func TestFormatPropertyLabel_UsesTheSchema(t *testing.T) {
+	for key, want := range map[string]string{
+		"ip_addresses":    "IP addresses",
+		"asn_org":         "ASN organization",
+		"vendor_firmware": "Vendor Firmware",
+	} {
+		if got := formatPropertyLabel(key); got != want {
+			t.Errorf("formatPropertyLabel(%q) = %q, want %q", key, got, want)
+		}
+	}
+}

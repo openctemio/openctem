@@ -61,7 +61,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Settings
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
-		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove,
+		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
 		// Validation (legacy)
 		PentestRead, PentestWrite,
 		// Pentest (granular - all)
@@ -138,7 +138,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Settings (billing read only)
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
-		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove,
+		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
 		// Validation (legacy)
 		PentestRead, PentestWrite,
 		// Pentest (granular - all)

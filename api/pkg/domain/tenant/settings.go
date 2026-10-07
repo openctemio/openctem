@@ -32,6 +32,8 @@ type Settings struct {
 	Evidence EvidenceSettings `json:"evidence,omitempty"`
 	// EASM is attack-surface monitoring (research/22 P0-11).
 	EASM EASMSettings `json:"easm,omitempty"`
+	// Scope is the organization's scope knobs (RFC-054 §6.3).
+	Scope ScopeSettings `json:"scope,omitempty"`
 
 	// SubscribedBundles is the set of product-bundle IDs the tenant runs
 	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the
