@@ -4,6 +4,7 @@
  */
 
 import type { ImportFileResponse } from '../api/finding-import-api'
+import { SEVERITY_LEVELS } from '@/lib/severity'
 
 const FORMAT_LABELS: Record<string, string> = {
   nessus: 'Nessus (.nessus)',
@@ -32,7 +33,7 @@ export function formatLabel(format?: string): string {
   return FORMAT_LABELS[format] ?? format
 }
 
-export const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const
+export const SEVERITY_ORDER = SEVERITY_LEVELS
 
 /** Severity counts in display order, zero counts left out. */
 export function severityCounts(file: ImportFileResponse): { severity: string; count: number }[] {
