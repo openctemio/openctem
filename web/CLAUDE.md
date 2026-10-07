@@ -7,10 +7,13 @@
 This is `web/` in the `openctemio/openctem` monorepo (imported 2026-10-02 from
 `openctemio/ui`, now archived; its tags are kept as `ui/v*`, history only). The
 Go API is `../api/` (see `../api/CLAUDE.md`); rules that span both are in
-`../CLAUDE.md`. API wire types are generated, not hand-written:
-`src/lib/api/generated/api.types.ts` comes from `../api/api/openapi/swagger.yaml`
-(`npm run generate:api-types`, or `make api-types` at the root); Web CI fails
-if it is stale. API and web release together on one `vX.Y.Z` tag.
+`../CLAUDE.md`. API wire types are generated, not hand-written, and not
+committed: `src/lib/api/generated/api.types.ts` (from
+`../api/api/openapi/swagger.yaml`) and `src/config/api-route-permissions.json`
+(from the API route table) are written by `make generate` at the repository
+root (needs Go and Node; `make generate-docker` needs only Docker). `npm run
+dev/build/type-check/lint/test` stop with that hint when they are missing.
+API and web release together on one `vX.Y.Z` tag.
 
 Next.js 16 dashboard with locale/RTL **direction** support (en/vi/ar locales are
 detected and drive `dir`; a translation layer is NOT yet wired — UI strings are

@@ -10,7 +10,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Workflow (file) | Triggers | What it does | Gate check |
 |-----------------|----------|--------------|------------|
 | API CI (`api-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, lint), tests, protocol-v1 compat + release binaries, Docker build; see [Tiers](#tiers) | **API CI OK** |
-| Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | `Web checks` (one job: generated API types check, type-check, ESLint, Prettier, palette drift, Vitest); `next build` (push only) | **Web CI OK** |
+| Web CI (`web-ci.yml`) | PR / push to `main`, `develop`; merge queue | `API contract` (generates the contract files; for an API change compares them with the base and reports the difference), `API contract report` (the pull request comment), `Web checks` (one job: type-check against the generated contract, ESLint, Prettier, palette drift, Vitest); `next build` (push only) | **Web CI OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; weekly (Mon 00:00 UTC) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. PR and merge queue: only the changed language(s). Push to `develop`/`main` and weekly: both, so each branch keeps a fresh baseline per category | **CodeQL OK** |
 | All-in-one CI (`allinone-ci.yml`) | PR / push; merge queue | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
 | Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. actionlint over the workflows | **Secret Scanning**, **Workflow Lint** |
@@ -53,7 +53,6 @@ decides two outputs, `api` and `web`, for every workflow:
 |--------------|-----|-----|
 | `api/**` | ✓ | |
 | `web/**` | | ✓ |
-| `api/api/openapi/swagger.yaml` (the web types are generated from it) | ✓ | ✓ |
 | Shared: root `Makefile`, `go.work*`, `.github/**`, `deploy/**` | ✓ | ✓ |
 | Anything else (root docs, `.githooks/`) | | |
 
@@ -71,7 +70,7 @@ How each workflow uses the outputs:
 | Workflow | Scoping |
 |----------|---------|
 | API CI | always starts; real jobs run when `api` (which ones: [Tiers](#tiers)) |
-| Web CI | always starts; real jobs run when `web` |
+| Web CI | always starts; `API contract` runs when `api` or `web`; `Web checks` when `web`, or when an API change changed the generated contract |
 | CodeQL | Go when `api`, JS/TS when `web` (PR); nothing in the merge queue; both on push and weekly |
 | All-in-one CI | always starts; builds when `api` or `web` (both images are built from the whole component directory), in the merge queue and on pushes only |
 | Repository Security | always runs (secret scan diff-scoped on PR and merge queue) |
@@ -161,24 +160,72 @@ the queue (no required check; the PR and the push scan the change).
   and no secrets for fork PRs; nothing checks out a PR head with a write token.
 - Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint).
 
-### The API ↔ web contract
+### Generated contract files
 
-`api/api/openapi/swagger.yaml` is generated from the Go handler annotations.
-API CI's **OpenAPI Contract** job (`api/scripts/check-openapi.sh`) fails if the
-spec does not match the handlers: the same set of operations
-(`tools/lint/openapicontract`), and the same definition shapes as a fresh
-`make swagger` run (`tools/lint/openapischema`: definitions, required lists,
-property names, types, refs and enums; descriptions and `format` are ignored
-because swag is not byte-reproducible across machines). Web CI's first quality step,
-`npm run check:api-types`, fails if `web/src/lib/api/generated/api.types.ts` is
-not what the spec generates; that is why a spec change also triggers Web CI.
+The web console compiles against files generated from the Go API. **None of them
+is committed** (root `.gitignore`), so two pull requests can never conflict on
+them and the merge queue can test several API changes in one group:
+
+| File | Generated from | By |
+|------|----------------|----|
+| `api/api/openapi/swagger.yaml` | handler `// @Router` annotations and request/response types | `make -C api swagger` (swag, pinned) |
+| `api/api/openapi/routes.txt` | the router | `tools/lint/openapicontract` `TestWriteRouteManifest` |
+| `web/src/config/api-route-permissions.json` | the route gates | `tests/unit/route_permission_map_test.go` |
+| `web/src/lib/api/generated/api.types.ts` | the spec | `web/scripts/generate-api-types.sh` |
+
+`make -C api contract` writes the first three (needs Go), `npm run
+generate:api-types` in `web/` the fourth (needs Node); **`make generate`** at the
+root runs both, and **`make generate-docker`** does the same in throwaway
+`golang`/`node` containers when the host has only Docker
+(`scripts/generate-in-docker.sh`). Run it after pulling and after changing a
+handler, a route or its gate. `npm run dev/build/type-check/lint/test` refresh
+the web types when the spec is newer and stop with that hint when a file is
+missing (`web/scripts/ensure-generated.mjs`). Everything that builds the web
+console generates first: Web CI, Web E2E, All-in-one CI, Web Security's image
+scan and Docker Publish use the composite action
+`.github/actions/generate-contract` before `docker build web`. The web
+Dockerfile itself does not generate (its context is `web/` only): build the
+image after `make generate`, as `make allinone` does.
+
+The checks, on the generated output:
+
+- **API CI → OpenAPI Contract** (`api/scripts/check-openapi.sh`) generates the
+  spec, then checks it against the handlers and the router
+  (`tools/lint/openapicontract`): every annotation is in the spec and back,
+  every documented operation is routed, every route is documented or in the
+  shrink-only `api/openapi/undocumented-routes.txt`, path parameter names agree
+  or are in `api/openapi/param-name-drift.txt`. The test jobs generate the spec
+  too, for the tests that read it (the filter-param drift test).
+- **Web CI → API contract** generates the files once per run and hands them to
+  `Web checks` (artifact `contract`), which builds the TypeScript types and runs
+  tsc, ESLint and Vitest (including the endpoint check against `routes.txt`)
+  against them. For an API change it also generates the **base's** contract
+  (merge base / queue base / previous tip) and compares:
+  - when the contract changed, `Web checks` runs even though `web/` did not
+    change, so the web is proven to compile against the new contract;
+  - `tools/openapidiff` writes the difference to the job summary and to one
+    pull request comment, updated on every push (job `API contract report`, the
+    only job with a write token; it runs no pull request code, and fork pull
+    requests only get the summary): operations removed or added, parameters
+    that became required, request/response schemas that changed
+    (`tools/lint/openapischema`; descriptions and `format` are ignored because
+    swag is not byte-reproducible across machines), **route gate changes** of
+    the web permission map (review them as authorization changes) and
+    registered routes added or removed. Breaking changes are reported, not
+    failed: a reviewer decides whether one is intended.
+
 Locally:
 
 ```bash
-make -C api swagger   # regenerate the spec
-make api-types        # regenerate the web wire types
-make check            # both contract checks, as CI runs them
+make generate          # every contract file (Go + Node)
+make generate-docker   # the same, with only Docker
+make check             # generate, the OpenAPI contract check, then tsc
 ```
+
+**Deploying a bind-mounted checkout** (the API under air, the web under `next
+dev`): a `git pull` that deletes or changes nothing generated still leaves the
+files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
+<checkout>`) after every pull. `next dev` and air pick the new files up.
 
 ### What the API jobs check
 
@@ -328,8 +375,12 @@ The legacy `ui` GHCR package was created by `openctemio/ui`; this repository nee
 - **A required check stays Pending.** Something added `on.paths` to a workflow
   that carries a required check, or dropped its `merge_group` trigger; gate the
   jobs through the `changes` job instead.
-- **Web CI fails on `check:api-types`.** The spec changed without regenerating the
-  web types: `make api-types`, commit `web/src/lib/api/generated/api.types.ts`.
+- **"Generated contract files are missing" / `api.types` not found.** The
+  contract files are generated, not committed: `make generate` (or `make
+  generate-docker`) at the root.
+- **A merge conflicts on `swagger.yaml`, `api.types.ts` or
+  `api-route-permissions.json`.** A branch from before these files left git:
+  take the deletion (`git rm` the file) and regenerate locally.
 - **golangci-lint reports issues you didn't touch.** The PR's base is stale; rebase
   on `develop` (lint diffs against `.github/scripts/effective-base.sh`).
 - **govulncheck fails on every PR at once.** A new Go stdlib CVE: bump the
