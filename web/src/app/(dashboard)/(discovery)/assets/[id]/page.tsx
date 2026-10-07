@@ -229,7 +229,11 @@ export default function AssetDetailPage() {
         </CardHeader>
         <CardContent>
           <DetailSections>
-            <AssetAttributionSection assetId={asset.id} />
+            <AssetAttributionSection
+              assetId={asset.id}
+              assetName={asset.name}
+              assetType={asset.type}
+            />
             <AssetIdentitySections
               assetId={asset.id}
               assetName={asset.name}

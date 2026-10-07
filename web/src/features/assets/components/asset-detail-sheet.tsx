@@ -424,7 +424,11 @@ export function AssetDetailSheet<T extends Asset>({
 
         {tab === 'details' && (
           <DetailSections>
-            <AssetAttributionSection assetId={asset.id} />
+            <AssetAttributionSection
+              assetId={asset.id}
+              assetName={asset.name}
+              assetType={asset.type}
+            />
             <TimelineSection
               firstSeen={asset.firstSeen}
               lastSeen={asset.lastSeen}
