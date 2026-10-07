@@ -1,22 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  addEdge,
-  useNodesState,
-  useEdgesState,
-  Connection,
-  Edge,
-  Node,
-  Handle,
-  Position,
-  NodeProps,
-} from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
+import { useNodesState, useEdgesState, type Edge } from '@xyflow/react'
 
 import { Main } from '@/components/layout'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -52,7 +37,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Workflow as WorkflowIcon,
@@ -60,8 +44,6 @@ import {
   Plus,
   XCircle,
   Zap,
-  GitBranch,
-  Mail,
   RefreshCw,
   Save,
   Trash2,
@@ -94,16 +76,18 @@ import {
   invalidateWorkflowsCache,
   invalidateWorkflowRunsCache,
 } from '@/lib/api/workflow-hooks'
+import { AutomationCanvas } from '@/features/workflows/components/automation-canvas'
+import {
+  fromApiGraph,
+  starterGraph,
+  toApiGraph,
+  type AutomationNode,
+} from '@/features/workflows/lib/automation-graph'
 import type {
   Workflow,
   WorkflowRun,
-  WorkflowNode as APIWorkflowNode,
-  WorkflowEdge as APIWorkflowEdge,
   CreateWorkflowRequest,
   UpdateWorkflowGraphRequest,
-  CreateNodeRequest,
-  CreateEdgeRequest,
-  WorkflowNodeType,
   WorkflowTriggerType,
 } from '@/lib/api/workflow-types'
 import {
@@ -111,170 +95,6 @@ import {
   getUnsupportedWorkflowFeatures,
   formatUnsupportedWorkflowFeature,
 } from '@/lib/api/workflow-types'
-
-// Custom Node Components
-function TriggerNode({ data }: NodeProps) {
-  return (
-    <div className="rounded-lg border-2 border-green-500 bg-green-500/10 p-3 min-w-[180px]">
-      <div className="flex items-center gap-2 mb-2">
-        <div className="h-6 w-6 rounded bg-green-500 flex items-center justify-center">
-          <Zap className="h-4 w-4 text-white" />
-        </div>
-        <span className="text-xs font-medium text-green-500">TRIGGER</span>
-      </div>
-      <p className="text-sm font-medium">{data.label as string}</p>
-      {Boolean(data.description) && (
-        <p className="text-xs text-muted-foreground mt-1">{data.description as string}</p>
-      )}
-      <Handle type="source" position={Position.Bottom} className="!bg-green-500 !w-3 !h-3" />
-    </div>
-  )
-}
-
-function ConditionNode({ data }: NodeProps) {
-  return (
-    <div className="rounded-lg border-2 border-yellow-500 bg-yellow-500/10 p-3 min-w-[180px]">
-      <Handle type="target" position={Position.Top} className="!bg-yellow-500 !w-3 !h-3" />
-      <div className="flex items-center gap-2 mb-2">
-        <div className="h-6 w-6 rounded bg-yellow-500 flex items-center justify-center">
-          <GitBranch className="h-4 w-4 text-white" />
-        </div>
-        <span className="text-xs font-medium text-yellow-500">CONDITION</span>
-      </div>
-      <p className="text-sm font-medium">{data.label as string}</p>
-      {Boolean(data.description) && (
-        <p className="text-xs text-muted-foreground mt-1">{data.description as string}</p>
-      )}
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="yes"
-        className="!bg-green-500 !w-3 !h-3 !left-[30%]"
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="no"
-        className="!bg-red-500 !w-3 !h-3 !left-[70%]"
-      />
-    </div>
-  )
-}
-
-function ActionNode({ data }: NodeProps) {
-  return (
-    <div className="rounded-lg border-2 border-blue-500 bg-blue-500/10 p-3 min-w-[180px]">
-      <Handle type="target" position={Position.Top} className="!bg-blue-500 !w-3 !h-3" />
-      <div className="flex items-center gap-2 mb-2">
-        <div className="h-6 w-6 rounded bg-blue-500 flex items-center justify-center">
-          <Play className="h-4 w-4 text-white" />
-        </div>
-        <span className="text-xs font-medium text-blue-500">ACTION</span>
-      </div>
-      <p className="text-sm font-medium">{data.label as string}</p>
-      {Boolean(data.description) && (
-        <p className="text-xs text-muted-foreground mt-1">{data.description as string}</p>
-      )}
-      <Handle type="source" position={Position.Bottom} className="!bg-blue-500 !w-3 !h-3" />
-    </div>
-  )
-}
-
-function NotificationNode({ data }: NodeProps) {
-  return (
-    <div className="rounded-lg border-2 border-purple-500 bg-purple-500/10 p-3 min-w-[180px]">
-      <Handle type="target" position={Position.Top} className="!bg-purple-500 !w-3 !h-3" />
-      <div className="flex items-center gap-2 mb-2">
-        <div className="h-6 w-6 rounded bg-purple-500 flex items-center justify-center">
-          <Mail className="h-4 w-4 text-white" />
-        </div>
-        <span className="text-xs font-medium text-purple-500">NOTIFY</span>
-      </div>
-      <p className="text-sm font-medium">{data.label as string}</p>
-      {Boolean(data.description) && (
-        <p className="text-xs text-muted-foreground mt-1">{data.description as string}</p>
-      )}
-      <Handle type="source" position={Position.Bottom} className="!bg-purple-500 !w-3 !h-3" />
-    </div>
-  )
-}
-
-// Initial nodes and edges for demo
-const initialNodes: Node[] = [
-  {
-    id: '1',
-    type: 'trigger',
-    position: { x: 250, y: 50 },
-    data: { label: 'New Critical Finding', description: 'Severity >= Critical' },
-  },
-  {
-    id: '2',
-    type: 'condition',
-    position: { x: 250, y: 180 },
-    data: { label: 'Check Asset Criticality', description: 'Is Production Asset?' },
-  },
-  {
-    id: '3',
-    type: 'action',
-    position: { x: 100, y: 320 },
-    data: { label: 'Assign to Senior Engineer', description: 'Auto-assign based on expertise' },
-  },
-  {
-    id: '4',
-    type: 'action',
-    position: { x: 400, y: 320 },
-    data: { label: 'Assign to Regular Queue', description: 'Standard assignment flow' },
-  },
-  {
-    id: '5',
-    type: 'notification',
-    position: { x: 100, y: 460 },
-    data: { label: 'Send Slack Alert', description: '#security-critical channel' },
-  },
-  {
-    id: '6',
-    type: 'action',
-    position: { x: 100, y: 600 },
-    data: { label: 'Create Jira Ticket', description: 'Priority: P1' },
-  },
-]
-
-const initialEdges: Edge[] = [
-  { id: 'e1-2', source: '1', target: '2', animated: true },
-  {
-    id: 'e2-3',
-    source: '2',
-    target: '3',
-    sourceHandle: 'yes',
-    label: 'Yes',
-    style: { stroke: '#22c55e' },
-  },
-  {
-    id: 'e2-4',
-    source: '2',
-    target: '4',
-    sourceHandle: 'no',
-    label: 'No',
-    style: { stroke: '#ef4444' },
-  },
-  { id: 'e3-5', source: '3', target: '5', animated: true },
-  { id: 'e5-6', source: '5', target: '6', animated: true },
-]
-
-const nodeTypes = {
-  trigger: TriggerNode,
-  condition: ConditionNode,
-  action: ActionNode,
-  notification: NotificationNode,
-}
-
-// Draggable node components for sidebar
-const nodeTemplates = [
-  { type: 'trigger', label: 'Trigger', icon: Zap, color: 'green' },
-  { type: 'condition', label: 'Condition', icon: GitBranch, color: 'yellow' },
-  { type: 'action', label: 'Action', icon: Play, color: 'blue' },
-  { type: 'notification', label: 'Notification', icon: Mail, color: 'purple' },
-]
 
 // Helper to format relative time
 function formatRelativeTime(dateStr: string): string {
@@ -325,79 +145,6 @@ function getActionNames(workflow: Workflow): string[] {
     .map((n) => n.name)
 }
 
-// Convert API workflow to ReactFlow nodes/edges
-function convertToReactFlowFormat(
-  nodes: APIWorkflowNode[] | undefined,
-  edges: APIWorkflowEdge[] | undefined
-): { nodes: Node[]; edges: Edge[] } {
-  if (!nodes || nodes.length === 0) {
-    return { nodes: initialNodes, edges: initialEdges }
-  }
-
-  const rfNodes: Node[] = nodes.map((n) => ({
-    id: n.id,
-    type: n.node_type,
-    position: { x: n.ui_position.x, y: n.ui_position.y },
-    data: {
-      label: n.name,
-      description: n.description || '',
-      nodeKey: n.node_key,
-      config: n.config,
-    },
-  }))
-
-  const rfEdges: Edge[] = (edges || []).map((e) => ({
-    id: e.id,
-    source: nodes.find((n) => n.node_key === e.source_node_key)?.id || e.source_node_key,
-    target: nodes.find((n) => n.node_key === e.target_node_key)?.id || e.target_node_key,
-    sourceHandle: e.source_handle || undefined,
-    label: e.label || undefined,
-    animated: true,
-  }))
-
-  return { nodes: rfNodes, edges: rfEdges }
-}
-
-// Convert ReactFlow nodes/edges to API format for saving
-function convertToAPIFormat(
-  rfNodes: Node[],
-  rfEdges: Edge[]
-): { nodes: CreateNodeRequest[]; edges: CreateEdgeRequest[] } {
-  // Create a mapping from ReactFlow id to node_key
-  const idToKeyMap = new Map<string, string>()
-
-  const nodes: CreateNodeRequest[] = rfNodes.map((n, index) => {
-    // Use existing nodeKey from data if available, otherwise generate one
-    const nodeKey = (n.data?.nodeKey as string) || `${n.type}_${index + 1}`
-    idToKeyMap.set(n.id, nodeKey)
-
-    // Build config based on node type
-    const existingConfig = (n.data?.config as Record<string, unknown>) || {}
-    const config: Record<string, unknown> = { ...existingConfig }
-    if (n.type === 'trigger' && !config.trigger_type) {
-      config.trigger_type = 'manual'
-    }
-
-    return {
-      node_key: nodeKey,
-      node_type: n.type as WorkflowNodeType,
-      name: (n.data?.label as string) || `${n.type} node`,
-      description: (n.data?.description as string) || undefined,
-      ui_position: { x: n.position.x, y: n.position.y },
-      config,
-    }
-  })
-
-  const edges: CreateEdgeRequest[] = rfEdges.map((e) => ({
-    source_node_key: idToKeyMap.get(e.source) || e.source,
-    target_node_key: idToKeyMap.get(e.target) || e.target,
-    source_handle: e.sourceHandle || undefined,
-    label: (e.label as string) || undefined,
-  }))
-
-  return { nodes, edges }
-}
-
 // Workflow card component for the trigger mutation
 function WorkflowTriggerButton({
   workflowId,
@@ -429,8 +176,8 @@ function WorkflowTriggerButton({
 export default function WorkflowsPage() {
   // Active tab in the URL (?tab=) so a reload or shared link keeps the view.
   const [tab, setTab] = useUrlFilter('tab', 'workflows')
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+  const [nodes, setNodes, onNodesChange] = useNodesState<AutomationNode>(starterGraph().nodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null)
   const [deleteWorkflowId, setDeleteWorkflowId] = useState<string | null>(null)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -486,43 +233,12 @@ export default function WorkflowsPage() {
     return { totalWorkflows, active, triggered, successRate }
   }, [workflowsData])
 
-  const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true }, eds)),
-    [setEdges]
-  )
-
-  const onDragStart = (event: React.DragEvent, nodeType: string) => {
-    event.dataTransfer.setData('application/reactflow', nodeType)
-    event.dataTransfer.effectAllowed = 'move'
-  }
-
-  const onDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault()
-      const type = event.dataTransfer.getData('application/reactflow')
-      if (!type) return
-
-      const position = {
-        x: event.clientX - 250,
-        y: event.clientY - 100,
-      }
-
-      const newNode: Node = {
-        id: `${type}-${Date.now()}`,
-        type,
-        position,
-        data: { label: `New ${type}`, description: 'Configure this node' },
-      }
-
-      setNodes((nds) => [...nds, newNode])
-    },
-    [setNodes]
-  )
-
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-  }, [])
+  // Back to the starter graph: one manual trigger, nothing else.
+  const resetCanvas = useCallback(() => {
+    const g = starterGraph()
+    setNodes(g.nodes)
+    setEdges(g.edges)
+  }, [setNodes, setEdges])
 
   const handleSaveWorkflow = () => {
     // Check if we have at least one trigger node
@@ -548,7 +264,7 @@ export default function WorkflowsPage() {
 
     setIsSaving(true)
     try {
-      const { nodes: apiNodes, edges: apiEdges } = convertToAPIFormat(nodes, edges)
+      const { nodes: apiNodes, edges: apiEdges } = toApiGraph(nodes, edges)
 
       // Use the atomic graph update API to replace all nodes and edges
       const request: UpdateWorkflowGraphRequest = {
@@ -581,7 +297,7 @@ export default function WorkflowsPage() {
 
     setIsSaving(true)
     try {
-      const { nodes: apiNodes, edges: apiEdges } = convertToAPIFormat(nodes, edges)
+      const { nodes: apiNodes, edges: apiEdges } = toApiGraph(nodes, edges)
 
       const request: CreateWorkflowRequest = {
         name: saveWorkflowName.trim(),
@@ -682,41 +398,13 @@ export default function WorkflowsPage() {
   const handleEditInBuilder = (workflow: Workflow) => {
     // Load the workflow into the visual builder for editing
     setEditingWorkflow(workflow)
-    if (workflow.nodes && workflow.nodes.length > 0) {
-      const { nodes: rfNodes, edges: rfEdges } = convertToReactFlowFormat(
-        workflow.nodes,
-        workflow.edges
-      )
-      setNodes(rfNodes)
-      setEdges(rfEdges)
-    } else {
-      // Empty workflow - start with a single trigger
-      setNodes([
-        {
-          id: 'trigger-1',
-          type: 'trigger',
-          position: { x: 250, y: 50 },
-          data: {
-            label: 'Manual Trigger',
-            description: 'Start here',
-            nodeKey: 'trigger_1',
-            config: { trigger_type: 'manual' },
-          },
-        },
-      ])
-      setEdges([])
-    }
+    // A workflow without nodes opens as the starter graph (one manual trigger).
+    const graph = fromApiGraph(workflow.nodes, workflow.edges)
+    setNodes(graph.nodes)
+    setEdges(graph.edges)
     setSelectedWorkflow(null)
     setTab('builder')
     toast.info(`Loaded "${workflow.name}" into the builder.`)
-  }
-
-  const _handleNewInBuilder = () => {
-    // Clear current editing state and reset to default
-    setEditingWorkflow(null)
-    setNodes(initialNodes)
-    setEdges(initialEdges)
-    toast.info('Ready to create new workflow in Visual Builder')
   }
 
   const handleCreateWorkflow = async () => {
@@ -1092,7 +780,7 @@ export default function WorkflowsPage() {
                     <CardDescription>
                       {editingWorkflow
                         ? 'Make changes and click Save to update the workflow'
-                        : 'Drag and drop to create workflows'}
+                        : 'Add steps after the trigger, connect them and set each one up'}
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1102,22 +790,14 @@ export default function WorkflowsPage() {
                         size="sm"
                         onClick={() => {
                           setEditingWorkflow(null)
-                          setNodes(initialNodes)
-                          setEdges(initialEdges)
+                          resetCanvas()
                         }}
                       >
                         <XCircle className="me-2 h-4 w-4" />
                         Clear
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setNodes(initialNodes)
-                        setEdges(initialEdges)
-                      }}
-                    >
+                    <Button variant="outline" size="sm" onClick={resetCanvas}>
                       <RefreshCw className="me-2 h-4 w-4" />
                       Reset
                     </Button>
@@ -1129,86 +809,14 @@ export default function WorkflowsPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="flex h-[600px] border-t">
-                  {/* Sidebar with node templates */}
-                  <div className="w-64 border-r p-4 bg-muted/30">
-                    <h4 className="font-medium mb-4">Components</h4>
-                    <div className="space-y-2">
-                      {nodeTemplates.map((template) => (
-                        <div
-                          key={template.type}
-                          draggable
-                          onDragStart={(e) => onDragStart(e, template.type)}
-                          className={`flex items-center gap-3 p-3 rounded-lg border cursor-grab hover:shadow-md transition-shadow bg-card ${
-                            template.color === 'green'
-                              ? 'border-green-500/50 hover:border-green-500'
-                              : template.color === 'yellow'
-                                ? 'border-yellow-500/50 hover:border-yellow-500'
-                                : template.color === 'blue'
-                                  ? 'border-blue-500/50 hover:border-blue-500'
-                                  : 'border-purple-500/50 hover:border-purple-500'
-                          }`}
-                        >
-                          <div
-                            className={`h-8 w-8 rounded flex items-center justify-center ${
-                              template.color === 'green'
-                                ? 'bg-green-500'
-                                : template.color === 'yellow'
-                                  ? 'bg-yellow-500'
-                                  : template.color === 'blue'
-                                    ? 'bg-blue-500'
-                                    : 'bg-purple-500'
-                            }`}
-                          >
-                            <template.icon className="h-4 w-4 text-white" />
-                          </div>
-                          <span className="text-sm font-medium">{template.label}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <Separator className="my-4" />
-
-                    <h4 className="font-medium mb-4">Quick actions</h4>
-                    <div className="space-y-2 text-sm text-muted-foreground">
-                      <p>Drag components to the canvas to build your workflow.</p>
-                      <p>Connect nodes by dragging from one handle to another.</p>
-                    </div>
-                  </div>
-
-                  {/* ReactFlow Canvas */}
-                  <div className="flex-1" onDrop={onDrop} onDragOver={onDragOver}>
-                    <ReactFlow
-                      nodes={nodes}
-                      edges={edges}
-                      onNodesChange={onNodesChange}
-                      onEdgesChange={onEdgesChange}
-                      onConnect={onConnect}
-                      nodeTypes={nodeTypes}
-                      fitView
-                      className="bg-background"
-                    >
-                      <Background />
-                      <Controls />
-                      <MiniMap
-                        nodeColor={(node) => {
-                          switch (node.type) {
-                            case 'trigger':
-                              return '#22c55e'
-                            case 'condition':
-                              return '#eab308'
-                            case 'action':
-                              return '#3b82f6'
-                            case 'notification':
-                              return '#a855f7'
-                            default:
-                              return '#64748b'
-                          }
-                        }}
-                      />
-                    </ReactFlow>
-                  </div>
-                </div>
+                <AutomationCanvas
+                  nodes={nodes}
+                  edges={edges}
+                  setNodes={setNodes}
+                  setEdges={setEdges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                />
               </CardContent>
             </Card>
           </TabsContent>
