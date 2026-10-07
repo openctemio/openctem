@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/jwt"
@@ -69,9 +70,12 @@ func newChangeAuditHarness(t *testing.T) *authzPolicyHarness {
 	cfg := &config.Config{}
 	cfg.Auth.Provider = config.AuthProviderLocal
 
-	scope := handler.NewScopeHandler(scopeapp.NewService(postgres.NewScopeTargetRepository(db),
+	scopeSvc := scopeapp.NewService(postgres.NewScopeTargetRepository(db),
 		postgres.NewScopeExclusionRepository(db),
-		postgres.NewAssetRepository(db), log), v, log)
+		postgres.NewAssetRepository(db), log)
+	scopeSvc.SetStepUpGate(middleware.RecentAuthGate{Checker: alwaysSteppedUp{}, Window: time.Hour})
+	scopeSvc.SetEntryPolicy(nil, postgres.NewMemberLifecycleRepository(db), nil)
+	scope := handler.NewScopeHandler(scopeSvc, v, log)
 	scope.SetAuditService(auditSvc)
 	templates := handler.NewScannerTemplateHandler(
 		app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(db), "change-audit-template-signing-key-0123456789", log), v, log)
@@ -81,7 +85,7 @@ func newChangeAuditHarness(t *testing.T) *authzPolicyHarness {
 	tools.SetAuditService(auditSvc)
 
 	router := infrahttp.NewChiRouter()
-	Register(router, Handlers{Scope: scope, ScannerTemplate: templates, Tool: tools}, cfg, log,
+	Register(router, Handlers{Scope: scope, ScannerTemplate: templates, Tool: tools, StepUp: alwaysSteppedUp{}}, cfg, log,
 		AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen},
 		tenantRepo, tenant.NewUserService(postgres.NewUserRepository(db), log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
@@ -178,22 +182,37 @@ func TestScopeChangesAreAudited_DB(t *testing.T) {
 	tid := h.tenant()
 	owner, admin, member := h.member(tid, "owner"), h.member(tid, "admin"), h.member(tid, "member")
 
-	// Scope target: create, update, deactivate, activate, delete.
-	target := decodeID(t, h.expect(member, http.MethodPost, "/api/v1/scope/targets",
+	// Scope target (RFC-054): an admin's entry in a two-admin organization
+	// waits for the other admin; a member's change that does not widen is
+	// fine; activation widens again; a member only requests a one-off.
+	target := decodeID(t, h.expect(admin, http.MethodPost, "/api/v1/scope/targets",
 		`{"target_type":"domain","pattern":"*.audit.example.com","description":"before"}`, http.StatusCreated))
 	base := "/api/v1/scope/targets/" + target
 	h.expect(member, http.MethodPut, base, `{"description":"after"}`, http.StatusOK)
+	h.expect(admin, http.MethodPost, base+"/approve", "", http.StatusForbidden)  // the requester
+	h.expect(member, http.MethodPost, base+"/approve", "", http.StatusForbidden) // no scope:approve
+	h.expect(owner, http.MethodPost, base+"/approve", "", http.StatusOK)
 	h.expect(admin, http.MethodPost, base+"/deactivate", "", http.StatusOK)
+	h.expect(member, http.MethodPost, base+"/activate", "", http.StatusForbidden)
 	h.expect(admin, http.MethodPost, base+"/activate", "", http.StatusOK)
 	h.expect(owner, http.MethodDelete, base, "", http.StatusNoContent)
 
 	present := map[string]any{}
 	requireAudited(t, h.auditRows(tid, "scope_target."), target, []auditRow{
-		{action: "scope_target.created", actor: member.id, severity: "high", after: map[string]any{"pattern": "*.audit.example.com", "status": "active"}},
+		{action: "scope_target.created", actor: admin.id, severity: "high", after: map[string]any{"pattern": "*.audit.example.com", "status": "pending", "in_effect": false}},
 		{action: "scope_target.updated", actor: member.id, before: map[string]any{"description": "before"}, after: map[string]any{"description": "after"}},
+		{action: "scope_target.approved", actor: owner.id, severity: "high", before: map[string]any{"status": "pending"}, after: map[string]any{"status": "active", "in_effect": true}},
 		{action: "scope_target.deactivated", actor: admin.id, before: map[string]any{"status": "active"}, after: map[string]any{"status": "inactive"}},
-		{action: "scope_target.activated", actor: admin.id, severity: "high", before: map[string]any{"status": "inactive"}, after: map[string]any{"status": "active"}},
+		{action: "scope_target.activated", actor: admin.id, severity: "high", before: map[string]any{"status": "inactive"}, after: map[string]any{"status": "pending"}},
 		{action: "scope_target.deleted", actor: owner.id, before: map[string]any{"pattern": "*.audit.example.com"}},
+	})
+
+	// A member's request: a one-off for one name, with a reason; pending.
+	h.expect(member, http.MethodPost, "/api/v1/scope/targets", `{"target_type":"domain","pattern":"*.req.example.com"}`, http.StatusBadRequest)
+	req := decodeID(t, h.expect(member, http.MethodPost, "/api/v1/scope/targets",
+		`{"target_type":"domain","pattern":"promo.example.com","reason":"bought last week","expires_in_days":7}`, http.StatusCreated))
+	requireAudited(t, h.auditRows(tid, "scope_target."), req, []auditRow{
+		{action: "scope_target.created", actor: member.id, after: map[string]any{"status": "pending", "approvals_required": float64(1)}},
 	})
 
 	// Scope exclusion: create, update, approve, deactivate, activate, delete;
@@ -228,7 +247,7 @@ func TestScopeChangesAreAudited_DB(t *testing.T) {
 	// Bulk delete audits each deleted exclusion and target.
 	bulkExcl := decodeID(t, h.expect(member, http.MethodPost, "/api/v1/scope/exclusions",
 		`{"exclusion_type":"domain","pattern":"bulk.example.com","reason":"fragile"}`, http.StatusCreated))
-	bulkTarget := decodeID(t, h.expect(member, http.MethodPost, "/api/v1/scope/targets",
+	bulkTarget := decodeID(t, h.expect(admin, http.MethodPost, "/api/v1/scope/targets",
 		`{"target_type":"domain","pattern":"*.bulk.example.com"}`, http.StatusCreated))
 	h.expect(admin, http.MethodPost, "/api/v1/scope/exclusions/bulk/delete", `{"exclusion_ids":["`+bulkExcl+`"]}`, http.StatusOK)
 	h.expect(admin, http.MethodPost, "/api/v1/scope/targets/bulk/delete", `{"target_ids":["`+bulkTarget+`"]}`, http.StatusOK)
@@ -237,7 +256,7 @@ func TestScopeChangesAreAudited_DB(t *testing.T) {
 		{action: "scope_exclusion.deleted", actor: admin.id, before: map[string]any{"pattern": "bulk.example.com"}},
 	})
 	requireAudited(t, h.auditRows(tid, "scope_target."), bulkTarget, []auditRow{
-		{action: "scope_target.created", actor: member.id, after: present},
+		{action: "scope_target.created", actor: admin.id, after: present},
 		{action: "scope_target.deleted", actor: admin.id, before: map[string]any{"pattern": "*.bulk.example.com"}},
 	})
 

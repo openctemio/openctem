@@ -39,6 +39,7 @@ import (
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -83,6 +84,12 @@ type ScopeJoinStore interface {
 	TenantsWithPendingAutomatic(ctx context.Context) ([]shared.ID, error)
 }
 
+// ScopeJoinSettings reads the tenant's scope settings (*tenant.TenantService):
+// auto_join_discovered off sends every name to review (RFC-054 §6.3).
+type ScopeJoinSettings interface {
+	GetScopeSettings(ctx context.Context, tenantID string) (*tenant.ScopeSettings, error)
+}
+
 // ScopeJoinAudit records the system decision.
 type ScopeJoinAudit interface {
 	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
@@ -95,6 +102,7 @@ type ScopeJoin struct {
 	exclusions ScopeJoinExclusions
 	store      ScopeJoinStore
 	assets     ActiveGateAssets
+	settings   ScopeJoinSettings
 	audit      ScopeJoinAudit
 	log        *logger.Logger
 }
@@ -110,6 +118,9 @@ func NewScopeJoin(targets ScopeJoinTargets, seeds ScopeJoinSeeds, exclusions Sco
 	return &ScopeJoin{targets: targets, seeds: seeds, exclusions: exclusions, store: store, assets: assets,
 		log: log.With("component", "scope-join")}
 }
+
+// SetSettings wires the tenant's auto-join setting (nil: on).
+func (j *ScopeJoin) SetSettings(s ScopeJoinSettings) { j.settings = s }
 
 // SetAudit wires the audit log.
 func (j *ScopeJoin) SetAudit(a ScopeJoinAudit) { j.audit = a }
@@ -212,7 +223,7 @@ func itemAddress(it JoinItem) string {
 // Covered returns, for the items a permanent scope entry or seed covers and
 // nothing keeps out (exclusion, tombstone, rejected name), the evidence
 // source that covers each (asset id -> "scope_target:<id>" or
-// "easm_seed:<root>").
+// "easm_seed:<root>"). With auto-join off it returns nothing.
 func (j *ScopeJoin) Covered(ctx context.Context, tenantID shared.ID, items []JoinItem) (map[string]string, error) {
 	if err := j.ready(); err != nil {
 		return nil, err
@@ -220,6 +231,15 @@ func (j *ScopeJoin) Covered(ctx context.Context, tenantID shared.ID, items []Joi
 	out := map[string]string{}
 	if len(items) == 0 {
 		return out, nil
+	}
+	if j.settings != nil {
+		st, err := j.settings.GetScopeSettings(ctx, tenantID.String())
+		if err != nil {
+			return nil, fmt.Errorf("read scope settings: %w", err)
+		}
+		if st != nil && st.AutoJoinDisabled {
+			return out, nil
+		}
 	}
 	roots, err := j.loadRoots(ctx, tenantID)
 	if err != nil {

@@ -153,4 +153,33 @@ describe('PropertiesSection', () => {
     const { container } = render(<PropertiesSection properties={{}} />)
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('renders from the type schema: one labelled address list linked to the IP assets, the rest under Other', () => {
+    render(
+      <PropertiesSection
+        type="domain"
+        properties={{
+          ip: '202.160.124.20',
+          ip_addresses: ['202.160.124.20', '202.160.124.21'],
+          registrar: 'Example Registrar',
+          x_vendor_score: 7,
+        }}
+      />
+    )
+    expect(screen.getByText('IP addresses')).toBeInTheDocument()
+    expect(screen.queryByText('Ip')).not.toBeInTheDocument()
+    const link = screen.getByRole('link', { name: '202.160.124.20' })
+    expect(link).toHaveAttribute('href', '/assets?types=ip_address&q=202.160.124.20')
+    expect(screen.getAllByRole('link')).toHaveLength(2)
+    expect(screen.getByText('Registrar')).toBeInTheDocument()
+    expect(screen.getByText('Other')).toBeInTheDocument()
+    expect(screen.getByText('X vendor score')).toBeInTheDocument()
+  })
+
+  it('never links a url property that is not http(s)', () => {
+    render(
+      <PropertiesSection type="repository" properties={{ canonical_url: 'javascript:alert(1)' }} />
+    )
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
 })
