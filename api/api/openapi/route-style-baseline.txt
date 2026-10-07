@@ -40,7 +40,6 @@ R3 DELETE /api/v1/repositories/{repositoryId}/branches/{branchId}
 R3 DELETE /api/v1/roles/{roleId}
 R3 DELETE /api/v1/scan-zones/{id}/sensors/{sensorId}
 R3 DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}
-R3 DELETE /api/v1/tenant-tools/{toolId}
 R3 DELETE /api/v1/users/me/sessions/{sessionId}
 R3 DELETE /api/v1/users/{userId}/roles/{roleId}
 R3 DELETE /api/v1/workflows/{id}/edges/{edgeId}
@@ -77,10 +76,6 @@ R3 GET /api/v1/repositories/{repositoryId}/branches/default
 R3 GET /api/v1/roles/{roleId}
 R3 GET /api/v1/roles/{roleId}/members
 R3 GET /api/v1/scans/{id}/runs/{runId}
-R3 GET /api/v1/tenant-tools/stats/{toolId}
-R3 GET /api/v1/tenant-tools/{toolId}
-R3 GET /api/v1/tenant-tools/{toolId}/effective-config
-R3 GET /api/v1/tenant-tools/{toolId}/with-config
 R3 GET /api/v1/threat-intel/enrich/{cveId}
 R3 GET /api/v1/threat-intel/epss/{cveId}
 R3 GET /api/v1/threat-intel/kev/{cveId}
@@ -131,7 +126,6 @@ R3 PUT /api/v1/repositories/{repositoryId}/branches/{branchId}
 R3 PUT /api/v1/repositories/{repositoryId}/branches/{branchId}/default
 R3 PUT /api/v1/roles/{roleId}
 R3 PUT /api/v1/scan-zones/{id}/sensors/{sensorId}
-R3 PUT /api/v1/tenant-tools/{toolId}
 R3 PUT /api/v1/users/{userId}/roles
 R3 PUT /api/v1/verification-checklists/{findingId}
 R3 PUT /api/v1/workflows/{id}/nodes/{nodeId}
@@ -148,7 +142,6 @@ R4 GET /api/v1/state-history/{id}
 R4 GET /api/v1/threat-intel/enrich/{cveId}
 R4 GET /api/v1/threat-intel/kev/{cveId}
 R4 GET /api/v1/threat-intel/sync/{source}
-R4 GET /api/v1/tools/name/{name}
 R4 GET /api/v1/vulnerabilities/cve/{cveId}
 R4 GET /api/v1/vulnerabilities/cve/{cveId}/affected-assets
 R4 PATCH /api/v1/admin/threat-intel/sync/{source}
@@ -184,8 +177,6 @@ R5 POST /api/v1/credentials/import/csv
 R5 POST /api/v1/ctem-cycles/{id}/activate
 R5 POST /api/v1/ctem-cycles/{id}/close
 R5 POST /api/v1/ctem-cycles/{id}/start-review
-R5 POST /api/v1/custom-tools/{id}/activate
-R5 POST /api/v1/custom-tools/{id}/deactivate
 R5 POST /api/v1/exposures/{id}/accept
 R5 POST /api/v1/findings/actions/reject-fix
 R5 POST /api/v1/findings/bulk/assign
@@ -228,8 +219,6 @@ R5 POST /api/v1/tenants/{tenant}/settings/modules/validate
 R5 POST /api/v1/tenants/{tenant}/settings/risk-scoring/recalculate
 R5 POST /api/v1/threat-intel/enrich
 R5 POST /api/v1/threat-models/generate
-R5 POST /api/v1/tools/{id}/activate
-R5 POST /api/v1/tools/{id}/deactivate
 R5 POST /api/v2/sensor/fingerprints/check
 R6 DELETE /api/v1/tenants/{tenant}
 R6 DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}

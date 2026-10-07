@@ -39,6 +39,8 @@ import { useAssets, ASSET_TYPE_LABELS, ASSET_TYPE_COLORS } from '@/features/asse
 import type { Asset } from '@/features/assets'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { firstWildcard, scannerTakesWildcard } from '../../lib/wildcard-targets'
+import { WildcardTargetHint } from './wildcard-target-hint'
 
 // Target validation patterns (matching backend validator)
 const TARGET_PATTERNS = {
@@ -243,6 +245,13 @@ export function TargetsStep({ data, onChange }: TargetsStepProps) {
   const validatedTargets = useMemo(() => {
     return data.targets.customTargets.map(validateTarget)
   }, [data.targets.customTargets])
+
+  // A wildcard pattern for an active single scanner: offer discovery of the
+  // root, or the known assets that match (the API would refuse the pattern).
+  const wildcard =
+    data.mode === 'single' && !scannerTakesWildcard(data.scannerName)
+      ? firstWildcard(data.targets.customTargets)
+      : null
 
   const validationStats = useMemo(() => {
     const valid = validatedTargets.filter((t) => t.status === 'valid').length
@@ -732,6 +741,23 @@ export function TargetsStep({ data, onChange }: TargetsStepProps) {
                   validationStats.invalid > 0 && 'border-destructive focus-visible:ring-destructive'
                 )}
               />
+
+              {wildcard && (
+                <WildcardTargetHint
+                  pattern={wildcard}
+                  targets={data.targets.customTargets}
+                  onDiscover={(scannerName, targets) =>
+                    onChange({
+                      mode: 'single',
+                      scannerName,
+                      targets: { ...data.targets, customTargets: targets },
+                    })
+                  }
+                  onUseAssets={(targets) =>
+                    onChange({ targets: { ...data.targets, customTargets: targets } })
+                  }
+                />
+              )}
 
               {/* Validation feedback */}
               {hasCustomTargets && (

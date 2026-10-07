@@ -126,6 +126,8 @@ offboarding without step-up and is removed.
 | `POST /api/v1/ci/gate-overrides` | Break-glass past the CI security gate. |
 | `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST …/webhook-secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, repository events) for the organization. |
 | `PATCH /api/v1/attachments/storage-config` | Decides where evidence files are written and with which credentials. |
+| `POST /api/v1/sensors`, `POST /api/v1/sensors/{id}/regenerate-key` | Mints a persistent sensor key, a credential that outlives the session (the same reason as an API key). Revoking, disabling and deleting stay one click. |
+| `POST /api/v1/credentials/{id}/reveal` | Returns a leaked credential in plaintext; also audited (`credential.revealed`), and the response is not cached. |
 
 ### Actions that need step-up only in some cases
 
@@ -141,6 +143,7 @@ the web dialog appears and the request is retried.
 |---|---|
 | Making someone an administrator or an owner: `POST /api/v1/users/{id}/roles`, `PUT /api/v1/users/{id}/roles`, `POST /api/v1/roles/{id}/members/bulk` with the admin or owner role, `POST/PATCH /api/v1/tenants/{tenant}/members…` with `admin`, an invitation or a created user with the admin role | `RoleService.authorizeAdminPromotion`, `TenantService.authorizeAdminPromotion` (only when the user does not hold the role yet) |
 | Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
+| Allowing bearer-key sensors again: `PUT /api/v1/sensors/identity-policy` with `bearer_keys_allowed: true` while the organization requires key-bound identity | `SensorService.SetBearerKeysAllowed` (requiring key-bound identity, and re-sending the current value, stay one click) |
 
 The gate judges only the user making the request: a grant authorized
 earlier and applied for someone else (an invitation accepted by the invitee,

@@ -25,6 +25,9 @@ var stepUpServiceActions = map[string]string{
 	"OffboardMember":          "strips a member's access and reassigns their work",
 	"EraseMemberPersonalData": "irreversibly anonymises a person",
 	"ResetMemberMFA":          "removes another member's second factor",
+	"CreateSensor":            "mints a persistent sensor key",
+	"RegenerateAPIKey":        "mints a persistent sensor key",
+	"RevealSecret":            "returns a leaked credential in plaintext",
 }
 
 // machinePlanes authenticate a machine, or a principal that cannot
