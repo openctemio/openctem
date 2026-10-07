@@ -72,8 +72,7 @@ func TestLoopGuard_PingPongStopsAtChainDepth(t *testing.T) {
 	f, _ := vulnerability.NewFinding(tenant, shared.NewID(), vulnerability.FindingSourceSAST, "semgrep", vulnerability.SeverityHigh, "f")
 
 	var runs []TriggerWorkflowInput
-	var d *WorkflowEventDispatcher
-	d = &WorkflowEventDispatcher{workflowRepo: repo, logger: logger.NewNop()}
+	d := &WorkflowEventDispatcher{workflowRepo: repo, logger: logger.NewNop()}
 	d.triggerFn = func(ctx context.Context, in TriggerWorkflowInput) error {
 		runs = append(runs, in)
 		if len(runs) > 50 {
