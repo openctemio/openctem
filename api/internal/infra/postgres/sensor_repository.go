@@ -48,7 +48,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 
 	query := `
 		INSERT INTO sensors (
-			id, tenant_id, name, type, description, capabilities, tools,
+			id, tenant_id, name, type, description, capabilities,
 			execution_mode, status, health, status_message,
 			is_platform_sensor,
 			api_key_hash, api_key_prefix, metadata, labels, config,
@@ -57,7 +57,7 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 			last_seen_at, last_error_at, total_findings, total_scans, error_count,
 			created_at, updated_at, key_expires_at, key_pepper_id, auth_kind
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
 	`
 
 	var ipAddr sql.NullString
@@ -72,7 +72,6 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		string(a.Type),
 		a.Description,
 		pq.Array(a.Capabilities),
-		pq.Array(a.Tools),
 		string(a.ExecutionMode),
 		string(a.Status),
 		string(a.Health),
@@ -222,15 +221,15 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 
 	query := `
 		UPDATE sensors
-		SET name = $2, type = $3, description = $4, capabilities = $5, tools = $6,
-		    execution_mode = $7, status = $8, health = $9, status_message = $10,
-		    metadata = $11, labels = $12, config = $13,
-		    version = $14, hostname = $15, ip_address = $16,
-		    cpu_percent = $17, memory_percent = $18, max_concurrent_jobs = $19, current_jobs = $20, region = $21,
-		    disk_read_mbps = $22, disk_write_mbps = $23, network_rx_mbps = $24, network_tx_mbps = $25,
-		    load_score = $26, metrics_updated_at = $27,
-		    last_seen_at = $28, last_error_at = $29, total_findings = $30, total_scans = $31, error_count = $32,
-		    updated_at = $33
+		SET name = $2, type = $3, description = $4, capabilities = $5,
+		    execution_mode = $6, status = $7, health = $8, status_message = $9,
+		    metadata = $10, labels = $11, config = $12,
+		    version = $13, hostname = $14, ip_address = $15,
+		    cpu_percent = $16, memory_percent = $17, max_concurrent_jobs = $18, current_jobs = $19, region = $20,
+		    disk_read_mbps = $21, disk_write_mbps = $22, network_rx_mbps = $23, network_tx_mbps = $24,
+		    load_score = $25, metrics_updated_at = $26,
+		    last_seen_at = $27, last_error_at = $28, total_findings = $29, total_scans = $30, error_count = $31,
+		    updated_at = $32
 		WHERE id = $1
 	`
 
@@ -245,7 +244,6 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 		string(a.Type),
 		a.Description,
 		pq.Array(a.Capabilities),
-		pq.Array(a.Tools),
 		string(a.ExecutionMode),
 		string(a.Status),
 		string(a.Health),
@@ -836,7 +834,7 @@ func heartbeatIP(ip net.IP) sql.NullString {
 
 func (r *SensorRepository) selectQuery() string {
 	return `
-		SELECT id, tenant_id, name, type, description, capabilities, tools,
+		SELECT id, tenant_id, name, type, description, capabilities,
 		       execution_mode, status, health, status_message,
 		       is_platform_sensor, tier,
 		       api_key_hash, api_key_prefix, metadata, labels, config,
@@ -968,7 +966,6 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		status           string
 		health           string
 		capabilities     pq.StringArray
-		tools            pq.StringArray
 		metadata         []byte
 		labels           []byte
 		config           []byte
@@ -1039,7 +1036,6 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&sensorType,
 		&description,
 		&capabilities,
-		&tools,
 		&executionMode,
 		&status,
 		&health,
@@ -1133,7 +1129,6 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	a.Status = sensor.SensorStatus(status)
 	a.Health = sensor.SensorHealth(health)
 	a.Capabilities = capabilities
-	a.Tools = tools
 
 	if description.Valid {
 		a.Description = description.String

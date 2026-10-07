@@ -47,7 +47,7 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 {{- else}}
   -e API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
 {{- end}}
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
   -e SENSOR_TOOLS={{.}} \
 {{- end}}
   -e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml \
@@ -82,5 +82,5 @@ docker run --rm \
 {{- end}}
   -v "$PWD":/scan \
   {{.Image}} \
-  -tool {{firstTool .Sensor.Tools}} -target /scan -push
+  -tool {{firstTool .Sensor.EffectiveTools}} -target /scan -push
 {{- end}}

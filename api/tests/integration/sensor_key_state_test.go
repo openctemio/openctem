@@ -73,7 +73,7 @@ func newKeyStateFixture(t *testing.T) *keyStateFixture {
 func (f *keyStateFixture) createRenewedSensor(name string) (*sensor.Sensor, string, *time.Time) {
 	f.t.Helper()
 	out, err := f.svc.CreateSensor(f.ctx, sensorapp.CreateSensorInput{
-		TenantID: f.tenantID, Name: name, Type: "worker", ExecutionMode: "daemon", Tools: []string{"nuclei"},
+		TenantID: f.tenantID, Name: name, Type: "worker", ExecutionMode: "daemon",
 	})
 	if err != nil {
 		f.t.Fatalf("create sensor: %v", err)
