@@ -127,6 +127,9 @@ func TestMigration001164DropsRedundantApexExclusions(t *testing.T) {
 			}
 			out[p] = r
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
 		return out
 	}
 	before := state()
