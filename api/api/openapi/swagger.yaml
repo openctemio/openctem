@@ -3754,6 +3754,16 @@ definitions:
           "password" or "fresh_sign_in").
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_infra_http_include.Meta:
+    properties:
+      omitted_includes:
+        description: |-
+          OmittedIncludes were asked for but left out: the caller lacks the
+          permission they need.
+        items:
+          type: string
+        type: array
+    type: object
   github_com_openctemio_openctem_api_pkg_apierror.Code:
     enum:
     - BAD_REQUEST
@@ -3771,6 +3781,7 @@ definitions:
     - MFA_ENROLLMENT_REQUIRED
     - APPROVAL_REQUIRED
     - INVALID_FILTER
+    - INVALID_INCLUDE
     type: string
     x-enum-varnames:
     - CodeBadRequest
@@ -3788,6 +3799,7 @@ definitions:
     - CodeMFAEnrollmentRequired
     - CodeApprovalRequired
     - CodeInvalidFilter
+    - CodeInvalidInclude
   github_com_openctemio_openctem_api_pkg_apierror.Error:
     properties:
       code:
@@ -7302,14 +7314,18 @@ definitions:
           type: string
         type: array
     type: object
-  internal_infra_http_handler.BulkToolIDsRequest:
+  internal_infra_http_handler.BulkToolSettingsRequest:
     properties:
+      is_enabled:
+        type: boolean
       tool_ids:
         items:
           type: string
+        maxItems: 500
         minItems: 1
         type: array
     required:
+    - is_enabled
     - tool_ids
     type: object
   internal_infra_http_handler.BulkUpdateRequest:
@@ -9547,6 +9563,28 @@ definitions:
     required:
     - email
     - role_ids
+    type: object
+  internal_infra_http_handler.CreateToolCategoryRequest:
+    properties:
+      color:
+        maxLength: 20
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      display_name:
+        maxLength: 100
+        type: string
+      icon:
+        maxLength: 50
+        type: string
+      name:
+        maxLength: 50
+        minLength: 2
+        type: string
+    required:
+    - display_name
+    - name
     type: object
   internal_infra_http_handler.CreateToolRequest:
     properties:
@@ -12164,57 +12202,6 @@ definitions:
       data:
         items:
           $ref: '#/definitions/internal_infra_http_handler.SensorResponse'
-        type: array
-      links:
-        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
-      page:
-        type: integer
-      per_page:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
-  internal_infra_http_handler.ListResponse-internal_infra_http_handler_TenantToolConfigResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.TenantToolConfigResponse'
-        type: array
-      links:
-        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
-      page:
-        type: integer
-      per_page:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
-  internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        type: array
-      links:
-        $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
-      page:
-        type: integer
-      per_page:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
-  internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolWithConfigResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.ToolWithConfigResponse'
         type: array
       links:
         $ref: '#/definitions/internal_infra_http_handler.PaginationLinks'
@@ -15872,59 +15859,6 @@ definitions:
           type: array
         type: object
     type: object
-  internal_infra_http_handler.TenantToolConfigRequest:
-    properties:
-      config:
-        additionalProperties: {}
-        type: object
-      is_enabled:
-        type: boolean
-    type: object
-  internal_infra_http_handler.TenantToolConfigResponse:
-    properties:
-      config:
-        additionalProperties: {}
-        type: object
-      created_at:
-        type: string
-      custom_patterns:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.CustomPatternResponse'
-        type: array
-      custom_templates:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.CustomTemplateResponse'
-        type: array
-      id:
-        type: string
-      is_enabled:
-        type: boolean
-      tenant_id:
-        type: string
-      tool_id:
-        type: string
-      updated_at:
-        type: string
-      updated_by:
-        type: string
-    type: object
-  internal_infra_http_handler.TenantToolStatsResponse:
-    properties:
-      failed_runs:
-        type: integer
-      successful_runs:
-        type: integer
-      tenant_id:
-        type: string
-      tool_breakdown:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.ToolStatsResponse'
-        type: array
-      total_findings:
-        type: integer
-      total_runs:
-        type: integer
-    type: object
   internal_infra_http_handler.TestIntegrationCredentialsRequest:
     description: Request body for testing integration credentials
     properties:
@@ -15994,7 +15928,7 @@ definitions:
       version:
         type: string
     type: object
-  internal_infra_http_handler.ToolAvailabilityItem:
+  internal_infra_http_handler.ToolAvailabilityInfo:
     properties:
       content:
         items:
@@ -16002,8 +15936,6 @@ definitions:
         type: array
       enabled:
         description: 'Enabled: active in the catalog and switched on for the tenant.'
-        type: boolean
-      in_catalog:
         type: boolean
       last_reported_at:
         type: string
@@ -16014,8 +15946,6 @@ definitions:
       min_reported_version:
         type: string
       min_version:
-        type: string
-      name:
         type: string
       sensors:
         description: |-
@@ -16041,35 +15971,12 @@ definitions:
         - outdated
         - disabled
         type: string
-      tool:
-        allOf:
-        - $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        description: |-
-          Tool is the catalog entry; null for a tool a sensor reports that the
-          tenant's catalog does not list.
       update_available:
         type: boolean
       versions:
         items:
           type: string
         type: array
-    type: object
-  internal_infra_http_handler.ToolAvailabilityResponse:
-    properties:
-      computed_at:
-        type: string
-      items:
-        items:
-          $ref: '#/definitions/internal_infra_http_handler.ToolAvailabilityItem'
-        type: array
-      summary:
-        additionalProperties:
-          type: integer
-        description: Summary counts the tools per status (every status present).
-        type: object
-      zone_id:
-        description: ZoneID is the scan zone the view is limited to.
-        type: string
     type: object
   internal_infra_http_handler.ToolAvailabilitySensor:
     properties:
@@ -16109,6 +16016,48 @@ definitions:
       id:
         type: string
       name:
+        type: string
+    type: object
+  internal_infra_http_handler.ToolCategoryListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ToolCategoryResponse'
+        type: array
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_infra_http_handler.ToolCategoryResponse:
+    properties:
+      color:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      icon:
+        type: string
+      id:
+        type: string
+      is_builtin:
+        type: boolean
+      name:
+        type: string
+      sort_order:
+        type: integer
+      tenant_id:
+        type: string
+      updated_at:
         type: string
     type: object
   internal_infra_http_handler.ToolConfigRequest:
@@ -16159,6 +16108,47 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  internal_infra_http_handler.ToolListAvailability:
+    properties:
+      computed_at:
+        type: string
+      summary:
+        additionalProperties:
+          type: integer
+        description: Summary counts the tools per status (every status present).
+        type: object
+      unlisted:
+        description: |-
+          Unlisted are the tools the sensors report that the catalog does not
+          list (never enabled; not filtered or paginated).
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.UnlistedToolResponse'
+        type: array
+      zone_id:
+        description: ZoneID is the scan zone the view is limited to.
+        type: string
+    type: object
+  internal_infra_http_handler.ToolListResponse:
+    properties:
+      availability:
+        $ref: '#/definitions/internal_infra_http_handler.ToolListAvailability'
+      items:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ToolViewResponse'
+        type: array
+      meta:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_infra_http_include.Meta'
+        description: Meta lists the includes asked for but left out.
+      page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
     type: object
   internal_infra_http_handler.ToolResponse:
     properties:
@@ -16253,6 +16243,41 @@ definitions:
       version_regex:
         type: string
     type: object
+  internal_infra_http_handler.ToolSettingsRequest:
+    properties:
+      config:
+        additionalProperties: {}
+        type: object
+      is_enabled:
+        type: boolean
+    type: object
+  internal_infra_http_handler.ToolSettingsResponse:
+    properties:
+      config:
+        additionalProperties: {}
+        description: Config is the tenant's overrides of the tool's default config.
+        type: object
+      custom_patterns:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CustomPatternResponse'
+        type: array
+      custom_templates:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.CustomTemplateResponse'
+        type: array
+      effective_config:
+        additionalProperties: {}
+        description: EffectiveConfig is the default config with the overrides applied.
+        type: object
+      is_enabled:
+        description: IsEnabled is the tenant's switch (a tool never configured is
+          on).
+        type: boolean
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   internal_infra_http_handler.ToolStatsResponse:
     properties:
       avg_duration_ms:
@@ -16268,20 +16293,122 @@ definitions:
       total_runs:
         type: integer
     type: object
-  internal_infra_http_handler.ToolWithConfigResponse:
+  internal_infra_http_handler.ToolViewResponse:
     properties:
-      effective_config:
+      availability:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ToolAvailabilityInfo'
+        description: 'Availability: include=availability.'
+      capabilities:
+        items:
+          type: string
+        type: array
+      category:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.EmbeddedCategoryResponse'
+        description: Embedded category info for UI grouping
+      category_id:
+        description: Foreign key to tool_categories table
+        type: string
+      config_file_path:
+        type: string
+      config_schema:
         additionalProperties: {}
         type: object
-      is_available:
-        description: True if at least one sensor supports this tool
+      created_at:
+        type: string
+      created_by:
+        description: User ID who created the tool (for custom tools)
+        type: string
+      current_version:
+        type: string
+      default_config:
+        additionalProperties: {}
+        type: object
+      description:
+        type: string
+      display_name:
+        type: string
+      docs_url:
+        type: string
+      github_url:
+        type: string
+      has_update:
         type: boolean
-      is_enabled:
+      id:
+        type: string
+      install_cmd:
+        type: string
+      install_method:
+        type: string
+      is_active:
         type: boolean
-      tenant_config:
-        $ref: '#/definitions/internal_infra_http_handler.TenantToolConfigResponse'
-      tool:
-        $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
+      is_builtin:
+        type: boolean
+      is_platform_tool:
+        description: true for platform tools, false for custom
+        type: boolean
+      latest_version:
+        type: string
+      logo_url:
+        type: string
+      meta:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_infra_http_include.Meta'
+        description: Meta lists the includes left out (GET /tools/{id} only).
+      metadata:
+        additionalProperties: {}
+        type: object
+      min_version:
+        type: string
+      name:
+        type: string
+      output_formats:
+        items:
+          type: string
+        type: array
+      output_types:
+        description: |-
+          OutputTypes are the asset types a report of the tool may create
+          (scan stage catalog); read-only.
+        items:
+          type: string
+        type: array
+      settings:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ToolSettingsResponse'
+        description: 'Settings: include=settings.'
+      source:
+        description: |-
+          Source: platform (shared, managed by the platform) or custom (this
+          organization's own tool).
+        enum:
+        - platform
+        - custom
+        type: string
+      stats:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ToolStatsResponse'
+        description: 'Stats: include=stats.'
+      supported_targets:
+        items:
+          type: string
+        type: array
+      tags:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        description: nil for platform tools, UUID for custom tools
+        type: string
+      update_cmd:
+        type: string
+      updated_at:
+        type: string
+      version_cmd:
+        type: string
+      version_regex:
+        type: string
     type: object
   internal_infra_http_handler.TriageFindingRequest:
     properties:
@@ -16313,6 +16440,58 @@ definitions:
         type: number
       "y":
         type: number
+    type: object
+  internal_infra_http_handler.UnlistedToolResponse:
+    properties:
+      content:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ToolContentVersionsResponse'
+        type: array
+      enabled:
+        description: 'Enabled: active in the catalog and switched on for the tenant.'
+        type: boolean
+      last_reported_at:
+        type: string
+      latest_version:
+        type: string
+      max_reported_version:
+        type: string
+      min_reported_version:
+        type: string
+      min_version:
+        type: string
+      name:
+        type: string
+      sensors:
+        description: |-
+          Sensors lists every sensor that reports the tool, online first. Empty
+          without sensors:read (the counts are always given).
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ToolAvailabilitySensor'
+        type: array
+      sensors_excluded:
+        type: integer
+      sensors_online:
+        description: |-
+          SensorsOnline / SensorsTotal count the sensors that may run the tool;
+          SensorsExcluded those that have it but may not.
+        type: integer
+      sensors_total:
+        type: integer
+      status:
+        enum:
+        - ready
+        - no_sensor
+        - offline_only
+        - outdated
+        - disabled
+        type: string
+      update_available:
+        type: boolean
+      versions:
+        items:
+          type: string
+        type: array
     type: object
   internal_infra_http_handler.UnreadCountResponse:
     properties:
@@ -17125,6 +17304,23 @@ definitions:
         type: string
       s3_config:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_templatesource.S3SourceConfig'
+    type: object
+  internal_infra_http_handler.UpdateToolCategoryRequest:
+    properties:
+      color:
+        maxLength: 20
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      display_name:
+        maxLength: 100
+        type: string
+      icon:
+        maxLength: 50
+        type: string
+    required:
+    - display_name
     type: object
   internal_infra_http_handler.UpdateToolRequest:
     properties:
@@ -23707,290 +23903,6 @@ paths:
       summary: Get a cycle's scope snapshot
       tags:
       - CTEM Cycles
-  /custom-tools:
-    get:
-      consumes:
-      - application/json
-      description: Get a paginated list of tenant's custom tools
-      parameters:
-      - description: Filter by category
-        in: query
-        name: category
-        type: string
-      - description: Filter by capabilities (comma-separated)
-        in: query
-        name: capabilities
-        type: string
-      - description: Filter by active status
-        in: query
-        name: is_active
-        type: boolean
-      - description: Search by name or description
-        in: query
-        name: search
-        type: string
-      - description: Filter by tags (comma-separated)
-        in: query
-        name: tags
-        type: string
-      - default: 1
-        description: Page number
-        in: query
-        name: page
-        type: integer
-      - default: 20
-        description: Items per page
-        in: query
-        name: per_page
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: List custom tools
-      tags:
-      - Custom Tools
-    post:
-      consumes:
-      - application/json
-      description: Create a new tenant custom tool
-      parameters:
-      - description: Tool data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.CreateToolRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Create custom tool
-      tags:
-      - Custom Tools
-  /custom-tools/{id}:
-    delete:
-      consumes:
-      - application/json
-      description: Delete a tenant custom tool
-      parameters:
-      - description: Tool ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Delete custom tool
-      tags:
-      - Custom Tools
-    get:
-      consumes:
-      - application/json
-      description: Get a single tenant custom tool by ID
-      parameters:
-      - description: Tool ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get custom tool
-      tags:
-      - Custom Tools
-    put:
-      consumes:
-      - application/json
-      description: Update a tenant custom tool
-      parameters:
-      - description: Tool ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Update data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.UpdateToolRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Update custom tool
-      tags:
-      - Custom Tools
-  /custom-tools/{id}/activate:
-    post:
-      consumes:
-      - application/json
-      description: Activate a tenant custom tool
-      parameters:
-      - description: Tool ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Activate custom tool
-      tags:
-      - Custom Tools
-  /custom-tools/{id}/deactivate:
-    post:
-      consumes:
-      - application/json
-      description: Deactivate a tenant custom tool
-      parameters:
-      - description: Tool ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Deactivate custom tool
-      tags:
-      - Custom Tools
   /dashboard/program-metrics:
     get:
       description: 'Returns the ctem.org program KPIs computed from stored data, tenant-scoped
@@ -38221,449 +38133,6 @@ paths:
       summary: Enable template source
       tags:
       - Template Sources
-  /tenant-tools:
-    get:
-      consumes:
-      - application/json
-      description: Get a paginated list of tenant tool configurations
-      parameters:
-      - description: Filter by tool ID
-        in: query
-        name: tool_id
-        type: string
-      - description: Filter by enabled status
-        in: query
-        name: is_enabled
-        type: boolean
-      - default: 1
-        description: Page number
-        in: query
-        name: page
-        type: integer
-      - default: 20
-        description: Items per page
-        in: query
-        name: per_page
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_TenantToolConfigResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: List tenant tool configs
-      tags:
-      - Tenant Tools
-  /tenant-tools/{tool_id}:
-    delete:
-      consumes:
-      - application/json
-      description: Delete tenant-specific configuration for a tool
-      parameters:
-      - description: Tool ID
-        in: path
-        name: tool_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Delete tenant tool config
-      tags:
-      - Tenant Tools
-    get:
-      consumes:
-      - application/json
-      description: Get tenant-specific configuration for a tool
-      parameters:
-      - description: Tool ID
-        in: path
-        name: tool_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.TenantToolConfigResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get tenant tool config
-      tags:
-      - Tenant Tools
-    put:
-      consumes:
-      - application/json
-      description: Update or create tenant-specific configuration for a tool
-      parameters:
-      - description: Tool ID
-        in: path
-        name: tool_id
-        required: true
-        type: string
-      - description: Config data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.TenantToolConfigRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.TenantToolConfigResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Update tenant tool config
-      tags:
-      - Tenant Tools
-  /tenant-tools/{tool_id}/effective-config:
-    get:
-      consumes:
-      - application/json
-      description: Get the merged configuration (default + tenant overrides) for a
-        tool
-      parameters:
-      - description: Tool ID
-        in: path
-        name: tool_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get effective tool config
-      tags:
-      - Tenant Tools
-  /tenant-tools/{tool_id}/with-config:
-    get:
-      consumes:
-      - application/json
-      description: Get a tool with its tenant-specific configuration and effective
-        config
-      parameters:
-      - description: Tool ID
-        in: path
-        name: tool_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolWithConfigResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get tool with tenant config
-      tags:
-      - Tenant Tools
-  /tenant-tools/all-tools:
-    get:
-      consumes:
-      - application/json
-      description: Get a paginated list of all tools with their tenant-specific enabled
-        status
-      parameters:
-      - description: Filter by category
-        in: query
-        name: category
-        type: string
-      - description: Filter by system-wide active status
-        in: query
-        name: is_active
-        type: boolean
-      - description: Filter by builtin status
-        in: query
-        name: is_builtin
-        type: boolean
-      - description: Search by name or description
-        in: query
-        name: search
-        type: string
-      - default: 1
-        description: Page number
-        in: query
-        name: page
-        type: integer
-      - default: 20
-        description: Items per page
-        in: query
-        name: per_page
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolWithConfigResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: List all tools with tenant config
-      tags:
-      - Tenant Tools
-  /tenant-tools/availability:
-    get:
-      description: 'Every catalog tool, plus every tool the tenant''s sensors report,
-        with the sensors that have it (online and total), the versions they report
-        and a derived status. Sensor-reported data is advice: dispatch checks every
-        job again at claim time.'
-      parameters:
-      - description: Only the sensors of this scan zone
-        in: query
-        name: zone_id
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolAvailabilityResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Tool availability
-      tags:
-      - Tenant Tools
-  /tenant-tools/bulk/disable:
-    post:
-      consumes:
-      - application/json
-      description: Disable multiple tools for the current tenant
-      parameters:
-      - description: Tool IDs
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.BulkToolIDsRequest'
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Bulk disable tools
-      tags:
-      - Tenant Tools
-  /tenant-tools/bulk/enable:
-    post:
-      consumes:
-      - application/json
-      description: Enable multiple tools for the current tenant
-      parameters:
-      - description: Tool IDs
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_infra_http_handler.BulkToolIDsRequest'
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Bulk enable tools
-      tags:
-      - Tenant Tools
-  /tenant-tools/stats:
-    get:
-      consumes:
-      - application/json
-      description: Get aggregated tool execution statistics for the current tenant
-      parameters:
-      - default: 30
-        description: Number of days to include
-        in: query
-        name: days
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.TenantToolStatsResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get tenant tool stats
-      tags:
-      - Tool Stats
-  /tenant-tools/stats/{toolId}:
-    get:
-      consumes:
-      - application/json
-      description: Get execution statistics for a specific tool
-      parameters:
-      - description: Tool ID
-        in: path
-        name: toolId
-        required: true
-        type: string
-      - default: 30
-        description: Number of days to include
-        in: query
-        name: days
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolStatsResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get tool stats
-      tags:
-      - Tool Stats
   /tenants/{tenant}/invitations:
     get:
       description: 'Pending invitations of the organization. No token: tokens are
@@ -38930,35 +38399,20 @@ paths:
       summary: Change the threat-intelligence feed sync (not allowed)
       tags:
       - Threat Intelligence
-  /tools:
+  /tool-categories:
     get:
-      consumes:
-      - application/json
-      description: Get a paginated list of available tools
+      description: Platform categories plus the organization's custom categories.
       parameters:
-      - description: Filter by category
+      - description: platform or custom
+        enum:
+        - platform
+        - custom
         in: query
-        name: category
+        name: source
         type: string
-      - description: Filter by capabilities (comma-separated)
+      - description: Search the name and display name
         in: query
-        name: capabilities
-        type: string
-      - description: Filter by active status
-        in: query
-        name: is_active
-        type: boolean
-      - description: Filter by builtin status
-        in: query
-        name: is_builtin
-        type: boolean
-      - description: Search by name or description
-        in: query
-        name: search
-        type: string
-      - description: Filter by tags (comma-separated)
-        in: query
-        name: tags
+        name: q
         type: string
       - default: 1
         description: Page number
@@ -38966,7 +38420,7 @@ paths:
         name: page
         type: integer
       - default: 20
-        description: Items per page
+        description: Items per page (max 100)
         in: query
         name: per_page
         type: integer
@@ -38976,9 +38430,246 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolResponse'
+            $ref: '#/definitions/internal_infra_http_handler.ToolCategoryListResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List tool categories
+      tags:
+      - Tool Categories
+    post:
+      consumes:
+      - application/json
+      description: Create a custom category owned by the organization.
+      parameters:
+      - description: Category
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.CreateToolCategoryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ToolCategoryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Create custom tool category
+      tags:
+      - Tool Categories
+  /tool-categories/{id}:
+    delete:
+      description: Delete one of the organization's custom categories (refused while
+        a tool uses it). A platform category or another organization's is not found.
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete custom tool category
+      tags:
+      - Tool Categories
+    get:
+      description: A platform category or one of the organization's custom categories;
+        any other id is not found.
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ToolCategoryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get tool category
+      tags:
+      - Tool Categories
+    put:
+      consumes:
+      - application/json
+      description: Update one of the organization's custom categories. A platform
+        category or another organization's is not found.
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Category
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.UpdateToolCategoryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ToolCategoryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update custom tool category
+      tags:
+      - Tool Categories
+  /tools:
+    get:
+      description: 'The organization''s view of the tool catalog: platform tools and
+        its own custom tools. include= adds the organization''s settings (credential-like
+        config values masked), the availability from its sensors (sensor names and
+        zones only with sensors:read) and run statistics; each needs scans:tenant_tools:read
+        (stats, tenant-wide counts, also scans:read) and is otherwise left out and
+        listed in meta.omitted_includes. A response that took include= is Cache-Control:
+        private, no-store; availability and stats cost 2 more read-limit tokens each.
+        The enabled/available filters need scans:tenant_tools:read. With include=availability
+        the response also carries the availability summary and the tools the sensors
+        report that the catalog does not list.'
+      parameters:
+      - description: platform or custom
+        enum:
+        - platform
+        - custom
+        in: query
+        name: source
+        type: string
+      - description: Category name
+        in: query
+        name: category
+        type: string
+      - description: Search the name, display name and description
+        in: query
+        name: q
+        type: string
+      - description: Active in the catalog and switched on for the organization
+        in: query
+        name: enabled
+        type: boolean
+      - description: A scan job can be dispatched now (an online sensor may run it)
+        in: query
+        name: available
+        type: boolean
+      - description: Availability from this scan zone's sensors only
+        in: query
+        name: zone_id
+        type: string
+      - description: 'Comma-separated, at most 3: settings, availability, stats (per_page
+          is capped at 50 with availability or stats); one the caller may not read
+          is left out and listed in meta.omitted_includes'
+        in: query
+        name: include
+        type: string
+      - default: 30
+        description: Statistics window in days (1-365)
+        in: query
+        name: days
+        type: integer
+      - description: 'name, created_at or updated_at; ''-'' prefix for descending
+          (default: category, then name)'
+        in: query
+        name: sort
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Items per page (max 100)
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ToolListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "500":
@@ -38993,7 +38684,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new tool in the registry (admin only)
+      description: Create a custom tool owned by the organization. Platform tools
+        are managed by the platform and cannot be created here.
       parameters:
       - description: Tool data
         in: body
@@ -39022,26 +38714,70 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Create tool
+      summary: Create custom tool
       tags:
       - Tools
   /tools/{id}:
     delete:
-      consumes:
-      - application/json
-      description: Delete a tool from the registry (admin only, builtin tools cannot
-        be deleted)
+      description: Delete one of the organization's custom tools; active workflows
+        using it are deactivated. A platform tool or another organization's tool is
+        not found.
       parameters:
       - description: Tool ID
         in: path
         name: id
         required: true
         type: string
-      produces:
-      - application/json
       responses:
         "204":
           description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Delete custom tool
+      tags:
+      - Tools
+    get:
+      description: 'One tool of the organization''s view: a platform tool or its own
+        custom tool (any other id is not found). include= as on the list.'
+      parameters:
+      - description: Tool ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Availability from this scan zone's sensors only
+        in: query
+        name: zone_id
+        type: string
+      - description: 'Comma-separated, at most 3: settings, availability, stats; one
+          the caller may not read is left out and listed in meta.omitted_includes'
+        in: query
+        name: include
+        type: string
+      - default: 30
+        description: Statistics window in days (1-365)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ToolViewResponse'
         "400":
           description: Bad Request
           schema:
@@ -39060,47 +38796,14 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Delete tool
-      tags:
-      - Tools
-    get:
-      consumes:
-      - application/json
-      description: Get a single tool by ID
-      parameters:
-      - description: Tool ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
       summary: Get tool
       tags:
       - Tools
     put:
       consumes:
       - application/json
-      description: Update an existing tool (admin only)
+      description: Update one of the organization's custom tools. A platform tool
+        or another organization's tool is not found.
       parameters:
       - description: Tool ID
         in: path
@@ -39134,62 +38837,38 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Update tool
+      summary: Update custom tool
       tags:
       - Tools
-  /tools/{id}/activate:
-    post:
+  /tools/{id}/settings:
+    patch:
       consumes:
       - application/json
-      description: Activate a tool to make it available for use
+      description: 'Change the organization''s switch (scans:tenant_tools:write) and
+        config overrides (also scans:tools:write: they change what the sensors run)
+        of a platform tool or of its own custom tool. An omitted field is left as
+        it is; "config": {} clears the overrides. A config holding a secret (by key
+        or by value) is refused: credentials belong in the secret store, referenced
+        by id.'
       parameters:
       - description: Tool ID
         in: path
         name: id
         required: true
         type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Activate tool
-      tags:
-      - Tools
-  /tools/{id}/deactivate:
-    post:
-      consumes:
-      - application/json
-      description: Deactivate a tool to make it unavailable for use
-      parameters:
-      - description: Tool ID
-        in: path
-        name: id
+      - description: Settings to change
+        in: body
+        name: body
         required: true
-        type: string
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.ToolSettingsRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
+            $ref: '#/definitions/internal_infra_http_handler.ToolViewResponse'
         "400":
           description: Bad Request
           schema:
@@ -39204,88 +38883,25 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Deactivate tool
+      summary: Change tool settings
       tags:
       - Tools
-  /tools/name/{name}:
-    get:
+  /tools/settings:
+    patch:
       consumes:
       - application/json
-      description: Get a single tool by name
+      description: Switch several tools on or off for the organization. Ids of tools
+        it cannot see (another organization's custom tools, unknown ids) are ignored.
       parameters:
-      - description: Tool name
-        in: path
-        name: name
+      - description: Tools and the switch
+        in: body
+        name: body
         required: true
-        type: string
-      produces:
-      - application/json
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.BulkToolSettingsRequest'
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get tool by name
-      tags:
-      - Tools
-  /tools/platform:
-    get:
-      consumes:
-      - application/json
-      description: Get a paginated list of platform-provided tools (available to all
-        tenants)
-      parameters:
-      - description: Filter by category
-        in: query
-        name: category
-        type: string
-      - description: Filter by capabilities (comma-separated)
-        in: query
-        name: capabilities
-        type: string
-      - description: Filter by active status
-        in: query
-        name: is_active
-        type: boolean
-      - description: Search by name or description
-        in: query
-        name: search
-        type: string
-      - description: Filter by tags (comma-separated)
-        in: query
-        name: tags
-        type: string
-      - default: 1
-        description: Page number
-        in: query
-        name: page
-        type: integer
-      - default: 20
-        description: Items per page
-        in: query
-        name: per_page
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolResponse'
+        "204":
+          description: No Content
         "400":
           description: Bad Request
           schema:
@@ -39296,7 +38912,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: List platform tools
+      summary: Switch tools on or off
       tags:
       - Tools
   /users/me:
