@@ -203,7 +203,7 @@ func TestWidened(t *testing.T) {
 	cur := mustProfile(t, ProfileEASMExternal)
 	cases := map[string]func(*Grant){
 		DimTrust:         func(g *Grant) { g.TrustLevel = TrustTrusted },
-		DimJobTypes:      func(g *Grant) { g.JobTypes = append(g.JobTypes, "validate") },
+		DimJobTypes:      func(g *Grant) { g.JobTypes = append(g.JobTypes, "collect") },
 		DimTools:         func(g *Grant) { g.Tools = nil },
 		DimTier:          func(g *Grant) { g.TierCeiling = TierIntrusive },
 		DimTargetNetwork: func(g *Grant) { g.TargetNetwork = TargetNetworkAny },
