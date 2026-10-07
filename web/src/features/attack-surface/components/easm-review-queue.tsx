@@ -41,7 +41,7 @@ import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { useDecideReviewBatch, useEASMReviewQueue } from '../hooks/use-easm-review'
 import { useEASMSummary } from '../hooks/use-easm-summary'
 import { EASMRuleSuggestions } from './easm-rule-suggestions'
-import { reviewReasonLabel } from '@/features/assets/lib/attribution'
+import { reviewReasonLabel } from '../lib/review-reasons'
 import { ScopeEntryDialog, type ScopeEntryDraft } from '@/features/scope'
 import {
   Select,
