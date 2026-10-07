@@ -228,17 +228,13 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		return nil, fmt.Errorf("%w: scan resolves to %d targets, more than the %d allowed per run",
 			shared.ErrValidation, len(out.Targets), maxResolvedTargets)
 	}
-	if sc.ScannerName != "" && !scannerAcceptsTargetList(sc.ScannerName) {
-		// A single-scanner run of a one-target scanner dispatches one
-		// command per target (perTargetPlan, or the zone batches); refuse
-		// up front what would exceed the per-run job cap.
-		if len(out.Targets) > maxZoneJobsPerRun {
-			return nil, tooManyJobsError(sc, len(out.Targets))
-		}
-	} else if len(out.Targets) > 1 && !scannerAcceptsTargetList(sc.ScannerName) {
-		out.Warnings = append(out.Warnings, fmt.Sprintf(
-			singleTargetWarningPrefix+"%q takes one target per job: only %q is scanned in this run, %d other target(s) are not",
-			sc.ScannerName, out.Targets[0], len(out.Targets)-1))
+	// A single-scanner run of a one-target scanner dispatches one command
+	// per target (perTargetPlan, or the zone batches); refuse up front what
+	// would exceed the per-run job cap. A workflow (no scanner name) plans
+	// its targets per step and never had the one-target caveat: it used to
+	// be warned that only the first target would be scanned.
+	if sc.ScannerName != "" && !scannerAcceptsTargetList(sc.ScannerName) && len(out.Targets) > maxZoneJobsPerRun {
+		return nil, tooManyJobsError(sc, len(out.Targets))
 	}
 	return out, nil
 }
