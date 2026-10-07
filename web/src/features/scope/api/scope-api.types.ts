@@ -12,7 +12,7 @@ import type {
   Schemas,
   ScopeBulkOperationResponse,
   ScopeExclusionResponse,
-  ScopeMatchResponse,
+  CheckScopeResponse,
   ScopeStatsResponse,
   ScopeTargetResponse,
 } from '@/lib/api/generated'
@@ -36,7 +36,8 @@ import type {
 export type ApiScopeTarget = ScopeTargetResponse
 export type ApiScopeExclusion = ScopeExclusionResponse
 export type ApiScopeStats = ScopeStatsResponse
-export type ApiCheckScopeResponse = ScopeMatchResponse
+// POST /scope/check is a dry run of the active-probe gate (RFC-054 §6.4).
+export type ApiCheckScopeResponse = CheckScopeResponse
 export type BulkOperationResponse = ScopeBulkOperationResponse
 
 export type PaginationLinks = Schemas['internal_infra_http_handler.PaginationLinks']
@@ -48,8 +49,9 @@ export type ApiScopeExclusionListResponse = ApiResponse<'/scope/exclusions', 'ge
  * Input for checking if a value is in scope
  */
 export interface CheckScopeInput {
-  asset_type: string
-  value: string
+  targets: string[]
+  sensor_preference?: 'auto' | 'tenant' | 'platform'
+  tier?: 0 | 1 | 2
 }
 
 // ============================================

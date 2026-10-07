@@ -1294,10 +1294,10 @@ apply the same scope. An automation with no owner runs no step.
 Editing needs the same permissions: building a node needs its permission,
 and any change to what an existing automation does (an edge, deleting a
 node, a node edit, switching it on) needs the permission of every step it
-has. The `http_request` action is refused for new nodes; a stored one keeps
-running only while its owner holds `integrations:manage`, its header values
-are never returned by the API, and the response body and headers are never
-stored with the run.
+has. The `http_request` action is retired: new nodes are refused, a stored
+one no longer runs (its step fails), its header values are never returned by
+the API, and no response body or header is stored with a run. Building one
+needed `integrations:manage`.
 
 ### Tenant-wide aggregates still to scope (counts only, no row data)
 

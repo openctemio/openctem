@@ -338,7 +338,7 @@ func wfExecBuildSimpleWorkflow(tenantID shared.ID) (*workflow.Workflow, *workflo
 	triggerNode, _ := workflow.NewNode(wf.ID, "trigger_1", workflow.NodeTypeTrigger, "Trigger")
 	_ = triggerNode.SetTriggerConfig(workflow.TriggerTypeManual, nil)
 	actionNode, _ := workflow.NewNode(wf.ID, "action_1", workflow.NodeTypeAction, "Action")
-	_ = actionNode.SetActionConfig(workflow.ActionTypeHTTPRequest, map[string]any{"url": "https://example.com"})
+	_ = actionNode.SetActionConfig(workflow.ActionTypeAddTags, map[string]any{"url": "https://example.com"})
 	edge, _ := workflow.NewEdge(wf.ID, "trigger_1", "action_1")
 	wf.AddNode(triggerNode)
 	wf.AddNode(actionNode)
@@ -354,9 +354,9 @@ func wfExecBuildConditionWorkflow(tenantID shared.ID) (*workflow.Workflow, *work
 	condNode, _ := workflow.NewNode(wf.ID, "condition_1", workflow.NodeTypeCondition, "Condition")
 	_ = condNode.SetConditionConfig("trigger.severity == critical")
 	actionYes, _ := workflow.NewNode(wf.ID, "action_yes", workflow.NodeTypeAction, "Action Yes")
-	_ = actionYes.SetActionConfig(workflow.ActionTypeHTTPRequest, map[string]any{"url": "https://example.com"})
+	_ = actionYes.SetActionConfig(workflow.ActionTypeAddTags, map[string]any{"url": "https://example.com"})
 	actionNo, _ := workflow.NewNode(wf.ID, "action_no", workflow.NodeTypeAction, "Action No")
-	_ = actionNo.SetActionConfig(workflow.ActionTypeHTTPRequest, map[string]any{"url": "https://example.com"})
+	_ = actionNo.SetActionConfig(workflow.ActionTypeAddTags, map[string]any{"url": "https://example.com"})
 
 	edgeTriggerCond, _ := workflow.NewEdge(wf.ID, "trigger_1", "condition_1")
 	edgeYes, _ := workflow.NewEdge(wf.ID, "condition_1", "action_yes")
@@ -380,11 +380,11 @@ func wfExecBuildLinearWorkflow(tenantID shared.ID) *workflow.Workflow {
 	triggerNode, _ := workflow.NewNode(wf.ID, "trigger_1", workflow.NodeTypeTrigger, "Trigger")
 	_ = triggerNode.SetTriggerConfig(workflow.TriggerTypeManual, nil)
 	action1, _ := workflow.NewNode(wf.ID, "action_1", workflow.NodeTypeAction, "Action 1")
-	_ = action1.SetActionConfig(workflow.ActionTypeHTTPRequest, nil)
+	_ = action1.SetActionConfig(workflow.ActionTypeAddTags, nil)
 	action2, _ := workflow.NewNode(wf.ID, "action_2", workflow.NodeTypeAction, "Action 2")
-	_ = action2.SetActionConfig(workflow.ActionTypeHTTPRequest, nil)
+	_ = action2.SetActionConfig(workflow.ActionTypeAddTags, nil)
 	action3, _ := workflow.NewNode(wf.ID, "action_3", workflow.NodeTypeAction, "Action 3")
-	_ = action3.SetActionConfig(workflow.ActionTypeHTTPRequest, nil)
+	_ = action3.SetActionConfig(workflow.ActionTypeAddTags, nil)
 
 	e1, _ := workflow.NewEdge(wf.ID, "trigger_1", "action_1")
 	e2, _ := workflow.NewEdge(wf.ID, "action_1", "action_2")
@@ -471,7 +471,7 @@ func TestWfExec_RegisterActionHandler_RegistersCustomHandler(t *testing.T) {
 
 	handler := &wfExecMockActionHandler{}
 	// Should not panic
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 }
 
 func TestWfExec_RegisterActionHandler_OverridesExistingHandler(t *testing.T) {
@@ -484,8 +484,8 @@ func TestWfExec_RegisterActionHandler_OverridesExistingHandler(t *testing.T) {
 	handler1 := &wfExecMockActionHandler{returnOutput: map[string]any{"handler": "first"}}
 	handler2 := &wfExecMockActionHandler{returnOutput: map[string]any{"handler": "second"}}
 
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler1)
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler2)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler1)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler2)
 
 	// Build and execute a workflow to confirm handler2 is used
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
@@ -524,7 +524,7 @@ func TestWfExec_Execute_SimpleWorkflow_Success(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -555,7 +555,7 @@ func TestWfExec_Execute_SimpleWorkflow_RunCompleted(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{returnOutput: map[string]any{"status": "ok"}}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -680,7 +680,7 @@ func TestWfExec_ExecuteWithTenant_MatchingTenant_Success(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -726,7 +726,7 @@ func TestWfExec_ExecuteWithTenant_ZeroTenantID_Succeeds(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -757,7 +757,7 @@ func TestWfExec_Execute_ConditionTrue_YesBranchExecuted(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	actionYesHandler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, actionYesHandler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, actionYesHandler)
 
 	wf, _, _, _, _ := wfExecBuildConditionWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -809,7 +809,7 @@ func TestWfExec_Execute_ConditionFalse_NoBranchExecuted(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	actionHandler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, actionHandler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, actionHandler)
 
 	wf, _, _, _, _ := wfExecBuildConditionWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1114,7 +1114,7 @@ func TestWfExec_Execute_NodeFailure_RunMarkedFailed(t *testing.T) {
 
 	// Action handler that fails
 	failingHandler := &wfExecMockActionHandler{returnErr: errors.New("action failed: connection refused")}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, failingHandler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, failingHandler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1226,7 +1226,7 @@ func TestWfExec_Execute_LinearGraph_AllNodesCompleted(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{returnOutput: map[string]any{"status": "ok"}}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf := wfExecBuildLinearWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1263,7 +1263,7 @@ func TestWfExec_Execute_NoTriggerNodes_ReturnsError(t *testing.T) {
 	// Build workflow with only action nodes (no trigger)
 	wf, _ := workflow.NewWorkflow(tenantID, "No Trigger WF", "")
 	actionNode, _ := workflow.NewNode(wf.ID, "action_1", workflow.NodeTypeAction, "Action")
-	_ = actionNode.SetActionConfig(workflow.ActionTypeHTTPRequest, nil)
+	_ = actionNode.SetActionConfig(workflow.ActionTypeAddTags, nil)
 	wf.AddNode(actionNode)
 	workflowRepo.Create(context.Background(), wf)
 
@@ -1288,7 +1288,7 @@ func TestWfExec_Execute_MultipleTriggerNodes(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	// Build workflow with two trigger nodes
 	wf, _ := workflow.NewWorkflow(tenantID, "Multi Trigger WF", "")
@@ -1297,7 +1297,7 @@ func TestWfExec_Execute_MultipleTriggerNodes(t *testing.T) {
 	trigger2, _ := workflow.NewNode(wf.ID, "trigger_2", workflow.NodeTypeTrigger, "Trigger 2")
 	_ = trigger2.SetTriggerConfig(workflow.TriggerTypeFindingCreated, nil)
 	actionNode, _ := workflow.NewNode(wf.ID, "action_1", workflow.NodeTypeAction, "Action")
-	_ = actionNode.SetActionConfig(workflow.ActionTypeHTTPRequest, nil)
+	_ = actionNode.SetActionConfig(workflow.ActionTypeAddTags, nil)
 	edge1, _ := workflow.NewEdge(wf.ID, "trigger_1", "action_1")
 	edge2, _ := workflow.NewEdge(wf.ID, "trigger_2", "action_1")
 	wf.AddNode(trigger1)
@@ -1332,7 +1332,7 @@ func TestWfExec_Execute_BranchingGraph_DownstreamExecutedAfterCompletion(t *test
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{returnOutput: map[string]any{"ok": true}}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _, _, _ := wfExecBuildConditionWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1369,7 +1369,7 @@ func TestWfExec_Execute_AllNodesCompleted_RunCompleted(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1396,7 +1396,7 @@ func TestWfExec_Execute_SomeNodesFailed_RunFailed(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	failHandler := &wfExecMockActionHandler{returnErr: errors.New("node error")}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, failHandler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, failHandler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1426,7 +1426,7 @@ func TestWfExec_Execute_WorkflowStatsUpdated(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	initialTotalRuns := wf.TotalRuns
@@ -1454,7 +1454,7 @@ func TestWfExec_Execute_CompletedNodesCountUpdated(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf := wfExecBuildLinearWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1487,7 +1487,7 @@ func TestWfExec_Execute_SemaphoreNotExhausted(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	// Execute two separate workflows concurrently via goroutines
 	const numRuns = 3
@@ -1526,7 +1526,7 @@ func TestWfExec_ExecuteAsync_DoesNotBlock(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1558,7 +1558,7 @@ func TestWfExec_ExecuteAsyncWithTenant_DoesNotBlock(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1594,7 +1594,7 @@ func TestWfExec_RegisterActionHandler_ConcurrentAccess_NoRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			handler := &wfExecMockActionHandler{}
-			executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+			executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 		}()
 	}
 	wg.Wait()
@@ -1612,7 +1612,7 @@ func TestWfExec_Execute_NodeRunUpdatedDuringExecution(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1640,7 +1640,7 @@ func TestWfExec_Execute_RunUpdatedDuringExecution(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf, _, _ := wfExecBuildSimpleWorkflow(tenantID)
 	workflowRepo.Create(context.Background(), wf)
@@ -1701,7 +1701,7 @@ func TestWfExec_Execute_ConditionNodeNoExpression_DefaultsTrue(t *testing.T) {
 	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
 
 	handler := &wfExecMockActionHandler{}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	// Build workflow: trigger → condition (no expr) → action
 	wf, _ := workflow.NewWorkflow(tenantID, "Empty Condition WF", "")
@@ -1710,7 +1710,7 @@ func TestWfExec_Execute_ConditionNodeNoExpression_DefaultsTrue(t *testing.T) {
 	condNode, _ := workflow.NewNode(wf.ID, "condition_1", workflow.NodeTypeCondition, "Condition")
 	// No expression set → defaults to true
 	actionNode, _ := workflow.NewNode(wf.ID, "action_1", workflow.NodeTypeAction, "Action")
-	_ = actionNode.SetActionConfig(workflow.ActionTypeHTTPRequest, nil)
+	_ = actionNode.SetActionConfig(workflow.ActionTypeAddTags, nil)
 
 	edgeTC, _ := workflow.NewEdge(wf.ID, "trigger_1", "condition_1")
 	edgeCA, _ := workflow.NewEdge(wf.ID, "condition_1", "action_1")
@@ -1776,5 +1776,38 @@ func TestWfExec_Execute_UnknownNodeType_NodeFails(t *testing.T) {
 	err := executor.Execute(context.Background(), run.ID)
 	if err != nil {
 		t.Fatalf("Execute with trigger-only WF failed: %v", err)
+	}
+}
+
+// A stored workflow that still holds a refused action (trigger_pipeline) never
+// runs it, even with a handler registered for the type.
+func TestWfExec_Execute_StoredUnsupportedActionNeverRuns(t *testing.T) {
+	tenantID := shared.NewID()
+	workflowRepo := newWfExecMockWorkflowRepo()
+	runRepo := newWfExecMockRunRepo()
+	nodeRunRepo := newWfExecMockNodeRunRepo()
+	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
+
+	handler := &wfExecMockActionHandler{}
+	executor.RegisterActionHandler(workflow.ActionTypeTriggerPipeline, handler)
+
+	wf, _, actionNode := wfExecBuildSimpleWorkflow(tenantID)
+	_ = actionNode.SetActionConfig(workflow.ActionTypeTriggerPipeline, map[string]any{"pipeline_id": shared.NewID().String()})
+	workflowRepo.Create(context.Background(), wf)
+
+	run := wfExecBuildRun(wf, tenantID)
+	runRepo.Create(context.Background(), run)
+	for _, nr := range run.NodeRuns {
+		nodeRunRepo.Create(context.Background(), nr)
+	}
+
+	_ = executor.Execute(context.Background(), run.ID)
+
+	if handler.getCallCount() != 0 {
+		t.Fatalf("trigger_pipeline handler ran %d times, want 0", handler.getCallCount())
+	}
+	finalRun, _ := runRepo.GetByID(context.Background(), run.ID)
+	if finalRun.Status == workflow.RunStatusCompleted {
+		t.Fatalf("run with a refused action completed, want it to fail")
 	}
 }

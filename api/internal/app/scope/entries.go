@@ -64,6 +64,10 @@ func (s *Service) SetEntryPolicy(settings SettingsReader, admins AdminDirectory,
 	s.settings, s.admins, s.inApp = settings, admins, inApp
 }
 
+// SetGuardrails sets the platform's scope guardrails (RFC-054 §8): checked on
+// every new entry, whoever creates it. Nil: the built-in guardrails.
+func (s *Service) SetGuardrails(g scopedom.Guardrails) { s.guardrails = &g }
+
 // SetStepUpGate wires step-up re-authentication for widening. Without it a
 // person's widening is refused (fail closed).
 func (s *Service) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
