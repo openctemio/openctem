@@ -27,7 +27,8 @@ asset service/http (origin: https://api.example.com)
    reports endpoints (`stage.Stage.Endpoints`: `crawl.web`, `dast.web`) and,
    when the sensor declares a tool contract, its `produces` names `endpoint`.
 2. `planEndpoints` folds legacy `discovered_url` assets into endpoints (they
-   are no longer created; a finding on one moves to the origin), normalises
+   are no longer created; a finding on one moves to the origin; migration
+   001288 converted the stored ones the same way and deleted them), normalises
    every endpoint with `webendpoint.Observe` (ctis/weburl: strict parse,
    template, query names only, masked example), refuses origins a
    command-bound report's targets do not cover, counts static files without
