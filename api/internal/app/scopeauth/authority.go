@@ -7,7 +7,7 @@
 // The authority of a tenant is its active scope entries (domain, IP, CIDR,
 // URL, repository, ...), matched with pkg/domain/scope (a "*.x" entry covers
 // x and everything below it). Nothing else authorizes (research/53 SC1,
-// SC2): root-domain seeds were folded into entries (migration 001245), and a
+// SC2): root-domain seeds were folded into entries (migration 001262), and a
 // verified domain, of any purpose, is proof of control only (§8.1): it adds
 // a requirement where proof is needed and never grants anything by itself.
 //
