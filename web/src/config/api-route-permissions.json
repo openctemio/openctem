@@ -316,6 +316,7 @@
 "POST /api/v1/pentest/templates": {"permissions":["pentest:templates:write"]},
 "POST /api/v1/pipeline-runs/{id}/cancel": {"permissions":["integrations:pipelines:write","scans:write"]},
 "POST /api/v1/pipelines": {"permissions":["integrations:pipelines:write"]},
+"POST /api/v1/pipelines/verify": {"permissions":["integrations:pipelines:write"]},
 "POST /api/v1/pipelines/{id}/activate": {"permissions":["integrations:pipelines:write"]},
 "POST /api/v1/pipelines/{id}/clone": {"permissions":["integrations:pipelines:write"]},
 "POST /api/v1/pipelines/{id}/deactivate": {"permissions":["integrations:pipelines:write"]},

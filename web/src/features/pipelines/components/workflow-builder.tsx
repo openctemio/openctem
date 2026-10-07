@@ -17,6 +17,7 @@ import {
   type OnNodesChange,
   type OnEdgesChange,
   type OnConnect,
+  type OnConnectEnd,
   applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
@@ -26,8 +27,17 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
+import { toast } from 'sonner'
 import { ScannerNode, StartNode, EndNode, type ScannerNodeData } from './scanner-node'
 import type { PipelineStep, UIPosition } from '@/lib/api'
+import { makeIsValidConnection } from '@/components/flow/connection-rules'
+import {
+  EMPTY_TABLE,
+  capabilityForStep,
+  checkStepConnection,
+  stepEdges,
+  type CapabilityTable,
+} from '../lib/capability-graph'
 
 // ============================================
 // TYPES
@@ -63,6 +73,12 @@ export interface WorkflowBuilderProps {
   onEndPositionChange?: (position: UIPosition) => void
   onNodeDelete?: (stepId: string) => void
   onAddNode?: (data: AddNodeData) => void
+  // The capability catalog: typed ports and adapters (GET /scans/stages)
+  capabilityTable?: CapabilityTable
+  // API graph-check messages per step key
+  issuesByStep?: Record<string, string[]>
+  // Insert the adapter capability between two steps that cannot be wired
+  onInsertAdapter?: (sourceId: string, targetId: string, capability: string) => void
   readOnly?: boolean
   className?: string
 }
@@ -270,6 +286,9 @@ function WorkflowBuilderInner({
   onEndPositionChange,
   onNodeDelete,
   onAddNode,
+  capabilityTable = EMPTY_TABLE,
+  issuesByStep,
+  onInsertAdapter,
   readOnly = false,
   className,
 }: WorkflowBuilderProps) {
@@ -365,8 +384,11 @@ function WorkflowBuilderInner({
           .filter((s) => s.id !== step.id)
           .map((s) => ({ stepKey: s.step_key, name: s.name }))
 
+        const capability = capabilityForStep(capabilityTable, step)
+        const issues = issuesByStep?.[step.step_key] ?? []
+
         // Create a unique key based on data that should trigger re-render
-        const dataKey = `${step.tool || ''}-${JSON.stringify(step.capabilities || [])}`
+        const dataKey = `${step.tool || ''}-${JSON.stringify(step.capabilities || [])}-${capability?.key ?? ''}-${issues.join('|')}`
 
         return {
           id: step.id,
@@ -386,6 +408,13 @@ function WorkflowBuilderInner({
             categoryColor: (step as PipelineStep & { category_color?: string }).category_color,
             availableTools: availableTools,
             availableSteps: availableStepsForThis,
+            capabilityName: capability?.name,
+            capabilityTier: capability?.tier,
+            inPorts: capability?.inPorts,
+            outPorts: capability?.outPorts,
+            portLabels: capabilityTable.portLabels,
+            issues,
+            ...(issues.length > 0 ? { isValid: false, validationMessage: undefined } : {}),
             // Add callbacks if not readOnly
             ...(!readOnly && onStepUpdate
               ? {
@@ -428,6 +457,8 @@ function WorkflowBuilderInner({
   }, [
     steps,
     availableTools,
+    capabilityTable,
+    issuesByStep,
     readOnly,
     onStepUpdate,
     setNodes,
@@ -542,6 +573,45 @@ function WorkflowBuilderInner({
     [setEdges, readOnly, edges, steps, onStepUpdate]
   )
 
+  // Typed connections: a step-to-step edge must connect a port type the
+  // source gives to one the target takes (affordance; the API validates
+  // every save). Start/End edges are structural and always allowed.
+  const connectionRule = useMemo(
+    () =>
+      makeIsValidConnection((source, target) => {
+        if (source === END_NODE_ID || target === START_NODE_ID) {
+          return { ok: false, reason: 'Start only leads into steps, and End only follows them.' }
+        }
+        if (source === START_NODE_ID || target === END_NODE_ID) return { ok: true }
+        return checkStepConnection(capabilityTable, steps, stepEdges(steps), source, target)
+      }),
+    [capabilityTable, steps]
+  )
+
+  // Explain a refused connection when the drag ends on a step, and offer the
+  // adapter step that would connect the two.
+  const onConnectEnd: OnConnectEnd = useCallback(
+    (_event, state) => {
+      if (readOnly || state.isValid !== false || !state.fromNode || !state.toNode) return
+      const refusal = connectionRule.lastRefusal()
+      if (!refusal) return
+      const sourceId = state.fromNode.id
+      const targetId = state.toNode.id
+      const adapter = refusal.adapter
+      toast.error(refusal.reason, {
+        ...(adapter && onInsertAdapter
+          ? {
+              action: {
+                label: 'Insert step',
+                onClick: () => onInsertAdapter(sourceId, targetId, adapter),
+              },
+            }
+          : {}),
+      })
+    },
+    [readOnly, connectionRule, onInsertAdapter]
+  )
+
   // Handle new connections
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
@@ -572,7 +642,17 @@ function WorkflowBuilderInner({
           return
         }
 
-        // Normal step-to-step connection
+        // Normal step-to-step connection. A step without typed ports can be
+        // wired, but only orders the two: say so.
+        const verdict = checkStepConnection(
+          capabilityTable,
+          steps,
+          stepEdges(steps),
+          connection.source,
+          connection.target
+        )
+        if (!verdict.ok) return
+        if (verdict.warning) toast.warning(verdict.warning)
         setEdges((eds) =>
           addEdge(
             {
@@ -604,7 +684,7 @@ function WorkflowBuilderInner({
         }
       }
     },
-    [setEdges, steps, onStepUpdate, readOnly]
+    [setEdges, steps, onStepUpdate, readOnly, capabilityTable]
   )
 
   // Handle node selection (just for highlighting)
@@ -702,6 +782,8 @@ function WorkflowBuilderInner({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectEnd={onConnectEnd}
+        isValidConnection={connectionRule.isValidConnection}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onDragOver={onDragOver}
