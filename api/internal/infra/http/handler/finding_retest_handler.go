@@ -40,16 +40,22 @@ type FindingRetestResponse struct {
 	// Outcome: confirmed_fixed (the endpoint answered and the check did not
 	// match), not_reproduced (no match, endpoint not proven checked),
 	// still_vulnerable, inconclusive (reason_code says why).
-	Outcome      string     `json:"outcome,omitempty"`
-	ReasonCode   string     `json:"reason_code,omitempty"`
-	Reason       string     `json:"reason,omitempty"`
-	PriorStatus  string     `json:"prior_status"`
-	ResultStatus string     `json:"result_status,omitempty"`
-	TemplateID   string     `json:"template_id"`
-	Target       string     `json:"target"`
-	CreatedAt    time.Time  `json:"created_at"`
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`
-	DeadlineAt   time.Time  `json:"deadline_at"`
+	Outcome      string `json:"outcome,omitempty"`
+	ReasonCode   string `json:"reason_code,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	PriorStatus  string `json:"prior_status"`
+	ResultStatus string `json:"result_status,omitempty"`
+	TemplateID   string `json:"template_id"`
+	Target       string `json:"target"`
+	// RunKind is "retest": an attempt is a run linked to the finding, the
+	// command that carried it (check_command_id) and the sensor that ran it.
+	RunKind        string     `json:"run_kind"`
+	CheckCommandID string     `json:"check_command_id,omitempty"`
+	ReachCommandID string     `json:"reach_command_id,omitempty"`
+	SensorID       string     `json:"sensor_id,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	DeadlineAt     time.Time  `json:"deadline_at"`
 }
 
 // FindingRetestListResponse is a finding's retest history, newest first.
@@ -67,6 +73,16 @@ func toFindingRetestResponse(rt *retestdom.Retest) FindingRetestResponse {
 	}
 	if rt.RequestedBy != nil {
 		out.RequestedBy = rt.RequestedBy.String()
+	}
+	out.RunKind = "retest"
+	if rt.CheckCommandID != nil {
+		out.CheckCommandID = rt.CheckCommandID.String()
+	}
+	if rt.ReachCommandID != nil {
+		out.ReachCommandID = rt.ReachCommandID.String()
+	}
+	if rt.SensorID != nil {
+		out.SensorID = rt.SensorID.String()
 	}
 	return out
 }

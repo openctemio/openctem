@@ -517,6 +517,9 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 		}
 		v = s.applyDrift(ctx, rt, v, tr.TemplateDigest, false)
 		s.storeAttempt(ctx, rt, tr.Evidence, tr.TemplateDigest)
+		if cmd != nil {
+			rt.SensorID = cmd.SensorID
+		}
 		return s.settle(ctx, rt, v)
 	}
 	rt.Method = retestdom.MethodValidate
@@ -531,7 +534,21 @@ func (s *Service) trySettle(ctx context.Context, rt *retestdom.Retest, force boo
 	}
 	v = s.applyDrift(ctx, rt, v, check.TemplateDigest, true)
 	s.storeAttempt(ctx, rt, check.Evidence, check.TemplateDigest)
+	rt.SensorID = s.checkSensor(ctx, rt)
 	return s.settle(ctx, rt, v)
+}
+
+// checkSensor is the sensor that claimed the retest's check command (nil when
+// none did, or it cannot be read).
+func (s *Service) checkSensor(ctx context.Context, rt *retestdom.Retest) *shared.ID {
+	if rt.CheckCommandID == nil {
+		return nil
+	}
+	c, err := s.commands.GetByTenantAndID(ctx, rt.TenantID, *rt.CheckCommandID)
+	if err != nil || c == nil {
+		return nil
+	}
+	return c.SensorID
 }
 
 // applyDrift makes a conclusive verdict inconclusive when the re-run cannot
@@ -724,11 +741,14 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 	if rt.ReachCommandID != nil {
 		changes["reach_command_id"] = rt.ReachCommandID.String()
 	}
+	if rt.SensorID != nil {
+		changes["sensor_id"] = rt.SensorID.String()
+	}
 	source := activitySource(rt.Trigger)
 	var regression bool
 	res, err := s.store.Settle(ctx, retestdom.SettleInput{
 		TenantID: rt.TenantID, RetestID: rt.ID, FindingID: rt.FindingID,
-		Outcome: outcome, ReasonCode: v.Code, Reason: reason, ResolvedBy: resolvedBy, TemplateID: rt.TemplateID,
+		Outcome: outcome, ReasonCode: v.Code, Reason: reason, SensorID: rt.SensorID, ResolvedBy: resolvedBy, TemplateID: rt.TemplateID,
 		Decide: func(current vulnerability.FindingStatus) retestdom.SettleDecision {
 			next, change := retestdom.NextStatus(current, outcome, autoResolve)
 			regression = change && retestdom.IsRegression(current, next)
