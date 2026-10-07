@@ -24,9 +24,9 @@ const insertStepSQL = `
 		ui_position_x, ui_position_y,
 		tool, tool_id, capabilities, config, timeout_seconds,
 		depends_on, condition_type, condition_value,
-		max_retries, retry_delay_seconds, created_at
+		max_retries, retry_delay_seconds, created_at, prefer_tools
 	)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 `
 
 // insertStep inserts one step.
@@ -55,6 +55,7 @@ func insertStep(ctx context.Context, ex stepExecer, s *pipeline.Step) error {
 		s.MaxRetries,
 		s.RetryDelaySeconds,
 		s.CreatedAt,
+		pq.Array(nonNilStrings(s.PreferTools)),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -79,7 +80,7 @@ func updateStepInPlace(ctx context.Context, ex stepExecer, s *pipeline.Step) err
 		    ui_position_x = $7, ui_position_y = $8,
 		    tool = $9, tool_id = $10, capabilities = $11, config = $12, timeout_seconds = $13,
 		    depends_on = $14, condition_type = $15, condition_value = $16,
-		    max_retries = $17, retry_delay_seconds = $18
+		    max_retries = $17, retry_delay_seconds = $18, prefer_tools = $19
 		WHERE id = $1 AND pipeline_id = $2
 	`,
 		s.ID.String(),
@@ -100,6 +101,7 @@ func updateStepInPlace(ctx context.Context, ex stepExecer, s *pipeline.Step) err
 		nullString(s.Condition.Value),
 		s.MaxRetries,
 		s.RetryDelaySeconds,
+		pq.Array(nonNilStrings(s.PreferTools)),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -220,7 +222,7 @@ func (r *PipelineStepRepository) stepsInTx(ctx context.Context, tx *sql.Tx, pipe
 		       ui_position_x, ui_position_y,
 		       tool, tool_id, capabilities, config, timeout_seconds,
 		       depends_on, condition_type, condition_value,
-		       max_retries, retry_delay_seconds, created_at
+		       max_retries, retry_delay_seconds, created_at, prefer_tools
 		FROM pipeline_steps
 		WHERE pipeline_id = $1
 		ORDER BY step_order ASC
