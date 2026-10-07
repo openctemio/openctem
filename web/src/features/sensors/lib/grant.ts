@@ -9,6 +9,7 @@ export const GRANT_JOB_TYPES = [
   'scan',
   'collect',
   'validate',
+  'retest',
   'connector_sync',
   'connector_scan',
   'config_update',
