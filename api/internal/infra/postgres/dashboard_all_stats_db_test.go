@@ -52,6 +52,15 @@ func TestDashboardGetAllStats_OnePass(t *testing.T) {
 	seedDashAsset(ctx, t, db, tenant, "repository", "", "active", 20) // repo without findings; '' sub_type ignored
 	host := seedDashAsset(ctx, t, db, tenant, "host", "-", "inactive", 0)
 	otherAsset := seedDashAsset(ctx, t, db, other, "repository", "gitlab", "active", 90)
+	// Not in the inventory (RFC-054 §4.4): a name waiting for review and a
+	// rejected one are not counted.
+	for _, st := range []string{"needs_review", "rejected"} {
+		id := seedDashAsset(ctx, t, db, tenant, "subdomain", "-", "active", 10)
+		if _, err := db.ExecContext(ctx, `INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence) VALUES ($1, $2, $3, 85)`,
+			id.String(), tenant.String(), st); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	vulnID := shared.NewID()
 	if _, err := db.ExecContext(ctx,

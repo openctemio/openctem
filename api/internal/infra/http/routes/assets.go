@@ -359,6 +359,14 @@ func registerEASMRoutes(
 			r.GET("/candidates", h.Candidates, middleware.Require(permission.AssetsRead))
 			r.POST("/candidates/decisions", h.Decide, middleware.Require(permission.AssetsWrite))
 		}
+		// Review by rule (RFC-054 §6.7): a rule is a scope entry or an
+		// exclusion, created through the scope service (its own step-up and
+		// approvals); scope:write is checked in the handler for those.
+		if h.HasRules() {
+			r.GET("/candidates/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
+			r.POST("/candidates/rules/preview", h.PreviewRule, middleware.Require(permission.AssetsRead))
+			r.POST("/candidates/rules", h.ApplyRule, middleware.Require(permission.AssetsWrite))
+		}
 	}, tenantMiddlewares...)
 }
 

@@ -3,7 +3,6 @@ package scan
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/netip"
 	"net/url"
 	"strings"
@@ -269,10 +268,7 @@ func isInternalTarget(target string) bool {
 	if p, err := netip.ParsePrefix(host); err == nil {
 		return isInternalAddr(p.Addr())
 	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
+	host = asset.HostOf(host)
 	if a, err := netip.ParseAddr(host); err == nil {
 		return isInternalAddr(a)
 	}
