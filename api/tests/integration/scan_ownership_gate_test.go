@@ -21,6 +21,7 @@ import (
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -120,8 +121,16 @@ func TestScanOwnershipGate(t *testing.T) {
 		if !errors.As(err, &de) || de.Code != "TARGET_OUT_OF_SCOPE" {
 			t.Fatalf("%s: err = %v, want TARGET_OUT_OF_SCOPE", target, err)
 		}
-		if !strings.Contains(err.Error(), scansvc.ReasonOwnershipNotConfirmed) {
-			t.Fatalf("%s: not the generic reason: %v", target, err)
+		// Each refused target is listed with its structured code (RFC-054 §6.5).
+		details, _ := de.Details.(map[string]any)
+		list, _ := details["refused"].([]scopedom.Refusal)
+		if len(list) == 0 {
+			t.Fatalf("%s: no structured refusal in %+v", target, de.Details)
+		}
+		for _, r := range list {
+			if r.Code == "" || r.Message == "" || !strings.Contains(err.Error(), r.Message) {
+				t.Fatalf("%s: refusal %+v not coded or not in the message %v", target, r, err)
+			}
 		}
 	}
 	create := func(targets ...string) (*shared.ID, error) {
@@ -144,6 +153,20 @@ func TestScanOwnershipGate(t *testing.T) {
 		for _, target := range refusedTargets {
 			_, err := create(target)
 			refused(t, err, target)
+		}
+		want := map[string]string{
+			"www.scoped.example.com": scopedom.RefusalRejected, "dev.scoped.example.com": scopedom.RefusalNeedsReview,
+			"cand.example.org": scopedom.RefusalCandidate, "manual.example.net": scopedom.RefusalNoEntry,
+			"confirmed.example.net": scopedom.RefusalNoEntry,
+		}
+		for target, code := range want {
+			_, err := create(target)
+			var de *shared.DomainError
+			_ = errors.As(err, &de)
+			list := de.Details.(map[string]any)["refused"].([]scopedom.Refusal)
+			if list[0].Code != code {
+				t.Errorf("%s: code %s, want %s", target, list[0].Code, code)
+			}
 		}
 	})
 
