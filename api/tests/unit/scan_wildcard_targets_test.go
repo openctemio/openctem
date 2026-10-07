@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -168,9 +169,9 @@ func TestWildcardTarget_WorkflowNeedsDiscoveryFirstSteps(t *testing.T) {
 			deps.toolRepo.addTool("subfinder", true)
 			deps.toolRepo.addTool("nuclei", true)
 			sc := createTestScanInRepo(deps, tenantID, "Recon chain", scan.ScanTypeWorkflow)
-			deps.stepRepo.steps[sc.PipelineID.String()] = []*pipeline.Step{
-				{ID: shared.NewID(), PipelineID: *sc.PipelineID, StepKey: "first", StepOrder: 1, Tool: tc.rootTool},
-				{ID: shared.NewID(), PipelineID: *sc.PipelineID, StepKey: "then", StepOrder: 2, Tool: "nuclei", DependsOn: []string{"first"}},
+			deps.stepRepo.steps[sc.ScanWorkflowID.String()] = []*scanworkflow.Step{
+				{ID: shared.NewID(), ScanWorkflowID: *sc.ScanWorkflowID, StepKey: "first", StepOrder: 1, Tool: tc.rootTool},
+				{ID: shared.NewID(), ScanWorkflowID: *sc.ScanWorkflowID, StepKey: "then", StepOrder: 2, Tool: "nuclei", DependsOn: []string{"first"}},
 			}
 			sc.SetTargets([]string{"*.example.com"})
 			_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 )
 
 // RFC-046 D5 (`partial`), against the real SQL and migration 000350.
@@ -14,7 +14,7 @@ func TestPartialRun_StoredFinalAndCountedOnItsOwn(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
 	scans := NewScanRepository(&DB{DB: db})
-	runs := NewPipelineRunRepository(&DB{DB: db})
+	runs := NewScanRunRepository(&DB{DB: db})
 	steps := NewStepRunRepository(&DB{DB: db})
 	tenantID, scanID := seedCounterScan(ctx, t, db)
 	run := seedCounterRun(ctx, t, runs, tenantID, scanID)
@@ -25,7 +25,7 @@ func TestPartialRun_StoredFinalAndCountedOnItsOwn(t *testing.T) {
 	if err := steps.Update(ctx, sr); err != nil {
 		t.Fatalf("step -> partial: %v", err)
 	}
-	if err := runs.UpdateStatus(ctx, run.ID, pipeline.RunStatusPartial, "partial"); err != nil {
+	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusPartial, "partial"); err != nil {
 		t.Fatalf("run -> partial: %v", err)
 	}
 	if err := scans.RefreshRunSummary(ctx, tenantID, scanID); err != nil {
@@ -33,10 +33,10 @@ func TestPartialRun_StoredFinalAndCountedOnItsOwn(t *testing.T) {
 	}
 
 	// partial is terminal for both.
-	if err := runs.UpdateStatus(ctx, run.ID, pipeline.RunStatusCompleted, ""); !errors.Is(err, pipeline.ErrRunAlreadyFinished) {
+	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusCompleted, ""); !errors.Is(err, scanrun.ErrRunAlreadyFinished) {
 		t.Fatalf("run after partial: err=%v, want ErrRunAlreadyFinished", err)
 	}
-	if err := steps.Complete(ctx, sr.ID, 9, nil); !errors.Is(err, pipeline.ErrStepRunAlreadyFinished) {
+	if err := steps.Complete(ctx, sr.ID, 9, nil); !errors.Is(err, scanrun.ErrStepRunAlreadyFinished) {
 		t.Fatalf("step after partial: err=%v, want ErrStepRunAlreadyFinished", err)
 	}
 
@@ -63,7 +63,7 @@ func TestPartialRun_StoredFinalAndCountedOnItsOwn(t *testing.T) {
 func TestPartialRun_NotAutoRetried(t *testing.T) {
 	ctx := context.Background()
 	db := openTimeoutDB(t)
-	repo := NewPipelineRunRepository(&DB{DB: db})
+	repo := NewScanRunRepository(&DB{DB: db})
 	tenantID := seedTestTenant(ctx, t, db)
 
 	partial := seedFinishedRun(ctx, t, db, tenantID, seedRetryScan(ctx, t, db, tenantID, 5), "partial", 0, "partial", "BATCH_FAILED")
@@ -81,7 +81,7 @@ func TestPartialRun_NotAutoRetried(t *testing.T) {
 func TestPartialRun_InOverviewStats(t *testing.T) {
 	ctx := context.Background()
 	db := openTimeoutDB(t)
-	runs := NewPipelineRunRepository(&DB{DB: db})
+	runs := NewScanRunRepository(&DB{DB: db})
 	steps := NewStepRunRepository(&DB{DB: db})
 	tenantID := seedTestTenant(ctx, t, db)
 	scanID := seedRetryScan(ctx, t, db, tenantID, 0)

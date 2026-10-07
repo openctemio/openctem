@@ -6,10 +6,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -40,20 +41,20 @@ func newHopTenant(t *testing.T, db *sql.DB, assets int) *hopTenant {
 	t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = db.ExecContext(ctx, "DELETE FROM ingest_reports WHERE tenant_id = $1", h.tenant.String())
-		_, _ = db.ExecContext(ctx, "DELETE FROM pipeline_runs WHERE tenant_id = $1", h.tenant.String())
-		_, _ = db.ExecContext(ctx, "DELETE FROM pipeline_templates WHERE tenant_id = $1", h.tenant.String())
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_runs WHERE tenant_id = $1", h.tenant.String())
+		_, _ = db.ExecContext(ctx, "DELETE FROM scan_workflows WHERE tenant_id = $1", h.tenant.String())
 		_, _ = db.ExecContext(ctx, "DELETE FROM tenants WHERE id = $1", h.tenant.String())
 	})
 	hopExec(t, db, `INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status)
 		VALUES ($1, $2, 'hop-sensor', $3, 'p', 'active')`, h.sensor, h.tenant, "h-"+h.sensor.String())
-	hopExec(t, db, `INSERT INTO pipeline_templates (id, tenant_id, name) VALUES ($1, $2, $3)`, tpl, h.tenant, "hop "+tpl.String())
-	hopExec(t, db, `INSERT INTO pipeline_steps (id, pipeline_id, step_key, name, step_order, capabilities)
+	hopExec(t, db, `INSERT INTO scan_workflows (id, tenant_id, name) VALUES ($1, $2, $3)`, tpl, h.tenant, "hop "+tpl.String())
+	hopExec(t, db, `INSERT INTO scan_workflow_steps (id, scan_workflow_id, step_key, name, step_order, capabilities)
 		VALUES ($1, $2, 'subs', 'subs', 1, ARRAY['subdomain'])`, step, tpl)
-	hopExec(t, db, `INSERT INTO pipeline_runs (id, pipeline_id, tenant_id, trigger_type, status) VALUES ($1, $2, $3, 'manual', 'running')`,
+	hopExec(t, db, `INSERT INTO scan_runs (id, scan_workflow_id, tenant_id, trigger_type, status) VALUES ($1, $2, $3, 'manual', 'running')`,
 		h.run, tpl, h.tenant)
-	hopExec(t, db, `INSERT INTO step_runs (id, pipeline_run_id, step_id, step_key, step_order, status) VALUES ($1, $2, $3, 'subs', 1, 'completed')`,
+	hopExec(t, db, `INSERT INTO scan_run_steps (id, scan_run_id, step_id, step_key, step_order, status) VALUES ($1, $2, $3, 'subs', 1, 'completed')`,
 		h.stepRun, h.run, step)
-	hopExec(t, db, `INSERT INTO commands (id, tenant_id, sensor_id, type, status, payload, step_run_id)
+	hopExec(t, db, `INSERT INTO commands (id, tenant_id, sensor_id, type, status, payload, scan_run_step_id)
 		VALUES ($1, $2, $3, 'scan', 'completed', '{}', $4)`, h.command, h.tenant, h.sensor, h.stepRun)
 	for i := 0; i < assets; i++ {
 		a := shared.NewID()
@@ -117,7 +118,7 @@ func TestScanHops_OutputsAreTenantScoped(t *testing.T) {
 		t.Fatalf("total after a delete = %d", total)
 	}
 	// The composite foreign key refuses a cross-tenant row whatever writes it.
-	_, err = db.ExecContext(ctx, `INSERT INTO scan_step_outputs (tenant_id, run_id, step_run_id, asset_id) VALUES ($1, $2, $3, $4)`,
+	_, err = db.ExecContext(ctx, `INSERT INTO scan_step_outputs (tenant_id, run_id, scan_run_step_id, asset_id) VALUES ($1, $2, $3, $4)`,
 		b.tenant.String(), a.run.String(), a.stepRun.String(), b.assets[0].String())
 	if err == nil {
 		t.Fatal("a row pointing at another tenant's run was accepted")
@@ -133,13 +134,13 @@ func TestScanHops_StagePlanExactlyOnce(t *testing.T) {
 	a, b := newHopTenant(t, db, 2), newHopTenant(t, db, 0)
 
 	asset := a.assets[0]
-	plan := &pipeline.StagePlan{TenantID: a.tenant, RunID: a.run, StageKey: "dns", Stage: "resolve.dns", Tool: "dnsx",
+	plan := &scanrun.StagePlan{TenantID: a.tenant, RunID: a.run, StageKey: "dns", Stage: "resolve.dns", Tool: "dnsx",
 		Chained: true, Inputs: 3, Planned: 2, MaxHop: 1, Skipped: map[string]int{"unconfirmed": 1}}
-	rows := []pipeline.RunTarget{
-		{TargetKey: "acme.test", Origin: pipeline.TargetOriginSeed, Decision: pipeline.TargetPlanned, Reason: pipeline.ReasonSeed},
-		{TargetKey: "x.acme.test", AssetID: &asset, Origin: pipeline.TargetOriginDerived, ParentStageKey: "subs",
-			Relation: "subdomain_of", Hop: 1, Decision: pipeline.TargetPlanned, Reason: pipeline.ReasonPassiveAllowed},
-		{TargetKey: "y.acme.test", Origin: pipeline.TargetOriginDerived, Hop: 1, Decision: pipeline.TargetSkipped, Reason: pipeline.ReasonUnconfirmed},
+	rows := []scanrun.RunTarget{
+		{TargetKey: "acme.test", Origin: scanrun.TargetOriginSeed, Decision: scanrun.TargetPlanned, Reason: scanrun.ReasonSeed},
+		{TargetKey: "x.acme.test", AssetID: &asset, Origin: scanrun.TargetOriginDerived, ParentStageKey: "subs",
+			Relation: "subdomain_of", Hop: 1, Decision: scanrun.TargetPlanned, Reason: scanrun.ReasonPassiveAllowed},
+		{TargetKey: "y.acme.test", Origin: scanrun.TargetOriginDerived, Hop: 1, Decision: scanrun.TargetSkipped, Reason: scanrun.ReasonUnconfirmed},
 	}
 	ok, err := repo.SaveStagePlan(ctx, plan, rows)
 	if err != nil || !ok {

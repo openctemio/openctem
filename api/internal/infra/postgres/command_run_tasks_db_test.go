@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -17,7 +18,7 @@ import (
 type runTasksFixture struct {
 	ctx    context.Context
 	db     *sql.DB
-	runs   *PipelineRunRepository
+	runs   *ScanRunRepository
 	cmds   *CommandRepository
 	tenant shared.ID
 	scan   shared.ID
@@ -29,7 +30,7 @@ func newRunTasksFixture(t *testing.T) *runTasksFixture {
 	db := openScanDB(t)
 	tenant, scan := seedCounterScan(ctx, t, db)
 	return &runTasksFixture{ctx: ctx, db: db, tenant: tenant, scan: scan,
-		runs: NewPipelineRunRepository(&DB{DB: db}), cmds: NewCommandRepository(&DB{DB: db})}
+		runs: NewScanRunRepository(&DB{DB: db}), cmds: NewCommandRepository(&DB{DB: db})}
 }
 
 func (f *runTasksFixture) sensor(t *testing.T, tenant shared.ID, name string) shared.ID {
@@ -45,7 +46,7 @@ func (f *runTasksFixture) sensor(t *testing.T, tenant shared.ID, name string) sh
 func (f *runTasksFixture) command(t *testing.T, tenant, run shared.ID, sensor *shared.ID, status string, payload map[string]any) shared.ID {
 	t.Helper()
 	id := shared.NewID()
-	payload["pipeline_run_id"] = run.String()
+	payload["scan_run_id"] = run.String()
 	raw, _ := json.Marshal(payload)
 	var sensorArg any
 	if sensor != nil {
@@ -90,13 +91,13 @@ func TestListRunTasks_SkippedTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	byID := map[shared.ID]pipeline.Task{}
+	byID := map[shared.ID]scanrun.Task{}
 	for _, task := range tasks {
 		byID[task.ID] = task
 	}
 	p := byID[partial]
 	if p.SkippedTotal != 2 || len(p.Skipped) != 2 || p.Skipped[0].Target != "api.example.com" ||
-		p.Skipped[0].Reason != pipeline.SkipReasonUnresolvable || p.Skipped[1].Reason != pipeline.SkipReasonWildcard {
+		p.Skipped[0].Reason != scanrun.SkipReasonUnresolvable || p.Skipped[1].Reason != scanrun.SkipReasonWildcard {
 		t.Fatalf("partial task skipped = %+v (total %d)", p.Skipped, p.SkippedTotal)
 	}
 	if byID[plain].SkippedTotal != 0 || byID[plain].Skipped != nil {
@@ -136,23 +137,23 @@ func TestListRunTasks_SummaryItemsAndTenantScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRunTasks: %v", err)
 	}
-	want := pipeline.TaskSummary{Total: 6, Queued: 1, Running: 1, Completed: 1, Failed: 2, Canceled: 1, Sensors: 1}
+	want := scanrun.TaskSummary{Total: 6, Queued: 1, Running: 1, Completed: 1, Failed: 2, Canceled: 1, Sensors: 1}
 	if sum != want {
 		t.Fatalf("summary = %+v, want %+v", sum, want)
 	}
 	if len(tasks) != 6 {
 		t.Fatalf("got %d tasks, want 6", len(tasks))
 	}
-	byID := map[shared.ID]pipeline.Task{}
+	byID := map[shared.ID]scanrun.Task{}
 	for _, task := range tasks {
 		byID[task.ID] = task
 	}
 	ft := byID[failed]
-	if ft.Status != pipeline.TaskStatusFailed || ft.Tool != "nuclei" || ft.Targets != 1 ||
+	if ft.Status != scanrun.TaskStatusFailed || ft.Tool != "nuclei" || ft.Targets != 1 ||
 		ft.ErrorMessage != "scanner exited 2" || ft.SensorID == nil || *ft.SensorID != s1 || ft.SensorName == "" {
 		t.Fatalf("failed task = %+v", ft)
 	}
-	if tasks[0].Targets != 2 || tasks[0].Status != pipeline.TaskStatusCompleted {
+	if tasks[0].Targets != 2 || tasks[0].Status != scanrun.TaskStatusCompleted {
 		t.Fatalf("first task = %+v, want the completed 2-target task in dispatch order", tasks[0])
 	}
 

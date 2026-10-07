@@ -28,7 +28,7 @@ function Stat({ label, value, danger }: { label: string; value: number; danger?:
 }
 
 /**
- * What a scan run dispatched (GET /pipeline-runs/{id} `dispatch`): targets
+ * What a scan run dispatched (GET /scan-runs/{id} `dispatch`): targets
  * resolved and excluded, the zone each share went to, and every target that
  * was not scanned, with the reason (RFC-023 D5: never dropped silently).
  */

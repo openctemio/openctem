@@ -175,7 +175,7 @@ func TestTrustConfigValidate(t *testing.T) {
 		"github foreign issuer":                      func(c *TrustConfig) { c.Issuer = "https://evil.example" },
 		"gitlab http issuer":                         func(c *TrustConfig) { c.Provider, c.Issuer = ProviderGitLab, "http://gitlab.local" },
 		"gitlab issuer with user":                    func(c *TrustConfig) { c.Provider, c.Issuer = ProviderGitLab, "https://u:p@gitlab.local" },
-		"unknown provider":                           func(c *TrustConfig) { c.Provider = "jenkins" },
+		"unknown provider":                           func(c *TrustConfig) { c.Provider = "teamcity" },
 		"audience with space":                        func(c *TrustConfig) { c.Audience = "a b" },
 		"empty name":                                 func(c *TrustConfig) { c.Name = "" },
 		"pattern default branch":                     func(c *TrustConfig) { c.DefaultBranch = "ma*" },

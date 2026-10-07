@@ -192,7 +192,7 @@ type UserMembershipsByStatus struct {
 }
 
 // SystemTenantID is the platform system tenant seeded by migration 000058. It
-// owns system scan profiles and pipeline templates; it has no members, assets
+// owns system scan profiles and scan workflows; it has no members, assets
 // or findings, and it is not a customer tenant. shared.ID treats this all-zero
 // UUID as empty, so per-tenant services reject it — background sweeps must
 // never iterate it.

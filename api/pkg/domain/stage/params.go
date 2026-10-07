@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// A capability node's settings (pipeline_steps.config):
+// A capability node's settings (scan_workflow_steps.config):
 //
 //   - standard params: the capability contract's params, by name, checked
 //     against their type, enum and bounds; each tool receives them under

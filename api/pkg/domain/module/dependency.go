@@ -196,9 +196,9 @@ var ModuleDependencies = map[string][]Dependency{
 	"template_sources": {
 		{ModuleID: "scanner_templates", Type: DependencyHard, Reason: "sources feed the template catalogue"},
 	},
-	"scan_pipelines": {
-		{ModuleID: "scans", Type: DependencyHard, Reason: "pipelines orchestrate scan runs"},
-		{ModuleID: "scanner_templates", Type: DependencySoft, Reason: "pipelines typically invoke templates"},
+	"scan_workflows": {
+		{ModuleID: "scans", Type: DependencyHard, Reason: "scan workflows are what scans run"},
+		{ModuleID: "scanner_templates", Type: DependencySoft, Reason: "scan workflow steps typically run templates"},
 	},
 }
 

@@ -12,7 +12,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -74,10 +75,10 @@ func (s *Service) checkScanToolsDispatchable(ctx context.Context, sc *scan.Scan)
 		}
 		return s.checkToolDispatchable(ctx, sc, sc.ScannerName, "")
 	case scan.ScanTypeWorkflow:
-		if sc.PipelineID == nil {
+		if sc.ScanWorkflowID == nil {
 			return nil
 		}
-		steps, err := s.stepRepo.GetByPipelineID(ctx, *sc.PipelineID)
+		steps, err := s.stepRepo.GetByScanWorkflowID(ctx, *sc.ScanWorkflowID)
 		if err != nil {
 			return fmt.Errorf("failed to get pipeline steps: %w", err)
 		}
@@ -98,7 +99,7 @@ func (s *Service) checkScanToolsDispatchable(ctx context.Context, sc *scan.Scan)
 
 // stepToolName is the tool a workflow step runs: its tool, or the tool its
 // capabilities resolve to; "" when neither applies.
-func (s *Service) stepToolName(ctx context.Context, tenantID shared.ID, step *pipeline.Step) string {
+func (s *Service) stepToolName(ctx context.Context, tenantID shared.ID, step *scanworkflow.Step) string {
 	if step.Tool != "" {
 		return step.Tool
 	}

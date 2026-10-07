@@ -40,7 +40,7 @@ func (f *fairFixture) add(run string, p command.CommandPriority, age time.Durati
 	f.t.Helper()
 	payload := map[string]any{"scanner": "nuclei", "targets": []string{"10.0.0.1"}}
 	if run != "" {
-		payload["pipeline_run_id"] = run
+		payload["scan_run_id"] = run
 	}
 	raw, _ := json.Marshal(payload)
 	cmd, err := command.NewCommand(f.tenant, command.CommandTypeScan, p, raw)

@@ -178,7 +178,7 @@ func TestSessionTimeout(t *testing.T) {
 
 // sessionTimeoutChecker creates a simple HTTP handler that mimics the session
 // timeout check from UnifiedAuth middleware. This tests the isSessionExpired
-// logic without needing the full token validation pipeline.
+// logic without needing the full token validation scan workflow.
 func sessionTimeoutChecker(timeoutMinutes int, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if timeoutMinutes > 0 {

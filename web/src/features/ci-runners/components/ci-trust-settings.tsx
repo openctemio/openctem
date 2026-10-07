@@ -2,8 +2,9 @@
 
 /**
  * CI trust and gate settings (api RFC-051):
- *   - trust configurations: which GitHub Actions / GitLab CI pipelines may
- *     exchange their OIDC token for a short-lived upload token;
+ *   - trust configurations: which CI pipelines (GitHub Actions, GitLab CI,
+ *     Azure Pipelines, Bitbucket Pipelines, CircleCI, Jenkins) may exchange
+ *     their OIDC token for a short-lived upload token;
  *   - gate policy: what fails a pipeline (secrets always fail, accepted risk
  *     is always honored);
  *   - break-glass: let one commit pass for a limited time, audited.
@@ -58,15 +59,20 @@ import {
   useTrustConfigs,
 } from '../api/use-ci'
 import {
+  CI_PROVIDERS,
   PROVIDER_LABEL,
+  PROVIDER_TRAITS,
   SEVERITY_OPTIONS,
   defaultAudience,
+  issuerFor,
   joinList,
+  organizationFromIssuer,
   parseList,
   shortSHA,
   snippetFor,
 } from '../lib/ci'
-import type { CIGatePolicy, CIProvider, CITrustConfig } from '../types'
+import { CITrustPreview } from './ci-trust-preview'
+import type { CIGatePolicy, CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
 
 const NO_WRITE = 'Only owners and administrators can change CI trust and the gate'
 
@@ -83,7 +89,7 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
       {!embedded && (
         <PageHeader
           title="CI/CD integration"
-          description="Let GitHub Actions and GitLab CI jobs send results with their own identity instead of a stored API key, and decide what fails a pipeline."
+          description="Let CI jobs (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket, CircleCI, Jenkins) send results with their own identity instead of a stored API key, and decide what fails a pipeline."
         />
       )}
       <CIRequireOIDC canWrite={canWrite} />
@@ -247,9 +253,15 @@ function TrustConfigDialog({
 }) {
   const { currentTenant } = useTenant()
   const { trigger: save, isMutating } = useSaveTrustConfig()
+  const initialProvider = (config?.provider as CIProvider) ?? 'github'
   const [name, setName] = useState(config?.name ?? '')
-  const [provider, setProvider] = useState<CIProvider>((config?.provider as CIProvider) ?? 'github')
-  const [issuer, setIssuer] = useState(config?.issuer ?? '')
+  const [provider, setProvider] = useState<CIProvider>(initialProvider)
+  // The issuer as the administrator enters it: an organization id
+  // (Azure, CircleCI), a workspace (Bitbucket) or a URL (GitLab, Jenkins).
+  const [organization, setOrganization] = useState(
+    organizationFromIssuer(initialProvider, config?.issuer)
+  )
+  const [workspaceUUID, setWorkspaceUUID] = useState(config?.rules?.workspace_uuid ?? '')
   const [audience, setAudience] = useState(config?.audience ?? '')
   const [defaultBranch, setDefaultBranch] = useState(config?.default_branch ?? 'main')
   const [owners, setOwners] = useState(joinList(config?.rules?.owners))
@@ -260,32 +272,45 @@ function TrustConfigDialog({
   const [allowForks, setAllowForks] = useState(!!config?.rules?.allow_fork_pull_requests)
   const [protectedRef, setProtectedRef] = useState(!!config?.rules?.require_protected_ref)
   const [enabled, setEnabled] = useState(config?.enabled ?? true)
+  const traits = PROVIDER_TRAITS[provider]
+
+  const chooseProvider = (p: CIProvider) => {
+    setProvider(p)
+    setOrganization('')
+    setWorkspaceUUID('')
+    setAudience('')
+    if (!PROVIDER_TRAITS[p].events) setEvents('')
+    if (!PROVIDER_TRAITS[p].environments) setEnvironments('')
+    if (PROVIDER_TRAITS[p].protectedRef === 'none') setProtectedRef(false)
+  }
+
+  const body = (): CITrustConfigRequest => ({
+    name: name.trim() || 'preview',
+    provider,
+    issuer: traits.issuerInput === 'fixed' ? undefined : issuerFor(provider, organization),
+    audience: traits.fixedAudience ? undefined : audience.trim() || undefined,
+    default_branch: defaultBranch.trim() || undefined,
+    enabled,
+    rules: {
+      owners: parseList(owners),
+      repositories: parseList(repositories),
+      refs: parseList(refs),
+      environments: traits.environments ? parseList(environments) : [],
+      events: traits.events ? parseList(events) : [],
+      allow_fork_pull_requests: allowForks,
+      require_protected_ref: traits.protectedRef === 'none' ? false : protectedRef,
+      workspace_uuid: provider === 'bitbucket' ? workspaceUUID.trim() || undefined : undefined,
+    },
+  })
 
   const noScope = parseList(owners).length === 0 && parseList(repositories).length === 0
+  const needsIssuer =
+    traits.issuerInput !== 'fixed' && provider !== 'gitlab' && !organization.trim()
   const submit = async () => {
     if (!name.trim()) return toast.error('Name is required')
     if (noScope) return toast.error('Name at least one owner or repository')
     try {
-      const saved = await save({
-        id: config?.id,
-        body: {
-          name: name.trim(),
-          provider,
-          issuer: provider === 'gitlab' ? issuer.trim() || undefined : undefined,
-          audience: audience.trim() || undefined,
-          default_branch: defaultBranch.trim() || undefined,
-          enabled,
-          rules: {
-            owners: parseList(owners),
-            repositories: parseList(repositories),
-            refs: parseList(refs),
-            environments: parseList(environments),
-            events: parseList(events),
-            allow_fork_pull_requests: allowForks,
-            require_protected_ref: protectedRef,
-          },
-        },
-      })
+      const saved = await save({ id: config?.id, body: body() })
       toast.success(config ? 'CI trust updated' : 'CI trust added')
       onSaved(saved)
     } catch (e) {
@@ -293,6 +318,7 @@ function TrustConfigDialog({
     }
   }
 
+  const tenantAudience = defaultAudience(currentTenant?.id ?? '<tenant id>')
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
@@ -310,15 +336,18 @@ function TrustConfigDialog({
           <Field label="Provider" id="ci-provider">
             <Select
               value={provider}
-              onValueChange={(v) => setProvider(v as CIProvider)}
+              onValueChange={(v) => chooseProvider(v as CIProvider)}
               disabled={!!config}
             >
               <SelectTrigger id="ci-provider">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="github">GitHub Actions</SelectItem>
-                <SelectItem value="gitlab">GitLab CI</SelectItem>
+                {CI_PROVIDERS.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {PROVIDER_LABEL[p]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Field>
@@ -327,15 +356,77 @@ function TrustConfigDialog({
               <Input
                 id="ci-issuer"
                 placeholder="https://gitlab.com"
-                value={issuer}
-                onChange={(e) => setIssuer(e.target.value)}
+                value={organization}
+                onChange={(e) => setOrganization(e.target.value)}
               />
             </Field>
+          )}
+          {provider === 'jenkins' && (
+            <Field
+              label="Issuer"
+              id="ci-issuer"
+              hint="The OpenID Connect Provider plugin's issuer: <Jenkins URL>/oidc, a folder's issuer, or the credential's issuer URI when the platform cannot reach the controller."
+            >
+              <Input
+                id="ci-issuer"
+                placeholder="https://jenkins.example.com/oidc"
+                value={organization}
+                onChange={(e) => setOrganization(e.target.value)}
+              />
+            </Field>
+          )}
+          {traits.issuerInput === 'organization_id' && (
+            <Field
+              label="Organization id"
+              id="ci-org"
+              hint={
+                provider === 'azure_devops'
+                  ? 'The Azure DevOps organization id (a UUID), the org_id of its tokens.'
+                  : 'The CircleCI organization id (Organization settings > Overview).'
+              }
+            >
+              <Input
+                id="ci-org"
+                placeholder="00000000-0000-0000-0000-000000000000"
+                value={organization}
+                onChange={(e) => setOrganization(e.target.value)}
+              />
+            </Field>
+          )}
+          {provider === 'bitbucket' && (
+            <>
+              <Field label="Workspace" id="ci-org" hint="As in bitbucket.org/<workspace>.">
+                <Input
+                  id="ci-org"
+                  placeholder="acme"
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Workspace UUID"
+                id="ci-ws-uuid"
+                hint="Required: a renamed workspace gives up its name, never its UUID."
+              >
+                <Input
+                  id="ci-ws-uuid"
+                  placeholder="{00000000-0000-0000-0000-000000000000}"
+                  value={workspaceUUID}
+                  onChange={(e) => setWorkspaceUUID(e.target.value)}
+                />
+              </Field>
+            </>
           )}
           <Field
             label="Owners"
             id="ci-owners"
-            hint={provider === 'gitlab' ? 'Top-level groups.' : 'Organizations or users.'}
+            hint={
+              provider === 'gitlab'
+                ? 'Top-level groups.'
+                : provider === 'bitbucket'
+                  ? 'The workspace.'
+                  : 'Organizations or users that own the repositories.'
+            }
           >
             <Input
               id="ci-owners"
@@ -344,10 +435,18 @@ function TrustConfigDialog({
               onChange={(e) => setOwners(e.target.value)}
             />
           </Field>
-          <Field label="Repositories" id="ci-repos" hint="owner/name, owner/* or owner/**.">
+          <Field
+            label="Repositories"
+            id="ci-repos"
+            hint={
+              traits.repositoriesById
+                ? 'Repository UUIDs: the token signs the id, never the name.'
+                : 'owner/name, owner/* or owner/**.'
+            }
+          >
             <Input
               id="ci-repos"
-              placeholder="acme/api, acme/web"
+              placeholder={traits.repositoriesById ? '{repository uuid}' : 'acme/api, acme/web'}
               value={repositories}
               onChange={(e) => setRepositories(e.target.value)}
             />
@@ -364,24 +463,32 @@ function TrustConfigDialog({
               onChange={(e) => setRefs(e.target.value)}
             />
           </Field>
-          <Field
-            label="Environments"
-            id="ci-envs"
-            hint="Optional: require a deployment environment."
-          >
-            <Input
+          {traits.environments && (
+            <Field
+              label="Environments"
               id="ci-envs"
-              value={environments}
-              onChange={(e) => setEnvironments(e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Events"
-            id="ci-events"
-            hint="Optional: push, pull_request, merge_request_event, schedule..."
-          >
-            <Input id="ci-events" value={events} onChange={(e) => setEvents(e.target.value)} />
-          </Field>
+              hint={
+                provider === 'bitbucket'
+                  ? 'Optional: deployment environment UUIDs.'
+                  : 'Optional: require a deployment environment.'
+              }
+            >
+              <Input
+                id="ci-envs"
+                value={environments}
+                onChange={(e) => setEnvironments(e.target.value)}
+              />
+            </Field>
+          )}
+          {traits.events && (
+            <Field
+              label="Events"
+              id="ci-events"
+              hint="Optional: push, pull_request, merge_request_event, schedule..."
+            >
+              <Input id="ci-events" value={events} onChange={(e) => setEvents(e.target.value)} />
+            </Field>
+          )}
           <Field
             label="Default branch"
             id="ci-default"
@@ -393,49 +500,72 @@ function TrustConfigDialog({
               onChange={(e) => setDefaultBranch(e.target.value)}
             />
           </Field>
-          <Field
-            label="Audience"
-            id="ci-aud"
-            hint={`Default: ${defaultAudience(currentTenant?.id ?? '<tenant id>')}`}
-          >
-            <Input id="ci-aud" value={audience} onChange={(e) => setAudience(e.target.value)} />
-          </Field>
-          <SwitchRow
-            id="ci-protected"
-            label="Protected branches and tags only"
-            checked={protectedRef}
-            onChange={setProtectedRef}
-          />
-          {protectedRef && provider === 'github' && (
+          {traits.fixedAudience ? (
+            <p className="text-xs text-muted-foreground" data-testid="ci-fixed-audience">
+              Audience: {traits.fixedAudience}, the only one Azure Pipelines issues. Tokens are
+              pinned to this organization id and accepted once.
+            </p>
+          ) : (
+            <Field
+              label="Audience"
+              id="ci-aud"
+              hint={
+                traits.tenantAudience
+                  ? `Default: ${tenantAudience}. Must contain your organization id.`
+                  : `Default: ${tenantAudience}`
+              }
+            >
+              <Input id="ci-aud" value={audience} onChange={(e) => setAudience(e.target.value)} />
+            </Field>
+          )}
+          {traits.protectedRef !== 'none' && (
+            <SwitchRow
+              id="ci-protected"
+              label="Protected branches and tags only"
+              checked={protectedRef}
+              onChange={setProtectedRef}
+            />
+          )}
+          {protectedRef && traits.protectedRef === 'environment' && (
             <p className="text-muted-foreground text-xs">
-              GitHub tokens do not say whether a ref is protected. List the deployment environments
-              above whose deployment branch rules admit only protected branches and tags; only jobs
-              running in one of them are admitted.
+              {PROVIDER_LABEL[provider]} tokens do not say whether a ref is protected. List the
+              deployment environments above whose deployment branch rules admit only protected
+              branches and tags; only jobs running in one of them are admitted.
             </p>
           )}
           <SwitchRow
             id="ci-forks"
-            label="Admit fork pull requests"
+            label={
+              traits.pullRequestsAsForks ? 'Admit pull request builds' : 'Admit fork pull requests'
+            }
             checked={allowForks}
             onChange={setAllowForks}
           />
+          {traits.pullRequestsAsForks && !allowForks && (
+            <p className="text-muted-foreground text-xs">
+              {PROVIDER_LABEL[provider]} tokens cannot tell a fork&apos;s pull request from your
+              own, so pull request builds are refused.
+            </p>
+          )}
           {allowForks && (
             <Alert variant="destructive">
               <ShieldAlert />
               <AlertTitle>Fork code would act with this repository&apos;s identity</AlertTitle>
               <AlertDescription>
-                Events such as pull_request_target run code from a fork. Leave this off unless the
-                workflow never checks out fork code.
+                {traits.pullRequestsAsForks
+                  ? 'Every pull request build is admitted, including builds of fork code. Turn this on only if the pipeline never builds fork pull requests.'
+                  : 'Events such as pull_request_target run code from a fork. Leave this off unless the workflow never checks out fork code.'}
               </AlertDescription>
             </Alert>
           )}
           <SwitchRow id="ci-enabled" label="Enabled" checked={enabled} onChange={setEnabled} />
+          {!needsIssuer && <CITrustPreview provider={provider} draft={body} />}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={isMutating || noScope || !name.trim()}>
+          <Button onClick={submit} disabled={isMutating || noScope || needsIssuer || !name.trim()}>
             {config ? 'Save' : 'Add'}
           </Button>
         </DialogFooter>

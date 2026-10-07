@@ -115,7 +115,7 @@ func (r *CommandLogRepository) ListForRunTask(ctx context.Context, tenantID, run
 	var one int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT 1 FROM commands
-		WHERE tenant_id = $1 AND id = $2 AND (payload->>'pipeline_run_id') = $3::text`,
+		WHERE tenant_id = $1 AND id = $2 AND (payload->>'scan_run_id') = $3::text`,
 		tenantID.String(), commandID.String(), runID.String()).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return commandlog.Page{}, commandlog.ErrNotFound

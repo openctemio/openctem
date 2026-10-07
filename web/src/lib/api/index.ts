@@ -379,7 +379,6 @@ export {
   // Pipeline run hooks
   usePipelineRuns,
   usePipelineRun,
-  useTriggerPipelineRun,
   useCancelPipelineRun,
 
   // Scan management hooks
@@ -416,7 +415,6 @@ export type {
   UpdatePipelineRequest,
   CreateStepRequest,
   UpdateStepRequest,
-  TriggerPipelineRunRequest,
   QuickScanRequest,
 
   // UI Position for workflow builder
@@ -453,7 +451,7 @@ export {
 // PIPELINE & SCAN MANAGEMENT ENDPOINTS
 // ============================================
 
-export { pipelineEndpoints, pipelineRunEndpoints, scanManagementEndpoints } from './endpoints'
+export { scanWorkflowEndpoints, scanRunEndpoints, scanManagementEndpoints } from './endpoints'
 
 // ============================================
 // WORKFLOW HOOKS & TYPES

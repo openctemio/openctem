@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -36,13 +37,13 @@ func seedFinishedRun(ctx context.Context, t *testing.T, db *sql.DB, tenantID, sc
 	t.Helper()
 	id := shared.NewID()
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO pipeline_runs (id, pipeline_id, tenant_id, scan_id, trigger_type, status, started_at, completed_at, retry_attempt)
+		`INSERT INTO scan_runs (id, scan_workflow_id, tenant_id, scan_id, trigger_type, status, started_at, completed_at, retry_attempt)
 		 VALUES ($1, $2, $3, $4, 'manual', $5, NOW() - interval '2 days', NOW() - interval '1 day', $6)`,
 		id.String(), retryQuickScanTemplate, tenantID.String(), scanID.String(), status, attempt); err != nil {
 		t.Fatalf("seed run: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO step_runs (id, pipeline_run_id, step_id, step_key, step_order, status, error_code)
+		`INSERT INTO scan_run_steps (id, scan_run_id, step_id, step_key, step_order, status, error_code)
 		 VALUES ($1, $2, $3, 'quick_scan', 1, $4, NULLIF($5, ''))`,
 		shared.NewID().String(), id.String(), quickScanStepID, stepStatus, errCode); err != nil {
 		t.Fatalf("seed step run: %v", err)
@@ -50,7 +51,7 @@ func seedFinishedRun(ctx context.Context, t *testing.T, db *sql.DB, tenantID, sc
 	return id
 }
 
-func listedRuns(ctx context.Context, t *testing.T, repo *PipelineRunRepository) map[shared.ID]bool {
+func listedRuns(ctx context.Context, t *testing.T, repo *ScanRunRepository) map[shared.ID]bool {
 	t.Helper()
 	cands, err := repo.ListPendingRetries(ctx, 1000)
 	if err != nil {
@@ -66,11 +67,11 @@ func listedRuns(ctx context.Context, t *testing.T, repo *PipelineRunRepository) 
 func TestListPendingRetries_Classes(t *testing.T) {
 	ctx := context.Background()
 	db := openTimeoutDB(t)
-	repo := NewPipelineRunRepository(&DB{DB: db})
+	repo := NewScanRunRepository(&DB{DB: db})
 	tenantID := seedTestTenant(ctx, t, db)
 
 	transient := seedFinishedRun(ctx, t, db, tenantID, seedRetryScan(ctx, t, db, tenantID, 5), "failed", 0, "failed", "COMMAND_FAILED")
-	permanent := seedFinishedRun(ctx, t, db, tenantID, seedRetryScan(ctx, t, db, tenantID, 5), "failed", 0, "failed", pipeline.FailureScannerNotFound)
+	permanent := seedFinishedRun(ctx, t, db, tenantID, seedRetryScan(ctx, t, db, tenantID, 5), "failed", 0, "failed", scanrun.FailureScannerNotFound)
 	timeoutFresh := seedFinishedRun(ctx, t, db, tenantID, seedRetryScan(ctx, t, db, tenantID, 5), "timeout", 1, "timeout", "")
 	timeoutSpent := seedFinishedRun(ctx, t, db, tenantID, seedRetryScan(ctx, t, db, tenantID, 5), "timeout", 2, "timeout", "")
 
@@ -92,7 +93,7 @@ func TestListPendingRetries_Classes(t *testing.T) {
 func TestReleaseFailedRetryDispatch_SpendsTheAttempt(t *testing.T) {
 	ctx := context.Background()
 	db := openTimeoutDB(t)
-	repo := NewPipelineRunRepository(&DB{DB: db})
+	repo := NewScanRunRepository(&DB{DB: db})
 	tenantID := seedTestTenant(ctx, t, db)
 	runID := seedFinishedRun(ctx, t, db, tenantID, seedRetryScan(ctx, t, db, tenantID, 2), "failed", 1, "failed", "COMMAND_FAILED")
 
@@ -104,7 +105,7 @@ func TestReleaseFailedRetryDispatch_SpendsTheAttempt(t *testing.T) {
 	}
 	var attempt int
 	var claimed sql.NullTime
-	if err := db.QueryRowContext(ctx, `SELECT retry_attempt, retry_dispatched_at FROM pipeline_runs WHERE id = $1`, runID.String()).
+	if err := db.QueryRowContext(ctx, `SELECT retry_attempt, retry_dispatched_at FROM scan_runs WHERE id = $1`, runID.String()).
 		Scan(&attempt, &claimed); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +127,7 @@ func seedRunCommand(ctx context.Context, t *testing.T, db *sql.DB, tenantID, run
 	}
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO commands (id, tenant_id, type, priority, payload, status, acknowledged_at, dispatch_attempts)
-		 VALUES ($1, $2, 'scan', 'normal', jsonb_build_object('pipeline_run_id', $3::text, 'step_key', 'quick_scan'), $4, `+ack+`, $5)`,
+		 VALUES ($1, $2, 'scan', 'normal', jsonb_build_object('scan_run_id', $3::text, 'step_key', 'quick_scan'), $4, `+ack+`, $5)`,
 		id.String(), tenantID.String(), runID.String(), status, attempts); err != nil {
 		t.Fatalf("seed command: %v", err)
 	}
@@ -137,13 +138,13 @@ func seedActiveRun(ctx context.Context, t *testing.T, db *sql.DB, tenantID, scan
 	t.Helper()
 	id := shared.NewID()
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO pipeline_runs (id, pipeline_id, tenant_id, scan_id, trigger_type, status, started_at)
+		`INSERT INTO scan_runs (id, scan_workflow_id, tenant_id, scan_id, trigger_type, status, started_at)
 		 VALUES ($1, $2, $3, $4, $5, 'running', NOW() - make_interval(secs => $6))`,
 		id.String(), retryQuickScanTemplate, tenantID.String(), scanID.String(), trigger, startedAgo.Seconds()); err != nil {
 		t.Fatalf("seed run: %v", err)
 	}
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO step_runs (id, pipeline_run_id, step_id, step_key, step_order, status)
+		`INSERT INTO scan_run_steps (id, scan_run_id, step_id, step_key, step_order, status)
 		 VALUES ($1, $2, $3, 'quick_scan', 1, 'queued')`,
 		shared.NewID().String(), id.String(), quickScanStepID); err != nil {
 		t.Fatalf("seed step run: %v", err)
@@ -154,7 +155,7 @@ func seedActiveRun(ctx context.Context, t *testing.T, db *sql.DB, tenantID, scan
 func TestAbortUnclaimedRuns(t *testing.T) {
 	ctx := context.Background()
 	db := openTimeoutDB(t)
-	repo := NewPipelineRunRepository(&DB{DB: db})
+	repo := NewScanRunRepository(&DB{DB: db})
 	tenantID := seedTestTenant(ctx, t, db)
 	scanID := seedRetryScan(ctx, t, db, tenantID, 0)
 
@@ -180,10 +181,10 @@ func TestAbortUnclaimedRuns(t *testing.T) {
 		t.Fatalf("unclaimed run: status=%s msg=%q, want failed with the reason", status, msg.String)
 	}
 	var code, cmdStatus string
-	if err := db.QueryRowContext(ctx, `SELECT error_code FROM step_runs WHERE pipeline_run_id = $1`, unclaimed.String()).Scan(&code); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT error_code FROM scan_run_steps WHERE scan_run_id = $1`, unclaimed.String()).Scan(&code); err != nil {
 		t.Fatal(err)
 	}
-	if code != pipeline.FailureNoSensor {
+	if code != scanrun.FailureNoSensor {
 		t.Fatalf("step error_code=%s, want NO_SENSOR (never retried)", code)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT status FROM commands WHERE id = $1`, unclaimedCmd.String()).Scan(&cmdStatus); err != nil {

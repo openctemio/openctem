@@ -7,7 +7,7 @@ import type { PipelineRun } from '@/lib/api/pipeline-types'
 const run = (i: number, over: Partial<PipelineRun> = {}): PipelineRun => ({
   id: `r${i}`,
   tenant_id: 't',
-  pipeline_id: 'p',
+  scan_workflow_id: 'p',
   scan_id: 's1',
   scan_name: 'Nightly recon',
   trigger_type: 'manual',
@@ -50,7 +50,7 @@ describe('fetchRunsForExport', () => {
     expect(out.capped).toBe(false)
     expect(fetchPage).toHaveBeenCalledTimes(3)
     for (const [url] of fetchPage.mock.calls) {
-      expect(url.startsWith('/api/v1/pipeline-runs?')).toBe(true)
+      expect(url.startsWith('/api/v1/scan-runs?')).toBe(true)
       const q = new URL(url, 'http://x').searchParams
       expect(q.get('status')).toBe('failed')
       expect(q.get('sort')).toBe('-total_findings')
