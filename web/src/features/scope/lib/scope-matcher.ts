@@ -18,6 +18,7 @@ import type {
   ScopeTargetType,
 } from '../types'
 import { SCOPE_TO_ASSET_TYPE_MAP } from '../types'
+import { IP_ADDRESSES_KEY, propertyStrings } from '@/features/asset-types/lib/property-schema'
 import { assetMatchesAnyTypeName } from '@/features/asset-types/type-match'
 
 // Constants for security limits
@@ -223,7 +224,7 @@ export const matchesScopeTarget = (
     }
 
     case 'ip_address': {
-      const ip = name || (metadata?.ip as string) || ''
+      const ip = name || propertyStrings(metadata, IP_ADDRESSES_KEY)[0] || ''
       if (validPattern === ip) {
         return { matches: true, matchType: 'exact' }
       }
@@ -233,7 +234,7 @@ export const matchesScopeTarget = (
     case 'ip_range': {
       const ip =
         name ||
-        (metadata?.ip as string) ||
+        propertyStrings(metadata, IP_ADDRESSES_KEY)[0] ||
         (metadata?.privateIp as string) ||
         (metadata?.publicIp as string) ||
         ''

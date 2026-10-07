@@ -136,6 +136,34 @@ func (r *SensorRepository) CurrentManifest(ctx context.Context, tenantID *shared
 	return v, err
 }
 
+// CurrentManifestsByTenant returns the current manifest of every sensor of
+// the tenant, keyed by sensor id, in one query (the tool view reads every
+// sensor's contracts at once).
+func (r *SensorRepository) CurrentManifestsByTenant(ctx context.Context, tenantID shared.ID) (map[shared.ID]*sensor.ManifestVersion, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+sensorManifestColumns+`
+		FROM sensor_manifests m
+		JOIN sensors s ON s.id = m.sensor_id AND s.manifest_digest = m.digest AND s.tenant_id = $1
+		WHERE m.tenant_id = $1
+	`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sensor manifests: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[shared.ID]*sensor.ManifestVersion{}
+	for rows.Next() {
+		v, err := scanManifestVersion(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[v.SensorID] = v
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read sensor manifests: %w", err)
+	}
+	return out, nil
+}
+
 // ListManifests implements sensor.ManifestStore.
 func (r *SensorRepository) ListManifests(ctx context.Context, tenantID *shared.ID, sensorID shared.ID, limit int) ([]sensor.ManifestVersion, error) {
 	if limit <= 0 || limit > sensor.ManifestVersionsKept {
