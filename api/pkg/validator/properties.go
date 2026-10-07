@@ -228,12 +228,12 @@ func (v *PropertiesValidator) validateSubdomainProperties(props map[string]any) 
 		}
 	}
 
-	if resolvedIPs, ok := props["resolved_ips"].([]any); ok {
+	if resolvedIPs, ok := props["ip_addresses"].([]any); ok {
 		for i, ip := range resolvedIPs {
 			ipStr, _ := ip.(string)
 			if net.ParseIP(ipStr) == nil {
 				errs = append(errs, PropertyError{
-					Path:    fmt.Sprintf("properties.resolved_ips[%d]", i),
+					Path:    fmt.Sprintf("properties.ip_addresses[%d]", i),
 					Message: "must be a valid IP address",
 				})
 			}

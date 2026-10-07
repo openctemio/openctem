@@ -560,7 +560,6 @@ export {
   useAllCapabilities,
   useCapability,
   useCapabilityCategories,
-  useCapabilitiesByCategory,
   useCreateCapability,
   useUpdateCapability,
   useDeleteCapability,
@@ -610,7 +609,7 @@ export {
 // CAPABILITY ENDPOINTS
 // ============================================
 
-export { capabilityEndpoints, customCapabilityEndpoints } from './endpoints'
+export { capabilityEndpoints } from './endpoints'
 
 // ============================================
 // SENSOR HOOKS & TYPES
