@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	"github.com/go-chi/chi/v5"
 
@@ -449,6 +449,10 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 // @Router       /scans [get]
 func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	input := scansvc.ListScansInput{
 		TenantID:       tenantID,
@@ -461,8 +465,8 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 		Search:         r.URL.Query().Get("search"),
 		IncludeAdHoc:   r.URL.Query().Get("include_ad_hoc") == "true",
 		Sort:           r.URL.Query().Get("sort"),
-		Page:           parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:        parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:           page.Page,
+		PerPage:        page.PerPage,
 	}
 
 	result, err := h.service.ListScans(r.Context(), input)
@@ -489,10 +493,6 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 	h.enrichScanResponses(ctx, tenantID, result.Data, items)
 
 	resp := map[string]any{
-		// "items" is the historical key the UI (scans/page.tsx) reads; "data" is
-		// added as a non-breaking alias so this endpoint also matches the
-		// documented list envelope convention ({"data":[...]}) for new consumers.
-		"items":       items,
 		"data":        items,
 		"total":       result.Total,
 		"page":        result.Page,
@@ -1062,10 +1062,12 @@ func (h *ScanHandler) ListScanRuns(w http.ResponseWriter, r *http.Request) {
 	// Bound both params: per_page caps the SQL LIMIT (and a downstream
 	// slice pre-alloc), page caps the OFFSET — an unbounded per_page is a
 	// memory/DoS vector and a negative one is a Postgres syntax error.
-	page := parseQueryIntBounded(r.URL.Query().Get("page"), 1, 1, math.MaxInt32)
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
-	result, err := h.service.ListScanRuns(r.Context(), tenantID, scanID, page, perPage)
+	result, err := h.service.ListScanRuns(r.Context(), tenantID, scanID, page.Page, page.PerPage)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1479,6 +1481,9 @@ func (h *ScanHandler) handleValidationError(w http.ResponseWriter, err error) {
 // handleServiceError converts service errors to API errors.
 func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, scanworkflow.ErrScanWorkflowRetired):
+		// The workflow of the scan was deleted (kept for its run history).
+		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRetired.Code), scanworkflow.ErrScanWorkflowRetired.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scan").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):

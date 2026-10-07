@@ -242,6 +242,14 @@ type StepQueuer interface {
 	QueueRunStep(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step) error
 }
 
+// RunAdvancer re-evaluates a run whose first steps were just handed to the
+// StepQueuer: steps that could not be queued are failed already, dependents
+// that can no longer run are skipped, and a run with nothing left to run
+// settles. The scan run service implements it.
+type RunAdvancer interface {
+	AdvanceRun(ctx context.Context, run *scanrun.Run) error
+}
+
 // SetStepQueuer wires the step dispatcher the scan trigger hands workflow
 // steps to. A setter because the scan run service is built after the scan
 // service. Without it a workflow scan is refused (fail closed).

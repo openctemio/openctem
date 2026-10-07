@@ -100,7 +100,7 @@ func (r *ScanWorkflowRepository) GetByTenantAndID(ctx context.Context, tenantID,
 
 // GetByName retrieves a template by name and version.
 func (r *ScanWorkflowRepository) GetByName(ctx context.Context, tenantID shared.ID, name string, version int) (*scanworkflow.Workflow, error) {
-	query := r.selectQuery() + " WHERE tenant_id = $1 AND name = $2 AND version = $3"
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND name = $2 AND version = $3 AND retired_at IS NULL"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), name, version)
 	return r.scanTemplate(row)
 }
@@ -263,6 +263,54 @@ func (r *ScanWorkflowRepository) Delete(ctx context.Context, id shared.ID) error
 	return nil
 }
 
+// Remove deletes the tenant's workflow, or retires it when it has runs.
+func (r *ScanWorkflowRepository) Remove(ctx context.Context, tenantID, id shared.ID) (retired bool, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var retiredAt sql.NullTime
+	err = tx.QueryRowContext(ctx,
+		`SELECT retired_at FROM scan_workflows WHERE id = $1 AND tenant_id = $2 AND NOT is_system_template FOR UPDATE`,
+		id.String(), tenantID.String()).Scan(&retiredAt)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && retiredAt.Valid) {
+		return false, shared.ErrNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to lock scan workflow: %w", err)
+	}
+
+	var active, hasRuns bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM scan_runs WHERE scan_workflow_id = $1 AND tenant_id = $2
+		                 AND status NOT IN `+terminalRunStatusesSQL+`),
+		       EXISTS (SELECT 1 FROM scan_runs WHERE scan_workflow_id = $1)`,
+		id.String(), tenantID.String()).Scan(&active, &hasRuns); err != nil {
+		return false, fmt.Errorf("failed to check runs: %w", err)
+	}
+	if active {
+		return false, scanworkflow.ErrScanWorkflowRunActive
+	}
+
+	if hasRuns {
+		// Keep the workflow and its steps: the runs read their graph from them.
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE scan_workflows SET retired_at = NOW(), is_active = false WHERE id = $1 AND tenant_id = $2`,
+			id.String(), tenantID.String()); err != nil {
+			return false, fmt.Errorf("failed to retire scan workflow: %w", err)
+		}
+	} else if _, err := tx.ExecContext(ctx,
+		`DELETE FROM scan_workflows WHERE id = $1 AND tenant_id = $2`, id.String(), tenantID.String()); err != nil {
+		return false, fmt.Errorf("failed to delete scan workflow: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit: %w", err)
+	}
+	return hasRuns, nil
+}
+
 // DeleteInTx deletes a template within a transaction.
 func (r *ScanWorkflowRepository) DeleteInTx(ctx context.Context, tx *sql.Tx, id shared.ID) error {
 	query := "DELETE FROM scan_workflows WHERE id = $1"
@@ -340,7 +388,7 @@ func (r *ScanWorkflowRepository) ListWithSystemTemplates(ctx context.Context, te
 
 	// Core condition: tenant templates OR system templates
 	args = append(args, tenantID.String())
-	conditions = append(conditions, fmt.Sprintf("(tenant_id = $%d OR is_system_template = true)", len(args)))
+	conditions = append(conditions, fmt.Sprintf("(tenant_id = $%d OR is_system_template = true)", len(args)), "retired_at IS NULL")
 
 	// Additional filters
 	if filter.IsActive != nil {
@@ -438,13 +486,14 @@ func (r *ScanWorkflowRepository) selectQuery() string {
 		SELECT id, tenant_id, name, description, version,
 		       triggers, settings, is_active, is_system_template,
 		       tags, ui_start_position, ui_end_position,
-		       created_by, created_at, updated_at
+		       created_by, created_at, updated_at, retired_at
 		FROM scan_workflows
 	`
 }
 
 func (r *ScanWorkflowRepository) buildWhereClause(filter scanworkflow.Filter) (string, []any) {
-	var conditions []string
+	// A retired workflow is never listed (it is read by id for its runs).
+	conditions := []string{"retired_at IS NULL"}
 	var args []any
 
 	if filter.TenantID != nil {
@@ -485,6 +534,7 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 		uiStartPos []byte
 		uiEndPos   []byte
 		createdBy  sql.NullString
+		retiredAt  sql.NullTime
 	)
 
 	err := row.Scan(
@@ -503,6 +553,7 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 		&createdBy,
 		&t.CreatedAt,
 		&t.UpdatedAt,
+		&retiredAt,
 	)
 
 	if err != nil {
@@ -515,6 +566,9 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 	t.ID, _ = shared.IDFromString(id)
 	t.TenantID, _ = shared.IDFromString(tenantID)
 	t.Tags = tags
+	if retiredAt.Valid {
+		t.RetiredAt = &retiredAt.Time
+	}
 
 	if createdBy.Valid {
 		createdByID, _ := shared.IDFromString(createdBy.String)
@@ -554,6 +608,7 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 		uiStartPos []byte
 		uiEndPos   []byte
 		createdBy  sql.NullString
+		retiredAt  sql.NullTime
 	)
 
 	err := rows.Scan(
@@ -572,6 +627,7 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 		&createdBy,
 		&t.CreatedAt,
 		&t.UpdatedAt,
+		&retiredAt,
 	)
 
 	if err != nil {
@@ -581,6 +637,9 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 	t.ID, _ = shared.IDFromString(id)
 	t.TenantID, _ = shared.IDFromString(tenantID)
 	t.Tags = tags
+	if retiredAt.Valid {
+		t.RetiredAt = &retiredAt.Time
+	}
 
 	if createdBy.Valid {
 		createdByID, _ := shared.IDFromString(createdBy.String)

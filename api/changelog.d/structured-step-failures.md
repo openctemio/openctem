@@ -1,0 +1,6 @@
+### Fixed: step failures keep their reason and class; doomed runs are not retried
+
+- Every step failure code has a class: config, scope, placement, policy, transient, tool, timeout or canceled. Step runs in scan run responses carry `error_class` next to `error_code`.
+- Failures a retry cannot fix are never retried, as a step or as a whole run: the queue-time codes (`NO_MATCHING_TOOL`, `STEP_CAPABILITY_AMBIGUOUS`, `INCOMPATIBLE_TARGETS`, `STAGE_NOT_CHAINABLE`, `NO_SENSOR_FOR_TOOL`, `STEP_TARGETS_REFUSED`) and policy refusals now join the permanent ones. Transient failures (a lost lease, an exhausted or expired command) stay retryable.
+- Sensor protocol v2: `POST /commands/{id}/fail` takes an optional `error_code` (`SCANNER_NOT_FOUND`, `TARGET_REFUSED`, `NO_TARGETS`, `POLICY_REFUSED`, `TOOL_EXIT`, `PARSE_ERROR`, `TIMEOUT`). The step records it instead of the flat `COMMAND_FAILED`; any other value, including a platform code, is recorded as `COMMAND_FAILED` and the message is classified as before. A structured policy refusal that was not re-queued is `POLICY_REFUSED`.
+- A run whose command lost its lease and went back to the queue is no longer aborted as "no sensor ever took it" (`NO_SENSOR`, never retried): the reaper now also counts dispatch attempts.

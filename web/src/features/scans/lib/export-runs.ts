@@ -33,7 +33,7 @@ export interface RunExport {
 
 /** Every run of the list for `filters` (status and sort), up to `cap`. */
 export async function fetchRunsForExport(
-  filters: Pick<ScanRunListFilters, 'status' | 'sort'>,
+  filters: Pick<ScanRunListFilters, 'status' | 'scan_id' | 'sort'>,
   cap: number = RUN_EXPORT_CAP,
   fetchPage: (url: string) => Promise<ScanRunListResponse> = (url) => get<ScanRunListResponse>(url)
 ): Promise<RunExport> {
@@ -43,7 +43,7 @@ export async function fetchRunsForExport(
     const res = await fetchPage(
       scanRunEndpoints.list({ ...filters, page, per_page: EXPORT_PAGE_SIZE })
     )
-    const items = res?.items ?? []
+    const items = res?.data ?? []
     total = res?.total ?? runs.length + items.length
     runs.push(...items)
     if (items.length < EXPORT_PAGE_SIZE || runs.length >= total) break

@@ -51,23 +51,17 @@ vi.mock('@/lib/permissions', async (importOriginal) => {
       canReadScanRuns ? <>{children}</> : <>{fallback}</>,
   }
 })
-const urlState: Record<string, string> = {}
-vi.mock('@/hooks/use-url-param', () => ({
-  useUrlFilter: (key: string, fallback: string) => [
-    urlState[key] ?? fallback,
-    (v: string) => {
-      if (v === fallback || v === '') delete urlState[key]
-      else urlState[key] = v
-    },
-  ],
-  useUrlFilterNumber: (key: string, fallback: number) => [
-    urlState[key] ? Number(urlState[key]) : fallback,
-    (v: number) => {
-      if (v === fallback) delete urlState[key]
-      else urlState[key] = String(v)
-    },
-  ],
-}))
+// The real URL is the list state (useListParams reads and writes it).
+const urlState = new Proxy({} as Record<string, string | undefined>, {
+  get: (_, key) => new URLSearchParams(window.location.search).get(String(key)) ?? undefined,
+  set: (_, key, value) => {
+    const params = new URLSearchParams(window.location.search)
+    params.set(String(key), String(value))
+    window.history.replaceState(null, '', `/scans/runs?${params}`)
+    return true
+  },
+})
+const resetUrl = () => window.history.replaceState(null, '', '/scans/runs')
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -100,9 +94,9 @@ describe('ScanRunsTab', () => {
   beforeEach(() => {
     workflowRunsCalls.length = 0
     canReadScanRuns = true
-    for (const k of Object.keys(urlState)) delete urlState[k]
+    resetUrl()
     runsResponse = {
-      items: [
+      data: [
         run({}),
         run({
           id: 'r2',
@@ -148,7 +142,7 @@ describe('ScanRunsTab', () => {
   it('counts partial runs and filters on them', async () => {
     render(<ScanRunsTab />)
     await userEvent.click(screen.getByText('Partial'))
-    expect(urlState.run_status).toBe('partial')
+    expect(urlState.status).toBe('partial')
   })
 
   it('opens the run drawer on row click', async () => {
@@ -158,14 +152,14 @@ describe('ScanRunsTab', () => {
   })
 
   it('passes the status filter to the API', () => {
-    urlState.run_status = 'canceled'
+    urlState.status = 'canceled'
     render(<ScanRunsTab />)
     expect(workflowRunsCalls.at(-1)).toMatchObject({ status: 'canceled', page: 1 })
   })
 
   it('keeps page, page size and sort in the URL and sends them to the API', async () => {
-    urlState.run_page = '2'
-    urlState.run_sort = '-total_findings'
+    urlState.page = '2'
+    urlState.sort = '-total_findings'
     render(<ScanRunsTab />)
     expect(workflowRunsCalls.at(-1)).toMatchObject({
       page: 2,
@@ -173,27 +167,41 @@ describe('ScanRunsTab', () => {
       sort: '-total_findings',
     })
     await userEvent.click(screen.getByRole('button', { name: 'Previous page' }))
-    expect(urlState.run_page).toBeUndefined()
+    expect(urlState.page).toBeUndefined()
   })
 
   it('sorts on the server from a column header and returns to page 1', async () => {
-    urlState.run_page = '2'
+    urlState.page = '2'
     render(<ScanRunsTab />)
     await userEvent.click(screen.getByRole('button', { name: /^Started/ }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /Asc/ }))
-    expect(urlState.run_sort).toBe('started_at')
-    expect(urlState.run_page).toBeUndefined()
+    expect(urlState.sort).toBe('started_at')
+    expect(urlState.page).toBeUndefined()
+  })
+
+  it('narrows to one scan from a link and clears it back to every scan', async () => {
+    urlState.scan_id = 's1'
+    render(<ScanRunsTab />)
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ scan_id: 's1', page: 1 })
+    await userEvent.click(screen.getByRole('button', { name: 'Show runs of every scan' }))
+    expect(urlState.scan_id).toBeUndefined()
+  })
+
+  it('uses plain list parameters, never prefixed ones', async () => {
+    render(<ScanRunsTab />)
+    await userEvent.click(screen.getByText('Partial'))
+    expect(window.location.search).toBe('?status=partial')
   })
 
   it('falls back to newest first for a stale sort link', () => {
-    urlState.run_sort = 'status'
+    urlState.sort = 'status'
     render(<ScanRunsTab />)
     expect(workflowRunsCalls.at(-1)).toMatchObject({ sort: '-created_at' })
   })
 
   it('names a quick-scan run from the server and marks a deleted scan', () => {
     runsResponse = {
-      items: [
+      data: [
         run({ id: 'q1', scan_id: 'adhoc', scan_name: 'Quick Scan - 20261004-101010' }),
         run({ id: 'd1', scan_id: 'gone', scan_name: undefined, error_message: undefined }),
       ],
@@ -211,9 +219,9 @@ describe('ScanRunsTab', () => {
   })
 
   it('exports the list as filtered and sorted, through the same endpoint', async () => {
-    urlState.run_status = 'failed'
-    urlState.run_sort = '-started_at'
-    exportGet.mockResolvedValue({ items: [run({})], total: 1, page: 1, per_page: 100 })
+    urlState.status = 'failed'
+    urlState.sort = '-started_at'
+    exportGet.mockResolvedValue({ data: [run({})], total: 1, page: 1, per_page: 100 })
     render(<ScanRunsTab />)
     await userEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
     await waitFor(() => expect(exportToCsvMock).toHaveBeenCalled())
@@ -235,12 +243,12 @@ describe('ScanRunsTab', () => {
 describe('ScanRunsTab tasks', () => {
   beforeEach(() => {
     canReadScanRuns = true
-    for (const k of Object.keys(urlState)) delete urlState[k]
+    resetUrl()
   })
 
   it('shows a run as tasks done of total with the counts that matter', () => {
     runsResponse = {
-      items: [
+      data: [
         run({
           status: 'partial',
           error_message: undefined,
@@ -268,7 +276,7 @@ describe('ScanRunsTab tasks', () => {
   })
 
   it('falls back to steps for a run without a task summary', () => {
-    runsResponse = { items: [run({})], total: 1, page: 1, per_page: 25, total_pages: 1 }
+    runsResponse = { data: [run({})], total: 1, page: 1, per_page: 25, total_pages: 1 }
     render(<ScanRunsTab />)
     expect(within(screen.getByRole('table')).getByText(/1\/2 steps/)).toBeInTheDocument()
   })

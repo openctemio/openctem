@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 
 	"github.com/go-chi/chi/v5"
 
@@ -130,6 +131,9 @@ type TemplateResponse struct {
 	UIEndPosition    *UIPositionResponse          `json:"ui_end_position,omitempty"`
 	CreatedAt        string                       `json:"created_at"`
 	UpdatedAt        string                       `json:"updated_at"`
+	// RetiredAt is set when the workflow was deleted while it had runs (it
+	// is read-only and kept for their history).
+	RetiredAt string `json:"retired_at,omitempty"`
 }
 
 // TriggerResponse represents a trigger in the response.
@@ -410,15 +414,18 @@ type StepRunResponse struct {
 	StepName string `json:"step_name,omitempty"`
 	Tool     string `json:"tool,omitempty"`
 	// Capability is the versioned capability the step run ran.
-	Capability    string  `json:"capability,omitempty"`
-	Status        string  `json:"status"`
-	StartedAt     *string `json:"started_at,omitempty"`
-	CompletedAt   *string `json:"completed_at,omitempty"`
-	ErrorMessage  string  `json:"error_message,omitempty"`
-	ErrorCode     string  `json:"error_code,omitempty"`
-	Attempt       int     `json:"attempt"`
-	MaxAttempts   int     `json:"max_attempts"`
-	FindingsCount int     `json:"findings_count"`
+	Capability   string  `json:"capability,omitempty"`
+	Status       string  `json:"status"`
+	StartedAt    *string `json:"started_at,omitempty"`
+	CompletedAt  *string `json:"completed_at,omitempty"`
+	ErrorMessage string  `json:"error_message,omitempty"`
+	ErrorCode    string  `json:"error_code,omitempty"`
+	// ErrorClass groups the code by what can fix it: config, scope,
+	// placement, policy, transient, tool, timeout or canceled.
+	ErrorClass    string `json:"error_class,omitempty"`
+	Attempt       int    `json:"attempt"`
+	MaxAttempts   int    `json:"max_attempts"`
+	FindingsCount int    `json:"findings_count"`
 }
 
 // --- Template Handlers ---
@@ -529,13 +536,17 @@ func (h *ScanWorkflowHandler) ListTemplates(w http.ResponseWriter, r *http.Reque
 		isActive = &active
 	}
 
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := scanrun.ListTemplatesInput{
 		TenantID: tenantID,
 		IsActive: isActive,
 		Tags:     parseQueryArray(r.URL.Query().Get("tags")),
 		Search:   r.URL.Query().Get("search"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:     page.Page,
+		PerPage:  page.PerPage,
 	}
 
 	result, err := h.service.ListTemplates(r.Context(), input)
@@ -544,18 +555,7 @@ func (h *ScanWorkflowHandler) ListTemplates(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	items := make([]*TemplateResponse, len(result.Data))
-	for i, t := range result.Data {
-		items[i] = toTemplateResponse(t)
-	}
-
-	resp := map[string]interface{}{
-		"items":       items,
-		"total":       result.Total,
-		"page":        result.Page,
-		"per_page":    result.PerPage,
-		"total_pages": result.TotalPages,
-	}
+	resp := pagination.Map(result, toTemplateResponse)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -1031,14 +1031,19 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := scanrun.ListRunsInput{
 		TenantID:       tenantID,
 		ScanWorkflowID: r.URL.Query().Get("scan_workflow_id"),
+		ScanID:         r.URL.Query().Get("scan_id"),
 		AssetID:        r.URL.Query().Get("asset_id"),
 		Status:         r.URL.Query().Get("status"),
 		Sort:           r.URL.Query().Get("sort"),
-		Page:           parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:        parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:           page.Page,
+		PerPage:        page.PerPage,
 	}
 
 	result, err := h.service.ListRuns(r.Context(), input)
@@ -1070,12 +1075,12 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp := map[string]interface{}{
-		"items":       items,
-		"total":       result.Total,
-		"page":        result.Page,
-		"per_page":    result.PerPage,
-		"total_pages": result.TotalPages,
+	resp := pagination.Result[*RunResponse]{
+		Data:       items,
+		Total:      result.Total,
+		Page:       result.Page,
+		PerPage:    result.PerPage,
+		TotalPages: result.TotalPages,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1229,6 +1234,10 @@ func toTemplateResponse(t *scanworkflow.Workflow) *TemplateResponse {
 		Steps:     steps,
 		CreatedAt: t.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt: t.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+
+	if t.RetiredAt != nil {
+		resp.RetiredAt = t.RetiredAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 
 	// Add UI positions for visual builder
@@ -1488,6 +1497,7 @@ func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 		Status:        string(sr.Status),
 		ErrorMessage:  sr.ErrorMessage,
 		ErrorCode:     sr.ErrorCode,
+		ErrorClass:    stepErrorClass(sr.ErrorCode),
 		Attempt:       sr.Attempt,
 		MaxAttempts:   sr.MaxAttempts,
 		FindingsCount: sr.FindingsCount,
@@ -1532,6 +1542,8 @@ func (h *ScanWorkflowHandler) handleServiceError(w http.ResponseWriter, err erro
 	case writeGraphInvalid(w, err):
 	case errors.Is(err, scanworkflow.ErrScanWorkflowRunActive):
 		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRunActive.Code), scanworkflow.ErrScanWorkflowRunActive.Message).WriteJSON(w)
+	case errors.Is(err, scanworkflow.ErrScanWorkflowRetired):
+		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRetired.Code), scanworkflow.ErrScanWorkflowRetired.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Pipeline").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
@@ -1554,6 +1566,8 @@ func (h *ScanWorkflowHandler) handleStepError(w http.ResponseWriter, err error) 
 	case writeGraphInvalid(w, err):
 	case errors.Is(err, scanworkflow.ErrScanWorkflowRunActive):
 		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRunActive.Code), scanworkflow.ErrScanWorkflowRunActive.Message).WriteJSON(w)
+	case errors.Is(err, scanworkflow.ErrScanWorkflowRetired):
+		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRetired.Code), scanworkflow.ErrScanWorkflowRetired.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Step").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
@@ -1574,4 +1588,13 @@ func (h *ScanWorkflowHandler) handleStepError(w http.ResponseWriter, err error) 
 // service's audit actor (see scanrun.WithAuditActor).
 func scanWorkflowAuditCtx(r *http.Request) context.Context {
 	return scanrun.WithAuditActor(r.Context(), middleware.GetUserID(r.Context()))
+}
+
+// stepErrorClass is the failure class of a step's error code, or "" for a
+// step without one.
+func stepErrorClass(code string) string {
+	if code == "" {
+		return ""
+	}
+	return string(scanrundom.ClassOf(code))
 }

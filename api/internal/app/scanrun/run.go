@@ -118,6 +118,10 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 		}
 	}
 
+	if template.RetiredAt != nil {
+		return nil, scanworkflow.ErrScanWorkflowRetired
+	}
+
 	// Verify template is active
 	if !template.IsActive {
 		return nil, shared.NewDomainError("INACTIVE", "pipeline template is not active", shared.ErrValidation)
@@ -429,14 +433,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	zoneID := scanrun.ScanZoneFromContext(run.Context)
 	usePlatform := false
 	if zoneID == nil {
-		pref := settings.SensorPreference
-		// A scan that runs on the tenant's own sensors only
-		// (scans.run_on_tenant_runner, carried in the run context) never
-		// goes to platform sensors, whatever the template says.
-		if tenantRunnerOnly(run.Context) {
-			pref = scanworkflow.SensorPreferenceTenant
-		}
-		usePlatform = s.routeToPlatform(ctx, run.TenantID, step.Tool, pref)
+		usePlatform = s.stepUsesPlatform(ctx, run, step, settings.SensorPreference)
 	}
 
 	// A large step is cut into chunks of the capability's size, so every
@@ -586,6 +583,29 @@ func (s *Service) routeToPlatform(ctx context.Context, tenantID shared.ID, tool 
 		}
 	}
 	return false
+}
+
+// stepUsesPlatform reports whether a step of run goes to platform sensors.
+// A run started from a scan carries the scan's trigger-time decision
+// (sensor_routing), made with the platform checks; it wins over the
+// workflow's own preference. A run with no decision (started from a
+// workflow directly) follows the workflow's preference.
+func (s *Service) stepUsesPlatform(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, pref scanworkflow.SensorPreference) bool {
+	switch scanrun.SensorRoutingFromContext(run.Context) {
+	case scanrun.SensorRoutingTenant:
+		return false
+	case scanrun.SensorRoutingPlatform:
+		return true
+	case scanrun.SensorRoutingAuto:
+		return s.routeToPlatform(ctx, run.TenantID, step.Tool, scanworkflow.SensorPreferenceAuto)
+	}
+	// A scan that runs on the tenant's own sensors only
+	// (scans.run_on_tenant_runner, carried in the run context) never goes
+	// to platform sensors, whatever the template says.
+	if tenantRunnerOnly(run.Context) {
+		pref = scanworkflow.SensorPreferenceTenant
+	}
+	return s.routeToPlatform(ctx, run.TenantID, step.Tool, pref)
 }
 
 // calculateScanRunInitialPriority calculates the initial queue priority for platform jobs.
@@ -987,7 +1007,7 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	default:
-		if !s.finishRun(ctx, run, scanrun.RunStatusFailed, "Pipeline completed with failures", st.findings) {
+		if !s.finishRun(ctx, run, scanrun.RunStatusFailed, failedRunMessage(run), st.findings) {
 			return
 		}
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
@@ -999,6 +1019,30 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
 	}
+}
+
+// failedRunMessage says why a run failed: the first failed step, its reason
+// and its code (NO_MATCHING_TOOL, INCOMPATIBLE_TARGETS, ...), so the run
+// shows the cause without opening its steps.
+func failedRunMessage(run *scanrun.Run) string {
+	for _, sr := range run.StepRuns {
+		if sr == nil || sr.Status != scanrun.StepRunStatusFailed {
+			continue
+		}
+		name := sr.StepName
+		if name == "" {
+			name = sr.StepKey
+		}
+		msg := fmt.Sprintf("Step %q failed", name)
+		if sr.ErrorMessage != "" {
+			msg += ": " + sr.ErrorMessage
+		}
+		if sr.ErrorCode != "" {
+			msg += " (" + sr.ErrorCode + ")"
+		}
+		return msg
+	}
+	return "Scan run completed with failures"
 }
 
 // uncoveredTargetCount is how many targets the run's zone routing could not
@@ -1399,8 +1443,9 @@ func (s *Service) RunTaskSummaries(ctx context.Context, tenantID string, runs []
 type ListRunsInput struct {
 	TenantID       string `json:"tenant_id" validate:"required,uuid"`
 	ScanWorkflowID string `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScanID         string `json:"scan_id" validate:"omitempty,uuid"`
 	AssetID        string `json:"asset_id" validate:"omitempty,uuid"`
-	Status         string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout"`
+	Status         string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout blocked"`
 	// Sort is one sort key, `field` or `-field` (scanrun.RunListSortFields);
 	// an unknown field is a validation error.
 	Sort    string `json:"sort"`
@@ -1425,22 +1470,31 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 		Sort:     sort,
 	}
 
-	if input.ScanWorkflowID != "" {
-		pid, err := shared.IDFromString(input.ScanWorkflowID)
-		if err == nil {
-			filter.ScanWorkflowID = &pid
+	// A filter id that does not parse is refused: silently dropping it would
+	// answer with every run of the tenant instead of the narrowed list.
+	for _, f := range []struct {
+		name, raw string
+		dst       **shared.ID
+	}{
+		{"scan_workflow_id", input.ScanWorkflowID, &filter.ScanWorkflowID},
+		{"scan_id", input.ScanID, &filter.ScanID},
+		{"asset_id", input.AssetID, &filter.AssetID},
+	} {
+		if f.raw == "" {
+			continue
 		}
-	}
-
-	if input.AssetID != "" {
-		aid, err := shared.IDFromString(input.AssetID)
-		if err == nil {
-			filter.AssetID = &aid
+		id, err := shared.IDFromString(f.raw)
+		if err != nil {
+			return pagination.Result[*scanrun.Run]{}, fmt.Errorf("%w: invalid %s", shared.ErrValidation, f.name)
 		}
+		*f.dst = &id
 	}
 
 	if input.Status != "" {
 		st := scanrun.RunStatus(input.Status)
+		if !st.IsValid() {
+			return pagination.Result[*scanrun.Run]{}, fmt.Errorf("%w: invalid status", shared.ErrValidation)
+		}
 		filter.Status = &st
 	}
 
@@ -1562,6 +1616,24 @@ func (s *Service) FailStepRun(ctx context.Context, stepRunID, errorMessage, erro
 func tenantRunnerOnly(runContext map[string]any) bool {
 	v, _ := runContext["tenant_runner_only"].(bool)
 	return v
+}
+
+// AdvanceRun re-evaluates a run right after its trigger queued the first
+// steps (scan.RunAdvancer): a step that could not be queued is failed, its
+// dependents are skipped, and a run in which nothing else can run settles at
+// once with that step's reason.
+func (s *Service) AdvanceRun(ctx context.Context, run *scanrun.Run) error {
+	if run == nil {
+		return fmt.Errorf("%w: run is required", shared.ErrValidation)
+	}
+	template, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+	if err != nil {
+		return fmt.Errorf("load the run's workflow: %w", err)
+	}
+	if template == nil {
+		return fmt.Errorf("%w: the run's workflow", shared.ErrNotFound)
+	}
+	return s.advanceRun(ctx, run, template)
 }
 
 // QueueRunStep queues one step of a run: the dispatcher a scan's workflow

@@ -585,7 +585,7 @@ export function AddNotificationDialog({
                   </Label>
                   <Input
                     id="channel_id"
-                    placeholder="e.g., -1001234567890 or @channelname"
+                    placeholder="e.g., -1001274567890 or @channelname"
                     {...register('channel_id', { required: selectedProvider?.id === 'telegram' })}
                   />
                   {errors.channel_id && (
@@ -594,7 +594,7 @@ export function AddNotificationDialog({
                   <p className="text-xs text-muted-foreground">
                     Get your chat ID: 1) Add @userinfobot to your group/channel, 2) It will reply
                     with the chat ID. For groups/channels, use the numeric ID (e.g.,
-                    -1001234567890).
+                    -1001274567890).
                   </p>
                 </div>
               )}

@@ -532,12 +532,12 @@ export function EditNotificationDialog({
                 </Label>
                 <Input
                   id="channel_id"
-                  placeholder="e.g., -1001234567890 or @channelname"
+                  placeholder="e.g., -1001274567890 or @channelname"
                   {...register('channel_id', { required: integration.provider === 'telegram' })}
                 />
                 <p className="text-xs text-muted-foreground">
                   Get your chat ID: Add @userinfobot to your group/channel. For groups/channels, use
-                  the numeric ID (e.g., -1001234567890).
+                  the numeric ID (e.g., -1001274567890).
                 </p>
               </div>
             )}
