@@ -13685,6 +13685,13 @@ definitions:
         type: integer
       id:
         type: string
+      last_run:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ScanLastRunResponse'
+        description: |-
+          LastRun is the scan's latest run: its real state (running with
+          progress, completed, partial, failed, blocked with the reason, ...).
+          Absent before the first run.
       last_run_at:
         type: string
       last_run_id:
@@ -13702,6 +13709,9 @@ definitions:
           D5).'
         type: integer
       pipeline_id:
+        type: string
+      pipeline_name:
+        description: PipelineName names the workflow a workflow scan runs.
         type: string
       profile_id:
         type: string
@@ -13816,6 +13826,32 @@ definitions:
       timezone:
         type: string
       updated_at:
+        type: string
+    type: object
+  internal_infra_http_handler.ScanLastRunResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error_message:
+        type: string
+      id:
+        type: string
+      progress:
+        description: 'Progress is 0-100 for a live run: finished tasks of all tasks.'
+        type: integer
+      refusal_code:
+        description: RefusalCode and ErrorMessage say why a blocked or failed run
+          ended.
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      task_summary:
+        $ref: '#/definitions/internal_infra_http_handler.RunTaskSummaryResponse'
+      trigger_type:
         type: string
     type: object
   internal_infra_http_handler.ScanProfileResponse:
