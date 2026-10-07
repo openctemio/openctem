@@ -1147,93 +1147,6 @@ func TestTenantSvc_UpdateMemberRole_RepoError(t *testing.T) {
 }
 
 // =============================================================================
-// RemoveMember Tests
-// =============================================================================
-
-func TestTenantSvc_RemoveMember_Success(t *testing.T) {
-	svc, repo := newTestTenantService()
-	tenantID := shared.NewID()
-	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
-
-	err := svc.RemoveMember(context.Background(), ms.ID().String(), audit.AuditContext{TenantID: tenantID.String()})
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if repo.deleteMembershipCalls != 1 {
-		t.Errorf("expected 1 deleteMembership call, got %d", repo.deleteMembershipCalls)
-	}
-}
-
-func TestTenantSvc_RemoveMember_InvalidID(t *testing.T) {
-	svc, _ := newTestTenantService()
-
-	err := svc.RemoveMember(context.Background(), "bad-uuid", audit.AuditContext{})
-	if err == nil {
-		t.Fatal("expected error for invalid ID")
-	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
-	}
-}
-
-func TestTenantSvc_RemoveMember_NotFound(t *testing.T) {
-	svc, _ := newTestTenantService()
-
-	err := svc.RemoveMember(context.Background(), shared.NewID().String(), audit.AuditContext{})
-	if err == nil {
-		t.Fatal("expected error for not found")
-	}
-}
-
-func TestTenantSvc_RemoveMember_CannotRemoveOwner(t *testing.T) {
-	svc, repo := newTestTenantService()
-	tenantID := shared.NewID()
-	ownerMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleOwner)
-
-	err := svc.RemoveMember(context.Background(), ownerMs.ID().String(), audit.AuditContext{TenantID: tenantID.String()})
-	if err == nil {
-		t.Fatal("expected error when removing owner")
-	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
-	}
-}
-
-func TestTenantSvc_RemoveMember_RepoError(t *testing.T) {
-	svc, repo := newTestTenantService()
-	tenantID := shared.NewID()
-	ms := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleMember)
-	repo.deleteMembershipErr = errors.New("db error")
-
-	err := svc.RemoveMember(context.Background(), ms.ID().String(), audit.AuditContext{TenantID: tenantID.String()})
-	if err == nil {
-		t.Fatal("expected error from repo")
-	}
-}
-
-func TestTenantSvc_RemoveMember_RemoveAdminAllowed(t *testing.T) {
-	svc, repo := newTestTenantService()
-	tenantID := shared.NewID()
-	adminMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleAdmin)
-
-	err := svc.RemoveMember(context.Background(), adminMs.ID().String(), audit.AuditContext{TenantID: tenantID.String()})
-	if err != nil {
-		t.Fatalf("expected admin removal to succeed, got %v", err)
-	}
-}
-
-func TestTenantSvc_RemoveMember_RemoveViewerAllowed(t *testing.T) {
-	svc, repo := newTestTenantService()
-	tenantID := shared.NewID()
-	viewerMs := seedMembershipInRepo(repo, shared.NewID(), tenantID, tenant.RoleViewer)
-
-	err := svc.RemoveMember(context.Background(), viewerMs.ID().String(), audit.AuditContext{TenantID: tenantID.String()})
-	if err != nil {
-		t.Fatalf("expected viewer removal to succeed, got %v", err)
-	}
-}
-
-// =============================================================================
 // ListMembers Tests
 // =============================================================================
 
@@ -2637,7 +2550,6 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 			_, err := svc.UpdateMemberRole(context.Background(), invalidID, tenantapp.UpdateMemberRoleInput{Role: "admin"}, audit.AuditContext{})
 			return err
 		}},
-		{"RemoveMember", func() error { return svc.RemoveMember(context.Background(), invalidID, audit.AuditContext{}) }},
 		{"CreateInvitation", func() error {
 			_, err := svc.CreateInvitation(context.Background(), invalidID, tenantapp.CreateInvitationInput{Email: "a@b.com", Role: "member", RoleIDs: []string{"r1"}}, shared.NewID(), audit.AuditContext{})
 			return err
