@@ -51,6 +51,9 @@ type ctlHarness struct {
 
 type ctlSensor struct {
 	id, key string
+	// tools are the tools the test means the sensor to have; verifyTools
+	// records them as its report.
+	tools []string
 }
 
 func newCtlHarness(t *testing.T) *ctlHarness {
@@ -129,11 +132,11 @@ func (h *ctlHarness) newTenant() string {
 func (h *ctlHarness) newSensor(tenantID, name string) ctlSensor {
 	h.t.Helper()
 	out, err := h.sensors.CreateSensor(context.Background(), sensor.CreateSensorInput{TenantID: tenantID, Name: name,
-		Type: "worker", Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "daemon"})
+		Type: "worker", Capabilities: []string{"sast"}, ExecutionMode: "daemon"})
 	if err != nil {
 		h.t.Fatalf("create sensor: %v", err)
 	}
-	s := ctlSensor{id: out.Sensor.ID.String(), key: out.APIKey}
+	s := ctlSensor{id: out.Sensor.ID.String(), key: out.APIKey, tools: []string{"semgrep"}}
 	h.verifyTools(s)
 	return s
 }

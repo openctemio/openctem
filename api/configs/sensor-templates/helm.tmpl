@@ -37,7 +37,7 @@ helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.mode=daemon \
   --set sensor.image.tag={{imageTag .Image}} \
   --set sensor.existingSecret={{$slug}}-key \
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
   --set sensor.outbox.persistence.enabled=true \

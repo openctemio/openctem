@@ -71,7 +71,7 @@
 |---|---|---|
 | RFC-007 planner, scheduler, dispatcher, `tenable_config.go`, coverage stats | `api/internal/app/scancoverage/`, `internal/infra/controller/coverage_scheduler.go`, migration `000176_scan_coverage_state` | Kept, not registered since #990 (`tenableCoverageRunnerAvailable = false`). `ActiveIPs` returns 0 |
 | Tenable provider | `pkg/domain/integration` (`ProviderTenable`) | `HasClient()` false since #990: create refused, stored rows load |
-| `.nessus` parser and findings upload | `pkg/parsers/nessus` (#988), `POST /api/v1/assets/import/nessus-findings` | Works; runs with the uploader's rights after #985 (L-05) |
+| `.nessus` parser and findings upload | ctis `importer` (Nessus format), `POST /api/v1/findings/import` | Works; runs with the uploader's rights. The API's own parser and `POST /assets/import/nessus{,-findings}` were removed |
 | Nessus Pro REST client and `.nessus` → CTIS | sdk-go `pkg/scanners/tenable` | Kept in sdk-go v0.17.0; no Tenable.sc client |
 | Sensor Tenable runner | sensor `internal/executor/tenable.go` (sensor#25, target guard #26) | **Removed in sensor v0.8.0** (sensor#107) with the whole `-platform` mode. It was reachable only through the `/api/v1/platform/*` job protocol, which the API no longer serves. It was dead code, not a rejected design. It also only ever implemented Nessus Pro: Tenable.sc returned "not yet supported" |
 
@@ -368,7 +368,7 @@ only, joined with commas, never from free text.
 
 ### 7.1 Hosts → assets
 
-Same rules as `pkg/parsers/nessus` and sdk-go `tenable.Convert`, so the three
+Same rules as the ctis Nessus importer and sdk-go `tenable.Convert`, so the three
 Tenable paths land on the same asset:
 
 | Tenable | CTIS asset |

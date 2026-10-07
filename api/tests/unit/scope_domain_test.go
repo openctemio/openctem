@@ -658,10 +658,10 @@ func TestMatchesPatternDomain(t *testing.T) {
 		{"NoMatch", "example.com", "other.com", false},
 		{"WildcardMatchSubdomain", "*.example.com", "sub.example.com", true},
 		{"WildcardMatchDeepSubdomain", "*.example.com", "deep.sub.example.com", true},
-		{"WildcardDoesNotMatchApex", "*.example.com", "example.com", false},
+		{"WildcardMatchesApex", "*.example.com", "example.com", true},
 		{"WildcardNoMatch", "*.example.com", "other.com", false},
 		{"DoubleWildcardMatch", "**.example.com", "a.b.c.example.com", true},
-		{"DoubleWildcardDoesNotMatchApex", "**.example.com", "example.com", false},
+		{"DoubleWildcardMatchesApex", "**.example.com", "example.com", true},
 		{"DoubleWildcardNoMatch", "**.example.com", "notexample.com", false},
 		{"SubdomainType", "*.test.org", "api.test.org", true},
 	}

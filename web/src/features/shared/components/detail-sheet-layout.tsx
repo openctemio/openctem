@@ -32,6 +32,11 @@
  * never drags it. Swiping is a shortcut: the Close button and Esc still close.
  * Motion is transform-only and stops under `prefers-reduced-motion`.
  *
+ * "View all …" / "Open full page": render `<DetailSheetFooter>` anywhere inside
+ * the sheet's children (a tab component included). It is shown in a footer
+ * pinned under the scrolling body, so the action is always visible, whatever
+ * the length of the list above it.
+ *
  * On phones the sheet has one fixed height (92% of the small viewport), like a
  * native sheet at a fixed detent: switching tabs or loading more content does
  * not make it jump, short content leaves empty space under it, and a tab change
@@ -41,6 +46,7 @@
 'use client'
 
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { MoreHorizontal, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -137,6 +143,34 @@ function keepControlsFromDragging(e: React.PointerEvent) {
   }
 }
 
+// The footer's mount point, owned by the sheet. A tab component renders its
+// "View all" through <DetailSheetFooter>, which portals into it.
+const FooterTargetContext = React.createContext<{ node: HTMLElement; pad: string } | null>(null)
+
+export interface DetailSheetFooterProps {
+  children: React.ReactNode
+  className?: string
+}
+
+/**
+ * A navigation action that belongs at the bottom of the sheet ("View all
+ * findings (2)", "Open full page"). Pinned under the scrolling body with a top
+ * border and the sheet's own padding, clear of the phone home indicator, and
+ * last in the focus order. Outside a DetailSheet it renders in place.
+ */
+export function DetailSheetFooter({ children, className }: DetailSheetFooterProps) {
+  const target = React.useContext(FooterTargetContext)
+  const content = (
+    <div
+      data-slot="detail-sheet-footer"
+      className={cn('border-t bg-background py-3', target?.pad, className)}
+    >
+      {children}
+    </div>
+  )
+  return target ? createPortal(content, target.node) : content
+}
+
 export function DetailSheet({
   open,
   onOpenChange,
@@ -216,8 +250,15 @@ export function DetailSheet({
     [returnFocus]
   )
 
+  const [footerTarget, setFooterTarget] = React.useState<HTMLElement | null>(null)
+
+  const footerValue = React.useMemo(
+    () => (footerTarget ? { node: footerTarget, pad } : null),
+    [footerTarget, pad]
+  )
+
   const frame = (
-    <>
+    <FooterTargetContext.Provider value={footerValue}>
       <div className={cn('shrink-0 border-b', isPhone ? 'pt-2' : 'pt-4', pad, !tabs && 'pb-4')}>
         {header}
         {tabs}
@@ -243,7 +284,10 @@ export function DetailSheet({
           {footer}
         </div>
       )}
-    </>
+      {/* <DetailSheetFooter> content lands here; it brings its own border and
+          vertical padding, so an empty mount point takes no space. */}
+      <div ref={setFooterTarget} data-vaul-no-drag="" className="shrink-0 empty:hidden" />
+    </FooterTargetContext.Provider>
   )
 
   if (isPhone) {

@@ -152,7 +152,7 @@ func TestScanRunSummary_BlockedRunIsCountedAndRead(t *testing.T) {
 }
 
 // The live contradiction: last_run_at set, no run behind it. A refresh (and
-// migration 001152, which runs the same statement) clears it.
+// migration 001157, which runs the same statement) clears it.
 func TestScanRunSummary_RepairsALastRunWithNoRun(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
@@ -177,14 +177,14 @@ func TestScanRunSummary_RepairsALastRunWithNoRun(t *testing.T) {
 // rules. A drift between the two would make the backfill and later refreshes
 // disagree.
 func TestScanRunSummary_MigrationBackfillMatchesRepository(t *testing.T) {
-	raw, err := os.ReadFile("../../../migrations/001152_scan_run_summary_blocked_runs.up.sql")
+	raw, err := os.ReadFile("../../../migrations/001157_scan_run_summary_blocked_runs.up.sql")
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}
 	norm := func(s string) string { return strings.Join(strings.Fields(s), " ") }
 	mig := norm(string(raw))
 	if !strings.Contains(mig, norm(scanRunSummaryUpdateSQL)) {
-		t.Fatal("migration 001152's backfill differs from scanRunSummaryUpdateSQL")
+		t.Fatal("migration 001157's backfill differs from scanRunSummaryUpdateSQL")
 	}
 }
 

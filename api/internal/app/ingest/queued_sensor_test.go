@@ -106,7 +106,7 @@ func TestJobProcessor_DropsWorkOfSensorsTakenOutOfService(t *testing.T) {
 func TestJobProcessor_ActiveSensorIngestsAsTheStoredSensor(t *testing.T) {
 	tenantID := shared.NewID()
 	active := &sensor.Sensor{ID: shared.NewID(), TenantID: &tenantID, Status: sensor.SensorStatusActive,
-		Tools: []string{"trivy"}}
+		Reported: sensor.ReportOf("trivy")}
 	svc, auditRepo := queuedService(active)
 	var got *sensor.Sensor
 	p := &JobProcessor{service: ingesterFunc(func(agt *sensor.Sensor) { got = agt }), sensors: svc}
