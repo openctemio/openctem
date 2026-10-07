@@ -332,7 +332,9 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
             )}
           >
             <SelectValue placeholder="Select scanner">
-              {data.toolDisplayName || data.tool || 'No scanner'}
+              {data.toolDisplayName ||
+                data.tool ||
+                (data.capabilityName ? 'Any tool (see settings)' : 'No scanner')}
             </SelectValue>
           </SelectTrigger>
           <SelectContent position="popper" className="max-h-60">
