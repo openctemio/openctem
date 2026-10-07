@@ -10,6 +10,7 @@ asset_groups
 asset_identifiers
 asset_identity_backfill
 asset_merge_log
+asset_properties_pre_001185
 asset_relationships
 asset_services
 asset_state_history
@@ -120,12 +121,13 @@ scim_group_role_mappings
 scim_groups
 scim_tokens
 scope_exclusions
+scope_target_approvals
 scope_targets
 sensor_config_reports
 sensor_content_policies
 sensor_events
-sensor_heartbeat_history
 sensor_grants
+sensor_heartbeat_history
 sensor_keys
 sensor_manifests
 sensor_pairings
