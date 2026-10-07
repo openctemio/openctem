@@ -23,8 +23,21 @@ vi.mock('@/lib/permissions', async (orig) => {
 })
 const toast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 't1', name: 'ORG' } }),
+}))
 
 const { EASMReviewQueue } = await import('../easm-review-queue')
+
+/** The queue for the candidates list; empty answers for the summary and suggestions. */
+const byUrl = (page: unknown) => (url: string) =>
+  Promise.resolve(
+    url.includes('/candidates/suggestions')
+      ? { suggestions: [], individual: [] }
+      : url.includes('/easm/summary')
+        ? {}
+        : page
+  )
 
 const wrap = (ui: ReactNode) =>
   render(<SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{ui}</SWRConfig>)
@@ -74,7 +87,7 @@ beforeEach(() => {
 
 describe('EASMReviewQueue', () => {
   it('lists the queue with its evidence, most confident first as served', async () => {
-    api.get.mockResolvedValue(queue)
+    api.get.mockImplementation(byUrl(queue))
     wrap(<EASMReviewQueue />)
     expect(await screen.findByText('api.acme.io')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith(
@@ -90,7 +103,7 @@ describe('EASMReviewQueue', () => {
   })
 
   it('confirms the selected assets in one decision and reports the rest', async () => {
-    api.get.mockResolvedValue(queue)
+    api.get.mockImplementation(byUrl(queue))
     api.post.mockResolvedValue({
       decided: [{ asset_id: A, from: 'needs_review', to: 'confirmed' }],
       not_found: [B],
@@ -111,7 +124,7 @@ describe('EASMReviewQueue', () => {
 
   it('offers no decisions without assets:write', async () => {
     perms.write = false
-    api.get.mockResolvedValue(queue)
+    api.get.mockImplementation(byUrl(queue))
     wrap(<EASMReviewQueue />)
     await screen.findByText('api.acme.io')
     expect(screen.queryByRole('checkbox')).toBeNull()

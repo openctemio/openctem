@@ -39,6 +39,17 @@ import {
 } from '@/features/assets/lib/attribution'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { useDecideReviewBatch, useEASMReviewQueue } from '../hooks/use-easm-review'
+import { useEASMSummary } from '../hooks/use-easm-summary'
+import { EASMRuleSuggestions } from './easm-rule-suggestions'
+import { reviewReasonLabel } from '@/features/assets/lib/attribution'
+import { ScopeEntryDialog, type ScopeEntryDraft } from '@/features/scope'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 /** The queue views: what is waiting, and what was rejected (for undo). */
 export const REVIEW_VIEWS: { id: string; label: string; states: AttributionState[] }[] = [
@@ -62,6 +73,7 @@ function stateOf(item: EASMReviewItem): AttributionState {
 export function EASMReviewQueue() {
   const { can } = usePermissions()
   const canDecide = can(Permission.AssetsWrite)
+  const canAddScope = can(Permission.ScopeWrite)
   // The tab is in the URL (?tab=rejected) so a view can be linked to.
   const [tabParam, setTabParam] = useUrlFilter('tab', REVIEW_VIEWS[0].id)
   const view = REVIEW_VIEWS.some((v) => v.id === tabParam) ? tabParam : REVIEW_VIEWS[0].id
@@ -71,11 +83,20 @@ export function EASMReviewQueue() {
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: PAGE_SIZE })
   const [selected, setSelected] = useState<EASMReviewItem[]>([])
   const [resetKey, setResetKey] = useState(0)
+  // Filter by the rule that queued the names (RFC-054 §6.6), in the URL.
+  const [reasonParam, setReasonParam] = useUrlFilter('reason', 'all')
+  const reason = reasonParam === 'all' ? undefined : reasonParam
+  const { summary } = useEASMSummary()
+  const reasons = Object.entries(summary?.attribution?.review_by_reason ?? {}).filter(
+    ([, n]) => n > 0
+  )
+  const [addDraft, setAddDraft] = useState<ScopeEntryDraft | null>(null)
 
   const states = REVIEW_VIEWS.find((v) => v.id === view)?.states ?? REVIEW_VIEWS[0].states
   const { page, error, isLoading, mutate } = useEASMReviewQueue({
     states,
     search: search.trim() || undefined,
+    reason: view === 'review' ? reason : undefined,
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
   })
@@ -186,6 +207,45 @@ export function EASMReviewQueue() {
         },
       },
       {
+        id: 'covered',
+        header: 'Covered by',
+        cell: ({ row }) => {
+          const c = row.original.covered_by
+          if (c?.pattern) {
+            return (
+              <span className="text-sm">
+                <code className="break-all">{c.pattern}</code>
+                {c.proof === 'verified' && (
+                  <span className="ms-1 text-xs text-success">verified</span>
+                )}
+              </span>
+            )
+          }
+          // Nothing covers it: confirming records ownership, but scans still
+          // need a scope entry (RFC-054 §4.2), so offer that first.
+          return (
+            <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              Not in scope
+              {canAddScope && row.original.name && (
+                <Button
+                  size="sm"
+                  variant="link"
+                  className="h-auto p-0 text-xs"
+                  onClick={() =>
+                    setAddDraft({
+                      pattern: row.original.name,
+                      target_type: row.original.type === 'ip_address' ? 'ip_address' : 'domain',
+                    })
+                  }
+                >
+                  Add to scope
+                </Button>
+              )}
+            </span>
+          )
+        },
+      },
+      {
         id: 'since',
         header: 'In queue since',
         cell: ({ row }) =>
@@ -193,7 +253,7 @@ export function EASMReviewQueue() {
       }
     )
     return cols
-  }, [canDecide])
+  }, [canDecide, canAddScope, setAddDraft])
 
   if (error) {
     return <ErrorState title="the review queue" error={error} onRetry={() => void mutate()} />
@@ -218,6 +278,8 @@ export function EASMReviewQueue() {
         </TabsList>
       </Tabs>
 
+      {view === 'review' && <EASMRuleSuggestions onApplied={() => void mutate()} />}
+
       {canDecide && selected.length > 0 && (
         <div
           role="toolbar"
@@ -225,6 +287,11 @@ export function EASMReviewQueue() {
           className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2"
         >
           <span className="text-sm">{selected.length} selected</span>
+          {view === 'review' && selected.some((s) => !s.covered_by) && (
+            <span className="text-xs text-muted-foreground">
+              Confirming records ownership only; names no scope entry covers stay out of scans.
+            </span>
+          )}
           {DECISIONS.filter((d) => !states.includes(d.state as AttributionState)).map((d) => {
             const Icon = d.icon
             return (
@@ -260,24 +327,47 @@ export function EASMReviewQueue() {
         pagination={pagination}
         onPaginationChange={setPagination}
         onSelectionChange={setSelected}
-        resetSelectionKey={`${view}:${search}:${pagination.pageIndex}:${resetKey}`}
+        resetSelectionKey={`${view}:${search}:${reason}:${pagination.pageIndex}:${resetKey}`}
         showSearch={false}
         toolbarStart={
-          <div className="relative w-full max-w-sm">
-            <SearchIcon
-              className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              value={searchInput}
-              onChange={(e) => {
-                setSearchInput(e.target.value)
-                setPagination((p) => ({ ...p, pageIndex: 0 }))
-              }}
-              placeholder="Search names"
-              aria-label="Search names"
-              className="ps-8"
-            />
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <div className="relative w-full max-w-sm">
+              <SearchIcon
+                className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                value={searchInput}
+                onChange={(e) => {
+                  setSearchInput(e.target.value)
+                  setPagination((p) => ({ ...p, pageIndex: 0 }))
+                }}
+                placeholder="Search names"
+                aria-label="Search names"
+                className="ps-8"
+              />
+            </div>
+            {view === 'review' && reasons.length > 0 && (
+              <Select
+                value={reason ?? 'all'}
+                onValueChange={(v) => {
+                  setReasonParam(v)
+                  setPagination((p) => ({ ...p, pageIndex: 0 }))
+                }}
+              >
+                <SelectTrigger className="h-9 w-auto min-w-44" aria-label="Filter by reason">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Every reason</SelectItem>
+                  {reasons.map(([r, n]) => (
+                    <SelectItem key={r} value={r}>
+                      {reviewReasonLabel(r)} ({n})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         }
         emptyMessage={
@@ -290,6 +380,12 @@ export function EASMReviewQueue() {
               ? 'Every discovered name has a decision, or none has been found yet.'
               : undefined
         }
+      />
+      <ScopeEntryDialog
+        open={addDraft !== null}
+        draft={addDraft ?? undefined}
+        onOpenChange={(o) => !o && setAddDraft(null)}
+        onCreated={() => void mutate()}
       />
       {!canDecide && (page?.total ?? 0) > 0 && (
         <p className="text-sm text-muted-foreground">
