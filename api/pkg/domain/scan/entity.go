@@ -76,6 +76,9 @@ type Scan struct {
 	// PartialRuns counts runs that kept results but lost some work
 	// (RFC-046 D5); neither a success nor a failure.
 	PartialRuns int
+	// BlockedRuns counts triggers that were refused before anything was
+	// dispatched (pipeline.RunStatusBlocked).
+	BlockedRuns int
 
 	// Audit
 	CreatedBy *shared.ID

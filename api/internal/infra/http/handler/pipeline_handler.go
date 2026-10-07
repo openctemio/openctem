@@ -206,7 +206,10 @@ type RunResponse struct {
 	QualityGateResult *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
 	StepRuns          []StepRunResponse              `json:"step_runs,omitempty"`
 	ErrorMessage      string                         `json:"error_message,omitempty"`
-	CreatedAt         string                         `json:"created_at"`
+	// RefusalCode says why a blocked run was refused (status blocked only),
+	// e.g. ALL_TARGETS_EXCLUDED, SCAN_FREEZE_ACTIVE, NO_SENSOR_AVAILABLE.
+	RefusalCode string `json:"refusal_code,omitempty"`
+	CreatedAt   string `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
 	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
@@ -1236,6 +1239,7 @@ func toRunResponse(r *pipeline.Run) *RunResponse {
 		SkippedSteps:   r.SkippedSteps,
 		TotalFindings:  r.TotalFindings,
 		ErrorMessage:   r.ErrorMessage,
+		RefusalCode:    r.RefusalCode,
 		CreatedAt:      r.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
