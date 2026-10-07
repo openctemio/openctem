@@ -80,9 +80,16 @@ func (r *v2Rig) newTenant(tools ...string) v2Tenant {
 		_, _ = r.db.ExecContext(context.Background(), `DELETE FROM ingest_reports WHERE tenant_id = $1`, tn.tenant.String())
 		_, _ = r.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tn.tenant.String())
 	})
-	if _, err := r.db.ExecContext(ctx, `INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status, type, tools)
-		VALUES ($1, $2, 'v2-sensor', $3, 'rda_test', 'active', 'worker', $4)`,
-		tn.sensor.String(), tn.tenant.String(), "h-"+tn.sensor.String(), pq.Array(tools)); err != nil {
+	// The sensor reported its tools installed: the v2 tool gate reads them.
+	inv := make([]map[string]any, 0, len(tools))
+	for _, tool := range tools {
+		inv = append(inv, map[string]any{"name": tool, "installed": true})
+	}
+	rawInv, _ := json.Marshal(inv)
+	if _, err := r.db.ExecContext(ctx, `INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status, type,
+		reported_tools, reported_tool_names, reported_at)
+		VALUES ($1, $2, 'v2-sensor', $3, 'rda_test', 'active', 'worker', $4::jsonb, $5, NOW())`,
+		tn.sensor.String(), tn.tenant.String(), "h-"+tn.sensor.String(), string(rawInv), pq.Array(tools)); err != nil {
 		r.t.Fatalf("seed sensor: %v", err)
 	}
 	return tn

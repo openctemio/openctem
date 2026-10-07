@@ -11,10 +11,13 @@ package easm
 //     person confirmed this very asset);
 //   - its attribution record, if any, is confirmed (needs_review, candidate,
 //     dependency, monitor_only and rejected are refused);
-//   - an internet-facing asset with no record sits inside an active scope
-//     target of the tenant, or at or under one of its root-domain seeds or
-//     verified domains. Otherwise it is "unattributed": a person confirms it
-//     (assets:write, audited) or adds a scope target first.
+//   - an internet-facing asset, or typed text naming an internet host or
+//     address, is covered by the tenant's scope authority (scopeauth: an
+//     active scope target, or a name at or under a root-domain seed or
+//     verified domain; RFC-054 §4.2). A confirmed record does not replace
+//     that: a person confirming an asset on its Ownership tab records
+//     ownership, it does not authorize active probes outside every scope
+//     entry (out_of_scope). Without a record it is "unattributed".
 //
 // Every lookup is tenant-scoped, and every lookup error refuses (the caller
 // dispatches nothing). Another tenant's assets, records, tombstones, scope
@@ -29,6 +32,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -119,9 +123,9 @@ func (g *ActiveGate) ActiveCheckBlocked(ctx context.Context, tenantID shared.ID,
 // BlockedTargets returns the typed targets that may not be probed: a target
 // that names one of the tenant's assets (as typed, lower-cased, or the host
 // of a URL or host:port) is decided as that asset; any other target is
-// refused only when it, or a parent domain of it, is a name the tenant
-// rejected. Whether free text matches a scope target is the act-scope
-// check's job.
+// refused when it, or a parent domain of it, is a name the tenant rejected,
+// and otherwise (an internet host or address) when the scope authority does
+// not cover it (unattributed): the same answer an inventory asset gets.
 func (g *ActiveGate) BlockedTargets(ctx context.Context, tenantID shared.ID, targets []string) (map[string]attribution.State, error) {
 	if err := g.ready(); err != nil {
 		return nil, err
@@ -192,8 +196,45 @@ func (g *ActiveGate) BlockedTargets(ctx context.Context, tenantID shared.ID, tar
 				out[t] = attribution.StateRejected
 			}
 		}
+		var auth *scopeauth.Authority
+		for _, t := range free {
+			if _, no := out[t]; no || !needsAuthority(t) {
+				continue
+			}
+			if auth == nil {
+				if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+					return nil, err
+				}
+			}
+			if _, ok := auth.Covers(t); !ok {
+				out[t] = attribution.StateUnattributed
+			}
+		}
 	}
 	return out, nil
+}
+
+// needsAuthority reports whether typed text names an internet host or a
+// public address or range, which the scope authority must cover (a host with
+// a path, such as a repository URL, counts as its host unless a scope target
+// matches the whole text). Private and internal names are gated by scan
+// zones; anything else (an identifier) is left to the act-scope check.
+func needsAuthority(t string) bool {
+	if isInternalName(t) {
+		return false
+	}
+	if dnsHost(t) != "" {
+		return true
+	}
+	h := strings.Trim(strings.TrimSpace(t), "[]")
+	if _, err := netip.ParsePrefix(h); err == nil {
+		return true
+	}
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = strings.Trim(host, "[]")
+	}
+	_, err := netip.ParseAddr(h)
+	return err == nil
 }
 
 // decide applies the rule to assets already loaded (ids not in assets are
@@ -222,7 +263,7 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 		return nil, err
 	}
 
-	var auth *authority
+	var auth *scopeauth.Authority
 	for _, id := range ids {
 		a := assets[id]
 		if a == nil {
@@ -230,28 +271,33 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			continue
 		}
 		rec, recorded := records[id]
-		if recorded && rec.State == attribution.StateConfirmed && rec.HumanDecided {
-			continue // a person confirmed this very asset
-		}
-		if h, ok := hostOf[id]; ok && underAny(h, rejected) {
+		humanConfirmed := recorded && rec.State == attribution.StateConfirmed && rec.HumanDecided
+		// A person confirming this very asset overrides a rejected parent;
+		// nothing else does.
+		if h, ok := hostOf[id]; ok && !humanConfirmed && underAny(h, rejected) {
 			out[id] = attribution.StateRejected
 			continue
 		}
-		if recorded {
-			if rec.State != attribution.StateConfirmed {
-				out[id] = rec.State
-			}
+		if recorded && rec.State != attribution.StateConfirmed {
+			out[id] = rec.State
 			continue
 		}
 		if !internetFacing(a.Type(), a.SubType()) || isInternalName(a.Name()) {
 			continue
 		}
 		if auth == nil {
-			if auth, err = g.loadAuthority(ctx, tenantID); err != nil {
+			if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
 				return nil, err
 			}
 		}
-		if !auth.covers(a.Name()) {
+		if _, ok := auth.Covers(a.Name()); ok {
+			continue
+		}
+		if recorded {
+			// Confirmed (by a person or a rule) but no scope entry, seed or
+			// verified domain covers it any more, or never did.
+			out[id] = attribution.StateOutOfScope
+		} else {
 			out[id] = attribution.StateUnattributed
 		}
 	}
@@ -308,56 +354,6 @@ func (g *ActiveGate) rejectedNames(ctx context.Context, tenantID shared.ID, host
 		}
 	}
 	return out, nil
-}
-
-// authority is what the tenant authorized for active checks without a
-// per-asset decision: its active scope targets and the names at or under
-// its root-domain seeds and verified domains.
-type authority struct {
-	targets []*scopedom.Target
-	roots   []string
-}
-
-func (g *ActiveGate) loadAuthority(ctx context.Context, tenantID shared.ID) (*authority, error) {
-	targets, err := g.scope.ListActiveTargets(ctx, tenantID.String())
-	if err != nil {
-		return nil, fmt.Errorf("list scope targets: %w", err)
-	}
-	seeds, err := g.roots.RootDomainSeedNames(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	verified, err := g.roots.VerifiedDomainNames(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	a := &authority{targets: targets}
-	for _, r := range append(seeds, verified...) {
-		if r = normalizeHost(r); r != "" {
-			a.roots = append(a.roots, r)
-		}
-	}
-	return a, nil
-}
-
-// covers reports whether an asset name is inside a scope target or at or
-// under a seed or verified domain.
-func (a *authority) covers(name string) bool {
-	for _, f := range actscope.MatchForms(name) {
-		for _, t := range a.targets {
-			if t != nil && t.Matches(f) {
-				return true
-			}
-		}
-	}
-	if h := dnsHost(name); h != "" {
-		for _, r := range a.roots {
-			if h == r || strings.HasSuffix(h, "."+r) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // dnsHost is the lower-case DNS name a target or asset name points at ("" for

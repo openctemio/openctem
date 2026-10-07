@@ -128,7 +128,7 @@ spec:
                 secretKeyRef:
                   name: {{$slug}}
                   key: api-key
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
             - name: SENSOR_TOOLS
               value: {{yamlQuote .}}
 {{- end}}
@@ -223,7 +223,7 @@ spec:
       containers:
         - name: sensor
           image: {{.Image}}
-          args: ["-tool", "{{firstTool .Sensor.Tools}}", "-target", "/scan", "-push"]
+          args: ["-tool", "{{firstTool .Sensor.EffectiveTools}}", "-target", "/scan", "-push"]
           env:
             - name: API_URL
               value: {{yamlQuote .BaseURL}}

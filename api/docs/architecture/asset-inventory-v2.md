@@ -284,7 +284,7 @@ The gate runs again at dispatch whatever the preview said.
 | Pattern | Matches |
 |---|---|
 | `acme.com` | that name only |
-| `*.acme.com` | subdomains only (existing rows were rewritten to the pair `acme.com` + `*.acme.com`) |
+| `*.acme.com` | `acme.com` and every name below it (RFC-054 §4.1); add an exclusion of exactly `acme.com` for the subdomains only |
 | `test.*.acme.com` | exactly one label in the middle |
 | `10.0.0.0/8`, `10.0.0.1-10.0.0.9` | addresses |
 

@@ -18,7 +18,7 @@ import (
 //
 // Now every change recomputes the whole summary from pipeline_runs in one
 // statement, so the three numbers on a scan row always describe the same set
-// of runs. Migration 001152 ran the same statement once over every scan.
+// of runs. Migration 001157 ran the same statement once over every scan.
 //
 // Counted: total = every run (running and blocked ones too, as the run list
 // shows them); successful = completed; failed = failed + timeout; partial;

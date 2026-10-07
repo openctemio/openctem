@@ -116,6 +116,10 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	if err := s.configureScanType(ctx, sc, tenantID, scanType, input); err != nil {
 		return nil, err
 	}
+	// A wildcard pattern only for tools that take it as a root domain.
+	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
+		return nil, err
+	}
 
 	// Configure schedule
 	if err := configureScanSchedule(sc, input); err != nil {
@@ -739,6 +743,11 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		if err := sc.SetSingleScanner(input.ScannerName, cfg, targetsPerJob); err != nil {
 			return nil, err
 		}
+	}
+	// A new tool must still take the scan's targets (no wildcard pattern
+	// for an active tool).
+	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
+		return nil, err
 	}
 
 	// Update schedule if provided. SetSchedule refuses what the scheduler

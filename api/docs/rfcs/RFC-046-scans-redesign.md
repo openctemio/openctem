@@ -216,7 +216,7 @@ Mapping onto today's tables (no big-bang rename; §8):
   tasks); its unfinished targets roll over (§6.3).
 - Counters on the scan: `total_runs`, `successful_runs`, `failed_runs`, a
   new `partial_runs` and `blocked_runs`. They and `last_run_*` are a cache
-  recomputed from the scan's runs after every run change (migration 001152,
+  recomputed from the scan's runs after every run change (migration 001157,
   `scan_run_summary.go`), so a scan's last run, run count and results always
   describe the same runs; total counts running and blocked runs too. The
   success rate is
