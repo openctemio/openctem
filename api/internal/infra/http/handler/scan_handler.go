@@ -231,7 +231,10 @@ type ScanDetailResponse struct {
 	SuccessfulRuns int     `json:"successful_runs"`
 	FailedRuns     int     `json:"failed_runs"`
 	// PartialRuns: runs that kept results but lost some work (RFC-046 D5).
-	PartialRuns   int     `json:"partial_runs"`
+	PartialRuns int `json:"partial_runs"`
+	// BlockedRuns: triggers refused before anything was dispatched; each
+	// is a run with status blocked and its refusal_code.
+	BlockedRuns   int     `json:"blocked_runs"`
 	CreatedBy     *string `json:"created_by,omitempty"`
 	CreatedByName *string `json:"created_by_name,omitempty"`
 	CreatedAt     string  `json:"created_at"`
@@ -1312,6 +1315,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		SuccessfulRuns:        s.SuccessfulRuns,
 		FailedRuns:            s.FailedRuns,
 		PartialRuns:           s.PartialRuns,
+		BlockedRuns:           s.BlockedRuns,
 		CreatedAt:             s.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:             s.UpdatedAt.Format(time.RFC3339),
 	}

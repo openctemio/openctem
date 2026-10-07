@@ -90,23 +90,10 @@ type Repository interface {
 	// UpdateNextRunAt updates the next run time for a scan.
 	UpdateNextRunAt(ctx context.Context, tenantID, id shared.ID, nextRunAt *time.Time) error
 
-	// RecordRunStarted records a newly created run as the scan's last run
-	// (status 'running') without rewriting the rest of the scan row and without
-	// touching the counters.
-	RecordRunStarted(ctx context.Context, tenantID, id shared.ID, runID shared.ID) error
-
-	// RecordRun records a run's terminal outcome and counts the run.
-	// last_run_status follows only while runID is still the scan's latest run.
-	RecordRun(ctx context.Context, tenantID, id shared.ID, runID shared.ID, status string) error
-
-	// RecordTriggerFailure records that a scheduled trigger failed BEFORE any
-	// run was created (e.g. no sensor available). It sets last_run_at/last_run_status
-	// so the failure is visible in the scan's own state — the scheduler advances
-	// next_run_at regardless (to avoid re-trigger storms), which otherwise makes a
-	// scan that can never start look identical to one that simply hasn't run yet.
-	// Deliberately does NOT touch the run counters: no run existed, so inflating
-	// total_runs would be a second lie on top of the one this fixes.
-	RecordTriggerFailure(ctx context.Context, tenantID, id shared.ID, status string) error
+	// RefreshRunSummary recomputes the scan's last run and run counters from
+	// its runs (pipeline_runs), the one source of both. Called after any
+	// change to one of its runs.
+	RefreshRunSummary(ctx context.Context, tenantID, id shared.ID) error
 
 	// Statistics
 
