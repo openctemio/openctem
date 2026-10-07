@@ -428,6 +428,20 @@ every line again (`internal/app/commandlog`), stores it in `command_logs`
 `GET /api/v1/pipeline-runs/{id}/tasks/{task_id}/logs` (`pipelines:read`),
 as plain text.
 
+Besides the tool's lines, an SDK with the poller log sink (sdk-go #191) sends
+the sensor's own lines, tagged `source: sensor`:
+
+- the command was received;
+- the local policy check and each target it skipped, with the reason;
+- a refusal before running;
+- the outcome: completed, partial, failed, timed out, or kill switch;
+- a hand-back to the platform.
+
+A task refused before any tool started therefore has a log. When a task has
+no lines but has a refusal or failure reason, the Logs dialog shows "This task
+was refused before it ran" (or "failed before it sent any logs") with the
+reason, instead of the generic empty state.
+
 ## Install snippets
 
 `GET /api/v1/sensors/{id}/config-templates` renders the snippets the Sensors
@@ -1270,6 +1284,24 @@ and narrows dispatch:
   parseable. A re-queued command fires no pipeline failure. Commands a person
   addressed to one sensor fail as before. A sensor that retries the same fail
   after the re-queue gets a 409 (the command is no longer its own).
+- **Per-target refusals** (sdk-go #191). A scan target the local policy
+  refuses, or cannot check, no longer refuses the whole job. "Cannot check"
+  means the name does not resolve or the target is a wildcard pattern. The
+  sensor removes the target before any tool sees it, runs the job on the rest,
+  and completes the command with `result.metadata.refused_targets`,
+  `refused_targets_total` and `partial: true`.
+  - The platform reads them when the command completes
+    (`pipeline.ParseSkippedTargets`: at most 20 listed, each string cleaned to
+    one bounded line, unknown reasons read as `refused`).
+  - The step ends `partial` with code `TARGETS_SKIPPED` and a summary, so the
+    run ends `partial`. For a batched step, the skipped counts of the completed
+    batches are summed (`StepBatchState`).
+  - The task's `skipped_targets` / `skipped_targets_total` show under its
+    status as "Completed with N targets skipped: … (does not resolve)".
+  - Skipped targets do not roll over to the next scheduled run; the sensor
+    would refuse them again.
+  - A job whose every target is refused still fails (and is re-queued as
+    above when it is routed work).
 - **Tenant switch.** Security settings
   `require_sensor_local_policy_for_private_targets` (default off, owner
   decision Q3 (a)). On, a sensor that does not enforce a policy (absent,
