@@ -69,8 +69,10 @@ export function useMemberNames(enabled = true) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const allowed = can(Permission.MembersRead)
+  // Current members (active and suspended): a person who left is not listed
+  // and reads "Former member", which is what they are.
   const { members, isLoading } = useMembers(enabled && allowed ? currentTenant?.id : undefined, {
-    status: 'all',
+    status: 'current',
     limit: 100,
   })
   const names = useMemo(() => {
