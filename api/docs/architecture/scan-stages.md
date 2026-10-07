@@ -50,7 +50,7 @@ platform data: a tenant, a sensor or a report cannot widen it.
 - **Validation.** `stage.ValidateGraph` checks a workflow graph against the
   capability contracts (§1.1). Every pipeline save calls it: full save, create,
   and add, update or delete of a step, inside the save transaction. It also
-  backs `POST /api/v1/pipelines/verify` (`pipelines:write`), which checks a
+  backs `POST /api/v1/scan-workflows/verify` (`pipelines:write`), which checks a
   draft and stores nothing. A pipeline's steps are the graph
   (`pipeline.StepsGraph`): one node per step and one edge per dependency. A step
   the catalogue places is a capability node, with its tool as the pin. A tenant
@@ -158,8 +158,8 @@ Settings (`config`) follow the contract:
   every tool.
 
 When a step is queued, its step run records the **capability it ran**
-(`step_runs.capability`, for example `scan.ports@1`) and the **tool the planner
-picked** (`step_runs.tool`). The tier of a capability node is the tier of its
+(`scan_run_steps.capability`, for example `scan.ports@1`) and the **tool the planner
+picked** (`scan_run_steps.tool`). The tier of a capability node is the tier of its
 capability: every built-in implementation shares it.
 
 ### 1.3 Starter workflows
@@ -246,7 +246,7 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `crawl.web` and `dast.web` 10; the code, image and connector capabilities
   are not cut. A one-target tool keeps one command per step. If a later
   chunk cannot be created, the ones already created are canceled.
-  Where the chunks went: `GET /pipeline-runs/{id}/stages` gives each stage
+  Where the chunks went: `GET /scan-runs/{id}/stages` gives each stage
   its chunk counts by state and the share of each tenant sensor that took
   one (`StepSensorShares`, tenant-scoped; platform jobs are counted as
   platform without the platform sensor's identity). The run panel shows them
@@ -315,7 +315,7 @@ what makes chained outputs trustworthy.
   what those predecessors produced, after the gate.
 - **Data flows through the inventory only (G3).** Ingest records the assets
   each command-bound report wrote (`scan_step_outputs`), keyed by the step run
-  the command names server-side (`commands.step_run_id`, now set on every step
+  the command names server-side (`commands.scan_run_step_id`, now set on every step
   command). A sensor's raw output is never read, and a sensor cannot attribute
   output to another step, run or tenant.
 - **Stage barrier (G4).** A chained stage is planned once its predecessors
@@ -350,7 +350,7 @@ what makes chained outputs trustworthy.
   `subdomain_of`, `derived`), hop, and the rule that allowed it
   (`seed`, `passive_allowed`, `gate_allowed`) or why it was skipped
   (`excluded`, `unconfirmed`, `refused`, `other_zone`, `hop_limit`,
-  `over_cap`, `duplicate`, `invalid`). `GET /api/v1/pipeline-runs/{id}/stages`
+  `over_cap`, `duplicate`, `invalid`). `GET /api/v1/scan-runs/{id}/stages`
   (`pipelines:read`, tenant-scoped, counts only) serves the per-stage counts.
 - **Tenant isolation.** Every query is scoped to the run's tenant, and every
   row references the run and assets with composite tenant foreign keys, so a

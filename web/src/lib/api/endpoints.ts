@@ -1313,71 +1313,71 @@ import type { WorkflowListFilters, WorkflowRunListFilters } from './workflow-typ
  * Pipeline endpoints for managing workflow pipelines
  * Pipelines are templates for multi-step scan orchestration
  */
-export const pipelineEndpoints = {
+export const scanWorkflowEndpoints = {
   /**
    * List pipelines with optional filters
    */
   list: (filters?: PipelineListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `/api/v1/pipelines${queryString}`
+    return `/api/v1/scan-workflows${queryString}`
   },
 
   /**
    * Get pipeline by ID
    */
-  get: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}`,
+  get: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}`,
 
   /**
    * Create a new pipeline
    */
-  create: () => '/api/v1/pipelines',
+  create: () => '/api/v1/scan-workflows',
 
   /**
    * Update pipeline
    */
-  update: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}`,
+  update: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}`,
 
   /**
    * Delete pipeline
    */
-  delete: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}`,
+  delete: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}`,
 
   /**
    * Activate pipeline
    */
-  activate: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/activate`,
+  activate: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}/activate`,
 
   /**
    * Deactivate pipeline
    */
-  deactivate: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/deactivate`,
+  deactivate: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}/deactivate`,
 
   /**
    * Clone pipeline
    */
-  clone: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/clone`,
+  clone: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}/clone`,
 
   /**
    * Add step to pipeline
    */
-  addStep: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/steps`,
+  addStep: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}/steps`,
 
   /**
    * Update step
    */
   updateStep: (pipelineId: string, stepId: string) =>
-    `/api/v1/pipelines/${pipelineId}/steps/${stepId}`,
+    `/api/v1/scan-workflows/${pipelineId}/steps/${stepId}`,
 
   /**
    * Delete step
    */
   deleteStep: (pipelineId: string, stepId: string) =>
-    `/api/v1/pipelines/${pipelineId}/steps/${stepId}`,
+    `/api/v1/scan-workflows/${pipelineId}/steps/${stepId}`,
 
   /**
    * Check a draft pipeline's steps as a workflow graph (stores nothing)
    */
-  verify: () => '/api/v1/pipelines/verify',
+  verify: () => '/api/v1/scan-workflows/verify',
 
   /**
    * The scan capability catalog: contracts, port types and adapters
@@ -1403,35 +1403,29 @@ export const scanZoneEndpoints = {
     `${API_BASE.SCAN_ZONES}/${zoneId}/sensors/${sensorId}`,
 } as const
 
-export const pipelineRunEndpoints = {
+export const scanRunEndpoints = {
   /**
    * List pipeline runs with optional filters
    */
   list: (filters?: PipelineRunListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `/api/v1/pipeline-runs${queryString}`
+    return `/api/v1/scan-runs${queryString}`
   },
 
   /**
    * Get pipeline run by ID
    */
-  get: (runId: string) => `/api/v1/pipeline-runs/${runId}`,
-
-  /**
-   * Trigger a new pipeline run
-   * Note: Uses /api/v1/pipelines/{id}/runs endpoint
-   */
-  trigger: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/runs`,
+  get: (runId: string) => `/api/v1/scan-runs/${runId}`,
 
   /**
    * Cancel a running pipeline
    */
-  cancel: (runId: string) => `/api/v1/pipeline-runs/${runId}/cancel`,
+  cancel: (runId: string) => `/api/v1/scan-runs/${runId}/cancel`,
 
   /**
    * How each stage of a run was planned (counts by reason; research/27).
    */
-  stages: (runId: string) => `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/stages`,
+  stages: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/stages`,
 
   /**
    * One cursor page of a run's tasks (the run read embeds the first page and
@@ -1442,14 +1436,14 @@ export const pipelineRunEndpoints = {
     if (cursor) params.set('cursor', cursor)
     if (perPage) params.set('per_page', String(perPage))
     const qs = params.toString()
-    return `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/tasks${qs ? `?${qs}` : ''}`
+    return `/api/v1/scan-runs/${encodeURIComponent(runId)}/tasks${qs ? `?${qs}` : ''}`
   },
 
   /**
    * The log lines a task's sensor sent (kept 14 days).
    */
   taskLogs: (runId: string, taskId: string) =>
-    `/api/v1/pipeline-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/logs`,
+    `/api/v1/scan-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/logs`,
 } as const
 
 /**
@@ -1945,8 +1939,8 @@ export const endpoints = {
   scanProfiles: scanProfileEndpoints,
   scannerTemplates: scannerTemplateEndpoints,
   tools: toolEndpoints,
-  pipelines: pipelineEndpoints,
-  pipelineRuns: pipelineRunEndpoints,
+  pipelines: scanWorkflowEndpoints,
+  pipelineRuns: scanRunEndpoints,
   scanManagement: scanManagementEndpoints,
   scans: scanEndpoints,
   exposures: exposureEndpoints,
@@ -1976,8 +1970,8 @@ export {
   scanProfileEndpoints as scanProfiles,
   scannerTemplateEndpoints as scannerTemplates,
   toolEndpoints as tools,
-  pipelineEndpoints as pipelines,
-  pipelineRunEndpoints as pipelineRuns,
+  scanWorkflowEndpoints as pipelines,
+  scanRunEndpoints as pipelineRuns,
   scanManagementEndpoints as scanManagement,
   scanEndpoints as scans,
   exposureEndpoints as exposures,

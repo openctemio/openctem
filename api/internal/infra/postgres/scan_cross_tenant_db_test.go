@@ -56,7 +56,7 @@ func TestScanDelete_OtherTenantIsNotFound(t *testing.T) {
 	// The run summary refresh is tenant-bound too: the victim scan has a run,
 	// and another tenant's refresh must not write the summary.
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO pipeline_runs (pipeline_id, tenant_id, scan_id, trigger_type, status)
+		`INSERT INTO scan_runs (scan_workflow_id, tenant_id, scan_id, trigger_type, status)
 		 VALUES ('00000000-0000-0000-0000-000000000001', $1, $2, 'manual', 'completed')`,
 		victim.String(), scanID.String()); err != nil {
 		t.Fatalf("seed victim run: %v", err)

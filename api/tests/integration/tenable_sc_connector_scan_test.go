@@ -112,7 +112,7 @@ func TestTenableSCConnectorScan(t *testing.T) {
 			t.Fatal(err)
 		}
 		if p.Scanner != tenablesc.ToolName || p.PolicyID != 1000003 || p.RepositoryID != 5 || p.Instance != "sc-prod" ||
-			p.PipelineRunID != run.ID.String() || p.StepRunID == "" {
+			p.ScanRunID != run.ID.String() || p.StepRunID == "" {
 			t.Fatalf("payload %+v", p)
 		}
 		if !slices.Equal(p.Targets, []string{"mine.example.com"}) {

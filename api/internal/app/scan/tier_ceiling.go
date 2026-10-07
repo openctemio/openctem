@@ -6,7 +6,7 @@ package scan
 // refused with tier_exceeds on every dispatch path: scan create and quick
 // scan refuse the request, a run leaves the target out with a warning, a
 // workflow step leaves it out of that step, and the dispatch gate
-// (POST /pipelines/runs, chained hops, coverage, validation, the dry run)
+// (POST /scan-workflows/runs, chained hops, coverage, validation, the dry run)
 // reports it refused. Intrusive (t2) workflow steps also need proof per
 // step (§8.1): every target at or under a verified domain.
 

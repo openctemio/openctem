@@ -6,9 +6,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+
 	_ "github.com/lib/pq"
 
-	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -24,25 +25,25 @@ import (
 //     outcome back onto the scan, so two failed runs in a row were invisible
 //     on the scan itself.
 //  2. Canceling a running scan did not stop the sensor: the cancel looked the
-//     run's commands up through commands.step_run_id, which the scan dispatcher
+//     run's commands up through commands.scan_run_step_id, which the scan dispatcher
 //     never sets, so the command stayed 'running' and the scanner kept going.
 //  3. When that sensor then reported its result, the canceled run flipped to
 //     'completed' and was counted as a successful run on the scan.
 
-// newRecordingPipelineService is newPipelineService with the scan-run recorder
+// newRecordingScanRunService is newScanRunService with the scan-run recorder
 // wired, exactly as cmd/server does.
-func newRecordingPipelineService(db *sql.DB) *pipelinesvc.Service {
+func newRecordingScanRunService(db *sql.DB) *scanrun.Service {
 	pg := &postgres.DB{DB: db}
-	return pipelinesvc.NewService(
-		postgres.NewPipelineTemplateRepository(pg),
-		postgres.NewPipelineStepRepository(pg),
-		postgres.NewPipelineRunRepository(pg),
+	return scanrun.NewService(
+		postgres.NewScanWorkflowRepository(pg),
+		postgres.NewScanWorkflowStepRepository(pg),
+		postgres.NewScanRunRepository(pg),
 		postgres.NewStepRunRepository(pg),
 		nil, // sensorRepo
 		postgres.NewCommandRepository(pg),
 		nil, // securityValidator
 		logger.New(logger.Config{Level: "error"}),
-		pipelinesvc.WithScanRunRecorder(postgres.NewScanRepository(pg)),
+		scanrun.WithScanRunRecorder(postgres.NewScanRepository(pg)),
 	)
 }
 
@@ -68,7 +69,7 @@ func commandStatusForRun(ctx context.Context, t *testing.T, db *sql.DB, runID st
 	t.Helper()
 	var status string
 	if err := db.QueryRowContext(ctx,
-		`SELECT status FROM commands WHERE payload->>'pipeline_run_id' = $1`, runID).Scan(&status); err != nil {
+		`SELECT status FROM commands WHERE payload->>'scan_run_id' = $1`, runID).Scan(&status); err != nil {
 		t.Fatalf("read command status: %v", err)
 	}
 	return status
@@ -78,7 +79,7 @@ func TestScanRun_FailedRunIsRecordedOnTheScan(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newRecordingPipelineService(db)
+	pipeSvc := newRecordingScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -89,7 +90,7 @@ func TestScanRun_FailedRunIsRecordedOnTheScan(t *testing.T) {
 	}
 	p := routingFromCommand(ctx, t, db, tenantID.String())
 
-	if err := pipeSvc.OnStepFailed(ctx, p.PipelineRunID, p.StepKey, "scan target refused by guard", "COMMAND_FAILED"); err != nil {
+	if err := pipeSvc.OnStepFailed(ctx, p.ScanRunID, p.StepKey, "scan target refused by guard", "COMMAND_FAILED"); err != nil {
 		t.Fatalf("OnStepFailed: %v", err)
 	}
 
@@ -108,7 +109,7 @@ func TestScanRun_CancelStopsTheDispatchedCommand(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newRecordingPipelineService(db)
+	pipeSvc := newRecordingScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -119,7 +120,7 @@ func TestScanRun_CancelStopsTheDispatchedCommand(t *testing.T) {
 	}
 	// The sensor has claimed and started it.
 	if _, err := db.ExecContext(ctx,
-		`UPDATE commands SET status = 'running', started_at = NOW() WHERE payload->>'pipeline_run_id' = $1`,
+		`UPDATE commands SET status = 'running', started_at = NOW() WHERE payload->>'scan_run_id' = $1`,
 		run.ID.String()); err != nil {
 		t.Fatalf("mark command running: %v", err)
 	}
@@ -146,7 +147,7 @@ func TestScanRun_CancelIsIdempotentTenantScopedAndClosesSteps(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newRecordingPipelineService(db)
+	pipeSvc := newRecordingScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -177,8 +178,8 @@ func TestScanRun_CancelIsIdempotentTenantScopedAndClosesSteps(t *testing.T) {
 		t.Errorf("command = %q, want canceled", got)
 	}
 	var openSteps int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM step_runs
-		WHERE pipeline_run_id = $1 AND status NOT IN ('canceled', 'completed', 'partial', 'failed', 'skipped', 'timeout')`,
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM scan_run_steps
+		WHERE scan_run_id = $1 AND status NOT IN ('canceled', 'completed', 'partial', 'failed', 'skipped', 'timeout')`,
 		run.ID.String()).Scan(&openSteps); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +196,7 @@ func TestScanRun_LateResultDoesNotReviveACanceledRun(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newRecordingPipelineService(db)
+	pipeSvc := newRecordingScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -210,7 +211,7 @@ func TestScanRun_LateResultDoesNotReviveACanceledRun(t *testing.T) {
 		t.Fatalf("CancelRun: %v", err)
 	}
 	// The sensor finishes anyway and reports.
-	if err := pipeSvc.OnStepCompleted(ctx, p.PipelineRunID, p.StepKey, 1, nil); err != nil {
+	if err := pipeSvc.OnStepCompleted(ctx, p.ScanRunID, p.StepKey, 1, nil); err != nil {
 		t.Fatalf("OnStepCompleted: %v", err)
 	}
 
@@ -226,7 +227,7 @@ func TestScanRun_LateFailureDoesNotOverwriteATimedOutRun(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newRecordingPipelineService(db)
+	pipeSvc := newRecordingScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -239,10 +240,10 @@ func TestScanRun_LateFailureDoesNotOverwriteATimedOutRun(t *testing.T) {
 
 	// The reaper got there first.
 	if _, err := db.ExecContext(ctx,
-		`UPDATE pipeline_runs SET status = 'timeout', completed_at = NOW() WHERE id = $1`, run.ID.String()); err != nil {
+		`UPDATE scan_runs SET status = 'timeout', completed_at = NOW() WHERE id = $1`, run.ID.String()); err != nil {
 		t.Fatalf("mark run timed out: %v", err)
 	}
-	if err := pipeSvc.OnStepFailed(ctx, p.PipelineRunID, p.StepKey, "late error", "COMMAND_FAILED"); err != nil {
+	if err := pipeSvc.OnStepFailed(ctx, p.ScanRunID, p.StepKey, "late error", "COMMAND_FAILED"); err != nil {
 		t.Fatalf("OnStepFailed: %v", err)
 	}
 
@@ -271,18 +272,18 @@ func TestScanRun_TimeoutClosesTheCommandAndRecordsTheScan(t *testing.T) {
 	// older than the scan's timeout.
 	if _, err := db.ExecContext(ctx,
 		`UPDATE commands SET status = 'running', started_at = NOW() - INTERVAL '2 hours'
-		 WHERE payload->>'pipeline_run_id' = $1`, run.ID.String()); err != nil {
+		 WHERE payload->>'scan_run_id' = $1`, run.ID.String()); err != nil {
 		t.Fatalf("mark command running: %v", err)
 	}
 	// The deadline is fixed when the run starts (RFC-046 §6.3), so aging the
 	// run means moving its stored deadline along with its start.
 	if _, err := db.ExecContext(ctx,
-		`UPDATE pipeline_runs SET started_at = NOW() - INTERVAL '2 hours',
+		`UPDATE scan_runs SET started_at = NOW() - INTERVAL '2 hours',
 		        deadline_at = NOW() - INTERVAL '1 hour' WHERE id = $1`, run.ID.String()); err != nil {
 		t.Fatalf("age run: %v", err)
 	}
 
-	if _, err := postgres.NewPipelineRunRepository(&postgres.DB{DB: db}).MarkTimedOutRuns(ctx); err != nil {
+	if _, err := postgres.NewScanRunRepository(&postgres.DB{DB: db}).MarkTimedOutRuns(ctx); err != nil {
 		t.Fatalf("MarkTimedOutRuns: %v", err)
 	}
 
@@ -295,7 +296,7 @@ func TestScanRun_TimeoutClosesTheCommandAndRecordsTheScan(t *testing.T) {
 	}
 	var stepStatus string
 	if err := db.QueryRowContext(ctx,
-		`SELECT status FROM step_runs WHERE pipeline_run_id = $1`, run.ID.String()).Scan(&stepStatus); err != nil {
+		`SELECT status FROM scan_run_steps WHERE scan_run_id = $1`, run.ID.String()).Scan(&stepStatus); err != nil {
 		t.Fatalf("read step run: %v", err)
 	}
 	if stepStatus != "timeout" {

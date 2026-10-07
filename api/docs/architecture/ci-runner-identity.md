@@ -109,7 +109,7 @@ findings per run.
   (cascade; moved by asset merge). Holds the run summary the status is
   computed from (last run, fork run, default-branch and pull request
   verdicts, scanner failures, runner version, tools, median and schedule
-  intervals, revocation, retirement). `ci_runs.pipeline_id` (composite FK)
+  intervals, revocation, retirement). `ci_runs.scan_workflow_id` (composite FK)
   links each run.
 - `ci_coverage_expectations`: one per `(tenant, repository asset)`, composite
   FK to the asset (cascade; moved by asset merge); the expected capabilities
@@ -148,7 +148,7 @@ touches a finding it cannot attribute to a run).
   will reference a CI run as one possible source.
 - A definition is `<x>`, its executions `<x>_runs` (`ci_pipelines`,
   `ci_runs`). A CI run is not a scan run: it is never dispatched, has its own
-  credential and its own verdict, and lives in `ci_runs`, not `pipeline_runs`.
+  credential and its own verdict, and lives in `ci_runs`, not `scan_runs`.
 
 ### Exchange and pipeline flow
 
@@ -162,7 +162,7 @@ sequenceDiagram
   S->>S: PipelineKeyFromClaims (repository id + workflow path)
   S->>DB: claim jti
   S->>DB: UpsertPipeline (advisory lock per tenant, caps, legacy adoption)
-  S->>DB: CreateRun (pipeline_id, runner version)
+  S->>DB: CreateRun (scan_workflow_id, runner version)
   S->>DB: RefreshPipeline (summary from runs; fork runs excluded)
   S-->>J: run + octci_ token
 ```

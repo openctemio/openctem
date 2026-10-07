@@ -79,7 +79,7 @@ Rules:
   - The OpenAPI spec uses the same name as the router. **(lint)**
 - **Nesting:** at most two parent collections and six segments after the
   version. When a child has its own identity, also give it a top-level
-  collection, e.g. `/pipeline-runs` beside `/pipelines/{pipeline_id}/runs`.
+  collection, e.g. `/scan-runs` beside `/pipelines/{scan_workflow_id}/runs`.
   **(lint)**
 - **Alternate keys are filters or `GET` lookups, not path segments.**
   - Use `GET /vulnerabilities?cve_id=CVE-2024-1234`, not

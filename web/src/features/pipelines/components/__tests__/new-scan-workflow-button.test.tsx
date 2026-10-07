@@ -28,13 +28,13 @@ describe('NewScanWorkflowButton', () => {
   })
 
   it('is enabled for a member who can write scan workflows but not automations', () => {
-    perms = [Permission.PipelinesRead, Permission.PipelinesWrite]
+    perms = [Permission.ScanWorkflowsRead, Permission.ScanWorkflowsWrite]
     render(<NewScanWorkflowButton label="New scan workflow" onClick={vi.fn()} />)
     expect(screen.getByText('New scan workflow').closest('button')).toBeEnabled()
   })
 
   it('is disabled for a member who can write automations but not scan workflows', () => {
-    perms = [Permission.WorkflowsRead, Permission.WorkflowsWrite, Permission.PipelinesRead]
+    perms = [Permission.WorkflowsRead, Permission.WorkflowsWrite, Permission.ScanWorkflowsRead]
     render(<NewScanWorkflowButton label="New scan workflow" onClick={vi.fn()} />)
     expect(screen.getByText('New scan workflow').closest('button')).toBeDisabled()
   })

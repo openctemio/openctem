@@ -27,11 +27,11 @@ type ScanConfigExport struct {
 	Targets       []string `json:"targets,omitempty"`
 
 	// Scan Type
-	ScanType      string         `json:"scan_type"`
-	PipelineID    *string        `json:"pipeline_id,omitempty"`
-	ScannerName   string         `json:"scanner_name,omitempty"`
-	ScannerConfig map[string]any `json:"scanner_config,omitempty"`
-	TargetsPerJob int            `json:"targets_per_job"`
+	ScanType       string         `json:"scan_type"`
+	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
+	ScannerName    string         `json:"scanner_name,omitempty"`
+	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
+	TargetsPerJob  int            `json:"targets_per_job"`
 
 	// Schedule
 	ScheduleType     string  `json:"schedule_type"`
@@ -131,10 +131,10 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 		}
 	}
 
-	// Convert pipeline ID
-	if sc.PipelineID != nil && !sc.PipelineID.IsZero() {
-		pid := sc.PipelineID.String()
-		export.PipelineID = &pid
+	// Convert scan workflow ID
+	if sc.ScanWorkflowID != nil && !sc.ScanWorkflowID.IsZero() {
+		pid := sc.ScanWorkflowID.String()
+		export.ScanWorkflowID = &pid
 	}
 
 	// Convert schedule time
@@ -238,9 +238,9 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		input.AssetGroupID = export.AssetGroupIDs[0]
 	}
 
-	// Set pipeline ID if workflow type
-	if export.PipelineID != nil {
-		input.PipelineID = *export.PipelineID
+	// Set scan workflow ID if workflow type
+	if export.ScanWorkflowID != nil {
+		input.ScanWorkflowID = *export.ScanWorkflowID
 	}
 
 	// Use the existing CreateScan method which handles all validation
