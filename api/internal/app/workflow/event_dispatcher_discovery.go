@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -184,9 +185,11 @@ func buildAssetsDiscoveredTriggerData(assets []*asset.Asset) map[string]any {
 	}
 }
 
-// DispatchScanCompleted fires `scan_completed` when a pipeline run finishes
-// successfully. Wired as the pipeline service's run-completed callback. Async
-// with panic recovery, like every other dispatch path.
+// DispatchScanCompleted fires `scan_completed` when a pipeline run settles
+// (completed, partial or failed). Each automation picks the outcomes it runs
+// on with status_filter (scanOutcomeMatches). Wired as the pipeline service's
+// run-settled callback. Async with panic recovery, like every other dispatch
+// path.
 func (d *WorkflowEventDispatcher) DispatchScanCompleted(_ context.Context, run *pipeline.Run) {
 	if run == nil {
 		return
@@ -231,7 +234,8 @@ func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run
 		if wf.TenantID != run.TenantID {
 			continue
 		}
-		if _, ok := triggerConfigFor(wf, workflowdom.TriggerTypeScanCompleted); !ok {
+		cfg, ok := triggerConfigFor(wf, workflowdom.TriggerTypeScanCompleted)
+		if !ok || !scanOutcomeMatches(cfg, string(run.Status)) {
 			continue
 		}
 		if err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
@@ -247,6 +251,31 @@ func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run
 		triggered++
 	}
 	return triggered
+}
+
+// scanOutcomes are the run outcomes `scan_completed` reports.
+var scanOutcomes = []string{
+	string(pipeline.RunStatusCompleted), string(pipeline.RunStatusPartial), string(pipeline.RunStatusFailed),
+}
+
+// scanOutcomeMatches applies the scan_completed trigger's status_filter
+// ([]string of completed, partial, failed). Without one the trigger fires on
+// completed runs only, as it always did: an automation written for a
+// successful scan never starts on a failed one.
+func scanOutcomeMatches(cfg map[string]any, status string) bool {
+	if !slices.Contains(scanOutcomes, status) {
+		return false
+	}
+	raw, ok := cfg["status_filter"].([]any)
+	if !ok || len(raw) == 0 {
+		return status == string(pipeline.RunStatusCompleted)
+	}
+	for _, v := range raw {
+		if s, ok := v.(string); ok && s == status {
+			return true
+		}
+	}
+	return false
 }
 
 func completedAt(run *pipeline.Run) string {
