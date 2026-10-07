@@ -4,15 +4,13 @@ import { Badge } from '@/components/ui/badge'
 import { Network, Shield, AlertTriangle, Router, Server } from 'lucide-react'
 import type { AssetPageConfig } from '@/features/assets/types/page-config.types'
 import type { Asset } from '@/features/assets'
+import { ipAddresses } from '@/features/assets/lib/service-facts'
 
-/** Get management IP from properties with fallback: management_ip → ip → ip_addresses[0] */
+/** Management IP: management_ip, else the device's first address. */
 const getManagementIP = (asset: Asset): string => {
   const meta = asset.metadata as Record<string, unknown>
-  if (meta.management_ip) return meta.management_ip as string
-  if (meta.ip) return meta.ip as string
-  const ips = meta.ip_addresses as string[] | undefined
-  if (ips && ips.length > 0) return ips[0]
-  return ''
+  if (typeof meta.management_ip === 'string' && meta.management_ip) return meta.management_ip
+  return ipAddresses(asset)[0] ?? ''
 }
 
 const getDeviceTypeLabel = (asset: Asset): string => {
