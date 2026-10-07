@@ -32,6 +32,10 @@ type ScanWorkflowHandler struct {
 	// taskLogs reads a run task's logs (nil: GET .../tasks/{task_id}/logs
 	// answers an empty log).
 	taskLogs taskLogReader
+	// findingScope checks the finding of a run about a finding (retest).
+	findingScope runFindingScope
+	// runLookup reads a run for the access check (the service when unset).
+	runLookup runReader
 }
 
 // NewScanWorkflowHandler creates a new ScanWorkflowHandler.
@@ -217,7 +221,13 @@ type RunResponse struct {
 	// RefusalCode says why a blocked run was refused (status blocked only),
 	// e.g. ALL_TARGETS_EXCLUDED, SCAN_FREEZE_ACTIVE, NO_SENSOR_AVAILABLE.
 	RefusalCode string `json:"refusal_code,omitempty"`
-	CreatedAt   string `json:"created_at"`
+	// Kind is what the run is: scan, quick, retest, validation, test,
+	// connector or system.
+	Kind string `json:"kind"`
+	// Subject names what a run that executes no scan workflow is about,
+	// e.g. {"finding_id", "retest_id"} for a retest.
+	Subject   map[string]any `json:"subject,omitempty"`
+	CreatedAt string         `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
 	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
@@ -1008,6 +1018,10 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	if tid, perr := shared.IDFromString(tenantID); perr != nil || !h.runVisible(r.Context(), tid, run) {
+		apierror.NotFound("Run").WriteJSON(w)
+		return
+	}
 
 	resp := toRunResponse(run)
 	tasks, err := h.service.GetRunTasks(r.Context(), run)
@@ -1034,11 +1048,16 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	input := scanrun.ListRunsInput{
 		TenantID:       tenantID,
 		ScanWorkflowID: r.URL.Query().Get("scan_workflow_id"),
+		Kinds:          parseQueryArray(r.URL.Query().Get("kind")),
+		IncludeSystem:  r.URL.Query().Get("include_system") == queryParamTrue,
 		AssetID:        r.URL.Query().Get("asset_id"),
 		Status:         r.URL.Query().Get("status"),
 		Sort:           r.URL.Query().Get("sort"),
 		Page:           parseQueryInt(r.URL.Query().Get("page"), 1),
 		PerPage:        parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+	}
+	if tid, perr := shared.IDFromString(tenantID); perr == nil && h.listHidesFindingRuns(r.Context(), tid) {
+		input.ExcludeKinds = []string{string(scanrundom.RunKindRetest)}
 	}
 
 	result, err := h.service.ListRuns(r.Context(), input)
@@ -1099,6 +1118,9 @@ func (h *ScanWorkflowHandler) ListRunTasks(w http.ResponseWriter, r *http.Reques
 	tenantID := middleware.GetTenantID(r.Context())
 	runID := chi.URLParam(r, "id")
 	q := r.URL.Query()
+	if !h.guardRun(w, r) {
+		return
+	}
 
 	perPage := 0
 	if raw := q.Get("per_page"); raw != "" {
@@ -1127,6 +1149,9 @@ func (h *ScanWorkflowHandler) ListRunTasks(w http.ResponseWriter, r *http.Reques
 func (h *ScanWorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
+	if !h.guardRun(w, r) {
+		return
+	}
 
 	if err := h.service.CancelRun(scanWorkflowAuditCtx(r), tenantID, runID); err != nil {
 		h.handleServiceError(w, err)
@@ -1289,6 +1314,8 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		TotalFindings:  r.TotalFindings,
 		ErrorMessage:   r.ErrorMessage,
 		RefusalCode:    r.RefusalCode,
+		Kind:           string(r.KindOrDefault()),
+		Subject:        r.Subject,
 		CreatedAt:      r.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
