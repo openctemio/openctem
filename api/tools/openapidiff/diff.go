@@ -53,7 +53,7 @@ var methods = []string{"get", "put", "post", "delete", "patch", "head", "options
 
 func readOptional(path string) ([]byte, error) {
 	raw, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) || (err == nil && len(bytes.TrimSpace(raw)) == 0) {
 		return nil, nil
 	}
 	return raw, err
