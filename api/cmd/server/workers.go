@@ -295,6 +295,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 	w.ControllerManager.Register(jobRecovery)
 
+	// Automation runs a restart left pending or running end as failed (on
+	// start and every 15 minutes), so they stop holding the active-run cap.
+	w.ControllerManager.Register(controller.NewAutomationRunReaper(repos.WorkflowRun, 0, log))
+
 	// One-off scans that never ran are archived after 30 days (audited).
 	w.ControllerManager.Register(controller.NewOneOffScanArchiveController(svc.Scan, 0, 0))
 
@@ -632,6 +636,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger: log.With("controller", "finding-scanner-output-retention"),
 			},
 		))
+	}
+
+	// Finding evidence retention: encrypted secret values past the tenant's
+	// secret retention, evidence past 365 days (finding-evidence.md).
+	if svc.Evidence != nil {
+		w.ControllerManager.Register(controller.NewEvidenceRetentionController(
+			svc.Evidence, time.Hour, log.With("controller", "finding-evidence-retention")))
 	}
 
 	// Sensor activity timeline retention: sensor_events past 90 days.

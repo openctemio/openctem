@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
@@ -15,13 +16,17 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// Concurrent workflow run limits to prevent resource exhaustion.
+// Run limits: how many runs may wait or run at once (the executor runs a
+// bounded number per tenant and queues the rest). The hourly quotas are in
+// workflowdom (run_limits.go).
 const (
-	// MaxConcurrentWorkflowRunsPerWorkflow is the maximum concurrent runs per workflow.
-	MaxConcurrentWorkflowRunsPerWorkflow = 5
+	// MaxConcurrentWorkflowRunsPerWorkflow caps the waiting and running runs
+	// of one workflow.
+	MaxConcurrentWorkflowRunsPerWorkflow = workflowdom.MaxActiveRunsPerWorkflow
 
-	// MaxConcurrentWorkflowRunsPerTenant is the maximum concurrent workflow runs per tenant.
-	MaxConcurrentWorkflowRunsPerTenant = 50
+	// MaxConcurrentWorkflowRunsPerTenant caps the waiting and running runs
+	// of one tenant.
+	MaxConcurrentWorkflowRunsPerTenant = workflowdom.MaxActiveRunsPerTenant
 )
 
 // WorkflowService handles workflow-related business operations.
@@ -34,6 +39,11 @@ type WorkflowService struct {
 	executor     *WorkflowExecutor
 	auditService *auditapp.AuditService
 	logger       *logger.Logger
+
+	// Manual runs (manual_run.go).
+	authorizer StepAuthorizer
+	findings   FindingReader
+	assets     AssetReader
 }
 
 // WorkflowServiceOption is a functional option for WorkflowService.
@@ -85,6 +95,26 @@ func (s *WorkflowService) logAudit(ctx context.Context, actx auditapp.AuditConte
 	if err := s.auditService.LogEvent(ctx, actx, event); err != nil {
 		s.logger.Error("failed to log audit event", "error", err, "action", event.Action)
 	}
+}
+
+// takeOwnership makes the member who changes what an automation does (its
+// graph, a node or edge, or switching it on) its owner: event runs act as the
+// owner (authz.go), so an edit never makes the automation act with someone
+// else's permissions or data scope. Edits by an internal call (no user) keep
+// the owner.
+func (s *WorkflowService) takeOwnership(ctx context.Context, w *workflowdom.Workflow, userID shared.ID) error {
+	if userID.IsZero() || (w.CreatedBy != nil && *w.CreatedBy == userID) {
+		return nil
+	}
+	setter, ok := s.workflowRepo.(workflowdom.OwnerSetter)
+	if !ok {
+		return fmt.Errorf("failed to record the workflow owner: repository cannot set it")
+	}
+	if err := setter.SetOwner(ctx, w.TenantID, w.ID, userID); err != nil {
+		return fmt.Errorf("failed to record the workflow owner: %w", err)
+	}
+	w.SetCreatedBy(userID)
+	return nil
 }
 
 // --------------------------------------------------------------------------
@@ -301,6 +331,13 @@ func (s *WorkflowService) UpdateWorkflow(ctx context.Context, input UpdateWorkfl
 	if err := s.workflowRepo.Update(ctx, w); err != nil {
 		return nil, fmt.Errorf("failed to update workflow: %w", err)
 	}
+	// Switching it on: the member who did becomes the owner its event runs
+	// act as.
+	if activationChange == "activated" {
+		if err := s.takeOwnership(ctx, w, input.UserID); err != nil {
+			return nil, err
+		}
+	}
 
 	// Audit log
 	if activationChange != "" {
@@ -426,9 +463,12 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 		return nil, fmt.Errorf("graph validation failed: %w", err)
 	}
 
-	// Update workflow metadata
+	// Update workflow metadata; the editor becomes the owner.
 	if err := s.workflowRepo.Update(ctx, w); err != nil {
 		return nil, fmt.Errorf("failed to update workflow: %w", err)
+	}
+	if err := s.takeOwnership(ctx, w, input.UserID); err != nil {
+		return nil, err
 	}
 
 	// Audit log
@@ -508,7 +548,7 @@ func (s *WorkflowService) AddNode(ctx context.Context, input AddNodeInput) (*wor
 		return nil, err
 	}
 
-	if err := workflowdom.ValidateSupported(input.Config); err != nil {
+	if err := validateNodeConfigs(input.Config); err != nil {
 		return nil, err
 	}
 
@@ -522,6 +562,9 @@ func (s *WorkflowService) AddNode(ctx context.Context, input AddNodeInput) (*wor
 
 	if err := s.nodeRepo.Create(ctx, node); err != nil {
 		return nil, fmt.Errorf("failed to create node: %w", err)
+	}
+	if err := s.takeOwnership(ctx, w, input.UserID); err != nil {
+		return nil, err
 	}
 
 	return node, nil
@@ -543,7 +586,7 @@ type UpdateNodeInput struct {
 // UpdateNode updates a workflow node.
 func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput) (*workflowdom.Node, error) {
 	// Verify workflow belongs to tenant
-	_, err := s.workflowRepo.GetByTenantAndID(ctx, input.TenantID, input.WorkflowID)
+	w, err := s.workflowRepo.GetByTenantAndID(ctx, input.TenantID, input.WorkflowID)
 	if err != nil {
 		return nil, err
 	}
@@ -568,7 +611,7 @@ func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput)
 		node.SetUIPosition(*input.UIPositionX, *input.UIPositionY)
 	}
 	if input.Config != nil {
-		if err := workflowdom.ValidateSupported(*input.Config); err != nil {
+		if err := validateNodeConfigs(*input.Config); err != nil {
 			return nil, err
 		}
 		node.Config = *input.Config
@@ -577,14 +620,21 @@ func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput)
 	if err := s.nodeRepo.Update(ctx, node); err != nil {
 		return nil, fmt.Errorf("failed to update node: %w", err)
 	}
+	// A config edit changes what runs: the editor becomes the owner.
+	if input.Config != nil {
+		if err := s.takeOwnership(ctx, w, input.UserID); err != nil {
+			return nil, err
+		}
+	}
 
 	return node, nil
 }
 
-// DeleteNode deletes a node from a workflow.
-func (s *WorkflowService) DeleteNode(ctx context.Context, tenantID, workflowID, nodeID shared.ID) error {
+// DeleteNode deletes a node from a workflow. userID (the editor) becomes
+// the owner.
+func (s *WorkflowService) DeleteNode(ctx context.Context, tenantID, userID, workflowID, nodeID shared.ID) error {
 	// Verify workflow belongs to tenant
-	_, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID)
+	w, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID)
 	if err != nil {
 		return err
 	}
@@ -599,7 +649,10 @@ func (s *WorkflowService) DeleteNode(ctx context.Context, tenantID, workflowID, 
 		return shared.ErrNotFound
 	}
 
-	return s.nodeRepo.Delete(ctx, nodeID)
+	if err := s.nodeRepo.Delete(ctx, nodeID); err != nil {
+		return err
+	}
+	return s.takeOwnership(ctx, w, userID)
 }
 
 // --------------------------------------------------------------------------
@@ -656,14 +709,18 @@ func (s *WorkflowService) AddEdge(ctx context.Context, input AddEdgeInput) (*wor
 	if err := s.edgeRepo.Create(ctx, edge); err != nil {
 		return nil, fmt.Errorf("failed to create edge: %w", err)
 	}
+	if err := s.takeOwnership(ctx, w, input.UserID); err != nil {
+		return nil, err
+	}
 
 	return edge, nil
 }
 
-// DeleteEdge deletes an edge from a workflow.
-func (s *WorkflowService) DeleteEdge(ctx context.Context, tenantID, workflowID, edgeID shared.ID) error {
+// DeleteEdge deletes an edge from a workflow. userID (the editor) becomes
+// the owner.
+func (s *WorkflowService) DeleteEdge(ctx context.Context, tenantID, userID, workflowID, edgeID shared.ID) error {
 	// Verify workflow belongs to tenant
-	_, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID)
+	w, err := s.workflowRepo.GetByTenantAndID(ctx, tenantID, workflowID)
 	if err != nil {
 		return err
 	}
@@ -678,7 +735,10 @@ func (s *WorkflowService) DeleteEdge(ctx context.Context, tenantID, workflowID, 
 		return shared.ErrNotFound
 	}
 
-	return s.edgeRepo.Delete(ctx, edgeID)
+	if err := s.edgeRepo.Delete(ctx, edgeID); err != nil {
+		return err
+	}
+	return s.takeOwnership(ctx, w, userID)
 }
 
 // --------------------------------------------------------------------------
@@ -692,6 +752,15 @@ type TriggerWorkflowInput struct {
 	WorkflowID  shared.ID
 	TriggerType workflowdom.TriggerType
 	TriggerData map[string]any
+	// SubjectID is the finding or asset the run is about (nil for none).
+	SubjectID *shared.ID
+	// IdempotencyKey identifies the event: a second trigger with the same
+	// key for the same workflow returns workflowdom.ErrRunDuplicate.
+	IdempotencyKey string
+	// SubjectCooldown refuses the run (workflowdom.ErrRunCooldown) when the
+	// workflow already ran for this subject and trigger type within
+	// SubjectCooldown (loop_guard.go).
+	SubjectCooldown bool
 }
 
 // TriggerWorkflow triggers a workflow execution.
@@ -712,6 +781,19 @@ func (s *WorkflowService) TriggerWorkflow(ctx context.Context, input TriggerWork
 		return nil, shared.NewDomainError("WORKFLOW_INACTIVE", "workflow is not active", shared.ErrValidation)
 	}
 
+	if input.SubjectCooldown && input.SubjectID != nil {
+		if recent, ok := s.runRepo.(workflowdom.RecentSubjectRunChecker); ok {
+			found, err := recent.HasRecentSubjectRun(ctx, input.TenantID, input.WorkflowID, *input.SubjectID,
+				input.TriggerType, time.Now().Add(-SubjectCooldown))
+			if err != nil {
+				return nil, fmt.Errorf("check the subject cooldown: %w", err)
+			}
+			if found {
+				return nil, workflowdom.ErrRunCooldown
+			}
+		}
+	}
+
 	// Create run
 	run, err := workflowdom.NewRun(input.WorkflowID, input.TenantID, input.TriggerType, input.TriggerData)
 	if err != nil {
@@ -721,6 +803,7 @@ func (s *WorkflowService) TriggerWorkflow(ctx context.Context, input TriggerWork
 	if !input.UserID.IsZero() {
 		run.SetTriggeredBy(input.UserID)
 	}
+	run.SetSubject(input.SubjectID, input.IdempotencyKey)
 
 	run.TotalNodes = len(w.Nodes)
 
@@ -891,5 +974,14 @@ func validateSupportedNodeInputs(nodes []CreateNodeInput) error {
 	for _, n := range nodes {
 		configs = append(configs, n.Config)
 	}
-	return workflowdom.ValidateSupported(configs...)
+	return validateNodeConfigs(configs...)
+}
+
+// validateNodeConfigs refuses unsupported trigger and action types and
+// trigger options that would never match.
+func validateNodeConfigs(configs ...workflowdom.NodeConfig) error {
+	if err := workflowdom.ValidateSupported(configs...); err != nil {
+		return err
+	}
+	return workflowdom.ValidateTriggerConfig(configs...)
 }

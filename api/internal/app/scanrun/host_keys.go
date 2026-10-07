@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
@@ -74,6 +75,9 @@ func hostKey(target string) string {
 			return ""
 		}
 		return strings.TrimSuffix(u.Hostname(), ".")
+	}
+	if h, _, _, ok := asset.SplitServiceName(t); ok {
+		return h // a service in any name form leases its host
 	}
 	if strings.Contains(t, "/") {
 		if _, _, err := net.ParseCIDR(t); err == nil {

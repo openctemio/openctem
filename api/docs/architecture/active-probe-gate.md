@@ -76,7 +76,18 @@ Operator settings, never tenant settings:
   an explicit platform preference with an unproven target is refused
   (`PROOF_REQUIRED`).
 - **Intrusive scans**: a scanner whose stages are all T2 needs every target
-  verified, at create, quick scan and every run.
+  verified, at create, quick scan and every run. A workflow checks each
+  intrusive (T2) step on its own: the step gets only the verified targets
+  and fails (`STEP_TARGETS_REFUSED`) when none is left.
+- **Tier ceilings** (RFC-054 §4.2 step 6, `scan/tier_ceiling.go`): a scope
+  entry authorizes probes up to its `max_tier`, a seed or an `easm` verified domain up
+  to T1. The probe's tier is the tool's highest stage tier (`stage.ProbeTier`,
+  unknown tools T1). A target covered only below it is refused `tier_exceeds`
+  (fix `raise_tier`): scan create and quick scan refuse the request, a run
+  skips the target with a warning (`TIER_EXCEEDS` when nothing is left), a
+  workflow step skips it for that step, and `ResolveDispatchTargets` refuses
+  it at `DispatchTargetsInput.Tier` (T1 when unset; passive dispatches are
+  not checked). `easm.ActiveGate.TierExceeded` answers, tenant-scoped.
 
 ## What the gate checks
 
@@ -129,7 +140,10 @@ For each target, in order:
    answer `TARGET_OUT_OF_SCOPE` with `details.refused[]` (`target`, `code`,
    `message`, `fixes`). The act scope runs first on those paths, so a
    restricted member never learns the state of an asset outside their data
-   scope. The state is also
+   scope. The dry run (`POST /scope/check`) answers the same codes for typed
+   targets and for inventory assets (`asset_ids`, checked by name); an asset
+   the caller may not see, or that is not the tenant's, answers
+   `out_of_data_scope` by its id only, whichever it is. The state is also
    logged (`active scan target refused`) with the path. A request refused as
    a whole (scan create, clone, import, quick scan, `POST /commands`) is also
    **audited** as `scan.target_refused` (medium, result `failure`) in the

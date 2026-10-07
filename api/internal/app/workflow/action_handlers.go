@@ -408,7 +408,7 @@ func (h *PipelineTriggerHandler) triggerPipeline(ctx context.Context, input *Act
 			AssetID:     assetID,
 			TriggerType: "api",
 			TriggeredBy: "workflow:" + input.WorkflowID.String(),
-			Context:     input.TriggerData,
+			Context:     runContextWithCause(ctx, input.TriggerData),
 		}
 
 		run, err := h.scanRunService.TriggerPipeline(ctx, triggerInput)
@@ -424,12 +424,9 @@ func (h *PipelineTriggerHandler) triggerPipeline(ctx context.Context, input *Act
 		}, nil
 	}
 
-	return map[string]any{
-		"pipeline_id": scanWorkflowID,
-		"triggered":   false,
-		"error":       "pipeline service not available",
-		"action":      "trigger_pipeline",
-	}, nil
+	// No service: the step fails. A {"triggered": false} success would show
+	// a green run that started nothing.
+	return nil, fmt.Errorf("trigger_pipeline: pipeline service not available")
 }
 
 func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionInput) (map[string]any, error) {
@@ -453,7 +450,7 @@ func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionI
 			TenantID:    input.TenantID.String(),
 			ScanID:      scanID,
 			TriggeredBy: "workflow:" + input.WorkflowID.String(),
-			Context:     input.TriggerData,
+			Context:     runContextWithCause(ctx, input.TriggerData),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to trigger scan: %w", err)
@@ -467,12 +464,9 @@ func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionI
 		}, nil
 	}
 
-	return map[string]any{
-		"scan_id":   scanID,
-		"triggered": false,
-		"error":     "scan service not available",
-		"action":    "trigger_scan",
-	}, nil
+	// No service: the step fails. A {"triggered": false} success would show
+	// a green run that started nothing.
+	return nil, fmt.Errorf("trigger_scan: scan service not available")
 }
 
 // ----------------------------------------------------------------------------
@@ -661,12 +655,9 @@ func (h *AITriageActionHandler) triggerAITriage(ctx context.Context, input *Acti
 	)
 
 	if h.aiTriageService == nil {
-		return map[string]any{
-			"finding_id": findingID,
-			"triggered":  false,
-			"error":      "AI triage service not available",
-			"action":     "trigger_ai_triage",
-		}, nil
+		// No service: the step fails rather than report a run that
+		// requested nothing as a success.
+		return nil, fmt.Errorf("trigger_ai_triage: AI triage service not available")
 	}
 
 	// Request triage
@@ -799,4 +790,16 @@ func RegisterAllActionHandlersWithAI(
 
 	// Script runner (disabled by default)
 	executor.RegisterActionHandler(workflowdom.ActionTypeRunScript, NewScriptRunnerHandler(log))
+}
+
+// runContextWithCause is the context of a scan an automation step starts:
+// the step's trigger data, with the step's cause replacing the trigger's,
+// so the scan_completed event of that scan counts as caused by this run
+// (loop_guard.go).
+func runContextWithCause(ctx context.Context, triggerData map[string]any) map[string]any {
+	c, ok := AutomationCauseFrom(ctx)
+	if !ok {
+		return triggerData
+	}
+	return withCause(triggerData, &c)
 }

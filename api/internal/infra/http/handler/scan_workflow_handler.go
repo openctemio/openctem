@@ -1571,7 +1571,7 @@ func (h *ScanWorkflowHandler) handleStepError(w http.ResponseWriter, err error) 
 }
 
 // scanWorkflowAuditCtx is the request context carrying the caller as the scan workflow
-// service's audit actor (see pipelinesvc.WithAuditActor).
+// service's audit actor (see scanrun.WithAuditActor).
 func scanWorkflowAuditCtx(r *http.Request) context.Context {
 	return scanrun.WithAuditActor(r.Context(), middleware.GetUserID(r.Context()))
 }

@@ -140,6 +140,9 @@ export const Permission = {
   // Reveal a leaked credential's plaintext secret (audited). Reads return only
   // a mask and a fingerprint; owners and admins hold this by default.
   CredentialsReveal: 'findings:credentials:reveal',
+  // Reveal secret values masked out of finding evidence (auth headers,
+  // cookies, tokens). Step-up and audited; owners and admins by default.
+  EvidenceReveal: 'findings:evidence:reveal',
 
   // Remediation (findings:remediation:*)
   RemediationRead: 'findings:remediation:read',

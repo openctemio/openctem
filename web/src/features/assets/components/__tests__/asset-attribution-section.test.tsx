@@ -12,8 +12,16 @@ import { AssetAttributionSection } from '../asset-attribution-section'
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 't1', name: 'ORG' } }),
+}))
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
 
-const api = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }))
+const api = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), post: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
 
 let perms: string[] = []
@@ -76,7 +84,7 @@ describe('AssetAttributionSection', () => {
       active_checks_allowed: true,
     })
     wrap(<AssetAttributionSection assetId="a1" />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Confirm ours' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ours' }))
     expect(api.put).toHaveBeenCalledWith('/api/v1/assets/a1/attribution', { state: 'confirmed' })
     await waitFor(() => expect(screen.getByText('Confirmed')).toBeInTheDocument())
     expect(screen.getByText('Scans can reach this asset.')).toBeInTheDocument()
@@ -102,6 +110,55 @@ describe('AssetAttributionSection', () => {
     api.get.mockResolvedValue(review)
     wrap(<AssetAttributionSection assetId="a1" />)
     await screen.findByText('Needs review')
-    expect(screen.queryByRole('button', { name: 'Confirm ours' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ours' })).not.toBeInTheDocument()
+  })
+
+  it('explains each decision next to its button', async () => {
+    api.get.mockResolvedValue({ ...review, state: 'confirmed', human_decided: true })
+    wrap(<AssetAttributionSection assetId="a1" />)
+    const notOurs = await screen.findByRole('button', { name: 'Not ours' })
+    expect(notOurs).toHaveAccessibleDescription(/leaves the inventory/)
+    expect(
+      screen.getByRole('button', { name: 'Ours, on third-party infrastructure' })
+    ).toHaveAccessibleDescription(/passive and takeover checks/)
+    expect(screen.getByRole('button', { name: 'Watch only' })).toHaveAccessibleDescription(
+      /never actively scanned/
+    )
+    expect(screen.getByRole('button', { name: 'Undo the decision' })).toBeInTheDocument()
+  })
+
+  it('says confirming ownership is not a scope grant, and offers to add a scope entry', async () => {
+    perms = ['assets:read', 'assets:write', 'attack_surface:scope:write']
+    api.get.mockResolvedValue({
+      ...review,
+      state: 'confirmed',
+      human_decided: true,
+      active_checks_allowed: false,
+      active_checks_blocked_by: 'out_of_scope',
+      scope_status: 'out_of_scope',
+      blocked_code: 'no_entry',
+    })
+    wrap(<AssetAttributionSection assetId="a1" assetName="promo.acme.io" />)
+    expect(
+      await screen.findByText('Out of scope: no scope entry covers this name.')
+    ).toBeInTheDocument()
+    expect(screen.getByText(/It does not authorize scanning/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Add to scope' }))
+    expect(await screen.findByDisplayValue('promo.acme.io')).toBeInTheDocument()
+  })
+
+  it('names what covers an asset in scope', async () => {
+    api.get.mockResolvedValue({
+      ...review,
+      state: 'confirmed',
+      active_checks_allowed: true,
+      scope_status: 'in_scope',
+      covered_by: { kind: 'scope_target', pattern: '*.acme.io', proof: 'verified' },
+    })
+    wrap(<AssetAttributionSection assetId="a1" assetName="a.acme.io" />)
+    expect(
+      await screen.findByText('In scope through the scope entry *.acme.io (verified).')
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to scope' })).not.toBeInTheDocument()
   })
 })

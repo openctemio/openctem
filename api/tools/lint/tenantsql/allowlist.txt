@@ -73,7 +73,6 @@ tool_repository.go:ToolRepository.Update:tools  D-11 baseline: add the tenant pr
 workflow_repository.go:WorkflowRepository.Delete:workflows  D-11 baseline: add the tenant predicate
 workflow_repository.go:WorkflowRepository.GetByID:workflows  D-11 baseline: add the tenant predicate
 workflow_repository.go:WorkflowRepository.Update:workflows  D-11 baseline: add the tenant predicate
-workflow_run_repository.go:WorkflowRunRepository.CreateRunIfUnderLimit:workflows  D-11 baseline: add the tenant predicate
 workflow_run_repository.go:WorkflowRunRepository.Delete:workflow_runs  D-11 baseline: add the tenant predicate
 workflow_run_repository.go:WorkflowRunRepository.GetByID:workflow_runs  D-11 baseline: add the tenant predicate
 workflow_run_repository.go:WorkflowRunRepository.UpdateStats:workflow_runs  D-11 baseline: add the tenant predicate
