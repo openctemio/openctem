@@ -544,8 +544,18 @@ export default function ScanDetailPage() {
                   <DetailCopyId id={config.id} label="Scan ID" />
                 </DetailField>
                 {config.scan_workflow_id && (
-                  <DetailField label="Pipeline ID" full>
-                    <DetailCopyId id={config.scan_workflow_id} label="Pipeline ID" />
+                  <DetailField label="Scan workflow" full>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Can permission={Permission.ScanWorkflowsRead}>
+                        <Link
+                          href={`/pipelines/${encodeURIComponent(config.scan_workflow_id)}/builder`}
+                          className="text-primary text-sm font-medium hover:underline"
+                        >
+                          Open scan workflow
+                        </Link>
+                      </Can>
+                      <DetailCopyId id={config.scan_workflow_id} label="Scan workflow ID" />
+                    </div>
                   </DetailField>
                 )}
               </DetailFieldGrid>

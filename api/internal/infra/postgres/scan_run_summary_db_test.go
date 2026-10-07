@@ -184,7 +184,7 @@ func TestScanRunSummary_MigrationBackfillMatchesRepository(t *testing.T) {
 		t.Fatalf("read migration: %v", err)
 	}
 	norm := func(s string) string { return strings.Join(strings.Fields(s), " ") }
-	// Migration 001240 renamed the tables after 001157 ran; compare under
+	// Migration 001285 renamed the tables after 001157 ran; compare under
 	// the current names.
 	mig := norm(strings.NewReplacer("pipeline_runs", "scan_runs", "pipeline_id", "scan_workflow_id").Replace(string(raw)))
 	if !strings.Contains(mig, norm(scanRunSummaryUpdateSQL)) {

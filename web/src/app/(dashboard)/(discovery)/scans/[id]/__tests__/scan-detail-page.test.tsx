@@ -153,4 +153,15 @@ describe('Scan page', () => {
     await userEvent.click(screen.getByRole('button', { name: /A run is in progress/ }))
     expect(screen.getByTestId('run-sheet')).toHaveTextContent('live')
   })
+
+  it('links a workflow scan to its scan workflow', () => {
+    urlState.tab = 'details'
+    config = { ...config, scan_type: 'workflow', scan_workflow_id: 'wf-1' }
+    render(<ScanDetailPage />)
+    expect(screen.getByRole('link', { name: 'Open scan workflow' })).toHaveAttribute(
+      'href',
+      '/pipelines/wf-1/builder'
+    )
+    expect(screen.queryByText('Pipeline ID')).toBeNull()
+  })
 })

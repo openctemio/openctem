@@ -40,6 +40,8 @@ var findingMergeRefs = []mergeRef{
 	// settleLoserPendingRetest runs first, so the move cannot collide.
 	{table: "finding_retests", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "ai_triage_results", column: "finding_id", tenantCol: "tenant_id"},
+	// Evidence follows its finding (its secrets hang off the evidence row).
+	{table: "finding_evidence", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "iocs", column: "source_finding_id", tenantCol: "tenant_id"},
 	{table: "ioc_matches", column: "finding_id", tenantCol: "tenant_id"},
 	{table: "findings", column: "duplicate_of", tenantCol: "tenant_id"},
@@ -366,12 +368,12 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 
 // settleLoserPendingRetest makes room for the loser's retests on the survivor.
 // A finding has at most one pending retest; when both have one, the survivor's
-// keeps running and the loser's is closed as "unknown" (its result would
+// keeps running and the loser's is closed as "inconclusive" (its result would
 // describe the same issue twice). Its history moves with the other rows.
 func settleLoserPendingRetest(ctx context.Context, tx *sql.Tx, tenantID, survivorID, loserID string) error {
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE finding_retests SET
-			status = 'completed', outcome = 'unknown', completed_at = NOW(),
+			status = 'completed', outcome = 'inconclusive', reason_code = 'no_result', completed_at = NOW(),
 			reason = 'finding merged into ' || $1::text
 		WHERE tenant_id = $3 AND finding_id = $2 AND status = 'pending'
 		  AND EXISTS (SELECT 1 FROM finding_retests

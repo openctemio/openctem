@@ -33,6 +33,11 @@ vi.mock('@/context/permission-provider', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
+vi.mock('../../../api/use-finding-evidence-items', () => ({
+  useFindingEvidenceItems: () => ({ data: { data: [] }, isLoading: false }),
+  revealEvidence: vi.fn(),
+}))
+
 const nucleiFinding = {
   id: 'f-1',
   toolName: 'nuclei',
@@ -82,17 +87,18 @@ describe('FindingRetestSection', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows an unreachable target as unknown, with the reason', () => {
+  it('shows an unreachable target as inconclusive, with the reason', () => {
     mockRetests = [
       retest({
-        outcome: 'unknown',
+        outcome: 'inconclusive',
+        reason_code: 'unreachable',
         reason: 'target unreachable: connection refused',
         result_status: 'confirmed',
       }),
     ]
     render(<FindingRetestSection finding={nucleiFinding} />)
-    expect(screen.getByText('Unknown')).toBeInTheDocument()
-    expect(screen.getByText(/target unreachable/i)).toBeInTheDocument()
+    expect(screen.getByText('Inconclusive: target unreachable')).toBeInTheDocument()
+    expect(screen.getByText(/connection refused/i)).toBeInTheDocument()
   })
 
   it('disables Retest now while a retest is running', () => {
@@ -104,17 +110,33 @@ describe('FindingRetestSection', () => {
 })
 
 describe('retestMeta', () => {
-  it('labels each outcome', () => {
-    expect(retestMeta(retest({ outcome: 'fixed', result_status: 'resolved' })).label).toMatch(
-      /Fixed/
+  it('labels each outcome; only a confirmed fix reads as fixed', () => {
+    expect(
+      retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'validated_fixed' })).label
+    ).toBe('Verified fixed — awaiting confirmation')
+    expect(
+      retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'resolved' })).label
+    ).toBe('Fixed — verified and resolved')
+    expect(retestMeta(retest({ outcome: 'not_reproduced' })).label).toBe(
+      'Not reproduced — not confirmed'
     )
-    expect(retestMeta(retest({ outcome: 'still_present' })).label).toBe('Still present')
+    expect(retestMeta(retest({ outcome: 'still_vulnerable' })).label).toBe('Still vulnerable')
     expect(
       retestMeta(
-        retest({ outcome: 'still_present', prior_status: 'resolved', result_status: 'confirmed' })
+        retest({
+          outcome: 'still_vulnerable',
+          prior_status: 'resolved',
+          result_status: 'confirmed',
+        })
       ).label
     ).toMatch(/Regression/)
-    expect(retestMeta(retest({ outcome: 'unknown' })).label).toBe('Unknown')
+    expect(
+      retestMeta(retest({ outcome: 'inconclusive', reason_code: 'endpoint_mismatch' })).label
+    ).toBe('Inconclusive: another endpoint was checked')
+    expect(retestMeta(retest({ outcome: 'inconclusive', reason_code: 'blocked' })).label).toBe(
+      'Inconclusive: blocked'
+    )
+    expect(retestMeta(retest({ outcome: 'inconclusive' })).label).toBe('Inconclusive')
     expect(retestMeta(retest({ status: 'pending' })).label).toBe('Retest running')
   })
 })

@@ -135,6 +135,13 @@ export type BulkUpdateResponse = Schemas['internal_infra_http_handler.BulkUpdate
 export type FindingRetestResponse = Schemas['internal_infra_http_handler.FindingRetestResponse']
 export type FindingRetestListResponse =
   Schemas['internal_infra_http_handler.FindingRetestListResponse']
+// Finding evidence (masked proof + audited reveal)
+export type FindingEvidenceItemResponse =
+  Schemas['internal_infra_http_handler.FindingEvidenceItemResponse']
+export type FindingEvidenceItemListResponse =
+  Schemas['internal_infra_http_handler.FindingEvidenceItemListResponse']
+export type RevealEvidenceResponse = Schemas['internal_infra_http_handler.RevealEvidenceResponse']
+export type EvidenceItem = Schemas['github_com_openctemio_openctem_api_pkg_domain_evidence.Item']
 
 // Scope (targets / exclusions)
 export type ScopeTargetResponse = Schemas['internal_infra_http_handler.ScopeTargetResponse']

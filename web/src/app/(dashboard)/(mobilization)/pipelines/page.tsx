@@ -78,10 +78,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
-import { Can, Permission } from '@/lib/permissions'
 
 import { NodePalette } from '@/features/pipelines/components/node-palette'
 import { PipelineForm } from '@/features/pipelines/components/pipeline-form'
+import { NewScanWorkflowButton } from '@/features/pipelines/components/new-scan-workflow-button'
 // Lazy-load the visual builder: it pulls in @xyflow/react (~100KB+) and its
 // CSS. Loading it via dynamic() keeps the graph engine out of the pipelines
 // route's initial bundle until the builder is actually rendered.
@@ -522,12 +522,7 @@ export default function PipelinesPage() {
           title="Scan pipelines"
           description="Multi-step scans that chain tools together, run on demand or on a schedule."
         >
-          <Can permission={Permission.WorkflowsWrite} mode="disable">
-            <Button size="sm" onClick={handleOpenCreateForm}>
-              <Plus className="me-2 h-4 w-4" />
-              New pipeline
-            </Button>
-          </Can>
+          <NewScanWorkflowButton label="New scan workflow" onClick={handleOpenCreateForm} />
         </PageHeader>
 
         <Tabs value={tab} onValueChange={setTab} className="mt-4">
@@ -584,12 +579,10 @@ export default function PipelinesPage() {
                 title="No pipelines yet"
                 description="Create a pipeline to chain scan steps together."
                 action={
-                  <Can permission={Permission.WorkflowsWrite} mode="disable">
-                    <Button size="sm" onClick={handleOpenCreateForm}>
-                      <Plus className="me-2 h-4 w-4" />
-                      Create pipeline
-                    </Button>
-                  </Can>
+                  <NewScanWorkflowButton
+                    label="Create scan workflow"
+                    onClick={handleOpenCreateForm}
+                  />
                 }
               />
             ) : (

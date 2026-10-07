@@ -118,13 +118,32 @@ func TestFinishRun_OnlyTheWinningTransitionRecordsTheRun(t *testing.T) {
 	scanID := shared.NewID()
 	run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID(), ScanID: &scanID}
 
-	if !s.finishRun(context.Background(), run, scanrun.RunStatusCompleted, "") {
+	if !s.finishRun(context.Background(), run, scanrun.RunStatusCompleted, "", 0) {
 		t.Fatal("first transition should win")
 	}
-	if s.finishRun(context.Background(), run, scanrun.RunStatusFailed, "late") {
+	if s.finishRun(context.Background(), run, scanrun.RunStatusFailed, "late", 0) {
 		t.Fatal("second transition must lose: the run already finished")
 	}
 	if len(rec.calls) != 1 {
 		t.Fatalf("scan refreshes = %+v, want exactly one", rec.calls)
+	}
+}
+
+// Every settled outcome (completed, partial, failed) reaches the run-settled
+// callback (the scan_completed automation trigger) with its status and
+// finding count; a transition that lost the race reaches nothing.
+func TestFinishRun_SettledRunsReachTheCallback(t *testing.T) {
+	for _, st := range []scanrun.RunStatus{scanrun.RunStatusCompleted, scanrun.RunStatusPartial, scanrun.RunStatusFailed} {
+		var got []*scanrun.Run
+		s := &Service{runRepo: &statusOnlyRunRepo{}, logger: logger.NewNop()}
+		s.SetRunCompletedCallback(func(_ context.Context, r *scanrun.Run) { got = append(got, r) })
+		run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID()}
+		if !s.finishRun(context.Background(), run, st, "", 4) {
+			t.Fatalf("%s: first transition should win", st)
+		}
+		s.finishRun(context.Background(), run, scanrun.RunStatusFailed, "late", 9)
+		if len(got) != 1 || got[0].Status != st || got[0].TotalFindings != 4 {
+			t.Fatalf("%s: callback got %+v, want one call with the outcome and 4 findings", st, got)
+		}
 	}
 }
