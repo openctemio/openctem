@@ -210,7 +210,7 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `crawl.web` and `dast.web` 10; the code, image and connector capabilities
   are not cut. A one-target tool keeps one command per step. If a later
   chunk cannot be created, the ones already created are canceled.
-- **One sensor per host** (platform-side politeness, migration 001183). A
+- **One sensor per host** (platform-side politeness, migration 001186). A
   chunk of an active stage (T1 and above) records the hosts it sends traffic
   to in `commands.host_keys` (lower-case name or address, no scheme, port or
   path). The poll offers, and a claim takes, such a chunk only while no other
