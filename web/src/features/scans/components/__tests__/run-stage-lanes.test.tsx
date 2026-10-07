@@ -6,7 +6,16 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { RunStageLanes, skipLabel, skippedReasons, stageLabel } from '../run-stage-lanes'
 
 const getMock = vi.fn()
-vi.mock('@/lib/api/client', () => ({ get: (...a: unknown[]) => getMock(...a) }))
+// Labels come from the served capability catalog (GET /scans/stages).
+const CATALOG = {
+  stages: [
+    { key: 'discover.subdomains', name: 'Subdomain discovery', implementations: [] },
+    { key: 'scan.ports', name: 'Port scan', implementations: [] },
+  ],
+}
+vi.mock('@/lib/api/client', () => ({
+  get: (url: string) => (url === '/api/v1/scans/stages' ? Promise.resolve(CATALOG) : getMock(url)),
+}))
 
 const fresh = (ui: React.ReactNode) =>
   render(
@@ -101,7 +110,8 @@ describe('RunStageLanes', () => {
 
 describe('stage lane helpers', () => {
   it('labels stages and skip reasons, with fallbacks', () => {
-    expect(stageLabel('probe.http')).toBe('HTTP probe')
+    expect(stageLabel('probe.http', { 'probe.http': 'HTTP probe' })).toBe('HTTP probe')
+    expect(stageLabel('probe.http')).toBe('probe.http')
     expect(stageLabel('future.stage')).toBe('future.stage')
     expect(stageLabel(undefined)).toBe('Custom step')
     expect(skipLabel('hop_limit')).toBe('too many hops from the seeds')
