@@ -14,6 +14,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -741,7 +742,7 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 		if err := severityRows.Scan(&severity, &count); err != nil {
 			continue
 		}
-		stats.VulnBySeverity[severity] = count
+		stats.VulnBySeverity[vulnerability.SeverityBucket(severity)] += count
 	}
 
 	if err := severityRows.Err(); err != nil {
@@ -885,6 +886,7 @@ func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenan
 			COUNT(*) FILTER (WHERE cf.severity = 'high') as high_count,
 			COUNT(*) FILTER (WHERE cf.severity = 'medium') as medium_count,
 			COUNT(*) FILTER (WHERE cf.severity = 'low') as low_count,
+			COUNT(*) FILTER (WHERE cf.severity IN ('info', 'none')) as info_count,
 			COUNT(*) as total_count,
 			BOOL_OR(COALESCE(cf.in_kev, false)) as in_cisa_kev
 		FROM components c
@@ -919,6 +921,7 @@ func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenan
 			&vc.HighCount,
 			&vc.MediumCount,
 			&vc.LowCount,
+			&vc.InfoCount,
 			&vc.TotalCount,
 			&vc.InCisaKev,
 		); err != nil {

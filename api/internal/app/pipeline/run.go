@@ -367,8 +367,12 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 	step = resolved.WithTool(step)
+	// The step run records what it runs: the capability and the tool the
+	// planner picked (written with the queued state below).
+	stepRun.Tool = resolved.Name
+	stepRun.Capability = resolved.Capability()
 	s.logger.Info("queueing step for execution", "step_key", step.StepKey, "tool", step.Tool,
-		"pinned", resolved.Pinned, "sensor_preference", settings.SensorPreference)
+		"capability", stepRun.Capability, "pinned", resolved.Pinned, "sensor_preference", settings.SensorPreference)
 
 	// Security validation: Last line of defense before sending to sensor
 	if s.securityValidator != nil {

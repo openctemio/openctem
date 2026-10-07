@@ -426,5 +426,18 @@
   "sensors.setup.noChecks": "The report has no checks.",
   "sensors.setup.loadError": "The setup report could not be loaded.",
   "sensors.setup.retry": "Retry",
-  "sensors.setup.empty": "This sensor has not sent a setup report yet. Sensors send one when they start and after a configuration change."
+  "sensors.setup.empty": "This sensor has not sent a setup report yet. Sensors send one when they start and after a configuration change.",
+  "severity.critical": "Critical",
+  "severity.high": "High",
+  "severity.medium": "Medium",
+  "severity.low": "Low",
+  "severity.info": "Info",
+  "severity.informational": "Informational",
+  "criticality.critical": "Critical",
+  "criticality.high": "High",
+  "criticality.medium": "Medium",
+  "criticality.low": "Low",
+  "criticality.none": "Not rated",
+  "findings.hideInformational": "Hide informational",
+  "findings.hideInformational.hint": "Hide info findings from the list. Saved on this browser."
 }

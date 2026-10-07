@@ -65,8 +65,19 @@ import type {
   IntegrationStatus,
 } from '@/features/integrations/types/integration.types'
 import { toast } from 'sonner'
+import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
+import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { mutate } from 'swr'
 import { SafeExternalLink } from '@/components/safe-external-link'
+
+/** The API's default Jira priority per severity (shown as the placeholder). */
+const DEFAULT_JIRA_PRIORITY: Record<SeverityLevel, string> = {
+  critical: 'Highest',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  info: 'Lowest',
+}
 
 // Finding statuses a Jira webhook may set inbound (the API refuses any other on
 // save). false_positive/accepted need an approval, resolved needs findings:verify
@@ -170,12 +181,10 @@ function ConfigureTicketingDialog({
   const [defaultPriority, setDefaultPriority] = useState<string>(
     (cfg.default_priority as string) ?? ''
   )
-  const [sevPriority, setSevPriority] = useState<Record<string, string>>({
-    critical: sev0.critical ?? '',
-    high: sev0.high ?? '',
-    medium: sev0.medium ?? '',
-    low: sev0.low ?? '',
-  })
+  const severityLabel = useSeverityLabel()
+  const [sevPriority, setSevPriority] = useState<Record<string, string>>(() =>
+    Object.fromEntries(SEVERITY_LEVELS.map((s) => [s, sev0[s] ?? '']))
+  )
   const [statusOutbound, setStatusOutbound] = useState<Record<string, string>>({
     confirmed: out0.confirmed ?? '',
     in_progress: out0.in_progress ?? '',
@@ -337,21 +346,16 @@ function ConfigureTicketingDialog({
             </div>
             <Label className="text-xs">Severity → Jira priority</Label>
             <div className="grid grid-cols-2 gap-3">
-              {(['critical', 'high', 'medium', 'low'] as const).map((sev) => (
+              {SEVERITY_LEVELS.map((sev) => (
                 <div key={sev} className="space-y-1">
-                  <Label
-                    htmlFor={`sev-${sev}`}
-                    className="text-muted-foreground text-xs capitalize"
-                  >
-                    {sev}
+                  <Label htmlFor={`sev-${sev}`} className="text-muted-foreground text-xs">
+                    {severityLabel(sev)}
                   </Label>
                   <Input
                     id={`sev-${sev}`}
                     value={sevPriority[sev]}
                     onChange={(e) => setSevPriority((p) => ({ ...p, [sev]: e.target.value }))}
-                    placeholder={
-                      { critical: 'Highest', high: 'High', medium: 'Medium', low: 'Low' }[sev]
-                    }
+                    placeholder={DEFAULT_JIRA_PRIORITY[sev]}
                   />
                 </div>
               ))}
