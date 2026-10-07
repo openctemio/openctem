@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-// RFC-046 B9: no metric carries a tenant, sensor, pipeline or run id as a
+// RFC-046 B9: no metric carries a tenant, sensor, scan workflow or run id as a
 // label. Per-tenant views come from logs and traces; ids as labels leak
 // tenant identity into every metrics consumer and blow up cardinality.
 // Every metric definition file of the API is checked.
 func TestNoIdentifierLabels(t *testing.T) {
-	forbidden := []string{"tenant_id", "sensor_id", "pipeline_id", "run_id", "scan_id", "user_id"}
+	forbidden := []string{"tenant_id", "sensor_id", "scan_workflow_id", "run_id", "scan_id", "user_id"}
 	files := []string{
 		"metrics.go",
 		"security_defenses.go",

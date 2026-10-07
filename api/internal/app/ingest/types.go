@@ -214,8 +214,20 @@ type Output struct {
 	LicensesLinked         int         `json:"licenses_linked,omitempty"`
 	CVEsCreated            int         `json:"cves_created,omitempty"`
 	CVEsUpdated            int         `json:"cves_updated,omitempty"`
-	Errors                 []string    `json:"errors,omitempty"`
-	Warnings               []string    `json:"warnings,omitempty"`
+	// EndpointsCreated and EndpointsUpdated count web endpoints written to
+	// the sub-inventory; EndpointsRefused those dropped (unparseable, an
+	// origin the report may not write to); EndpointsStatic static files
+	// counted and not stored; EndpointsOverCap new endpoints or parameters
+	// beyond the per-origin caps; LegacyURLAssetsFolded discovered_url
+	// assets turned into endpoints instead of assets.
+	EndpointsCreated      int      `json:"endpoints_created,omitempty"`
+	EndpointsUpdated      int      `json:"endpoints_updated,omitempty"`
+	EndpointsRefused      int      `json:"endpoints_refused,omitempty"`
+	EndpointsStatic       int      `json:"endpoints_static,omitempty"`
+	EndpointsOverCap      int      `json:"endpoints_over_cap,omitempty"`
+	LegacyURLAssetsFolded int      `json:"legacy_url_assets_folded,omitempty"`
+	Errors                []string `json:"errors,omitempty"`
+	Warnings              []string `json:"warnings,omitempty"`
 
 	// Binding is the authority the report was applied under: command,
 	// unsolicited or trusted (RFC-040 §5.3).

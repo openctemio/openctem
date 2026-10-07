@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { layeredLayout } from '@/components/flow/layered-layout'
 import { TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
-import { pipelineEndpoints, pipelineRunEndpoints } from '@/lib/api/endpoints'
+import { scanWorkflowEndpoints, scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunStage, RunStageList } from '@/lib/api/generated'
 import type { PipelineTemplate, StepRun } from '@/lib/api'
 import { toDisplayText } from '@/lib/untrusted-text'
@@ -154,7 +154,7 @@ const nodeTypes = { runstep: RunStepNode }
 /**
  * The run overlay: the workflow graph of a run, read-only, each step with
  * its status, counts, skip reasons and error. Data: the run's step runs,
- * GET /pipeline-runs/{id}/stages and the workflow's dependencies.
+ * GET /scan-runs/{id}/stages and the workflow's dependencies.
  */
 export function RunGraph({
   runId,
@@ -169,12 +169,12 @@ export function RunGraph({
 }) {
   const { table } = useCapabilityTable()
   const { data: lanes } = useSWR<RunStageList>(
-    pipelineRunEndpoints.stages(runId),
+    scanRunEndpoints.stages(runId),
     (url: string) => get<RunStageList>(url),
     { revalidateOnFocus: false, refreshInterval }
   )
   const { data: pipeline } = useSWR<PipelineTemplate>(
-    pipelineId ? pipelineEndpoints.get(pipelineId) : null,
+    pipelineId ? scanWorkflowEndpoints.get(pipelineId) : null,
     (url: string) => get<PipelineTemplate>(url),
     { revalidateOnFocus: false }
   )

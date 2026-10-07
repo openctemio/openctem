@@ -21,6 +21,7 @@ type Repositories struct {
 	ScopeTarget            *postgres.ScopeTargetRepository
 	ScopeExcl              *postgres.ScopeExclusionRepository
 	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
+	WebEndpoint            *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
 	RelationshipSuggestion *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
@@ -139,10 +140,10 @@ type Repositories struct {
 	TemplateSource   *postgres.TemplateSourceRepository
 	SecretStore      *postgres.SecretStoreRepository
 
-	// Pipelines
-	PipelineTemplate *postgres.PipelineTemplateRepository
-	PipelineRun      *postgres.PipelineRunRepository
-	PipelineStep     *postgres.PipelineStepRepository
+	// ScanRuns
+	ScanWorkflow     *postgres.ScanWorkflowRepository
+	ScanRun          *postgres.ScanRunRepository
+	ScanWorkflowStep *postgres.ScanWorkflowStepRepository
 	StepRun          *postgres.StepRunRepository
 
 	// Workflows
@@ -273,7 +274,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetTypeCat:           postgres.NewAssetTypeCategoryRepository(db),
 		ScopeTarget:            postgres.NewScopeTargetRepository(db),
 		ScopeExcl:              postgres.NewScopeExclusionRepository(db),
-		AssetService:           postgres.NewAssetServiceRepository(db),           // CTEM: Network services
+		AssetService:           postgres.NewAssetServiceRepository(db), // CTEM: Network services
+		WebEndpoint:            postgres.NewWebEndpointRepository(db),
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
 		RelationshipSuggestion: postgres.NewRelationshipSuggestionRepository(db), // CTEM: Relationship suggestions
@@ -380,10 +382,10 @@ func newRepositories(db *postgres.DB) *Repositories {
 		TemplateSource:   postgres.NewTemplateSourceRepository(db),
 		SecretStore:      postgres.NewSecretStoreRepository(db),
 
-		// Pipelines
-		PipelineTemplate: postgres.NewPipelineTemplateRepository(db),
-		PipelineRun:      postgres.NewPipelineRunRepository(db),
-		PipelineStep:     postgres.NewPipelineStepRepository(db),
+		// ScanRuns
+		ScanWorkflow:     postgres.NewScanWorkflowRepository(db),
+		ScanRun:          postgres.NewScanRunRepository(db),
+		ScanWorkflowStep: postgres.NewScanWorkflowStepRepository(db),
 		StepRun:          postgres.NewStepRunRepository(db),
 
 		// Workflows

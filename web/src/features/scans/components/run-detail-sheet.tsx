@@ -22,7 +22,7 @@ import {
   RunStatusBadge,
 } from '@/features/shared'
 import { get } from '@/lib/api/client'
-import { pipelineRunEndpoints } from '@/lib/api/endpoints'
+import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { PipelineRun } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
 import { toDisplayText } from '@/lib/untrusted-text'
@@ -89,7 +89,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
     isLoading,
     mutate,
   } = useSWR<PipelineRun>(
-    runId ? pipelineRunEndpoints.get(runId) : null,
+    runId ? scanRunEndpoints.get(runId) : null,
     (url: string) => get<PipelineRun>(url),
     {
       revalidateOnFocus: false,
@@ -167,7 +167,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               <DetailSection title="Workflow">
                 <RunGraph
                   runId={run.id}
-                  pipelineId={run.pipeline_id}
+                  pipelineId={run.scan_workflow_id}
                   stepRuns={run.step_runs ?? []}
                   refreshInterval={runRefreshInterval(run)}
                 />

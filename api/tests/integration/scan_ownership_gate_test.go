@@ -4,7 +4,7 @@ package integration
 // wiring (easm.ActiveGate over the real repositories), through every scan
 // entry point: scan create, clone, import, quick scan, POST /commands, a
 // scan run (manual, scheduled and retry share TriggerScan) and the dispatch
-// gate (pipelines, coverage, validation, retests, simulations, connector
+// gate (scan workflows, coverage, validation, retests, simulations, connector
 // scans). Design: docs/rfcs/RFC-036-easm.md §6.3; architecture:
 // docs/architecture/active-probe-gate.md.
 

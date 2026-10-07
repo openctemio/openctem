@@ -179,11 +179,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Initialize command expiration checker
 	w.CommandExpirationChecker = command.NewExpirationChecker(
 		repos.Command,
-		svc.Pipeline,
+		svc.ScanRun,
 		command.ExpirationCheckerConfig{
 			CheckInterval: time.Minute,
 			// Owns platform-job queue expiry too, because expiring a job has to
-			// tell the owning pipeline run why. Previously JobRecoveryController's
+			// tell the owning scan run why. Previously JobRecoveryController's
 			// MaxQueueMinutes, where the expiry notified nobody.
 			MaxQueueMinutes: 60,
 		},
@@ -260,7 +260,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
 	// default branches and outdated runners, once each while they hold; and
-	// findings only a stale pipeline reported become not observed.
+	// findings only a stale CI pipeline reported become not observed.
 	if repos.CIRun != nil {
 		var notifier cirunapp.Notifier
 		if svc.Outbox != nil {
@@ -276,7 +276,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		}, log)
 		w.ControllerManager.Register(controller.NewCIAlertsController(job, 0))
 		// Retention: expired run token hashes, run findings after 90 days,
-		// runs after 400 days (each pipeline keeps its latest runs).
+		// runs after 400 days (each scan workflow keeps its latest runs).
 		w.ControllerManager.Register(controller.NewCIRetentionController(cirunapp.NewRetentionJob(repos.CIRun, log), 0))
 	}
 
@@ -289,9 +289,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Logger:                log.With("controller", "job-recovery"),
 		},
 	)
-	// A poison command (dispatch attempts exhausted) fails its pipeline step.
-	if svc.Pipeline != nil {
-		jobRecovery.SetStepFailureNotifier(svc.Pipeline)
+	// A poison command (dispatch attempts exhausted) fails its workflow step.
+	if svc.ScanRun != nil {
+		jobRecovery.SetStepFailureNotifier(svc.ScanRun)
 	}
 	w.ControllerManager.Register(jobRecovery)
 
@@ -302,9 +302,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// One-off scans that never ran are archived after 30 days (audited).
 	w.ControllerManager.Register(controller.NewOneOffScanArchiveController(svc.Scan, 0, 0))
 
-	// Scan timeout controller: enforces per-scan timeout_seconds on running pipeline_runs
+	// Scan timeout controller: enforces per-scan timeout_seconds on running scan_runs
 	w.ControllerManager.Register(controller.NewScanTimeoutController(
-		repos.PipelineRun,
+		repos.ScanRun,
 		&controller.ScanTimeoutControllerConfig{
 			Interval: 60 * time.Second,
 			Logger:   log.With("controller", "scan-timeout"),
@@ -314,7 +314,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Scan retry controller: dispatches automatic retries for failed scans
 	// with retry budget remaining (uses exponential backoff)
 	w.ControllerManager.Register(controller.NewScanRetryController(
-		repos.PipelineRun,
+		repos.ScanRun,
 		svc.Scan, // scan service implements RetryDispatcher
 		&controller.ScanRetryControllerConfig{
 			Interval:  60 * time.Second,

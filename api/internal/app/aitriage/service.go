@@ -587,7 +587,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// "info" to suppress it. When the proposed severity differs from
 	// what the scanner originally reported — in either direction — we
 	// flag the result so NeedsReview() is true and downstream
-	// auto-apply pipelines refuse to mutate the finding until a human
+	// auto-apply scan workflows refuse to mutate the finding until a human
 	// signs off. The LLM output is still persisted; only the auto-
 	// apply gate is affected.
 	if analysis.SeverityAssessment != "" {
@@ -630,7 +630,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// the domain enums (invalid severity, missing required fields,
 	// prompt-injection suspected), the TriageAnalysis carries a non-
 	// empty ValidationWarnings slice. A sanitised default (usually
-	// "medium") has been applied so the pipeline doesn't stall, but
+	// "medium") has been applied so the scan workflow doesn't stall, but
 	// downstream automation (workflow dispatcher, auto-apply rules,
 	// severity-change triggers) MUST NOT treat this result as
 	// authoritative. We surface the condition three ways:

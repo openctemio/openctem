@@ -22,17 +22,17 @@ func seedChunkStepRun(ctx context.Context, t *testing.T, db *sql.DB, tenant shar
 	t.Helper()
 	var runID, stepID, stepRunID string
 	if err := db.QueryRowContext(ctx,
-		`INSERT INTO pipeline_runs (pipeline_id, tenant_id, status, trigger_type)
+		`INSERT INTO scan_runs (scan_workflow_id, tenant_id, status, trigger_type)
 		 VALUES ('00000000-0000-0000-0000-000000000001', $1, 'running', 'manual') RETURNING id`,
 		tenant.String()).Scan(&runID); err != nil {
 		t.Skipf("seed run (quick-scan template missing?): %v", err)
 	}
 	if err := db.QueryRowContext(ctx,
-		`SELECT id FROM pipeline_steps WHERE pipeline_id = '00000000-0000-0000-0000-000000000001' LIMIT 1`).Scan(&stepID); err != nil {
+		`SELECT id FROM scan_workflow_steps WHERE scan_workflow_id = '00000000-0000-0000-0000-000000000001' LIMIT 1`).Scan(&stepID); err != nil {
 		t.Skipf("quick-scan template has no step: %v", err)
 	}
 	if err := db.QueryRowContext(ctx,
-		`INSERT INTO step_runs (pipeline_run_id, step_id, step_key, step_order) VALUES ($1, $2, 'probe', 1) RETURNING id`,
+		`INSERT INTO scan_run_steps (scan_run_id, step_id, step_key, step_order) VALUES ($1, $2, 'probe', 1) RETURNING id`,
 		runID, stepID).Scan(&stepRunID); err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func createStepChunks(ctx context.Context, t *testing.T, repo *CommandRepository
 		}
 		raw, _ := json.Marshal(map[string]any{
 			"scanner": "httpx", "preferred_tool": "httpx", "step_key": "probe",
-			"step_run_id": stepRun.String(), "targets": targets,
+			"scan_run_step_id": stepRun.String(), "targets": targets,
 		})
 		cmd, err := command.NewCommand(tenant, command.CommandTypeScan, command.CommandPriorityNormal, raw)
 		if err != nil {

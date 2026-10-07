@@ -23,7 +23,7 @@ const WorkflowBuilder = dynamic(
 import {
   get,
   put,
-  pipelineEndpoints,
+  scanWorkflowEndpoints,
   invalidateAllPipelineCaches,
   type PipelineTemplate,
   type PipelineStep,
@@ -102,7 +102,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
     async function loadPipeline() {
       try {
         setIsLoading(true)
-        const data = await get<PipelineTemplate>(pipelineEndpoints.get(id))
+        const data = await get<PipelineTemplate>(scanWorkflowEndpoints.get(id))
         setPipeline(data)
         setLocalSteps(data.steps || [])
         setStartPosition(data.ui_start_position)
@@ -353,7 +353,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
         ui_start_position: startPosition,
         ui_end_position: endPosition,
       }
-      await put<PipelineTemplate>(pipelineEndpoints.update(pipeline.id), updateData)
+      await put<PipelineTemplate>(scanWorkflowEndpoints.update(pipeline.id), updateData)
       await invalidateAllPipelineCaches()
       setHasChanges(false)
       toast.success('Pipeline saved successfully')

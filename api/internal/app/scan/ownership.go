@@ -5,7 +5,7 @@ package scan
 // entry point asks the AttributionGate about the targets it names: scan
 // create, update, clone and import, quick scan and POST /commands refuse
 // the request as a whole; a scan run (manual, scheduled, retry, workflow)
-// skips the target with a run warning; the dispatch gate (pipelines,
+// skips the target with a run warning; the dispatch gate (scan workflows,
 // coverage, validation, retests, simulations, connector scans) refuses it.
 //
 // The reason the caller sees is generic. The specific state (rejected,
