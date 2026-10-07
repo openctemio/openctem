@@ -10,8 +10,8 @@ import {
 } from '../workflow-types'
 
 // The API refuses (400) to create, edit or activate a workflow that uses the
-// schedule/finding_age triggers or the assign_team/update_priority actions:
-// nothing runs them. No picker may offer them; stored workflows are flagged.
+// schedule/finding_age/finding_updated/webhook triggers or the assign_team/
+// update_priority/run_script/trigger_pipeline actions: nothing runs them. No picker may offer them; stored workflows are flagged.
 
 function node(config: WorkflowNode['config']): WorkflowNode {
   return {
@@ -37,10 +37,16 @@ describe('workflow picker lists', () => {
   })
 
   it('match the API unsupported sets exactly', () => {
-    expect([...WORKFLOW_UNSUPPORTED_TRIGGER_TYPES].sort()).toEqual(['finding_age', 'schedule'])
+    expect([...WORKFLOW_UNSUPPORTED_TRIGGER_TYPES].sort()).toEqual([
+      'finding_age',
+      'finding_updated',
+      'schedule',
+      'webhook',
+    ])
     expect([...WORKFLOW_UNSUPPORTED_ACTION_TYPES].sort()).toEqual([
       'assign_team',
       'run_script',
+      'trigger_pipeline',
       'update_priority',
     ])
   })

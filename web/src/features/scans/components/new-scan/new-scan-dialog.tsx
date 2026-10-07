@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { ChevronLeft, ChevronRight, Loader2, Play } from 'lucide-react'
 import { ScanRoutingSection, toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
+import { WorkflowPreviewSection } from './workflow-preview'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
@@ -245,6 +246,16 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         return (
           <>
             <ScheduleStep data={formData} onChange={handleDataChange} />
+            {formData.mode === 'workflow' && formData.workflowId && (
+              <WorkflowPreviewSection
+                request={{
+                  pipeline_id: formData.workflowId,
+                  targets: previewRequest.targets,
+                  asset_group_ids: previewRequest.asset_group_ids,
+                  scan_zone_id: formData.scanZoneId ?? undefined,
+                }}
+              />
+            )}
             {canReadZones && zones.length > 0 && (
               <ScanRoutingSection
                 zones={zones}
