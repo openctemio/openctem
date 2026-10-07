@@ -6,9 +6,8 @@
  * noticed because no check compared the two. This calls every builder in the
  * endpoint modules with placeholder arguments and matches the path it returns
  * against api/api/openapi/routes.txt, the generated list of every registered
- * operation. The file is not committed: Web CI writes it from the router, and
- * locally `cd api && UPDATE_ROUTE_MANIFEST=1 go test
- * ./tools/lint/openapicontract/ -run RouteManifest` does.
+ * operation. The file is not committed: `make generate` at the repository
+ * root writes it from the router (Web CI does the same).
  *
  * Builders that point at no route today are frozen in
  * endpoint-route-baseline.txt. The baseline only shrinks: a new builder without
@@ -27,8 +26,8 @@ const baselinePath = resolve(here, 'endpoint-route-baseline.txt')
 
 if (!existsSync(manifestPath)) {
   throw new Error(
-    'api/api/openapi/routes.txt is missing. Generate it from the router: ' +
-      'cd api && UPDATE_ROUTE_MANIFEST=1 go test ./tools/lint/openapicontract/ -run RouteManifest'
+    'api/api/openapi/routes.txt is missing. It is generated from the router, not ' +
+      'committed: run `make generate` at the repository root.'
   )
 }
 
