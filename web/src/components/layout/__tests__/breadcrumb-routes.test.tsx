@@ -42,7 +42,7 @@ describe('PATHS_WITHOUT_PAGE', () => {
 
   it('matches id segments in a real URL', () => {
     expect(breadcrumbHasPage('/insights')).toBe(false)
-    expect(breadcrumbHasPage('/pipelines/01a0f683-d491-7143-b9b7-6e2b70490c0e')).toBe(false)
+    expect(breadcrumbHasPage('/pentest/findings/01a0f683-d491-7143-b9b7-6e2b70490c0e')).toBe(false)
     expect(breadcrumbHasPage('/findings')).toBe(true)
     expect(breadcrumbHasPage('/settings')).toBe(true)
   })
@@ -62,12 +62,12 @@ describe('BreadcrumbNav', () => {
   })
 
   it('does not link the id segment of a nested detail route without a page', () => {
-    pathname.current = '/pipelines/01a0f683-d491-7143-b9b7-6e2b70490c0e/builder'
+    pathname.current = '/settings/pentest/templates/01a0f683-d491-7143-b9b7-6e2b70490c0e/edit'
     const { container } = render(<BreadcrumbNav />)
     // The current page renders role="link" without an href; count real links only.
     const links = [...container.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'))
-    expect(links).not.toContain('/pipelines/01a0f683-d491-7143-b9b7-6e2b70490c0e')
-    expect(links).toContain('/pipelines')
+    expect(links).not.toContain('/settings/pentest/templates/01a0f683-d491-7143-b9b7-6e2b70490c0e')
+    expect(links).toContain('/settings/pentest/templates')
   })
 
   it('leaves only the home link when no parent has a page', () => {

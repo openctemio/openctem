@@ -3,7 +3,7 @@ export {
   ScannerNode,
   WorkflowBuilder,
   NodePalette,
-  PipelineForm,
+  ScanWorkflowForm,
   VisualBuilderDialog,
 } from './components'
 export type {

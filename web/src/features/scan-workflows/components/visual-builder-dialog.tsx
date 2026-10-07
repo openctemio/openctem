@@ -10,36 +10,36 @@ import { toast } from 'sonner'
 
 import { WorkflowBuilder, type AvailableTool } from './workflow-builder'
 import { NodePalette } from './node-palette'
-import type { PipelineTemplate, PipelineStep, UIPosition } from '@/lib/api'
+import type { ScanWorkflow, ScanWorkflowStep, UIPosition } from '@/lib/api'
 import { getErrorMessage } from '@/lib/api'
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { generateTempStepId, generateStepKey } from '@/lib/utils'
 
 interface SaveData {
-  steps: PipelineStep[]
+  steps: ScanWorkflowStep[]
   ui_start_position?: UIPosition
   ui_end_position?: UIPosition
 }
 
 interface VisualBuilderDialogProps {
-  pipeline: PipelineTemplate | null
+  workflow: ScanWorkflow | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (data: SaveData) => Promise<void>
 }
 
 export function VisualBuilderDialog({
-  pipeline,
+  workflow,
   open,
   onOpenChange,
   onSave,
 }: VisualBuilderDialogProps) {
   // Local state for steps (modified version)
-  const [localSteps, setLocalSteps] = useState<PipelineStep[]>([])
+  const [localSteps, setLocalSteps] = useState<ScanWorkflowStep[]>([])
   const [hasChanges, setHasChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Start/End node positions (persisted with pipeline)
+  // Start/End node positions (persisted with workflow)
   const [startPosition, setStartPosition] = useState<UIPosition | undefined>(undefined)
   const [endPosition, setEndPosition] = useState<UIPosition | undefined>(undefined)
 
@@ -67,20 +67,20 @@ export function VisualBuilderDialog({
       }))
   }, [toolsData])
 
-  // Initialize local steps and positions when pipeline changes or dialog opens
+  // Initialize local steps and positions when workflow changes or dialog opens
   useEffect(() => {
-    if (open && pipeline) {
-      setLocalSteps([...(pipeline.steps || [])])
-      setStartPosition(pipeline.ui_start_position)
-      setEndPosition(pipeline.ui_end_position)
+    if (open && workflow) {
+      setLocalSteps([...(workflow.steps || [])])
+      setStartPosition(workflow.ui_start_position)
+      setEndPosition(workflow.ui_end_position)
       setHasChanges(false)
-    } else if (open && !pipeline) {
+    } else if (open && !workflow) {
       setLocalSteps([])
       setStartPosition(undefined)
       setEndPosition(undefined)
       setHasChanges(false)
     }
-  }, [open, pipeline])
+  }, [open, workflow])
 
   // Handle closing
   const handleOpenChange = (newOpen: boolean) => {
@@ -99,20 +99,20 @@ export function VisualBuilderDialog({
   }
 
   // Handle steps change
-  const handleStepsChange = useCallback((newSteps: PipelineStep[]) => {
+  const handleStepsChange = useCallback((newSteps: ScanWorkflowStep[]) => {
     setLocalSteps(newSteps)
     setHasChanges(true)
   }, [])
 
   // Handle inline step updates (from node editing or panel)
-  const handleStepUpdate = useCallback((stepId: string, updates: Partial<PipelineStep>) => {
+  const handleStepUpdate = useCallback((stepId: string, updates: Partial<ScanWorkflowStep>) => {
     setLocalSteps((prev) =>
       prev.map((step) => (step.id === stepId ? { ...step, ...updates } : step))
     )
     setHasChanges(true)
   }, [])
 
-  // Handle Start/End position changes (persisted to pipeline)
+  // Handle Start/End position changes (persisted to workflow)
   const handleStartPositionChange = useCallback((position: UIPosition) => {
     setStartPosition(position)
     setHasChanges(true)
@@ -146,13 +146,13 @@ export function VisualBuilderDialog({
       const stepKeyBase = toolName || stepName
       const stepKey = generateStepKey(stepKeyBase)
 
-      const newStep: PipelineStep = {
+      const newStep: ScanWorkflowStep = {
         id: generateTempStepId(), // Temporary ID - backend will assign real UUID on save
         step_key: stepKey,
         name: stepName,
         description: '',
         order: localSteps.length + 1,
-        node_type: 'scanner', // All pipeline steps are scanners
+        node_type: 'scanner', // All workflow steps are scanners
         tool: toolName || '', // Pre-fill tool from palette
         capabilities: capabilities || ['scan'],
         timeout_seconds: 3600,
@@ -207,7 +207,7 @@ export function VisualBuilderDialog({
 
   // Handle save
   const handleSave = async () => {
-    if (!pipeline) return
+    if (!workflow) return
 
     setIsSaving(true)
     try {
@@ -217,16 +217,16 @@ export function VisualBuilderDialog({
         ui_end_position: endPosition,
       })
       setHasChanges(false)
-      toast.success('Pipeline saved successfully')
+      toast.success('Workflow saved successfully')
     } catch (error) {
-      console.error('Failed to save pipeline:', error)
-      toast.error(getErrorMessage(error, 'Failed to save pipeline'))
+      console.error('Failed to save workflow:', error)
+      toast.error(getErrorMessage(error, 'Failed to save workflow'))
     } finally {
       setIsSaving(false)
     }
   }
 
-  const isReadOnly = pipeline?.is_system_template || false
+  const isReadOnly = workflow?.is_system_template || false
 
   return (
     <>
@@ -235,14 +235,14 @@ export function VisualBuilderDialog({
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b bg-background shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              {pipeline?.is_system_template ? (
+              {workflow?.is_system_template ? (
                 <Cloud className="h-5 w-5 text-blue-500 shrink-0" />
               ) : (
                 <Server className="h-5 w-5 text-muted-foreground shrink-0" />
               )}
               <div className="min-w-0">
                 <DialogTitle className="text-base font-semibold truncate">
-                  {pipeline?.name || 'Visual Builder'}
+                  {workflow?.name || 'Visual Builder'}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground whitespace-nowrap">
                   {isReadOnly

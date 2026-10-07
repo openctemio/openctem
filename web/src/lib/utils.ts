@@ -40,7 +40,7 @@ export function slugify(text: string, maxLength: number = 40): string {
 }
 
 /**
- * Generate a unique step key for pipeline steps
+ * Generate a unique step key for scan workflow steps
  * Format: {slug}-{nanoid(8)} e.g., "semgrep-V1StGXnO", "nuclei-scan-x9K2mNpQ"
  *
  * nanoid(8) provides:
@@ -62,7 +62,7 @@ export function generateStepKey(name: string): string {
 }
 
 /**
- * Generate a temporary client-side ID for pipeline steps
+ * Generate a temporary client-side ID for scan workflow steps
  * Format: temp-{nanoid(12)} e.g., "temp-V1StGXnO9_cK"
  *
  * @security This is a TEMPORARY ID for UI state management only.

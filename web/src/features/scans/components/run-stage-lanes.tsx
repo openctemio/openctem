@@ -10,7 +10,7 @@ import { TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunStage, RunStageList } from '@/lib/api/generated'
-import { useCapabilityTable } from '@/features/pipelines/lib/use-capability-table'
+import { useCapabilityTable } from '@/features/scan-workflows/lib/use-capability-table'
 
 /** Why the hop router left targets out (scan_run_targets reasons). */
 const SKIP_LABELS: Record<string, string> = {
