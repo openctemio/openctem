@@ -32,7 +32,7 @@ test('verified domains open on the seeds of Scoping > Boundaries', async ({ page
   await expect(page.getByRole('tab', { name: /^Seeds/, selected: true })).toBeVisible({
     timeout: 30_000,
   })
-  expect(new URL(page.url()).pathname).toBe('/scope-config')
+  expect(new URL(page.url()).pathname).toBe('/scope')
 })
 
 base('SCIM tokens: no Generate token for a member or viewer', async ({ page }) => {

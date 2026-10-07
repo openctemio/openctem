@@ -105,7 +105,7 @@ API connector already uses (`pkg/httpsec`).
 | `/assets/changes` (What changed) | Real |
 | `/attack-paths`, `/exposure-chains`, `/exposures` | Real |
 | `/exposures/{vulnerabilities,secrets,code,misconfigurations}` | Partial: side cards show tenant-wide numbers |
-| `/scope-config`, `/scoping` | Real |
+| `/scope`, `/scoping` | Real |
 
 No EASM page is a `useDashboardStats` scaffold. The planned pages (§7) must
 each have their own endpoint. The UI CI test `sidebar-no-scaffolds` enforces
@@ -137,7 +137,7 @@ DNS checks watch every permanent domain entry with discovery on (origin
 §4.3). Existing seeds were folded into entries with `origin: seed_migration`.
 Only scope entries authorize active probes; a verified domain is proof only.
 
-**Web.** Scoping › Boundaries (`/scope-config?tab=proof`) has a **Domain
+**Web.** Scoping › Scope (`/scope?tab=proof`) has a **Domain
 proof** tab when the `attack_surface` module is on: prove control of a domain
 with a DNS TXT record (`/api/v1/easm/verified-domains`); SSO domains are shown
 read-only. Code: `web/src/features/attack-surface/components/easm-domain-proof.tsx`.

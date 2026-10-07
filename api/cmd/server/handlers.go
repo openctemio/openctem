@@ -318,6 +318,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
 		FindingActions:            findingActionsHandler,
 		FindingRetest:             handler.NewFindingRetestHandler(svc.Retest, log),
+		FindingEvidenceItems:      handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             githubWebhookHandler,
@@ -836,6 +837,14 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	if svc.ActiveGate != nil {
 		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
 	}
+	// Address rows explain why they stay in review and offer the fix.
+	review.SetAddressExplainer(repos.Attribution, func(ctx context.Context, tenantID shared.ID) (string, error) {
+		t, err := repos.Tenant.GetByID(ctx, tenantID)
+		if err != nil {
+			return "", err
+		}
+		return t.Name(), nil
+	})
 	h.SetReview(review, audit)
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {

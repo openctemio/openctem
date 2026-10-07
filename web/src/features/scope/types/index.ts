@@ -34,81 +34,6 @@ export type ScopeTargetType =
   | 'path'
   | 'email_domain'
 
-export type ScopeTargetStatus = 'active' | 'inactive'
-
-/**
- * Scope Target - defines what should be scanned
- */
-export interface ScopeTarget {
-  id: string
-  type: ScopeTargetType
-  pattern: string
-  description: string
-  status: ScopeTargetStatus
-  priority?: 'critical' | 'high' | 'medium' | 'low'
-  tags?: string[]
-  addedAt: string
-  addedBy: string
-  updatedAt?: string
-  // Link to source (e.g., imported from cloud account)
-  sourceType?: 'manual' | 'imported' | 'discovered'
-  sourceId?: string
-}
-
-/**
- * Scope Exclusion - defines what should be excluded from scanning
- */
-export interface ScopeExclusion {
-  id: string
-  type: ScopeTargetType
-  pattern: string
-  reason: string
-  status: ScopeTargetStatus
-  expiresAt?: string // Temporary exclusions
-  approvedBy?: string
-  addedAt: string
-  addedBy: string
-}
-
-/**
- * Scope Match Result - links an asset to its matching scope rules
- */
-export interface ScopeMatchResult {
-  assetId: string
-  assetName: string
-  assetType: string
-  matchedTargets: {
-    targetId: string
-    pattern: string
-    matchType: 'exact' | 'wildcard' | 'cidr' | 'regex'
-  }[]
-  matchedExclusions: {
-    exclusionId: string
-    pattern: string
-    reason: string
-  }[]
-  inScope: boolean // true if matched by target and not excluded
-}
-
-/**
- * Scope Status Stats (how many assets match scope rules)
- */
-export interface ScopeCoverage {
-  totalAssets: number
-  inScopeAssets: number
-  excludedAssets: number
-  uncoveredAssets: number
-  coveragePercent: number
-  byType: Record<
-    string,
-    {
-      total: number
-      inScope: number
-      excluded: number
-    }
-  >
-}
-
 /**
  * Type configuration for UI display
  */
@@ -160,8 +85,9 @@ export const SCOPE_TYPE_CONFIGS: ScopeTypeConfig[] = [
     type: 'domain',
     label: 'Domain',
     icon: 'Globe',
-    placeholder: '*.example.com or api.example.com',
-    helpText: 'Supports wildcards (*.domain.com)',
+    placeholder: 'example.com or *.example.com',
+    helpText:
+      'example.com is that name only; *.example.com is example.com and every name below it.',
     validation: {
       pattern: /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/,
       message: 'Invalid domain format',
