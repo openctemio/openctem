@@ -191,6 +191,7 @@ type Service struct {
 
 	// tombstones lets promotion skip rejected names (nil: no check).
 	tombstones TombstoneChecker
+	scopeJoin  ScopeJoiner
 	// tenantSettings carries the per-tenant switch and interval.
 	tenantSettings TenantSettingsReader
 	// relinker moves stored CT exposures onto their host's asset.
