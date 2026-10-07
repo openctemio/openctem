@@ -164,7 +164,7 @@ capability: every built-in implementation shares it.
 
 ### 1.3 Starter workflows
 
-Migration 001167 seeds five system workflows built only from capability steps
+Migration 001177 seeds five system workflows built only from capability steps
 (no pinned tool), so any available implementation runs them:
 
 | Workflow | Steps |
