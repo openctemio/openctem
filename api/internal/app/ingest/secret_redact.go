@@ -31,8 +31,8 @@ func redactReportSecrets(report *ctis.Report) {
 		return
 	}
 	secretTool := false
-	if report.Tool != nil {
-		secretTool = detectFindingSource(report.Tool.Name, report.Tool.Capabilities) == vulnerability.FindingSourceSecret
+	if report.Tool != nil || report.Metadata.Capability != "" {
+		secretTool = reportFindingSource(report) == vulnerability.FindingSourceSecret
 	}
 	for i := range report.Findings {
 		f := &report.Findings[i]

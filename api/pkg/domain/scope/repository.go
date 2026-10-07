@@ -119,6 +119,28 @@ type Stats struct {
 	TotalExclusions  int64   `json:"total_exclusions"`
 	ActiveExclusions int64   `json:"active_exclusions"`
 	Coverage         float64 `json:"coverage"`
+	// Inventory is the coverage breakdown behind Coverage, counted over the
+	// assets the caller may see.
+	Inventory InventoryCoverage `json:"inventory"`
+}
+
+// InventoryCoverage is how much of the internet-facing inventory the active
+// scope targets cover (research/53 SC8): InScope of InternetFacing. Internal
+// names and addresses (zone-gated) are counted apart, in neither.
+type InventoryCoverage struct {
+	InternetFacing int64 `json:"internet_facing"`
+	InScope        int64 `json:"in_scope"`
+	Internal       int64 `json:"internal"`
+}
+
+// Percent is InScope as a share of InternetFacing, rounded to two decimals
+// (0 with no internet-facing inventory).
+func (c InventoryCoverage) Percent() float64 {
+	if c.InternetFacing <= 0 {
+		return 0
+	}
+	p := float64(c.InScope) / float64(c.InternetFacing) * 100
+	return float64(int64(p*100+0.5)) / 100
 }
 
 // Coverage represents scope coverage breakdown.

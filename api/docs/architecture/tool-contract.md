@@ -189,7 +189,27 @@ lints, runs offline through the real runtime, and runs the conformance kit:
 - fuzzing;
 - the semver diff.
 
-## 8. Old sensors
+## 8. Web scope, endpoints and evidence
+
+- **Web scope.** A job's `web_scope` (hosts, path prefixes, deny paths,
+  methods) is enforced on the sensor: `tool.Context.HTTP` checks every
+  request and redirect as the server sees the path, a networked tool must
+  declare `features.web_scope`, exec tools read
+  `{{task.web_scope_file}}`, and katana maps the scope onto its flags and
+  filters its results. The conformance kit's `crawl.web` and `dast.web`
+  suites point a tool at a site that links to denied paths in every
+  spelling and fail it on any request to one.
+- **Endpoints.** CTIS 1.6 `endpoints[]` travel as the `endpoint` record kind
+  (adapter protocol, exec output, importer formats). A tool declares
+  `endpoint` in `produces`; `crawl.web@1`, `dast.web@1` and
+  `import.api_spec@1` may emit them.
+- **Evidence.** Findings and retest verdicts carry CTIS 1.6
+  `evidence_items`, raw, with sensitive values marked in `sensitive[]`; the
+  platform masks them. A networked tool's `fixed` stands only with the
+  attempt's answered `http_exchange`; nuclei retests run with `-ms` so the
+  non-matching attempt is the proof.
+
+## 9. Old sensors
 
 A sensor that reports no descriptors keeps working for one release train
 through the platform fallback: a built-in tool name maps to its catalogue
