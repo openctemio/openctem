@@ -76,7 +76,10 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 
 			// Token operations - separate rate limit (20/min)
 			// Token exchange requires valid refresh token, not brute-forceable
-			// Used for tenant switching which may happen frequently
+			// Used for tenant switching which may happen frequently.
+			// This is the only handler of POST /auth/token, in local and
+			// hybrid mode alike: an OIDC access token is verified by the auth
+			// middleware on each request and is never exchanged here.
 			tokenHandler := ChainFunc(h.LocalAuth.ExchangeToken, tokenExchangeRL)
 			r.POST("/token", tokenHandler.ServeHTTP)
 
@@ -112,11 +115,6 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			r.GET("/step-up", ChainFunc(h.LocalAuth.GetStepUp, authMiddleware).ServeHTTP)
 			r.POST("/step-up", ChainFunc(h.LocalAuth.StepUp, stepUpRL, authMiddleware).ServeHTTP)
 
-		}
-
-		// OIDC token endpoint (deprecated - returns Keycloak redirect info)
-		if authCfg.Provider.SupportsOIDC() && h.Auth != nil {
-			r.POST("/token", h.Auth.GenerateToken)
 		}
 
 		// OAuth endpoints (social login) - login rate limit.
