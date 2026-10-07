@@ -126,66 +126,12 @@ export const matchCIDR = (cidr: string, ip: string): boolean => {
   }
 }
 
-const SERVICE_NAME_RE = /^(.+):(\d{1,5})(?:[:/](tcp|udp|sctp))?$/
-
 /**
- * The host an asset name points at, as the API reads it
- * (`asset.HostOf`): the host of a URL, of a service name in any form
- * (`host:443:tcp`, `host:443/tcp`, `[v6]:443/tcp`, `v6:443:tcp`) or of
- * `host:port/path`; the name itself otherwise. Lower-cased, without
- * brackets or one trailing dot.
- */
-export const hostOf = (name: string): string => {
-  let s = (name || '').trim()
-  if (s.includes('://')) {
-    try {
-      return new URL(s).hostname
-        .replace(/^\[|\]$/g, '')
-        .replace(/\.$/, '')
-        .toLowerCase()
-    } catch {
-      return ''
-    }
-  }
-  const service = (v: string): string | null => {
-    const m = SERVICE_NAME_RE.exec(v.toLowerCase())
-    if (!m) return null
-    let host = m[1]
-    if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1)
-    else if (host.includes(':') && !m[3]) return null // "2001:db8::1:443" is an address
-    if (/[/?#@ \[\]]/.test(host)) return null
-    return host.replace(/\.$/, '')
-  }
-  const direct = service(s)
-  if (direct !== null) return direct
-  const cut = s.search(/[/?#]/)
-  if (cut >= 0 && !/^[\d.]+\/\d+$/.test(s) && !/^[0-9a-f:]+\/\d+$/i.test(s)) {
-    s = s.slice(0, cut)
-    const h = service(s)
-    if (h !== null) return h
-  }
-  return s
-    .replace(/^\[|\]$/g, '')
-    .replace(/\.$/, '')
-    .toLowerCase()
-}
-
-/**
- * Check if a domain matches a domain pattern, with the API's rule
- * (RFC-054 §4.1): "x" is exactly x; "*.x" and "**.x" are x and every name
- * below it. Case-insensitive; one trailing dot ignored; a service, URL or
- * host:port is matched by its host.
+ * Check if a domain matches a domain pattern (supports wildcards)
+ * Uses RegExp implementation
  */
 export const matchDomain = (pattern: string, domain: string): boolean => {
-  if (!pattern || !domain) return false
-  if (pattern.length > MAX_PATTERN_LENGTH || domain.length > MAX_VALUE_LENGTH) return false
-  let p = pattern.trim().toLowerCase().replace(/\.$/, '')
-  const wild = p.startsWith('*.') || p.startsWith('**.')
-  if (wild) p = p.replace(/^\*\*?\./, '')
-  const d = hostOf(domain)
-  if (!p || !d) return false
-  if (!wild) return d === p
-  return d === p || d.endsWith('.' + p)
+  return matchWildcard(pattern, domain)
 }
 
 /**

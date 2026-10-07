@@ -8,10 +8,8 @@
   `10.0.0.5:22:tcp` as public, and scan-zone routing could not route it to its
   zone.
 - These checks, and host leases, hop routing, target
-  validation, the scope coverage count and the web scope matcher, now read
+  validation and the scope coverage count, now read
   every service form through the one parser (`asset.SplitServiceName` /
-  `asset.HostOf`; the web `hostOf` mirrors it). A service on a private address
+  `asset.HostOf`). A service on a private address
   routes only to the zone that holds the address, and is refused outside every
   zone.
-- The web scope matcher now uses the API's wildcard rule: `*.x` covers `x`
-  and every name below it.

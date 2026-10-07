@@ -81,4 +81,3 @@ func TestRoleMayPushUnsolicited(t *testing.T) {
 		}
 	}
 }
-
