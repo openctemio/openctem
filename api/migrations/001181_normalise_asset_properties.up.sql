@@ -24,13 +24,14 @@
 -- ids and updated_at are not touched. No audit or history rows are written.
 
 -- A ledger of this migration, like asset_type_reclassifications (000684):
--- no foreign key, so it never blocks or follows an asset delete or merge;
--- the down migration restores only assets that still exist.
+-- a row goes with its asset (delete, merge) and with its tenant (erasure).
 CREATE TABLE asset_properties_pre_001181 (
     asset_id   uuid PRIMARY KEY,
-    tenant_id  uuid NOT NULL,
+    tenant_id  uuid NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
     properties jsonb NOT NULL,
-    saved_at   timestamptz NOT NULL DEFAULT now()
+    saved_at   timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT fk_asset_properties_pre_001181_tenant_asset
+        FOREIGN KEY (tenant_id, asset_id) REFERENCES assets (tenant_id, id) ON DELETE CASCADE
 );
 
 COMMENT ON TABLE asset_properties_pre_001181 IS
