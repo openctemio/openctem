@@ -1811,6 +1811,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Chained steps take what their predecessors produced, through the
 		// per-hop gate (hop_router.go).
 		pipeline.WithHopStore(scanHops),
+		// Web steps carry the path exclusions of their hosts (RFC-056).
+		pipeline.WithWebScope(s.Scope),
 	)
 
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
@@ -2281,6 +2283,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	if s.SensorGrant != nil {
 		s.SensorGrant.SetNotifications(repos.MemberLifecycle, s.Notification)
 	}
+	// A path exclusion's testing mode change notifies every administrator
+	// (RFC-056).
+	s.Scope.SetNotifications(repos.MemberLifecycle, s.Notification)
 }
 
 // InitEmailServices initializes email-related services.

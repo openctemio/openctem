@@ -176,6 +176,8 @@ type Exclusion struct {
 	createdBy     string
 	createdAt     time.Time
 	updatedAt     time.Time
+	// web is the path rule of a `path` exclusion (web_rule.go).
+	web *WebRule
 }
 
 // NewExclusion creates a new scope exclusion awaiting approval.
@@ -291,6 +293,9 @@ func (e *Exclusion) IsPending() bool {
 
 // Matches checks if a value matches this exclusion's pattern.
 func (e *Exclusion) Matches(value string) bool {
+	if e.exclusionType == ExclusionTypePath {
+		return e.matchesWebURL(value)
+	}
 	return MatchesExclusionPattern(e.exclusionType, e.pattern, value)
 }
 

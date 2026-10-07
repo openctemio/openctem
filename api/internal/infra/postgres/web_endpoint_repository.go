@@ -188,6 +188,7 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 		examples, ctypes, auths, techs, sigs              = make([]string, n), make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 		statuses                                          = make([]int64, n)
 		inScope                                           = make([]bool, n)
+		exclusions                                        = make([]string, n)
 	)
 	for i, o := range obs {
 		ids[i] = shared.NewID().String()
@@ -197,6 +198,9 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 		sigs[i] = o.ResponseSig()
 		statuses[i] = int64(o.StatusCode)
 		inScope[i] = !o.OutOfScope
+		if o.ExclusionID != nil {
+			exclusions[i] = o.ExclusionID.String()
+		}
 	}
 	tool := prov.Tool
 	if len(tool) > 64 {
@@ -207,14 +211,15 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO web_endpoints (id, tenant_id, origin_asset_id, method, path_template, template_hash, path_hash,
 			kind, sources, example_path, last_status, content_type, auth_state, technologies, response_sig, in_scope,
-			last_run_id, last_sensor_id, last_tool)
+			last_run_id, last_sensor_id, last_tool, exclusion_id)
 		SELECT u.id::uuid, $1::uuid, $2::uuid, u.method, u.tmpl, u.thash, u.phash,
 			u.kind, string_to_array(u.source, ','), NULLIF(u.example, ''), NULLIF(u.status, 0)::smallint, NULLIF(u.ctype, ''), u.auth,
 			CASE WHEN u.tech = '' THEN '{}'::text[] ELSE string_to_array(u.tech, E'\x1f') END, u.sig, u.in_scope,
-			$17::uuid, $18::uuid, NULLIF($19, '')
+			$17::uuid, $18::uuid, NULLIF($19, ''),
+			(SELECT x.id FROM scope_exclusions x WHERE x.id = NULLIF(u.excl, '')::uuid AND x.tenant_id = $1::uuid)
 		FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],
-			$10::text[], $11::bigint[], $12::text[], $13::text[], $14::text[], $15::text[], $16::bool[])
-			AS u(id, method, tmpl, thash, phash, kind, source, example, status, ctype, auth, tech, sig, in_scope)
+			$10::text[], $11::bigint[], $12::text[], $13::text[], $14::text[], $15::text[], $16::bool[], $20::text[])
+			AS u(id, method, tmpl, thash, phash, kind, source, example, status, ctype, auth, tech, sig, in_scope, excl)
 		ON CONFLICT (tenant_id, origin_asset_id, template_hash) DO UPDATE SET
 			sources = CASE WHEN excluded.sources <@ web_endpoints.sources THEN web_endpoints.sources
 				ELSE ARRAY(SELECT DISTINCT s FROM unnest(web_endpoints.sources || excluded.sources) s ORDER BY s) END,
@@ -227,6 +232,7 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 				AND web_endpoints.response_sig IS NOT NULL THEN now() ELSE web_endpoints.last_changed_at END,
 			response_sig = excluded.response_sig,
 			in_scope = excluded.in_scope,
+			exclusion_id = excluded.exclusion_id,
 			state = CASE WHEN web_endpoints.state = 'gone' THEN 'active' ELSE web_endpoints.state END,
 			last_seen_at = now(),
 			last_run_id = COALESCE(excluded.last_run_id, web_endpoints.last_run_id),
@@ -235,13 +241,14 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 		WHERE web_endpoints.last_seen_at < now() - interval '1 hour'
 			OR web_endpoints.state = 'gone'
 			OR web_endpoints.in_scope IS DISTINCT FROM excluded.in_scope
+			OR web_endpoints.exclusion_id IS DISTINCT FROM excluded.exclusion_id
 			OR web_endpoints.response_sig IS DISTINCT FROM excluded.response_sig
 			OR NOT (excluded.sources <@ web_endpoints.sources)`,
 		tenantID.String(), originAssetID.String(),
 		pq.Array(ids), pq.Array(methods), pq.Array(tmpls), pq.Array(thash), pq.Array(phash),
 		pq.Array(kinds), pq.Array(sources), pq.Array(examples), pq.Array(statuses), pq.Array(ctypes),
 		pq.Array(auths), pq.Array(techs), pq.Array(sigs), pq.Array(inScope),
-		nullID(prov.RunID), nullID(prov.SensorID), tool)
+		nullID(prov.RunID), nullID(prov.SensorID), tool, pq.Array(exclusions))
 	if err != nil {
 		return fmt.Errorf("upsert endpoints: %w", err)
 	}
