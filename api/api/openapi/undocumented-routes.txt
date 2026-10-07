@@ -278,7 +278,6 @@ POST /api/v1/assignment-rules/{}/test
 POST /api/v1/attachments
 POST /api/v1/attachments/link
 POST /api/v1/attacker-profiles
-POST /api/v1/audit-logs/rebaseline
 POST /api/v1/auth/backchannel-logout
 POST /api/v1/auth/create-first-team
 POST /api/v1/auth/saml/{}/acs

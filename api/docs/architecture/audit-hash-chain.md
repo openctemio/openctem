@@ -16,7 +16,7 @@ fact breaks the chain from that point on, and the break is detectable.
 | Classify breaks (one implementation, shared by the CLI and the server) | `internal/app/audit/chainclassify` |
 | Classify breaks offline, every tenant | `cmd/chainaudit` |
 | Classify and rebaseline one organization from the admin console | `GET`/`POST /api/v1/admin/tenants/{tenantId}/audit-chain[/rebaseline]` (`AuditService.ClassifyChain`, `RebaselineChainIfExplained`) |
-| Rebaseline: `POST /api/v1/audit-logs/rebaseline` (owner only) | `AuditService.RebaselineChain` |
+| There is no tenant rebaseline route: the organization's owner is the insider the chain guards against, so a rebaseline is a platform-operator action (admin console, above) | |
 | Retention: archive and prune the oldest prefix past `AUDIT_RETENTION_DAYS` | `AuditService.PruneExpiredChains`, `internal/infra/controller/data_expiration.go`, migration 001010 |
 
 `payload` is `action|resource_type|resource_id|result`. The timestamp is
@@ -114,14 +114,15 @@ organization's `audit.chain_rebaselined` event is attributed to
 log gets a high-severity `organization.audit_chain_rebaseline` row (refusals
 included, never the code).
 
-### From the tenant API
+### Not from the tenant API
 
-As the organization's owner:
-
-```
-POST /api/v1/audit-logs/rebaseline
-→ 200 {"ok": true, "rebaseline_id": "…", "entries_total": 812, "entries_rewritten": 80}
-```
+The tenant API has no rebaseline route. The chain exists to make changes by a
+privileged insider evident, and the organization's owner is the most
+privileged insider, so letting them re-sign it would defeat its purpose, even
+behind step-up. The owner reads the chain state (`GET /api/v1/audit-logs/verify`)
+and asks the platform operator, who rebaselines from the admin console after
+reviewing the classification. `tests/unit/admin_only_actions_test.go` fails
+if a tenant-plane route reaches a rebaseline.
 
 The rebaseline refuses with **409** and changes nothing when:
 
@@ -129,9 +130,6 @@ The rebaseline refuses with **409** and changes nothing when:
   tamper signal, and a rebaseline must not cover it up;
 - the chain changed while the rebaseline ran (an entry was appended, or an
   entry no longer holds the hashes that were read).
-
-An intact chain can still be rebaselined. It is recorded with
-`entries_rewritten: 0`.
 
 ### What is kept
 

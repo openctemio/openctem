@@ -177,6 +177,8 @@ jobs:
       - name: Route Style (planes and conventions)
         run: go test ./tools/lint/routestyle/... ./internal/infra/http/routes/plane/... -count=1
 
+      # Generates the spec from the handler annotations (it is not committed),
+      # then checks it against the routes (scripts/check-openapi.sh).
       - name: OpenAPI Contract
         run: bash scripts/check-openapi.sh
 
@@ -259,6 +261,10 @@ jobs:
           go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
+
+      # The spec is generated, not committed; the contract tests read it.
+      - name: Generate the OpenAPI spec
+        run: make swagger
 
       - name: Install golang-migrate
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
@@ -358,6 +364,10 @@ jobs:
           go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
+
+      # The spec is generated, not committed; the contract tests read it.
+      - name: Generate the OpenAPI spec
+        run: make swagger
 
       - name: Install golang-migrate
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
