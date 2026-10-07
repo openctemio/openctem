@@ -12,6 +12,12 @@ import (
 
 // RunFilter represents filter options for listing runs.
 type RunFilter struct {
+	// Kinds narrows to these run kinds; empty means every kind.
+	Kinds []RunKind
+	// ExcludeSystem leaves out system runs (the Runs list default).
+	ExcludeSystem bool
+	// ExcludeKinds leaves out these kinds.
+	ExcludeKinds   []RunKind
 	TenantID       *shared.ID
 	ScanWorkflowID *shared.ID
 	// ScanID narrows to the runs of one scan (a scan's "View all runs").

@@ -104,7 +104,7 @@ var RefusalMessages = map[string]string{
 	RefusalCandidate:          "This asset is a discovery candidate; its ownership is not confirmed.",
 	RefusalDependency:         "This name runs on third-party infrastructure; only passive and takeover checks apply.",
 	RefusalMonitorOnly:        "This asset is watched passively only.",
-	RefusalNoEntry:            "No scope entry, seed or verified domain covers this target.",
+	RefusalNoEntry:            "No scope entry covers this target.",
 	RefusalEntryPending:       "The scope entry that covers this target is waiting for approval.",
 	RefusalEntryExpired:       "The scope entry that covered this target has expired.",
 	RefusalEntryInactive:      "The scope entry that covers this target is deactivated.",

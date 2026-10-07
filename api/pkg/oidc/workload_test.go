@@ -204,3 +204,71 @@ func TestWorkloadClockSkewBounds(t *testing.T) {
 		}
 	}
 }
+
+// A provider that sends no jti gets a replay key derived from the token
+// itself: the same token always maps to the same key, another token to
+// another key. Without JTIOptional the token is still refused.
+func TestWorkloadJTIOptional(t *testing.T) {
+	p := newTestIdP(t)
+	c := p.workloadClaims()
+	delete(c, "jti")
+	raw := p.sign(t, c)
+	if _, err := p.client().VerifyWorkloadToken(context.Background(), raw, p.workloadExpect()); err == nil {
+		t.Fatal("token without jti accepted")
+	}
+	exp := p.workloadExpect()
+	exp.JTIOptional = true
+	a, err := p.client().VerifyWorkloadToken(context.Background(), raw, exp)
+	if err != nil {
+		t.Fatalf("token without jti refused with JTIOptional: %v", err)
+	}
+	b, _ := p.client().VerifyWorkloadToken(context.Background(), raw, exp)
+	if !strings.HasPrefix(a.JTI, TokenHashJTIPrefix) || len(a.JTI) != len(TokenHashJTIPrefix)+64 || b == nil || a.JTI != b.JTI {
+		t.Fatalf("replay key = %q, again %v", a.JTI, b)
+	}
+	c["sub"] = "another"
+	other, err := p.client().VerifyWorkloadToken(context.Background(), p.sign(t, c), exp)
+	if err != nil || other.JTI == a.JTI {
+		t.Fatalf("another token shares the replay key: %v", err)
+	}
+	withJTI, err := p.client().VerifyWorkloadToken(context.Background(), p.sign(t, p.workloadClaims()), exp)
+	if err != nil || withJTI.JTI != "jti-1" {
+		t.Fatalf("a token's own jti must win: %+v %v", withJTI, err)
+	}
+}
+
+// A preview judges a sample token at its own issue time: an expired token
+// shows as verified, a forged one or one for another audience does not.
+func TestWorkloadIgnoreTimes(t *testing.T) {
+	p := newTestIdP(t)
+	old := p.workloadClaims()
+	old["iat"] = time.Now().Add(-3 * time.Hour).Unix()
+	old["nbf"] = old["iat"]
+	old["exp"] = time.Now().Add(-2 * time.Hour).Unix()
+	exp := p.workloadExpect()
+	if _, err := p.client().VerifyWorkloadToken(context.Background(), p.sign(t, old), exp); err == nil {
+		t.Fatal("expired token accepted without IgnoreTimes")
+	}
+	exp.IgnoreTimes = true
+	if _, err := p.client().VerifyWorkloadToken(context.Background(), p.sign(t, old), exp); err != nil {
+		t.Fatalf("preview of an expired token: %v", err)
+	}
+	other, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := jwtv5.NewWithClaims(jwtv5.SigningMethodRS256, old)
+	forged.Header["kid"] = "rsa1"
+	raw, err := forged.SignedString(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.client().VerifyWorkloadToken(context.Background(), raw, exp); err == nil {
+		t.Fatal("preview accepted a forged signature")
+	}
+	wrongAud := p.workloadClaims()
+	wrongAud["aud"] = "openctem:tenant:t2"
+	if _, err := p.client().VerifyWorkloadToken(context.Background(), p.sign(t, wrongAud), exp); err == nil {
+		t.Fatal("preview accepted another audience")
+	}
+}

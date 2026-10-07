@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
@@ -111,9 +112,13 @@ func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
 
 // newScanWorkflowHandler builds the scan workflow handler with the run page's task
 // logs (RFC-029 §4.4.1).
-func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
+func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, scope *datascope.Enforcer, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
 	h := handler.NewScanWorkflowHandler(svc, v, log)
 	h.SetTaskLogs(logs)
+	if scope != nil {
+		// Runs about a finding (retests) follow the finding's data scope.
+		h.SetFindingScope(scope)
+	}
 	return h
 }
 
@@ -295,7 +300,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
-		EASMSeed:      newEASMSeedHandler(repos, svc, log),
 		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
 
 		// Configuration (read-only system config)
@@ -384,7 +388,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CI:              handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:         ciAdmin,
 		CIRunner:        ciRunner,
-		ScanWorkflow:    newScanWorkflowHandler(svc.ScanRun, commandLogs, v, log),
+		ScanWorkflow:    newScanWorkflowHandler(svc.ScanRun, commandLogs, svc.DataScope, v, log),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
@@ -508,8 +512,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// People on scope responses are named from this tenant's members only.
 	scopeActors := postgres.NewScopeActorRepository(deps.DB)
 	handlers.Scope.SetActorNamer(scopeActors)
-	if handlers.EASMSeed != nil {
-		handlers.EASMSeed.SetActorNamer(scopeActors)
+	if svc.EASMSweep != nil {
+		handlers.Scope.SetSweeper(svc.EASMSweep)
 	}
 	handlers.Scope.SetActiveProof(cfg.Scope.ActiveProof)
 	if svc.Scan != nil && svc.ActiveGate != nil {
@@ -885,32 +889,6 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 		DNSDefaultHrs: int(cfg.Worker.EASMDNSInterval.Hours()),
 	}
 	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log)
-}
-
-// newEASMSeedHandler builds the seeds handler; every change is audited.
-func newEASMSeedHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMSeedHandler {
-	var audit handler.AttributionAuditor
-	if svc.Audit != nil {
-		audit = svc.Audit
-	}
-	seeds := easmapp.NewSeedService(repos.EASMSeed, repos.EASMSeed)
-	// A new seed is a scope entry created through the guarded widening path
-	// (RFC-054 §6.1): without the scope service, adding one is refused.
-	if svc.Scope != nil {
-		seeds.SetEntries(svc.Scope)
-	}
-	h := handler.NewEASMSeedHandler(seeds, audit, log)
-	if svc.Scope != nil {
-		h.SetAdminNotifier(svc.Scope)
-	}
-	if svc.ScopeJoin != nil {
-		h.SetScopeJoin(svc.ScopeJoin)
-	}
-	// A new seed starts a sweep so its first results arrive in minutes (P0-11).
-	if svc.EASMSweep != nil {
-		h.SetSweeper(svc.EASMSweep)
-	}
-	return h
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit

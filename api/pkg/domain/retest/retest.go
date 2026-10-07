@@ -143,6 +143,9 @@ type Retest struct {
 	Method         string
 	CheckCommandID *shared.ID
 	ReachCommandID *shared.ID
+	// RunID is the scan run (kind retest) that holds the commands, their
+	// logs and the outcome, so the retest shows up in Runs.
+	RunID *shared.ID
 	// SensorID is the sensor that ran the check (set when the retest settles).
 	SensorID    *shared.ID
 	DeadlineAt  time.Time

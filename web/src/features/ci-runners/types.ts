@@ -20,10 +20,15 @@ export type CIGatePolicyRequest = S['internal_infra_http_handler.CIGatePolicyReq
 export type CIGateOverride = S['internal_infra_http_handler.CIGateOverrideResponse']
 export type CIGateOverrideRequest = S['internal_infra_http_handler.CIGateOverrideRequest']
 
+/** A trust preview: a sample token checked against a draft configuration. */
+export type CITrustPreviewRequest = S['internal_infra_http_handler.CITrustPreviewRequest']
+export type CITrustPreview =
+  S['github_com_openctemio_openctem_api_internal_app_cirun.PreviewResult']
+
 /** The organization's CI settings (OIDC required for CI results). */
 export type CISettings = S['github_com_openctemio_openctem_api_internal_app_cirun.Settings']
 
-export type CIProvider = 'github' | 'gitlab'
+export type CIProvider = 'github' | 'gitlab' | 'azure_devops' | 'bitbucket' | 'circleci' | 'jenkins'
 export type CIVerdictFilter = '' | 'pass' | 'fail' | 'none'
 
 /** CI pipelines: one workflow file of one repository, listed in the fleet in runner mode. */
