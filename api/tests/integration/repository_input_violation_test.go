@@ -23,7 +23,7 @@ import (
 //	POST/PUT /simulations       mitre_technique_id longer than varchar(20)
 //	POST/PUT /pentest/templates cwe_id longer than varchar(20)
 //	POST     /threat-actors     mitre_group_id longer than varchar(20)
-//	POST     /tools, /custom-tools  category_id that does not exist (FK)
+//	POST     /tools             category_id that does not exist (FK)
 func TestRepositoriesReportCallerInputViolationsAsValidation(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
