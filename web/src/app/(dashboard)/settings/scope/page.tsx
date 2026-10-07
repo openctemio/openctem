@@ -26,7 +26,7 @@ export default function ScopeSettingsPage() {
         description="Who may widen what your organization probes, how many must approve, and how one-off entries and discovered names behave."
       >
         <Button asChild variant="outline" size="sm">
-          <Link href="/scope-config">Scope entries</Link>
+          <Link href="/scope">Scope entries</Link>
         </Button>
       </PageHeader>
       <div className="mt-5">
