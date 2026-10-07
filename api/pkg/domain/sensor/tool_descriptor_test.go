@@ -40,7 +40,7 @@ func TestSanitizeToolDescriptor(t *testing.T) {
 		"not JSON":         {`{`, descriptorContract(`{`), "not JSON"},
 		"version mismatch": {`{"apiVersion":"openctem.io/tool/v1","version":"9.0.0"}`, descriptorContract(`{"apiVersion":"openctem.io/tool/v1","version":"9.0.0"}`), "does not match"},
 		"control char":     {`{"apiVersion":"openctem.io/tool/v1","version":"2.0.0","description":"a\u0007b"}`, descriptorContract(`{"apiVersion":"openctem.io/tool/v1","version":"2.0.0","description":"a\u0007b"}`), "control character"},
-		"bidi override":    {`{"apiVersion":"openctem.io/tool/v1","version":"2.0.0","n":"‮exe"}`, descriptorContract(`{"apiVersion":"openctem.io/tool/v1","version":"2.0.0","n":"‮exe"}`), "control character"},
+		"bidi override":    {`{"apiVersion":"openctem.io/tool/v1","version":"2.0.0","n":"\u202eexe"}`, descriptorContract(`{"apiVersion":"openctem.io/tool/v1","version":"2.0.0","n":"\u202eexe"}`), "control character"},
 		"control in key":   {`{"apiVersion":"openctem.io/tool/v1","version":"2.0.0","a\nb":1}`, descriptorContract(`{"apiVersion":"openctem.io/tool/v1","version":"2.0.0","a\nb":1}`), "control character"},
 	}
 	// Version from the contract: the hash matches but the version differs.
