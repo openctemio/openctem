@@ -162,6 +162,24 @@ When a step is queued, its step run records the **capability it ran**
 picked** (`step_runs.tool`). The tier of a capability node is the tier of its
 capability: every built-in implementation shares it.
 
+### 1.3 Starter workflows
+
+Migration 001201 seeds five system workflows built only from capability steps
+(no pinned tool), so any available implementation runs them:
+
+| Workflow | Steps |
+|---|---|
+| Discover | `discover.subdomains` → `resolve.dns` → `probe.http` |
+| Discover + Vuln | `discover.subdomains` → `resolve.dns` → `scan.ports` → `probe.http` → `vuln.templates` (fed by the probe and the ports) |
+| Web app | `probe.http` → `crawl.web` → `vuln.templates` |
+| Network | `scan.ports` → `probe.http` → `vuln.templates` |
+| Code / CI | `secrets.code`, `sast.code`, `sca.deps` and `iac.misconfig`, in parallel |
+
+They are tagged `starter`. The new-scan wizard offers them first, next to a
+single check. An integration test checks that each passes the graph check
+and resolves a seeded platform tool for every step. The presets they replace
+are deactivated, not deleted.
+
 ## 2. The planner: one dispatcher, capability → tool
 
 Every pipeline step command is built on one path:
