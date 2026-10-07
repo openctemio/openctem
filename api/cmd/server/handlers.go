@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
+
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
@@ -302,6 +304,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),

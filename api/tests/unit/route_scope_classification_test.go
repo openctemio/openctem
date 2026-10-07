@@ -141,6 +141,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/repositories":                                {classScoped, "repository must be in scope (L-10)"},
 	"/api/v1/relationships":                               {classScoped, "both ends in scope"},
 	"/api/v1/services":                                    {classScoped, "asset service handler scope"},
+	"/api/v1/web-endpoints":                               {classScoped, "filter compiled with the caller data scope on the origin asset; by-id reads assert the origin (RFC-056)"},
 	"/api/v1/state-history":                               {classScoped, "state history handler scope"},
 	"/api/v1/threat-models":                               {classScoped, "threat model scope (L-10)"},
 	"/api/v1/vulnerabilities/{id}/affected-assets":        {classScoped, "affected assets filtered"},
