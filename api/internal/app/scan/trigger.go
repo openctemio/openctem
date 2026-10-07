@@ -612,7 +612,7 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 		}
 		if err := s.stepQueuer.QueueRunStep(ctx, run, step); err != nil {
 			s.logger.Warn("a first step of the workflow could not be queued",
-				"run_id", run.ID.String(), "step_key", step.StepKey, "error", err)
+				"run_id", run.ID.String(), "step_key", oneLine(step.StepKey), "error", err)
 			if queueErr == nil {
 				queueErr = err
 			}
@@ -1370,4 +1370,10 @@ func (s *Service) filterAssetsForSingleScan(ctx context.Context, sc *scan.Scan) 
 	}
 
 	return result, nil
+}
+
+// oneLine strips line breaks from a user-supplied value before it is logged
+// (a step key is free text from the workflow author).
+func oneLine(v string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(v, "\n", " "), "\r", " ")
 }
