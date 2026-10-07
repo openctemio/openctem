@@ -645,10 +645,6 @@ func registerAssetImportRoutes(
 
 	router.Group("/api/v1/assets/import", func(r Router) {
 		r.POST("/csv", h.ImportCSV, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware())
-		r.POST("/nessus", h.ImportNessus, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware())
-		// Ingests assets AND vulnerability findings from a .nessus export
-		// (RFC-007 manual/cron coverage path); needs both write scopes.
-		r.POST("/nessus-findings", h.IngestNessusFindings, middleware.RequireAll(permission.AssetsWrite, permission.FindingsWrite, permission.AssetsImport), importRL.Middleware())
 		r.POST("/kubernetes", h.ImportKubernetes, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware())
 	}, tenantMiddlewares...)
 }
