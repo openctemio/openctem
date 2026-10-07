@@ -4,6 +4,7 @@ package handler
 // docs/architecture/tool-availability.md).
 
 import (
+	"fmt"
 	"sort"
 	"time"
 
@@ -39,6 +40,11 @@ type ToolAvailabilitySensor struct {
 	// grant or local_policy; empty when it may.
 	Excluded       string `json:"excluded,omitempty" enums:"grant,local_policy"`
 	ExcludedDetail string `json:"excluded_detail,omitempty"`
+	// Trust is the tool's trust level on the sensor; empty when the sensor
+	// reports no tool contract.
+	Trust string `json:"trust,omitempty" enums:"builtin,unverified"`
+	// Tier is the tier the platform assigns a scan with the tool there.
+	Tier string `json:"tier" enums:"T0,T1,T2"`
 }
 
 // ToolContentVersionsResponse is the versions of one piece of a tool's
@@ -71,6 +77,13 @@ type ToolAvailabilityInfo struct {
 	UpdateAvailable    bool                          `json:"update_available"`
 	Content            []ToolContentVersionsResponse `json:"content"`
 	LastReportedAt     *string                       `json:"last_reported_at,omitempty"`
+	// Trust is the lowest trust among the sensors that can run the tool
+	// (unverified: one runs an operator-installed copy); empty when none
+	// reports a contract.
+	Trust string `json:"trust,omitempty" enums:"builtin,unverified"`
+	// Tier is the highest tier the platform assigns a scan with the tool on
+	// those sensors; empty when no sensor can run it.
+	Tier string `json:"tier,omitempty" enums:"T0,T1,T2"`
 }
 
 // UnlistedToolResponse is a tool the sensors report that the catalog does
@@ -99,6 +112,8 @@ func toToolAvailabilityInfo(t sensor.ToolAvailability, zones map[shared.ID]strin
 		UpdateAvailable:    t.UpdateAvailable,
 		Content:            make([]ToolContentVersionsResponse, 0, len(t.Content)),
 		LastReportedAt:     formatTimePtr(t.LastReportedAt),
+		Trust:              t.Trust,
+		Tier:               tierLabel(t.Tier),
 	}
 	if item.Versions == nil {
 		item.Versions = []string{}
@@ -120,6 +135,7 @@ func toolAvailabilitySensor(s sensor.ToolSensor, zones map[shared.ID]string) Too
 		ID: s.SensorID.String(), Name: s.Name, State: string(s.State), Online: s.Online,
 		Zones: make([]ToolAvailabilityZone, 0, len(s.ZoneIDs)), Version: s.Version,
 		Excluded: s.Excluded, ExcludedDetail: s.ExcludedDetail,
+		Trust: s.Trust, Tier: tierLabel(s.Tier),
 	}
 	for _, z := range s.ZoneIDs {
 		out.Zones = append(out.Zones, ToolAvailabilityZone{ID: z.String(), Name: zones[z]})
@@ -129,6 +145,14 @@ func toolAvailabilitySensor(s sensor.ToolSensor, zones map[shared.ID]string) Too
 		out.Content = append(out.Content, ToolAvailabilityContent{Name: c.Name, Version: c.Version, UpdatedAt: formatTimePtr(c.UpdatedAt)})
 	}
 	return out
+}
+
+// tierLabel is "T0".."T2" ("" for no tier).
+func tierLabel(t int) string {
+	if t < sensor.TierPassive || t > sensor.TierIntrusive {
+		return ""
+	}
+	return fmt.Sprintf("T%d", t)
 }
 
 // formatTimePtr formats an optional time as RFC 3339 UTC.

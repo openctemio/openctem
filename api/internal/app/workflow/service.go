@@ -137,8 +137,13 @@ func (s *WorkflowService) CreateWorkflow(ctx context.Context, input CreateWorkfl
 		w.Tags = input.Tags
 	}
 
-	// Refuse trigger/action types the platform does not execute, before any write.
+	// Refuse trigger/action types the platform does not execute and an
+	// invalid graph (cycle, unreachable node, edge into a trigger), before
+	// any write.
 	if err := validateSupportedNodeInputs(input.Nodes); err != nil {
+		return nil, err
+	}
+	if err := validateGraphInputs(input.Nodes, input.Edges); err != nil {
 		return nil, err
 	}
 
@@ -280,6 +285,11 @@ func (s *WorkflowService) UpdateWorkflow(ctx context.Context, input UpdateWorkfl
 			if err := full.ValidateSupported(); err != nil {
 				return nil, err
 			}
+			// Nor can a graph with a cycle or a node no trigger reaches
+			// (possible when it was built one node and edge at a time).
+			if err := full.ValidateTopology(); err != nil {
+				return nil, err
+			}
 			w.Activate()
 			activationChange = "activated"
 		} else if !*input.IsActive && w.IsActive {
@@ -343,9 +353,12 @@ func (s *WorkflowService) UpdateWorkflowGraph(ctx context.Context, input UpdateW
 		return nil, shared.NewDomainError("ACTIVE_RUNS_EXIST", "cannot update workflow graph with active runs", shared.ErrValidation)
 	}
 
-	// Refuse trigger/action types the platform does not execute, before the
-	// existing graph is deleted.
+	// Refuse trigger/action types the platform does not execute and an
+	// invalid graph, before the existing graph is deleted.
 	if err := validateSupportedNodeInputs(input.Nodes); err != nil {
+		return nil, err
+	}
+	if err := validateGraphInputs(input.Nodes, input.Edges); err != nil {
 		return nil, err
 	}
 
@@ -630,6 +643,16 @@ func (s *WorkflowService) AddEdge(ctx context.Context, input AddEdgeInput) (*wor
 	edge.SetSourceHandle(input.SourceHandle)
 	edge.SetLabel(input.Label)
 
+	// The new edge must not end at a trigger, leave a condition without a
+	// yes/no handle, or close a cycle (a run would never end).
+	full, err := s.workflowRepo.GetWithGraph(ctx, w.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load workflow graph: %w", err)
+	}
+	if err := full.ValidateNewEdge(edge); err != nil {
+		return nil, err
+	}
+
 	if err := s.edgeRepo.Create(ctx, edge); err != nil {
 		return nil, fmt.Errorf("failed to create edge: %w", err)
 	}
@@ -835,6 +858,30 @@ func (s *WorkflowService) skipOpenNodeRuns(ctx context.Context, tenantID, runID 
 		return 0
 	}
 	return n
+}
+
+// validateGraphInputs builds the graph from the inputs in memory and runs
+// the domain graph checks (unique keys, known edge ends, a trigger, no
+// edge into a trigger, condition handles, no cycle, every node reached
+// from a trigger), so an invalid graph is refused before anything is written.
+func validateGraphInputs(nodes []CreateNodeInput, edges []CreateEdgeInput) error {
+	trial := &workflowdom.Workflow{}
+	for _, n := range nodes {
+		node, err := workflowdom.NewNode(shared.ID{}, n.NodeKey, n.NodeType, n.Name)
+		if err != nil {
+			return fmt.Errorf("node %s: %w", n.NodeKey, err)
+		}
+		trial.Nodes = append(trial.Nodes, node)
+	}
+	for _, e := range edges {
+		edge, err := workflowdom.NewEdge(shared.ID{}, e.SourceNodeKey, e.TargetNodeKey)
+		if err != nil {
+			return err
+		}
+		edge.SetSourceHandle(e.SourceHandle)
+		trial.Edges = append(trial.Edges, edge)
+	}
+	return trial.ValidateGraph()
 }
 
 // validateSupportedNodeInputs refuses node inputs that use a trigger or action
