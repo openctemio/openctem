@@ -84,6 +84,6 @@ func (s *Service) checkCapabilityContract(agt *sensor.Sensor, tenantID shared.ID
 	metrics.SensorUnsolicitedResultsTotal.WithLabelValues("capability_contract_warned").Inc()
 	s.logger.Warn("sensor report misses the output contract of its capability; applied (warn)",
 		"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", sanitizeIngestLogField(tool),
-		"capability", ref, "violations", len(violations), "first", shown,
+		"capability", sanitizeIngestLogField(ref), "violations", len(violations), "first", shown,
 		"report_id", sanitizeIngestLogField(report.Metadata.ID))
 }
