@@ -3,6 +3,7 @@ package findingimport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -434,5 +435,41 @@ func TestImportFile_RecordsTheProducer(t *testing.T) {
 	_ = svc.ImportFile(context.Background(), Request{TenantID: tid, Actor: onlyAssets{}, SessionID: "s"}, 0, "a", strings.NewReader(nessusDoc), nil)
 	if len(repo.stamped) != 0 {
 		t.Fatalf("stamped out-of-scope assets: %v", repo.stamped)
+	}
+}
+
+// A .nessus export holds the scan policy (credentials, accounts) and plugin
+// output that can echo them. None of it reaches ingest.
+func TestImportFile_NessusNeverCarriesScanCredentials(t *testing.T) {
+	const doc = `<?xml version="1.0"?>
+<NessusClientData_v2 xmlns:cm="http://www.nessus.org/cm"><Policy><policyName>creds</policyName><Preferences><PluginsPreferences>
+<item><pluginName>Login configurations</pluginName><preferenceName>SSH user name :</preferenceName><selectedValue>svc-scan-user</selectedValue></item>
+<item><pluginName>Login configurations</pluginName><preferenceName>SSH password :</preferenceName><selectedValue>Pol1cyS3cret</selectedValue></item>
+<item><pluginName>SNMP settings</pluginName><preferenceName>Community name :</preferenceName><selectedValue>snmp-community-x</selectedValue></item>
+</PluginsPreferences></Preferences></Policy>
+<Report name="r"><ReportHost name="192.0.2.5"><HostProperties><tag name="host-ip">192.0.2.5</tag><tag name="ssh-login-used">svc-scan-user</tag></HostProperties>
+<ReportItem port="0" svc_name="general" protocol="tcp" severity="1" pluginID="19506" pluginName="Scan info" pluginFamily="Settings"><plugin_output>Credentialed checks : yes, as 'svc-scan-user' via ssh
+password: Plug1nS3cret</plugin_output></ReportItem>
+<ReportItem port="0" svc_name="general" protocol="tcp" severity="3" pluginID="21157" pluginName="Unix Compliance Checks" pluginFamily="Policy Compliance"><cm:compliance-check-name>1.1.1 cramfs</cm:compliance-check-name><cm:compliance-check-id>c1</cm:compliance-check-id><cm:compliance-result>FAILED</cm:compliance-result><cm:compliance-uname>svc-scan-user</cm:compliance-uname><cm:compliance-actual-value>missing; user: svc-scan-user</cm:compliance-actual-value></ReportItem>
+</ReportHost></Report></NessusClientData_v2>`
+	svc, ing, _ := newSvc(ingest.SourceResolveDryRun)
+	fr := svc.ImportFile(context.Background(), Request{TenantID: shared.NewID(), SessionID: "s"}, 0, "a.nessus", strings.NewReader(doc), nil)
+	if fr.Error != nil {
+		t.Fatal(fr.Error.Message)
+	}
+	if len(ing.calls) != 1 || len(ing.calls[0].Report.Findings) != 2 {
+		t.Fatalf("ingest calls = %d", len(ing.calls))
+	}
+	b, err := json.Marshal(ing.calls[0].Report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"svc-scan-user", "Pol1cyS3cret", "Plug1nS3cret", "snmp-community-x", "Login configurations"} {
+		if bytes.Contains(b, []byte(secret)) {
+			t.Errorf("the ingested report holds %q", secret)
+		}
+	}
+	if fr.Ingest == nil || fr.ImportID == "" {
+		t.Fatal("not committed")
 	}
 }
