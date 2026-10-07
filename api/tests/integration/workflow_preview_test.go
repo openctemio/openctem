@@ -52,6 +52,14 @@ func TestWorkflowPreview(t *testing.T) {
 			t.Fatalf("node %+v: want a resolved tool, capability and tier", n)
 		}
 	}
+	// Chunk sizes come from the capability: DNS resolution is cut in 200s,
+	// vulnerability templates in 25s.
+	for _, n := range out.Nodes {
+		want := map[string]int{"dns": 200, "ports": 50, "http": 200, "vulns": 25, "subdomains": 50}[n.StepKey]
+		if n.ChunkSize != want {
+			t.Errorf("step %s chunk size = %d, want %d", n.StepKey, n.ChunkSize, want)
+		}
+	}
 	if out.Targets == nil || out.Targets.ResolvedTargets != 30 || len(out.Targets.Targets) > 20 {
 		t.Fatalf("targets: resolved %d, sampled %d (want 30, at most 20)", out.Targets.ResolvedTargets, len(out.Targets.Targets))
 	}

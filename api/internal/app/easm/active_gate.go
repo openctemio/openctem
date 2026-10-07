@@ -26,9 +26,7 @@ package easm
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/netip"
-	"net/url"
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
@@ -111,6 +109,50 @@ func (g *ActiveGate) CoverOf(ctx context.Context, tenantID shared.ID, targets []
 		}
 	}
 	return out, nil
+}
+
+// Scope statuses of an asset (RFC-054 §6.6).
+const (
+	ScopeStatusInScope       = "in_scope"
+	ScopeStatusOutOfScope    = "out_of_scope"
+	ScopeStatusInternal      = "internal"
+	ScopeStatusNotApplicable = "not_applicable"
+)
+
+// ScopeOfAsset answers whether the tenant's scope covers one asset and what
+// covers it: in_scope (with the authority), out_of_scope, internal (a
+// private or internal name, gated by scan zones) or not_applicable (a type
+// the scope authority does not judge). An unknown asset is out_of_scope.
+func (g *ActiveGate) ScopeOfAsset(ctx context.Context, tenantID shared.ID, assetID string) (string, *scopeauth.Via, error) {
+	if err := g.ready(); err != nil {
+		return "", nil, err
+	}
+	id, err := shared.IDFromString(assetID)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: invalid asset id", shared.ErrValidation)
+	}
+	assets, err := g.assets.GetByIDs(ctx, tenantID, []shared.ID{id})
+	if err != nil {
+		return "", nil, err
+	}
+	a := assets[assetID]
+	if a == nil {
+		return ScopeStatusOutOfScope, nil, nil
+	}
+	if isInternalName(a.Name()) {
+		return ScopeStatusInternal, nil, nil
+	}
+	if !internetFacing(a.Type(), a.SubType()) {
+		return ScopeStatusNotApplicable, nil, nil
+	}
+	cover, err := g.CoverOf(ctx, tenantID, []string{a.Name()})
+	if err != nil {
+		return "", nil, err
+	}
+	if v, ok := cover[a.Name()]; ok {
+		return ScopeStatusInScope, &v, nil
+	}
+	return ScopeStatusOutOfScope, nil, nil
 }
 
 // UnverifiedTargets returns the targets naming an internet host or public
@@ -302,10 +344,7 @@ func needsAuthority(t string) bool {
 	if _, err := netip.ParsePrefix(h); err == nil {
 		return true
 	}
-	if host, _, err := net.SplitHostPort(h); err == nil {
-		h = strings.Trim(host, "[]")
-	}
-	_, err := netip.ParseAddr(h)
+	_, err := netip.ParseAddr(asset.HostOf(t))
 	return err == nil
 }
 
@@ -438,22 +477,10 @@ func (g *ActiveGate) rejectedNames(ctx context.Context, tenantID shared.ID, host
 // dnsHost is the lower-case DNS name a target or asset name points at ("" for
 // an address, a CIDR or something that is not a host name).
 func dnsHost(s string) string {
-	h := strings.TrimSpace(s)
-	if strings.Contains(h, "://") {
-		u, err := url.Parse(h)
-		if err != nil {
-			return ""
-		}
-		h = u.Hostname()
-	} else {
-		if i := strings.IndexAny(h, "/?#"); i >= 0 {
-			h = h[:i]
-		}
-		if host, _, err := net.SplitHostPort(h); err == nil {
-			h = host
-		}
-	}
-	h = normalizeHost(h)
+	// asset.HostOf reads every service name form ("host:443:tcp",
+	// "host:443/tcp", "[v6]:443/tcp"), URLs and host:port, so a service
+	// follows its host.
+	h := normalizeHost(asset.HostOf(s))
 	if h == "" || !strings.Contains(h, ".") {
 		return ""
 	}
@@ -512,19 +539,10 @@ func hostValues(m map[string]string) []string {
 // Those are gated by scan zones (a private address is scanned only inside a
 // zone), not by EASM attribution.
 func isInternalName(name string) bool {
-	h := strings.TrimSpace(name)
-	if strings.Contains(h, "://") {
-		if u, err := url.Parse(h); err == nil {
-			h = u.Hostname()
-		}
-	}
-	if p, err := netip.ParsePrefix(h); err == nil {
+	if p, err := netip.ParsePrefix(strings.TrimSpace(name)); err == nil {
 		return internalAddr(p.Addr())
 	}
-	if host, _, err := net.SplitHostPort(h); err == nil {
-		h = host
-	}
-	h = strings.Trim(h, "[]")
+	h := asset.HostOf(name)
 	if a, err := netip.ParseAddr(h); err == nil {
 		return internalAddr(a)
 	}
