@@ -87,10 +87,8 @@ func registerThreatIntelRoutes(
 		r.GET("/sync", h.GetSyncStatuses, middleware.Require(permission.VulnerabilitiesRead))
 		r.GET("/sync/{source}", h.GetSyncStatus, middleware.Require(permission.VulnerabilitiesRead))
 		// The feed syncs are platform-wide: an organization may neither run
-		// nor toggle them (403). Operators use /api/v1/admin/threat-intel.
-		tiSyncWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
-		r.POST("/sync", h.RefusePlatformFeedWrite, tiSyncWriteMW...)
-		r.PATCH("/sync/{source}", h.RefusePlatformFeedToggle, tiSyncWriteMW...)
+		// nor toggle them, so there is no write route here. Operators use
+		// /api/v1/admin/threat-intel.
 
 		// CVE enrichment (combine EPSS + KEV data)
 		r.GET("/enrich/{cveId}", h.EnrichCVE, middleware.Require(permission.VulnerabilitiesRead))
@@ -201,15 +199,9 @@ func registerVulnerabilityRoutes(
 		r.GET("/{id}/affected-assets", h.ListAffectedAssets, tenantScopedMW...)
 		r.GET("/cve/{cveId}/affected-assets", h.ListAffectedAssetsByCVE, tenantScopedMW...)
 
-		// Writes to the shared CVE catalog are refused for every tenant role
-		// (403): one organization must not decide what every other one sees.
-		// The routes stay registered so a client gets an explanation, not a
-		// 404. See docs/architecture/global-catalog-trust.md.
-		vulnWriteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesWrite))
-		vulnDeleteMW := append(tenantOverlayMiddlewares(), middleware.Require(permission.VulnerabilitiesDelete))
-		r.POST("/", h.RefuseSharedCatalogWrite, vulnWriteMW...)
-		r.PUT("/{id}", h.RefuseSharedCatalogEntryWrite, vulnWriteMW...)
-		r.DELETE("/{id}", h.RefuseSharedCatalogEntryWrite, vulnDeleteMW...)
+		// There are no writes to the shared CVE catalog: one organization must
+		// not decide what every other one sees (405 for every tenant role).
+		// See docs/architecture/global-catalog-trust.md.
 	}, baseMiddlewares...)
 
 	// Build tenant middleware chain from JWT token (used by /findings group below)
@@ -236,7 +228,6 @@ func registerVulnerabilityRoutes(
 		if findingActionsHandler != nil {
 			r.GET("/groups", findingActionsHandler.ListFindingGroups, middleware.Require(permission.FindingsRead))
 			r.GET("/related-cves/{cveId}", findingActionsHandler.GetRelatedCVEs, middleware.Require(permission.FindingsRead))
-			r.GET("/analytics/sources", findingActionsHandler.SourceAnalytics, middleware.Require(permission.FindingsRead))
 		}
 
 		// Bulk operations (must be before /{id})
@@ -308,10 +299,8 @@ func registerVulnerabilityRoutes(
 		// CTEM Mobilization guidance: definition of done + acceptable fixes.
 		r.PATCH("/{id}/remediation", h.UpdateRemediation, middleware.Require(permission.FindingsWrite))
 
-		// Jira ticket linking — store/remove Jira ticket references on findings
+		// Jira: open a ticket for a finding.
 		if jiraHandler != nil {
-			r.POST("/{id}/link-ticket", jiraHandler.LinkTicket, middleware.Require(permission.FindingsWrite))
-			r.DELETE("/{id}/link-ticket", jiraHandler.UnlinkTicket, middleware.Require(permission.FindingsWrite))
 			r.POST("/{id}/create-ticket", jiraHandler.CreateTicket, middleware.Require(permission.FindingsWrite))
 		}
 
@@ -438,10 +427,20 @@ func registerAITriageRoutes(
 	router.POST("/api/v1/findings/{id}/ai-triage", h.RequestTriage,
 		append(postMiddlewares, middleware.RequireAll(permission.FindingsWrite, permission.AITriageTrigger))...)
 
-	// Bulk triage multiple findings (rate-limited)
-	// Note: Bulk endpoint uses same rate limiter - each finding in bulk counts toward limit
+	// Bulk triage multiple findings (rate-limited; each finding counts toward
+	// the limit). Deprecated: nothing in the console or the SDK calls it, and
+	// it is documented publicly, so it carries Deprecation/Sunset headers for
+	// a release before it is removed; triage one finding at a time.
+	bulkTriageDeprecated := middleware.Deprecated(middleware.Deprecation{
+		Plane:        "user",
+		Route:        "findings_ai_triage_bulk",
+		Successor:    "/api/v1/findings/{id}/ai-triage",
+		DeprecatedAt: time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC),
+		SunsetAt:     time.Date(2027, 1, 15, 0, 0, 0, 0, time.UTC),
+	})
 	router.POST("/api/v1/findings/ai-triage/bulk", h.RequestBulkTriage,
-		append(postMiddlewares, middleware.RequireAll(permission.FindingsWrite, permission.AITriageTrigger))...)
+		append(append([]Middleware{bulkTriageDeprecated}, postMiddlewares...),
+			middleware.RequireAll(permission.FindingsWrite, permission.AITriageTrigger))...)
 
 	// AI triage config endpoint - returns current AI mode, provider, model
 	router.GET("/api/v1/findings/ai-triage/config", h.GetConfig,

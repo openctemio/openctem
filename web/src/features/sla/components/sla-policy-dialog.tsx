@@ -33,6 +33,7 @@ import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
 
 import { PRIORITY_WINDOWS, SEVERITY_WINDOWS } from './sla-windows'
+import { NO_SLA } from '../schemas/sla-policy-schema'
 
 import {
   slaPolicySchema,
@@ -221,7 +222,8 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
               <div className="space-y-1">
                 <h4 className="text-sm font-medium">Severity windows (days)</h4>
                 <p className="text-xs text-muted-foreground">
-                  Used only for findings that have no priority class yet.
+                  Used only for findings that have no priority class yet. Info 0 = informational
+                  findings get no SLA (the default), whatever their priority class.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
@@ -241,7 +243,7 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                         <FormControl>
                           <Input
                             type="number"
-                            min={1}
+                            min={sev.key === 'info_days' ? NO_SLA : 1}
                             max={365}
                             {...field}
                             value={Number.isNaN(field.value) ? '' : field.value}

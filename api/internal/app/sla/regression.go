@@ -65,6 +65,9 @@ func (r *RegressionRestarter) RestartForRegression(ctx context.Context, tenantID
 			r.logger.Warn("regression SLA: deadline not computed", "finding_id", c.FindingID.String(), "error", err)
 			continue
 		}
+		if deadline.IsZero() {
+			continue // no SLA for this finding (informational, info days = 0)
+		}
 		ok, err := r.store.RestartSLA(ctx, tenantID, sladom.RegressionRestart{
 			FindingID: c.FindingID, Deadline: deadline, PreviousDeadline: c.SLADeadline,
 			PreviousStatus: c.SLAStatus, Trigger: trigger, RestartedAt: now,
