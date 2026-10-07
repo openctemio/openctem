@@ -11,7 +11,11 @@ import { Server } from 'lucide-react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { TonePill } from '@/features/shared'
-import type { ToolAvailabilityItem, ToolAvailabilitySensor } from '@/lib/api/tool-types'
+import type {
+  ToolAvailabilityInfo,
+  ToolAvailabilityItem,
+  ToolAvailabilitySensor,
+} from '@/lib/api/tool-types'
 import { cn } from '@/lib/utils'
 
 import {
@@ -42,6 +46,48 @@ export function ToolStatusBadge({
   )
 }
 
+const TIER_LABEL = { T0: 'passive', T1: 'active', T2: 'intrusive' } as const
+
+/**
+ * The trust and the tier the platform assigns a tool (RFC-055 §5). An
+ * operator-installed copy is unverified and runs only as T2; nothing shows
+ * for a tool no sensor reports a contract for.
+ */
+export function ToolTrustBadge({
+  item,
+  className,
+}: {
+  item: Pick<ToolAvailabilityInfo, 'trust' | 'tier'>
+  className?: string
+}) {
+  if (!item.trust && !item.tier) return null
+  const tier = item.tier ? `${item.tier} ${TIER_LABEL[item.tier]}` : ''
+  if (item.trust === 'unverified') {
+    return (
+      <TonePill
+        tone="warning"
+        label={item.tier ? `Unverified · ${item.tier}` : 'Unverified'}
+        title="Installed by a sensor's operator and not verified: it runs only as tier T2 (intrusive), under a grant that allows T2."
+        state="unverified"
+        className={className}
+      />
+    )
+  }
+  return (
+    <TonePill
+      tone="muted"
+      label={item.tier ?? 'Built in'}
+      title={
+        item.trust === 'builtin'
+          ? `Built into the sensor. The platform runs it as tier ${tier}.`
+          : `The platform runs it as tier ${tier}.`
+      }
+      state={item.trust ?? 'tier'}
+      className={className}
+    />
+  )
+}
+
 /** One sensor row: name, state, zones, version and why it may not run the tool. */
 function SensorRow({ sensor }: { sensor: ToolAvailabilitySensor }) {
   return (
@@ -54,6 +100,9 @@ function SensorRow({ sensor }: { sensor: ToolAvailabilitySensor }) {
           {sensor.online ? 'Online' : sensor.state.replace(/_/g, ' ')}
           {sensor.zones.length > 0 && ` · ${sensor.zones.map((z) => z.name).join(', ')}`}
         </p>
+        {sensor.trust === 'unverified' && (
+          <p className="text-xs text-warning">Operator-installed copy (unverified, T2)</p>
+        )}
         {sensor.excluded && (
           <p className="text-xs text-warning" title={sensor.excluded_detail}>
             Has it, but {TOOL_EXCLUSION_LABEL[sensor.excluded]}

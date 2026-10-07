@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
-// The starter workflows (migration 001182) are capability graphs: each one
+// The starter workflows (migration 001201) are capability graphs: each one
 // passes the graph check, every step is a capability node with no pinned
 // tool, and the planner resolves a seeded platform tool for every step.
 func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
