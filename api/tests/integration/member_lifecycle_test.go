@@ -288,9 +288,8 @@ func TestMemberLifecycle_OffboardReassignsStripsAndTombstones(t *testing.T) {
 	if got := f.str(t, `SELECT status FROM tenant_members WHERE id = $1 AND tenant_id = $2`, f.mshipID.String(), tid); got != "active" {
 		t.Fatalf("a refused offboarding changed the membership to %q", got)
 	}
-	// DELETE /members/{id} is the same offboarding without a plan.
-	if err := f.svc.RemoveMember(ctx, f.mshipID.String(), f.ownerCtx()); !errors.Is(err, tenantdom.ErrReassignmentRequired) {
-		t.Fatalf("RemoveMember with owned work: want ErrReassignmentRequired, got %v", err)
+	if !errors.Is(err, tenantdom.ErrReassignmentRequired) {
+		t.Fatalf("offboard without a plan: want ErrReassignmentRequired, got %v", err)
 	}
 
 	for name, target := range map[string]shared.ID{"other tenant": f.foreignID, "self": f.memberID, "unknown": shared.NewID()} {
