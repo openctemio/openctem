@@ -249,7 +249,7 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -265,7 +265,11 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
             <AlertDescription>{t('scope.error.REQUEST_NOT_ALLOWED')}</AlertDescription>
           </Alert>
         ) : (
-          <form id={formId} onSubmit={submit} className="space-y-4">
+          <form
+            id={formId}
+            onSubmit={submit}
+            className="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-1"
+          >
             {error && (
               <div
                 role="alert"
