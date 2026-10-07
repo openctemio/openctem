@@ -7,11 +7,10 @@
  */
 
 import { useMemo, useState } from 'react'
-import { Hash, Loader2, Pause, Play, RefreshCw, Tag, Trash2 } from 'lucide-react'
+import { Hash, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
   DetailCopyId,
   DetailField,
@@ -23,25 +22,17 @@ import {
   DetailStat,
   DetailStatGrid,
   DetailTabs,
-  StatusBadge,
   TruncatedText,
   type DetailMenuItem,
   type DetailTab,
 } from '@/features/shared'
-import { post } from '@/lib/api/client'
-import { scanEndpoints } from '@/lib/api/endpoints'
-import { getErrorMessage } from '@/lib/api/error-handler'
-import { invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
-import {
-  SCAN_CONFIG_STATUS_LABELS,
-  SCAN_TYPE_LABELS,
-  SCHEDULE_TYPE_LABELS,
-  type ScanConfig,
-} from '@/lib/api/scan-types'
+import { LastRunCell } from './last-run-cell'
+import { ScanControls, scanStateLabel } from './scan-controls'
+import { lastRunOf, scanTypeLabel } from '../lib/scan-status'
+import { SCAN_TYPE_LABELS, SCHEDULE_TYPE_LABELS, type ScanConfig } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { formatScanDate, scanSuccessRate } from '../lib/format'
-import { useScanTrigger } from '../hooks/use-scan-trigger'
 import { schedulePreviewRequestFromConfig } from '../lib/schedule-preview'
 import { SchedulePreview } from './schedule-preview'
 
@@ -101,23 +92,13 @@ export function ScanConfigDetailSheet({
       header={
         <DetailHeader
           title={config.name}
-          badges={
-            <StatusBadge
-              status={
-                config.status === 'active'
-                  ? 'active'
-                  : config.status === 'paused'
-                    ? 'pending'
-                    : 'inactive'
-              }
-            />
-          }
+          badges={<LastRunCell run={lastRunOf(config)} />}
           meta={[
-            SCAN_TYPE_LABELS[config.scan_type],
+            scanTypeLabel(config).label,
             SCHEDULE_TYPE_LABELS[config.schedule_type],
-            config.last_run_at ? `last run ${formatScanDate(config.last_run_at)}` : 'never run',
+            scanStateLabel(config),
           ]}
-          actions={<RunControls config={config} />}
+          actions={<ScanControls config={config} />}
           menu={menu}
           onClose={() => onOpenChange(false)}
         />
@@ -128,94 +109,6 @@ export function ScanConfigDetailSheet({
       {tab === 'config' && <Configuration config={config} />}
       {tab === 'details' && <Details config={config} />}
     </DetailSheet>
-  )
-}
-
-/** Trigger / pause / resume / enable, by the configuration's state. */
-function RunControls({ config }: { config: ScanConfig }) {
-  const [busy, setBusy] = useState<'pause' | 'activate' | null>(null)
-  // Trigger goes through the shared guard: it asks before a second concurrent
-  // run and ignores double clicks (also from the list behind the drawer).
-  const { trigger: triggerScan, isTriggering, dialog } = useScanTrigger()
-  const triggering = isTriggering(config.id)
-
-  const run = async (
-    kind: 'pause' | 'activate',
-    request: () => Promise<unknown>,
-    done: string,
-    failed: string
-  ) => {
-    setBusy(kind)
-    try {
-      await request()
-      toast.success(done)
-      await invalidateScanConfigsCache()
-    } catch (error) {
-      toast.error(getErrorMessage(error, failed))
-    } finally {
-      setBusy(null)
-    }
-  }
-  const trigger = () => void triggerScan(config)
-  const pause = () =>
-    run(
-      'pause',
-      () => post(scanEndpoints.pause(config.id), {}),
-      `Scan "${config.name}" paused`,
-      `Failed to pause scan "${config.name}"`
-    )
-  const activate = () =>
-    run(
-      'activate',
-      () => post(scanEndpoints.activate(config.id), {}),
-      `Scan "${config.name}" activated`,
-      `Failed to activate scan "${config.name}"`
-    )
-  const spin = (k: typeof busy) => busy === k && <Loader2 className="h-4 w-4 animate-spin" />
-  const triggerSpin = triggering && <Loader2 className="h-4 w-4 animate-spin" />
-  const locked = !!busy || triggering
-
-  if (config.status === 'active') {
-    return (
-      <>
-        <Button size="sm" onClick={trigger} disabled={locked} aria-busy={triggering}>
-          {triggerSpin || <Play className="h-4 w-4" />}
-          Trigger
-        </Button>
-        <Button size="sm" variant="outline" onClick={pause} disabled={locked}>
-          {spin('pause') || <Pause className="h-4 w-4" />}
-          Pause
-        </Button>
-        {dialog}
-      </>
-    )
-  }
-  if (config.status === 'paused') {
-    return (
-      <>
-        <Button size="sm" onClick={activate} disabled={locked}>
-          {spin('activate') || <Play className="h-4 w-4" />}
-          Resume
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={trigger}
-          disabled={locked}
-          aria-busy={triggering}
-        >
-          {triggerSpin || <RefreshCw className="h-4 w-4" />}
-          Trigger
-        </Button>
-        {dialog}
-      </>
-    )
-  }
-  return (
-    <Button size="sm" onClick={activate} disabled={!!busy}>
-      {spin('activate') || <Play className="h-4 w-4" />}
-      Enable
-    </Button>
   )
 }
 
@@ -234,7 +127,7 @@ function Overview({ config }: { config: ScanConfig }) {
               ? undefined
               : { value: config.successful_runs, max: settled, label: 'Successful runs' }
           }
-          caption={SCAN_CONFIG_STATUS_LABELS[config.status]}
+          caption={scanStateLabel(config)}
         />
         <DetailStat label="Total runs" value={config.total_runs} />
         <DetailStat label="Successful" value={config.successful_runs} />

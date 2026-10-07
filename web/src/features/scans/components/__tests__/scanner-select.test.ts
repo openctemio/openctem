@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Tool } from '@/lib/api/tool-types'
-import { scannerOptions } from '../scanner-select'
+import { scannerOptions, scannerUnavailableReason } from '../scanner-select'
 
 const tool = (over: Partial<Tool>) =>
   ({ id: over.name, name: 'x', display_name: '', is_active: true, ...over }) as Tool
@@ -37,5 +37,34 @@ describe('scannerOptions', () => {
 
   it('is empty without data', () => {
     expect(scannerOptions(undefined)).toEqual([])
+  })
+})
+
+describe('scannerUnavailableReason', () => {
+  const avail = new Map([
+    ['nuclei', { name: 'nuclei', status: 'ready' }],
+    [
+      'checkov',
+      {
+        name: 'checkov',
+        status: 'no_sensor',
+        sensors_total: 0,
+        sensors_excluded: 0,
+        in_catalog: true,
+      },
+    ],
+  ]) as unknown as Parameters<typeof scannerUnavailableReason>[1]
+
+  it('disables a scanner no online sensor may run, with the reason', () => {
+    expect(scannerUnavailableReason(tool({ name: 'nuclei' }), avail)).toBeNull()
+    expect(scannerUnavailableReason(tool({ name: 'checkov' }), avail)).toBe('No sensor has checkov')
+  })
+
+  it('never blocks on unknown availability or a connector', () => {
+    expect(scannerUnavailableReason(tool({ name: 'checkov' }), null)).toBeNull()
+    expect(scannerUnavailableReason(tool({ name: 'unlisted' }), avail)).toBeNull()
+    expect(
+      scannerUnavailableReason(tool({ name: 'checkov', metadata: { kind: 'connector' } }), avail)
+    ).toBeNull()
   })
 })
