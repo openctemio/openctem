@@ -23,6 +23,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -59,14 +60,15 @@ type Service struct {
 	cveProcessor       *CVEProcessor
 	validator          *Validator
 
-	assetRepo   asset.Repository
-	findingRepo vulnerability.FindingRepository
-	vulnRepo    vulnerability.VulnerabilityRepository
-	compRepo    component.Repository
-	sensorRepo  sensor.Repository
-	branchRepo  branch.Repository
-	tenantRepo  tenant.Repository
-	auditRepo   audit.Repository
+	assetRepo    asset.Repository
+	findingRepo  vulnerability.FindingRepository
+	vulnRepo     vulnerability.VulnerabilityRepository
+	compRepo     component.Repository
+	webEndpoints webendpoint.Repository
+	sensorRepo   sensor.Repository
+	branchRepo   branch.Repository
+	tenantRepo   tenant.Repository
+	auditRepo    audit.Repository
 
 	// auditSvc is the SHARED application audit service. Ingest audit
 	// events are tenant-scoped, so they must go through it rather than
@@ -432,6 +434,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
 	}
+	// Web endpoints (and legacy discovered_url assets) go to the web surface
+	// sub-inventory under their origin asset, never one asset per URL.
+	report, endpoints := s.planEndpoints(report, binding, output)
 
 	// Load tenant settings once for both asset processing and finding processing
 	var tenantRules branch.BranchTypeRules
@@ -501,6 +506,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if s.assetExposureProjector != nil {
 		s.projectAssetExposures(ctx, tenantID, report, assetMap)
 	}
+
+	// Step 1c: the web endpoints, under their persisted origin assets.
+	s.recordEndpoints(ctx, agt, tenantID, binding, scope, endpoints, assetMap, report, output)
 
 	// Step 2: Process dependencies/components (SBOM)
 	if s.compRepo != nil && s.componentProcessor != nil && len(report.Dependencies) > 0 {

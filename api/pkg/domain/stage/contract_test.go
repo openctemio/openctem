@@ -22,10 +22,10 @@ func carriedBy(ref asset.TypeRef, ports []PortType) bool {
 	return false
 }
 
-func TestPortTypes_ClosedSetOfTen(t *testing.T) {
+func TestPortTypes_ClosedSetOfEleven(t *testing.T) {
 	got := PortTypes()
-	if len(got) != 10 {
-		t.Fatalf("port types: %d, want the closed set of 10", len(got))
+	if len(got) != 11 {
+		t.Fatalf("port types: %d, want the closed set of 11", len(got))
 	}
 	seen := map[PortType]bool{}
 	for _, p := range got {
