@@ -240,7 +240,7 @@ type AttributionGate interface {
 	BlockedTargets(ctx context.Context, tenantID shared.ID, targets []string) (map[string]attribution.State, error)
 	// TierExceeded returns the targets the tenant's scope authority covers,
 	// but only below tier (RFC-054 §4.2 step 6), with the covering entry of
-	// the highest ceiling (nil when a seed or verified domain covers it).
+	// the highest ceiling.
 	TierExceeded(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error)
 }
 

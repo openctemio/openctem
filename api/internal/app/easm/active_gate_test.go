@@ -469,16 +469,17 @@ func TestActiveGate_TierExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"app.low.example", "app.scoped.com", "www.seeded.com", "www.verified.com"} {
-		if _, ok := got[want]; !ok {
-			t.Errorf("t2: %s not listed (%v)", want, got)
+	for _, want := range []string{"app.low.example", "app.scoped.com"} {
+		if r := got[want]; r == nil {
+			t.Errorf("t2: %s not listed with its entry (%v)", want, got)
 		}
 	}
-	if r := got["www.seeded.com"]; r != nil {
-		t.Errorf("a seed has no entry to raise: %+v", r)
-	}
-	if _, ok := got["nothing.example"]; ok {
-		t.Error("an uncovered name is the ownership gate's answer, not tier_exceeds")
+	// Only entries authorize (research/53 SC1, SC2): a name under a former
+	// seed or a verified domain is uncovered, the ownership gate's answer.
+	for _, n := range []string{"www.seeded.com", "www.verified.com", "nothing.example"} {
+		if _, ok := got[n]; ok {
+			t.Errorf("%s: an uncovered name is the ownership gate's answer, not tier_exceeds", n)
+		}
 	}
 	if _, ok := got["10.0.0.5"]; ok {
 		t.Error("a private address is gated by zones")
