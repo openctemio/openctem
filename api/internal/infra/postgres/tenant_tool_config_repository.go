@@ -471,7 +471,7 @@ func (r *TenantToolConfigRepository) ListToolsWithConfig(
 			t.config_file_path, t.config_schema, t.default_config,
 			t.capabilities, t.supported_targets, t.output_formats, t.output_types,
 			t.docs_url, t.github_url, t.is_active, t.is_builtin, t.tags, t.metadata,
-			t.created_by, t.created_at, t.updated_at,
+			t.created_by, t.created_at, t.updated_at, t.min_version,
 			tc.id as config_id, tc.config as tenant_config, tc.is_enabled,
 			tc.custom_templates, tc.custom_patterns, tc.custom_wordlists,
 			tc.updated_by, tc.created_at as config_created_at, tc.updated_at as config_updated_at,
@@ -550,6 +550,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		catDisplayName sql.NullString
 		catIcon        sql.NullString
 		catColor       sql.NullString
+		minVersion     sql.NullString
 	)
 
 	err := rows.Scan(
@@ -559,7 +560,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		&configFilePath, &configSchema, &defaultConfig,
 		&capabilities, &supportedTargets, &outputFormats, &outputTypes,
 		&docsURL, &githubURL, &t.IsActive, &t.IsBuiltin, &tags, &metadata,
-		&createdBy, &t.CreatedAt, &t.UpdatedAt,
+		&createdBy, &t.CreatedAt, &t.UpdatedAt, &minVersion,
 		&configID, &tenantConfig, &isEnabled,
 		&customTemplates, &customPatterns, &customWordlists,
 		&configUpdatedBy, &configCreatedAt, &configUpdatedAt,
@@ -591,6 +592,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 	t.VersionRegex = versionRegex.String
 	t.CurrentVersion = currentVersion.String
 	t.LatestVersion = latestVersion.String
+	t.MinVersion = minVersion.String
 	t.ConfigFilePath = configFilePath.String
 	t.DocsURL = docsURL.String
 	t.GithubURL = githubURL.String
