@@ -26,6 +26,7 @@ type EASMSummarizer interface {
 type EASMHandler struct {
 	svc    EASMSummarizer
 	review EASMReviewer
+	rules  EASMRuleService
 	audit  AttributionAuditor
 	logger *logger.Logger
 }

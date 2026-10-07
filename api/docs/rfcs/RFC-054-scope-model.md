@@ -502,10 +502,18 @@ query `states` default `needs_review`, `limit` ≤ 50):
 - **Counts:** `covered` = pending items the rule would confirm; `blocked` =
   items it covers that an exclusion, tombstone or rejected parent keeps out
   (they stay out; codes from §6.5).
-- **Hints** are evidence we already hold: the seed that discovered the names,
-  a certificate organization, the same NS/SOA as a verified domain, the RDAP
-  allocation. Order: by strength (strong, medium, weak), then from the most
-  specific rule to the broadest.
+- **Hints** are evidence we already hold: the root that discovered the names
+  (`discovering_<origin>`: `easm_seed`, `scope_target`, `domain_asset`,
+  `verified_domain`), a `verified_domain` or `seed` at or above the pattern,
+  and the address's `asn` (number and organization). Certificate
+  organizations, NS/SOA and RDAP allocations join when we store them (no new
+  outbound call). Strength: `strong` with a verified domain, `medium` with a
+  discovering root, seed or ASN, otherwise `weak`. Order: by strength, then
+  from the most specific rule to the broadest, then by items covered. A
+  broader pattern covering exactly the same items as a narrower one is
+  dropped.
+- **Shared space**: an address whose `cdn` property is set or whose ASN
+  organization is a known CDN or cloud provider is never grouped.
 
 **`POST /api/v1/easm/candidates/rules/preview`** and
 **`POST /api/v1/easm/candidates/rules`**, same body:
@@ -521,11 +529,13 @@ query `states` default `needs_review`, `limit` ≤ 50):
 | `action` | Effect | Permission |
 |---|---|---|
 | `accept_rule` | creates a permanent scope entry for `pattern` exactly as `POST /scope/targets` does (step-up, §7 approvals, audit, admin notification; a caller without `scope:approve` creates a pending request). Once the entry is active, the pending items it covers are re-evaluated and confirmed through `matches_scope_target` (§4.3) | `scope:write` (+ step-up for approvers) |
-| `accept_selected` | confirms only `asset_ids` (≤ 200), like the decisions route; creates no entry, so active scanning still needs a covering entry (§4.2) | `assets:write` |
+| `accept_selected` | confirms only `asset_ids` (≤ 200, pending items of the caller only), like the decisions route; creates no entry, so active scanning still needs a covering entry (§4.2) | `assets:write` |
 | `reject_rule` | creates a scope exclusion for `pattern` (the normal exclusion approval flow) and rejects the pending items it covers now (tombstones); future names it matches are rejected on arrival while the exclusion is in effect | `scope:write` + `assets:write` |
 
-`reason` is required for `accept_rule` and `reject_rule`. The preview
-returns exactly what the action would change and changes nothing:
+`target_type` is `domain`, `cidr`, `ip_range` or `ip_address`; a domain
+rule never touches address items and the reverse. `reason` is required for
+`accept_rule` and `reject_rule`. The preview (`assets:read`) returns exactly
+what the action would change and changes nothing:
 
 ```json
 { "action": "accept_rule",
@@ -539,9 +549,11 @@ returns exactly what the action would change and changes nothing:
 ```
 
 `refusal` carries a §6.1 code (`PUBLIC_SUFFIX`, `DENY_LIST`,
-`CIDR_TOO_LARGE`, …) when the rule cannot be created. The action route
-answers the same shape plus the created `entry` or `exclusion` and the
-counts actually applied. Re-evaluation is idempotent (running it twice
+`CIDR_TOO_LARGE`, `REQUEST_MUST_BE_ONE_OFF`, …) when the rule cannot be
+created. The action route answers the same shape with `entry.id`, the
+entry's actual `status`, and `confirmed` / `rejected` (the asset ids
+changed). Every created entry, exclusion and decision is audited
+(`via: review_rule`). Re-evaluation is idempotent (running it twice
 changes nothing) and tenant-scoped; items outside the caller's data scope are
 neither counted nor changed.
 

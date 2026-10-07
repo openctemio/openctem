@@ -828,7 +828,12 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	if svc.ActiveGate != nil {
 		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
 	}
-	return h.SetReview(review, audit)
+	h.SetReview(review, audit)
+	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
+	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
+		h.SetRules(easmapp.NewRuleService(review, svc.ScopeJoin, svc.Scope, repos.Asset, svc.ActiveGate, svc.ScopeGuardrails))
+	}
+	return h
 }
 
 // easmDecisionEffects reclassifies the decided assets' findings now and, on a

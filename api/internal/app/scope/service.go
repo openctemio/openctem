@@ -104,7 +104,7 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	}
 
 	now := time.Now().UTC()
-	d, err := s.decideNewEntry(ctx, tenantID, targetType, input, now)
+	d, err := s.decideNewEntry(ctx, tenantID, targetType, input, now, false)
 	if err != nil {
 		return nil, err
 	}

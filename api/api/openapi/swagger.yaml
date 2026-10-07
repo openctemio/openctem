@@ -3076,6 +3076,15 @@ definitions:
       review_oldest_since:
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.BlockedItem:
+    properties:
+      asset_id:
+        type: string
+      code:
+        type: string
+      name:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.Decision:
     properties:
       asset_id:
@@ -3109,6 +3118,17 @@ definitions:
       open:
         type: integer
     type: object
+  github_com_openctemio_openctem_api_internal_app_easm.IndividualItem:
+    properties:
+      asset_id:
+        type: string
+      name:
+        type: string
+      reason:
+        type: string
+      shared_ip:
+        type: boolean
+    type: object
   github_com_openctemio_openctem_api_internal_app_easm.MonitoringBlock:
     properties:
       ct_domains_watched:
@@ -3118,6 +3138,13 @@ definitions:
       ct_never_succeeded:
         type: integer
       ct_oldest_success:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.NamedAsset:
+    properties:
+      asset_id:
+        type: string
+      name:
         type: string
     type: object
   github_com_openctemio_openctem_api_internal_app_easm.NewBlock:
@@ -3204,6 +3231,111 @@ definitions:
         type: string
       type:
         type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.RuleEntryPreview:
+    properties:
+      approvals_required:
+        type: integer
+      id:
+        type: string
+      kind:
+        description: scope_target, exclusion
+        type: string
+      pattern:
+        type: string
+      status:
+        type: string
+      target_type:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.RuleHint:
+    properties:
+      kind:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.RulePreview:
+    properties:
+      action:
+        type: string
+      allowed:
+        type: boolean
+      confirmed:
+        description: Applied lists what the action changed (action route only).
+        items:
+          type: string
+        type: array
+      entry:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.RuleEntryPreview'
+      refusal:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.RuleRefusal'
+      rejected:
+        items:
+          type: string
+        type: array
+      stays_blocked:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.BlockedItem'
+        type: array
+      step_up_required:
+        type: boolean
+      would_confirm:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.NamedAsset'
+        type: array
+      would_reject:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.NamedAsset'
+        type: array
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.RuleRefusal:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestion:
+    properties:
+      blocked:
+        type: integer
+      blocked_sample:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.BlockedItem'
+        type: array
+      covered:
+        type: integer
+      covered_sample:
+        items:
+          type: string
+        type: array
+      hints:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.RuleHint'
+        type: array
+      id:
+        type: string
+      kind:
+        description: domain_wildcard, ip_cidr
+        type: string
+      pattern:
+        type: string
+      strength:
+        type: string
+      target_type:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestions:
+    properties:
+      individual:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.IndividualItem'
+        type: array
+      suggestions:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestion'
+        type: array
     type: object
   github_com_openctemio_openctem_api_internal_app_easm.SeedView:
     properties:
@@ -9941,6 +10073,27 @@ definitions:
         type: string
       state:
         description: 'State: confirmed, rejected, dependency, monitor_only or needs_review.'
+        type: string
+    type: object
+  internal_infra_http_handler.EASMRuleRequest:
+    properties:
+      action:
+        description: 'Action: accept_rule, accept_selected or reject_rule.'
+        type: string
+      asset_ids:
+        description: AssetIDs are the items to confirm (accept_selected), at most
+          200.
+        items:
+          type: string
+        type: array
+      pattern:
+        type: string
+      reason:
+        description: Reason is required for accept_rule and reject_rule (audited).
+        type: string
+      target_type:
+        description: 'TargetType: domain, cidr, ip_range or ip_address (accept_rule,
+          reject_rule).'
         type: string
     type: object
   internal_infra_http_handler.EASMSeedCreateRequest:
@@ -24064,6 +24217,115 @@ paths:
       security:
       - BearerAuth: []
       summary: Decide EASM attribution in bulk
+      tags:
+      - Attack Surface
+  /easm/candidates/rules:
+    post:
+      consumes:
+      - application/json
+      description: accept_rule creates a permanent scope entry exactly as POST /scope/targets
+        does (attack_surface:scope:write; with scope:approve a recent re-authentication,
+        then the organization's approvals; everyone notified) and, once it is in effect,
+        confirms the pending items it covers. accept_selected confirms only asset_ids.
+        reject_rule creates a scope exclusion (pending its approval) and rejects the
+        pending items it covers. Every change is audited. The answer is the preview
+        with what was applied.
+      parameters:
+      - description: Action
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.RulePreview'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: 'Review by rule: apply'
+      tags:
+      - Attack Surface
+  /easm/candidates/rules/preview:
+    post:
+      consumes:
+      - application/json
+      description: 'Exactly what a review-by-rule action would change, changing nothing:
+        the scope entry or exclusion it would create (with the status and approvals
+        it would get), the items it would confirm or reject, the items that stay blocked,
+        and whether it needs a recent re-authentication. A refusal (PUBLIC_SUFFIX,
+        DENY_LIST, CIDR_TOO_LARGE, REQUEST_MUST_BE_ONE_OFF, ...) comes back in refusal.'
+      parameters:
+      - description: Action
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.EASMRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.RulePreview'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: 'Review by rule: preview'
+      tags:
+      - Attack Surface
+  /easm/candidates/suggestions:
+    get:
+      description: 'The caller''s pending review items grouped into candidate scope
+        rules (RFC-054 §6.7): wildcards at each label level up to the registrable
+        domain (never a public suffix), /24 (IPv4) or /48 (IPv6) ranges (never for
+        shared, CDN or cloud-provider space: those are listed individually), each
+        with the items it covers, the items an exclusion or rejection keeps out, ownership
+        hints and a strength. Narrowed to the caller''s data scope.'
+      parameters:
+      - description: Attribution states (comma-separated); default needs_review
+        in: query
+        name: states
+        type: string
+      - default: 50
+        description: Suggestions to return
+        in: query
+        maximum: 50
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.RuleSuggestions'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: 'Review by rule: suggestions'
       tags:
       - Attack Surface
   /easm/seeds:
