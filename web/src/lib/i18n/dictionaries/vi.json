@@ -426,5 +426,7 @@
   "sensors.setup.noChecks": "Báo cáo không có kiểm tra nào.",
   "sensors.setup.loadError": "Không tải được báo cáo cấu hình.",
   "sensors.setup.retry": "Thử lại",
-  "sensors.setup.empty": "Sensor này chưa gửi báo cáo cấu hình. Sensor gửi báo cáo khi khởi động và sau mỗi lần thay đổi cấu hình."
+  "sensors.setup.empty": "Sensor này chưa gửi báo cáo cấu hình. Sensor gửi báo cáo khi khởi động và sau mỗi lần thay đổi cấu hình.",
+  "assets.properties.title": "Thuộc tính",
+  "assets.properties.other": "Khác"
 }
