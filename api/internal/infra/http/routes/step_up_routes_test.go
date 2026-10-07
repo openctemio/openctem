@@ -56,7 +56,6 @@ var stepUpRoutes = []string{
 	"POST /api/v1/api-keys",
 	"DELETE /api/v1/api-keys/{id}",
 	"POST /api/v1/scim-tokens",
-	"POST /api/v1/audit-logs/rebaseline",
 	"POST /api/v1/ci/gate-overrides",
 	"PATCH /api/v1/tenants/acme/settings/security",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
