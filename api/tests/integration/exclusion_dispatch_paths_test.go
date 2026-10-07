@@ -148,6 +148,7 @@ func TestPipelineRun_TargetsPassTheScanGate(t *testing.T) {
 		postgres.NewSensorRepository(pg), postgres.NewCommandRepository(pg),
 		nil, logger.New(logger.Config{Level: "error"}),
 		scanrun.WithTargetGate(gate),
+		scanrun.WithWebScope(scopeService(db)),
 	)
 	trigger := func(runContext map[string]any) error {
 		_, err := svc.TriggerPipeline(ctx, scanrun.TriggerRunInput{

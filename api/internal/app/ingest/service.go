@@ -65,6 +65,7 @@ type Service struct {
 	vulnRepo     vulnerability.VulnerabilityRepository
 	compRepo     component.Repository
 	webEndpoints webendpoint.Repository
+	webRules     WebRuleSource
 	sensorRepo   sensor.Repository
 	branchRepo   branch.Repository
 	tenantRepo   tenant.Repository

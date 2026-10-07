@@ -190,6 +190,7 @@ type Service struct {
 	targetGate        TargetGate            // checks run-context targets; nil refuses runs that carry targets
 	assetRefChecker   AssetRefChecker       // tenant + scope check of a run's asset_id; nil refuses runs that carry one
 	hops              scanrun.HopRepository // stage chaining (hop_router.go); nil keeps every step on the run's seeds
+	webScope          WebScopeBuilder       // web_scope of web steps (web_scope.go); nil refuses web steps
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)

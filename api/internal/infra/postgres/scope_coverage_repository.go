@@ -150,3 +150,37 @@ func (r *ScopeCoverageRepository) CountCoverage(ctx context.Context, tenantID sh
 	}
 	return out, nil
 }
+
+// CountVisibleAssets counts the given assets of the tenant that the data
+// scope lets the caller see (nil scope: every one); the scope join counts
+// (scope.Service.JoinNow, PreviewJoin). Ids that are not the tenant's assets
+// count for nothing.
+func (r *ScopeCoverageRepository) CountVisibleAssets(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, assetIDs []string) (int, error) {
+	ids := make([]string, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		if _, err := shared.IDFromString(id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	var user any
+	if scope != nil {
+		if !scope.TenantID.IsZero() && scope.TenantID != tenantID {
+			return 0, nil // a scope for another tenant admits nothing
+		}
+		user = scope.UserID.String()
+	}
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT count(*) FROM assets a
+		WHERE a.tenant_id = $1 AND a.id = ANY($2::uuid[])
+		  AND ($3::uuid IS NULL OR a.id IN (
+		       SELECT u.asset_id FROM user_accessible_assets u WHERE u.user_id = $3::uuid AND u.tenant_id = $1))`,
+		tenantID.String(), pq.Array(ids), user).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count visible assets: %w", err)
+	}
+	return n, nil
+}
