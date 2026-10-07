@@ -13311,6 +13311,16 @@ definitions:
         type: string
       sensor_name:
         type: string
+      skipped_targets:
+        description: |-
+          SkippedTargets are the targets the sensor's local policy skipped in a
+          task that completed on the rest (at most 20; sensor-supplied text,
+          show as plain text). SkippedTargetsTotal counts all of them.
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunTaskSkippedTarget'
+        type: array
+      skipped_targets_total:
+        type: integer
       started_at:
         type: string
       status:
@@ -13323,6 +13333,17 @@ definitions:
       targets:
         type: integer
       tool:
+        type: string
+    type: object
+  internal_infra_http_handler.RunTaskSkippedTarget:
+    properties:
+      detail:
+        type: string
+      reason:
+        type: string
+      rule:
+        type: string
+      target:
         type: string
     type: object
   internal_infra_http_handler.RunTaskSummaryResponse:
