@@ -37,7 +37,9 @@ var permSeedMigrations = []string{
 // permRenameMigrations rename permission ids in place (old id → new id) with
 // a mapping table whose rows are ('old', 'new', ...). The renames are applied,
 // in order, on top of the seeded ids.
-var permRenameMigrations = []string{}
+var permRenameMigrations = []string{
+	"001285_scan_workflow_rename.up.sql", // integrations:pipelines:* -> scans:workflows:*
+}
 
 // permRemoveMigrations delete permission ids. Each lists the removed ids as
 // one-column VALUES rows ('id'), which tupleID parses; they are applied, in
@@ -45,6 +47,7 @@ var permRenameMigrations = []string{}
 var permRemoveMigrations = []string{
 	"001179_drop_tenant_tools_delete_permission.up.sql",
 	"001184_drop_vulnerability_write_permissions.up.sql",
+	"001286_drop_scan_workflow_execute_permission.up.sql",
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)

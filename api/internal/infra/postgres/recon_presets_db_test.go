@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
-// Every step of an active system preset pipeline can run on a shipped
+// Every step of an active system preset scan workflow can run on a shipped
 // tool: a pinned step names a tool the catalog has (and a sensor image
 // ships), with capabilities the catalog gives that tool (the queue-time step
 // check refuses anything else, so before migration 000270 no preset could
@@ -28,8 +28,8 @@ func TestPresetPipelines_UseShippedTools(t *testing.T) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT pt.name, ps.step_key, COALESCE(ps.tool, ''), COALESCE(ps.capabilities, '{}'),
 		       COALESCE(t.capabilities, '{}'), t.id IS NOT NULL
-		FROM pipeline_steps ps
-		JOIN pipeline_templates pt ON pt.id = ps.pipeline_id
+		FROM scan_workflow_steps ps
+		JOIN scan_workflows pt ON pt.id = ps.scan_workflow_id
 		LEFT JOIN tools t ON t.name = ps.tool AND t.tenant_id IS NULL AND t.is_active
 		WHERE pt.is_system_template AND pt.is_active
 		  AND (pt.id::text LIKE 'a0000001-%' OR pt.id::text LIKE 'a0000002-%')`) // presets and starters; Quick Scan picks its tool per run
@@ -81,7 +81,7 @@ func TestPresetPipelines_UseShippedTools(t *testing.T) {
 
 	// Intrusive presets with unshipped tools are off (RFC-036 O3).
 	var active int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pipeline_templates
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM scan_workflows
 		WHERE id IN ('a0000001-0000-0000-0000-000000000004', 'a0000001-0000-0000-0000-000000000005') AND is_active`).Scan(&active); err != nil {
 		t.Fatal(err)
 	}

@@ -1,8 +1,9 @@
 # Connect CI pipelines without a stored secret
 
-GitHub Actions and GitLab CI jobs can send scan results and fail on the
-platform's gate using the identity their CI provider gives them (OIDC). Nothing
-secret is stored in CI. Design: [RFC-051](../rfcs/RFC-051-ci-runner-identity-and-gate.md).
+GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, CircleCI and
+Jenkins (with its OpenID Connect provider plugin) jobs can send scan results
+and fail on the platform's gate using the identity their CI provider gives
+them (OIDC). Nothing secret is stored in CI. Design: [RFC-051](../rfcs/RFC-051-ci-runner-identity-and-gate.md).
 
 You need `scans:ci:write` (owners and administrators).
 
@@ -11,10 +12,19 @@ You need `scans:ci:write` (owners and administrators).
 **Discovery > CI/CD > Trust and gate > Trust > Add trust** (also under
 **Settings > Scanning > CI/CD integration**):
 
-- **Provider**: GitHub Actions or GitLab CI. For a self-managed GitLab, enter
-  its URL as the issuer. The platform fetches its keys over HTTPS through the
-  outbound-request guard; an instance on a private address needs
-  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` on the API.
+- **Provider**: GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket
+  Pipelines, CircleCI or Jenkins. Each asks for what names your CI
+  organization (sections 3a to 3d); there is never an issuer that stands for
+  every customer of a provider. For a self-managed GitLab or a Jenkins
+  controller, enter its issuer URL. The platform fetches the issuer's keys
+  over HTTPS through the outbound-request guard; an issuer on a private
+  address needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` on the API.
+- **Check a sample token** (in the dialog): paste a token from a job of that
+  pipeline. The platform verifies its signature against the issuer's keys and
+  shows its claims, the repository, ref, commit and run it reads from them,
+  and whether the rules admit it. The sample is not stored and its id is not
+  recorded (the same token can still be exchanged); a sample that expired
+  since is still checked and shown as expired.
 - **Owners** and/or **Repositories**: at least one. `acme` admits every
   repository of the `acme` organization or group; `acme/api, acme/web` only
   those; `acme/*` one level, `acme/**` any depth.
@@ -97,6 +107,145 @@ Merge requests from forks run in the fork's project by default, whose path does
 not match your rules. If you run them in the parent project, turn on
 **Protected branches and tags only** for configurations that must not admit
 them.
+
+## 3a. Azure Pipelines
+
+**Trust:** provider **Azure Pipelines**, the organization's **id** (a UUID:
+Organization settings > Microsoft Entra, or the `org_id` of a sample token).
+The issuer is `https://vstoken.dev.azure.com/<organization id>`.
+
+The job asks Azure DevOps for a *pipeline* token (no service connection):
+`openctem-ci` calls `$(System.OidcRequestUri)` with the job's access token,
+which the step must map in:
+
+```yaml
+- script: openctem-ci scan --capability sast --aggregate
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    OPENCTEM_API_URL: https://openctem.example.com
+    OPENCTEM_TENANT_ID: <your organization id>
+```
+
+The token signs the repository (`rpo_uri`), commit (`rpo_ver`), ref
+(`rpo_ref`), project (`prj_id`), pipeline definition (`def_id`) and run
+(`run_id`). Rules match the repository path: `acme/api` for a GitHub
+repository, `<organization>/<project>/<repository>` for Azure Repos.
+
+- Its audience is always `api://AzureADTokenExchange` and cannot be changed,
+  so the same token is valid for any service that trusts your organization's
+  pipeline tokens. The platform pins the token to your organization
+  (`org_id` must match the issuer), accepts each token once, and Azure
+  tokens live five minutes.
+- The token cannot tell a fork's pull request from your own: every pull
+  request build is refused unless **Admit fork pull requests** is on. Builds
+  of fork pull requests in Azure Pipelines do not get your secrets by
+  default; turn it on only if your pipeline never builds fork code.
+- **Events**, **Environments** and **Protected branches and tags only** are
+  not available: the token carries none of them. List the refs instead.
+
+## 3b. Bitbucket Pipelines
+
+**Trust:** provider **Bitbucket Pipelines**, the **workspace** (its slug, as
+in `bitbucket.org/<workspace>`) and the **workspace UUID** (Workspace
+settings, or `workspaceUuid` in a sample token). The issuer is
+`https://api.bitbucket.org/2.0/workspaces/<workspace>/pipelines-config/identity/oidc`.
+The UUID is required: a renamed workspace gives up its slug, and the UUID is
+what keeps a later owner of that slug out.
+
+```yaml
+options:
+  oidc:
+    audiences:
+      - openctem:tenant:<your organization id>
+pipelines:
+  default:
+    - step:
+        oidc: true
+        script:
+          - openctem-ci scan --capability sast --aggregate
+```
+
+`openctem-ci` reads `BITBUCKET_STEP_OIDC_TOKEN` and reports the repository
+name (`BITBUCKET_REPO_FULL_NAME`) and commit (`BITBUCKET_COMMIT`).
+
+- The token signs the repository's **UUID**, not its name. **Repositories**
+  rules therefore list repository UUIDs; **Owners** names the workspace. The
+  name a job reports is bound to the UUID that first used it: another
+  repository of the workspace cannot later report under that name (refused,
+  `repository_binding` in the audit log).
+- The audience must contain your organization id (the default
+  `openctem:tenant:<id>`): the workspace's own audience is shared by every
+  service that trusts the workspace.
+- **Environments** are deployment environment UUIDs; **Protected branches
+  and tags only** needs them (environments whose deployment rules admit only
+  protected branches). **Events** are not available.
+
+## 3c. CircleCI
+
+**Trust:** provider **CircleCI**, the organization's **id** (Organization
+settings > Overview). The issuer is
+`https://oidc.circleci.com/org/<organization id>`.
+
+CircleCI's ready-made `CIRCLE_OIDC_TOKEN` has the organization id as its
+audience, which any service trusting your organization shares; the platform
+refuses it. Mint one for the platform in the step:
+
+```yaml
+- run: |
+    export OPENCTEM_ID_TOKEN="$(circleci run oidc get --claims '{"aud":"openctem:tenant:<your organization id>"}')"
+    openctem-ci scan --capability sast --aggregate
+```
+
+- The token signs the repository (`vcs-origin`), ref (`vcs-ref`), project,
+  workflow and job, **not the commit**. `openctem-ci` reports
+  `CIRCLE_SHA1`; the run marks its commit unverified, and a break-glass
+  (granted per commit) never applies to such a run.
+- A job re-run with SSH is always refused. Pull request refs are refused
+  unless **Admit fork pull requests** is on (the token cannot tell a fork's).
+- **Events**, **Environments** and **Protected branches and tags only** are
+  not available.
+
+## 3d. Jenkins
+
+Jenkins has no OIDC of its own; install the **OpenID Connect Provider**
+plugin. It signs tokens with a key per credential and publishes the keys at
+`<Jenkins URL>/oidc` (or a folder's issuer). A controller the platform
+cannot reach sets the credential's **issuer URI** to a static HTTPS location
+and publishes the two files Jenkins shows there
+(`.well-known/openid-configuration` and `jwks`).
+
+1. Manage Jenkins > Security > OpenID Connect: add the **claim templates**
+   the platform reads (they apply to every token of the controller):
+
+   | Claim | Template | Required |
+   |---|---|---|
+   | `repository` | `${GIT_URL}` | yes |
+   | `branch` | `${BRANCH_NAME}` (multibranch) or `${GIT_BRANCH}` | yes |
+   | `sha` | `${GIT_COMMIT}` | recommended (otherwise the job's report, unverified) |
+
+2. Add an **OpenID Connect id token** credential (folder-scoped for the jobs
+   that scan) with the audience `openctem:tenant:<your organization id>`.
+3. **Trust:** provider **Jenkins**, the credential's issuer.
+4. In the pipeline:
+
+```groovy
+withCredentials([string(credentialsId: 'openctem-oidc', variable: 'OPENCTEM_ID_TOKEN')]) {
+  sh 'openctem-ci scan --capability sast --aggregate'
+}
+```
+
+- The pipeline is the job (its URL, without the branch of a multibranch
+  job), the run the build number. The claims prove what your controller
+  asserts: anyone who can change the controller's configuration or its
+  credentials can mint any of them. Scope the credential to the folders whose
+  jobs may report.
+- Multibranch pull request builds (`PR-<n>`) are refused unless **Admit fork
+  pull requests** is on.
+- The plugin sends no `jti`; the platform accepts each token once by its
+  hash. Re-saving the credential rotates its key at once: republish the
+  static keys if you use an issuer URI.
+- No fallback secret: a long-lived CI credential would be an API key by
+  another name. A controller that cannot run the plugin uses scan-only mode.
 
 ## Already have a tool's output file?
 
@@ -190,5 +339,9 @@ since it exists) also refuses the key of any one-shot (standalone) sensor
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
 | `The CI token was not accepted` and `pipeline_identity` in the audit log | The token carries no repository/project id or no usable workflow path |
 | `The CI token was not accepted` and `pipeline_cap` in the audit log | The organization has the most CI pipelines it may have; existing pipelines keep running |
+| `organization_mismatch` in the audit log | The token's organization (Azure `org_id`, CircleCI `org-id`, Bitbucket `workspaceUuid`) is not the one the trust names |
+| `repository_binding` in the audit log | Bitbucket: another repository of the workspace already reports under that name |
+| `ssh_rerun` in the audit log | CircleCI: a re-run with SSH access, never admitted |
+| `missing_claims` on CircleCI or Jenkins | No commit was reported (CircleCI), or the Jenkins claim templates `repository` and `branch` are missing |
 | `403 RUNNER_OUTDATED` on the exchange | The sensor image is older than the minimum supported version; update the pinned image |
 | `401` on upload after a long scan | The 15-minute run token expired; on GitHub the sensor renews it, on GitLab shorten the time between the first upload and the verdict |

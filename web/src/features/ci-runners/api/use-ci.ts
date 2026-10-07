@@ -20,6 +20,8 @@ import type {
   CIRunList,
   CITrustConfig,
   CITrustConfigRequest,
+  CITrustPreview,
+  CITrustPreviewRequest,
   CIVerdictFilter,
   CIPipelineDetail,
   CIPipelineList,
@@ -148,6 +150,15 @@ export function useSaveTrustConfig() {
       arg.id
         ? put<CITrustConfig>(`${TRUST}/${encodeURIComponent(arg.id)}`, arg.body)
         : post<CITrustConfig>(TRUST, arg.body)
+  )
+}
+
+/** Checks a sample token against a draft trust configuration; nothing is stored. */
+export function usePreviewTrustConfig() {
+  const { currentTenant } = useTenant()
+  return useSWRMutation(
+    currentTenant ? `${TRUST}/preview` : null,
+    async (url: string, { arg }: { arg: CITrustPreviewRequest }) => post<CITrustPreview>(url, arg)
   )
 }
 

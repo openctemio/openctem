@@ -68,7 +68,7 @@ describe('formDataToCreateRequest', () => {
     const req = formDataToCreateRequest(form({ scannerName: 'semgrep' }))
     expect(req.scan_type).toBe('single')
     expect(req.scanner_name).toBe('semgrep')
-    expect(req.pipeline_id).toBeUndefined()
+    expect(req.scan_workflow_id).toBeUndefined()
     expect(req.name).toBe('Weekly SCA')
   })
 
@@ -80,7 +80,7 @@ describe('formDataToCreateRequest', () => {
   it('sends the real pipeline id in workflow mode, and no scanner', () => {
     const req = formDataToCreateRequest(form({ mode: 'workflow', workflowId: 'p-123' }))
     expect(req.scan_type).toBe('workflow')
-    expect(req.pipeline_id).toBe('p-123')
+    expect(req.scan_workflow_id).toBe('p-123')
     expect(req.scanner_name).toBeUndefined()
   })
 
@@ -173,12 +173,12 @@ describe('scanConfigToFormData + formDataToUpdateRequest (Edit)', () => {
     const c = config({
       scan_type: 'workflow',
       scanner_name: undefined,
-      pipeline_id: 'p9',
+      scan_workflow_id: 'p9',
     } as Partial<ScanConfig>)
     const f = scanConfigToFormData(c)
     expect(f.mode).toBe('workflow')
     const req = formDataToUpdateRequest(f, c, { canSetZone: false })
-    expect(req.pipeline_id).toBe('p9')
+    expect(req.scan_workflow_id).toBe('p9')
     expect(req.scanner_name).toBeUndefined()
   })
 })

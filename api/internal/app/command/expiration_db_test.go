@@ -26,13 +26,13 @@ import (
 //
 // and nothing ever wrote the column: the only setter was
 // command.Service.Create's `if input.ExpiresIn > 0`, and no caller passes
-// ExpiresIn. All six creation sites (scan/trigger x2, pipeline/run,
+// ExpiresIn. All six creation sites (scan/trigger x2, scan workflow/run,
 // validation/dispatcher, scancoverage/dispatcher, command/service) went through
 // commanddom.NewCommand, which left ExpiresAt nil. On the live database:
 // 21 commands, 0 with an expiry, 0 ever expired.
 //
 // So a command nobody answers was never expired and
-// pipeline.OnStepFailed(..., "COMMAND_EXPIRED") had never fired — the owning run
+// scanrun.OnStepFailed(..., "COMMAND_EXPIRED") had never fired — the owning run
 // hung until ScanTimeoutController reported a generic timeout instead.
 //
 // These tests go through the real postgres repository so they fail if the
@@ -77,12 +77,12 @@ func seedExpiryTenant(ctx context.Context, t *testing.T, db *postgres.DB) shared
 	return id
 }
 
-func pipelinePayload(t *testing.T, runID, stepKey string) json.RawMessage {
+func scanRunPayload(t *testing.T, runID, stepKey string) json.RawMessage {
 	t.Helper()
 
 	raw, err := json.Marshal(map[string]string{
-		"pipeline_run_id": runID,
-		"step_key":        stepKey,
+		"scan_run_id": runID,
+		"step_key":    stepKey,
 	})
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -104,7 +104,7 @@ func TestCommandCreation_PersistsDefaultExpiry(t *testing.T) {
 	created, err := svc.Create(ctx, CreateInput{
 		TenantID: tenantID.String(),
 		Type:     string(commanddom.CommandTypeScan),
-		Payload:  pipelinePayload(t, shared.NewID().String(), "default-expiry-step"),
+		Payload:  scanRunPayload(t, shared.NewID().String(), "default-expiry-step"),
 	})
 	if err != nil {
 		t.Fatalf("create command: %v", err)
@@ -148,7 +148,7 @@ func TestCommandCreation_ExplicitExpiresInWins(t *testing.T) {
 	created, err := svc.Create(ctx, CreateInput{
 		TenantID:  tenantID.String(),
 		Type:      string(commanddom.CommandTypeScan),
-		Payload:   pipelinePayload(t, shared.NewID().String(), "explicit-expiry-step"),
+		Payload:   scanRunPayload(t, shared.NewID().String(), "explicit-expiry-step"),
 		ExpiresIn: 300,
 	})
 	if err != nil {
@@ -192,7 +192,7 @@ func TestExpirationChecker_ExpiresCommandAndFailsStep(t *testing.T) {
 	created, err := svc.Create(ctx, CreateInput{
 		TenantID: tenantID.String(),
 		Type:     string(commanddom.CommandTypeScan),
-		Payload:  pipelinePayload(t, runID, stepKey),
+		Payload:  scanRunPayload(t, runID, stepKey),
 	})
 	if err != nil {
 		t.Fatalf("create command: %v", err)
@@ -211,7 +211,7 @@ func TestExpirationChecker_ExpiresCommandAndFailsStep(t *testing.T) {
 
 	failer := &stubStepFailer{}
 	checker := NewExpirationChecker(repo, nil, ExpirationCheckerConfig{}, logger.NewNop())
-	checker.pipelineService = failer
+	checker.scanRunService = failer
 
 	checker.checkAndExpire()
 

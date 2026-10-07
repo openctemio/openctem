@@ -131,12 +131,6 @@ type VerifiedDomainLister interface {
 	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*verifieddomain.VerifiedDomain, error)
 }
 
-// SeedRootLister lists a tenant's root_domain seeds with discovery on.
-// Satisfied by *postgres.EASMSeedRepository.
-type SeedRootLister interface {
-	DiscoveryRootDomains(ctx context.Context, tenantID shared.ID) ([]string, error)
-}
-
 // ScopeTargetLister lists a tenant's active scope targets. Satisfied by
 // *postgres.ScopeTargetRepository.
 type ScopeTargetLister interface {
@@ -197,9 +191,6 @@ type Service struct {
 	// relinker moves stored CT exposures onto their host's asset.
 	relinker ExposureRelinker
 
-	// seeds lists root_domain seeds to watch (nil: none).
-	seeds SeedRootLister
-
 	// maxBody bounds one CT response (maxBodyBytes; tests lower it).
 	maxBody int64
 }
@@ -247,11 +238,6 @@ func (s *Service) SetDomainSources(verified VerifiedDomainLister, targets ScopeT
 	s.verified = verified
 	s.scopeTargets = targets
 }
-
-// SetSeedSource adds the tenant's root_domain seeds (RFC-036 §6.3) to the
-// names the sweep queries. A seed is the tenant's assertion: names found
-// under it get fqdn_under_asserted_root unless a verified domain covers them.
-func (s *Service) SetSeedSource(seeds SeedRootLister) { s.seeds = seeds }
 
 // SetStateStore enables the persisted rotation cursor and failure back-off.
 func (s *Service) SetStateStore(st StateStore) { s.state = st }
@@ -482,7 +468,7 @@ func truncate(s string, n int) string {
 
 // gatherRoots collects every domain the tenant asked us to watch: its domain
 // assets that are not awaiting review or rejected (paged, no cap), verified
-// domains, root_domain seeds with discovery
+// domains, scope entries with discovery
 // on and active domain scope targets.
 // It also returns the domain assets by name so a discovered host can be tied
 // to its nearest known domain asset.
@@ -538,24 +524,20 @@ func (s *Service) gatherRoots(ctx context.Context, tenantID shared.ID) ([]rootDo
 		}
 	}
 
-	if s.seeds != nil {
-		names, err := s.seeds.DiscoveryRootDomains(ctx, tenantID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list seeds: %w", err)
-		}
-		for _, n := range names {
-			in = append(in, rootDomain{name: n, origin: OriginSeed})
-		}
-	}
-
 	if s.scopeTargets != nil {
 		targets, err := s.scopeTargets.ListActive(ctx, tenantID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list scope targets: %w", err)
 		}
 		for _, t := range targets {
+			// Discovery hangs off the entry (research/53 SC1): a permanent
+			// domain entry with discovery on. One-off entries never
+			// discover (their names would never confirm).
+			if !t.Discovery() {
+				continue
+			}
 			switch t.TargetType() {
-			case scope.TargetTypeDomain, scope.TargetTypeSubdomain, scope.TargetTypeEmailDomain:
+			case scope.TargetTypeDomain, scope.TargetTypeSubdomain:
 				in = append(in, rootDomain{name: t.Pattern(), origin: OriginScope})
 			}
 		}

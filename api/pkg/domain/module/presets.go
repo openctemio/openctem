@@ -276,7 +276,7 @@ var presetVMEssentials = ModulePreset{
 		// Settings / ops
 		"integrations", "integrations.scm", "integrations.scanners",
 		"integrations.notifications", "integrations.ticketing",
-		"scanner_templates", "scan_profiles", "tools", "scan_pipelines",
+		"scanner_templates", "scan_profiles", "tools", "scan_workflows",
 		"iocs",
 	},
 }
@@ -322,7 +322,7 @@ var presetASM = ModulePreset{
 		// Settings + ops
 		"integrations", "integrations.cloud", "integrations.scm",
 		"integrations.scanners", "integrations.notifications",
-		"scanner_templates", "scan_profiles", "tools", "scan_pipelines",
+		"scanner_templates", "scan_profiles", "tools", "scan_workflows",
 	},
 }
 
@@ -385,7 +385,7 @@ var presetOffensive = ModulePreset{
 		// Insights — reports are the deliverable for both
 		"reports", "executive_summary", "mitre_coverage", "ctem_maturity",
 		// Operations — recon scanning at scale
-		"scanner_templates", "template_sources", "scan_pipelines",
+		"scanner_templates", "template_sources", "scan_workflows",
 		"scan_profiles", "tools", "iocs",
 		// Settings — ticketing (pentest handoff)
 		"integrations", "integrations.scm", "integrations.cloud",
@@ -437,7 +437,7 @@ var presetASPM = ModulePreset{
 		// Settings — SCM/CI/scanner integration heavy
 		"integrations", "integrations.scm", "integrations.pipelines",
 		"integrations.scanners", "integrations.notifications", "integrations.ticketing",
-		"scanner_templates", "template_sources", "scan_pipelines",
+		"scanner_templates", "template_sources", "scan_workflows",
 		"tools", "scan_profiles", "iocs",
 	},
 }
@@ -484,7 +484,7 @@ var presetSBOM = ModulePreset{
 		"integrations", "integrations.scm", "integrations.pipelines",
 		"integrations.scanners", "integrations.notifications",
 		"integrations.ticketing",
-		"scanner_templates", "template_sources", "scan_pipelines",
+		"scanner_templates", "template_sources", "scan_workflows",
 		"tools", "scan_profiles",
 	},
 }
@@ -531,7 +531,7 @@ var presetCSPM = ModulePreset{
 		"integrations", "integrations.cloud", "integrations.scm",
 		"integrations.pipelines", "integrations.scanners",
 		"integrations.notifications", "integrations.siem",
-		"scanner_templates", "template_sources", "scan_pipelines",
+		"scanner_templates", "template_sources", "scan_workflows",
 		"tools", "scan_profiles", "iocs",
 		// Compliance (light — for cloud benchmarks)
 		"compliance",
@@ -632,7 +632,7 @@ var presetCTEMFull = ModulePreset{
 		"reports", "executive_summary", "ctem_maturity",
 		"mitre_coverage", "sbom_export",
 		// Operations
-		"scanner_templates", "template_sources", "scan_pipelines",
+		"scanner_templates", "template_sources", "scan_workflows",
 		"scan_profiles", "tools", "iocs",
 		// Compliance
 		"compliance",

@@ -13,25 +13,25 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// PipelineDeactivator interface for cascade deactivation when tools are disabled/deleted.
+// ScanWorkflowDeactivator interface for cascade deactivation when tools are disabled/deleted.
 // This decouples Service from PipelineService while allowing the cascade behavior.
-type PipelineDeactivator interface {
-	// DeactivatePipelinesByTool deactivates all active pipelines using the specified tool.
-	// Returns the count of deactivated pipelines and their IDs.
-	DeactivatePipelinesByTool(ctx context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error)
+type ScanWorkflowDeactivator interface {
+	// DeactivateScanWorkflowsByTool deactivates all active scan workflows using the specified tool.
+	// Returns the count of deactivated scan workflows and their IDs.
+	DeactivateScanWorkflowsByTool(ctx context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error)
 
-	// GetPipelinesUsingTool returns all active pipeline IDs that use a specific tool.
-	GetPipelinesUsingTool(ctx context.Context, tenantID shared.ID, toolName string) ([]shared.ID, error)
+	// GetScanWorkflowsUsingTool returns all active scan workflow IDs that use a specific tool.
+	GetScanWorkflowsUsingTool(ctx context.Context, tenantID shared.ID, toolName string) ([]shared.ID, error)
 }
 
 // Service handles tool registry business operations.
 type Service struct {
-	toolRepo            tooldom.Repository
-	configRepo          tooldom.TenantToolConfigRepository
-	executionRepo       tooldom.ToolExecutionRepository
-	categoryRepo        tooldomcat.Repository // For fetching category info
-	pipelineDeactivator PipelineDeactivator   // For cascade deactivation when tool is disabled/deleted
-	logger              *logger.Logger
+	toolRepo                tooldom.Repository
+	configRepo              tooldom.TenantToolConfigRepository
+	executionRepo           tooldom.ToolExecutionRepository
+	categoryRepo            tooldomcat.Repository   // For fetching category info
+	scanWorkflowDeactivator ScanWorkflowDeactivator // For cascade deactivation when tool is disabled/deleted
+	logger                  *logger.Logger
 
 	// Tool availability sources (availability.go).
 	availSensors SensorLister
@@ -62,10 +62,10 @@ func (s *Service) SetCategoryRepo(repo tooldomcat.Repository) {
 	s.categoryRepo = repo
 }
 
-// SetPipelineDeactivator sets the pipeline deactivator for cascade deactivation.
-// This is optional - if not set, pipelines will not be auto-deactivated when tools are disabled.
-func (s *Service) SetPipelineDeactivator(deactivator PipelineDeactivator) {
-	s.pipelineDeactivator = deactivator
+// SetScanWorkflowDeactivator sets the scan workflow deactivator for cascade deactivation.
+// This is optional - if not set, scan workflows will not be auto-deactivated when tools are disabled.
+func (s *Service) SetScanWorkflowDeactivator(deactivator ScanWorkflowDeactivator) {
+	s.scanWorkflowDeactivator = deactivator
 }
 
 // =============================================================================
@@ -332,7 +332,7 @@ func (s *Service) UpdateTool(ctx context.Context, input UpdateInput) (*tooldom.T
 }
 
 // DeleteTool deletes a tool from the registry.
-// Before deleting, cascade deactivates any active pipelines that use this tool.
+// Before deleting, cascade deactivates any active scan workflows that use this tool.
 func (s *Service) DeleteTool(ctx context.Context, tenantID, toolID string) error {
 	s.logger.Info("deleting tool", "tool_id", toolID)
 
@@ -355,9 +355,9 @@ func (s *Service) DeleteTool(ctx context.Context, tenantID, toolID string) error
 		return err
 	}
 
-	// Cascade deactivate pipelines using this tool before deletion
-	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
+	// Cascade deactivate scan workflows using this tool before deletion
+	if s.scanWorkflowDeactivator != nil {
+		count, scanWorkflowIDs, err := s.scanWorkflowDeactivator.DeactivateScanWorkflowsByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines before tool deletion",
 				"tool_id", toolID,
@@ -369,7 +369,7 @@ func (s *Service) DeleteTool(ctx context.Context, tenantID, toolID string) error
 				"tool_id", toolID,
 				"tool_name", t.Name,
 				"deactivated_count", count,
-				"pipeline_ids", pipelineIDs)
+				"scan_workflow_ids", scanWorkflowIDs)
 		}
 	}
 
@@ -405,7 +405,7 @@ func (s *Service) ActivateTool(ctx context.Context, tenantID, toolID string) (*t
 }
 
 // DeactivateTool deactivates a tool.
-// Also cascade deactivates any active pipelines that use this tool.
+// Also cascade deactivates any active scan workflows that use this tool.
 func (s *Service) DeactivateTool(ctx context.Context, tenantID, toolID string) (*tooldom.Tool, error) {
 	s.logger.Info("deactivating tool", "tool_id", toolID)
 
@@ -422,9 +422,9 @@ func (s *Service) DeactivateTool(ctx context.Context, tenantID, toolID string) (
 		return nil, err
 	}
 
-	// Cascade deactivate pipelines using this tool
-	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
+	// Cascade deactivate scan workflows using this tool
+	if s.scanWorkflowDeactivator != nil {
+		count, scanWorkflowIDs, err := s.scanWorkflowDeactivator.DeactivateScanWorkflowsByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines for tool",
 				"tool_id", toolID,
@@ -436,7 +436,7 @@ func (s *Service) DeactivateTool(ctx context.Context, tenantID, toolID string) (
 				"tool_id", toolID,
 				"tool_name", t.Name,
 				"deactivated_count", count,
-				"pipeline_ids", pipelineIDs)
+				"scan_workflow_ids", scanWorkflowIDs)
 		}
 	}
 
@@ -781,7 +781,7 @@ func (s *Service) UpdateCustomTool(ctx context.Context, input UpdateCustomToolIn
 }
 
 // DeleteCustomTool deletes a tenant custom tool.
-// Before deleting, cascade deactivates any active pipelines that use this tool.
+// Before deleting, cascade deactivates any active scan workflows that use this tool.
 func (s *Service) DeleteCustomTool(ctx context.Context, tenantID, toolID string) error {
 	s.logger.Info("deleting custom tool", "tenant_id", tenantID, "tool_id", toolID)
 
@@ -806,9 +806,9 @@ func (s *Service) DeleteCustomTool(ctx context.Context, tenantID, toolID string)
 		return err
 	}
 
-	// Cascade deactivate pipelines using this tool before deletion
-	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
+	// Cascade deactivate scan workflows using this tool before deletion
+	if s.scanWorkflowDeactivator != nil {
+		count, scanWorkflowIDs, err := s.scanWorkflowDeactivator.DeactivateScanWorkflowsByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines before custom tool deletion",
 				"tenant_id", tenantID,
@@ -821,7 +821,7 @@ func (s *Service) DeleteCustomTool(ctx context.Context, tenantID, toolID string)
 				"tool_id", toolID,
 				"tool_name", t.Name,
 				"deactivated_count", count,
-				"pipeline_ids", pipelineIDs)
+				"scan_workflow_ids", scanWorkflowIDs)
 		}
 	}
 
@@ -857,7 +857,7 @@ func (s *Service) ActivateCustomTool(ctx context.Context, tenantID, toolID strin
 }
 
 // DeactivateCustomTool deactivates a tenant custom tool.
-// Also cascade deactivates any active pipelines that use this tool.
+// Also cascade deactivates any active scan workflows that use this tool.
 func (s *Service) DeactivateCustomTool(ctx context.Context, tenantID, toolID string) (*tooldom.Tool, error) {
 	s.logger.Info("deactivating custom tool", "tenant_id", tenantID, "tool_id", toolID)
 
@@ -876,9 +876,9 @@ func (s *Service) DeactivateCustomTool(ctx context.Context, tenantID, toolID str
 		return nil, err
 	}
 
-	// Cascade deactivate pipelines using this tool
-	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
+	// Cascade deactivate scan workflows using this tool
+	if s.scanWorkflowDeactivator != nil {
+		count, scanWorkflowIDs, err := s.scanWorkflowDeactivator.DeactivateScanWorkflowsByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines for custom tool",
 				"tenant_id", tenantID,
@@ -891,7 +891,7 @@ func (s *Service) DeactivateCustomTool(ctx context.Context, tenantID, toolID str
 				"tool_id", toolID,
 				"tool_name", t.Name,
 				"deactivated_count", count,
-				"pipeline_ids", pipelineIDs)
+				"scan_workflow_ids", scanWorkflowIDs)
 		}
 	}
 
@@ -1334,13 +1334,13 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 
 // RecordToolExecutionInput represents the input for recording a tool execution.
 type RecordToolExecutionInput struct {
-	TenantID      string         `json:"-" validate:"required,uuid"`
-	ToolID        string         `json:"tool_id" validate:"required,uuid"`
-	SensorID      string         `json:"sensor_id" validate:"omitempty,uuid"`
-	PipelineRunID string         `json:"pipeline_run_id" validate:"omitempty,uuid"`
-	StepRunID     string         `json:"step_run_id" validate:"omitempty,uuid"`
-	InputConfig   map[string]any `json:"input_config"`
-	TargetsCount  int            `json:"targets_count"`
+	TenantID     string         `json:"-" validate:"required,uuid"`
+	ToolID       string         `json:"tool_id" validate:"required,uuid"`
+	SensorID     string         `json:"sensor_id" validate:"omitempty,uuid"`
+	ScanRunID    string         `json:"scan_run_id" validate:"omitempty,uuid"`
+	StepRunID    string         `json:"scan_run_step_id" validate:"omitempty,uuid"`
+	InputConfig  map[string]any `json:"input_config"`
+	TargetsCount int            `json:"targets_count"`
 }
 
 // RecordToolExecution records a new tool execution.
@@ -1366,13 +1366,13 @@ func (s *Service) RecordToolExecution(ctx context.Context, input RecordToolExecu
 
 	execution := tooldom.NewToolExecution(tenantID, toolID, sensorID, input.InputConfig, input.TargetsCount)
 
-	// Set optional pipeline/step run IDs
-	if input.PipelineRunID != "" {
-		prid, err := shared.IDFromString(input.PipelineRunID)
+	// Set optional scan workflow/step run IDs
+	if input.ScanRunID != "" {
+		prid, err := shared.IDFromString(input.ScanRunID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid pipeline_run id", shared.ErrValidation)
 		}
-		execution.PipelineRunID = &prid
+		execution.ScanRunID = &prid
 	}
 
 	if input.StepRunID != "" {
@@ -1521,13 +1521,13 @@ func (s *Service) GetTenantToolStats(ctx context.Context, tenantID string, days 
 
 // ListToolExecutionsInput represents the input for listing tool executions.
 type ListToolExecutionsInput struct {
-	TenantID      string `json:"tenant_id" validate:"required,uuid"`
-	ToolID        string `json:"tool_id" validate:"omitempty,uuid"`
-	SensorID      string `json:"sensor_id" validate:"omitempty,uuid"`
-	PipelineRunID string `json:"pipeline_run_id" validate:"omitempty,uuid"`
-	Status        string `json:"status" validate:"omitempty,oneof=running completed failed timeout"`
-	Page          int    `json:"page"`
-	PerPage       int    `json:"per_page"`
+	TenantID  string `json:"tenant_id" validate:"required,uuid"`
+	ToolID    string `json:"tool_id" validate:"omitempty,uuid"`
+	SensorID  string `json:"sensor_id" validate:"omitempty,uuid"`
+	ScanRunID string `json:"scan_run_id" validate:"omitempty,uuid"`
+	Status    string `json:"status" validate:"omitempty,oneof=running completed failed timeout"`
+	Page      int    `json:"page"`
+	PerPage   int    `json:"per_page"`
 }
 
 // ListToolExecutions lists tool executions with filters.
@@ -1557,12 +1557,12 @@ func (s *Service) ListToolExecutions(ctx context.Context, input ListToolExecutio
 		filter.SensorID = &sensorID
 	}
 
-	if input.PipelineRunID != "" {
-		pipelineRunID, err := shared.IDFromString(input.PipelineRunID)
+	if input.ScanRunID != "" {
+		scanRunID, err := shared.IDFromString(input.ScanRunID)
 		if err != nil {
 			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid pipeline_run id", shared.ErrValidation)
 		}
-		filter.PipelineRunID = &pipelineRunID
+		filter.ScanRunID = &scanRunID
 	}
 
 	if input.Status != "" {

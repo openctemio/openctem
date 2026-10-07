@@ -5,15 +5,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 type reaperRunRepo struct {
-	pipeline.RunRepository
+	scanrun.RunRepository
 	timedOut, aborted int64
 }
 

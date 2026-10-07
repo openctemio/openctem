@@ -27,7 +27,7 @@ const (
 )
 
 // AttackerCapabilities is the capability gate an attacker profile brings to the
-// generation pipeline. It mirrors attackerprofile.Capabilities but is a neutral
+// generation scan workflow. It mirrors attackerprofile.Capabilities but is a neutral
 // value type so the pure applicability logic has no dependency on that aggregate.
 type AttackerCapabilities struct {
 	NetworkAccess   string // external|internal|physical ("" treated as external)

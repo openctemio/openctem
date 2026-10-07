@@ -125,6 +125,11 @@ type PipelineCaps struct {
 
 // PipelineRepository persists CI pipelines. Every method is tenant-scoped.
 type PipelineRepository interface {
+	// RepositoryBoundElsewhere reports whether an active pipeline of the
+	// provider and issuer, keyed by another repository id, already reports
+	// on the repository asset of that name: a name the token does not sign
+	// stays with the first repository id that used it.
+	RepositoryBoundElsewhere(ctx context.Context, tenantID shared.ID, provider Provider, issuer, repositoryName, externalRepoID string) (bool, error)
 	// UpsertPipeline finds the pipeline with p's key (adopting a backfilled
 	// legacy row of the same repository asset and workflow path) or creates
 	// it within the caps (ErrPipelineCap). An existing pipeline takes p's

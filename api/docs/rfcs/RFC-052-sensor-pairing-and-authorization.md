@@ -284,7 +284,7 @@ One row per sensor in `sensor_grants` (composite foreign key on
 |---|---|---|
 | Profile | `profile` | The profile it was created from (label only; the columns are the grant) |
 | Trust | `sensors.trust_level` (on the sensor row) | `new` or `trusted` (SP3 adds `restricted`, `quarantined`) |
-| Job types | `job_types` | `scan`, `collect`, `validate`, `connector_sync`, `connector_scan`, … |
+| Job types | `job_types` | `scan`, `collect`, `validate`, `retest`, `connector_sync`, `connector_scan`, … |
 | Zones | `zone_ids` | A zoned command must be in one of these zones |
 | Tools | `tools` | The command's tool must be listed |
 | Capabilities | `capabilities` | The command's required capabilities must be listed |
@@ -303,13 +303,22 @@ T0 and turns credentials and push ingest off.
 
 | Profile | Job types | Tier | Targets | Credentials | Push ingest | Remote actions |
 |---|---|---|---|---|---|---|
-| `easm-external` | scan | T1 | public only | no | no | pause, drain |
-| `internal-network-scanner` (default) | scan, validate | T1 | any, zones chosen at approval | no | no | pause, drain |
-| `authenticated-scanner` | scan, validate | T1 | any, zones | yes (still off while New) | no | pause, drain |
+| `easm-external` | scan, validate, retest | T1 | public only | no | no | pause, drain |
+| `internal-network-scanner` (default) | scan, validate, retest | T1 | any, zones chosen at approval | no | no | pause, drain |
+| `authenticated-scanner` | scan, validate, retest | T1 | any, zones | yes (still off while New) | no | pause, drain |
 | `collector:<integration>` | collect, connector_sync | T0 | none | no | yes (still off while New) | pause, drain |
-| `ci-runner` | scan | T0 | none (code only) | no | yes (still off while New) | pause, drain |
-| `endpoint-agent` | scan, collect | T0 | none | no | yes (still off while New) | pause, drain |
+| `ci-runner` | scan, validate, retest | T0 | none (code only) | no | yes (still off while New) | pause, drain |
+| `endpoint-agent` | scan, collect, validate, retest | T0 | none | no | yes (still off while New) | pause, drain |
 | `legacy-broad` | any | T2 | any | yes | yes | all |
+
+A profile that may scan may also validate and retest: a validate or retest
+command re-runs one check of a tool the sensor scans with, on a target the
+grant already covers, and is held to the same zones, target network, target
+scope and tier ceiling (a retest is rated at the tier of the detection it
+repeats, §5.3). Migration 001263 added `retest` (and `validate` where it was
+missing) to every grant still on one of these profiles and to the insert
+trigger's default; a grant an administrator edited (`custom`) keeps its job
+types.
 
 `legacy-broad` exists only for sensors that existed before this RFC (the
 migration gives it to all of them at trust level `trusted`, so nothing
@@ -321,7 +330,7 @@ changes for them). It cannot be chosen for a new sensor. The console flags it
 | Where | Check |
 |---|---|
 | Poll, claim-N, claim by id (v1 acknowledge, v2 claim) | The Go dispatch gate (`dispatchGate.refusal`, the one place poll, claim and acknowledge all pass) evaluates the effective grant against the command: job type, zone, tool, required capabilities, tier, target network, target scope, credentials. A refused command is not offered on poll, and a claim by id answers like a lost claim (`command-claimed`) so a deployed sensor drops the command instead of reading a 403 as a lost key; the refusal is audited (`sensor.claim_refused_grant`, or `sensor.credential_refused` for the credentials dimension) with the dimension and recorded on the sensor's timeline. The capability predicate is added to `ClaimForSensor` too (the gap in §3). |
-| Command tier | The stage catalog's tier for the command's tool (lowest stage it implements); custom templates or out-of-band callbacks raise it to T2; an unknown tool is T2 (fail closed); `collect` and `connector_sync` are T0. |
+| Command tier | The stage catalog's tier for the command's tool (lowest stage it implements); custom templates or out-of-band callbacks raise it to T2; an unknown tool is T2 (fail closed); `collect` and `connector_sync` are T0. A `retest` takes the tier of the detection it repeats: the scan tier of the finding's tool under the contract the sensor reported for it, never lower and never higher, so the retest of a T1 finding is T1 and only a T2 detection (an intrusive or operator-installed tool, a declared side effect) retests at T2. Trust `new` still caps every command at T0. |
 | Credentials | A command whose `scanner_config`/`config` carries credential-looking values (the existing secret detector) needs `allow_credentials` and trust `trusted`; otherwise it is refused at claim (`sensor.credential_refused`, audited). Sealed credential delivery (RFC-032 Phase 3) will use the same gate. |
 | Results with a job | Unchanged: bound to a command the sensor holds (`ingest.OpenCommand`), same tool. |
 | Results without a job | A sensor whose effective grant has `allow_push_ingest = false` is refused (the segment's items are rejected with item error `push_ingest_not_granted`, not a 403, which sensors read as a lost key) before the role and tenant policy are consulted, audited (`sensor.push_refused_grant`); with it, today's path applies (role, tenant `warn`/`quarantine`, limited powers). |

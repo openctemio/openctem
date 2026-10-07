@@ -39,6 +39,26 @@ type ScopeHandler struct {
 	// activeProof is the operator's SCOPE_ACTIVE_PROOF (read-only view).
 	activeProof string
 	actors      MemberNamer
+	sweeper     DiscoverySweeper
+}
+
+// DiscoverySweeper starts a discovery sweep for a tenant (*easm.SweepService).
+type DiscoverySweeper interface {
+	SweepForSeed(tenantID shared.ID)
+}
+
+// SetSweeper starts discovery at once when an entry that discovers comes into
+// effect, so its first names arrive in minutes instead of at the next run.
+func (h *ScopeHandler) SetSweeper(s DiscoverySweeper) { h.sweeper = s }
+
+// discover starts a sweep when the entry discovers and is in effect.
+func (h *ScopeHandler) discover(tenantID string, t *scopedom.Target) {
+	if h.sweeper == nil || t == nil || !t.IsActive() || !t.Discovery() {
+		return
+	}
+	if id, err := shared.IDFromString(tenantID); err == nil {
+		h.sweeper.SweepForSeed(id)
+	}
 }
 
 // SetActorNamer names the people on scope responses (members of the
@@ -193,7 +213,11 @@ type ScopeTargetResponse struct {
 	CreatedBy *ActorRef `json:"created_by,omitempty"`
 	// Origin is how the entry came to exist: manual, request, import,
 	// review_rule, refusal_fix, seed, seed_migration or system.
-	Origin    string    `json:"origin"`
+	Origin string `json:"origin"`
+	// Discovery: names under the entry are discovered (Certificate
+	// Transparency) and join the inventory; only a permanent domain entry
+	// discovers.
+	Discovery bool      `json:"discovery"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -287,6 +311,9 @@ type CreateScopeTargetRequest struct {
 	// Origin: refusal_fix when the entry fixes a refused scan target (the
 	// one origin a client may name; the server sets every other).
 	Origin string `json:"origin" validate:"omitempty,oneof=refusal_fix"`
+	// Discovery: discover names under the entry (default true; runs only
+	// for a permanent domain entry).
+	Discovery *bool `json:"discovery"`
 }
 
 // UpdateScopeTargetRequest represents the request to update a scope target.
@@ -300,6 +327,8 @@ type UpdateScopeTargetRequest struct {
 	ExpiresAt     *time.Time `json:"expires_at"`
 	ClearExpiry   bool       `json:"clear_expiry"`
 	MaxTier       *string    `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
+	// Discovery: turning it on widens (approvers, step-up).
+	Discovery *bool `json:"discovery"`
 }
 
 // CreateScopeExclusionRequest represents the request to create a scope exclusion.
@@ -371,6 +400,7 @@ func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 		Tags:              t.Tags(),
 		CreatedBy:         actorRef(t.CreatedBy()),
 		Origin:            string(t.Origin()),
+		Discovery:         t.Discovery(),
 		CreatedAt:         t.CreatedAt(),
 		UpdatedAt:         t.UpdatedAt(),
 	}
@@ -603,6 +633,7 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		MaxTier:       req.MaxTier,
 		Actor:         scopeActor(r),
 		Origin:        scopedom.Origin(req.Origin),
+		Discovery:     req.Discovery,
 	}
 
 	target, err := h.service.CreateTarget(r.Context(), input)
@@ -612,6 +643,7 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditTarget(r, audit.ActionScopeTargetCreated, target.ID().String(), nil, target)
 	h.reevaluate(tenantID, target)
+	h.discover(tenantID, target)
 
 	// Check for pattern overlaps (non-blocking warnings)
 	warnings, overlapErr := h.service.CheckPatternOverlaps(r.Context(), tenantID, req.TargetType, req.Pattern)
@@ -697,6 +729,7 @@ func (h *ScopeHandler) UpdateTarget(w http.ResponseWriter, r *http.Request) {
 		ExpiresInDays: req.ExpiresInDays,
 		ClearExpiry:   req.ClearExpiry,
 		MaxTier:       req.MaxTier,
+		Discovery:     req.Discovery,
 		Actor:         scopeActor(r),
 	}
 
