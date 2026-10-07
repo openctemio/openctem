@@ -74,7 +74,7 @@ type CreateTargetInput struct {
 // CreateTarget creates a scope entry: effective at once, pending approval,
 // or a member's pending request (entries.go).
 func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*scopedom.Target, error) {
-	s.logger.Info("creating scope target", "type", input.TargetType, "pattern", input.Pattern)
+	s.logger.Info("creating scope target", "type", logSafe(input.TargetType), "pattern", logSafe(input.Pattern))
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -135,7 +135,7 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	case !input.Actor.system():
 		s.notifyWidened(ctx, target, "Scope entry added")
 	}
-	s.logger.Info("scope target created", "id", target.ID().String(), "pattern", input.Pattern, "status", target.Status().String())
+	s.logger.Info("scope target created", "id", target.ID().String(), "pattern", logSafe(input.Pattern), "status", target.Status().String())
 	return target, nil
 }
 
@@ -469,7 +469,7 @@ type CreateExclusionInput struct {
 
 // CreateExclusion creates a new scope exclusion.
 func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInput) (*scopedom.Exclusion, error) {
-	s.logger.Info("creating scope exclusion", "type", input.ExclusionType, "pattern", input.Pattern)
+	s.logger.Info("creating scope exclusion", "type", logSafe(input.ExclusionType), "pattern", logSafe(input.Pattern))
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -490,7 +490,7 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 		return nil, fmt.Errorf("failed to create scope exclusion: %w", err)
 	}
 
-	s.logger.Info("scope exclusion created", "id", exclusion.ID().String(), "pattern", input.Pattern)
+	s.logger.Info("scope exclusion created", "id", exclusion.ID().String(), "pattern", logSafe(input.Pattern))
 	return exclusion, nil
 }
 
