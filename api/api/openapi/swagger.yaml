@@ -4389,6 +4389,8 @@ definitions:
         type: string
       in_cisa_kev:
         type: boolean
+      info_count:
+        type: integer
       license:
         type: string
       low_count:
@@ -9045,8 +9047,9 @@ definitions:
         minimum: 1
         type: integer
       info_days:
+        description: 0 = no SLA for informational findings
         maximum: 365
-        minimum: 1
+        minimum: 0
         type: integer
       is_default:
         type: boolean
@@ -9087,7 +9090,6 @@ definitions:
     required:
     - critical_days
     - high_days
-    - info_days
     - low_days
     - medium_days
     - name
@@ -16770,8 +16772,9 @@ definitions:
         minimum: 1
         type: integer
       info_days:
+        description: 0 = no SLA for informational findings
         maximum: 365
-        minimum: 1
+        minimum: 0
         type: integer
       is_active:
         type: boolean
@@ -25473,6 +25476,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality
         type: array
@@ -25485,6 +25489,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality_not
         type: array
@@ -26938,6 +26943,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality
         type: array
@@ -26950,6 +26956,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality_not
         type: array
@@ -27656,6 +27663,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality
         type: array
@@ -27668,6 +27676,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality_not
         type: array
@@ -28400,6 +28409,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality
         type: array
@@ -28412,6 +28422,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality_not
         type: array
@@ -29138,6 +29149,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality
         type: array
@@ -29150,6 +29162,7 @@ paths:
           - high
           - medium
           - low
+          - none
           type: string
         name: asset_criticality_not
         type: array

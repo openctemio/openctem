@@ -22,6 +22,12 @@ import {
   useScanCoverage,
   useAttackPaths,
 } from '@/features/dashboard/hooks/use-ctem-dashboard'
+import {
+  INFORMATIONAL_LABEL,
+  SEVERITY_LABELS,
+  SEVERITY_LEVELS,
+  severityCounts,
+} from '@/lib/severity'
 
 function useStats() {
   const { currentTenant } = useTenant()
@@ -106,13 +112,12 @@ function StatShell({
 
 function SeverityBreakdownWidget() {
   const { stats, isLoading } = useStats()
-  const by = stats.findings.bySeverity ?? {}
-  const rows: Array<[string, number]> = [
-    ['Critical', by.critical ?? 0],
-    ['High', by.high ?? 0],
-    ['Medium', by.medium ?? 0],
-    ['Low', by.low ?? 0],
-  ]
+  // Every severity, Informational included (none folds into it).
+  const by = severityCounts(stats.findings.bySeverity)
+  const rows: Array<[string, number]> = SEVERITY_LEVELS.map((s) => [
+    s === 'info' ? INFORMATIONAL_LABEL : SEVERITY_LABELS[s],
+    by[s],
+  ])
   return (
     <Card className="h-full">
       <CardHeader className="pb-2">

@@ -12939,9 +12939,9 @@ export interface paths {
           /** @description assigned to: none of (comma list) */
           assigned_to_not?: string[]
           /** @description asset criticality: any of (comma list) */
-          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset criticality: none of (comma list) */
-          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset owner id: any of (comma list) */
           asset_owner_id?: string[]
           /** @description asset owner id is unset (true) or set (false) */
@@ -14581,9 +14581,9 @@ export interface paths {
           /** @description assigned to: none of (comma list) */
           assigned_to_not?: string[]
           /** @description asset criticality: any of (comma list) */
-          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset criticality: none of (comma list) */
-          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset owner id: any of (comma list) */
           asset_owner_id?: string[]
           /** @description asset owner id is unset (true) or set (false) */
@@ -14964,9 +14964,9 @@ export interface paths {
           /** @description assigned to: none of (comma list) */
           assigned_to_not?: string[]
           /** @description asset criticality: any of (comma list) */
-          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset criticality: none of (comma list) */
-          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset owner id: any of (comma list) */
           asset_owner_id?: string[]
           /** @description asset owner id is unset (true) or set (false) */
@@ -15367,9 +15367,9 @@ export interface paths {
           /** @description assigned to: none of (comma list) */
           assigned_to_not?: string[]
           /** @description asset criticality: any of (comma list) */
-          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset criticality: none of (comma list) */
-          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset owner id: any of (comma list) */
           asset_owner_id?: string[]
           /** @description asset owner id is unset (true) or set (false) */
@@ -15828,9 +15828,9 @@ export interface paths {
           /** @description assigned to: none of (comma list) */
           assigned_to_not?: string[]
           /** @description asset criticality: any of (comma list) */
-          asset_criticality?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset criticality: none of (comma list) */
-          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low')[]
+          asset_criticality_not?: ('critical' | 'high' | 'medium' | 'low' | 'none')[]
           /** @description asset owner id: any of (comma list) */
           asset_owner_id?: string[]
           /** @description asset owner id is unset (true) or set (false) */
@@ -35909,6 +35909,7 @@ export interface components {
       high_count?: number
       id?: string
       in_cisa_kev?: boolean
+      info_count?: number
       license?: string
       low_count?: number
       medium_count?: number
@@ -38296,7 +38297,8 @@ export interface components {
       description?: string
       escalation_enabled?: boolean
       high_days: number
-      info_days: number
+      /** @description 0 = no SLA for informational findings */
+      info_days?: number
       is_default?: boolean
       low_days: number
       medium_days: number
@@ -42491,6 +42493,7 @@ export interface components {
       description?: string
       escalation_enabled?: boolean
       high_days?: number
+      /** @description 0 = no SLA for informational findings */
       info_days?: number
       is_active?: boolean
       is_default?: boolean

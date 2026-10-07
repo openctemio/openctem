@@ -10,6 +10,8 @@
 // ============================================
 // Re-export from Asset Types (unified architecture)
 // ============================================
+import { SEVERITY_LABELS, type SeverityLevel } from '@/lib/severity'
+
 export {
   // Base types
   type Asset,
@@ -33,7 +35,6 @@ export {
   ASSET_SCOPE_LABELS,
   EXPOSURE_LEVEL_LABELS,
   CRITICALITY_LABELS,
-  CRITICALITY_COLORS,
 } from '@/features/assets/types/asset.types'
 
 // ============================================
@@ -164,15 +165,8 @@ export const SCANNER_TYPE_LABELS: Record<ScannerType, string> = {
 // Severity Types
 // ============================================
 
-export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info'
-
-export const SEVERITY_LABELS: Record<Severity, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-}
+export type Severity = SeverityLevel
+export { SEVERITY_LABELS }
 
 export const SEVERITY_COLORS: Record<Severity, { bg: string; text: string; border: string }> = {
   critical: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
