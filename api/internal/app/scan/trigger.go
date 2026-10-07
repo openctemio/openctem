@@ -434,6 +434,10 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
+	// Proof can be lost after the scan was saved: re-check at every run.
+	if err := s.refuseUnprovenIntrusive(ctx, sc.TenantID, sc.ScannerName, resolved.Targets); err != nil {
+		return nil, err
+	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
 
 	// A connector scan (RFC-047) is one command for the connector's sensor;
@@ -980,6 +984,17 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	}
 	internal := sc.HasAssetGroup() || hasInternalTarget(targets)
 
+	// Platform sensors probe from the platform's addresses: with the
+	// operator's proof requirement every target must be at or under a
+	// verified domain of the tenant (RFC-054 §8.1).
+	var unproven []string
+	if s.platformNeedsProof() && !internal {
+		var err error
+		if unproven, err = s.unverified(ctx, sc.TenantID, targets); err != nil {
+			return false, err
+		}
+	}
+
 	// If explicitly set to platform only, the tenant must be allowed and the
 	// targets must be public.
 	if sc.SensorPreference == scan.SensorPreferencePlatform {
@@ -987,6 +1002,9 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 			return false, shared.NewDomainError("PLATFORM_SENSOR_REFUSED",
 				"sensor_preference is 'platform', but shared platform sensors never scan asset groups or internal targets; set sensor_preference to 'tenant' or 'auto', or scan only public targets",
 				shared.ErrValidation)
+		}
+		if err := proofError("platform sensors probe only verified domains", unproven); err != nil {
+			return false, err
 		}
 		if s.sensorSelector != nil {
 			canUse, reason := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID)
@@ -999,9 +1017,10 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 		return true, nil
 	}
 
-	// Auto: tenant sensors first. Shared sensors only if the tenant may use them
-	// and nothing in the scan is internal; otherwise the job waits.
-	if s.sensorSelector == nil || internal {
+	// Auto: tenant sensors first. Shared sensors only if the tenant may use them,
+	// nothing in the scan is internal and every target is proven where the
+	// operator requires it; otherwise the job waits.
+	if s.sensorSelector == nil || internal || len(unproven) > 0 {
 		return false, nil
 	}
 	result, err := s.sensorSelector.SelectSensor(ctx, SelectSensorRequest{

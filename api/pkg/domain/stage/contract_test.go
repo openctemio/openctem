@@ -22,10 +22,10 @@ func carriedBy(ref asset.TypeRef, ports []PortType) bool {
 	return false
 }
 
-func TestPortTypes_ClosedSetOfTen(t *testing.T) {
+func TestPortTypes_ClosedSetOfEleven(t *testing.T) {
 	got := PortTypes()
-	if len(got) != 10 {
-		t.Fatalf("port types: %d, want the closed set of 10", len(got))
+	if len(got) != 11 {
+		t.Fatalf("port types: %d, want the closed set of 11", len(got))
 	}
 	seen := map[PortType]bool{}
 	for _, p := range got {
@@ -178,8 +178,10 @@ func TestAdapters_TypeCheck(t *testing.T) {
 // routed: no lookup, tool or capability word reaches them.
 func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 	all := Taxonomy()
-	if len(all) != 22 {
-		t.Fatalf("taxonomy v1: %d capabilities, want 22", len(all))
+	// 13 routed + 12 planned: the 22 of taxonomy v1 plus discover.cloud,
+	// sbom.generate and import.file (RFC-055).
+	if len(all) != 25 {
+		t.Fatalf("taxonomy v1: %d capabilities, want 25", len(all))
 	}
 	ids := map[string]bool{}
 	for _, s := range all {
@@ -187,7 +189,7 @@ func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 			t.Fatalf("duplicate capability id %s", s.ID())
 		}
 		ids[s.ID()] = true
-		if s.CrossCutting != (s.Key == "verify.finding") {
+		if s.CrossCutting != (s.Key == "verify.finding" || s.Key == "import.file") {
 			t.Fatalf("%s: cross-cutting flag", s.Key)
 		}
 	}

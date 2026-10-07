@@ -19,6 +19,65 @@ The sensor-local policy still reads `*.x` as names below `x` (the stricter
 reading on its allow list); aligning it is a follow-up in sdk-go and the
 sensor.
 
+## Scope entries (RFC-054)
+
+A scope target authorizes probes only while it is **in effect**: status
+`active` and not past `expires_at`. The read of active targets filters on
+both, so an expired one-off stops authorizing at once; the data-expiration
+controller then marks it `expired`.
+
+- **One-off entries** carry `expires_at` (default 7 days, at most the
+  organization's `one_off_max_days`, 30 at most) and a `reason`.
+- **Who widens.** Creating, activating, extending or raising the tier of an
+  entry is widening. A holder of `attack_surface:scope:approve` re-authenticates
+  (step-up) and the entry needs the organization's approval count of other
+  approvers (`widening_approvals`, default `min(1, admins − 1)`, at least 1
+  with two or more admins and for `t2`); until then it is `pending` and
+  authorizes nothing. Anyone else with `scope:write` only **requests** a
+  one-off for one name or address, with a reason; it needs an approver.
+- **Approving** (`POST /scope/targets/{id}/approve`) needs the approval
+  permission and step-up; the requester never approves, nobody approves
+  twice. Exclusion removal, deactivation and shortening need step-up too.
+- Every widening that takes effect, every request, and every settings change
+  notifies all active owners and administrators in-app, and is audited.
+- Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one
+  click.
+- **Seeds are scope entries.** A root-domain seed authorizes T1 probes of
+  every name under it and confirms them into the inventory, so `POST
+  /easm/seeds` creates the permanent entry `*.<domain>` through the same
+  path (`easm.SeedService.Create` calls `scope.Service.CreateTarget`):
+  `scope:approve` and step-up on the route, the approval count, the
+  guardrails, the administrator notification and a `scope_target.created`
+  audit record (`via: easm_seed`). A member gets `403
+  WIDENING_NEEDS_APPROVER`. Turning a seed's discovery back on
+  (`PATCH /easm/seeds/{id}`) needs `scope:approve` and step-up and notifies
+  the administrators. Seed rows made before this change keep working until
+  they are folded into entries.
+- **SSO domains never authorize.** Only verified domains of purpose `easm`
+  (verified by the organization for attack-surface work) count as authority
+  (`EASMVerifiedDomainNames`). A domain a platform administrator verified
+  for SSO sign-in (purpose `sso`) is proof of control only (§8.1).
+
+## Platform guardrails (RFC-054 §8)
+
+Operator settings, never tenant settings:
+
+- **New entries** (`scope.Service.CreateTarget`, `pkg/domain/scope/guardrails.go`):
+  no public suffix or wildcard of one (embedded Public Suffix List), no
+  government or military name, no shared-provider apex as a wildcard root,
+  no `0.0.0.0/0`, `::/0`, link-local or metadata address, nothing in
+  `SCOPE_DENY_EXTRA`, no public range larger than the CIDR caps.
+- **Dispatch** (the ownership gate below): a deny-listed target is refused
+  on every path (`platform_denied`); with `SCOPE_ACTIVE_PROOF=all` an
+  internet target not at or under a verified domain is refused
+  (`proof_required`).
+- **Platform sensors** (`scan/active_proof.go`): with `platform_sensors` or
+  `all`, a job goes to platform sensors only when every target is verified;
+  an explicit platform preference with an unproven target is refused
+  (`PROOF_REQUIRED`).
+- **Intrusive scans**: a scanner whose stages are all T2 needs every target
+  verified, at create, quick scan and every run.
+
 ## What the gate checks
 
 For each target, in order:
@@ -53,7 +112,8 @@ For each target, in order:
      internet-facing asset (domain, subdomain, IP, service, web endpoint,
      host, …), or typed text naming an internet host or public address, is
      not covered by an active scope target of the tenant nor at or under one
-     of its root-domain seeds or verified domains. Without a record that is
+     of its root-domain seeds or `easm`-purpose verified domains (an
+     SSO-purpose domain is never authority). Without a record that is
      `unattributed`; with a **confirmed** record it is `out_of_scope`:
      confirming an asset on its Ownership tab records ownership, it does not
      authorize active probes by itself. Private addresses and internal names
@@ -63,7 +123,13 @@ For each target, in order:
    Typed text that names no asset gets the same authority decision as an
    inventory asset; the act-scope check below asks the same `scopeauth`
    package, so a typed name and the same name in the inventory never
-   disagree. The caller sees one generic reason; the state that refused the target is
+   disagree. Every refusal carries a structured code (RFC-054 §6.5:
+   `rejected`, `needs_review`, `candidate`, `dependency`, `monitor_only`,
+   `no_entry`, `deny_list`, `proof_required`, …); requests refused as a whole
+   answer `TARGET_OUT_OF_SCOPE` with `details.refused[]` (`target`, `code`,
+   `message`, `fixes`). The act scope runs first on those paths, so a
+   restricted member never learns the state of an asset outside their data
+   scope. The state is also
    logged (`active scan target refused`) with the path. A request refused as
    a whole (scan create, clone, import, quick scan, `POST /commands`) is also
    **audited** as `scan.target_refused` (medium, result `failure`) in the
