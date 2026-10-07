@@ -29,7 +29,7 @@ function pages(total: number) {
     const start = (page - 1) * per
     const n = Math.max(0, Math.min(per, total - start))
     return {
-      items: Array.from({ length: n }, (_, i) => run(start + i)),
+      data: Array.from({ length: n }, (_, i) => run(start + i)),
       total,
       page,
       per_page: per,

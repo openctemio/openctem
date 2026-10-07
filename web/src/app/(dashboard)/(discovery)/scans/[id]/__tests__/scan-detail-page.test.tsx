@@ -110,15 +110,21 @@ describe('Scan page', () => {
     })
   })
 
-  it('pages the run history on the server, with the page in the URL', async () => {
-    urlState.run_page = '2'
+  // An embedded list keeps its paging local (no prefixed run_page in the
+  // URL); "View all runs" links to the Runs list filtered to this scan.
+  it('pages the run history on the server and links to the full runs list', async () => {
     render(<ScanDetailPage />)
-    expect(runCalls).toContainEqual({ page: 2, perPage: 25 })
+    expect(runCalls).toContainEqual({ page: 1, perPage: 25 })
     // The numbers come from the newest runs whatever page is open.
     expect(runCalls).toContainEqual({ page: 1, perPage: 10 })
-    expect(screen.getByText(/^Showing/).textContent).toMatch(/26\s*-\s*50\s*of\s*60\s*runs/)
     await userEvent.click(screen.getByRole('button', { name: 'Next page' }))
-    expect(urlState.run_page).toBe('3')
+    expect(runCalls).toContainEqual({ page: 2, perPage: 25 })
+    expect(screen.getByText(/^Showing/).textContent).toMatch(/26\s*-\s*50\s*of\s*60\s*runs/)
+    expect(Object.keys(urlState).filter((k) => k.startsWith('run_'))).toEqual([])
+    expect(screen.getByRole('link', { name: 'View all runs' })).toHaveAttribute(
+      'href',
+      '/scans/runs?scan_id=s1'
+    )
   })
 
   it('opens a run in the drawer', async () => {
