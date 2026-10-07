@@ -152,7 +152,7 @@ types:
     constraints:
       - sources: [host, endpoint, ip_address, k8s_workload, container]
         targets: [api_endpoint, service, api]
-      - sources: [domain]
+      - sources: [domain, subdomain]
         targets: [website, api, service]
       - sources: [load_balancer]
         targets: [api, service, website]

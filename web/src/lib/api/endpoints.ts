@@ -33,7 +33,6 @@ export const API_BASE = {
   TOOLS: '/api/v1/tools',
   TOOL_CATEGORIES: '/api/v1/tool-categories',
   CAPABILITIES: '/api/v1/capabilities',
-  CUSTOM_CAPABILITIES: '/api/v1/custom-capabilities',
   SCANS: '/api/v1/scans',
   EXPOSURES: '/api/v1/exposures',
   THREAT_INTEL: '/api/v1/threat-intel',
@@ -1262,11 +1261,12 @@ export const toolCategoryEndpoints = {
 import type { CapabilityListFilters } from './capability-types'
 
 /**
- * Capability endpoints (read-only for platform + tenant custom)
+ * Capability endpoints: one collection, platform and the organization's custom capabilities
  */
 export const capabilityEndpoints = {
   /**
-   * List all capabilities (platform + tenant custom, with pagination)
+   * List capabilities: the platform ones and the organization's own custom
+   * ones (source=platform|custom, category, q, include=usage, page, per_page).
    */
   list: (filters?: CapabilityListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
@@ -1274,56 +1274,32 @@ export const capabilityEndpoints = {
   },
 
   /**
-   * List all capabilities for dropdowns (no pagination)
+   * Get one capability; include=usage adds which tools and sensors have it.
    */
-  all: () => `${API_BASE.CAPABILITIES}/all`,
+  get: (capabilityId: string, include?: 'usage') =>
+    `${API_BASE.CAPABILITIES}/${capabilityId}${include ? `?include=${include}` : ''}`,
 
   /**
-   * Get capability by ID
-   */
-  get: (capabilityId: string) => `${API_BASE.CAPABILITIES}/${capabilityId}`,
-
-  /**
-   * Get all capability categories (security, recon, analysis)
+   * The categories in use (security, recon, analysis, ...)
    */
   categories: () => `${API_BASE.CAPABILITIES}/categories`,
 
   /**
-   * List capabilities by category
+   * Create a custom capability (owner/admin)
    */
-  byCategory: (category: string) => `${API_BASE.CAPABILITIES}/by-category/${category}`,
+  create: () => API_BASE.CAPABILITIES,
 
   /**
-   * Get usage stats for a single capability
+   * Update one of the organization's custom capabilities
    */
-  usageStats: (capabilityId: string) => `${API_BASE.CAPABILITIES}/${capabilityId}/usage-stats`,
+  update: (capabilityId: string) => `${API_BASE.CAPABILITIES}/${capabilityId}`,
 
   /**
-   * Get usage stats for multiple capabilities (batch)
-   */
-  usageStatsBatch: () => `${API_BASE.CAPABILITIES}/usage-stats`,
-} as const
-
-/**
- * Custom Capability endpoints (tenant custom capabilities management)
- */
-export const customCapabilityEndpoints = {
-  /**
-   * Create a new custom capability
-   */
-  create: () => API_BASE.CUSTOM_CAPABILITIES,
-
-  /**
-   * Update a custom capability
-   */
-  update: (capabilityId: string) => `${API_BASE.CUSTOM_CAPABILITIES}/${capabilityId}`,
-
-  /**
-   * Delete a custom capability
+   * Delete one of the organization's custom capabilities
    * @param force - Force delete even if capability is in use
    */
   delete: (capabilityId: string, force?: boolean) =>
-    `${API_BASE.CUSTOM_CAPABILITIES}/${capabilityId}${force ? '?force=true' : ''}`,
+    `${API_BASE.CAPABILITIES}/${capabilityId}${force ? '?force=true' : ''}`,
 } as const
 
 // ============================================

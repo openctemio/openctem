@@ -35,7 +35,10 @@ type Service struct {
 	optIns OptInPolicy
 	// grants enforces each sensor's grant (local_policy.go, RFC-052 §5);
 	// nil: not enforced. grantRefusals hears about refused claims by id.
-	grants        GrantReader
+	grants GrantReader
+	// contracts are the sensors' manifests, whose tool contracts set each
+	// job's tier (local_policy.go, RFC-055).
+	contracts     ToolContractSource
 	grantRefusals GrantRefusalObserver
 	// now is the clock (tests replace it).
 	now func() time.Time

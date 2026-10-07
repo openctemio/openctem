@@ -24,6 +24,16 @@ import {
   type NotificationPreferences,
 } from '@/features/notifications/api/use-notification-api'
 import { NOTIFICATION_TYPES } from '@/features/notifications/lib/notification-types'
+import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
+
+/** Threshold wording per level (the list runs least severe first). */
+const MIN_SEVERITY_LABELS: Record<SeverityLevel, string> = {
+  info: 'Info (all)',
+  low: 'Low and above',
+  medium: 'Medium and above',
+  high: 'High and above',
+  critical: 'Critical only',
+}
 
 /**
  * The user's own notification settings: the one place for them, saved on the
@@ -155,11 +165,11 @@ export default function NotificationsSettingsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="info">Info (all)</SelectItem>
-                <SelectItem value="low">Low and above</SelectItem>
-                <SelectItem value="medium">Medium and above</SelectItem>
-                <SelectItem value="high">High and above</SelectItem>
-                <SelectItem value="critical">Critical only</SelectItem>
+                {[...SEVERITY_LEVELS].reverse().map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {MIN_SEVERITY_LABELS[s]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
