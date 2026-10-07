@@ -31,7 +31,7 @@ func TestCIRequireOIDC_RunnerKeyRefused_DB(t *testing.T) {
 	})
 
 	runner, err := h.sensors.CreateSensor(ctx, sensorapp.CreateSensorInput{TenantID: h.tenantID, Name: "ci-runner",
-		Type: "worker", Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "standalone"})
+		Type: "worker", Capabilities: []string{"sast"}, ExecutionMode: "standalone"})
 	if err != nil {
 		t.Fatalf("create runner sensor: %v", err)
 	}

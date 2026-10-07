@@ -62,6 +62,7 @@ ago. At most 500 new assets per tenant per run, verified-root names first.
 |---|---|---|
 | a verified domain | `fqdn_under_verified_root` (0.99, strong) | `confirmed` (O4: strong rule and ≥ 90) |
 | a domain asset or scope target the tenant did not verify | `fqdn_under_asserted_root` (0.85, medium) | `needs_review` |
+| an active, permanent scope target or a root-domain seed (not excluded, not tombstoned, not under a rejected name) | also `matches_scope_target` (0.99, strong; RFC-054 §4.3) | `confirmed` |
 
 Promoted assets are `subdomain` assets with `discovery_source =
 cert_transparency` and `discovery_tool` = the CT source (`crt.sh` or

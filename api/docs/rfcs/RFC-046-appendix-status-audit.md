@@ -54,7 +54,7 @@ not effective).
 | D7 | Never retry permanent classes; retry lease expiry and timeout ×2 with backoff | **fixed** | A.1 #15; lease expiry → `COMMAND_EXHAUSTED` retryable | Typed error codes; remove or fix the dead step-level retry |
 | D8 | Abort unclaimed runs after 4 h (scheduled) / 1 h (interactive) | **fixed** | `api/internal/infra/controller/scan_timeout.go:68-69`; `AbortUnclaimedRuns` (`pipeline_run_repository.go:586-664`) | — |
 | D9 | Defer adaptive chunks | **honoured** | RFC-030 Phase 2 not started | — |
-| D10 | Quick scan is ad hoc + "Save as scan" | **fixed** | `api/migrations/000271_scans_ad_hoc.up.sql`; `api/internal/app/scan/run.go:225,294-308`; `POST /scans/{id}/save`; `quick-scan-dialog.tsx:68,153` | Offer Save from a run later; clean up unsaved ad-hoc rows (retention) |
+| D10 | Quick scan is ad hoc + "Save as scan" | **fixed** | `api/migrations/000271_scans_ad_hoc.up.sql`; `api/internal/app/scan/run.go:225,294-308`; `POST /scans/{id}/save`; `quick-scan-dialog.tsx:68,153` | Offer Save from a run later. Retention done: the one-off archive job (`internal/app/scan/one_off_archive.go`, every 6 h) archives ad-hoc scans that never ran after 30 days (`scans.archived_at`, disabled, never listed, audited; never deleted), and migration 001154 marks the quick scans created before ad-hoc scans existed as ad hoc |
 | D11 | rrule + timezone schedules | **partly** | Timezone works (`entity.go:269,306-311`); no rrule | P1.5 |
 | D12 | Cancel needs `scans:write` | **fixed** for runs | `scanning.go:426-430` `RequireAll(PipelinesWrite, ScansWrite)` | Command cancel route (A.2) |
 | D13 | Recon extras ship with EASM P3–P4 | **not due** | — | Tracked by RFC-036 |

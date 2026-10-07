@@ -254,12 +254,12 @@ func TestDiffManifests(t *testing.T) {
 }
 
 func TestSensorManifestPolicy(t *testing.T) {
-	a := &Sensor{Tools: []string{"nuclei"}, MaxConcurrentJobs: 5, Reported: CapabilityReport{
+	a := &Sensor{MaxConcurrentJobs: 5, Reported: CapabilityReport{
 		Tools:        []ReportedTool{{Name: "nuclei", Installed: true}, {Name: "semgrep", Installed: true}},
 		Capabilities: []string{"nuclei", "semgrep", "sast"}, MaxConcurrentJobs: 3,
 	}}
 	p := a.ManifestPolicy()
-	if !reflect.DeepEqual(p.AllowedTools, []string{"nuclei"}) || p.MaxJobs != 3 || len(p.AllowedCapabilities) != 3 {
+	if !reflect.DeepEqual(p.AllowedTools, []string{"nuclei", "semgrep"}) || p.MaxJobs != 3 || len(p.AllowedCapabilities) != 3 {
 		t.Fatalf("policy %+v", p)
 	}
 }

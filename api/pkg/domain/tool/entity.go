@@ -52,6 +52,10 @@ type Tool struct {
 	VersionRegex   string // Regex to extract version from output
 	CurrentVersion string // Currently installed version
 	LatestVersion  string // Latest available version
+	// MinVersion is the oldest version the catalog accepts ("" = none).
+	// Sensors report the versions they run; the tool availability view
+	// marks a tool outdated when every online sensor is below it.
+	MinVersion string
 
 	// Configuration
 	ConfigFilePath string         // Path to config file, e.g., '/root/.config/nuclei/config.yaml'

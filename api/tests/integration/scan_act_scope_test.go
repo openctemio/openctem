@@ -40,7 +40,7 @@ func actScopeChecker(db *sql.DB, admins ...shared.ID) *actscope.Checker {
 	enf.SetAdminLookup(func(_ context.Context, _, user shared.ID) (bool, error) {
 		return slices.ContainsFunc(admins, user.Equals), nil
 	})
-	return actscope.New(enf, postgres.NewAssetRepository(pg), scopeService(db))
+	return actscope.New(enf, postgres.NewAssetRepository(pg), scopeService(db), postgres.NewEASMSeedRepository(pg))
 }
 
 func seedScopeTarget(t *testing.T, db *sql.DB, tenant shared.ID, typ, pattern string) {
@@ -139,6 +139,42 @@ func TestScanActScope(t *testing.T) {
 		// Not an asset and no scope target of tenant A (tenant B's scope
 		// target and asset do not count).
 		for _, target := range []string{"evil.example.org", "b-asset.example.com", "203.0.113.9"} {
+			_, err := create(asAdmin, admin, target)
+			refused(t, err)
+		}
+	})
+
+	// One authority (RFC-054 §4.2): typed text at or under a root-domain seed
+	// or verified domain of the tenant is covered, exactly as the same name
+	// in the inventory is; another tenant's seeds and verified domains cover
+	// nothing.
+	t.Run("administrator: seeds and verified domains cover typed text", func(t *testing.T) {
+		exec := func(q string, args ...any) {
+			t.Helper()
+			if _, err := db.ExecContext(ctx, q, args...); err != nil {
+				t.Fatal(err)
+			}
+		}
+		seed := func(tenant shared.ID, v string) {
+			exec(`INSERT INTO easm_seeds (id, tenant_id, kind, value) VALUES ($1, $2, 'root_domain', $3)`,
+				shared.NewID().String(), tenant.String(), v)
+		}
+		verified := func(tenant shared.ID, d, status string) {
+			exec(`INSERT INTO verified_domains (id, tenant_id, domain, verification_token, status, purpose) VALUES ($1, $2, $3, 'tok', $4, 'easm')`,
+				shared.NewID().String(), tenant.String(), d, status)
+		}
+		seed(tenantA, "a-seeded.example.net")
+		verified(tenantA, "a-verified.example.net", "verified")
+		verified(tenantA, "a-pending.example.net", "pending")
+		seed(tenantB, "b-seeded.example.net")
+		verified(tenantB, "b-verified.example.net", "verified")
+
+		for _, target := range []string{"a-seeded.example.net", "www.a-seeded.example.net", "https://x.a-verified.example.net/login"} {
+			if _, err := create(asAdmin, admin, target); err != nil {
+				t.Fatalf("%s refused: %v", target, err)
+			}
+		}
+		for _, target := range []string{"x.a-pending.example.net", "b-seeded.example.net", "x.b-verified.example.net"} {
 			_, err := create(asAdmin, admin, target)
 			refused(t, err)
 		}
