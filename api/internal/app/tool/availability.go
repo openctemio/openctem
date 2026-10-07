@@ -37,6 +37,16 @@ type GrantLister interface {
 	ListByTenant(ctx context.Context, tenantID shared.ID) (map[shared.ID]*sensor.Grant, error)
 }
 
+// ManifestLister reads the current manifests of a tenant's sensors, keyed
+// by sensor id (sensor.ManifestStore).
+type ManifestLister interface {
+	CurrentManifestsByTenant(ctx context.Context, tenantID shared.ID) (map[shared.ID]*sensor.ManifestVersion, error)
+}
+
+// SetManifestSource wires the sensors' manifests: their tool contracts give
+// each tool's trust and platform-assigned tier in the view (RFC-055 §5).
+func (s *Service) SetManifestSource(m ManifestLister) { s.availManifests = m }
+
 // SetAvailabilitySources wires what the availability view reads. Without
 // them availability is unknown and every tool counts as available (the
 // is_available flag never blocks a picker on a misconfigured server).
@@ -240,12 +250,22 @@ func (s *Service) sensorInventories(ctx context.Context, tenantID shared.ID) ([]
 			return nil, nil, fmt.Errorf("failed to list sensor grants: %w", err)
 		}
 	}
+	var manifests map[shared.ID]*sensor.ManifestVersion
+	if s.availManifests != nil {
+		if manifests, err = s.availManifests.CurrentManifestsByTenant(ctx, tenantID); err != nil {
+			return nil, nil, fmt.Errorf("failed to read sensor manifests: %w", err)
+		}
+	}
 	inv := make([]sensor.SensorInventory, 0, len(sensors))
 	for _, a := range sensors {
 		if a.TenantID == nil || *a.TenantID != tenantID {
 			continue // defense in depth: the lister is tenant-scoped
 		}
-		inv = append(inv, sensor.SensorInventory{Sensor: a, Grant: grants[a.ID], ZoneIDs: zonesBySensor[a.ID]})
+		item := sensor.SensorInventory{Sensor: a, Grant: grants[a.ID], ZoneIDs: zonesBySensor[a.ID]}
+		if v := manifests[a.ID]; v != nil && v.TenantID != nil && *v.TenantID == tenantID {
+			item.Manifest = &v.Manifest
+		}
+		inv = append(inv, item)
 	}
 	return inv, zoneNames, nil
 }
