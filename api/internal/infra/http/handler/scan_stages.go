@@ -62,6 +62,14 @@ type ScanStageResponse struct {
 	Tier                 string                            `json:"tier" enums:"T0,T1,T2"`
 	Implementations      []ScanStageImplementationResponse `json:"implementations"`
 	MaxFanout            int                               `json:"max_fanout"`
+	// Phase is the engagement phase of the capability (discover.passive,
+	// discover.active, assess, validate, collect) and CTEMStage its CTEM
+	// stage; Attack and D3FEND are the MITRE ATT&CK techniques the act
+	// emulates and the D3FEND functions it performs (ctis/capability).
+	Phase     string   `json:"phase,omitempty"`
+	CTEMStage string   `json:"ctem_stage,omitempty"`
+	Attack    []string `json:"attack,omitempty"`
+	D3FEND    []string `json:"d3fend,omitempty"`
 }
 
 // ScanPortTypeResponse is one workflow port type.
@@ -140,6 +148,8 @@ func scanStageResponse(s stage.Stage) ScanStageResponse {
 		Findings:             s.Findings,
 		Tier:                 s.Tier.String(), MaxFanout: s.MaxFanout,
 		Implementations: make([]ScanStageImplementationResponse, 0, len(s.Implementations)),
+		Phase:           s.Phase, CTEMStage: s.CTEMStage,
+		Attack: append([]string(nil), s.Attack...), D3FEND: append([]string(nil), s.D3FEND...),
 	}
 	for _, t := range s.Inputs {
 		r.Inputs = append(r.Inputs, stage.Label(t))
