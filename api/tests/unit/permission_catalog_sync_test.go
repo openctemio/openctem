@@ -40,7 +40,7 @@ var permRenameMigrations = []string{}
 // one-column VALUES rows ('id'), which tupleID parses; they are applied, in
 // order, after the renames.
 var permRemoveMigrations = []string{
-	"001168_drop_vulnerability_write_permissions.up.sql",
+	"001178_drop_vulnerability_write_permissions.up.sql",
 }
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
