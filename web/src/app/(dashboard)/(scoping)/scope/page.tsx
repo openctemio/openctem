@@ -17,6 +17,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -40,6 +41,8 @@ import {
   Loader2,
   Power,
   PowerOff,
+  Check,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -66,6 +69,9 @@ import {
   scopeTargetTypeLabel,
   storedTypesFor,
   coversText,
+  canApproveEntry,
+  approveScopeTarget,
+  rejectScopeTarget,
   entryStatus,
   expiryText,
   SCOPE_ENTRY_STATUS_HINT,
@@ -81,6 +87,7 @@ import { EASMSeedsPanel } from '@/features/attack-surface/components/easm-seeds'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
+import { useUser } from '@/stores/auth-store'
 
 // Use shared validation from scope feature types
 const validatePattern = (
@@ -129,6 +136,11 @@ export default function ScopeConfigPage() {
   // Permission check for write operations
   const canApproveScope = useHasPermission(Permission.ScopeApprove)
   const { t } = useTranslation()
+  const user = useUser()
+  // Entries waiting for approval (RFC-054 §6.1): approvers see the count
+  // and approve or reject from the row menu.
+  const { data: pendingData } = useScopeTargetsApi({ status: 'pending', per_page: 1 })
+  const pendingCount = pendingData?.total ?? 0
   // A new exclusion is pending until someone else holding this approves it.
   const canApproveExclusions = useHasPermission(Permission.ScopeExclusionsApprove)
 
@@ -293,6 +305,24 @@ export default function ScopeConfigPage() {
     },
     [exclusions]
   )
+
+  const decideTarget = async (target: ApiScopeTarget, approve: boolean) => {
+    try {
+      const id = target.id ?? ''
+      const updated = approve ? await approveScopeTarget(id) : await rejectScopeTarget(id)
+      await invalidateScopeTargetsCache()
+      await invalidateScopeStatsCache()
+      toast.success(
+        !approve
+          ? `${target.pattern} rejected`
+          : updated?.status === 'active'
+            ? `${target.pattern} is in scope`
+            : `Approval recorded; ${target.pattern} still waits for another approver`
+      )
+    } catch (err) {
+      toast.error(scopeErrorMessage(t, err, 'The decision was not saved'))
+    }
+  }
 
   const setTargetActive = async (target: ApiScopeTarget, active: boolean) => {
     try {
@@ -640,6 +670,31 @@ export default function ScopeConfigPage() {
         permission: Permission.ScopeWrite,
       },
     ]
+    if (st === 'pending' && canApproveScope) {
+      // The requester, or someone who already approved, cannot approve: the
+      // item stays visible with the reason instead of failing with a 403.
+      const mayDecide = canApproveEntry(e, user?.id)
+      const why =
+        e.created_by === user?.id
+          ? 'You requested this; another approver must approve it.'
+          : 'You already approved this; it waits for another approver.'
+      out.push(
+        {
+          label: 'Approve',
+          icon: Check,
+          onClick: () => void decideTarget(e, true),
+          disabled: !mayDecide,
+          disabledReason: why,
+        },
+        {
+          label: 'Reject',
+          icon: X,
+          onClick: () => void decideTarget(e, false),
+          disabled: e.created_by === user?.id,
+          disabledReason: 'You requested this; another approver decides.',
+        }
+      )
+    }
     if (st === 'active') {
       out.push({
         label: 'Deactivate',
@@ -928,6 +983,17 @@ export default function ScopeConfigPage() {
         </PageHeader>
 
         <MetricStrip className="mt-5" loading={statsLoading} items={metrics} />
+
+        {canApproveScope && pendingCount > 0 && (
+          <Alert className="mt-5">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              {pendingCount} scope {pendingCount === 1 ? 'entry waits' : 'entries wait'} for
+              approval. They authorize nothing until approved; approve or reject them from the row
+              menu.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Tabs value={tab} onValueChange={selectTab} className="mt-5">
           <div className="no-scrollbar -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
