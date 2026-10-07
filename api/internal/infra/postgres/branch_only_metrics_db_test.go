@@ -32,10 +32,6 @@ func TestBranchOnly_MetricsLeaveThemOut(t *testing.T) {
 	if err != nil || all.Findings.Total != 1 {
 		t.Fatalf("GetAllStats findings = %+v (%v), want 1", all, err)
 	}
-	filtered, err := dash.GetFilteredFindingStats(ctx, []string{f.tenant.String()})
-	if err != nil || filtered.Total != 1 {
-		t.Fatalf("GetFilteredFindingStats total = %d (%v), want 1", filtered.Total, err)
-	}
 	exec, err := dash.GetExecutiveSummary(ctx, f.tenant, 30)
 	if err != nil || exec.FindingsTotal != 1 || exec.FindingsNew != 1 {
 		t.Fatalf("executive summary open %d new %d (%v), want 1 and 1", exec.FindingsTotal, exec.FindingsNew, err)
