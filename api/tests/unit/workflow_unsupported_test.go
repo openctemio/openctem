@@ -35,6 +35,7 @@ func unsupportedCases() []struct {
 		{"finding_updated trigger", workflow.NodeConfig{TriggerType: workflow.TriggerTypeFindingUpdated}, "trigger:finding_updated"},
 		{"webhook trigger", workflow.NodeConfig{TriggerType: workflow.TriggerTypeWebhook}, "trigger:webhook"},
 		{"trigger_pipeline action", workflow.NodeConfig{ActionType: workflow.ActionTypeTriggerPipeline}, "action:trigger_pipeline"},
+		{"http_request action", workflow.NodeConfig{ActionType: workflow.ActionTypeHTTPRequest}, "action:http_request"},
 	}
 }
 
@@ -69,7 +70,7 @@ func TestWorkflowSupport_TypeSets(t *testing.T) {
 	for _, a := range []workflow.ActionType{
 		workflow.ActionTypeAssignUser, workflow.ActionTypeUpdateStatus, workflow.ActionTypeAddTags,
 		workflow.ActionTypeRemoveTags, workflow.ActionTypeCreateTicket, workflow.ActionTypeUpdateTicket,
-		workflow.ActionTypeTriggerScan, workflow.ActionTypeHTTPRequest,
+		workflow.ActionTypeTriggerScan,
 		workflow.ActionTypeTriggerAITriage,
 	} {
 		if !a.IsSupported() {
@@ -215,6 +216,28 @@ func TestUpdateWorkflow_ActivateOtherTenantIsNotFound(t *testing.T) {
 	}
 	if wf.IsActive {
 		t.Fatal("another tenant's workflow was activated")
+	}
+}
+
+// A scan_completed status_filter must name scan outcomes: anything else
+// would make the trigger silently never fire.
+func TestValidateTriggerConfig_ScanStatusFilter(t *testing.T) {
+	cfg := func(v any) workflow.NodeConfig {
+		return workflow.NodeConfig{TriggerType: workflow.TriggerTypeScanCompleted, TriggerConfig: map[string]any{"status_filter": v}}
+	}
+	for _, ok := range []workflow.NodeConfig{
+		{TriggerType: workflow.TriggerTypeScanCompleted},
+		cfg([]any{"completed"}), cfg([]any{"partial", "failed"}), cfg([]any{}),
+	} {
+		if err := workflow.ValidateTriggerConfig(ok); err != nil {
+			t.Errorf("%v refused: %v", ok.TriggerConfig, err)
+		}
+	}
+	for _, bad := range []workflow.NodeConfig{cfg([]any{"success"}), cfg("failed"), cfg([]any{1})} {
+		err := workflow.ValidateTriggerConfig(bad)
+		if err == nil || !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("%v accepted (err %v), want a 400", bad.TriggerConfig, err)
+		}
 	}
 }
 
