@@ -24094,10 +24094,17 @@ paths:
     post:
       consumes:
       - application/json
-      description: Adds a seed discovery expands from. The caller must attest that
-        the organization is authorized to have it discovered and checked (recorded
-        with the user and time). Public suffixes and providers' shared domains are
-        refused. Audited.
+      description: 'Adds a root-domain seed as the permanent scope entry "*.<domain>"
+        (RFC-054): it authorizes active checks of the domain and every name below
+        it, confirms discovered names under it and starts discovery. Adding one widens
+        scope, so it goes through the scope entry path: attack_surface:scope:approve,
+        a recent re-authentication (403 STEP_UP_REQUIRED), the organization''s approval
+        count (202 with a pending entry that authorizes nothing until approved), the
+        platform guardrails (public suffixes, the deny list), and a notification to
+        every administrator. A member cannot add a seed (403 WIDENING_NEEDS_APPROVER);
+        members request one-off entries on POST /scope/targets. The caller must attest
+        that the organization is authorized to have it discovered and checked. Audited
+        as a scope entry.'
       parameters:
       - description: Seed
         in: body
@@ -24109,11 +24116,19 @@ paths:
       - application/json
       responses:
         "201":
-          description: Created
+          description: in effect
           schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
+            $ref: '#/definitions/internal_infra_http_handler.ScopeTargetResponse'
+        "202":
+          description: pending approval
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ScopeTargetResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "409":
@@ -24159,7 +24174,9 @@ paths:
       consumes:
       - application/json
       description: 'Changes a seed''s label or turns discovery from it on or off.
-        The kind and value cannot change: delete and add instead. Audited.'
+        The kind and value cannot change: delete and add instead. Needs attack_surface:scope:approve
+        and a recent re-authentication (403 STEP_UP_REQUIRED); turning discovery on
+        notifies every administrator. Audited.'
       parameters:
       - description: Seed ID
         in: path
@@ -24181,6 +24198,10 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.SeedView'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "404":
