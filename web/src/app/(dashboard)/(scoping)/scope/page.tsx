@@ -17,7 +17,8 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MetricStrip, PageHeader, type MetricStripItem } from '@/features/shared'
 import { useDebounce } from '@/hooks/use-debounce'
-import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   ScopeEntryDialog,
@@ -56,9 +57,8 @@ export default function ScopePage() {
   const [q, setQ] = useUrlFilter('q', '')
   const [kind, setKind] = useUrlFilter('kind', 'all')
   const [status, setStatus] = useUrlFilter('status', 'all')
-  const [page, setPage] = useUrlFilterNumber('page', 1)
-  const [perPageParam, setPerPage] = useUrlFilterNumber('per_page', 20)
-  const perPage = SCOPE_PAGE_SIZES.includes(perPageParam) ? perPageParam : 20
+  const list = useListParams({ pageSizes: SCOPE_PAGE_SIZES, defaultPageSize: 20 })
+  const { page, perPage, setPage } = list
   const [searchInput, setSearchInput] = useState(q)
   const debounced = useDebounce(searchInput, 300)
   const commitSearch = useEffectEvent((next: string) => {
@@ -83,12 +83,7 @@ export default function ScopePage() {
     setPage(1)
     setTabParam(next)
   }
-  const onPagination = (p: { pageIndex: number; pageSize: number }) => {
-    if (p.pageSize !== perPage) {
-      setPerPage(p.pageSize)
-      setPage(1)
-    } else setPage(p.pageIndex + 1)
-  }
+  const onPagination = list.setPagination
 
   // Counts for the tabs and the strip (one row each; the lists load their own).
   const { data: activeEntries } = useScopeTargetsApi({ status: 'active', per_page: 1 })

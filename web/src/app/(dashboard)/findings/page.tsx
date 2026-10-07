@@ -1,5 +1,6 @@
 'use client'
 
+import { useListParams } from '@/hooks/use-list-params'
 import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
@@ -526,22 +527,8 @@ function FindingsContent() {
   // 100 rows even when the tenant had thousands of findings).
   // The whole view is in the URL — tab, page, page size and sort as well as
   // filters — so any screen of this list can be shared or bookmarked.
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '20')
-  const pagination = useMemo(
-    () => ({
-      pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 20,
-    }),
-    [pageParam, perPageParam]
-  )
-  const setPagination = useCallback(
-    (next: { pageIndex: number; pageSize: number }) => {
-      setPageParam(next.pageIndex === 0 ? '1' : String(next.pageIndex + 1))
-      setPerPageParam(String(next.pageSize))
-    },
-    [setPageParam, setPerPageParam]
-  )
+  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
   // No tabs: grouping is a view of the same findings ("Group by"), and the
   // verification queue is reached from its metric. Legacy ?tab= links map over.
   const [tabParam, setTabParam] = useUrlFilter('tab', '')
@@ -830,8 +817,8 @@ function FindingsContent() {
   useEffect(() => {
     if (lastFilterKey.current === filterKey) return
     lastFilterKey.current = filterKey
-    setPageParam('1')
-  }, [filterKey, setPageParam])
+    setPage(1)
+  }, [filterKey, setPage])
 
   // Fetch finding stats. Pass `assetId` so the severity cards reflect
   // the filtered table when the user navigates here from an asset
