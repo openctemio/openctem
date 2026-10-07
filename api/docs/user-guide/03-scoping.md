@@ -67,7 +67,7 @@ Targets read like `0`, `< 48h`, `<= 14 days`, `>= 90%`, `at least 5` or
 
 ## Define your scope
 
-**Scoping → Scope Config** (`/scope-config`) is where you draw the boundary of
+**Scoping → Scope** (`/scope`) is where you draw the boundary of
 what the platform looks at. It has four tabs:
 
 - **In-Scope Targets** — **Add Target** (type + value + description) for each

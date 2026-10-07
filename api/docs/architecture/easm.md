@@ -105,7 +105,7 @@ API connector already uses (`pkg/httpsec`).
 | `/assets/changes` (What changed) | Real |
 | `/attack-paths`, `/exposure-chains`, `/exposures` | Real |
 | `/exposures/{vulnerabilities,secrets,code,misconfigurations}` | Partial: side cards show tenant-wide numbers |
-| `/scope-config`, `/scoping` | Real |
+| `/scope`, `/scoping` | Real |
 
 No EASM page is a `useDashboardStats` scaffold. The planned pages (§7) must
 each have their own endpoint. The UI CI test `sidebar-no-scaffolds` enforces
@@ -148,7 +148,7 @@ nothing about another tenant's seed or verification is ever shown. Code:
 `pkg/domain/easmseed`, `internal/app/easm/seeds.go`,
 `internal/infra/postgres/easm_seed_repository.go`.
 
-**Web.** Scoping › Boundaries (`/scope-config?tab=seeds`) has a **Seeds** tab
+**Web.** Scoping › Scope (`/scope?tab=seeds`) has a **Seeds** tab
 when the `attack_surface` module is on: the list with ownership (verified by a
 DNS TXT record, or asserted), a discovery switch, and Add seed, which stays
 disabled until the attestation box is ticked. Code:
