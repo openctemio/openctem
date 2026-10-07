@@ -710,10 +710,10 @@ def test_tools():
         return False
 
     # List capabilities
-    result = api_request("GET", "/capabilities/all")
+    result = api_request("GET", "/capabilities?per_page=100")
     if result:
-        caps = result.get("capabilities", [])
-        log_success(f"GET /capabilities/all - Listed {len(caps)} capabilities")
+        caps = result.get("items", [])
+        log_success(f"GET /capabilities - Listed {len(caps)} capabilities")
     else:
         return False
 
