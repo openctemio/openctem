@@ -82,7 +82,7 @@ export function ExcludedBadge({ exclusionId }: { exclusionId?: string }) {
   if (!exclusionId) return badge
   return (
     <Link
-      href="/scope-config?tab=exclusions"
+      href="/scope?tab=exclusions"
       className="inline-flex"
       aria-label="Excluded, untested: open the scope exclusions"
     >

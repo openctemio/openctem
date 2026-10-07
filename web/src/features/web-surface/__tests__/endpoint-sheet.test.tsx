@@ -78,7 +78,7 @@ describe('EndpointSheet', () => {
     expect(screen.getByText('Never tested')).toBeInTheDocument()
     expect(screen.getByText(/no findings here does not mean it is safe/i)).toBeInTheDocument()
     const links = screen.getAllByRole('link', { name: /exclusion/i })
-    expect(links.every((l) => l.getAttribute('href') === '/scope-config?tab=exclusions')).toBe(true)
+    expect(links.every((l) => l.getAttribute('href') === '/scope?tab=exclusions')).toBe(true)
   })
 
   it('offers Ignore only to members who may change assets', () => {
