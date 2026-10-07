@@ -1,5 +1,6 @@
 'use client'
 
+import { actorLabel } from '@/features/scope/lib/actor'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { type ColumnDef, type SortingState } from '@tanstack/react-table'
@@ -106,7 +107,7 @@ function transformApiTarget(api: ApiScopeTarget): ScopeTarget {
     priority: PRIORITY_MAP[api.priority ?? 0],
     tags: api.tags,
     addedAt: api.created_at ?? '',
-    addedBy: api.created_by ?? '',
+    addedBy: actorLabel(api.created_by),
     updatedAt: api.updated_at ?? '',
   }
 }
@@ -119,9 +120,9 @@ function transformApiExclusion(api: ApiScopeExclusion): ScopeExclusion {
     reason: api.reason ?? '',
     status: (api.status ?? '') as ScopeTargetStatus,
     expiresAt: api.expires_at,
-    approvedBy: api.approved_by,
+    approvedBy: api.approved_by ? actorLabel(api.approved_by) : undefined,
     addedAt: api.created_at ?? '',
-    addedBy: api.created_by ?? '',
+    addedBy: actorLabel(api.created_by),
   }
 }
 

@@ -503,6 +503,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.Scope.SetScopeJoin(svc.ScopeJoin)
 	}
 	handlers.Scope.SetSettingsStore(svc.Tenant)
+	// People on scope responses are named from this tenant's members only.
+	scopeActors := postgres.NewScopeActorRepository(deps.DB)
+	handlers.Scope.SetActorNamer(scopeActors)
+	if handlers.EASMSeed != nil {
+		handlers.EASMSeed.SetActorNamer(scopeActors)
+	}
 	handlers.Scope.SetActiveProof(cfg.Scope.ActiveProof)
 	if svc.Scan != nil && svc.ActiveGate != nil {
 		handlers.Scope.SetDryRun(svc.Scan, svc.ActiveGate)

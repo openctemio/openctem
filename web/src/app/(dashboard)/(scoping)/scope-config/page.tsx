@@ -82,6 +82,7 @@ import { post } from '@/lib/api/client'
 import { EASMSeedsPanel } from '@/features/attack-surface/components/easm-seeds'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { actorLabel } from '@/features/scope/lib/actor'
 
 // Use shared validation from scope feature types
 const validatePattern = (
@@ -829,7 +830,7 @@ export default function ScopeConfigPage() {
       accessorKey: 'created_by',
       header: 'Created by',
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">{row.original.created_by}</span>
+        <span className="text-sm text-muted-foreground">{actorLabel(row.original.created_by)}</span>
       ),
     },
     {
@@ -946,7 +947,7 @@ export default function ScopeConfigPage() {
       accessorKey: 'created_by',
       header: 'Created by',
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">{row.original.created_by}</span>
+        <span className="text-sm text-muted-foreground">{actorLabel(row.original.created_by)}</span>
       ),
     },
     {
