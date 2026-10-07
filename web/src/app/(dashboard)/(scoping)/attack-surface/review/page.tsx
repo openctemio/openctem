@@ -16,7 +16,7 @@ export default function AttackSurfaceReviewPage() {
     <Main>
       <PageHeader
         title="Attack surface"
-        description="Names found in Certificate Transparency and discovery that may be yours. Scans skip them until you confirm them."
+        description="Names discovery found that may be yours. Names under your scope join automatically; these need a decision. Confirming records ownership; a scope entry is still what lets scans reach a name."
       />
       <AttackSurfaceSectionTabs />
       <div className="mt-5">

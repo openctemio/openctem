@@ -615,9 +615,10 @@ func TestWfDispatch_DispatchFindingsCreated_DispatchesForEachFinding(t *testing.
 	// Wait for async goroutine
 	time.Sleep(200 * time.Millisecond)
 
-	// Deduplication: same workflow triggered only once per batch
-	if h.runRepo.TriggeredCount() != 1 {
-		t.Errorf("expected 1 trigger (deduplicated per batch), got %d", h.runRepo.TriggeredCount())
+	// One run per matching finding (before: one per batch, for the first
+	// finding only).
+	if h.runRepo.TriggeredCount() != 2 {
+		t.Errorf("expected 2 runs (one per finding), got %d", h.runRepo.TriggeredCount())
 	}
 }
 
@@ -653,9 +654,9 @@ func TestWfDispatch_DispatchFindingsCreated_RespectsMaxLimit(t *testing.T) {
 	h.dispatch.DispatchFindingsCreated(ctx, tenantID, findings)
 	time.Sleep(200 * time.Millisecond)
 
-	// Deduplication: at most triggered once
-	if h.runRepo.TriggeredCount() > 1 {
-		t.Errorf("expected at most 1 trigger (dedup across truncated batch), got %d", h.runRepo.TriggeredCount())
+	// One run per finding, for the first 500 (the batch is truncated).
+	if h.runRepo.TriggeredCount() != 500 {
+		t.Errorf("expected 500 runs (truncated batch), got %d", h.runRepo.TriggeredCount())
 	}
 }
 
