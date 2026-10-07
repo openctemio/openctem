@@ -697,7 +697,7 @@ func (s *RuleService) Apply(ctx context.Context, tenantID shared.ID, in RuleActi
 	}
 	switch in.Action {
 	case RuleAcceptRule:
-		t, err := s.scope.CreateTarget(ctx, scope.CreateTargetInput{TenantID: tenantID.String(), TargetType: in.TargetType,
+		t, err := s.scope.CreateTarget(ctx, scope.CreateTargetInput{TenantID: tenantID.String(), Origin: scopedom.OriginReviewRule, TargetType: in.TargetType,
 			Pattern: in.Pattern, Reason: in.Reason, CreatedBy: in.Actor.UserID, Actor: in.Actor})
 		if err != nil {
 			return nil, err
@@ -728,7 +728,7 @@ func (s *RuleService) Apply(ctx context.Context, tenantID shared.ID, in RuleActi
 		}
 	case RuleRejectRule:
 		typ, _ := ruleType(in.TargetType)
-		e, err := s.scope.CreateExclusion(ctx, scope.CreateExclusionInput{TenantID: tenantID.String(),
+		e, err := s.scope.CreateExclusion(ctx, scope.CreateExclusionInput{TenantID: tenantID.String(), Origin: scopedom.OriginReviewRule,
 			ExclusionType: string(exclusionType(typ)), Pattern: in.Pattern, Reason: in.Reason, CreatedBy: in.Actor.UserID})
 		if err != nil {
 			return nil, err

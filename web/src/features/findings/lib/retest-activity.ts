@@ -10,9 +10,14 @@
 import type { ActivityType } from '../types'
 
 const OUTCOME_TEXT: Record<string, string> = {
-  fixed: 'Fixed — no longer detected',
-  still_present: 'Still present',
-  unknown: 'Unknown',
+  confirmed_fixed: 'Verified fixed',
+  still_vulnerable: 'Still vulnerable',
+  not_reproduced: 'Not reproduced (not confirmed)',
+  inconclusive: 'Inconclusive',
+  // Timeline entries written before RFC-057 R2 keep their outcome words.
+  fixed: 'Fixed (unverified non-match)',
+  still_present: 'Still vulnerable',
+  unknown: 'Inconclusive',
 }
 
 /**

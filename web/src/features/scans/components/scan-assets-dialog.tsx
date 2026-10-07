@@ -35,6 +35,7 @@ import { toast } from 'sonner'
 import { AlertTriangle, Loader2, Wifi } from 'lucide-react'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { invalidatePipelineRunsCache, useQuickScan } from '@/lib/api/pipeline-hooks'
+import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
 
 /** Backend hard cap on targets per quick scan (see POST /scans/quick, 1..1000). */
 const MAX_TARGETS = 1000
@@ -75,6 +76,7 @@ export function ScanAssetsDialog({
   const router = useRouter()
   const [scannerName, setScannerName] = useState('nuclei')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [refused, setRefused] = useState<ScopeRefusal[]>([])
   const { trigger: quickScan } = useQuickScan()
 
   // Resolve + de-duplicate targets; track how many were unusable.
@@ -107,6 +109,7 @@ export function ScanAssetsDialog({
     }
 
     setIsSubmitting(true)
+    setRefused([])
     try {
       await quickScan({
         targets: cappedTargets,
@@ -126,6 +129,11 @@ export function ScanAssetsDialog({
       onSuccess?.()
       onOpenChange(false)
     } catch (error) {
+      const scopeRefused = refusedFromError(error)
+      if (scopeRefused.length > 0) {
+        setRefused(scopeRefused)
+        return
+      }
       if (error instanceof ApiClientError && error.statusCode === 429) {
         toast.error('Rate limit reached — please wait a moment before starting another scan.')
       } else if (error instanceof ApiClientError && error.statusCode === 400) {
@@ -178,6 +186,7 @@ export function ScanAssetsDialog({
               {skippedCount} asset{skippedCount !== 1 ? 's' : ''} skipped (no scannable address).
             </p>
           )}
+          {refused.length > 0 && <ScopeRefusalPanel refused={refused} />}
           {isOverCap && (
             <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

@@ -6,7 +6,10 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
@@ -180,7 +183,16 @@ func (v *TargetValidator) ValidateSingleTarget(target string) ValidatedTarget {
 		return v.validateURL(target)
 	}
 
-	// 2. Check if it's a CIDR range. Anything else with a slash is usually a
+	// 2. A service name in any form ("host:443:tcp", "host:443/tcp",
+	// "[v6]:443/tcp") is its host and port.
+	if h, port, _, ok := asset.SplitServiceName(target); ok {
+		if strings.Contains(h, ":") {
+			h = "[" + h + "]"
+		}
+		return v.validateHostPort(target, h, strconv.Itoa(port))
+	}
+
+	// 3. Check if it's a CIDR range. Anything else with a slash is usually a
 	// filesystem path or a repository, which are not network targets.
 	if strings.Contains(target, "/") {
 		if looksLikePathOrRepo(target) {

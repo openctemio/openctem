@@ -112,7 +112,13 @@ trigger):
    sits at or under a root-domain seed or a verified domain of purpose `easm`
    (T1 at most). A domain verified for SSO sign-in (purpose `sso`, set up by
    a platform administrator) never authorizes; it counts only as proof
-   (step 7);
+   (step 7). A target covered only below the probe's tier is refused
+   `tier_exceeds`. The
+   probe's tier is its tool's highest stage tier (an unknown tool is T1): scan
+   create and quick scan refuse the request, a run leaves the target out with
+   a warning (`TIER_EXCEEDS` when nothing is left), a workflow step is checked
+   at its own tool's tier, and the dispatch gate (pipeline runs, chained hops,
+   coverage, validation, the dry run) checks T1 unless told otherwise;
 7. proof, when §8.1 requires it: the target sits at or under a verified domain;
 8. the actor may act on it (D9: data scope; restricted members only their
    assets);
@@ -267,15 +273,37 @@ Response (`ScopeTargetResponse`, also for list/get/update):
   "expires_at": "2026-10-14T00:00:00Z",
   "max_tier": "t1",
   "approvals_required": 1,
-  "approvals": [{"user_id": "…", "approved_at": "…"}],
+  "approvals": [{"user_id": "…", "approver": {"kind": "user", "id": "…", "name": "Lan"}, "approved_at": "…"}],
   "approved_at": null,
   "rejected_by": null, "rejected_at": null,
-  "created_by": "…", "created_at": "…", "updated_at": "…",
+  "created_by": {"kind": "user", "id": "…", "name": "Nguyen Manh"},
+  "origin": "manual",
+  "created_at": "…", "updated_at": "…",
   "warnings": ["Pattern \"*.example.com\" is a superset of existing pattern \"api.example.com\""]
 }
 ```
 
 `covers` is `name`, `domain_and_subdomains`, `addresses` or `pattern`.
+
+**People and provenance.** Every actor field of an entry or exclusion
+(`created_by`, `approvals[].approver`, `rejected_by`, and an exclusion's
+`approved_by`) is an `ActorRef`:
+
+```json
+{ "kind": "user", "id": "019d…", "name": "Nguyen Manh" }
+{ "kind": "user", "id": "…", "former_member": true }
+{ "kind": "system", "code": "upgrade_wildcard_split" }
+```
+
+Names come only from the organization's current members (active or
+suspended); a user who left, or an id that is not a member, is a
+`former_member` with no name. No e-mail is returned. System codes:
+`upgrade_wildcard_split` (the 000292 apex rows), `seed_migration`, `system`.
+`origin` is how the row came to exist: `manual`, `request` (a member's
+request), `import`, `review_rule`, `refusal_fix` (the one value a client may
+send on create, when it fixes a refused scan target), `seed`,
+`seed_migration` or `system` (migration `001244`, existing rows `manual`,
+platform rows `system`). Audit records keep the reference without the name.
 `status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
 
 **Seeds** (`POST /api/v1/easm/seeds`, `scope:approve` + **step-up**): a
@@ -367,11 +395,17 @@ response by the guardrails PR. `t2` is never a default.
 
 ```json
 { "targets": ["vndirect.com.vn", "promo-landing.net"],
+  "asset_ids": ["5f0c…"],
   "sensor_preference": "auto",
   "tier": 1 }
 ```
 
-At most 200 targets (an inventory asset is checked by its name). Runs §4.2
+At most 200 targets and assets together, at least one. An inventory asset
+(`asset_ids`) is checked by its name, as a scan of it would be (its other
+names, such as its address, count for exclusions); its result carries
+`asset_id`. An asset outside the caller's data scope, another tenant's, a
+deleted or an unknown id all answer the same `out_of_data_scope` with the id
+as `target` and nothing else, so the dry run is no existence oracle. Runs §4.2
 steps 1–9 for the caller (act scope included) without dispatching, auditing
 or logging a refusal. The act scope answers first for a restricted member
 (`not_an_asset`, `out_of_data_scope`), so the dry run tells them nothing
@@ -423,7 +457,11 @@ platform policy it is `{"kind": "platform_policy"}` with no detail.
 | `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
 
 Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
-"domain"?, "requires"?}`; `requires` is the permission the action needs. The
+"domain"?, "tier"?, "requires"?}`; `requires` is the permission the action
+needs. A `tier_exceeds` refusal offers `raise_tier` with the `id` of the
+caller's covering entry with the highest ceiling and the `tier` the probe
+needs; when only a seed or verified domain covers the target (T1 at most),
+`allow_temporarily` at that `tier` instead. The
 dry run keeps only the fixes the caller may take (an approver gets
 `allow_temporarily`, a member `request_access`, never both).
 
@@ -673,8 +711,12 @@ Where it is enforced:
   path (never-stored state `proof_required`, refusal code `proof_required`).
 - Intrusive: scan create, quick scan and every single-scanner run refuse a
   scan whose tool only implements T2 stages (for example `zap`) when a target
-  is unproven (`PROOF_REQUIRED`). Workflow scans keep RFC-036's rule that an
-  intrusive stage never takes discovered targets; per-step proof is P1.
+  is unproven (`PROOF_REQUIRED`). A workflow scan checks proof per step: an
+  intrusive step (its tool's tier is T2) is handed only the run's targets at
+  or under a verified domain, and fails with `STEP_TARGETS_REFUSED` before any
+  sensor sees it when none is left; its passive and active steps are not
+  affected. An intrusive stage still never takes discovered targets
+  (RFC-036).
 
 ### 8.2 Deny list and public suffixes
 
@@ -737,3 +779,4 @@ are gated by zones and are not capped.
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
 | Refusals | codes, fixes, `POST /check` dry run |
+| Tier ceilings | `max_tier` enforced at every dispatch (`tier_exceeds`, `raise_tier`); per-step proof for intrusive workflow steps |

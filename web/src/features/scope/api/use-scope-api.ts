@@ -34,6 +34,8 @@ import type {
   BulkOperationResponse,
   ApiScopeSettings,
   UpdateScopeSettingsInput,
+  PathExclusionFields,
+  SetExclusionTestingInput,
 } from './scope-api.types'
 
 // ============================================
@@ -468,6 +470,49 @@ export function setScopeTargetActive(id: string, active: boolean) {
 /** PUT /scope/targets/{id} */
 export function updateScopeTarget(id: string, input: UpdateScopeTargetInput) {
   return put<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}`, input)
+}
+
+// ============================================
+// EXCLUSION DECISIONS (RFC-054 §6.2)
+//
+// Lifting an exclusion (deactivate, remove, an earlier end) widens scope and
+// needs the exclusion-approve permission and step-up; the shared client
+// handles step-up. Approving needs someone other than the requester.
+// ============================================
+
+export function createScopeExclusion(input: CreateScopeExclusionInput) {
+  return post<ApiScopeExclusion>(`${BASE_URL}/exclusions`, input)
+}
+
+export function updateScopeExclusion(id: string, input: UpdateScopeExclusionInput) {
+  return put<ApiScopeExclusion>(`${BASE_URL}/exclusions/${encodeURIComponent(id)}`, input)
+}
+
+export function decideScopeExclusion(id: string, approve: boolean) {
+  const action = approve ? 'approve' : 'reject'
+  return post<ApiScopeExclusion>(`${BASE_URL}/exclusions/${encodeURIComponent(id)}/${action}`, {})
+}
+
+export function setScopeExclusionActive(id: string, active: boolean) {
+  const action = active ? 'activate' : 'deactivate'
+  return post<ApiScopeExclusion>(`${BASE_URL}/exclusions/${encodeURIComponent(id)}/${action}`, {})
+}
+
+/**
+ * PUT /scope/exclusions/{id}/testing: how a path exclusion may be tested.
+ * Needs the exclusion-approve permission and step-up; audited, and every
+ * administrator is notified. It never widens scope beyond the organization's
+ * in-scope assets.
+ */
+export function setScopeExclusionTesting(id: string, input: SetExclusionTestingInput) {
+  return put<ApiScopeExclusion & PathExclusionFields>(
+    `${BASE_URL}/exclusions/${encodeURIComponent(id)}/testing`,
+    input
+  )
+}
+
+export function deleteScopeExclusion(id: string) {
+  return del<void>(`${BASE_URL}/exclusions/${encodeURIComponent(id)}`)
 }
 
 // ============================================

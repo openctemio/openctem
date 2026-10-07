@@ -407,7 +407,7 @@ func (h *PipelineTriggerHandler) triggerPipeline(ctx context.Context, input *Act
 			AssetID:     assetID,
 			TriggerType: "api",
 			TriggeredBy: "workflow:" + input.WorkflowID.String(),
-			Context:     input.TriggerData,
+			Context:     runContextWithCause(ctx, input.TriggerData),
 		}
 
 		run, err := h.pipelineService.TriggerPipeline(ctx, triggerInput)
@@ -449,7 +449,7 @@ func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionI
 			TenantID:    input.TenantID.String(),
 			ScanID:      scanID,
 			TriggeredBy: "workflow:" + input.WorkflowID.String(),
-			Context:     input.TriggerData,
+			Context:     runContextWithCause(ctx, input.TriggerData),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to trigger scan: %w", err)
@@ -789,4 +789,16 @@ func RegisterAllActionHandlersWithAI(
 
 	// Script runner (disabled by default)
 	executor.RegisterActionHandler(workflowdom.ActionTypeRunScript, NewScriptRunnerHandler(log))
+}
+
+// runContextWithCause is the context of a scan an automation step starts:
+// the step's trigger data, with the step's cause replacing the trigger's,
+// so the scan_completed event of that scan counts as caused by this run
+// (loop_guard.go).
+func runContextWithCause(ctx context.Context, triggerData map[string]any) map[string]any {
+	c, ok := AutomationCauseFrom(ctx)
+	if !ok {
+		return triggerData
+	}
+	return withCause(triggerData, &c)
 }
