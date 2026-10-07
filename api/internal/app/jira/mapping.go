@@ -86,6 +86,10 @@ func DefaultMappingConfig() MappingConfig {
 			"high":     "High",
 			"medium":   "Medium",
 			"low":      "Low",
+			// Informational findings carry no remediation obligation, so a
+			// ticket raised for one lands at the bottom of the backlog.
+			"info": "Lowest",
+			"none": "Lowest",
 		},
 		// INBOUND (Jira status name → finding status). Lower-cased keys.
 		//
