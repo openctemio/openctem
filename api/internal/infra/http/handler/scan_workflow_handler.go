@@ -410,15 +410,18 @@ type StepRunResponse struct {
 	StepName string `json:"step_name,omitempty"`
 	Tool     string `json:"tool,omitempty"`
 	// Capability is the versioned capability the step run ran.
-	Capability    string  `json:"capability,omitempty"`
-	Status        string  `json:"status"`
-	StartedAt     *string `json:"started_at,omitempty"`
-	CompletedAt   *string `json:"completed_at,omitempty"`
-	ErrorMessage  string  `json:"error_message,omitempty"`
-	ErrorCode     string  `json:"error_code,omitempty"`
-	Attempt       int     `json:"attempt"`
-	MaxAttempts   int     `json:"max_attempts"`
-	FindingsCount int     `json:"findings_count"`
+	Capability   string  `json:"capability,omitempty"`
+	Status       string  `json:"status"`
+	StartedAt    *string `json:"started_at,omitempty"`
+	CompletedAt  *string `json:"completed_at,omitempty"`
+	ErrorMessage string  `json:"error_message,omitempty"`
+	ErrorCode    string  `json:"error_code,omitempty"`
+	// ErrorClass groups the code by what can fix it: config, scope,
+	// placement, policy, transient, tool, timeout or canceled.
+	ErrorClass    string `json:"error_class,omitempty"`
+	Attempt       int    `json:"attempt"`
+	MaxAttempts   int    `json:"max_attempts"`
+	FindingsCount int    `json:"findings_count"`
 }
 
 // --- Template Handlers ---
@@ -1488,6 +1491,7 @@ func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 		Status:        string(sr.Status),
 		ErrorMessage:  sr.ErrorMessage,
 		ErrorCode:     sr.ErrorCode,
+		ErrorClass:    stepErrorClass(sr.ErrorCode),
 		Attempt:       sr.Attempt,
 		MaxAttempts:   sr.MaxAttempts,
 		FindingsCount: sr.FindingsCount,
@@ -1574,4 +1578,13 @@ func (h *ScanWorkflowHandler) handleStepError(w http.ResponseWriter, err error) 
 // service's audit actor (see scanrun.WithAuditActor).
 func scanWorkflowAuditCtx(r *http.Request) context.Context {
 	return scanrun.WithAuditActor(r.Context(), middleware.GetUserID(r.Context()))
+}
+
+// stepErrorClass is the failure class of a step's error code, or "" for a
+// step without one.
+func stepErrorClass(code string) string {
+	if code == "" {
+		return ""
+	}
+	return string(scanrundom.ClassOf(code))
 }

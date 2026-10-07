@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
@@ -569,6 +571,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 	}
 	in := command.TransitionInput{TenantID: s.TenantID.String(), SensorID: s.ID.String(), CommandID: commandID,
 		LeaseEpoch: leaseEpochHeader(r)}
+	failCode := scanrundom.FailureCommandFailed
 	switch t {
 	case command.TransitionComplete:
 		var req protov2.CompleteRequest
@@ -582,6 +585,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		in.ErrorMessage = req.ErrorMessage
+		failCode = sensorFailureCode(req.ErrorCode, req.Refusal != nil)
 		if req.Refusal != nil {
 			in.Refusal = &sensor.DispatchRefusal{Layer: req.Refusal.Layer, Rule: req.Refusal.Rule, Detail: req.Refusal.Detail}
 		}
@@ -610,7 +614,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 		case command.TransitionFail:
 			// A refused job re-queued to another sensor has not failed.
 			if res.Command.Status == commanddom.CommandStatusFailed {
-				h.commands.triggerScanRunFailed(r.Context(), res.Command, res.Command.ErrorMessage)
+				h.commands.triggerScanRunFailed(r.Context(), res.Command, res.Command.ErrorMessage, failCode)
 				// A failed retest check settles its retest now (unknown)
 				// instead of at the next sweep.
 				h.commands.triggerRetestSettle(res.Command)
@@ -841,4 +845,20 @@ func (h *SensorControlV2Handler) RenewKey(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeV2JSON(w, http.StatusCreated, protov2.KeyResponse{APIKey: key, ExpiresAt: utcPtr(expiresAt)})
+}
+
+// sensorFailureCode is the step error code of a sensor's fail: the sensor's
+// structured code when it is one a sensor may report (scanrundom.
+// SensorFailureCodes), POLICY_REFUSED for a structured policy refusal that
+// was not re-queued, else COMMAND_FAILED (the message is then classified).
+// The code only ever comes from the sensor that holds the command: the
+// transition is fenced by tenant, sensor and lease epoch before this runs.
+func sensorFailureCode(code string, refused bool) string {
+	if scanrundom.SensorFailureCodes[code] {
+		return code
+	}
+	if refused {
+		return scanrundom.FailurePolicyRefused
+	}
+	return scanrundom.FailureCommandFailed
 }
