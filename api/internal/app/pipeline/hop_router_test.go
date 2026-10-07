@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -110,6 +111,8 @@ func (m *memHops) plan(t *testing.T, run shared.ID, key string) pipelinedom.Stag
 type attrTable struct {
 	byID   map[string]attribution.State
 	byName map[string]attribution.State
+	// ceiling: name -> max_tier of the entry covering it (absent: any).
+	ceiling map[string]scopedom.Tier
 }
 
 func (a attrTable) ActiveCheckBlocked(_ context.Context, _ shared.ID, ids []string) (map[string]attribution.State, error) {
@@ -117,6 +120,16 @@ func (a attrTable) ActiveCheckBlocked(_ context.Context, _ shared.ID, ids []stri
 	for _, id := range ids {
 		if s, ok := a.byID[id]; ok {
 			out[id] = s
+		}
+	}
+	return out, nil
+}
+
+func (a attrTable) TierExceeded(_ context.Context, _ shared.ID, ts []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
+	out := map[string]*scopedom.RuleRef{}
+	for _, t := range ts {
+		if c, ok := a.ceiling[t]; ok && c < tier {
+			out[t] = nil
 		}
 	}
 	return out, nil
@@ -181,7 +194,7 @@ type chainFixture struct {
 func newChainFixture(t *testing.T, zones ...*scanzone.Zone) *chainFixture {
 	t.Helper()
 	f := &chainFixture{hops: newMemHops(), cmds: &countingCommands{}, acts: &allowActs{}, excl: excludeNames{},
-		attr: attrTable{byID: map[string]attribution.State{}, byName: map[string]attribution.State{}}, sr: map[string]shared.ID{}}
+		attr: attrTable{byID: map[string]attribution.State{}, byName: map[string]attribution.State{}, ceiling: map[string]scopedom.Tier{}}, sr: map[string]shared.ID{}}
 	f.run = &pipelinedom.Run{ID: shared.NewID(), TenantID: shared.NewID(), PipelineID: shared.NewID(),
 		Status: pipelinedom.RunStatusRunning, Context: map[string]any{"targets": []string{"acme.com"}}}
 	f.tpl = &pipelinedom.Template{}
@@ -341,6 +354,32 @@ func TestHopRouter_NeedsReviewReachesPassiveStageOnly(t *testing.T) {
 	}
 	if len(f.acts.asked) == 0 {
 		t.Fatal("derived targets did not go through the act-scope check")
+	}
+}
+
+// RFC-054 §4.2 step 6 on a chained hop: a name whose scope entry allows t0
+// only reaches the passive stage (dnsx), never the active one (naabu).
+func TestHopRouter_TierCeiling(t *testing.T) {
+	f := newChainFixture(t)
+	f.seed("subs", "acme.com", 0, nil)
+	f.settle("subs", pipelinedom.StepRunStatusCompleted)
+	f.attr.ceiling["passive.acme.com"] = scopedom.TierPassive
+	f.output("subs", "passive.acme.com", "subdomain", "", "")
+	f.output("subs", "www.acme.com", "subdomain", "", "")
+
+	f.schedule(t)
+	if dns := f.commandTargets(t, 0); !contains(dns, "passive.acme.com") {
+		t.Fatalf("dnsx targets = %v: a t0 entry authorizes a passive stage", dns)
+	}
+	f.settle("dns", pipelinedom.StepRunStatusCompleted)
+	f.hops.outputs[f.sr["dns"]] = []pipelinedom.StepOutput{
+		{StepRunID: f.sr["dns"], AssetID: shared.NewID(), Name: "passive.acme.com", Type: "subdomain"},
+		{StepRunID: f.sr["dns"], AssetID: shared.NewID(), Name: "www.acme.com", Type: "subdomain"},
+	}
+	f.schedule(t)
+	ports := f.commandTargets(t, 1)
+	if contains(ports, "passive.acme.com") || !contains(ports, "www.acme.com") {
+		t.Fatalf("naabu targets = %v: a name covered only at t0 reached a t1 stage", ports)
 	}
 }
 
@@ -632,5 +671,27 @@ func TestListRunStages_CrossTenantNotFound(t *testing.T) {
 	}
 	if _, err := f.s.ListRunStages(context.Background(), shared.NewID().String(), f.run.ID.String()); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("another tenant read the lanes: %v", err)
+	}
+}
+
+// A service in every name form is a hop target keyed as host:port
+// (research/63 PR0); a bad port is still refused.
+func TestHopTargetKey_ServiceNames(t *testing.T) {
+	for in, want := range map[string]string{
+		"vndirect.com.vn:443:tcp": "vndirect.com.vn:443",
+		"vndirect.com.vn:443/tcp": "vndirect.com.vn:443",
+		"[2001:db8::1]:443/tcp":   "[2001:db8::1]:443",
+		"203.0.113.5:22:tcp":      "203.0.113.5:22",
+	} {
+		got, ok := hopTargetKey(in)
+		if !ok || got != want {
+			t.Errorf("hopTargetKey(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+		if h := keyHost(in); h == "" {
+			t.Errorf("keyHost(%q) is empty", in)
+		}
+	}
+	if _, ok := hopTargetKey("vndirect.com.vn:70000:tcp"); ok {
+		t.Error("an out-of-range port was accepted")
 	}
 }

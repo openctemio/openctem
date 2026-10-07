@@ -103,6 +103,21 @@ func (e *Explainer) Covering(target string) *scopedom.Target {
 	return nil
 }
 
+// Ceiling names the tenant's entry in effect with the highest max_tier that
+// covers the target (tier_exceeds: the entry to raise), or nil.
+func (e *Explainer) Ceiling(target string) *scopedom.RuleRef {
+	var best *scopedom.Target
+	for _, t := range e.targets {
+		if t != nil && t.InEffect(e.now) && matchesAny(t, target) && (best == nil || t.MaxTier() > best.MaxTier()) {
+			best = t
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	return &scopedom.RuleRef{Kind: scopedom.RuleScopeTarget, ID: best.ID().String(), Pattern: best.Pattern()}
+}
+
 func matchesAny(t *scopedom.Target, target string) bool {
 	for _, f := range exclusionMatchForms(target) {
 		if t.Matches(f) {

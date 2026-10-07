@@ -112,7 +112,13 @@ trigger):
    sits at or under a root-domain seed or a verified domain of purpose `easm`
    (T1 at most). A domain verified for SSO sign-in (purpose `sso`, set up by
    a platform administrator) never authorizes; it counts only as proof
-   (step 7);
+   (step 7). A target covered only below the probe's tier is refused
+   `tier_exceeds`. The
+   probe's tier is its tool's highest stage tier (an unknown tool is T1): scan
+   create and quick scan refuse the request, a run leaves the target out with
+   a warning (`TIER_EXCEEDS` when nothing is left), a workflow step is checked
+   at its own tool's tier, and the dispatch gate (pipeline runs, chained hops,
+   coverage, validation, the dry run) checks T1 unless told otherwise;
 7. proof, when §8.1 requires it: the target sits at or under a verified domain;
 8. the actor may act on it (D9: data scope; restricted members only their
    assets);
@@ -367,11 +373,17 @@ response by the guardrails PR. `t2` is never a default.
 
 ```json
 { "targets": ["vndirect.com.vn", "promo-landing.net"],
+  "asset_ids": ["5f0c…"],
   "sensor_preference": "auto",
   "tier": 1 }
 ```
 
-At most 200 targets (an inventory asset is checked by its name). Runs §4.2
+At most 200 targets and assets together, at least one. An inventory asset
+(`asset_ids`) is checked by its name, as a scan of it would be (its other
+names, such as its address, count for exclusions); its result carries
+`asset_id`. An asset outside the caller's data scope, another tenant's, a
+deleted or an unknown id all answer the same `out_of_data_scope` with the id
+as `target` and nothing else, so the dry run is no existence oracle. Runs §4.2
 steps 1–9 for the caller (act scope included) without dispatching, auditing
 or logging a refusal. The act scope answers first for a restricted member
 (`not_an_asset`, `out_of_data_scope`), so the dry run tells them nothing
@@ -423,7 +435,11 @@ platform policy it is `{"kind": "platform_policy"}` with no detail.
 | `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
 
 Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
-"domain"?, "requires"?}`; `requires` is the permission the action needs. The
+"domain"?, "tier"?, "requires"?}`; `requires` is the permission the action
+needs. A `tier_exceeds` refusal offers `raise_tier` with the `id` of the
+caller's covering entry with the highest ceiling and the `tier` the probe
+needs; when only a seed or verified domain covers the target (T1 at most),
+`allow_temporarily` at that `tier` instead. The
 dry run keeps only the fixes the caller may take (an approver gets
 `allow_temporarily`, a member `request_access`, never both).
 
@@ -444,7 +460,40 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   `source`, `weight`, `observed`, `first_observed_at`, `last_observed_at`),
   and `covered_by` (new: the caller's scope entry, seed or verified domain
   that covers the name, or null; a null `covered_by` on approval means
-  widening, so the UI offers "add scope entry" first).
+  widening, so the UI offers "add scope entry" first). Evidence from a sensor
+  (`source: "sensor:<id>"`) carries `source_label` and
+  `observed.sensor_name`: the caller's own sensor's name, `platform sensor`
+  for a platform sensor, never another organization's sensor.
+
+  **Address rows** (an `ip_address`, or a service on an address) stay in
+  review even when every name resolving to them is in scope: a name grant
+  never becomes an IP grant (§4.3). Such a row explains itself:
+
+  ```json
+  { "name": "202.160.124.20", "type": "ip_address", "covered_by": null,
+    "hint": "ip_needs_ip_entry",
+    "resolved_from": ["vndirect.com.vn", "www.vndirect.com.vn"],
+    "network": {"asn": "AS131386", "org": "VNDIRECT Securities Corporation",
+                "shared": false, "org_matches": true},
+    "fixes": [
+      {"action": "add_entry", "target_type": "ip_address", "pattern": "202.160.124.20",
+       "requires": "attack_surface:scope:approve"},
+      {"action": "add_entry", "target_type": "cidr", "pattern": "202.160.124.0/24",
+       "requires": "attack_surface:scope:approve"}] }
+  ```
+
+  - `resolved_from`: the caller's in-scope names with a `resolves_to` edge to
+    the address (at most 10, within the caller's data scope).
+  - `network`: the ASN and organization the inventory already holds (no
+    lookup at request time); `shared` for CDN or cloud-provider space;
+    `org_matches` when a distinctive word of the organization's name is in
+    the ASN organization.
+  - `fixes` go through `POST /scope/targets` (step-up, approvals, guardrails,
+    audit). An approver gets "add this IP" and, only when `org_matches`, "add
+    the /24 (IPv4) or /48 (IPv6) around it"; a member with `scope:write`
+    gets `request_access` (a 7-day one-off for the address); anyone else
+    none. Shared space gets no fix: those addresses serve other
+    organizations. A covered row gets neither `hint` nor `fixes`.
 - **`GET /api/v1/easm/summary`** (`assets:read`): `attribution` already
   counts `needs_review` and `candidate`; it adds `review_by_reason`
   (`{rule: count}`) for the caller's data scope. `surface` (by type), `new`
@@ -640,8 +689,12 @@ Where it is enforced:
   path (never-stored state `proof_required`, refusal code `proof_required`).
 - Intrusive: scan create, quick scan and every single-scanner run refuse a
   scan whose tool only implements T2 stages (for example `zap`) when a target
-  is unproven (`PROOF_REQUIRED`). Workflow scans keep RFC-036's rule that an
-  intrusive stage never takes discovered targets; per-step proof is P1.
+  is unproven (`PROOF_REQUIRED`). A workflow scan checks proof per step: an
+  intrusive step (its tool's tier is T2) is handed only the run's targets at
+  or under a verified domain, and fails with `STEP_TARGETS_REFUSED` before any
+  sensor sees it when none is left; its passive and active steps are not
+  affected. An intrusive stage still never takes discovered targets
+  (RFC-036).
 
 ### 8.2 Deny list and public suffixes
 
@@ -704,3 +757,4 @@ are gated by zones and are not capped.
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
 | Refusals | codes, fixes, `POST /check` dry run |
+| Tier ceilings | `max_tier` enforced at every dispatch (`tier_exceeds`, `raise_tier`); per-step proof for intrusive workflow steps |

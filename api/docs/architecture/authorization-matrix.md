@@ -430,6 +430,25 @@ create's target validator, exclusions, zone routing) in one call.
 member and viewer). There is no billing API route today; the permission gates
 the billing page in the UI.
 
+#### Finding evidence (`/api/v1/findings/{id}/evidence-items`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/findings/{id}/evidence-items` | `findings:read` + data scope (404 outside it) |
+| `POST /api/v1/findings/{id}/evidence-items/{item_id}/reveal` | `findings:evidence:reveal` + data scope + per-user rate limit + **step-up** (API keys cannot); audited |
+| `GET/PUT /api/v1/organization/settings/evidence` | owner/admin; PUT audited |
+
+> **Evidence secrets are reveal-only.** Reads return the tool's proof with
+> every secret value (auth headers, cookies, tokens, detected credentials)
+> masked as `«secret:kind#n»`; the values are AES-256-GCM encrypted apart
+> (`finding_evidence_secrets`, bound to tenant, item and placeholder) and kept
+> for the tenant's secret retention (default 30 days).
+> `findings:evidence:reveal` is held by owner and admin by default (migration
+> `001223`) and can be given to custom roles. Every reveal writes
+> `finding.evidence_revealed` (item, placeholder names, purpose; never values)
+> before answering, and a finding timeline entry; it answers 503 if the audit
+> event cannot be written. See [finding-evidence.md](finding-evidence.md).
+
 #### Leaked credentials (`/api/v1/credentials`)
 
 | Endpoint | Permission Required |
