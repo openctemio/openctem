@@ -295,6 +295,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 	w.ControllerManager.Register(jobRecovery)
 
+	// One-off scans that never ran are archived after 30 days (audited).
+	w.ControllerManager.Register(controller.NewOneOffScanArchiveController(svc.Scan, 0, 0))
+
 	// Scan timeout controller: enforces per-scan timeout_seconds on running pipeline_runs
 	w.ControllerManager.Register(controller.NewScanTimeoutController(
 		repos.PipelineRun,
