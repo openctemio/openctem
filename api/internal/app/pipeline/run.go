@@ -418,9 +418,80 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 	}
 	stepTargets = planned
 
-	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), stepTargets)
+	// Where the step's commands may run. No command is pinned to one
+	// sensor (research/49 W27): a zone-routed run's commands are stamped
+	// with the zone, the others go to the platform queue or to any tenant
+	// sensor that has the tool; the claim predicates (zone, tool, grant,
+	// refusals, freeze) decide who takes each one.
+	zoneID := pipeline.ScanZoneFromContext(run.Context)
+	usePlatform := false
+	if zoneID == nil {
+		pref := settings.SensorPreference
+		// A scan that runs on the tenant's own sensors only
+		// (scans.run_on_tenant_runner, carried in the run context) never
+		// goes to platform sensors, whatever the template says.
+		if tenantRunnerOnly(run.Context) {
+			pref = pipeline.SensorPreferenceTenant
+		}
+		usePlatform = s.routeToPlatform(ctx, run.TenantID, step.Tool, pref)
+	}
+
+	// A large step is cut into chunks of the capability's size, so every
+	// eligible sensor takes a share; the step settles with its last chunk
+	// (checkStepBatches). A step that fits one chunk stays one command.
+	chunks := stepChunks(resolved, stepTargets)
+	created := make([]*command.Command, 0, len(chunks))
+	for _, chunk := range chunks {
+		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
+		if err == nil {
+			if zoneID != nil {
+				cmd.SetScanZone(*zoneID)
+			} else if usePlatform {
+				cmd.SetPlatformJob(s.calculatePipelineInitialPriority(cmd.Priority))
+			}
+			err = s.commandRepo.Create(ctx, cmd)
+		}
+		if err != nil {
+			s.cancelStepCommands(ctx, created)
+			return err
+		}
+		created = append(created, cmd)
+	}
+	s.logger.Info("step queued", "step_key", step.StepKey, "commands", len(created),
+		"zone_routed", zoneID != nil, "platform", usePlatform)
+
+	// Mark step as queued
+	stepRun.Queue()
+	stepRun.CommandID = &created[0].ID
+	return s.stepRunRepo.Update(ctx, stepRun)
+}
+
+// stepChunks cuts a step's targets into the chunks its commands carry:
+// pieces of the capability's chunk size for a tool that takes a target
+// list (stage.ChunkSizeFor), else one chunk with every target. A step with
+// no explicit target list is one chunk (nil targets).
+func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets) []*scanapp.StepTargets {
+	size := 0
+	if resolved.HasStage {
+		size = resolved.Stage.ChunkSizeFor(resolved.Name)
+	}
+	if st == nil || size <= 0 || len(st.Targets) <= size {
+		return []*scanapp.StepTargets{st}
+	}
+	out := make([]*scanapp.StepTargets, 0, (len(st.Targets)+size-1)/size)
+	for i := 0; i < len(st.Targets); i += size {
+		end := min(i+size, len(st.Targets))
+		out = append(out, &scanapp.StepTargets{Targets: st.Targets[i:end:end], Refused: st.Refused, Reason: st.Reason})
+	}
+	return out
+}
+
+// stepCommand builds one command of a step for the given chunk of its
+// targets, after the payload passed the security validator.
+func (s *Service) stepCommand(ctx context.Context, run *pipeline.Run, step *pipeline.Step, stepRun *pipeline.StepRun, chunk *scanapp.StepTargets) (*command.Command, error) {
+	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
 	if err != nil {
-		return fmt.Errorf("step %s: %w", step.StepKey, err)
+		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 
 	// Final payload validation before sending to sensor
@@ -431,102 +502,56 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *pi
 				"run_id", run.ID.String(),
 				"step_key", step.StepKey,
 				"errors", result.Errors)
-			return fmt.Errorf("security validation failed: %s", result.Errors[0].Message)
+			return nil, fmt.Errorf("security validation failed: %s", result.Errors[0].Message)
 		}
 	}
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	// Create command
 	cmd, err := command.NewCommand(run.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payloadBytes)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// The command names its step run, so the reports bound to it are
-	// attributed to the step (scan provenance, chained outputs).
+	// attributed to the step (scan provenance, chained outputs) and the
+	// step settles with its last command.
 	cmd.SetStepRunID(stepRun.ID)
 	// A run started with an audited freeze override keeps it for every step.
 	cmd.FreezeOverride = run.FreezeOverride
-
-	// A run routed to a scan zone (RFC-023) keeps every step inside it: the
-	// command is stamped with the zone and left to the zone's sensors (the
-	// claim predicate enforces it), never pinned elsewhere or sent to
-	// platform sensors.
-	if zoneID := pipeline.ScanZoneFromContext(run.Context); zoneID != nil {
-		cmd.SetScanZone(*zoneID)
-		if err := s.commandRepo.Create(ctx, cmd); err != nil {
-			return err
-		}
-		stepRun.Queue()
-		stepRun.CommandID = &cmd.ID
-		return s.stepRunRepo.Update(ctx, stepRun)
-	}
-
-	// Determine sensor routing based on preference. A scan that runs on the
-	// tenant's own sensors only (scans.run_on_tenant_runner, carried in the
-	// run context) never goes to platform sensors, whatever the template
-	// says.
-	pref := settings.SensorPreference
-	if tenantRunnerOnly(run.Context) {
-		pref = pipeline.SensorPreferenceTenant
-	}
-	usePlatform, sensorID := s.determineSensorRouting(ctx, run.TenantID, step.Tool, pref)
-
-	//nolint:gocritic // if-else chain is clearer than switch for bool+pointer conditions
-	if usePlatform {
-		// Route to platform sensors
-		initialPriority := s.calculatePipelineInitialPriority(cmd.Priority)
-		cmd.SetPlatformJob(initialPriority)
-		s.logger.Info("routing step to platform sensors", "step_key", step.StepKey)
-	} else if sensorID != nil {
-		// Route to specific tenant sensor
-		cmd.SetSensorID(*sensorID)
-		s.logger.Info("routing step to tenant sensor", "step_key", step.StepKey, "sensor_id", sensorID.String())
-	} else {
-		// No specific sensor, command available to any tenant sensor
-		s.logger.Info("no specific sensor assigned, command available to all tenant sensors", "step_key", step.StepKey)
-	}
-
-	if err := s.commandRepo.Create(ctx, cmd); err != nil {
-		return err
-	}
-
-	// Mark step as queued
-	stepRun.Queue()
-	stepRun.CommandID = &cmd.ID
-	return s.stepRunRepo.Update(ctx, stepRun)
+	return cmd, nil
 }
 
-// determineSensorRouting determines whether to use platform sensors and which specific sensor to use.
-func (s *Service) determineSensorRouting(ctx context.Context, tenantID shared.ID, tool string, pref pipeline.SensorPreference) (usePlatform bool, sensorID *shared.ID) {
-	// If explicitly set to tenant only, never use platform
-	if pref == pipeline.SensorPreferenceTenant {
-		// Try to find a tenant sensor with the required tool
-		if tool != "" {
-			foundSensor, err := s.sensorRepo.FindAvailableWithTool(ctx, tenantID, tool)
-			if err == nil && foundSensor != nil {
-				return false, &foundSensor.ID
-			}
+// cancelStepCommands cancels the commands of a step already created when a
+// later one cannot be, so a step that reports a queue failure leaves no
+// chunk running.
+func (s *Service) cancelStepCommands(ctx context.Context, cmds []*command.Command) {
+	for _, c := range cmds {
+		c.Cancel()
+		if err := s.commandRepo.Update(ctx, c); err != nil {
+			s.logger.Warn("failed to cancel step command", "command_id", c.ID.String(), "error", err)
 		}
-		return false, nil
 	}
+}
 
-	// If explicitly set to platform only, always use platform
-	if pref == pipeline.SensorPreferencePlatform {
-		// Check if tenant can use platform sensors
+// routeToPlatform decides whether a step's commands go to the platform
+// queue (true) or to the tenant's own sensors (false). It never picks a
+// sensor: any tenant sensor that has the tool may claim the command.
+func (s *Service) routeToPlatform(ctx context.Context, tenantID shared.ID, tool string, pref pipeline.SensorPreference) bool {
+	switch pref {
+	case pipeline.SensorPreferenceTenant:
+		return false
+	case pipeline.SensorPreferencePlatform:
 		if s.sensorSelector != nil {
-			canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, tenantID)
-			if canUse {
-				return true, nil
+			if canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, tenantID); canUse {
+				return true
 			}
 		}
-		// Fall through to try tenant sensors if platform not available
+		// Platform not available: fall back to the tenant's sensors.
 	}
-
-	// For "auto" mode (or platform fallback), use SensorSelector if available
+	// Auto: the selector prefers the tenant's sensors and goes to the
+	// platform when none of them has the tool.
 	if s.sensorSelector != nil {
 		result, err := s.sensorSelector.SelectSensor(ctx, SelectSensorRequest{
 			TenantID:     tenantID,
@@ -535,25 +560,11 @@ func (s *Service) determineSensorRouting(ctx context.Context, tenantID shared.ID
 			Mode:         SelectTenantFirst,
 			AllowQueue:   true,
 		})
-		if err == nil {
-			if result.IsPlatform {
-				return true, nil
-			}
-			if result.Sensor != nil {
-				return false, &result.Sensor.ID
-			}
+		if err == nil && result != nil && result.IsPlatform {
+			return true
 		}
 	}
-
-	// Fallback: try to find tenant sensor
-	if tool != "" {
-		foundSensor, err := s.sensorRepo.FindAvailableWithTool(ctx, tenantID, tool)
-		if err == nil && foundSensor != nil {
-			return false, &foundSensor.ID
-		}
-	}
-
-	return false, nil
+	return false
 }
 
 // calculatePipelineInitialPriority calculates the initial queue priority for platform jobs.
