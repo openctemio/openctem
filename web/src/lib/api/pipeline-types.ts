@@ -63,6 +63,8 @@ export const PIPELINE_RUN_STATUSES = [
   // Spelled as the API stores it (pipeline.RunStatusCanceled).
   'canceled',
   'timeout',
+  // A trigger refused before anything was dispatched; refusal_code says why.
+  'blocked',
 ] as const
 export type PipelineRunStatus = (typeof PIPELINE_RUN_STATUSES)[number]
 
@@ -74,6 +76,7 @@ export const PIPELINE_RUN_STATUS_LABELS: Record<PipelineRunStatus, string> = {
   failed: 'Failed',
   canceled: 'Canceled',
   timeout: 'Timed out',
+  blocked: 'Blocked',
 }
 
 export const STEP_RUN_STATUSES = [
@@ -229,8 +232,11 @@ export interface PipelineTemplate {
 
 export interface StepRun {
   id: string
-  step_id: string
+  /** Absent once the step was removed from the pipeline; the run keeps its key, name and tool. */
+  step_id?: string
   step_key: string
+  step_name?: string
+  tool?: string
   status: StepRunStatus
   started_at?: string
   completed_at?: string
@@ -275,6 +281,8 @@ export interface PipelineRun {
   total_findings: number
   step_runs?: StepRun[]
   error_message?: string
+  /** Why a blocked run was refused (e.g. ALL_TARGETS_EXCLUDED, WILDCARD_TARGET). */
+  refusal_code?: string
   created_at: string
   /** What the trigger dispatched (scope exclusions, zone routing). RFC-023. */
   dispatch?: RunDispatch
@@ -305,6 +313,11 @@ export interface CreatePipelineRequest {
 }
 
 export interface CreateStepRequest {
+  /**
+   * Id of the existing step this entry is, when saving a whole pipeline: the
+   * step is updated in place and keeps its run history. Omit for a new step.
+   */
+  id?: string
   step_key: string
   name: string
   description?: string

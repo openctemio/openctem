@@ -480,6 +480,14 @@ func (m *mockStepRepo) Reorder(_ context.Context, _ shared.ID, _ map[string]int)
 func (m *mockStepRepo) FindPipelineIDsByToolName(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
 	return nil, nil
 }
+func (m *mockStepRepo) MutateSteps(_ context.Context, _, pipelineID shared.ID, mutate func([]*pipeline.Step) ([]*pipeline.Step, error)) ([]*pipeline.Step, error) {
+	next, err := mutate(m.steps[pipelineID.String()])
+	if err != nil {
+		return nil, err
+	}
+	m.steps[pipelineID.String()] = next
+	return next, nil
+}
 
 // =============================================================================
 // Mock: pipeline.StepRunRepository
@@ -874,7 +882,7 @@ type testScanServiceDeps struct {
 	auditSvc       *mockAuditService
 }
 
-func newTestScanService() (*scanservice.Service, *testScanServiceDeps) {
+func newTestScanService(opts ...scanservice.ServiceOption) (*scanservice.Service, *testScanServiceDeps) {
 	deps := &testScanServiceDeps{
 		scanRepo:       newMockScanRepo(),
 		templateRepo:   newMockTemplateRepo(),
@@ -907,7 +915,7 @@ func newTestScanService() (*scanservice.Service, *testScanServiceDeps) {
 		deps.sensorSelector,
 		deps.secValidator,
 		log,
-		scanservice.WithAuditService(deps.auditSvc),
+		append([]scanservice.ServiceOption{scanservice.WithAuditService(deps.auditSvc)}, opts...)...,
 	)
 	// A workflow scan's first steps are queued by the pipeline service, the
 	// one step dispatcher (research/27 P0-2), as in production.

@@ -68,6 +68,9 @@ var stepUpRoutes = []string{
 	"GET /api/v1/integrations/github/webhook-secret",
 	"POST /api/v1/integrations/github/webhook-secret/rotate",
 	"PATCH /api/v1/attachments/storage-config",
+	"POST /api/v1/sensors",
+	"POST /api/v1/sensors/{id}/regenerate-key",
+	"POST /api/v1/credentials/{id}/reveal",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -127,6 +130,8 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
+			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
+			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {
