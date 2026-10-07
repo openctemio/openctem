@@ -70,7 +70,11 @@ export function EASMSeedsPanel() {
         value: value.trim(),
         label: label.trim() || undefined,
       })
-      toast.success(`Seed ${s.value} added`)
+      toast.success(
+        s.status === 'pending'
+          ? `${s.pattern} requested: it takes effect once another administrator approves it`
+          : `${s.pattern} added to scope`
+      )
       setAddOpen(false)
       resetForm()
       void mutate()

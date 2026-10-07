@@ -15,6 +15,7 @@ package stage
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -74,6 +75,12 @@ type Implementation struct {
 	// Default marks the implementation the planner picks for a step that
 	// names only the capability. Exactly one per stage.
 	Default bool `json:"default"`
+	// Batch: the tool takes a list of targets in one task; otherwise one
+	// target per task (contract.go batchTools).
+	Batch bool `json:"batch"`
+	// Params maps the capability's standard params this tool accepts to
+	// the tool's own config key (contract.go toolParams).
+	Params map[string]string `json:"params"`
 }
 
 // Stage is one catalog entry.
@@ -104,6 +111,18 @@ type Stage struct {
 	// (tools.capabilities, pipeline step capabilities) that name this stage
 	// on their own.
 	Legacy []string `json:"-"`
+
+	// The capability contract (contract.go): major version, typed ports,
+	// standard params and the fields a report must carry. Tier is the
+	// contract's tier floor.
+	Version              int        `json:"version"`
+	InPorts              []PortType `json:"in_ports"`
+	OutPorts             []PortType `json:"out_ports"`
+	Params               []Param    `json:"params"`
+	RequiredOutputFields []string   `json:"required_output_fields"`
+	// CrossCutting capabilities (verify.finding) are used by other flows,
+	// never as a workflow node.
+	CrossCutting bool `json:"cross_cutting,omitempty"`
 }
 
 // Fan-out caps (research/27 §5.6). The run cap stays the dispatch cap of a
@@ -327,7 +346,14 @@ func (s Stage) clone() Stage {
 	s.Outputs = slices.Clone(s.Outputs)
 	s.Relations = slices.Clone(s.Relations)
 	s.Implementations = slices.Clone(s.Implementations)
+	for i := range s.Implementations {
+		s.Implementations[i].Params = maps.Clone(s.Implementations[i].Params)
+	}
 	s.Legacy = slices.Clone(s.Legacy)
+	s.InPorts = slices.Clone(s.InPorts)
+	s.OutPorts = slices.Clone(s.OutPorts)
+	s.Params = slices.Clone(s.Params)
+	s.RequiredOutputFields = slices.Clone(s.RequiredOutputFields)
 	return s
 }
 

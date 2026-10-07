@@ -310,32 +310,34 @@ http:
 		t.Fatal("template content copied into the audit log")
 	}
 
-	// A custom tool and the tenant's config of it.
-	tool := decodeID(t, h.expect(admin, http.MethodPost, "/api/v1/custom-tools",
+	// A custom tool and the tenant's settings of it.
+	tool := decodeID(t, h.expect(admin, http.MethodPost, "/api/v1/tools",
 		`{"name":"audit-tool","display_name":"Audit tool","install_method":"binary","capabilities":["scan"]}`, http.StatusCreated))
-	h.expect(admin, http.MethodPut, "/api/v1/custom-tools/"+tool, `{"display_name":"Audit tool 2"}`, http.StatusOK)
-	h.expect(admin, http.MethodPost, "/api/v1/custom-tools/"+tool+"/deactivate", "", http.StatusOK)
-	h.expect(admin, http.MethodPost, "/api/v1/custom-tools/"+tool+"/activate", "", http.StatusOK)
-	h.expect(member, http.MethodPut, "/api/v1/tenant-tools/"+tool,
-		`{"is_enabled":true,"config":{"rate_limit":10,"api_key":"fake-key-Zq8vT3mP0wX7rL2kN9sB4yH6"}}`, http.StatusOK)
-	h.expect(member, http.MethodPut, "/api/v1/tenant-tools/"+tool, `{"is_enabled":false,"config":{"rate_limit":20}}`, http.StatusOK)
-	h.expect(admin, http.MethodDelete, "/api/v1/tenant-tools/"+tool, "", http.StatusNoContent)
-	h.expect(admin, http.MethodDelete, "/api/v1/custom-tools/"+tool, "", http.StatusNoContent)
+	h.expect(admin, http.MethodPut, "/api/v1/tools/"+tool, `{"display_name":"Audit tool 2"}`, http.StatusOK)
+	// A secret in a config is refused, before anything is stored or audited.
+	h.expect(admin, http.MethodPatch, "/api/v1/tools/"+tool+"/settings",
+		`{"is_enabled":true,"config":{"rate_limit":10,"api_key":"fake-key-Zq8vT3mP0wX7rL2kN9sB4yH6"}}`, http.StatusBadRequest)
+	h.expect(admin, http.MethodPatch, "/api/v1/tools/"+tool+"/settings", `{"is_enabled":true,"config":{"rate_limit":10}}`, http.StatusOK)
+	h.expect(member, http.MethodPatch, "/api/v1/tools/"+tool+"/settings", `{"is_enabled":false}`, http.StatusOK)
+	h.expect(admin, http.MethodPatch, "/api/v1/tools/"+tool+"/settings", `{"config":{}}`, http.StatusOK)
+	h.expect(member, http.MethodPatch, "/api/v1/tools/settings", `{"tool_ids":["`+tool+`"],"is_enabled":true}`, http.StatusNoContent)
+	h.expect(admin, http.MethodDelete, "/api/v1/tools/"+tool, "", http.StatusNoContent)
 	rows = h.auditRows(tid, "tool.")
+	requireAudited(t, rows, "bulk", []auditRow{
+		{action: "tool.config_updated", actor: member.id, after: map[string]any{"is_enabled": true}},
+	})
 	requireAudited(t, rows, tool, []auditRow{
 		{action: "tool.created", actor: admin.id, after: map[string]any{"name": "audit-tool"}},
 		{action: "tool.updated", actor: admin.id, before: map[string]any{"display_name": "Audit tool"}, after: map[string]any{"display_name": "Audit tool 2"}},
-		{action: "tool.deactivated", actor: admin.id, before: map[string]any{"is_active": true}, after: map[string]any{"is_active": false}},
-		{action: "tool.activated", actor: admin.id, before: map[string]any{"is_active": false}, after: map[string]any{"is_active": true}},
-		{action: "tool.config_updated", actor: member.id, after: map[string]any{"is_enabled": true}},
+		{action: "tool.config_updated", actor: admin.id, after: map[string]any{"is_enabled": true}},
 		{action: "tool.config_updated", actor: member.id, before: map[string]any{"is_enabled": true}, after: map[string]any{"is_enabled": false}},
-		{action: "tool.config_deleted", actor: admin.id, before: map[string]any{"is_enabled": false}},
+		{action: "tool.config_updated", actor: admin.id, before: map[string]any{"is_enabled": false}, after: map[string]any{"is_enabled": false}},
 		{action: "tool.deleted", actor: admin.id, before: map[string]any{"name": "audit-tool"}},
 	})
 	var raw string
 	_ = h.db.QueryRow(`SELECT changes::text FROM audit_logs WHERE tenant_id = $1 AND action = 'tool.config_updated' ORDER BY logged_at LIMIT 1`, tid).Scan(&raw)
 	if strings.Contains(raw, "Zq8vT3mP0wX7") || !strings.Contains(raw, `"rate_limit": 10`) {
-		t.Fatalf("tool config audit entry must mask the secret and keep the rest: %s", raw)
+		t.Fatalf("tool config audit entry must hold the config and never the refused secret: %s", raw)
 	}
 }
 

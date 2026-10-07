@@ -81,6 +81,11 @@ type UIPositionRequest struct {
 // CreateStepRequest represents a step in the create template request.
 // Capabilities are optional - if not provided and tool is specified, they will be derived from the tool.
 type CreateStepRequest struct {
+	// ID is the id of the existing step this entry is, when the request saves
+	// a whole pipeline (PUT): the step is updated in place and keeps its run
+	// history. Optional; an id that is not one of the pipeline's steps (for
+	// example a client-side temporary id) makes the entry a new step.
+	ID                string                 `json:"id,omitempty" validate:"max=64"`
 	StepKey           string                 `json:"step_key" validate:"required,min=1,max=100"`
 	Name              string                 `json:"name" validate:"required,min=1,max=255"`
 	Description       string                 `json:"description" validate:"max=1000"`
@@ -206,7 +211,10 @@ type RunResponse struct {
 	QualityGateResult *scanprofile.QualityGateResult `json:"quality_gate_result,omitempty"`
 	StepRuns          []StepRunResponse              `json:"step_runs,omitempty"`
 	ErrorMessage      string                         `json:"error_message,omitempty"`
-	CreatedAt         string                         `json:"created_at"`
+	// RefusalCode says why a blocked run was refused (status blocked only),
+	// e.g. ALL_TARGETS_EXCLUDED, SCAN_FREEZE_ACTIVE, NO_SENSOR_AVAILABLE.
+	RefusalCode string `json:"refusal_code,omitempty"`
+	CreatedAt   string `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
 	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
@@ -267,6 +275,21 @@ type RunTaskResponse struct {
 	StartedAt    *string `json:"started_at,omitempty"`
 	CompletedAt  *string `json:"completed_at,omitempty"`
 	ErrorMessage string  `json:"error_message,omitempty"`
+	// SkippedTargets are the targets the sensor's local policy skipped in a
+	// task that completed on the rest (at most 20; sensor-supplied text,
+	// show as plain text). SkippedTargetsTotal counts all of them.
+	SkippedTargets      []RunTaskSkippedTarget `json:"skipped_targets,omitempty"`
+	SkippedTargetsTotal int                    `json:"skipped_targets_total,omitempty"`
+}
+
+// RunTaskSkippedTarget is one target a sensor skipped, and why: reason is
+// unresolvable, wildcard_pattern, denied_by_policy, invalid_target or
+// refused; rule is the sensor's policy rule.
+type RunTaskSkippedTarget struct {
+	Target string `json:"target"`
+	Reason string `json:"reason"`
+	Rule   string `json:"rule,omitempty"`
+	Detail string `json:"detail,omitempty"`
 }
 
 func toRunTaskSummaryResponse(s pipeline.TaskSummary) *RunTaskSummaryResponse {
@@ -286,6 +309,10 @@ func toRunTaskResponses(tasks []pipeline.Task) []RunTaskResponse {
 			ID: t.ID.String(), StepKey: t.StepKey, Tool: t.Tool, Status: string(t.Status),
 			SensorName: t.SensorName, Platform: t.Platform, Targets: t.Targets, Attempts: t.Attempts,
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: t.ErrorMessage,
+			SkippedTargetsTotal: t.SkippedTotal,
+		}
+		for _, sk := range t.Skipped {
+			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))
 		}
 		if t.StepRunID != nil {
 			v := t.StepRunID.String()
@@ -372,9 +399,13 @@ type SkipReasonResponse struct {
 
 // StepRunResponse represents a step run in the response.
 type StepRunResponse struct {
-	ID            string  `json:"id"`
-	StepID        string  `json:"step_id"`
+	ID string `json:"id"`
+	// StepID is empty once the step was removed from the pipeline; the step
+	// run keeps its key, name and tool.
+	StepID        string  `json:"step_id,omitempty"`
 	StepKey       string  `json:"step_key"`
+	StepName      string  `json:"step_name,omitempty"`
+	Tool          string  `json:"tool,omitempty"`
 	Status        string  `json:"status"`
 	StartedAt     *string `json:"started_at,omitempty"`
 	CompletedAt   *string `json:"completed_at,omitempty"`
@@ -415,25 +446,8 @@ func (h *PipelineHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 
 	stepInputs := make([]pipelinesvc.AddStepInput, 0, len(req.Steps))
 	for i, stepReq := range req.Steps {
-		stepInput := pipelinesvc.AddStepInput{
-			TenantID:          tenantID,
-			StepKey:           stepReq.StepKey,
-			Name:              stepReq.Name,
-			Description:       stepReq.Description,
-			Order:             stepReq.Order,
-			Tool:              stepReq.Tool,
-			Capabilities:      stepReq.Capabilities,
-			Config:            stepReq.Config,
-			TimeoutSeconds:    stepReq.TimeoutSeconds,
-			DependsOn:         stepReq.DependsOn,
-			Condition:         toCondition(stepReq.Condition),
-			MaxRetries:        stepReq.MaxRetries,
-			RetryDelaySeconds: stepReq.RetryDelaySeconds,
-		}
-		if stepReq.UIPosition != nil {
-			stepInput.UIPositionX = &stepReq.UIPosition.X
-			stepInput.UIPositionY = &stepReq.UIPosition.Y
-		}
+		stepInput := toAddStepInput(tenantID, "", stepReq)
+		stepInput.ID = "" // a new pipeline has no existing steps
 		if stepInput.Order == 0 {
 			stepInput.Order = i + 1
 		}
@@ -455,21 +469,20 @@ func (h *PipelineHandler) CreateTemplate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	steps := make([]*pipeline.Step, 0, len(stepInputs))
-	for _, stepInput := range stepInputs {
-		stepInput.TemplateID = template.ID.String()
-		step, err := h.service.AddStep(pipelineAuditCtx(r), stepInput)
-		if err != nil {
-			// A step can still fail past validation (e.g. a duplicate step_key).
-			// Remove the half-built template rather than leave it behind.
-			if delErr := h.service.DeleteTemplate(pipelineAuditCtx(r), tenantID, template.ID.String()); delErr != nil {
-				h.logger.Error("failed to remove pipeline template after a step was rejected",
-					"template_id", template.ID.String(), "error", delErr)
-			}
-			h.handleServiceError(w, err)
-			return
+	steps, err := h.service.ReplaceSteps(pipelineAuditCtx(r), pipelinesvc.ReplaceStepsInput{
+		TenantID:   tenantID,
+		TemplateID: template.ID.String(),
+		Steps:      stepInputs,
+	})
+	if err != nil {
+		// A step can still fail past validation. Remove the half-built
+		// template rather than leave it behind.
+		if delErr := h.service.DeleteTemplate(pipelineAuditCtx(r), tenantID, template.ID.String()); delErr != nil {
+			h.logger.Error("failed to remove pipeline template after a step was rejected",
+				"template_id", template.ID.String(), "error", delErr)
 		}
-		steps = append(steps, step)
+		h.handleServiceError(w, err)
+		return
 	}
 	template.Steps = steps
 
@@ -572,6 +585,27 @@ func (h *PipelineHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Steps first: the save validates every step and is refused as a whole
+	// (nothing changes) while a run of the pipeline is active, so a refused
+	// save does not leave the template's other fields half applied.
+	var steps []*pipeline.Step
+	if req.Steps != nil {
+		stepInputs := make([]pipelinesvc.AddStepInput, 0, len(req.Steps))
+		for _, stepReq := range req.Steps {
+			stepInputs = append(stepInputs, toAddStepInput(tenantID, templateID, stepReq))
+		}
+		var err error
+		steps, err = h.service.ReplaceSteps(pipelineAuditCtx(r), pipelinesvc.ReplaceStepsInput{
+			TenantID:   tenantID,
+			TemplateID: templateID,
+			Steps:      stepInputs,
+		})
+		if err != nil {
+			h.handleStepError(w, err)
+			return
+		}
+	}
+
 	input := pipelinesvc.UpdateTemplateInput{
 		TenantID:        tenantID,
 		TemplateID:      templateID,
@@ -591,76 +625,39 @@ func (h *PipelineHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// If steps are provided, sync them (delete existing, add new)
-	if req.Steps != nil {
-		// IMPORTANT: Validate all steps BEFORE deleting to avoid data loss
-		// Build step inputs and validate them first
-		stepInputs := make([]pipelinesvc.AddStepInput, 0, len(req.Steps))
-		for i, stepReq := range req.Steps {
-			stepInput := pipelinesvc.AddStepInput{
-				TenantID:          tenantID,
-				TemplateID:        templateID,
-				StepKey:           stepReq.StepKey,
-				Name:              stepReq.Name,
-				Description:       stepReq.Description,
-				Order:             stepReq.Order,
-				Tool:              stepReq.Tool,
-				Capabilities:      stepReq.Capabilities,
-				Config:            stepReq.Config,
-				TimeoutSeconds:    stepReq.TimeoutSeconds,
-				DependsOn:         stepReq.DependsOn,
-				Condition:         toCondition(stepReq.Condition),
-				MaxRetries:        stepReq.MaxRetries,
-				RetryDelaySeconds: stepReq.RetryDelaySeconds,
-			}
-			if stepReq.UIPosition != nil {
-				stepInput.UIPositionX = &stepReq.UIPosition.X
-				stepInput.UIPositionY = &stepReq.UIPosition.Y
-			}
-			if stepInput.Order == 0 {
-				stepInput.Order = i + 1
-			}
-			stepInputs = append(stepInputs, stepInput)
-		}
-
-		// Validate all steps before making any changes
-		if err := h.service.ValidateSteps(r.Context(), stepInputs); err != nil {
-			h.handleStepError(w, err)
-			return
-		}
-
-		// Now safe to delete existing steps (validation passed)
-		if err := h.service.DeleteStepsByPipelineID(pipelineAuditCtx(r), tenantID, templateID); err != nil {
-			// Ignore not found errors - there may be no existing steps
-			if !errors.Is(err, shared.ErrNotFound) {
-				h.handleServiceError(w, err)
-				return
-			}
-		}
-
-		// Add new steps (validation already passed, these should succeed)
-		steps := make([]*pipeline.Step, 0, len(stepInputs))
-		for _, stepInput := range stepInputs {
-			step, err := h.service.AddStep(pipelineAuditCtx(r), stepInput)
-			if err != nil {
-				// This shouldn't happen since we validated, but handle it gracefully
-				h.logger.Error("step creation failed after validation",
-					"step_key", stepInput.StepKey,
-					"error", err)
-				h.handleStepError(w, err)
-				return
-			}
-			steps = append(steps, step)
-		}
-		template.Steps = steps
-	} else {
-		// Load existing steps for response
-		steps, _ := h.service.GetSteps(r.Context(), templateID)
-		template.Steps = steps
+	if steps == nil {
+		steps, _ = h.service.GetSteps(r.Context(), templateID)
 	}
+	template.Steps = steps
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toTemplateResponse(template))
+}
+
+// toAddStepInput maps one step of a request to the service input.
+func toAddStepInput(tenantID, templateID string, req CreateStepRequest) pipelinesvc.AddStepInput {
+	in := pipelinesvc.AddStepInput{
+		TenantID:          tenantID,
+		TemplateID:        templateID,
+		ID:                req.ID,
+		StepKey:           req.StepKey,
+		Name:              req.Name,
+		Description:       req.Description,
+		Order:             req.Order,
+		Tool:              req.Tool,
+		Capabilities:      req.Capabilities,
+		Config:            req.Config,
+		TimeoutSeconds:    req.TimeoutSeconds,
+		DependsOn:         req.DependsOn,
+		Condition:         toCondition(req.Condition),
+		MaxRetries:        req.MaxRetries,
+		RetryDelaySeconds: req.RetryDelaySeconds,
+	}
+	if req.UIPosition != nil {
+		in.UIPositionX = &req.UIPosition.X
+		in.UIPositionY = &req.UIPosition.Y
+	}
+	return in
 }
 
 // DeleteTemplate handles DELETE /api/v1/pipelines/templates/{id}
@@ -1236,6 +1233,7 @@ func toRunResponse(r *pipeline.Run) *RunResponse {
 		SkippedSteps:   r.SkippedSteps,
 		TotalFindings:  r.TotalFindings,
 		ErrorMessage:   r.ErrorMessage,
+		RefusalCode:    r.RefusalCode,
 		CreatedAt:      r.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
@@ -1428,14 +1426,18 @@ func toFilteringResultFromStruct(v any) *FilteringResultResponse {
 func toStepRunResponse(sr *pipeline.StepRun) StepRunResponse {
 	resp := StepRunResponse{
 		ID:            sr.ID.String(),
-		StepID:        sr.StepID.String(),
 		StepKey:       sr.StepKey,
+		StepName:      sr.StepName,
+		Tool:          sr.Tool,
 		Status:        string(sr.Status),
 		ErrorMessage:  sr.ErrorMessage,
 		ErrorCode:     sr.ErrorCode,
 		Attempt:       sr.Attempt,
 		MaxAttempts:   sr.MaxAttempts,
 		FindingsCount: sr.FindingsCount,
+	}
+	if !sr.StepID.IsZero() {
+		resp.StepID = sr.StepID.String()
 	}
 
 	if sr.StartedAt != nil {
@@ -1471,6 +1473,8 @@ func (h *PipelineHandler) handleValidationError(w http.ResponseWriter, err error
 // handleServiceError converts service errors to API errors.
 func (h *PipelineHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, pipeline.ErrPipelineRunActive):
+		apierror.New(http.StatusConflict, apierror.Code(pipeline.ErrPipelineRunActive.Code), pipeline.ErrPipelineRunActive.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Pipeline").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
@@ -1490,6 +1494,8 @@ func (h *PipelineHandler) handleServiceError(w http.ResponseWriter, err error) {
 // handleStepError converts step-related service errors to API errors.
 func (h *PipelineHandler) handleStepError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, pipeline.ErrPipelineRunActive):
+		apierror.New(http.StatusConflict, apierror.Code(pipeline.ErrPipelineRunActive.Code), pipeline.ErrPipelineRunActive.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Step").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):

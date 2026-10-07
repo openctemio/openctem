@@ -42,6 +42,21 @@ controller then marks it `expired`.
   notifies all active owners and administrators in-app, and is audited.
 - Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one
   click.
+- **Seeds are scope entries.** A root-domain seed authorizes T1 probes of
+  every name under it and confirms them into the inventory, so `POST
+  /easm/seeds` creates the permanent entry `*.<domain>` through the same
+  path (`easm.SeedService.Create` calls `scope.Service.CreateTarget`):
+  `scope:approve` and step-up on the route, the approval count, the
+  guardrails, the administrator notification and a `scope_target.created`
+  audit record (`via: easm_seed`). A member gets `403
+  WIDENING_NEEDS_APPROVER`. Turning a seed's discovery back on
+  (`PATCH /easm/seeds/{id}`) needs `scope:approve` and step-up and notifies
+  the administrators. Seed rows made before this change keep working until
+  they are folded into entries.
+- **SSO domains never authorize.** Only verified domains of purpose `easm`
+  (verified by the organization for attack-surface work) count as authority
+  (`EASMVerifiedDomainNames`). A domain a platform administrator verified
+  for SSO sign-in (purpose `sso`) is proof of control only (§8.1).
 
 ## Platform guardrails (RFC-054 §8)
 
@@ -65,7 +80,7 @@ Operator settings, never tenant settings:
   intrusive (T2) step on its own: the step gets only the verified targets
   and fails (`STEP_TARGETS_REFUSED`) when none is left.
 - **Tier ceilings** (RFC-054 §4.2 step 6, `scan/tier_ceiling.go`): a scope
-  entry authorizes probes up to its `max_tier`, a seed or verified domain up
+  entry authorizes probes up to its `max_tier`, a seed or an `easm` verified domain up
   to T1. The probe's tier is the tool's highest stage tier (`stage.ProbeTier`,
   unknown tools T1). A target covered only below it is refused `tier_exceeds`
   (fix `raise_tier`): scan create and quick scan refuse the request, a run
@@ -108,7 +123,8 @@ For each target, in order:
      internet-facing asset (domain, subdomain, IP, service, web endpoint,
      host, …), or typed text naming an internet host or public address, is
      not covered by an active scope target of the tenant nor at or under one
-     of its root-domain seeds or verified domains. Without a record that is
+     of its root-domain seeds or `easm`-purpose verified domains (an
+     SSO-purpose domain is never authority). Without a record that is
      `unattributed`; with a **confirmed** record it is `out_of_scope`:
      confirming an asset on its Ownership tab records ownership, it does not
      authorize active probes by itself. Private addresses and internal names

@@ -19,6 +19,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -39,7 +40,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   useCreateCustomTool,
   useUpdateCustomTool,
-  invalidateCustomToolsCache,
+  invalidateToolsCache,
 } from '@/lib/api/tool-hooks'
 import { useAllToolCategories, getCategoryNameById } from '@/lib/api/tool-category-hooks'
 import {
@@ -86,6 +87,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
       update_cmd: '',
       version_cmd: '',
       version_regex: '',
+      min_version: '',
       docs_url: '',
       github_url: '',
       logo_url: '',
@@ -111,6 +113,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
         update_cmd: tool.update_cmd || '',
         version_cmd: tool.version_cmd || '',
         version_regex: tool.version_regex || '',
+        min_version: tool.min_version || '',
         docs_url: tool.docs_url || '',
         github_url: tool.github_url || '',
         logo_url: tool.logo_url || '',
@@ -157,6 +160,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
         update_cmd: data.update_cmd || undefined,
         version_cmd: data.version_cmd || undefined,
         version_regex: data.version_regex || undefined,
+        min_version: data.min_version || '',
         docs_url: data.docs_url || undefined,
         github_url: data.github_url || undefined,
         logo_url: data.logo_url || undefined,
@@ -174,7 +178,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
         toast.success(`Tool "${data.display_name || data.name}" created`)
       }
 
-      await invalidateCustomToolsCache()
+      await invalidateToolsCache()
       form.reset()
       setCommandsOpen(false)
       setMetadataOpen(false)
@@ -468,6 +472,24 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       )}
                     />
                   </div>
+
+                  <FormField
+                    control={form.control}
+                    name="min_version"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Minimum version</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="3.2.0" className="font-mono text-sm" />
+                        </FormControl>
+                        <FormDescription>
+                          When every online sensor runs an older version, the tool shows as
+                          outdated. Scans still run.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </CollapsibleContent>
               </Collapsible>
 
