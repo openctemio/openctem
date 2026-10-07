@@ -49,9 +49,9 @@ others see. A hostile or compromised sensor, or just a buggy one, could:
   skipped), and the propagation then clears its KEV columns and
   `exploit_available`. The findings reconciliation clears `is_in_kev` and
   `kev_due_date` on its findings, on every status; severity is not lowered.
-- **Tenant API**: `POST /api/v1/vulnerabilities` and
-  `PUT/DELETE /api/v1/vulnerabilities/{id}` answer **403** for every tenant
-  role. An organization's admin used to be able to edit or delete a CVE that
+- **Tenant API**: there is no `POST /api/v1/vulnerabilities` or
+  `PUT/DELETE /api/v1/vulnerabilities/{id}`: every tenant role gets 405. (They
+  were refusal stubs answering 403 until the route audit removed them.) An organization's admin used to be able to edit or delete a CVE that
   every other organization's findings point to. A platform-operator editor, if
   one is ever needed, belongs under the admin realm (`/api/v1/admin`).
 - **Components** (`ComponentRepository.Upsert`): `ON CONFLICT (purl) DO
@@ -115,7 +115,7 @@ found these, now closed:
 
 | Data | Was | Now |
 |---|---|---|
-| Threat-intel feed sync (`threat_intel_sync_status`, `epss_scores`, `kev_catalog`) | `POST /threat-intel/sync` and `PATCH /threat-intel/sync/{source}` let any organization's admin run the sync or switch EPSS/KEV off for everyone | 403 for tenants; the platform administrator uses `GET/POST /api/v1/admin/threat-intel/sync` and `PATCH /api/v1/admin/threat-intel/sync/{source}` (ops_admin+, audited `threat_intel.sync` / `threat_intel.sync_toggle`) |
+| Threat-intel feed sync (`threat_intel_sync_status`, `epss_scores`, `kev_catalog`) | `POST /threat-intel/sync` and `PATCH /threat-intel/sync/{source}` let any organization's admin run the sync or switch EPSS/KEV off for everyone | no tenant write route (405); the platform administrator uses `GET/POST /api/v1/admin/threat-intel/sync` and `PATCH /api/v1/admin/threat-intel/sync/{source}` (ops_admin+, audited `threat_intel.sync` / `threat_intel.sync_toggle`) |
 | System pipeline templates (`pipeline_templates.is_system_template`, e.g. Quick Scan) | readable by every tenant (so it can clone them), but `DELETE /pipelines/{id}` and the step add/update/delete routes did not check `is_system_template`: a tenant could edit the Quick Scan step or delete the template, cascading to every tenant's runs of it | 403 (`getWritableTemplate`); clone it to change it |
 | Other tenants' pipelines on tool deactivation | deactivating or deleting a tenant's custom tool deactivated every active pipeline, in any tenant, with a step using a tool of that name (names are unique per tenant, so a custom tool named `nuclei` hit everyone) | only the tool's own tenant's pipelines (`FindPipelineIDsByToolName` is tenant-scoped) |
 

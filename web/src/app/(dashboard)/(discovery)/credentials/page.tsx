@@ -69,6 +69,7 @@ import { useUrlFilter } from '@/hooks/use-url-param'
 import { useDebounce } from '@/hooks/use-debounce'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { normalizeSeverity } from '@/lib/severity'
 
 // Filter types
 type StatusFilter = Status | 'all'
@@ -207,6 +208,7 @@ export default function CredentialsPage() {
       high: 0,
       medium: 0,
       low: 0,
+      info: 0,
     }
     for (const c of items) {
       if (c.state === 'active') derived.active += 1
@@ -214,10 +216,8 @@ export default function CredentialsPage() {
       else if (c.state === 'accepted') derived.accepted += 1
       else if (c.state === 'false_positive') derived.falsePositive += 1
 
-      if (c.severity === 'critical') derived.critical += 1
-      else if (c.severity === 'high') derived.high += 1
-      else if (c.severity === 'medium') derived.medium += 1
-      else if (c.severity === 'low') derived.low += 1
+      const sev = normalizeSeverity(c.severity)
+      if (sev) derived[sev] += 1
     }
     return derived
   }, [allCredentialsResponse])

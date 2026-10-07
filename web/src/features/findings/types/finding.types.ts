@@ -6,6 +6,7 @@
 
 import type { Severity } from '@/features/shared/types'
 import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
+import type { CriticalityLevel } from '@/lib/criticality'
 
 // ============================================
 // FINDING STATUS (Workflow-based)
@@ -368,7 +369,8 @@ export interface AffectedAsset {
   type: AssetType
   name: string
   url?: string
-  criticality?: Severity
+  /** The asset's business criticality (none = Not rated). */
+  criticality?: CriticalityLevel
   /** public | restricted | private | isolated | unknown (detail page only). */
   exposure?: string
   isInternetAccessible?: boolean
