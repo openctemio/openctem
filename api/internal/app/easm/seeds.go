@@ -11,7 +11,16 @@ package easm
 //     never accepted from the client;
 //   - a seed's value is normalized and validated per kind
 //     (pkg/domain/easmseed): public suffixes and providers' shared domains
-//     are refused, so a seed cannot claim other organizations' names.
+//     are refused, so a seed cannot claim other organizations' names;
+//   - a seed authorizes active (T1) probes of every name at or under it and
+//     confirms them into the inventory, so adding one widens scope. A NEW
+//     seed is therefore created as the scope entry "*.<domain>" through the
+//     scope entry path (scope.Service.CreateTarget, RFC-054 §6.1): it needs
+//     attack_surface:scope:approve, step-up, the organization's approval
+//     count and the platform guardrails, notifies every administrator and is
+//     audited as a scope entry. A member cannot add one; members request
+//     one-off entries instead. Existing seed rows keep working until they
+//     are folded into scope entries.
 
 import (
 	"context"
@@ -21,7 +30,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -44,17 +55,27 @@ type VerifiedDomains interface {
 	VerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 }
 
+// SeedEntries creates scope entries through the guarded widening path
+// (*scope.Service).
+type SeedEntries interface {
+	CreateTarget(ctx context.Context, input scope.CreateTargetInput) (*scopedom.Target, error)
+}
+
 // SeedService manages seeds.
 type SeedService struct {
 	store    SeedStore
 	verified VerifiedDomains
-	now      func() time.Time
+	entries  SeedEntries
 }
+
+// SetEntries wires the scope entry path new seeds are created through.
+// Without it adding a seed is refused (fail closed).
+func (s *SeedService) SetEntries(e SeedEntries) { s.entries = e }
 
 // NewSeedService creates the service. A nil verifier reports every seed
 // unverified.
 func NewSeedService(store SeedStore, verified VerifiedDomains) *SeedService {
-	return &SeedService{store: store, verified: verified, now: func() time.Time { return time.Now().UTC() }}
+	return &SeedService{store: store, verified: verified}
 }
 
 // SeedView is a seed with its computed verification.
@@ -89,7 +110,9 @@ type CreateSeedInput struct {
 	// Attested must be true: the caller states the organization is
 	// authorized to have this seed discovered and checked.
 	Attested bool
-	ActorID  string
+	// Actor is the caller and whether they hold
+	// attack_surface:scope:approve. Adding a seed is never a system change.
+	Actor scope.Actor
 }
 
 // List returns the tenant's seeds, sorted by kind then value.
@@ -115,8 +138,12 @@ func (s *SeedService) List(ctx context.Context, tenantID shared.ID) ([]SeedView,
 	return out, nil
 }
 
-// Create validates and stores a seed.
-func (s *SeedService) Create(ctx context.Context, tenantID shared.ID, in CreateSeedInput) (*SeedView, error) {
+// Create validates a new root-domain seed and adds it as the permanent scope
+// entry "*.<domain>" through the scope entry path: approvers only, with
+// step-up, the organization's approval count (the entry may be pending),
+// the platform guardrails and an administrator notification. Discovery runs
+// from the entry once it is in effect.
+func (s *SeedService) Create(ctx context.Context, tenantID shared.ID, in CreateSeedInput) (*scopedom.Target, error) {
 	if !in.Attested {
 		return nil, fmt.Errorf("%w: confirm that the organization is authorized to have this seed discovered (attested)", shared.ErrValidation)
 	}
@@ -129,59 +156,62 @@ func (s *SeedService) Create(ctx context.Context, tenantID shared.ID, in CreateS
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", shared.ErrValidation, strings.TrimPrefix(err.Error(), easmseed.ErrInvalid.Error()+": "))
 	}
-	n, err := s.store.CountSeeds(ctx, tenantID)
+	if in.DiscoveryEnabled != nil && !*in.DiscoveryEnabled {
+		return nil, fmt.Errorf("%w: a new seed always discovers; to authorize the domain without discovery, add it as a scope entry", shared.ErrValidation)
+	}
+	// A seed widens scope: approvers only, and never a system change.
+	if in.Actor.UserID == "" || !in.Actor.CanApprove {
+		return nil, ErrSeedNeedsApprover
+	}
+	if s.entries == nil {
+		return nil, fmt.Errorf("seeds are scope entries and the scope entry path is not configured; nothing added")
+	}
+	// A root domain at or under one of the tenant's existing seeds adds
+	// nothing: it is already covered (research/22 P0-13, 22c B9).
+	existing, err := s.store.ListSeeds(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if n >= easmseed.MaxPerTenant {
-		return nil, fmt.Errorf("%w: at most %d seeds per organization", shared.ErrValidation, easmseed.MaxPerTenant)
-	}
-	// A root domain under one of the tenant's root-domain seeds adds nothing:
-	// discovery already covers it (research/22 P0-13, 22c B9).
-	if kind == easmseed.KindRootDomain {
-		existing, err := s.store.ListSeeds(ctx, tenantID)
-		if err != nil {
-			return nil, err
+	for _, e := range existing {
+		if e.Kind != easmseed.KindRootDomain {
+			continue
 		}
-		for _, e := range existing {
-			if e.Kind == easmseed.KindRootDomain && strings.HasSuffix(value, "."+e.Value) {
-				return nil, fmt.Errorf("%w: %s is already covered by the seed %s", shared.ErrValidation, value, e.Value)
-			}
+		if e.Value == value {
+			return nil, fmt.Errorf("%w: the seed %s already exists", shared.ErrConflict, value)
+		}
+		if strings.HasSuffix(value, "."+e.Value) {
+			return nil, fmt.Errorf("%w: %s is already covered by the seed %s", shared.ErrValidation, value, e.Value)
 		}
 	}
-	discovery := true
-	if in.DiscoveryEnabled != nil {
-		discovery = *in.DiscoveryEnabled
-	}
-	now := s.now()
-	sd := easmseed.Seed{
-		ID: shared.NewID(), TenantID: tenantID, Kind: kind, Value: value, Label: label,
-		DiscoveryEnabled: discovery, AttestedAt: now, CreatedAt: now, UpdatedAt: now,
-	}
-	if actor, err := shared.IDFromString(in.ActorID); err == nil {
-		sd.AttestedBy, sd.CreatedBy = &actor, &actor
-	}
-	if err := s.store.CreateSeed(ctx, sd); err != nil {
-		return nil, err
-	}
-	verified, err := s.verifiedNames(ctx, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	v := view(sd, verified)
-	return &v, nil
+	return s.entries.CreateTarget(ctx, scope.CreateTargetInput{
+		TenantID:    tenantID.String(),
+		TargetType:  string(scopedom.TargetTypeDomain),
+		Pattern:     "*." + value,
+		Description: label,
+		Reason:      "Root-domain seed " + value + ": the requester attested that the organization is authorized to have it discovered and checked",
+		CreatedBy:   in.Actor.UserID,
+		Actor:       in.Actor,
+	})
 }
 
-// Update changes a seed's label and discovery switch.
-func (s *SeedService) Update(ctx context.Context, tenantID, id shared.ID, label *string, discovery *bool) (*SeedView, error) {
+// ErrSeedNeedsApprover refuses a seed from a caller without
+// attack_surface:scope:approve (403, the scope entry code).
+var ErrSeedNeedsApprover = shared.NewDomainError(scope.ErrWideningNeedsApprove.Code,
+	"a seed authorizes active checks of every name under it, so only a scope approver can add it; ask an administrator, or request a one-off scope entry for a single name",
+	shared.ErrForbidden)
+
+// Update changes a seed's label and discovery switch. turnedOn reports a
+// discovery switch that went from off to on, a widening the caller announces
+// to the administrators.
+func (s *SeedService) Update(ctx context.Context, tenantID, id shared.ID, label *string, discovery *bool) (v *SeedView, turnedOn bool, err error) {
 	cur, err := s.find(ctx, tenantID, id)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	newLabel, newDiscovery := cur.Label, cur.DiscoveryEnabled
+	newLabel, newDiscovery, wasOn := cur.Label, cur.DiscoveryEnabled, cur.DiscoveryEnabled
 	if label != nil {
 		if newLabel, err = easmseed.CleanLabel(*label); err != nil {
-			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, strings.TrimPrefix(err.Error(), easmseed.ErrInvalid.Error()+": "))
+			return nil, false, fmt.Errorf("%w: %s", shared.ErrValidation, strings.TrimPrefix(err.Error(), easmseed.ErrInvalid.Error()+": "))
 		}
 	}
 	if discovery != nil {
@@ -189,14 +219,14 @@ func (s *SeedService) Update(ctx context.Context, tenantID, id shared.ID, label 
 	}
 	sd, err := s.store.UpdateSeed(ctx, tenantID, id, newLabel, newDiscovery)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	verified, err := s.verifiedNames(ctx, tenantID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	v := view(*sd, verified)
-	return &v, nil
+	out := view(*sd, verified)
+	return &out, newDiscovery && !wasOn, nil
 }
 
 // Delete removes a seed and returns it (for the audit record).
