@@ -443,33 +443,12 @@ func findParentDomain(subdomainName string, domainMap map[string]*assetdom.Asset
 	return nil
 }
 
-// getResolvedIP extracts the resolved_ip property from an asset.
+// getResolvedIP returns the first address a domain resolves to
+// (ip_addresses and its synonyms), or "".
 func getResolvedIP(a *assetdom.Asset) string {
-	props := a.Properties()
-
-	// Check resolved_ip property
-	if ip, ok := props["resolved_ip"]; ok {
-		if ipStr, ok := ip.(string); ok && ipStr != "" {
-			return ipStr
-		}
+	if ips := assetdom.IPAddresses(a.Properties()); len(ips) > 0 {
+		return ips[0]
 	}
-
-	// Check resolved_ips (array — take the first)
-	if ips, ok := props["resolved_ips"]; ok {
-		switch v := ips.(type) {
-		case []any:
-			if len(v) > 0 {
-				if ipStr, ok := v[0].(string); ok {
-					return ipStr
-				}
-			}
-		case []string:
-			if len(v) > 0 {
-				return v[0]
-			}
-		}
-	}
-
 	return ""
 }
 

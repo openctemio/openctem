@@ -5,6 +5,7 @@
  */
 
 import type { AssetGroup } from '../types'
+import { SEVERITY_LEVELS } from '@/lib/severity'
 
 // Helper to generate dates
 const daysAgo = (days: number) => {
@@ -308,7 +309,7 @@ export const getFindingsByGroupId = (groupId: string): GroupFinding[] => {
   if (!group) return []
 
   const findings: GroupFinding[] = []
-  const severities: GroupFinding['severity'][] = ['critical', 'high', 'medium', 'low', 'info']
+  const severities: GroupFinding['severity'][] = [...SEVERITY_LEVELS]
   const statuses: GroupFinding['status'][] = ['open', 'in_progress', 'resolved']
 
   const findingTitles = [

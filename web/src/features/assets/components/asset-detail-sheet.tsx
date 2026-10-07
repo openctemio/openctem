@@ -382,7 +382,13 @@ export function AssetDetailSheet<T extends Asset>({
               </DetailSection>
             )}
 
-            {renderProperties && <PropertiesSection properties={asset.metadata} />}
+            {renderProperties && (
+              <PropertiesSection
+                properties={asset.metadata}
+                type={asset.type}
+                subType={asset.subType}
+              />
+            )}
 
             {shouldShowRelationshipPreview && (
               <RelationshipPreview

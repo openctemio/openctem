@@ -30,7 +30,7 @@ var baselinePermissionRow = regexp.MustCompile(`^INSERT INTO public\.permissions
 // permissions. A new permission-seeding migration MUST be added here (every
 // listed file must exist, so a typo fails loudly).
 var permSeedMigrations = []string{
-	"001166_scope_entries.up.sql", // attack_surface:scope:approve (RFC-054)
+	"001198_scope_entries.up.sql", // attack_surface:scope:approve (RFC-054)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
@@ -41,7 +41,10 @@ var permRenameMigrations = []string{}
 // permRemoveMigrations delete permission ids. Each lists the removed ids as
 // one-column VALUES rows ('id'), which tupleID parses; they are applied, in
 // order, after the renames.
-var permRemoveMigrations = []string{}
+var permRemoveMigrations = []string{
+	"001179_drop_tenant_tools_delete_permission.up.sql",
+	"001184_drop_vulnerability_write_permissions.up.sql",
+}
 
 var renameRow = regexp.MustCompile(`^\s*\(\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'\s*,\s*'([a-z][a-z0-9_]*(?::[a-z0-9_]+)+)'`)
 

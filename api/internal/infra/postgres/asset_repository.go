@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -269,16 +270,13 @@ func (r *AssetRepository) GetByName(ctx context.Context, tenantID shared.ID, nam
 	return r.scanAsset(row, shared.ID{})
 }
 
-// FindByIP finds an existing asset that matches the given IP address.
-// Searches: name, properties->>'ip', properties->'ip_address'->>'address',
-// and properties->'ip_addresses' array (host with multiple IPs).
+// FindByIP finds an existing asset that matches the given IP address: its
+// name, or an address its properties record (addressPredicate).
 // Returns nil (no error) if no match found.
 func (r *AssetRepository) FindByIP(ctx context.Context, tenantID shared.ID, ip string) (*asset.Asset, error) {
 	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
 		a.name = $2
-		OR a.properties->>'ip' = $2
-		OR a.properties->'ip_address'->>'address' = $2
-		OR a.properties->'ip_addresses' ? $2
+		OR ` + addressPredicate("$2", false) + `
 	) LIMIT 1`
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), ip)
@@ -326,9 +324,7 @@ func (r *AssetRepository) FindByIPs(ctx context.Context, tenantID shared.ID, ips
 		AND a.asset_type IN ('host', 'ip_address')
 		AND (
 			a.name = ANY($2)
-			OR a.properties->>'ip' = ANY($2)
-			OR a.properties->'ip_address'->>'address' = ANY($2)
-			OR a.properties->'ip_addresses' ?| $2
+			OR ` + addressPredicate("$2", true) + `
 		)`
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(ips))
@@ -356,38 +352,29 @@ func (r *AssetRepository) FindByIPs(ctx context.Context, tenantID shared.ID, ips
 	return result, nil
 }
 
-// assetMatchesIP checks if an asset contains the given IP.
+// assetMatchesIP checks if an asset is named by, or records, the given IP.
 func assetMatchesIP(a *asset.Asset, ip string) bool {
-	if a.Name() == ip {
-		return true
+	return a.Name() == ip || slices.Contains(asset.IPAddresses(a.Properties()), ip)
+}
+
+// addressPredicate is the SQL condition "the row records an address of
+// param" over ip_addresses and every synonym of it (asset.AddressPropertyKeys:
+// rows written before the property normalisation still hold them). jsonb ?
+// and ?| match a string value and an array element alike; an object holds
+// its address under "address" (the CTIS technical ip_address block). The
+// keys come from the generated registry, never from input.
+func addressPredicate(param string, anyOf bool) string {
+	op, eq := "?", "= "+param
+	if anyOf {
+		op, eq = "?|", "= ANY("+param+")"
 	}
-	props := a.Properties()
-	if props == nil {
-		return false
+	parts := make([]string, 0, 2*len(asset.AddressPropertyKeys()))
+	for _, k := range asset.AddressPropertyKeys() {
+		parts = append(parts,
+			fmt.Sprintf("a.properties->'%s' %s %s", k, op, param),
+			fmt.Sprintf("a.properties->'%s'->>'address' %s", k, eq))
 	}
-	if v, ok := props["ip"].(string); ok && v == ip {
-		return true
-	}
-	if ipAddr, ok := props["ip_address"].(map[string]any); ok {
-		if addr, ok := ipAddr["address"].(string); ok && addr == ip {
-			return true
-		}
-	}
-	if ips, ok := props["ip_addresses"].([]any); ok {
-		for _, v := range ips {
-			if s, ok := v.(string); ok && s == ip {
-				return true
-			}
-		}
-	}
-	if ips, ok := props["ip_addresses"].([]string); ok {
-		for _, s := range ips {
-			if s == ip {
-				return true
-			}
-		}
-	}
-	return false
+	return "(" + strings.Join(parts, " OR ") + ")"
 }
 
 // FindRepositoryByRepoName finds a repository asset whose name ends with the given repo name.
@@ -477,7 +464,7 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'high') as finding_high,
 				COUNT(*) FILTER (WHERE f.severity = 'medium') as finding_medium,
 				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
-				COUNT(*) FILTER (WHERE f.severity = 'info') as finding_info
+				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info
 			FROM findings f
 			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only
 		) fc ON true
@@ -2361,9 +2348,14 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 	return facets, nil
 }
 
-// formatPropertyLabel converts snake_case or camelCase key to Title Case label.
+// formatPropertyLabel is the facet label of a property key: the property
+// schema's label (RFC-042 §6.3.9), the same one the asset detail shows; for
+// a key outside the schema, the key in Title Case.
 // Handles: snake_case, camelCase, PascalCase, ALLCAPS, and mixtures.
 func formatPropertyLabel(key string) string {
+	if p, ok := asset.LookupProperty(key); ok {
+		return p.Label
+	}
 	// Step 1: insert space before uppercase letters in camelCase/PascalCase
 	// but NOT between consecutive uppercase (e.g., "BIOS" stays "BIOS")
 	var b strings.Builder

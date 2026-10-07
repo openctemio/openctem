@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
@@ -42,6 +43,18 @@ type StepTool struct {
 	// step the catalog cannot place (a tenant tool), which never chains.
 	Stage    stage.Stage
 	HasStage bool
+	// Candidates are the tools the step could run, in the order tried
+	// (the pin alone for a pinned step).
+	Candidates []string
+}
+
+// Capability is the versioned capability the step runs ("scan.ports@1"),
+// empty for a step the catalog cannot place.
+func (t StepTool) Capability() string {
+	if !t.HasStage {
+		return ""
+	}
+	return t.Stage.ID()
 }
 
 // StepToolLookup is the slice of the tool registry the planner reads.
@@ -56,8 +69,11 @@ type StepToolLookup interface {
 //     active is the caller's strict check, as before);
 //   - a step that names a catalog capability (a stage key such as
 //     "scan.ports", or a word that names one stage, such as "portscan") runs
-//     the first active platform implementation of that stage, the default
-//     first; none active is NO_MATCHING_TOOL;
+//     the first active platform implementation of that stage that accepts
+//     the step's standard params: in the step's prefer_tools order when it
+//     has one, else the catalog order, the default first. A tool that does
+//     not take a param the step sets is skipped, never handed the step with
+//     that value dropped. None left is NO_MATCHING_TOOL, with the reasons;
 //   - capabilities that name more than one stage are refused
 //     (STEP_CAPABILITY_AMBIGUOUS), never guessed;
 //   - capabilities the catalog does not know fall back to the tenant's
@@ -72,7 +88,7 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 	}
 	if name := strings.TrimSpace(step.Tool); name != "" {
 		st, ok := stage.ForStep(name, step.Capabilities)
-		return StepTool{Name: name, Pinned: true, Stage: st, HasStage: ok}, nil
+		return StepTool{Name: name, Pinned: true, Stage: st, HasStage: ok, Candidates: []string{name}}, nil
 	}
 	if len(step.Capabilities) == 0 {
 		return StepTool{}, shared.NewDomainError(codeStepInvalid,
@@ -85,7 +101,13 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 	st, err := stage.ForCapabilities(step.Capabilities)
 	switch {
 	case err == nil:
-		for _, name := range st.Tools() {
+		candidates := stepCandidates(st, step)
+		var skipped []string
+		for _, name := range candidates {
+			if missing := stage.UnsupportedParams(st, name, step.Config); len(missing) > 0 {
+				skipped = append(skipped, fmt.Sprintf("%s does not take %s", name, strings.Join(missing, ", ")))
+				continue
+			}
 			t, lerr := tools.GetPlatformToolByName(ctx, name)
 			if lerr != nil {
 				if errors.Is(lerr, shared.ErrNotFound) {
@@ -94,12 +116,16 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 				return StepTool{}, fmt.Errorf("step %s: look up tool %q: %w", step.StepKey, name, lerr)
 			}
 			if usableScanner(t) {
-				return StepTool{Name: t.Name, Stage: st, HasStage: true}, nil
+				return StepTool{Name: t.Name, Stage: st, HasStage: true, Candidates: candidates}, nil
 			}
 		}
+		reason := ""
+		if len(skipped) > 0 {
+			reason = " (" + strings.Join(skipped, "; ") + ")"
+		}
 		return StepTool{}, shared.NewDomainError(codeNoMatchingTool,
-			fmt.Sprintf("No active tool runs '%s' for step '%s' (it can run on %s). Enable one of them or pin a tool.",
-				st.Key, step.StepKey, strings.Join(st.Tools(), ", ")),
+			fmt.Sprintf("No active tool runs '%s' for step '%s' (it can run on %s)%s. Enable one of them, change the settings or pin a tool.",
+				st.Key, step.StepKey, strings.Join(candidates, ", "), reason),
 			shared.ErrValidation)
 	case errors.Is(err, stage.ErrAmbiguousCapability):
 		return StepTool{}, shared.NewDomainError(codeStepCapabilityUnsure,
@@ -119,16 +145,37 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 	return StepTool{Name: t.Name}, nil
 }
 
+// stepCandidates are the tools a capability step may run, in the order
+// tried: its prefer_tools (those that implement the capability) or the
+// catalog order, the default first.
+func stepCandidates(st stage.Stage, step *pipeline.Step) []string {
+	if len(step.PreferTools) == 0 {
+		return st.Tools()
+	}
+	out := make([]string, 0, len(step.PreferTools))
+	for _, t := range step.PreferTools {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if st.Implements(t) && !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // usableScanner reports whether a tool can run a dispatched scan step.
 func usableScanner(t *tool.Tool) bool {
 	return t != nil && t.IsActive && !t.IsCollector() && !t.IsConnector()
 }
 
 // WithTool returns a copy of the step that runs the resolved tool, for the
-// checks and payload that read step.Tool.
+// checks and payload that read step.Tool and step.Config: the config is the
+// one that tool receives (its keys for the standard params, its extras).
 func (t StepTool) WithTool(step *pipeline.Step) *pipeline.Step {
 	cp := *step
 	cp.Tool = t.Name
+	if t.HasStage {
+		cp.Config = stage.ToolConfig(t.Stage, t.Name, step.Config, t.Pinned)
+	}
 	return &cp
 }
 
@@ -172,8 +219,20 @@ func StepCommandPayload(run *pipeline.Run, step *pipeline.Step, toolName, stepRu
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
 	}
+	// A capability job (RFC-055): the sensor checks that the tool implements
+	// the capability, checks the output against its contract and stamps it
+	// in the provenance; the platform's grant check applies the
+	// capability's tier floor. The settings stay in config, mapped to the
+	// tool's keys as before, so an older sensor runs the step unchanged.
+	if st, ok := stage.ForStep(toolName, step.Capabilities); ok && stage.TakesCapabilityJobs(st, toolName) {
+		payload[PayloadKeyCapability] = st.ID()
+	}
 	return payload, nil
 }
+
+// PayloadKeyCapability is the command payload key of a capability job's
+// capability ("scan.ports@1"; sdk-go ScanCommandPayload.Capability).
+const PayloadKeyCapability = "capability"
 
 // StepQueuer queues one step of a run on the pipeline service's dispatcher
 // (*pipeline.Service): the one path every step command is created on.

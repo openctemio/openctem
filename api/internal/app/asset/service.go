@@ -375,6 +375,9 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		return nil, err
 	}
 	assetType, subType := resolved.Type, resolved.SubType
+	if err := rejectMisplacedProperties(assetType, subType, input.Properties); err != nil {
+		return nil, err
+	}
 
 	criticality, err := assetdom.ParseCriticality(input.Criticality)
 	if err != nil {
@@ -590,8 +593,6 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 	normalizedProps := make(map[string]any, len(input.Properties))
 	for key, val := range input.Properties {
 		snakeKey := camelToSnakeCase(key)
-		// Merge singular/plural aliases to canonical plural form
-		snakeKey = normalizePropertyAlias(snakeKey)
 		// If both camelCase and snake_case exist, prefer the snake_case value
 		if snakeKey != key {
 			if _, exists := normalizedProps[snakeKey]; exists {
@@ -600,15 +601,17 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 		}
 		normalizedProps[snakeKey] = val
 	}
-	input.Properties = normalizedProps
+	// One key per concept (RFC-042 §6.3.9): synonyms (ip, resolved_ips,
+	// nameserver, technology, san, ...) fold into their canonical key.
+	input.Properties = assetdom.NormalizeProperties(normalizedProps)
 
 	// Extract DNS fields from nested domain.dns_records → flat properties
 	// Collector sends: {"domain": {"dns_records": [{"type":"A","value":"1.2.3.4","ttl":300}]}}
-	// UI reads flat: record_type, resolved_ip, cname_target, ttl, dns_record_types, resolved_ips
+	// UI reads flat: record_type, cname_target, ttl, dns_record_types, and the
+	// A/AAAA values in ip_addresses
 	if domainObj, ok := input.Properties["domain"].(map[string]any); ok {
 		if records, ok := domainObj["dns_records"].([]any); ok && len(records) > 0 {
 			var recordTypes []string
-			var resolvedIPs []string
 			for _, r := range records {
 				rec, ok := r.(map[string]any)
 				if !ok {
@@ -620,7 +623,7 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 					recordTypes = append(recordTypes, recType)
 				}
 				if recValue != "" && (recType == "A" || recType == "AAAA") {
-					resolvedIPs = append(resolvedIPs, recValue)
+					assetdom.AddIPAddress(input.Properties, recValue)
 				}
 			}
 			// First record as primary
@@ -629,10 +632,7 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 					input.Properties["record_type"] = rt
 				}
 				if rv, _ := first["value"].(string); rv != "" {
-					rt, _ := first["type"].(string)
-					if rt == "A" || rt == "AAAA" {
-						input.Properties["resolved_ip"] = rv
-					} else if rt == "CNAME" {
+					if rt, _ := first["type"].(string); rt == "CNAME" {
 						input.Properties["cname_target"] = rv
 					}
 				}
@@ -643,9 +643,6 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 			// Aggregates
 			if len(recordTypes) > 0 {
 				input.Properties["dns_record_types"] = strings.Join(unique(recordTypes), ", ")
-			}
-			if len(resolvedIPs) > 0 {
-				input.Properties["resolved_ips"] = strings.Join(unique(resolvedIPs), ", ")
 			}
 			input.Properties["dns_record_count"] = len(records)
 		}
@@ -711,23 +708,6 @@ func camelToSnakeCase(s string) string {
 		}
 	}
 	return string(result)
-}
-
-// propertyAliases maps singular/legacy property keys to their canonical plural form.
-// This prevents duplicate facets like "nameserver" vs "nameservers".
-var propertyAliases = map[string]string{
-	"nameserver":  "nameservers",
-	"technology":  "technologies",
-	"san":         "sans",
-	"resolved_ip": "resolved_ips",
-}
-
-// normalizePropertyAlias maps known singular keys to their canonical plural form.
-func normalizePropertyAlias(key string) string {
-	if canonical, ok := propertyAliases[key]; ok {
-		return canonical
-	}
-	return key
 }
 
 // unique returns a deduplicated copy of a string slice, preserving order.
@@ -1011,6 +991,9 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		if err := stripUnchangedReservedProperties(input.Properties, a.Properties()); err != nil {
 			return nil, err
 		}
+		if err := rejectMisplacedProperties(a.Type(), a.SubType(), input.Properties); err != nil {
+			return nil, err
+		}
 	}
 
 	oldName := a.Name()
@@ -1121,7 +1104,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		for k, v := range input.Properties {
 			merged[k] = v
 		}
-		a.SetProperties(merged)
+		a.SetProperties(assetdom.NormalizeProperties(merged))
 	}
 
 	// Recalculate risk score after updates using the asset's effective
