@@ -210,7 +210,7 @@ reopened.
 A retest attempt is a run of kind `retest`: `GET /findings/{id}/retests`
 returns, per attempt, `run_kind: "retest"`, the `check_command_id` (and the
 validate path's `reach_command_id`) and the `sensor_id` that claimed the
-check (stored on the retest when it settles, migration 001240), so a runs
+check (stored on the retest when it settles, migration 001242), so a runs
 view can link finding, command and sensor.
 
 ## Evidence
