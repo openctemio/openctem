@@ -71,9 +71,10 @@ func TestWfExec_CanceledRunStartsNoFurtherStep(t *testing.T) {
 	workflowRepo := newWfExecMockWorkflowRepo()
 	runRepo := &cancelableRunRepo{wfExecMockRunRepo: newWfExecMockRunRepo()}
 	nodeRunRepo := newWfExecMockNodeRunRepo()
-	executor := workflowsvc.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, logger.NewNop())
+	executor := workflowsvc.NewWorkflowExecutor(workflowRepo, runRepo, nodeRunRepo, logger.NewNop(),
+		workflowsvc.WithExecutorStepAuthorizer(wfExecAllowAll{}))
 	handler := &cancelingHandler{repo: runRepo}
-	executor.RegisterActionHandler(workflow.ActionTypeHTTPRequest, handler)
+	executor.RegisterActionHandler(workflow.ActionTypeAddTags, handler)
 
 	wf := wfExecBuildLinearWorkflow(tenantID)
 	_ = workflowRepo.Create(context.Background(), wf)
