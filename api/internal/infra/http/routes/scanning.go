@@ -479,6 +479,8 @@ func registerScanRoutes(
 		r.GET("/sensor-opt-in-impact", h.SensorOptInImpact, middleware.Require(permission.ScansRead))
 		// Next occurrences of a schedule (stateless; the wizard and the scan page)
 		r.POST("/schedule-preview", h.PreviewSchedule, middleware.Require(permission.ScansRead))
+		// What a workflow scan would do, before it is saved or started
+		r.POST("/workflow-preview", h.PreviewWorkflow, middleware.Require(permission.ScansWrite))
 		// Quick scan (consolidated from /quick-scan)
 		if triggerRateLimiter != nil {
 			r.POST("/quick", h.QuickScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute), triggerRateLimiter.QuickScanMiddleware())

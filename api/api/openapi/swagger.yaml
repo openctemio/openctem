@@ -3581,6 +3581,69 @@ definitions:
       zone_name:
         type: string
     type: object
+  github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreview:
+    properties:
+      blocking:
+        description: 'Blocking: a trigger with these settings would be refused.'
+        type: boolean
+      freeze:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewFreeze'
+      nodes:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewNode'
+        type: array
+      targets:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.ZoneRoutingPreview'
+    type: object
+  github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewAvailability:
+    properties:
+      sensors_excluded:
+        type: integer
+      sensors_online:
+        type: integer
+      sensors_total:
+        type: integer
+      status:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewFreeze:
+    properties:
+      until:
+        type: string
+      window:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewNode:
+    properties:
+      availability:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreviewAvailability'
+        description: |-
+          Availability is the tool's sensor status (ready, offline_only,
+          no_sensor, ...) with the counts behind it; nil when unknown.
+      blocking:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.PreviewError'
+        description: Blocking is what the trigger would refuse this step with.
+      candidates:
+        items:
+          type: string
+        type: array
+      capability:
+        type: string
+      name:
+        type: string
+      pinned:
+        type: boolean
+      step_key:
+        type: string
+      tier:
+        type: string
+      tool:
+        description: Tool is the tool the planner picks now; Pinned when the step
+          names it.
+        type: string
+    type: object
   github_com_openctemio_openctem_api_internal_app_scan.ZoneRoutingPreview:
     properties:
       error:
@@ -17263,6 +17326,25 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  internal_infra_http_handler.WorkflowPreviewRequest:
+    properties:
+      asset_group_ids:
+        items:
+          type: string
+        maxItems: 20
+        type: array
+      pipeline_id:
+        type: string
+      scan_zone_id:
+        type: string
+      targets:
+        items:
+          type: string
+        maxItems: 1000
+        type: array
+    required:
+    - pipeline_id
     type: object
   internal_infra_http_handler.remediationGroupsResponse:
     properties:
@@ -34404,6 +34486,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Get scan statistics
+      tags:
+      - Scans
+  /scans/workflow-preview:
+    post:
+      consumes:
+      - application/json
+      description: 'What a workflow scan would do, before it is saved or started:
+        per step the capability, tier, the tool the planner picks and whether an online
+        sensor may run it; the targets (zone routing, scope exclusions; at most 20
+        samples); an active freeze window. Computed with the trigger''s code; creates
+        nothing. `blocking` is true when a trigger with these settings would be refused.'
+      parameters:
+      - description: Workflow and targets
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.WorkflowPreviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scan.WorkflowPreview'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: workflow, scan zone or asset group not in this tenant
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Preview a workflow scan
       tags:
       - Scans
   /scope/check:
