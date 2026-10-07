@@ -23,6 +23,8 @@ export {
   ScopeCheckList,
   ScopeCheckRow,
   ScopeFixButtons,
+  ScopeRefusalPanel,
+  scopeRefusalSummary,
   refusedFromError,
   viaText,
   type ScopeRefusal,

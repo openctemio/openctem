@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -324,7 +326,9 @@ func ParseTarget(raw string) Target {
 	if p, err := netip.ParsePrefix(s); err == nil {
 		return Target{IsAddr: true, Prefix: unmapPrefix(p).Masked()}
 	}
-	if h, _, err := net.SplitHostPort(s); err == nil {
+	if h, _, _, ok := asset.SplitServiceName(s); ok {
+		s = h // a service in any name form routes by its host
+	} else if h, _, err := net.SplitHostPort(s); err == nil {
 		s = h
 	}
 	s = strings.Trim(s, "[]")
