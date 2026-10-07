@@ -42,6 +42,10 @@ var ErrRunnerOutdated = errors.New("ci runner older than the minimum supported v
 // ErrExchangeRefused, audited).
 var errPipelineRate = errors.New("pipeline run rate exceeded")
 
+// errAggregateNoRunID: an aggregate exchange whose token names no pipeline
+// run (the key every job of the run shares).
+var errAggregateNoRunID = errors.New("aggregate exchange without a pipeline run id")
+
 // ErrReportOutOfScope refuses a report that names an asset other than the
 // run's repository.
 var ErrReportOutOfScope = fmt.Errorf("%w: a CI run reports only on its own repository", shared.ErrValidation)
@@ -188,6 +192,11 @@ type ExchangeInput struct {
 	// the same repository, commit and pipeline run, before the run was
 	// evaluated and within MaxRunContinuation of its start.
 	RunID string
+	// Aggregate asks to join the run shared by every job of the same
+	// pipeline run (same pipeline, external run id, attempt and commit,
+	// all from the verified token), opening it for the first job. Each
+	// job gets its own upload token for it.
+	Aggregate bool
 	// Hints are what the job reports about itself, used only for what its
 	// provider's token does not sign (cirun.Hints): the commit on CircleCI
 	// (and Bitbucket or Jenkins tokens without one), the repository name on
@@ -207,6 +216,10 @@ type ExchangeOutput struct {
 	Run       *cirun.Run
 	Token     string
 	ExpiresAt time.Time
+	// JobID is the CI job the token was issued to (verified claim).
+	JobID string
+	// Joined: the job joined an aggregate run another job had opened.
+	Joined bool
 }
 
 // Exchange verifies a CI job's OIDC token against the tenant's trust
@@ -288,7 +301,12 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 				Detail: "the token does not belong to the run it asked to continue"}})
 		}
 	} else {
-		out, err = s.createRun(ctx, tenantID, cfg, claims, key, in.UserAgent)
+		out, err = s.createRun(ctx, tenantID, cfg, claims, key, in.UserAgent, in.Aggregate)
+		if errors.Is(err, errAggregateNoRunID) {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "aggregate_no_run_id",
+				Detail: "the token names no pipeline run, so it cannot join an aggregate run"}})
+			return nil, ErrExchangeRefused
+		}
 		if errors.Is(err, errPipelineRate) {
 			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "pipeline_rate",
 				Detail: fmt.Sprintf("the pipeline started %d or more runs in the last hour", cirun.MaxPipelineRunsPerHour)}})
@@ -388,7 +406,10 @@ func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Cl
 }
 
 func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims,
-	key cirun.PipelineKey, userAgent string) (*ExchangeOutput, error) {
+	key cirun.PipelineKey, userAgent string, aggregate bool) (*ExchangeOutput, error) {
+	if aggregate && strings.TrimSpace(c.RunID) == "" {
+		return nil, errAggregateNoRunID
+	}
 	repoName := c.CanonicalRepository()
 	repoAsset, err := s.repositoryAsset(ctx, tenantID, repoName)
 	if err != nil {
@@ -459,11 +480,43 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
+	if aggregate {
+		return s.joinAggregate(ctx, run, token, hash, expires)
+	}
 	if err := s.repo.CreateRun(ctx, run); err != nil {
 		return nil, fmt.Errorf("create run: %w", err)
 	}
 	s.refreshPipeline(ctx, tenantID, run.PipelineID)
-	return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires}, nil
+	return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires, JobID: run.ExternalJobID}, nil
+}
+
+// joinAggregate opens or joins the aggregate run of the pipeline run that
+// run describes and issues this job its own upload token for it. The run is
+// found by its pipeline, external run id, attempt and commit, all taken
+// from the verified token, so a job can only join a run of its own
+// pipeline run; another job's token keeps working.
+func (s *Service) joinAggregate(ctx context.Context, run *cirun.Run, token string, hash []byte, expires time.Time) (*ExchangeOutput, error) {
+	jobID := run.ExternalJobID
+	run.Aggregate, run.ExternalJobID, run.TokenHash, run.TokenExpiresAt = true, "", nil, nil
+	open, created, err := s.repo.OpenAggregateRun(ctx, run)
+	if errors.Is(err, cirun.ErrRunNotFound) {
+		// The open run was evaluated between the insert and the read: one
+		// more attempt opens the next one.
+		open, created, err = s.repo.OpenAggregateRun(ctx, run)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open aggregate run: %w", err)
+	}
+	if open.Repository != run.Repository || open.Issuer != run.Issuer || open.RepositoryAssetID != run.RepositoryAssetID {
+		return nil, ErrExchangeRefused
+	}
+	if err := s.repo.AddRunToken(ctx, open.TenantID, open.ID, hash, jobID, expires); err != nil {
+		return nil, fmt.Errorf("add run token: %w", err)
+	}
+	if created {
+		s.refreshPipeline(ctx, open.TenantID, open.PipelineID)
+	}
+	return &ExchangeOutput{Run: open, Token: token, ExpiresAt: expires, JobID: jobID, Joined: !created}, nil
 }
 
 // runnerVersion is the sensor version the runner's User-Agent reports
@@ -538,11 +591,19 @@ func (s *Service) continueRun(ctx context.Context, tenantID shared.ID, cfg *ciru
 		return nil, err
 	}
 	expires := now.Add(cirun.TokenTTL)
+	if run.Aggregate {
+		// Another job's token of the run must keep working: add a token
+		// instead of rotating one.
+		if err := s.repo.AddRunToken(ctx, tenantID, run.ID, hash, truncate(c.JobID, 64), expires); err != nil {
+			return nil, fmt.Errorf("add run token: %w", err)
+		}
+		return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires, JobID: truncate(c.JobID, 64)}, nil
+	}
 	if err := s.repo.RotateRunToken(ctx, tenantID, run.ID, hash, expires); err != nil {
 		return nil, fmt.Errorf("rotate run token: %w", err)
 	}
 	run.TokenHash, run.TokenExpiresAt = hash, &expires
-	return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires}, nil
+	return &ExchangeOutput{Run: run, Token: token, ExpiresAt: expires, JobID: run.ExternalJobID}, nil
 }
 
 // repositoryAsset finds the tenant's repository asset by its canonical name
@@ -628,8 +689,10 @@ func (s *Service) auditIssued(ctx context.Context, tenantID shared.ID, in Exchan
 		WithMetadata("actor", r.Actor).
 		WithMetadata("pipeline_run_id", r.ExternalRunID).
 		WithMetadata("run_attempt", r.RunAttempt).
-		WithMetadata("job_id", r.ExternalJobID).
+		WithMetadata("job_id", out.JobID).
 		WithMetadata("continuation", strings.TrimSpace(in.RunID) != "").
+		WithMetadata("aggregate", r.Aggregate).
+		WithMetadata("joined", out.Joined).
 		WithMetadata("pipeline_url", r.PipelineURL).
 		WithMetadata("fork", r.Fork).
 		WithMetadata("token_expires_at", out.ExpiresAt.Format(time.RFC3339))

@@ -38,6 +38,7 @@ ci_gate_overrides
 ci_gate_policies
 ci_pipelines
 ci_run_findings
+ci_run_tokens
 ci_runs
 ci_trust_configs
 command_logs
@@ -66,6 +67,8 @@ finding_activities
 finding_branch_occurrences
 finding_comments
 finding_definitions
+finding_evidence
+finding_evidence_secrets
 finding_fingerprints
 finding_group_assignments
 finding_imports

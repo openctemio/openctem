@@ -3,7 +3,6 @@ package scan
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/netip"
 	"net/url"
 	"strings"
@@ -59,7 +58,11 @@ type resolvedTargets struct {
 	// OutOfScope counts targets left out because the actor may not scan them
 	// (research/15 L-06, D9).
 	OutOfScope int
-	Warnings   []string
+	// TierExceeded counts targets left out because the scope entries
+	// covering them allow a lower tier than the scanner probes at
+	// (RFC-054 §4.2 step 6, tier_ceiling.go).
+	TierExceeded int
+	Warnings     []string
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
@@ -217,6 +220,9 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"%d target(s) were skipped: %s", out.Unconfirmed, ReasonOwnershipNotConfirmed))
 	}
+	if err := s.dropTierExceeded(ctx, sc.TenantID, sc.ScannerName, out); err != nil {
+		return nil, err
+	}
 	if len(out.Targets) > maxResolvedTargets {
 		return nil, fmt.Errorf("%w: scan resolves to %d targets, more than the %d allowed per run",
 			shared.ErrValidation, len(out.Targets), maxResolvedTargets)
@@ -269,10 +275,7 @@ func isInternalTarget(target string) bool {
 	if p, err := netip.ParsePrefix(host); err == nil {
 		return isInternalAddr(p.Addr())
 	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
+	host = asset.HostOf(host)
 	if a, err := netip.ParseAddr(host); err == nil {
 		return isInternalAddr(a)
 	}

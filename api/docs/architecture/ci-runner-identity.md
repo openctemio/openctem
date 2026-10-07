@@ -80,14 +80,22 @@ findings per run.
   `001137`) from the verified claims.
 - `ci_run_findings`: `(run_id, fingerprint)`; the gate joins it to `findings`
   of the run's asset.
+- Aggregate runs (RFC-051 §4.1, migration `001220`): `ci_runs.aggregate`
+  marks the run shared by the parallel capability jobs of one pipeline run
+  (at most one open per pipeline, external run id, attempt and commit:
+  `idx_ci_runs_aggregate_open`). Its upload tokens are in `ci_run_tokens`
+  (`token_hash` primary key, composite FK `(tenant_id, run_id)` to the run,
+  cascade; the job id; expiry), one per job exchange; it keeps none in
+  `ci_runs.token_hash`. Token lookup reads `ci_runs.token_hash` first, then
+  `ci_run_tokens`.
 - `ci_oidc_replay`: `(issuer, jti)`, global. A provider that sends no `jti`
   (Bitbucket, CircleCI, Jenkins) is recorded under `sha256:<token hash>`.
-- `ci_runs.commit_verified` (migration `001240`): false when the provider
+- `ci_runs.commit_verified` (migration `001261`): false when the provider
   signs no commit and the run's commit is the job's report; such a commit
   never matches a break-glass.
 - Providers: `github`, `gitlab`, `azure_devops`, `bitbucket`, `circleci`,
   `jenkins` (the `ci_trust_configs` and `ci_pipelines` CHECKs, migration
-  `001240`).
+  `001261`).
 - `ci_gate_policies`: one per scope. A repository policy names
   `repository_asset_id`, a business-unit policy `business_unit_id`, each a
   composite FK (cascade); the repository's policy follows it on asset merge
@@ -120,6 +128,7 @@ pipeline or a trust configuration and, per tenant, in bounded batches:
 | Data | Kept | Rule |
 |---|---|---|
 | `ci_runs.token_hash` | until the token expired an hour ago | cleared; the run stays |
+| `ci_run_tokens` | until the token expired an hour ago | deleted; the run stays |
 | `ci_run_findings` | 90 days | the fingerprints of older runs are deleted |
 | `ci_runs` | 400 days | older runs are deleted (their fingerprints cascade) |
 

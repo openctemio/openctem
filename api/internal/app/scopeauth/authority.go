@@ -22,10 +22,11 @@ package scopeauth
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/netip"
 	"net/url"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -157,6 +158,56 @@ func (a *Authority) Covers(name string) (Via, bool) {
 	return Via{}, false
 }
 
+// CoversAt is Covers for a probe of the given tier (RFC-054 §4.2 step 6): a
+// scope target covers only when its max_tier is at or above tier; a seed or
+// an easm-purpose verified domain authorizes t1 at most. As in Covers, a
+// domain verified for SSO sign-in never authorizes; it only proves.
+func (a *Authority) CoversAt(name string, tier scopedom.Tier) (Via, bool) {
+	if a == nil {
+		return Via{}, false
+	}
+	host := Host(name)
+	proof := ProofAsserted
+	if host != "" {
+		if _, ok := underAny(host, a.verified); ok {
+			proof = ProofVerified
+		}
+		if tier <= scopedom.TierActive {
+			if r, ok := underAny(host, a.authorizing); ok {
+				return Via{Kind: KindVerifiedDomain, Pattern: r, Proof: ProofVerified}, true
+			}
+			if r, ok := underAny(host, a.seeds); ok {
+				return Via{Kind: KindSeed, Pattern: r, Proof: proof}, true
+			}
+		}
+	}
+	for _, f := range MatchForms(name) {
+		for _, t := range a.targets {
+			if t != nil && t.MaxTier() >= tier && t.Matches(f) {
+				return Via{Kind: KindScopeTarget, ID: t.ID().String(), Pattern: t.Pattern(), Proof: proof}, true
+			}
+		}
+	}
+	return Via{}, false
+}
+
+// Ceiling names the tenant's scope target with the highest max_tier that
+// covers name (nil when none does: a seed or verified domain may still).
+func (a *Authority) Ceiling(name string) *scopedom.Target {
+	if a == nil {
+		return nil
+	}
+	var best *scopedom.Target
+	for _, f := range MatchForms(name) {
+		for _, t := range a.targets {
+			if t != nil && t.Matches(f) && (best == nil || t.MaxTier() > best.MaxTier()) {
+				best = t
+			}
+		}
+	}
+	return best
+}
+
 // Verified reports whether name is at or under one of the tenant's verified
 // domains (the ownership proof RFC-054 §8.1 asks for).
 func (a *Authority) Verified(name string) bool {
@@ -192,20 +243,11 @@ func normalizeRoot(s string) string {
 func Host(s string) string {
 	h := strings.TrimSpace(s)
 	if strings.Contains(h, "://") {
-		u, err := url.Parse(h)
-		if err != nil {
+		if _, err := url.Parse(h); err != nil {
 			return ""
 		}
-		h = u.Hostname()
-	} else {
-		if i := strings.IndexAny(h, "/?#"); i >= 0 {
-			h = h[:i]
-		}
-		if host, _, err := net.SplitHostPort(h); err == nil {
-			h = host
-		}
 	}
-	h = normalizeRoot(h)
+	h = normalizeRoot(asset.HostOf(h))
 	if h == "" || !strings.Contains(h, ".") {
 		return ""
 	}
@@ -233,12 +275,8 @@ func MatchForms(target string) []string {
 		out = append(out, s)
 	}
 	add(strings.ToLower(v))
-	if strings.Contains(v, "://") {
-		if u, err := url.Parse(v); err == nil {
-			add(strings.ToLower(u.Hostname()))
-		}
-	} else if h, _, err := net.SplitHostPort(v); err == nil {
-		add(strings.ToLower(h))
+	if h := asset.HostOf(v); !strings.EqualFold(h, v) {
+		add(h)
 	}
 	return out
 }

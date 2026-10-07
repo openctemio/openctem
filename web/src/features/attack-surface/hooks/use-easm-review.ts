@@ -10,6 +10,8 @@ import type { AttributionDecision, AttributionState } from '@/features/assets/li
 export interface EASMReviewQuery {
   states: AttributionState[]
   search?: string
+  /** The rule that put the names in the queue (RFC-054 §6.6). */
+  reason?: string
   page: number
   perPage: number
 }
@@ -19,6 +21,7 @@ export function reviewQueueURL(q: EASMReviewQuery): string {
   const sp = new URLSearchParams()
   if (q.states.length > 0) sp.set('states', q.states.join(','))
   if (q.search) sp.set('search', q.search)
+  if (q.reason) sp.set('reason', q.reason)
   sp.set('page', String(q.page))
   sp.set('per_page', String(q.perPage))
   return `/api/v1/easm/candidates?${sp.toString()}`
