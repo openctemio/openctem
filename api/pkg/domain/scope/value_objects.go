@@ -269,19 +269,24 @@ func MatchesPattern(targetType TargetType, pattern, value string) bool {
 	}
 }
 
-// matchDomain is the domain test for scope targets and exclusions alike:
+// matchDomain is the domain test for scope targets and exclusions alike
+// (RFC-054 §4.1, owner decision S1):
 //
 //   - "example.com" matches only example.com;
-//   - "*.example.com" matches every subdomain of example.com, at any depth,
-//     and NOT example.com itself (the usual certificate/DNS meaning; the
-//     apex needs its own "example.com" entry);
+//   - "*.example.com" matches example.com itself and every name below it, at
+//     any depth. To cover the subdomains without the apex, add an exclusion
+//     of exactly "example.com" (the more specific rule wins);
 //   - "**.example.com" means the same as "*.example.com".
+//
+// Root-domain seeds, verified domains and the active-scan gate use the same
+// "this domain and everything under it" meaning, so one intent gets one
+// answer everywhere.
 //
 // Both sides are compared case-insensitively, without a trailing dot, and in
 // their IDNA ASCII form, so "*.bücher.example" matches
 // "shop.xn--bcher-kva.example" and the other way round. A value may itself be
 // a wildcard pattern (CheckPatternOverlaps compares patterns): "*.a.x.com" is
-// inside "*.x.com".
+// inside "*.x.com", and "*.x.com" is not inside the exact "x.com".
 func matchDomain(pattern, domain string) bool {
 	pWild, p := splitDomainWildcard(pattern)
 	dWild, d := splitDomainWildcard(domain)
@@ -291,10 +296,7 @@ func matchDomain(pattern, domain string) bool {
 	if !pWild {
 		return !dWild && d == p
 	}
-	if dWild && d == p {
-		return true // "*.x" vs "*.x" / "**.x": the same set
-	}
-	return strings.HasSuffix(d, "."+p)
+	return d == p || strings.HasSuffix(d, "."+p)
 }
 
 // domainIDNA converts a name to its ASCII (punycode) form for comparison.
