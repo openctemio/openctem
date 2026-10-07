@@ -19,6 +19,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -214,6 +216,11 @@ func (g Guardrails) deniedHost(host string) bool {
 func (g Guardrails) Denies(target string) bool {
 	v := strings.TrimSpace(target)
 	if h := urlHost(v); h != "" {
+		v = h
+	}
+	// A service in any name form ("203.0.113.5:443:tcp",
+	// "203.0.113.5:443/tcp", "[2001:db8::1]:443/tcp") is denied by its host.
+	if h, _, _, ok := asset.SplitServiceName(v); ok {
 		v = h
 	}
 	if set, ok := parseIPSet(strings.Trim(v, "[]")); ok {

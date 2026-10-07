@@ -47,3 +47,18 @@ func TestFindingEvidenceSkipsSecretsAndEmpty(t *testing.T) {
 		t.Error("properties without an exchange, no evidence")
 	}
 }
+
+func TestWebLocationFallback(t *testing.T) {
+	f := &ctis.Finding{Web: &ctis.WebLocation{URL: "https://h.example/wp-admin/js/theme.js"}}
+	webLocationFallback(f)
+	if f.Location == nil || f.Location.Path != "https://h.example/wp-admin/js/theme.js" {
+		t.Fatalf("location = %+v", f.Location)
+	}
+	// A location the report set wins.
+	g := &ctis.Finding{Web: &ctis.WebLocation{URL: "https://h.example/a"}, Location: &ctis.FindingLocation{Path: "src/a.go"}}
+	webLocationFallback(g)
+	if g.Location.Path != "src/a.go" {
+		t.Fatalf("location overwritten: %q", g.Location.Path)
+	}
+	webLocationFallback(&ctis.Finding{})
+}

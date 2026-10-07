@@ -122,7 +122,8 @@ func (s *Service) DryRunTargets(ctx context.Context, in DryRunInput) ([]DryRunRe
 
 	// 3. The dispatch gate: validator, exclusions, ownership and authority,
 	// zones.
-	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true})
+	tier := scopedom.Tier(min(max(in.Tier, 0), int(scopedom.TierIntrusive)))
+	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true, Tier: &tier})
 	if err != nil {
 		return nil, err
 	}
