@@ -60,7 +60,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
     lockMode && data.mode === 'single' ? undefined : { is_active: true, per_page: 100 },
     { revalidateOnFocus: false }
   )
-  const workflows = useMemo(() => workflowsData?.items ?? [], [workflowsData?.items])
+  const workflows = useMemo(() => workflowsData?.data ?? [], [workflowsData?.data])
   const starters = useMemo(
     () => workflows.filter((p) => p.is_system_template && (p.tags ?? []).includes('starter')),
     [workflows]

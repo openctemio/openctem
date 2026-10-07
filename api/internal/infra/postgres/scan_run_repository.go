@@ -1099,6 +1099,11 @@ func (r *ScanRunRepository) buildWhereClause(filter scanrun.RunFilter) (string, 
 		conditions = append(conditions, fmt.Sprintf("scan_workflow_id = $%d", len(args)))
 	}
 
+	if filter.ScanID != nil {
+		args = append(args, filter.ScanID.String())
+		conditions = append(conditions, fmt.Sprintf("scan_id = $%d", len(args)))
+	}
+
 	if filter.AssetID != nil {
 		args = append(args, filter.AssetID.String())
 		conditions = append(conditions, fmt.Sprintf("asset_id = $%d", len(args)))
