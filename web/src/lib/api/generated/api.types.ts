@@ -37121,11 +37121,6 @@ export interface components {
        *     the sensor does not report.
        */
       capabilities_not_reported?: string[]
-      /**
-       * @description ToolsNotInstalled are tools the administrator set that the sensor
-       *     reports as not installed or does not report at all.
-       */
-      tools_not_installed?: string[]
     }
     'github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigCounts': {
       error?: number
@@ -39426,7 +39421,6 @@ export interface components {
       execution_mode?: 'standalone' | 'daemon'
       max_concurrent_jobs?: number
       name: string
-      tools?: string[]
       /** @enum {string} */
       type: 'worker' | 'collector' | 'sensor'
     }
@@ -42350,7 +42344,7 @@ export interface components {
       capabilities?: string[]
       /**
        * @description CapabilityMismatch lists settings the sensor's report contradicts
-       *     (a tool set here that the sensor does not have); omitted when none.
+       *     (a capability set here that the sensor does not report); omitted when none.
        */
       capability_mismatch?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_sensor.CapabilityMismatch']
       /**
@@ -42507,11 +42501,12 @@ export interface components {
       protocol?: components['schemas']['internal_infra_http_handler.SensorProtocolResponse']
       region?: string
       /**
-       * @description capabilities, tools and max_concurrent_jobs above are the
-       *     administrator's settings (limits). Reported is what the sensor last
-       *     reported it has (RFC-029 §4.3.1), null when it never reported;
-       *     Effective is what dispatch uses: the report narrowed by the
-       *     administrator's settings (the settings alone without a report).
+       * @description capabilities and max_concurrent_jobs above are the administrator's
+       *     settings (limits). Reported is what the sensor last reported it has
+       *     (RFC-029 §4.3.1), null when it never reported; Effective is what
+       *     dispatch uses: the report narrowed by those settings (the settings
+       *     alone without a report). The effective tools are the reported
+       *     installed tools (none before a report); the sensor grant narrows them.
        */
       reported?: components['schemas']['internal_infra_http_handler.SensorReportedResponse']
       /**
@@ -42558,7 +42553,6 @@ export interface components {
       status?: string
       status_message?: string
       tenant_id?: string
-      tools?: string[]
       total_findings?: number
       total_scans?: number
       type?: string
@@ -43361,7 +43355,6 @@ export interface components {
        * @enum {string}
        */
       status?: 'active' | 'disabled' | 'revoked'
-      tools?: string[]
     }
     'internal_infra_http_handler.UpdateSensorResultPolicyRequest': {
       allow_advisory_evidence?: boolean

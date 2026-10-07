@@ -17,7 +17,7 @@ function sensor(over: Partial<Sensor> = {}): Sensor {
     name: 'k8s-scanner-a',
     type: 'worker',
     capabilities: [],
-    tools: ['nuclei', 'trivy'],
+    effective: { tools: ['nuclei', 'trivy'], capabilities: [], max_concurrent_jobs: 8 },
     execution_mode: 'daemon',
     status: 'active',
     health: 'online',
@@ -75,7 +75,7 @@ describe('sensorHealthChecks', () => {
         sensor({
           key_expires_at: inDays(6),
           version: 'v0.3.0',
-          tools: [],
+          effective: { tools: [], capabilities: [], max_concurrent_jobs: 8 },
           outbox_warning: true,
           outbox: {
             pending_count: 148,
@@ -93,7 +93,7 @@ describe('sensorHealthChecks', () => {
     expect(c.key).toMatchObject({ status: 'warning', action: 'rotate_key' })
     expect(c.key.text).toContain('Expires in 6 days')
     expect(c.version).toMatchObject({ status: 'critical', action: 'install' })
-    expect(c.tools).toMatchObject({ status: 'warning', action: 'edit' })
+    expect(c.tools).toMatchObject({ status: 'warning', action: 'install' })
     expect(c.outbox.status).toBe('warning')
     expect(c.outbox.text).toContain('148 results waiting to upload, the oldest for 2h 14m')
     expect(c.protocol).toMatchObject({ status: 'warning', action: 'install' })
@@ -202,46 +202,30 @@ describe('sensorHealthChecks', () => {
     })
   })
 
-  it('tools follow the sensor report: declared but not installed is a warning', () => {
+  it('tools follow the sensor report: the installed tools it reports', () => {
     const reported = (tools: { name: string; installed: boolean }[]) => ({
       tools,
       capabilities: null,
       max_concurrent_jobs: null,
       reported_at: ago(4),
     })
-    const missing = byKey(
+    const some = byKey(
       sensorHealthChecks(
         sensor({
-          tools: ['nuclei', 'trivy'],
           reported: reported([
             { name: 'trivy', installed: true },
             { name: 'nuclei', installed: false },
           ]),
           effective: { tools: ['trivy'], capabilities: [], max_concurrent_jobs: 5 },
-          capability_mismatch: { tools_not_installed: ['nuclei'] },
         }),
         ctx
       )
     )
-    expect(missing.tools).toMatchObject({ status: 'warning', action: 'edit' })
-    expect(missing.tools.text).toContain('Set but not installed: nuclei')
-
-    const unlimited = byKey(
-      sensorHealthChecks(
-        sensor({
-          tools: [],
-          reported: reported([{ name: 'semgrep', installed: true }]),
-          effective: { tools: ['semgrep'], capabilities: [], max_concurrent_jobs: 5 },
-        }),
-        ctx
-      )
-    )
-    expect(unlimited.tools).toMatchObject({ status: 'ok', text: 'semgrep' })
+    expect(some.tools).toMatchObject({ status: 'ok', text: 'trivy' })
 
     const nothing = byKey(
       sensorHealthChecks(
         sensor({
-          tools: [],
           reported: reported([]),
           effective: { tools: [], capabilities: [], max_concurrent_jobs: 5 },
         }),
@@ -249,7 +233,20 @@ describe('sensorHealthChecks', () => {
       )
     )
     expect(nothing.tools.status).toBe('warning')
-    expect(nothing.tools.text).toContain('reports no usable tool')
+    expect(nothing.tools.text).toContain('reports no installed tool')
+    expect(nothing.tools.action).toBeUndefined()
+
+    const unreported = byKey(
+      sensorHealthChecks(
+        sensor({
+          reported: null,
+          effective: { tools: [], capabilities: [], max_concurrent_jobs: 5 },
+        }),
+        ctx
+      )
+    )
+    expect(unreported.tools).toMatchObject({ status: 'warning', action: 'install' })
+    expect(unreported.tools.text).toContain('has not reported its tools')
   })
 
   it('SDK: a line only when it is outdated or unsupported', () => {
