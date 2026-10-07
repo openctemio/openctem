@@ -119,6 +119,10 @@ const (
 	// CredentialsReveal returns a leaked credential's plaintext secret. Read
 	// returns only a mask and a fingerprint; every reveal is audited.
 	CredentialsReveal Permission = "findings:credentials:reveal"
+	// EvidenceReveal returns the plaintext of secret values masked out of a
+	// finding's evidence (request headers, cookies, tokens). Needs step-up;
+	// every reveal is audited and shown on the finding's timeline.
+	EvidenceReveal Permission = "findings:evidence:reveal"
 
 	// Remediation permissions (findings:remediation:*)
 	RemediationRead  Permission = "findings:remediation:read"
@@ -427,7 +431,7 @@ func AllPermissions() []Permission {
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
-		CredentialsRead, CredentialsWrite, CredentialsReveal,
+		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
 

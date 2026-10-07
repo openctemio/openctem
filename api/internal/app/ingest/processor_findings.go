@@ -14,6 +14,7 @@ import (
 
 	"github.com/openctemio/ctis"
 
+	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/component"
@@ -58,6 +59,10 @@ type FindingProcessor struct {
 	// pre-insert priority/SLA enrichers. Nil-safe: when unwired, scanner
 	// findings are not auto-routed (prior behavior).
 	assignmentApplier AssignmentApplier
+
+	// evidence stores each sighting's typed proof (finding-evidence.md).
+	// Nil-safe: when unwired, no evidence is kept.
+	evidence EvidenceStore
 
 	// activityService records audit trail for auto-reopen events
 	activityService activityRecorder
@@ -769,6 +774,18 @@ func (p *FindingProcessor) processBatch(
 		}
 	}
 	p.recordTemplateSightings(ctx, tenantID, sightings)
+
+	// Step 9: the typed proof of each sighting (request, response, match,
+	// reproduction), masked, its secret values encrypted apart. Best-effort.
+	if p.evidence != nil {
+		dets := make([]evidenceapp.Detection, 0)
+		for i := range validFindings {
+			if d, ok := findingEvidence(validFindings[i].fingerprint, &validFindings[i].finding, report.Tool); ok {
+				dets = append(dets, d)
+			}
+		}
+		p.evidence.StoreDetections(ctx, tenantID, dets)
+	}
 
 	return nil
 }

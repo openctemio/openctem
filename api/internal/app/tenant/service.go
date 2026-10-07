@@ -2020,6 +2020,50 @@ func (s *TenantService) UpdateRetestSettings(
 	return &out, nil
 }
 
+// GetEvidenceSettings returns the tenant's finding-evidence settings. The
+// zero value means the defaults.
+func (s *TenantService) GetEvidenceSettings(ctx context.Context, tenantID string) (*tenantdom.EvidenceSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	es := t.TypedSettings().Evidence
+	return &es, nil
+}
+
+// UpdateEvidenceSettings replaces the tenant's finding-evidence settings and
+// audits the before/after values.
+func (s *TenantService) UpdateEvidenceSettings(
+	ctx context.Context,
+	tenantID string,
+	es tenantdom.EvidenceSettings,
+	actx auditapp.AuditContext,
+) (*tenantdom.EvidenceSettings, error) {
+	var before tenantdom.EvidenceSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionEvidence, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().Evidence
+		return t.UpdateEvidenceSettings(es)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantEvidenceUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Evidence)).
+		WithMessage("Evidence settings updated").
+		WithMetadata("secret_retention_days_before", before.EffectiveSecretRetentionDays()).
+		WithMetadata("secret_retention_days_after", es.EffectiveSecretRetentionDays())
+	s.logAudit(ctx, actx, event)
+
+	out := t.TypedSettings().Evidence
+	return &out, nil
+}
+
 // GetAssetLifecycleSettings returns the tenant's current lifecycle
 // settings. An empty (zero-value) payload means the feature has
 // never been configured — the UI shows defaults.

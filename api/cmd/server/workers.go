@@ -634,6 +634,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Finding evidence retention: encrypted secret values past the tenant's
+	// secret retention, evidence past 365 days (finding-evidence.md).
+	if svc.Evidence != nil {
+		w.ControllerManager.Register(controller.NewEvidenceRetentionController(
+			svc.Evidence, time.Hour, log.With("controller", "finding-evidence-retention")))
+	}
+
 	// Sensor activity timeline retention: sensor_events past 90 days.
 	if repos.SensorEvent != nil {
 		w.ControllerManager.Register(controller.NewSensorEventRetentionController(

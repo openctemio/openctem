@@ -138,6 +138,8 @@ type Handlers struct {
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
 	// FindingRetest serves Retest now + retest history (RFC-039); nil if not initialized
 	FindingRetest *handler.FindingRetestHandler
+	// FindingEvidenceItems serves masked finding evidence + reveal; nil if not initialized
+	FindingEvidenceItems *handler.FindingEvidenceItemsHandler
 
 	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
 	JiraWebhook   *handler.JiraWebhookHandler   // nil if not initialized (no database)
@@ -504,6 +506,9 @@ func Register(
 	// Continuous retest (RFC-039): Retest now + a finding's retest history.
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	// Finding evidence: masked proof per detection / retest + audited reveal.
+	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
+	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)

@@ -29,7 +29,9 @@ var baselinePermissionRow = regexp.MustCompile(`^INSERT INTO public\.permissions
 // permSeedMigrations are the migrations above the baseline that INSERT INTO
 // permissions. A new permission-seeding migration MUST be added here (every
 // listed file must exist, so a typo fails loudly).
-var permSeedMigrations = []string{}
+var permSeedMigrations = []string{
+	"001176_finding_evidence.up.sql",
+}
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
 // a mapping table whose rows are ('old', 'new', ...). The renames are applied,
