@@ -1,4 +1,4 @@
-.PHONY: all build run test test-db lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev
+.PHONY: all build run test test-db lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install
 
 # Variables
 APP_NAME := openctem
@@ -137,13 +137,11 @@ tidy:
 	@echo "Tidying dependencies..."
 	$(GOMOD) tidy
 
-## swagger: Regenerate api/openapi/swagger.yaml from the handler annotations.
-## The spec is a GENERATED artifact — never hand-edit it. The UI generates its
-## API types from the committed file, and scripts/check-openapi.sh fails CI when
-## the annotations, the spec and the registered routes stop agreeing.
-##
-## Previously this target printed "swag not installed" and exited 0, so a
-## regeneration that never happened looked exactly like one that succeeded.
+## swagger: Generate api/openapi/swagger.yaml from the handler annotations.
+## The spec is generated and NOT committed (nor hand-edited): CI, release
+## builds and `make generate` at the repository root produce it, and
+## scripts/check-openapi.sh fails CI when the annotations, the spec and the
+## registered routes stop agreeing.
 swagger: swagger-install
 	@echo "Generating Swagger documentation..."
 	@# --parseDependency walks into dependency packages — the asset-type enum
@@ -162,15 +160,26 @@ swagger: swagger-install
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
 	@echo "Swagger docs generated in api/openapi/"
 
-## swagger-check: Fail if the annotations, the spec and the routes disagree.
-## Compares SETS of operations, not the bytes of the generated file — swag is
-## not reproducible enough across environments for a byte diff to hold. See
+## contract: Generate every contract file derived from the Go source. None of
+## them is committed:
+##   api/openapi/swagger.yaml                    the OpenAPI spec (swagger)
+##   api/openapi/routes.txt                      every registered route (web endpoint check)
+##   ../web/src/config/api-route-permissions.json  the web console's route gate map
+## The web API types are generated from the spec by `npm run generate:api-types`
+## in web/; `make generate` at the repository root runs both halves.
+contract: swagger
+	@GOWORK=off UPDATE_ROUTE_MANIFEST=1 go test ./tools/lint/openapicontract/ -run '^TestWriteRouteManifest$$' -count=1 >/dev/null
+	@GOWORK=off UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run '^TestRoutePermissionMap$$' -count=1 >/dev/null
+	@echo "Route manifest and route permission map generated"
+
+## swagger-check: Generate the spec, then fail if the annotations, the spec and
+## the routes disagree. Compares SETS of operations, not bytes — see
 ## tools/lint/openapicontract for why.
 swagger-check:
 	@bash scripts/check-openapi.sh
 
 ## swagger-install: Install the pinned swag CLI (no-op if already present).
-## Pinned: an upstream release must not be able to change the committed contract
+## Pinned: an upstream release must not be able to change the generated contract
 ## or turn every PR red. Bump here and in scripts/check-openapi.sh together.
 SWAG_VERSION ?= v1.16.4
 SWAG := $(shell command -v swag 2>/dev/null || echo "$$(go env GOPATH)/bin/swag")
