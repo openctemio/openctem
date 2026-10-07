@@ -66,6 +66,10 @@ func (r tenantRoots) VerifiedDomainNames(_ context.Context, t shared.ID) ([]stri
 	return r.verified[t], nil
 }
 
+func (r tenantRoots) EASMVerifiedDomainNames(_ context.Context, t shared.ID) ([]string, error) {
+	return r.verified[t], nil
+}
+
 type failingRoots struct{}
 
 func (failingRoots) RootDomainSeedNames(context.Context, shared.ID) ([]string, error) {
@@ -73,6 +77,10 @@ func (failingRoots) RootDomainSeedNames(context.Context, shared.ID) ([]string, e
 }
 
 func (failingRoots) VerifiedDomainNames(context.Context, shared.ID) ([]string, error) {
+	return nil, nil
+}
+
+func (failingRoots) EASMVerifiedDomainNames(context.Context, shared.ID) ([]string, error) {
 	return nil, nil
 }
 
