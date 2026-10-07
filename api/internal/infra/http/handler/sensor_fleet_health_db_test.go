@@ -132,6 +132,7 @@ func TestSensorFleetHealth_ResponseFields(t *testing.T) {
 	f.heartbeat(map[string]any{
 		"status": "running", "version": "0.7.0", "uptime_seconds": 7200,
 		"outbox": map[string]any{"pending_count": 0},
+		"tools":  []map[string]any{{"name": "semgrep", "installed": true}},
 	})
 	s, _ = f.get()
 	if s.State != "online" || len(s.HealthReasons) != 0 {

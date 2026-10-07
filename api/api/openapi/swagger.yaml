@@ -4724,13 +4724,6 @@ definitions:
         items:
           type: string
         type: array
-      tools_not_installed:
-        description: |-
-          ToolsNotInstalled are tools the administrator set that the sensor
-          reports as not installed or does not report at all.
-        items:
-          type: string
-        type: array
     type: object
   github_com_openctemio_openctem_api_pkg_domain_sensor.ConfigCounts:
     properties:
@@ -6112,8 +6105,10 @@ definitions:
           ActiveChecksBlockedBy says why a scan may not touch the asset when
           active_checks_allowed is false: its state (needs_review, candidate,
           dependency, monitor_only, rejected; rejected also for a name under a
-          rejected name), or unattributed: no record, and neither inside a scope
-          target nor under a root-domain seed or verified domain.
+          rejected name), unattributed: no record, and neither inside a scope
+          target nor under a root-domain seed or verified domain, or
+          out_of_scope: confirmed, but no scope target, seed or verified domain
+          covers it (confirmation alone does not authorize active checks).
         type: string
       confidence:
         type: integer
@@ -9352,11 +9347,6 @@ definitions:
         maxLength: 255
         minLength: 1
         type: string
-      tools:
-        items:
-          type: string
-        maxItems: 20
-        type: array
       type:
         enum:
         - worker
@@ -14770,7 +14760,7 @@ definitions:
         - $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_sensor.CapabilityMismatch'
         description: |-
           CapabilityMismatch lists settings the sensor's report contradicts
-          (a tool set here that the sensor does not have); omitted when none.
+          (a capability set here that the sensor does not report); omitted when none.
       config_health:
         description: |-
           ConfigHealth is the platform's rollup of the sensor's latest config
@@ -14979,11 +14969,12 @@ definitions:
         allOf:
         - $ref: '#/definitions/internal_infra_http_handler.SensorReportedResponse'
         description: |-
-          capabilities, tools and max_concurrent_jobs above are the
-          administrator's settings (limits). Reported is what the sensor last
-          reported it has (RFC-029 §4.3.1), null when it never reported;
-          Effective is what dispatch uses: the report narrowed by the
-          administrator's settings (the settings alone without a report).
+          capabilities and max_concurrent_jobs above are the administrator's
+          settings (limits). Reported is what the sensor last reported it has
+          (RFC-029 §4.3.1), null when it never reported; Effective is what
+          dispatch uses: the report narrowed by those settings (the settings
+          alone without a report). The effective tools are the reported
+          installed tools (none before a report); the sensor grant narrows them.
       sdk_name:
         description: |-
           Build information the sensor reported on its heartbeat, or that was
@@ -15039,10 +15030,6 @@ definitions:
         type: string
       tenant_id:
         type: string
-      tools:
-        items:
-          type: string
-        type: array
       total_findings:
         type: integer
       total_scans:
@@ -16616,11 +16603,6 @@ definitions:
         - disabled
         - revoked
         type: string
-      tools:
-        items:
-          type: string
-        maxItems: 20
-        type: array
     type: object
   internal_infra_http_handler.UpdateSensorResultPolicyRequest:
     properties:

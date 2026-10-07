@@ -274,8 +274,6 @@ POST /api/v1/assets/dedup/reviews/{}/approve
 POST /api/v1/assets/dedup/reviews/{}/reject
 POST /api/v1/assets/import/csv
 POST /api/v1/assets/import/kubernetes
-POST /api/v1/assets/import/nessus
-POST /api/v1/assets/import/nessus-findings
 POST /api/v1/assets/{}/lifecycle/snooze
 POST /api/v1/assets/{}/owners
 POST /api/v1/assets/{}/relationships

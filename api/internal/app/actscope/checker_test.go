@@ -55,6 +55,27 @@ func (t tenantTargets) ListActiveTargets(_ context.Context, tenantID string) ([]
 	return t[tenantID], nil
 }
 
+// tenantRoots holds root-domain seeds and verified domains per tenant.
+type tenantRoots struct{ seeds, verified map[shared.ID][]string }
+
+func (r tenantRoots) RootDomainSeedNames(_ context.Context, t shared.ID) ([]string, error) {
+	return r.seeds[t], nil
+}
+
+func (r tenantRoots) VerifiedDomainNames(_ context.Context, t shared.ID) ([]string, error) {
+	return r.verified[t], nil
+}
+
+type failingRoots struct{}
+
+func (failingRoots) RootDomainSeedNames(context.Context, shared.ID) ([]string, error) {
+	return nil, errors.New("db down")
+}
+
+func (failingRoots) VerifiedDomainNames(context.Context, shared.ID) ([]string, error) {
+	return nil, nil
+}
+
 type failingTargets struct{}
 
 func (failingTargets) ListActiveTargets(context.Context, string) ([]*scopedom.Target, error) {
@@ -84,6 +105,7 @@ type fixture struct {
 	mine, theirs     *asset.Asset
 	assets           tenantAssets
 	targets          tenantTargets
+	roots            tenantRoots
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -99,6 +121,10 @@ func newFixture(t *testing.T) *fixture {
 		f.tenantA.String(): {mustTarget(t, f.tenantA, scopedom.TargetTypeDomain, "*.allowed.example.com")},
 		f.tenantB.String(): {mustTarget(t, f.tenantB, scopedom.TargetTypeDomain, "*.b-allowed.example.com")},
 	}
+	f.roots = tenantRoots{
+		seeds:    map[shared.ID][]string{f.tenantA: {"seeded.example.net"}, f.tenantB: {"b-seeded.example.net"}},
+		verified: map[shared.ID][]string{f.tenantA: {"verified.example.net"}, f.tenantB: {"b-verified.example.net"}},
+	}
 	return f
 }
 
@@ -108,7 +134,7 @@ func newFixture(t *testing.T) *fixture {
 func TestCheck_RestrictedMember(t *testing.T) {
 	f := newFixture(t)
 	enf := &fakeEnforcer{inScope: map[shared.ID]bool{f.mine.ID(): true}}
-	c := New(enf, f.assets, f.targets)
+	c := New(enf, f.assets, f.targets, f.roots)
 	owner := shared.NewID()
 
 	d, err := c.Check(context.Background(), Input{
@@ -148,7 +174,7 @@ func TestCheck_RestrictedMember(t *testing.T) {
 // must match one of the tenant's own active scope targets.
 func TestCheck_UnrestrictedActorAllowlist(t *testing.T) {
 	f := newFixture(t)
-	c := New(&fakeEnforcer{unrestricted: true}, f.assets, f.targets)
+	c := New(&fakeEnforcer{unrestricted: true}, f.assets, f.targets, f.roots)
 	d, err := c.Check(context.Background(), Input{
 		TenantID: f.tenantA,
 		Targets: []string{
@@ -177,13 +203,15 @@ func TestCheck_FailsClosed(t *testing.T) {
 	in := Input{TenantID: f.tenantA, Targets: []string{"x.example.org"}, AssetIDs: []shared.ID{f.mine.ID()}}
 	cases := map[string]*Checker{
 		"nil checker":       nil,
-		"no enforcer":       New(nil, f.assets, f.targets),
-		"no assets":         New(&fakeEnforcer{unrestricted: true}, nil, f.targets),
-		"no targets":        New(&fakeEnforcer{unrestricted: true}, f.assets, nil),
-		"enforcer error":    New(&fakeEnforcer{err: errors.New("down")}, f.assets, f.targets),
-		"asset lookup":      New(&fakeEnforcer{unrestricted: true}, failingAssets{}, f.targets),
-		"allowlist lookup":  New(&fakeEnforcer{unrestricted: true}, f.assets, failingTargets{}),
-		"zero tenant input": New(&fakeEnforcer{unrestricted: true}, f.assets, f.targets),
+		"no enforcer":       New(nil, f.assets, f.targets, f.roots),
+		"no assets":         New(&fakeEnforcer{unrestricted: true}, nil, f.targets, f.roots),
+		"no targets":        New(&fakeEnforcer{unrestricted: true}, f.assets, nil, f.roots),
+		"enforcer error":    New(&fakeEnforcer{err: errors.New("down")}, f.assets, f.targets, f.roots),
+		"asset lookup":      New(&fakeEnforcer{unrestricted: true}, failingAssets{}, f.targets, f.roots),
+		"allowlist lookup":  New(&fakeEnforcer{unrestricted: true}, f.assets, failingTargets{}, f.roots),
+		"zero tenant input": New(&fakeEnforcer{unrestricted: true}, f.assets, f.targets, f.roots),
+		"no roots":          New(&fakeEnforcer{unrestricted: true}, f.assets, f.targets, nil),
+		"roots lookup":      New(&fakeEnforcer{unrestricted: true}, f.assets, f.targets, failingRoots{}),
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -195,5 +223,38 @@ func TestCheck_FailsClosed(t *testing.T) {
 				t.Fatalf("want an error, got %+v", d)
 			}
 		})
+	}
+}
+
+// Free text gets the same authority as an inventory asset (RFC-054 §4.2):
+// a name at or under a seed or verified domain of the tenant is covered, as
+// is a name inside a scope target, and another tenant's seeds, verified
+// domains and targets cover nothing.
+func TestCheck_FreeTextUsesTheOneAuthority(t *testing.T) {
+	f := newFixture(t)
+	c := New(&fakeEnforcer{unrestricted: true}, f.assets, f.targets, f.roots)
+	d, err := c.Check(context.Background(), Input{
+		TenantID: f.tenantA,
+		Targets: []string{
+			"seeded.example.net", "www.seeded.example.net", "https://a.verified.example.net/x",
+			"app.allowed.example.com",
+			"b-seeded.example.net", "x.b-verified.example.net", "app.b-allowed.example.com",
+			"notseeded.example.net",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"b-seeded.example.net": true, "x.b-verified.example.net": true, "app.b-allowed.example.com": true,
+		"notseeded.example.net": true,
+	}
+	if len(d.RefusedTargets) != len(want) {
+		t.Fatalf("refused = %v, want exactly %v", d.RefusedTargets, want)
+	}
+	for k := range want {
+		if d.RefusedTargets[k] != ReasonNoScopeTarget {
+			t.Fatalf("refused[%s] = %q, want the authority reason", k, d.RefusedTargets[k])
+		}
 	}
 }

@@ -26,6 +26,7 @@ import {
   DetailSection,
   DetailSections,
   DetailSheet,
+  DetailSheetFooter,
   DetailStat,
   DetailStatGrid,
   RiskScoreBadge,
@@ -234,17 +235,6 @@ export function GroupQuickView({
                     Edit
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    onClose()
-                    router.push(`/assets/groups/${group.id}`)
-                  }}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Open full page
-                </Button>
               </>
             }
             menu={menu}
@@ -290,6 +280,19 @@ export function GroupQuickView({
             </DetailSection>
           </DetailSections>
         </div>
+        <DetailSheetFooter>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => {
+              onClose()
+              router.push(`/assets/groups/${group.id}`)
+            }}
+          >
+            <ExternalLink className="h-4 w-4" />
+            Open full page
+          </Button>
+        </DetailSheetFooter>
       </DetailSheet>
     </TooltipProvider>
   )

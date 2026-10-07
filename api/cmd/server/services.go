@@ -544,7 +544,10 @@ type Services struct {
 	CTEMID          *ctemidapp.Service
 	CertMonitor     *certmonitorapp.Service
 	// ActiveGate decides what an active scan may touch (RFC-036 §6.3).
-	ActiveGate       *easmapp.ActiveGate
+	ActiveGate *easmapp.ActiveGate
+	// ScopeJoin confirms discovered names a permanent scope target or seed
+	// covers (RFC-054 §4.3).
+	ScopeJoin        *easmapp.ScopeJoin
 	EASMDNS          *easmdnsapp.Service
 	EASMSweep        *easmapp.SweepService
 	CredentialImport *integration.CredentialImportService
@@ -1178,7 +1181,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
 	// Simulation targets follow the scan act-scope rule (RFC-050 W3, 21b H4).
-	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope), s.DataScope)
+	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.EASMSeed), s.DataScope)
 	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
@@ -1536,7 +1539,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Assets reported for a tenant's own scan commands get tenant_scanned
 	// attribution evidence (RFC-036 O8).
 	if repos.Attribution != nil {
-		s.Ingest.SetScanAttributionStamper(easmapp.NewScanStamper(repos.Attribution, repos.EASMSeed))
+		// Names a permanent scope target or seed covers are confirmed
+		// without review (RFC-054 §4.3); the join also backs the start-up
+		// backfill and the re-evaluation after a scope target change.
+		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, repos.EASMSeed, s.Scope, repos.Attribution, repos.Asset, log)
+		s.ScopeJoin.SetAudit(s.Audit)
+		stamper := easmapp.NewScanStamper(repos.Attribution, repos.EASMSeed)
+		stamper.SetScopeJoin(s.ScopeJoin)
+		s.Ingest.SetScanAttributionStamper(stamper)
 	}
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).
@@ -1549,6 +1559,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.CertMonitor != nil {
 		s.CertMonitor.SetPromotion(s.Ingest, repos.Asset, repos.Attribution)
 		s.CertMonitor.SetTombstones(repos.Attribution)
+		if s.ScopeJoin != nil {
+			s.CertMonitor.SetScopeJoin(s.ScopeJoin)
+		}
 	}
 	// Open ports a port scan no longer sees are closed (research/22 P0-6).
 	s.Ingest.SetPortReconciler(postgres.NewEASMPortRepository(&postgres.DB{DB: deps.DB}))
@@ -1696,7 +1709,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
-		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope)),
+		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.EASMSeed)),
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),

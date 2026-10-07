@@ -23,6 +23,7 @@ import { DetailSection, DetailSections } from '@/features/shared/components/deta
 import {
   DetailHeader,
   DetailSheet,
+  DetailSheetFooter,
   type DetailMenuItem,
 } from '@/features/shared/components/detail-sheet-layout'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
@@ -283,12 +284,12 @@ export function FindingDetailDrawer({
               urlParam={false}
             />
 
-            <div className="border-t pt-4">
+            <DetailSheetFooter>
               <Button className="w-full" onClick={() => openPage()}>
                 <ExternalLink className="h-4 w-4" />
                 Open full details
               </Button>
-            </div>
+            </DetailSheetFooter>
           </div>
         )}
       </DetailSheet>

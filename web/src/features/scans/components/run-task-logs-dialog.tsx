@@ -13,7 +13,7 @@ import {
 import { EmptyState, TonePill, type PillTone } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { pipelineRunEndpoints } from '@/lib/api/endpoints'
-import type { RunTaskLogLine, RunTaskLogs } from '@/lib/api/generated'
+import type { RunTask, RunTaskLogLine, RunTaskLogs } from '@/lib/api/generated'
 import { toDisplayBlock, toDisplayText } from '@/lib/untrusted-text'
 
 /** The pill tone of a log level. */
@@ -27,6 +27,37 @@ export function logLevelTone(level?: string): PillTone {
       return 'muted'
     default:
       return 'info'
+  }
+}
+
+/** What a refusal's message starts with ("refused by local policy: …", "refused by the managed policy: …"). */
+const REFUSED_PREFIX = /^refused by\b/i
+
+/**
+ * The empty state of a task without log lines. A task that a policy refused
+ * before any tool started, or that failed before it logged anything, says
+ * why (its error message) instead of the generic "no logs".
+ */
+export function logsEmptyState(task?: Pick<RunTask, 'status' | 'error_message'> | null): {
+  title: string
+  description: string
+} {
+  const msg = task?.error_message?.trim()
+  if (msg && REFUSED_PREFIX.test(msg)) {
+    return {
+      title: 'This task was refused before it ran',
+      description: toDisplayText(msg, 1024),
+    }
+  }
+  if (msg && task?.status === 'failed') {
+    return {
+      title: 'This task failed before it sent any logs',
+      description: toDisplayText(msg, 1024),
+    }
+  }
+  return {
+    title: 'No logs from this task',
+    description: 'The sensor sent no log lines, or they are older than 14 days.',
   }
 }
 
@@ -85,12 +116,15 @@ export function RunTaskLogsDialog({
   runId,
   taskId,
   tool,
+  task,
   open,
   onOpenChange,
 }: {
   runId: string
   taskId: string
   tool?: string
+  /** The task's status and error: the empty state says why a refused or failed task has no logs. */
+  task?: Pick<RunTask, 'status' | 'error_message'> | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -100,6 +134,7 @@ export function RunTaskLogsDialog({
     { revalidateOnFocus: false }
   )
   const lines = data?.lines ?? []
+  const empty = logsEmptyState(task)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -129,8 +164,8 @@ export function RunTaskLogsDialog({
           {!isLoading && !error && lines.length === 0 && (
             <EmptyState
               icon={FileText}
-              title="No logs from this task"
-              description="The sensor sent no log lines, or they are older than 14 days."
+              title={empty.title}
+              description={empty.description}
               card={false}
             />
           )}

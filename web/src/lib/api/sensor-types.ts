@@ -259,7 +259,6 @@ export interface Sensor {
   type: SensorType
   description?: string
   capabilities: SensorCapability[]
-  tools: SensorTool[]
   execution_mode: ExecutionMode
   status: SensorStatus // Admin-controlled: active, disabled, revoked
   health: SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
@@ -316,11 +315,15 @@ export interface Sensor {
   content_refresh_supported?: boolean
   /**
    * What the sensor last reported it has (api RFC-029 §4.3.1); null before
-   * its first report, absent on APIs without it. `tools`, `capabilities`
-   * and `max_concurrent_jobs` above are then the administrator's limits.
+   * its first report, absent on APIs without it. `capabilities` and
+   * `max_concurrent_jobs` above are the administrator's limits.
    */
   reported?: SensorReported | null
-  /** What dispatch uses: the report narrowed by the limits. */
+  /**
+   * What dispatch uses: the reported installed tools (none before a
+   * report; the sensor grant narrows them), and the reported capabilities
+   * and capacity narrowed by the limits.
+   */
   effective?: SensorEffective
   /** The current manifest's digest (RFC-033); "" before the first one. */
   manifest_digest?: string
@@ -418,7 +421,6 @@ export interface SensorEffective {
 }
 
 export interface SensorCapabilityMismatch {
-  tools_not_installed?: string[]
   capabilities_not_reported?: string[]
 }
 
@@ -461,7 +463,6 @@ export interface CreateSensorRequest {
   type: SensorType
   description?: string
   capabilities?: SensorCapability[]
-  tools?: SensorTool[]
   execution_mode?: ExecutionMode
   max_concurrent_jobs?: number
   labels?: Record<string, string>
@@ -483,7 +484,6 @@ export interface UpdateSensorRequest {
   name?: string
   description?: string
   capabilities?: SensorCapability[]
-  tools?: SensorTool[]
   execution_mode?: ExecutionMode
   status?: SensorStatus
   max_concurrent_jobs?: number

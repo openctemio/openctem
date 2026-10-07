@@ -348,3 +348,34 @@ func TestBuildServiceProperties_TLSAlwaysPresent(t *testing.T) {
 	assert.Contains(t, props, "tls")
 	assert.Equal(t, false, props["tls"])
 }
+
+// A DNS name reported as ip_address (and an IP reported as a domain) is
+// stored by what its name is, so the inventory never shows a domain as an IP.
+func TestResolveCTISAssetType_NameWinsOverContradictingType(t *testing.T) {
+	tests := []struct {
+		name     string
+		ctisType ctis.AssetType
+		value    string
+		want     asset.AssetType
+	}{
+		{"domain reported as ip_address", ctis.AssetTypeIPAddress, "vndirect.com.vn", asset.AssetTypeDomain},
+		{"subdomain host reported as ip_address", ctis.AssetTypeIPAddress, "api.vndirect.com.vn", asset.AssetTypeDomain},
+		{"real ipv4 stays", ctis.AssetTypeIPAddress, "203.0.113.7", asset.AssetTypeIPAddress},
+		{"real ipv6 stays", ctis.AssetTypeIPAddress, "2001:db8::1", asset.AssetTypeIPAddress},
+		{"bracketed ipv6 stays", ctis.AssetTypeIPAddress, "[2001:db8::1]", asset.AssetTypeIPAddress},
+		{"cidr is not a dns name", ctis.AssetTypeIPAddress, "10.0.0.0/24", asset.AssetTypeIPAddress},
+		{"single label is not guessed", ctis.AssetTypeIPAddress, "localhost", asset.AssetTypeIPAddress},
+		{"ip reported as domain", ctis.AssetTypeDomain, "198.51.100.4", asset.AssetTypeIPAddress},
+		{"ip reported as subdomain", ctis.AssetTypeSubdomain, "198.51.100.4", asset.AssetTypeIPAddress},
+		{"domain stays", ctis.AssetTypeDomain, "example.com", asset.AssetTypeDomain},
+		{"subdomain stays", ctis.AssetTypeSubdomain, "a.example.com", asset.AssetTypeSubdomain},
+		{"host with dns name untouched", ctis.AssetTypeHost, "web01.example.com", asset.AssetTypeHost},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveCTISAssetType(&ctis.Asset{Type: tt.ctisType, Value: tt.value, Name: tt.value})
+			assert.Equal(t, tt.want, got.stored.Type)
+			assert.Equal(t, tt.want, got.normType)
+		})
+	}
+}

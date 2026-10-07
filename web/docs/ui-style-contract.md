@@ -308,6 +308,11 @@ className="flex flex-col gap-0 p-0 sm:p-0 …">` with a `<DialogHeaderBar>`
     close; fields and the footer never start a drag; the Close button (44x44
     hit area) and Esc always work; no slide under reduced motion. Never give
     a sheet a swipe-only way out.
+  - "View all …" / "Open full page" at the end of a sheet or tab: render
+    `<DetailSheetFooter>` (from any component inside the sheet). It is pinned
+    under the scrolling body with a top border and the sheet's padding, so it
+    is always visible and last in the focus order. Never place such a button
+    after the list inside the body.
   - Real checks only: `<DetailChecklist>` ("Health checks: N of M passing",
     folded, failing first) and the `<DetailCallout>` above it appear only
     when the record has such state. Never placeholder checks.

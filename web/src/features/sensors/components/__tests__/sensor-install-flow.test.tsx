@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 globalThis.ResizeObserver ??= class {
@@ -34,11 +34,6 @@ vi.mock('@/lib/api/sensor-hooks', () => ({
 vi.mock('@/lib/api/scan-zone-hooks', () => ({
   useScanZones: () => ({ data: { data: api.zones.value } }),
   assignSensorToZone: api.assign,
-}))
-vi.mock('../../hooks', () => ({
-  useSensorFormOptions: () => ({
-    getCapabilitiesForTools: (t: string[]) => (t.length ? ['dast'] : []),
-  }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('../sensor-install-snippets', () => ({
@@ -86,7 +81,7 @@ describe('SensorInstallFlow', () => {
     for (const tool of ['nuclei', 'trivy', 'semgrep', 'betterleaks']) {
       expect(screen.queryByRole('button', { name: tool })).toBeNull()
     }
-    expect(screen.getByText(/You choose its tools after it connects/)).toBeInTheDocument()
+    expect(screen.getByText(/The sensor reports which scanners it has/)).toBeInTheDocument()
   })
 
   it('offers no CI runner role: CI pipelines use OIDC, not a sensor key', () => {
@@ -120,7 +115,6 @@ describe('SensorInstallFlow', () => {
     version: '0.6.1',
     sdk_version: 'v0.11.0',
     hostname: 'dmz-host-7',
-    tools: [],
     protocol: { version: 2, user_agent: 'openctemio-sensor/0.6.1', seen_at: '', deprecated: false },
     reported: {
       tools: [
@@ -143,7 +137,7 @@ describe('SensorInstallFlow', () => {
     await screen.findByText('Connected')
   }
 
-  it('after the first heartbeat: shows what it reported, every installed tool checked', async () => {
+  it('after the first heartbeat: shows what it reported, its tools read-only', async () => {
     api.sensor.value = reportedSensor
     const onOpen = vi.fn()
     const onStepChange = vi.fn()
@@ -157,48 +151,24 @@ describe('SensorInstallFlow', () => {
     expect(screen.getByText('v0.6.1')).toBeInTheDocument()
     expect(screen.getByText('SDK v0.11.0')).toBeInTheDocument()
     expect(screen.getByText('4 jobs at once')).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: /nuclei/ })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /trivy/ })).toBeChecked()
-    const semgrep = screen.getByRole('checkbox', { name: /semgrep/ })
-    expect(semgrep).not.toBeChecked()
-    expect(semgrep).toBeDisabled()
+    const list = screen.getByRole('list', { name: 'Reported tools' })
+    for (const tool of ['nuclei', 'trivy', 'semgrep']) {
+      expect(within(list).getByText(tool)).toBeInTheDocument()
+    }
+    expect(screen.queryByRole('checkbox')).toBeNull()
     expect(screen.getByText('not installed')).toBeInTheDocument()
-    expect(
-      screen.getByText(/Jobs can use every reported tool until you narrow this/)
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Jobs can use every installed tool/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Open sensor' }))
     expect(onOpen).toHaveBeenCalled()
   })
 
-  it('Done with every tool checked sends nothing (all reported tools stay allowed)', async () => {
+  it('Done sends nothing: there is no tool list to save', async () => {
     api.sensor.value = reportedSensor
     const onDone = vi.fn()
     await connect({ onDone })
     await userEvent.click(screen.getByRole('button', { name: 'Done' }))
     expect(api.update).not.toHaveBeenCalled()
     expect(onDone).toHaveBeenCalled()
-  })
-
-  it('unchecking a tool sends only the allowed subset', async () => {
-    api.sensor.value = reportedSensor
-    const onDone = vi.fn()
-    await connect({ onDone })
-    await userEvent.click(screen.getByRole('checkbox', { name: /trivy/ }))
-    expect(screen.getByText(/Only the checked tools get jobs/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
-    await waitFor(() =>
-      expect(api.update).toHaveBeenCalledWith({ tools: ['nuclei'], capabilities: [] })
-    )
-    expect(onDone).toHaveBeenCalled()
-  })
-
-  it('unchecking every tool is refused', async () => {
-    api.sensor.value = reportedSensor
-    await connect()
-    await userEvent.click(screen.getByRole('checkbox', { name: /trivy/ }))
-    await userEvent.click(screen.getByRole('checkbox', { name: /nuclei/ }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Allow at least one tool.')
-    expect(screen.getByRole('button', { name: 'Done' })).toBeDisabled()
   })
 
   it('a sensor that reports no tools: says so, no checklist', async () => {

@@ -35,7 +35,7 @@ services:
     restart: {{if isDaemon .Sensor}}unless-stopped{{else}}"no"{{end}}
 {{- if not (isDaemon .Sensor)}}
     # A one-shot sensor: scans ./src once and sends the results.
-    command: ["-tool", "{{firstTool .Sensor.Tools}}", "-target", "/scan", "-push"]
+    command: ["-tool", "{{firstTool .Sensor.EffectiveTools}}", "-target", "/scan", "-push"]
 {{- end}}
 {{- if isDaemon .Sensor}}
     # Hardened: read-only root filesystem, no capabilities, no privilege
@@ -48,7 +48,7 @@ services:
     environment:
       API_URL: {{yamlQuote .BaseURL}}
       API_KEY: ${OPENCTEM_API_KEY:?set OPENCTEM_API_KEY in .env}
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
       SENSOR_TOOLS: {{yamlQuote .}}
 {{- end}}
 {{- if isDaemon .Sensor}}
