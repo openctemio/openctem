@@ -335,3 +335,66 @@ func TestActiveGate_FailsClosed(t *testing.T) {
 		t.Fatal("a malformed id must fail the check")
 	}
 }
+
+// The platform's guardrails win over anything the tenant declares (RFC-054
+// §8): a deny-listed name is refused even inside the tenant's own scope
+// target and even when a person confirmed it; with SCOPE_ACTIVE_PROOF=all
+// only names under a verified domain are probed.
+func TestActiveGate_PlatformPolicy(t *testing.T) {
+	f := newGateFixture(t)
+	gov, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "*.agency.gov.vn", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.targets = append(f.targets, gov)
+	gr, _ := scopedom.NewGuardrails(0, 0, []string{"198.51.100.200/32"})
+
+	g := NewActiveGate(f, f, f, f).WithPlatformPolicy(gr, false)
+	confirmedGov := f.add(t, "portal.agency.gov.vn", asset.AssetTypeSubdomain)
+	f.record(confirmedGov, attribution.StateConfirmed, true)
+	platformIP := f.add(t, "198.51.100.200", asset.AssetTypeIPAddress)
+	ok := f.add(t, "ok.scoped.com", asset.AssetTypeSubdomain)
+	got, err := g.ActiveCheckBlocked(context.Background(), f.tenant, []string{confirmedGov.ID().String(), platformIP.ID().String(), ok.ID().String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[confirmedGov.ID().String()] != attribution.StatePlatformDenied || got[platformIP.ID().String()] != attribution.StatePlatformDenied {
+		t.Fatalf("deny list: %v", got)
+	}
+	if _, no := got[ok.ID().String()]; no {
+		t.Fatalf("an allowed asset was refused: %v", got)
+	}
+	typed, err := g.BlockedTargets(context.Background(), f.tenant, []string{"x.agency.gov.vn", "https://x.agency.gov.vn/", "169.254.169.254", "app.scoped.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{"x.agency.gov.vn", "https://x.agency.gov.vn/", "169.254.169.254"} {
+		if typed[d] != attribution.StatePlatformDenied {
+			t.Errorf("%s = %q, want platform_denied", d, typed[d])
+		}
+	}
+	if _, no := typed["app.scoped.com"]; no {
+		t.Errorf("app.scoped.com refused: %v", typed)
+	}
+
+	all := NewActiveGate(f, f, f, f).WithPlatformPolicy(gr, true)
+	typed, err = all.BlockedTargets(context.Background(), f.tenant, []string{"app.scoped.com", "www.verified.com", "198.51.100.7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typed["app.scoped.com"] != attribution.StateProofRequired || typed["198.51.100.7"] != attribution.StateProofRequired {
+		t.Fatalf("proof all: %v", typed)
+	}
+	if _, no := typed["www.verified.com"]; no {
+		t.Fatalf("a verified name was refused: %v", typed)
+	}
+	un, err := all.UnverifiedTargets(context.Background(), f.tenant, []string{"app.scoped.com", "www.verified.com", "10.0.0.1", "198.51.100.7"})
+	if err != nil || len(un) != 2 {
+		t.Fatalf("unverified = %v (%v), want app.scoped.com and the address", un, err)
+	}
+	// Another tenant's verified domain proves nothing.
+	un, _ = all.UnverifiedTargets(context.Background(), shared.NewID(), []string{"www.verified.com"})
+	if len(un) != 1 {
+		t.Fatalf("tenant A's verified domain proved another tenant's target: %v", un)
+	}
+}
