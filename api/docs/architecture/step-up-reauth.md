@@ -103,6 +103,15 @@ Add every new protected route to `stepUpRoutes` in
 `internal/infra/http/routes/step_up_routes_test.go`; the test proves each one
 refuses outside the window and passes inside it.
 
+Step-up follows the action, not the path. `stepUpServiceActions` in
+`tests/unit/step_up_service_mapping_test.go` lists the service actions that
+need it; the test maps each one to every user-plane route whose handler
+reaches it (directly or through a service method) and fails when one of those
+routes lacks `requireStepUp()`. A second route to the same action cannot skip
+step-up. Offboarding has one route, `POST /api/v1/organization/members/{id}/offboard`;
+the former `DELETE /api/v1/tenants/{tenant}/members/{id}` reached the same
+offboarding without step-up and is removed.
+
 ## Protected routes
 
 | Route | Why |
@@ -113,7 +122,7 @@ refuses outside the window and passes inside it.
 | `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve` | Installs who can sign in to the organization. |
 | `DELETE /api/v1/tenants/{tenant}` | Deletes the organization. |
 | `DELETE /api/v1/organization/members/{id}/mfa` | Removes a member's second factor. |
-| `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. |
+| `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. Disabling (`POST /api/v1/tenants/{tenant}/members/{id}/suspend`) and re-enabling stay one click: they are reversible and keep everything the member holds. |
 | `POST /api/v1/ci/gate-overrides` | Break-glass past the CI security gate. |
 | `POST /api/v1/audit-logs/rebaseline` | Overwrites the tamper-evident audit chain. |
 | `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST …/webhook-secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, repository events) for the organization. |
