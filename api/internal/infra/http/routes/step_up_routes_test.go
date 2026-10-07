@@ -76,6 +76,10 @@ var stepUpRoutes = []string{
 	"POST /api/v1/scope/exclusions/{id}/deactivate",
 	"POST /api/v1/scope/exclusions/bulk/delete",
 	"DELETE /api/v1/scope/exclusions/{id}",
+	// A seed authorizes every name under it: adding one or turning its
+	// discovery on widens scope.
+	"POST /api/v1/easm/seeds",
+	"PATCH /api/v1/easm/seeds/{id}",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -136,6 +140,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
+			registerEASMSeedRoutes(router, &handler.EASMSeedHandler{}, auth, nil, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {
