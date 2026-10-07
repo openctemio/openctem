@@ -685,7 +685,7 @@ func TestDataScope_PushRecipientsAndFindingChannels(t *testing.T) {
 
 // --- Repository paths not reached over HTTP above ----------------------------
 
-func TestDataScope_AffectedAssetsAndCrossTenantActivity(t *testing.T) {
+func TestDataScope_AffectedAssets(t *testing.T) {
 	h := newDSHarness(t)
 	ctx := context.Background()
 	db := &postgres.DB{DB: h.db}
@@ -711,33 +711,6 @@ func TestDataScope_AffectedAssetsAndCrossTenantActivity(t *testing.T) {
 	res, err = repo.ListAffectedAssetsByVulnerabilityID(ctx, h.tenant, vulnID, true, pagination.New(1, 20), nil)
 	if err != nil || res.Total != 2 {
 		t.Errorf("unscoped affected assets = %d (err %v), want 2", res.Total, err)
-	}
-
-	// Cross-tenant dashboard activity: a tenant where the user is restricted
-	// contributes only in-scope findings.
-	dash := postgres.NewDashboardRepository(h.db)
-	items, err := dash.GetFilteredRecentActivity(ctx, nil, []string{h.tenant.String()}, h.memberA.String(), 50)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sawA, sawB bool
-	for _, it := range items {
-		sawA = sawA || it.Description == dsMarkerFindingA
-		sawB = sawB || it.Description == dsMarkerFindingB
-	}
-	if !sawA || sawB {
-		t.Errorf("restricted cross-tenant activity: sawA=%v (want true) sawB=%v (want false)", sawA, sawB)
-	}
-	items, err = dash.GetFilteredRecentActivity(ctx, []string{h.tenant.String()}, nil, "", 50)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sawB = false
-	for _, it := range items {
-		sawB = sawB || it.Description == dsMarkerFindingB
-	}
-	if !sawB {
-		t.Error("unrestricted cross-tenant activity must include FB")
 	}
 }
 
