@@ -371,6 +371,11 @@ func (m Manifest) Sanitized(rep CapabilityReport, now time.Time) (Manifest, []Ma
 		if t.Contract != nil {
 			if c, why := SanitizeToolContract(t.Contract); c != nil {
 				mt.Contract = c
+				if d, why := SanitizeToolDescriptor(c, t.Contract.Descriptor); d != nil {
+					c.Descriptor = d
+				} else if why != "" {
+					ignore(path+".contract.descriptor", why, IgnoredInvalidDescriptor)
+				}
 			} else {
 				ignore(path+".contract", why, IgnoredInvalidContract)
 			}

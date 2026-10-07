@@ -79,11 +79,8 @@ import {
   useUpdateBusinessUnit,
 } from '@/features/business-units/api/use-business-units'
 import { del } from '@/lib/api/client'
-import {
-  CRITICALITY_BADGE_SOFT,
-  CRITICALITY_LABELS,
-  CRITICALITY_DOT_COLORS,
-} from '@/lib/criticality-colors'
+import { CRITICALITY_BADGE_SOFT, CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
+import { CRITICALITY_LABELS, RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
 
 const criticalityColors: Record<Criticality, string> = CRITICALITY_BADGE_SOFT
 
@@ -127,7 +124,7 @@ function getDescendantIds(allUnits: BusinessUnit[], rootId: string): Set<string>
 }
 
 /** Backend accepts only critical|high|medium|low for criticality. */
-const CRITICALITY_OPTIONS: Criticality[] = ['critical', 'high', 'medium', 'low']
+const CRITICALITY_OPTIONS: readonly Criticality[] = RATED_CRITICALITY_LEVELS
 /** Backend accepts only low|medium|high for risk tolerance. */
 const RISK_TOLERANCE_OPTIONS: RiskTolerance[] = ['low', 'medium', 'high']
 

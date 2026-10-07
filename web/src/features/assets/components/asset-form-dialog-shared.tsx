@@ -26,6 +26,7 @@ import { AssetGroupSelect } from '@/features/asset-groups'
 import type { FormFieldConfig } from '../types/page-config.types'
 import type { Asset } from '../types'
 import { IMPACT_RATING_OPTIONS } from '../types'
+import { ASSET_CRITICALITY_LEVELS, criticalityOptions } from '@/lib/criticality'
 
 interface AssetFormDialogSharedProps {
   open: boolean
@@ -44,12 +45,7 @@ interface AssetFormDialogSharedProps {
 // per-type config. The backend infers these on ingest, but an operator must be
 // able to set/override them — previously they were hardcoded on create
 // (medium/internal/unknown) and never editable.
-const CRITICALITY_OPTIONS = [
-  { value: 'critical', label: 'Critical' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
-]
+const CRITICALITY_OPTIONS = criticalityOptions(ASSET_CRITICALITY_LEVELS)
 const SCOPE_OPTIONS = [
   { value: 'internal', label: 'Internal' },
   { value: 'external', label: 'External' },
