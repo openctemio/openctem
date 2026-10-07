@@ -1,4 +1,4 @@
-### Documentation: RFC-055 covers web scope, CTIS 1.6 endpoints and evidence
+### Changed: RFC-055 covers web scope, CTIS 1.6 endpoints and evidence
 
 - RFC-055 and `docs/architecture/tool-contract.md` now describe:
   - the job's `web_scope` and how the SDK and katana enforce it;
