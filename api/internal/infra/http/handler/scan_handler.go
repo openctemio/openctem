@@ -1414,6 +1414,9 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 		if errors.As(err, &de) && de.Details != nil {
 			e = e.WithDetails(de.Details)
 		}
+		if d := toolUnavailableDetails(err); d != nil {
+			e.Details = d
+		}
 		e.WriteJSON(w)
 	case scansvc.AsFrozen(err) != nil:
 		// A scan freeze window is active: 409 with its own code, so the
@@ -1665,4 +1668,28 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), sc))
+}
+
+// ToolUnavailableDetails is the error body's details on a NO_SENSOR_FOR_TOOL
+// refusal: the tool, the workflow step that needs it, and the sensor counts
+// behind the refusal (docs/architecture/tool-availability.md).
+type ToolUnavailableDetails struct {
+	Tool            string `json:"tool"`
+	Step            string `json:"step,omitempty"`
+	Status          string `json:"status"`
+	SensorsTotal    int    `json:"sensors_total"`
+	SensorsOnline   int    `json:"sensors_online"`
+	SensorsExcluded int    `json:"sensors_excluded"`
+	ZoneID          string `json:"zone_id,omitempty"`
+}
+
+// toolUnavailableDetails returns the details of a NO_SENSOR_FOR_TOOL
+// refusal, or nil.
+func toolUnavailableDetails(err error) *ToolUnavailableDetails {
+	var tu *scansvc.ToolUnavailableError
+	if !errors.As(err, &tu) {
+		return nil
+	}
+	return &ToolUnavailableDetails{Tool: tu.Tool, Step: tu.Step, Status: tu.Status,
+		SensorsTotal: tu.SensorsTotal, SensorsOnline: tu.SensorsOnline, SensorsExcluded: tu.SensorsExcluded, ZoneID: tu.ZoneID}
 }

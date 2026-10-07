@@ -1,7 +1,7 @@
 ### Security: widening scope needs re-authentication, approval and notifies every administrator
 
 - Scope targets gain an expiry, a reason, a tier ceiling and widening
-  approvals (RFC-054, migration `001155`, new permission
+  approvals (RFC-054, migration `001158`, new permission
   `attack_surface:scope:approve` for owners and admins).
 - Creating, activating, extending or raising the tier of a scope target asks
   for step-up re-authentication and, in an organization with two or more

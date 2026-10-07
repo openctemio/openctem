@@ -260,6 +260,12 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		sc.SetTags(input.Tags)
 	}
 
+	// Refused before the ad-hoc scan is stored: a wildcard pattern only for
+	// a tool that takes it as a root domain.
+	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
+		return nil, err
+	}
+
 	if input.CreatedBy != "" {
 		userID, _ := shared.IDFromString(input.CreatedBy)
 		sc.SetCreatedBy(userID)
