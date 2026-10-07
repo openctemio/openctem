@@ -1,10 +1,11 @@
 /**
  * Basic Info Step
  *
- * Step 1: name, then the scanner (single) or a pipeline (workflow). Both lists
- * come from the API: the tool registry's active scanners and the tenant's
- * active pipeline templates. (They used to be a fixed "scan type" radio that
- * changed nothing and a hardcoded list of example workflows the API rejects.)
+ * Step 1: name, then what to run: a single check (one scanner) or a scan
+ * workflow. The starter workflows (system templates tagged "starter":
+ * Discover, Discover + Vuln, Web app, Network, Code / CI) are offered first;
+ * any other active workflow is one choice away. Every list comes from the
+ * API: the tool registry's active scanners and the active pipeline templates.
  */
 
 'use client'
@@ -33,8 +34,8 @@ import {
   Cloud,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import type { ScanMode, SensorPreference, NewScanFormData } from '../../types'
-import { SCAN_MODE_CONFIG, SENSOR_PREFERENCE_CONFIG } from '../../types'
+import type { SensorPreference, NewScanFormData } from '../../types'
+import { SENSOR_PREFERENCE_CONFIG } from '../../types'
 import { usePipelines } from '@/lib/api/pipeline-hooks'
 import { ScannerSelect } from '../scanner-select'
 import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
@@ -53,12 +54,34 @@ interface BasicInfoStepProps {
 
 export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoStepProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  // The workflows are needed to offer the starters, unless the mode is
+  // locked to a single scan (Edit).
   const { data: pipelinesData, isLoading: isLoadingPipelines } = usePipelines(
-    data.mode === 'workflow' ? { is_active: true, per_page: 100 } : undefined,
+    lockMode && data.mode === 'single' ? undefined : { is_active: true, per_page: 100 },
     { revalidateOnFocus: false }
   )
   const pipelines = useMemo(() => pipelinesData?.items ?? [], [pipelinesData?.items])
+  const starters = useMemo(
+    () => pipelines.filter((p) => p.is_system_template && (p.tags ?? []).includes('starter')),
+    [pipelines]
+  )
   const selectedWorkflow = pipelines.find((w) => w.id === data.workflowId)
+  const selectedStarter = starters.find((w) => w.id === data.workflowId)
+  // What the "what to run" choice shows as selected
+  const choice = data.mode === 'single' ? 'single' : selectedStarter ? selectedStarter.id : 'other'
+  const choose = (value: string) => {
+    if (value === 'single') {
+      onChange({ mode: 'single', workflowId: undefined })
+    } else if (value === 'other') {
+      onChange({
+        mode: 'workflow',
+        scannerName: '',
+        workflowId: selectedStarter ? undefined : data.workflowId,
+      })
+    } else {
+      onChange({ mode: 'workflow', scannerName: '', workflowId: value })
+    }
+  }
 
   return (
     <div className="space-y-5 px-4 sm:px-6 py-4">
@@ -74,6 +97,41 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
           onChange={(e) => onChange({ name: e.target.value })}
         />
       </div>
+
+      {/* What to run: a single check, a starter workflow or another workflow */}
+      {!lockMode && (
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">What to run</legend>
+          <RadioGroup
+            value={choice}
+            onValueChange={choose}
+            className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+          >
+            <ChoiceCard
+              value="single"
+              title="Single check"
+              description="One scanner on the targets."
+              icon={<Radar className="h-4 w-4" />}
+            />
+            {starters.map((s) => (
+              <ChoiceCard
+                key={s.id}
+                value={s.id}
+                title={s.name}
+                description={s.description ?? ''}
+                icon={<GitBranch className="h-4 w-4" />}
+                steps={(s.steps ?? []).map((st) => st.name)}
+              />
+            ))}
+            <ChoiceCard
+              value="other"
+              title="Another workflow"
+              description="One of your organization's workflows."
+              icon={<Layers className="h-4 w-4" />}
+            />
+          </RadioGroup>
+        </fieldset>
+      )}
 
       {/* Single scan: the scanner, from the tool registry */}
       {data.mode === 'single' && (
@@ -103,8 +161,8 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
         />
       )}
 
-      {/* Workflow Scan: Workflow Selection */}
-      {data.mode === 'workflow' && (
+      {/* Workflow Scan: Workflow Selection (a starter is chosen above) */}
+      {data.mode === 'workflow' && (lockMode || !selectedStarter) && (
         <div className="space-y-3">
           <Label>
             Select Workflow <span className="text-destructive">*</span>
@@ -199,43 +257,6 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
           <span>Advanced Options</span>
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-4 pt-3">
-          {/* Scan Mode (not changeable on an existing configuration) */}
-          {!lockMode && (
-            <div className="space-y-2">
-              <Label className="text-sm">Scan Mode</Label>
-              <RadioGroup
-                value={data.mode}
-                onValueChange={(value: ScanMode) =>
-                  onChange({
-                    mode: value,
-                    workflowId: value === 'single' ? undefined : data.workflowId,
-                    scannerName: value === 'workflow' ? '' : data.scannerName,
-                  })
-                }
-                className="flex flex-wrap gap-3"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="single" id="mode-single" />
-                  <Label htmlFor="mode-single" className="cursor-pointer text-sm font-normal">
-                    <span className="flex items-center gap-1.5">
-                      <Radar className="h-3.5 w-3.5" />
-                      {SCAN_MODE_CONFIG.single.label}
-                    </span>
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="workflow" id="mode-workflow" />
-                  <Label htmlFor="mode-workflow" className="cursor-pointer text-sm font-normal">
-                    <span className="flex items-center gap-1.5">
-                      <GitBranch className="h-3.5 w-3.5" />
-                      {SCAN_MODE_CONFIG.workflow.label}
-                    </span>
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-          )}
-
           {/* Sensor Preference - Compact */}
           <div className="space-y-2">
             <Label className="text-sm">Sensor Preference</Label>
@@ -276,5 +297,47 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
         </CollapsibleContent>
       </Collapsible>
     </div>
+  )
+}
+
+/** One "what to run" option: a radio with a title, a description and steps. */
+function ChoiceCard({
+  value,
+  title,
+  description,
+  icon,
+  steps,
+}: {
+  value: string
+  title: string
+  description: string
+  icon: React.ReactNode
+  steps?: string[]
+}) {
+  const id = `run-choice-${value}`
+  return (
+    <Label
+      htmlFor={id}
+      className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 font-normal hover:bg-muted/50 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+    >
+      <RadioGroupItem value={value} id={id} className="mt-0.5" aria-label={title} />
+      <span className="min-w-0 space-y-1">
+        <span className="flex items-center gap-1.5 text-sm font-medium">
+          {icon}
+          {title}
+        </span>
+        <span className="text-xs text-muted-foreground line-clamp-2">{description}</span>
+        {steps && steps.length > 0 && (
+          <span className="flex flex-wrap items-center gap-0.5 text-[10px] text-muted-foreground">
+            {steps.map((st, i) => (
+              <span key={`${st}-${i}`} className="flex items-center">
+                {i > 0 && <ChevronRight className="h-3 w-3" />}
+                {st}
+              </span>
+            ))}
+          </span>
+        )}
+      </span>
+    </Label>
   )
 }
