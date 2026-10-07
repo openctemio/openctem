@@ -1159,6 +1159,13 @@ func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict("Workflow already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
+		// A domain error carries a stable code (WORKFLOW_GRAPH_CYCLE,
+		// UNSUPPORTED_WORKFLOW_FEATURE, ...) the client can act on.
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code != "" && de.Code != "VALIDATION" {
+			apierror.New(http.StatusBadRequest, apierror.Code(de.Code), de.Message).WriteJSON(w)
+			return
+		}
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
