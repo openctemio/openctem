@@ -6,8 +6,10 @@ name: Web E2E
 #
 # Not a required check (yet): it reports on its own and does not join the
 # `Web CI OK` aggregate. The `changes` job (.github/scripts/changed.sh) gates
-# the run, so an API-only change does not start the stack. The suite needs the
-# API as well, but the API has its own tests; this job is about the web app.
+# the run, so an API-only change does not start the stack unless it touches the
+# API's HTTP layer (api/internal/infra/http/), where the web's contract comes
+# from. The suite needs the API as well, but the API has its own tests; this
+# job is about the web app.
 #
 # When it runs. It is the slowest job (three image builds and a full stack), and
 # the merge queue tests every pull request again on top of the latest develop,
@@ -38,6 +40,7 @@ jobs:
     outputs:
       web: ${{ steps.f.outputs.web }}
       suite: ${{ steps.suite.outputs.changed }}
+      http: ${{ steps.http.outputs.changed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,6 +51,29 @@ jobs:
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/changed.sh
+      # The API's HTTP layer (handlers, routes, middleware) is where the contract
+      # the web compiles against comes from. Its generated files are not
+      # committed, so a change there no longer shows up as a web change; count
+      # it here so the suite still runs for it.
+      - id: http
+        if: github.event_name != 'push'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: |
+          if [ -n "$MG_BASE" ] && [ -n "$MG_HEAD" ]; then
+            git cat-file -e "${MG_BASE}^{commit}" 2>/dev/null || git fetch --no-tags --quiet origin "$MG_BASE" || true
+            range="${MG_BASE}..${MG_HEAD}"
+          else
+            git fetch --no-tags --quiet origin "$BASE_REF"
+            range="origin/${BASE_REF}...HEAD"
+          fi
+          if ! files="$(git diff --name-only "$range")" || grep -q '^api/internal/infra/http/' <<<"$files"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
       # Did a pull request change the suite itself? Then it runs on the PR.
       - id: suite
         if: github.event_name == 'pull_request'
@@ -65,7 +91,7 @@ jobs:
     name: Playwright e2e
     needs: changes
     if: >-
-      needs.changes.outputs.web == 'true' && (
+      (needs.changes.outputs.web == 'true' || needs.changes.outputs.http == 'true') && (
         github.event_name != 'pull_request' ||
         needs.changes.outputs.suite == 'true' ||
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
@@ -78,6 +104,11 @@ jobs:
       ADMIN_IMAGE: local/admin-cli:e2e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The web image compiles against the generated contract files, which are
+      # not committed (api/docs/development/ci-cd.md).
+      - name: Generate the contract files
+        uses: ./.github/actions/generate-contract
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 

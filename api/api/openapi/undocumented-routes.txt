@@ -38,7 +38,6 @@ DELETE /api/v1/compensating-controls/{}
 DELETE /api/v1/compliance/findings/{}/controls/{}
 DELETE /api/v1/control-tests/{}
 DELETE /api/v1/custom-capabilities/{}
-DELETE /api/v1/custom-tool-categories/{}
 DELETE /api/v1/findings/{}/evidence/notes/{}
 DELETE /api/v1/findings/{}/link-ticket
 DELETE /api/v1/groups/{}/scope-rules/{}
@@ -228,9 +227,6 @@ GET /api/v1/threat-intel/sync/{}
 GET /api/v1/threat-models
 GET /api/v1/threat-models/{}
 GET /api/v1/threat-models/{}/coverage
-GET /api/v1/tool-categories
-GET /api/v1/tool-categories/all
-GET /api/v1/tool-categories/{}
 GET /api/v1/users/{}/roles
 GET /api/v1/validation/coverage
 GET /api/v1/verification-checklists/{}
@@ -282,7 +278,6 @@ POST /api/v1/assignment-rules/{}/test
 POST /api/v1/attachments
 POST /api/v1/attachments/link
 POST /api/v1/attacker-profiles
-POST /api/v1/audit-logs/rebaseline
 POST /api/v1/auth/backchannel-logout
 POST /api/v1/auth/create-first-team
 POST /api/v1/auth/saml/{}/acs
@@ -307,7 +302,6 @@ POST /api/v1/ctem-cycles/{}/profiles
 POST /api/v1/ctem-cycles/{}/scope-refinement
 POST /api/v1/ctem-cycles/{}/start-review
 POST /api/v1/custom-capabilities
-POST /api/v1/custom-tool-categories
 POST /api/v1/findings/actions/assign-to-owners
 POST /api/v1/findings/actions/fix-applied
 POST /api/v1/findings/actions/reject-fix
@@ -403,7 +397,6 @@ PUT /api/v1/business-units/{}
 PUT /api/v1/compensating-controls/{}
 PUT /api/v1/ctem-cycles/{}
 PUT /api/v1/custom-capabilities/{}
-PUT /api/v1/custom-tool-categories/{}
 PUT /api/v1/exposures/{}/ctem-id
 PUT /api/v1/groups/{}/scope-rules/{}
 PUT /api/v1/pentest/campaigns/{}
