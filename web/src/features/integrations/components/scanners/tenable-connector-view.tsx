@@ -29,7 +29,7 @@ import { EmptyState, PageHeader } from '@/features/shared'
 import { useAllSensors } from '@/lib/api/sensor-hooks'
 import { Can, Permission } from '@/lib/permissions'
 import { PausedScannerCard } from './scanner-imports-view'
-import { ImportResultsDialog } from './shared'
+import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { TenableConnectorCard } from './tenable-connector-card'
 import { TenableConnectorDialog } from './tenable-connector-dialog'
 import { TenableCoveragePanel } from './tenable-coverage-panel'
@@ -158,7 +158,12 @@ export function TenableConnectorView() {
         onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
         onSaved={refresh}
       />
-      <ImportResultsDialog open={importOpen} onOpenChange={setImportOpen} onSuccess={refresh} />
+      <ImportResultsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={refresh}
+        minSeverity="low"
+      />
     </Main>
   )
 }
