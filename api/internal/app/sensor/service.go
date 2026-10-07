@@ -18,7 +18,6 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/sensorkey"
@@ -353,7 +352,6 @@ type CreateSensorInput struct {
 	Type              string   `json:"type" validate:"required,oneof=worker collector sensor"`
 	Description       string   `json:"description" validate:"max=1000"`
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
-	Tools             []string `json:"tools" validate:"max=20,dive,max=50"`
 	ExecutionMode     string   `json:"execution_mode" validate:"omitempty,oneof=standalone daemon"`
 	MaxConcurrentJobs int      `json:"max_concurrent_jobs" validate:"omitempty,min=1,max=100"`
 	// Audit context (optional, for audit logging)
@@ -392,7 +390,7 @@ func (s *SensorService) CreateSensor(ctx context.Context, input CreateSensorInpu
 		executionMode = sensorType.DefaultExecutionMode()
 	}
 
-	a, err := sensordom.NewSensor(tenantID, input.Name, sensorType, input.Description, input.Capabilities, canonicalToolNames(input.Tools), executionMode)
+	a, err := sensordom.NewSensor(tenantID, input.Name, sensorType, input.Description, input.Capabilities, executionMode)
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +505,6 @@ type UpdateSensorInput struct {
 	Name              string   `json:"name" validate:"omitempty,min=1,max=255"`
 	Description       string   `json:"description" validate:"max=1000"`
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
-	Tools             []string `json:"tools" validate:"max=20,dive,max=50"`
 	Status            string   `json:"status" validate:"omitempty,oneof=active disabled revoked"` // Admin-controlled
 	MaxConcurrentJobs *int     `json:"max_concurrent_jobs" validate:"omitempty,min=1,max=100"`
 	// Audit context (optional, for audit logging)
@@ -535,18 +532,13 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 		a.Description = input.Description
 	}
 
-	// Tools and capabilities are limits on what the sensor reports
-	// (RFC-029 §4.3.1). A list that is present replaces the limit; [] removes
-	// it (every tool / capability the sensor reports may be used). Absent
-	// (nil) leaves it as it is.
+	// Capabilities are a limit on what the sensor reports (RFC-029 §4.3.1).
+	// A list that is present replaces the limit; [] removes it (every
+	// capability the sensor reports may be used). Absent (nil) leaves it as
+	// it is. Tools have no such limit here: the sensor grant narrows them.
 	if input.Capabilities != nil && !slices.Equal(input.Capabilities, a.Capabilities) {
 		changes.Set("capabilities", a.Capabilities, input.Capabilities)
 		a.Capabilities = append([]string{}, input.Capabilities...)
-	}
-
-	if tools := canonicalToolNames(input.Tools); tools != nil && !slices.Equal(tools, a.Tools) {
-		changes.Set("tools", a.Tools, tools)
-		a.Tools = tools
 	}
 
 	// Revocation is permanent (ActivateSensor refuses it too). Without this a
@@ -691,24 +683,6 @@ type SensorHeartbeatData struct {
 	// (research/26), untrusted; nil when it carried none. Only its digest
 	// is stored, validated (sensordom.HeartbeatConfigDigest).
 	ConfigReport *sensordom.ConfigReportSummary
-}
-
-// canonicalToolNames writes tool limits the way sensors report tools:
-// lowercase catalog names, a retired name as its replacement ("gitleaks" is
-// "betterleaks"), so the narrowing (reported ∩ limit) compares like with
-// like. nil stays nil (no change on update).
-func canonicalToolNames(in []string) []string {
-	if in == nil {
-		return nil
-	}
-	out := make([]string, 0, len(in))
-	for _, t := range in {
-		t = strings.ToLower(tooldom.CanonicalName(strings.TrimSpace(t)))
-		if t != "" && !slices.Contains(out, t) {
-			out = append(out, t)
-		}
-	}
-	return out
 }
 
 // sanitizeReport turns a heartbeat's capability report into what may be

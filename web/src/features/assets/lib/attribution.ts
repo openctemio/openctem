@@ -31,7 +31,7 @@ export interface AssetAttribution {
    * `rejected` also for a name under a rejected name, or `unattributed` (no
    * record, and no scope target, seed or verified domain covers it).
    */
-  active_checks_blocked_by?: AttributionState | 'unattributed'
+  active_checks_blocked_by?: AttributionState | 'unattributed' | 'out_of_scope'
   decided_at?: string
   evidence: AttributionEvidence[]
 }
@@ -117,7 +117,9 @@ export function scanStanding(
 ): string {
   if (a.active_checks_allowed) return 'Scans can reach this asset.'
   if (a.active_checks_blocked_by === 'unattributed')
-    return 'Scans skip this asset: nobody has confirmed it is yours, and no scope target or seed domain covers it. Confirm it here, or add it to Scoping › Targets.'
+    return 'Scans skip this asset: no scope target, seed or verified domain covers it. Add it to Scoping › Targets.'
+  if (a.active_checks_blocked_by === 'out_of_scope')
+    return 'Scans skip this asset: it is confirmed as yours, but no scope target, seed or verified domain covers it. Add it to Scoping › Targets to scan it.'
   if (a.active_checks_blocked_by === 'rejected' && a.state !== 'rejected')
     return 'Scans skip this asset: a name it sits under was marked not yours.'
   if (a.state === 'needs_review' || a.state === 'candidate')

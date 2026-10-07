@@ -2,10 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -54,7 +56,8 @@ func TestScanZoneHandler_ErrorBodyCarriesContractCode(t *testing.T) {
 func TestScanHandler_TriggerRefusalKeepsItsCode(t *testing.T) {
 	h := &ScanHandler{logger: logger.NewNop()}
 	for _, c := range []string{"NO_ZONE_COVERAGE", "ZONE_SPLIT_REQUIRED", "TOO_MANY_JOBS", "NO_TARGETS",
-		"ALL_TARGETS_EXCLUDED", "PLATFORM_SENSOR_REFUSED", "SCAN_ZONE_NOT_FOUND"} {
+		"ALL_TARGETS_EXCLUDED", "PLATFORM_SENSOR_REFUSED", "SCAN_ZONE_NOT_FOUND",
+		"NO_SENSOR_FOR_TOOL", "NO_SENSOR_AVAILABLE", "TOOL_NOT_FOUND", "TOOL_DISABLED", "TOOL_NOT_SCANNER"} {
 		rec := httptest.NewRecorder()
 		h.handleServiceError(rec, shared.NewDomainError(c, "refused: "+c, shared.ErrValidation))
 		code, msg := errorBody(t, rec)
@@ -66,5 +69,27 @@ func TestScanHandler_TriggerRefusalKeepsItsCode(t *testing.T) {
 	h.handleServiceError(rec, shared.NewDomainError("VALIDATION", "name is required", shared.ErrValidation))
 	if code, _ := errorBody(t, rec); code != "BAD_REQUEST" {
 		t.Errorf("generic validation code = %q, want BAD_REQUEST", code)
+	}
+}
+
+// A NO_SENSOR_FOR_TOOL refusal carries the tool and the counts behind it.
+func TestScanHandler_ToolUnavailableDetails(t *testing.T) {
+	h := &ScanHandler{logger: logger.NewNop()}
+	rec := httptest.NewRecorder()
+	h.handleServiceError(rec, fmt.Errorf("failed to trigger scan: %w", &scansvc.ToolUnavailableError{
+		Domain: shared.NewDomainError(scansvc.CodeNoSensorForTool, "No online sensor has semgrep", shared.ErrValidation),
+		Tool:   "semgrep", Step: "sast", Status: "offline_only", SensorsTotal: 2,
+	}))
+	var b struct {
+		Code    string                 `json:"code"`
+		Message string                 `json:"message"`
+		Details ToolUnavailableDetails `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusBadRequest || b.Code != scansvc.CodeNoSensorForTool || b.Message != "No online sensor has semgrep" ||
+		b.Details.Tool != "semgrep" || b.Details.Step != "sast" || b.Details.Status != "offline_only" || b.Details.SensorsTotal != 2 {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
 	}
 }

@@ -60,7 +60,7 @@ error.
 - Gate: `findings:write`, `assets:write` and `assets:import`. Rate limited
   **per organization** (6 per minute, burst 3), not per client address. Body
   limit 110 MiB; 10 minutes per request.
-- The report is ingested like `POST /assets/import/nessus-findings`: through
+- The report is ingested through
   `ingest.Service` with the uploader's data scope as `Options.Actor`, so a
   restricted uploader only adds findings to existing assets in their scope
   and creates none. Coverage is always **partial**: an import never

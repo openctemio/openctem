@@ -147,7 +147,6 @@ type Sensor struct {
 	Type          SensorType
 	Description   string
 	Capabilities  []string
-	Tools         []string // Specific tools: semgrep, trivy, nuclei, nmap, etc.
 	ExecutionMode ExecutionMode
 	Status        SensorStatus // Admin-controlled: active, disabled, revoked
 	Health        SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
@@ -259,8 +258,9 @@ type Sensor struct {
 	Protocol *ProtocolInfo
 
 	// Reported is what the sensor last reported it can do (reported.go).
-	// Tools, Capabilities and MaxConcurrentJobs above are the
-	// administrator's settings; dispatch uses the Effective* values.
+	// Capabilities and MaxConcurrentJobs above are the administrator's
+	// settings; dispatch uses the Effective* values. The tools are only
+	// the reported ones (EffectiveTools); the sensor grant narrows them.
 	Reported CapabilityReport
 
 	// Load is the load the sensor last reported (load.go): resources,
@@ -314,7 +314,6 @@ func NewSensor(
 	sensorType SensorType,
 	description string,
 	capabilities []string,
-	tools []string,
 	executionMode ExecutionMode,
 ) (*Sensor, error) {
 	if name == "" {
@@ -338,10 +337,9 @@ func NewSensor(
 		Description: description,
 		// Default to empty (not nil): Go marshals a nil slice as JSON `null`, and
 		// these fields carry no `omitempty`, so a nil here reaches clients as
-		// `"tools": null` and crashes any consumer doing `.length`/`.map` on it.
+		// `"capabilities": null` and crashes any consumer doing `.length`/`.map` on it.
 		// The adjacent Labels/Config/Metadata already make() for the same reason.
 		Capabilities:  defaultStrings(capabilities),
-		Tools:         defaultStrings(tools),
 		ExecutionMode: executionMode,
 		Status:        SensorStatusActive,  // Admin-controlled: enabled by default
 		Health:        SensorHealthUnknown, // Automatic: unknown until first heartbeat

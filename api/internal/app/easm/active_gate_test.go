@@ -153,8 +153,28 @@ func TestActiveGate_Assets(t *testing.T) {
 		{"unrecorded repository: not an internet target", func() *asset.Asset {
 			return f.add(t, "github.com/org/repo", asset.AssetTypeRepository)
 		}, ""},
-		{"confirmed by a person outside scope", func() *asset.Asset {
+		{"confirmed by a person outside scope: ownership is not authority", func() *asset.Asset {
 			a := f.add(t, "confirmed.example.net", asset.AssetTypeDomain)
+			f.record(a, attribution.StateConfirmed, true)
+			return a
+		}, attribution.StateOutOfScope},
+		{"confirmed by a rule outside scope", func() *asset.Asset {
+			a := f.add(t, "auto.example.net", asset.AssetTypeDomain)
+			f.record(a, attribution.StateConfirmed, false)
+			return a
+		}, attribution.StateOutOfScope},
+		{"confirmed IP outside every scope range", func() *asset.Asset {
+			a := f.add(t, "203.0.113.77", asset.AssetTypeIPAddress)
+			f.record(a, attribution.StateConfirmed, true)
+			return a
+		}, attribution.StateOutOfScope},
+		{"confirmed by a person inside a scope target", func() *asset.Asset {
+			a := f.add(t, "mine.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateConfirmed, true)
+			return a
+		}, ""},
+		{"confirmed private address: zones decide", func() *asset.Asset {
+			a := f.add(t, "10.0.0.9", asset.AssetTypeIPAddress)
 			f.record(a, attribution.StateConfirmed, true)
 			return a
 		}, ""},
@@ -237,7 +257,12 @@ func TestActiveGate_BlockedTargets(t *testing.T) {
 		"ok.scoped.com",                // allowed
 		"api.www.scoped.com",           // free text under a rejected asset
 		"a.dead.example.org",           // free text under a tombstone
-		"free.example.com",             // free text: the act-scope check decides
+		"free.example.com",             // free text outside every scope entry
+		"https://new.seeded.com/x",     // free text under a seed: allowed
+		"203.0.113.9",                  // public address outside every range
+		"198.51.100.9:443",             // address inside a scope CIDR: allowed
+		"10.1.2.3",                     // private: zones decide
+		"github.com/org/repo-x",        // a host with a path and no covering entry
 	}
 	got, err := g.BlockedTargets(context.Background(), f.tenant, targets)
 	if err != nil {
@@ -250,6 +275,9 @@ func TestActiveGate_BlockedTargets(t *testing.T) {
 		"manual.example.net":           attribution.StateUnattributed,
 		"api.www.scoped.com":           attribution.StateRejected,
 		"a.dead.example.org":           attribution.StateRejected,
+		"free.example.com":             attribution.StateUnattributed,
+		"203.0.113.9":                  attribution.StateUnattributed,
+		"github.com/org/repo-x":        attribution.StateUnattributed,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -260,14 +288,25 @@ func TestActiveGate_BlockedTargets(t *testing.T) {
 		}
 	}
 
-	// Another tenant: tenant A's rejections, records and assets mean
-	// nothing; free text is not refused and nothing resolves to A's assets.
+	// Another tenant: tenant A's rejections, records, assets, scope targets,
+	// seeds and verified domains mean nothing: every internet target is
+	// unattributed (never rejected by A's data, never allowed by A's scope).
 	other, err := g.BlockedTargets(context.Background(), shared.NewID(), targets)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(other) != 0 {
-		t.Fatalf("another tenant was refused by tenant A's data: %v", other)
+	for _, tg := range targets {
+		st, no := other[tg]
+		switch tg {
+		case "10.1.2.3":
+			if no {
+				t.Fatalf("another tenant: %s refused (%s), want left to zones/act scope", tg, st)
+			}
+		default:
+			if st != attribution.StateUnattributed {
+				t.Fatalf("another tenant: %s = %q, want unattributed (A's data leaked)", tg, st)
+			}
+		}
 	}
 	if b, err := g.ActiveCheckBlocked(context.Background(), shared.NewID(), []string{rej.ID().String()}); err != nil || b[rej.ID().String()] != attribution.StateUnattributed {
 		// Tenant A's asset id asked by another tenant is not found: refused.
