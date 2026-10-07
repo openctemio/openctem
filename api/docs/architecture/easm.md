@@ -29,7 +29,7 @@ is ever built, it uses only passive public data.
 ## 1. Pipeline
 
 ```
- Scoping › Boundaries › Seeds                       (tenant-entered, verified where possible)
+ Scoping › Boundaries › scope entries (discovery on)  (tenant-entered, verified where possible)
    │  org names, brands, root domains, ASNs, CIDRs, cloud accounts, GitHub orgs
    ▼
  ┌──────────────────────────── API side, passive: no packets to the target ─────────────┐
@@ -124,35 +124,23 @@ hash. Seeds sit in Scoping › Boundaries next to targets and exclusions.
 | DNS TXT (`verified_domains`, reused from SSO) or cloud connector | Auto-confirmation of names under the domain; eligible for T2 intrusive checks on opt-in |
 
 Exclusions always win, as today. An asset is actively scanned only when it is
-attributed `confirmed` and either inside a scope target or derived from a seed.
+attributed `confirmed` and inside a scope entry.
 Candidates and dependencies get passive (T0) checks only.
 
-**Built (P2 slice 1, migration 000700).** `easm_seeds` holds one row per
-(tenant, kind, value) with a label, `discovery_enabled`, and who attested the
-organisation's authority over it and when. The schema lists every RFC kind;
-the API accepts only kinds something consumes, today **`root_domain`**: the
-Certificate Transparency monitor watches it (origin `easm_seed`, asserted:
-names under it get `fqdn_under_asserted_root` and wait for review unless a
-verified domain covers them). CIDR, ASN and organisation seeds arrive with
-their collectors, so no seed sits unused.
+**Seeds are scope entries (migration 001242, research/53 SC1, SC2).** The
+separate `easm_seeds` table and `/api/v1/easm/seeds` are gone. A root domain
+to discover from is the permanent scope entry `*.example.com` with
+`discovery` on (`POST /api/v1/scope/targets`: approvers, step-up, approvals,
+guardrails, audit; RFC-054 §6.1). The Certificate Transparency monitor and the
+DNS checks watch every permanent domain entry with discovery on (origin
+`scope_target`); names under it are confirmed into the inventory (RFC-054
+§4.3). Existing seeds were folded into entries with `origin: seed_migration`.
+Only scope entries authorize active probes; a verified domain is proof only.
 
-| Route | Permission | |
-|---|---|---|
-| `GET /api/v1/easm/seeds` | `attack_surface:scope:read` | with `verification` (`dns_txt` while the tenant has a verified DNS TXT record for the domain or a parent; computed on read, never taken from the client) |
-| `POST /api/v1/easm/seeds` `{kind, value, label?, discovery_enabled?, attested: true}` | `attack_surface:scope:write` | refuses public suffixes, providers' shared domains (private PSL suffixes) and names without an ICANN suffix; at most 500 per tenant; audited `easm_seed.created` (high) |
-| `PATCH /api/v1/easm/seeds/{id}` `{label?, discovery_enabled?}` | `attack_surface:scope:write` | audited `easm_seed.updated` |
-| `DELETE /api/v1/easm/seeds/{id}` | `attack_surface:scope:delete` | assets found from it stay; audited `easm_seed.deleted` |
-
-All behind the `attack_surface` module. Two tenants may seed the same domain:
-nothing about another tenant's seed or verification is ever shown. Code:
-`pkg/domain/easmseed`, `internal/app/easm/seeds.go`,
-`internal/infra/postgres/easm_seed_repository.go`.
-
-**Web.** Scoping › Boundaries (`/scope-config?tab=seeds`) has a **Seeds** tab
-when the `attack_surface` module is on: the list with ownership (verified by a
-DNS TXT record, or asserted), a discovery switch, and Add seed, which stays
-disabled until the attestation box is ticked. Code:
-`web/src/features/attack-surface/components/easm-seeds.tsx`.
+**Web.** Scoping › Boundaries (`/scope-config?tab=proof`) has a **Domain
+proof** tab when the `attack_surface` module is on: prove control of a domain
+with a DNS TXT record (`/api/v1/easm/verified-domains`); SSO domains are shown
+read-only. Code: `web/src/features/attack-surface/components/easm-domain-proof.tsx`.
 
 ## 4. Attribution
 

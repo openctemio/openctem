@@ -70,7 +70,7 @@ func (d *Decision) Refused() bool {
 const (
 	ReasonOutOfDataScope = "the asset is outside your data scope"
 	ReasonNotAnAsset     = "not an asset in your data scope; restricted members may scan only their assets"
-	ReasonNoScopeTarget  = "no scope target, seed or verified domain covers it; add it to Scoping before scanning it"
+	ReasonNoScopeTarget  = "no scope entry covers it; add it to Scoping before scanning it"
 )
 
 // Checker implements the act-scope rule.

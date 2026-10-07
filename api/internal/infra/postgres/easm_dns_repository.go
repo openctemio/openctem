@@ -122,14 +122,16 @@ func (r *EASMDNSRepository) dueAssetTargets(ctx context.Context, tenantID shared
 	return out, rows.Err()
 }
 
-// dueNameTargets returns the tenant's root-domain seeds (discovery on) and
+// dueNameTargets returns the roots of the tenant's permanent domain scope
+// entries with discovery on (research/53 SC1), and its
 // verified domains that no active domain asset covers and that no person
 // rejected, due for the check.
 func (r *EASMDNSRepository) dueNameTargets(ctx context.Context, tenantID shared.ID, kind string, checkedBefore time.Time, limit int) ([]dueTarget, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		WITH names AS (
-			SELECT lower(value) AS name FROM easm_seeds
-			WHERE tenant_id = $1 AND kind = 'root_domain' AND discovery_enabled
+			SELECT rtrim(regexp_replace(lower(pattern), '^\*\*?\.', ''), '.') AS name FROM scope_targets
+			WHERE tenant_id = $1 AND status = 'active' AND expires_at IS NULL AND discovery
+			  AND target_type IN ('domain', 'subdomain')
 			UNION
 			SELECT lower(domain) FROM verified_domains WHERE tenant_id = $1 AND status = 'verified'
 		)
@@ -182,7 +184,7 @@ func (r *EASMDNSRepository) SaveState(ctx context.Context, tenantID, assetID sha
 }
 
 // SaveNameState records the last outcome of one check on a name target (a
-// seed or verified domain with no domain asset).
+// scope entry with discovery or verified domain with no domain asset).
 func (r *EASMDNSRepository) SaveNameState(ctx context.Context, tenantID shared.ID, name, kind, outcome, lastErr string, at time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO easm_dns_name_state (tenant_id, name, check_kind, last_checked_at, last_outcome, last_error)

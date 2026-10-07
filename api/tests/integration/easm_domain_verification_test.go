@@ -69,7 +69,7 @@ func TestEASMDomainVerification(t *testing.T) {
 		t.Fatalf("EASM verification admits SSO users: %v %v", ok, err)
 	}
 	// EASM counts it: names under it are under a verified domain for A only.
-	seeds := postgres.NewEASMSeedRepository(pg)
+	seeds := postgres.NewVerifiedDomainNameRepository(pg)
 	namesA, err := seeds.VerifiedDomainNames(ctx, tenantA)
 	if err != nil || len(namesA) != 1 || namesA[0] != "verify-it.example.com" {
 		t.Fatalf("A verified names = %v %v", namesA, err)

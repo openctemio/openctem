@@ -59,7 +59,6 @@ easm_alert_throttle
 easm_dns_check_state
 easm_dns_name_state
 easm_evidence
-easm_seeds
 easm_tombstones
 exposure_events
 exposures
