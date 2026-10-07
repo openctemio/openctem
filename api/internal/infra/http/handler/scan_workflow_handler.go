@@ -131,6 +131,9 @@ type TemplateResponse struct {
 	UIEndPosition    *UIPositionResponse          `json:"ui_end_position,omitempty"`
 	CreatedAt        string                       `json:"created_at"`
 	UpdatedAt        string                       `json:"updated_at"`
+	// RetiredAt is set when the workflow was deleted while it had runs (it
+	// is read-only and kept for their history).
+	RetiredAt string `json:"retired_at,omitempty"`
 }
 
 // TriggerResponse represents a trigger in the response.
@@ -1233,6 +1236,10 @@ func toTemplateResponse(t *scanworkflow.Workflow) *TemplateResponse {
 		UpdatedAt: t.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 
+	if t.RetiredAt != nil {
+		resp.RetiredAt = t.RetiredAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+
 	// Add UI positions for visual builder
 	if t.UIStartPosition != nil {
 		resp.UIStartPosition = &UIPositionResponse{X: t.UIStartPosition.X, Y: t.UIStartPosition.Y}
@@ -1535,6 +1542,8 @@ func (h *ScanWorkflowHandler) handleServiceError(w http.ResponseWriter, err erro
 	case writeGraphInvalid(w, err):
 	case errors.Is(err, scanworkflow.ErrScanWorkflowRunActive):
 		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRunActive.Code), scanworkflow.ErrScanWorkflowRunActive.Message).WriteJSON(w)
+	case errors.Is(err, scanworkflow.ErrScanWorkflowRetired):
+		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRetired.Code), scanworkflow.ErrScanWorkflowRetired.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Pipeline").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
@@ -1557,6 +1566,8 @@ func (h *ScanWorkflowHandler) handleStepError(w http.ResponseWriter, err error) 
 	case writeGraphInvalid(w, err):
 	case errors.Is(err, scanworkflow.ErrScanWorkflowRunActive):
 		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRunActive.Code), scanworkflow.ErrScanWorkflowRunActive.Message).WriteJSON(w)
+	case errors.Is(err, scanworkflow.ErrScanWorkflowRetired):
+		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRetired.Code), scanworkflow.ErrScanWorkflowRetired.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Step").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
