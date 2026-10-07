@@ -82,7 +82,7 @@ func TestMarkDuplicate_MergesAndRecordsWho(t *testing.T) {
 	h.exec(`INSERT INTO finding_comments (finding_id, author_id, content, tenant_id) VALUES ($1, $2, 'on the duplicate', $3)`,
 		dup.String(), h.owner.String(), h.tenant.String())
 	h.exec(`INSERT INTO finding_retests (id, tenant_id, finding_id, trigger, status, outcome, completed_at,
-			prior_status, template_id, target, deadline_at) VALUES ($1,$2,$3,'manual','completed','fixed',NOW(),
+			prior_status, template_id, target, deadline_at) VALUES ($1,$2,$3,'manual','completed','not_reproduced',NOW(),
 			'new','tpl','https://a.example',NOW()-interval '1 hour')`, shared.NewID().String(), h.tenant.String(), dup.String())
 
 	// memberA's scope is asset A: both findings are in it.

@@ -17,24 +17,36 @@ describe('retestActivity', () => {
   it('renders a completion that moved the finding as a status change', () => {
     const r = retestActivity('retest_completed', {
       moved: true,
-      outcome: 'still_present',
+      outcome: 'still_vulnerable',
       regression: true,
       template_id: 'tpl',
     })
     expect(r?.type).toBe('status_changed')
-    expect(r?.content).toBe('Retest: Still present (regression) (template tpl)')
+    expect(r?.content).toBe('Retest: Still vulnerable (regression) (template tpl)')
   })
 
-  it('renders an unknown outcome with its reason, as a single line', () => {
+  it('renders an inconclusive outcome with its reason, as a single line', () => {
     const r = retestActivity('retest_completed', {
       moved: false,
-      outcome: 'unknown',
+      outcome: 'inconclusive',
       reason: 'target unreachable: connection refused',
     })
     expect(r).toEqual({
       type: 'verified',
-      content: 'Retest: Unknown — target unreachable: connection refused',
+      content: 'Retest: Inconclusive — target unreachable: connection refused',
     })
+  })
+
+  it('never calls a bare non-match fixed, old entries included', () => {
+    expect(retestActivity('retest_completed', { outcome: 'not_reproduced' })?.content).toBe(
+      'Retest: Not reproduced (not confirmed)'
+    )
+    expect(retestActivity('retest_completed', { outcome: 'fixed' })?.content).toBe(
+      'Retest: Fixed (unverified non-match)'
+    )
+    expect(retestActivity('retest_completed', { outcome: 'confirmed_fixed' })?.content).toBe(
+      'Retest: Verified fixed'
+    )
   })
 })
 
@@ -47,5 +59,21 @@ describe('isRetestable', () => {
     expect(isRetestable({ toolName: 'nuclei', ruleId: 'tpl', status: 'false_positive' })).toBe(
       false
     )
+  })
+})
+
+describe('evidence reveal activity', () => {
+  it('says who revealed how many values and why, never the values', () => {
+    const a = retestActivity('evidence_revealed', {
+      placeholders: ['«secret:authorization#1»', '«secret:cookie#1»'],
+      purpose: 'copy_curl',
+    })
+    expect(a).toEqual({
+      type: 'evidence_added',
+      content: 'Copied the reproduction curl with 2 masked evidence values',
+    })
+    expect(
+      retestActivity('evidence_revealed', { placeholders: ['x'], purpose: 'view' })?.content
+    ).toBe('Revealed 1 masked evidence value')
   })
 })
