@@ -152,7 +152,7 @@ func toolUnavailableMessage(ta *sensordom.ToolAvailability, stepKey string, zone
 		return fmt.Sprintf("%sNo online sensor has %s%s: %d sensor(s) have it and none is online now. Start one, or wait until it reconnects.",
 			prefix, ta.Name, where, ta.SensorsTotal)
 	case ta.SensorsExcluded > 0:
-		return fmt.Sprintf("%sNo sensor%s may run %s: %d sensor(s) have it, but their grant, local policy or tool list does not allow it.",
+		return fmt.Sprintf("%sNo sensor%s may run %s: %d sensor(s) have it, but their grant or local policy does not allow it.",
 			prefix, where, ta.Name, ta.SensorsExcluded)
 	default:
 		return fmt.Sprintf("%sNo sensor%s has %s. Add it to a sensor (Settings > Scanning > Tools shows how) or choose another tool.",

@@ -32,7 +32,7 @@ response gives:
 | `sensors[]` | Each sensor reporting the tool: id, name, state, online, zones, version, content, exclusion. Listed only to callers holding `sensors:read`. The counts are given to everyone. |
 | `versions`, `min_reported_version`, `max_reported_version` | Distinct versions the runnable sensors report, oldest first. |
 | `content[]` | Per content name, the versions the sensors report. |
-| `min_version` | The oldest version the catalog accepts (`tools.min_version`, migration 001149). Custom tools set it through the custom tool API. |
+| `min_version` | The oldest version the catalog accepts (`tools.min_version`, migration 001150). Custom tools set it through the custom tool API. |
 | `latest_version` | The newest version known: the catalog's `latest_version`, or the newest reported version if that is newer. |
 | `update_available` | A runnable sensor reports a version below `latest_version`. |
 | `last_reported_at` | The newest manifest among the sensors listed. |
@@ -63,9 +63,8 @@ sensor (`Sensor.CanTakeJobs`). The fleet stats use the same function.
 ### Exclusions
 
 A sensor that reports a tool installed may still be unable to run it. The view
-asks the same rules dispatch applies to a scan job for that tool:
+asks the same rules admission applies to a scan job for that tool. An administrator narrows a sensor's tools through its grant.
 
-- `sensor_settings`: the administrator's tool list on the sensor leaves the tool out (`effective_tools`).
 - `grant`: the sensor's grant ([RFC-052](../rfcs/RFC-052-sensor-pairing-and-authorization.md)) refuses the job (`Grant.Admit`). This covers job types, tools, and the tool's tier above the ceiling. A New sensor runs passive tools only.
 - `local_policy`: the sensor's own local policy refuses the job (`sensor.Accepts`). This covers the policy's tool or job list and the kill switch.
 

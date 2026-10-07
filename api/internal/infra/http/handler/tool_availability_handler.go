@@ -42,8 +42,8 @@ type ToolAvailabilitySensor struct {
 	Version string                    `json:"version,omitempty"`
 	Content []ToolAvailabilityContent `json:"content,omitempty"`
 	// Excluded is why the sensor may not run the tool although it has it:
-	// sensor_settings, grant or local_policy; empty when it may.
-	Excluded       string `json:"excluded,omitempty" enums:"sensor_settings,grant,local_policy"`
+	// grant or local_policy; empty when it may.
+	Excluded       string `json:"excluded,omitempty" enums:"grant,local_policy"`
 	ExcludedDetail string `json:"excluded_detail,omitempty"`
 }
 
