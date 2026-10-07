@@ -7,7 +7,7 @@
   targets, scope gate or scan history. It is refused the same way; an
   automation runs a saved scan with `trigger_scan`. The executor also refuses
   to run any refused action type still stored in an automation.
-- Migration 001208 switches off every active automation that still uses a
+- Migration 001211 switches off every active automation that still uses a
   refused trigger or action. The automation stays readable and lists the
   refused types in `unsupported_features`; replace the node to switch it on.
 - **Upgrade note:** none; the migration runs with the others.
