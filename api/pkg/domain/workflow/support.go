@@ -12,7 +12,9 @@ import (
 //   - the schedule and finding_age triggers are stored but nothing ever fires
 //     them (no scheduler or age sweep reads them);
 //   - the assign_team and update_priority actions have no backing service and
-//     fail every time they run.
+//     fail every time they run;
+//   - the run_script action is disabled (there is no sandbox to run a
+//     tenant-supplied script in), so it fails every time it runs.
 //
 // They stay in the enum so stored workflows that use them still load, read
 // and render. New writes are refused: creating a workflow, replacing its
@@ -36,7 +38,7 @@ func (t TriggerType) IsSupported() bool {
 // IsSupported reports whether the platform actually executes this action type.
 func (t ActionType) IsSupported() bool {
 	switch t {
-	case ActionTypeAssignTeam, ActionTypeUpdatePriority:
+	case ActionTypeAssignTeam, ActionTypeUpdatePriority, ActionTypeRunScript:
 		return false
 	}
 	return true
