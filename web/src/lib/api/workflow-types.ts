@@ -4,6 +4,7 @@
  * TypeScript types for Automation Workflows
  * Workflows are event-driven automation pipelines with visual graph builder.
  */
+import type { SeverityLevel } from '@/lib/severity'
 
 // ============================================
 // NODE TYPES
@@ -169,8 +170,8 @@ export interface WorkflowUIPosition {
  * Filters which findings should trigger this workflow.
  */
 export interface FindingCreatedTriggerConfig {
-  /** Filter by severity levels (critical, high, medium, low) */
-  severity_filter?: Array<'critical' | 'high' | 'medium' | 'low'>
+  /** Filter by severity levels (critical, high, medium, low, info) */
+  severity_filter?: SeverityLevel[]
   /** Filter by tool names (nuclei, semgrep, etc.) */
   tool_filter?: string[]
   /** Filter by finding source codes (sast, dast, pentest, bug_bounty, etc.) */

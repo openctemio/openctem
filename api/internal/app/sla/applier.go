@@ -85,6 +85,12 @@ func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings [
 			failed++
 			continue
 		}
+		if deadline.IsZero() {
+			// No SLA for this finding (informational, info days = 0): the
+			// deadline stays NULL and sla_status stays not_applicable.
+			applied++
+			continue
+		}
 		f.SetSLADeadline(deadline)
 		applied++
 	}

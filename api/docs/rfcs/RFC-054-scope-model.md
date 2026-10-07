@@ -581,6 +581,31 @@ changed). Every created entry, exclusion and decision is audited
 changes nothing) and tenant-scoped; items outside the caller's data scope are
 neither counted nor changed.
 
+### 6.8 Coverage (`GET /stats`, `scope:read`)
+
+`coverage` is the share of the **internet-facing inventory** that an active
+scope target covers and no exclusion removes (research/53 SC8):
+
+- the inventory is §4.4 (confirmed or unrecorded, `dependency`,
+  `monitor_only`) of the stored types `domain`, `subdomain`, `ip_address`,
+  `service` and `application`; repositories, cloud resources and the review
+  queue are not in it;
+- internal names (`localhost`, `.local`, `.internal`, `.lan`) and private,
+  loopback, link-local and CGNAT addresses are counted apart
+  (`inventory_internal`), on neither side: scan zones gate them;
+- an asset matches on its host (the name, or the host of a URL or
+  `host:port`) with the §4.1 rules; an IP exclusion wins on any overlap;
+- everything is counted in one SQL statement over the **caller's data
+  scope** (a restricted member counts only their assets; one with no scope
+  rows counts nothing), so the numbers are not an oracle for the inventory
+  outside it. A data scope that cannot be resolved fails the request.
+
+```json
+{ "total_targets": 7, "active_targets": 7, "total_exclusions": 3, "active_exclusions": 3,
+  "coverage": 75.36,
+  "inventory_internet_facing": 69, "inventory_in_scope": 52, "inventory_internal": 4 }
+```
+
 ## 7. Approvals and notification (S3)
 
 - Effective approvals: the tenant's `widening_approvals`, or

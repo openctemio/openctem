@@ -210,11 +210,23 @@ type CreateTargetResponseWithWarnings struct {
 
 // ScopeStatsResponse represents scope statistics in API responses.
 type ScopeStatsResponse struct {
-	TotalTargets     int64   `json:"total_targets"`
-	ActiveTargets    int64   `json:"active_targets"`
-	TotalExclusions  int64   `json:"total_exclusions"`
-	ActiveExclusions int64   `json:"active_exclusions"`
-	Coverage         float64 `json:"coverage"`
+	TotalTargets     int64 `json:"total_targets"`
+	ActiveTargets    int64 `json:"active_targets"`
+	TotalExclusions  int64 `json:"total_exclusions"`
+	ActiveExclusions int64 `json:"active_exclusions"`
+	// Coverage is the percentage of the internet-facing inventory that the
+	// active scope targets cover (in_scope of internet_facing), counted over
+	// the assets the caller may see.
+	Coverage float64 `json:"coverage"`
+	// InventoryInternetFacing counts the caller-visible inventory domains,
+	// subdomains, public addresses, services and applications.
+	InventoryInternetFacing int64 `json:"inventory_internet_facing"`
+	// InventoryInScope is the part of it an active scope target covers and
+	// no exclusion removes.
+	InventoryInScope int64 `json:"inventory_in_scope"`
+	// InventoryInternal counts internal names and private addresses
+	// (zone-gated), left out of both.
+	InventoryInternal int64 `json:"inventory_internal"`
 }
 
 // =============================================================================
@@ -1114,7 +1126,7 @@ func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Reques
 
 // GetStats handles GET /api/v1/scope/stats
 // @Summary      Get scope statistics
-// @Description  Get aggregate statistics for scope targets and exclusions
+// @Description  Aggregate counts of scope targets and exclusions, and the share of the internet-facing inventory (domains, subdomains, public addresses, services, applications in the inventory) that the active scope targets cover. The inventory counts include only the assets the caller may see.
 // @Tags         Scope
 // @Produce      json
 // @Success      200  {object}  ScopeStatsResponse
@@ -1137,6 +1149,10 @@ func (h *ScopeHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		TotalExclusions:  stats.TotalExclusions,
 		ActiveExclusions: stats.ActiveExclusions,
 		Coverage:         stats.Coverage,
+
+		InventoryInternetFacing: stats.Inventory.InternetFacing,
+		InventoryInScope:        stats.Inventory.InScope,
+		InventoryInternal:       stats.Inventory.Internal,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

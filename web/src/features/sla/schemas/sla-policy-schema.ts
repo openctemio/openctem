@@ -8,12 +8,23 @@ import { z } from 'zod'
  * warning threshold 0..100. Windows must be non-decreasing: P0 <= P1 <= P2 <=
  * P3 and critical <= high <= medium <= low <= info. A more urgent finding never
  * gets a longer deadline.
+ *
+ * Info may be 0 = informational findings get no SLA (the default); it then
+ * takes no part in the order.
  */
 
 const dayField = z
   .number()
   .int('Whole days only')
   .min(1, 'At least 1 day')
+  .max(365, 'At most 365 days')
+
+/** Info days: 0 = no SLA for informational findings. */
+export const NO_SLA = 0
+const infoDayField = z
+  .number()
+  .int('Whole days only')
+  .min(NO_SLA, '0 (no SLA) or more')
   .max(365, 'At most 365 days')
 
 type DayKey =
@@ -51,7 +62,7 @@ export const slaPolicySchema = z
     high_days: dayField,
     medium_days: dayField,
     low_days: dayField,
-    info_days: dayField,
+    info_days: infoDayField,
     warning_threshold_pct: z
       .number()
       .int('Whole percent only')
@@ -61,6 +72,7 @@ export const slaPolicySchema = z
   })
   .superRefine((v, ctx) => {
     for (const [tighter, looser, message] of WINDOW_ORDER) {
+      if (looser === 'info_days' && v.info_days === NO_SLA) continue
       if (v[tighter] > v[looser]) {
         ctx.addIssue({ code: 'custom', message, path: [tighter] })
       }
@@ -104,7 +116,7 @@ export const DEFAULT_SLA_FORM: SlaPolicyFormData = {
   high_days: 15,
   medium_days: 30,
   low_days: 60,
-  info_days: 90,
+  info_days: NO_SLA,
   warning_threshold_pct: 80,
   escalation_enabled: true,
 }

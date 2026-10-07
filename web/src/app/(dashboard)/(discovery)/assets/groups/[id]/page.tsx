@@ -77,6 +77,7 @@ import {
 import { groupMemberHref } from '@/features/asset-groups/lib/member-link'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { IssuesChip } from '@/features/assets/components/service-cells'
+import { SEVERITY_LEVELS, normalizeSeverity, type SeverityLevel } from '@/lib/severity'
 
 const criticalityColors: Record<string, string> = CRITICALITY_BADGE_SOFT
 
@@ -195,9 +196,13 @@ function AssetGroupDetailContent({ params }: PageProps) {
   }, [safeAssets])
 
   const findingsBySeverity = useMemo(() => {
-    const counts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
+    const counts = Object.fromEntries(SEVERITY_LEVELS.map((s) => [s, 0])) as Record<
+      SeverityLevel,
+      number
+    >
     safeFindings.forEach((f) => {
-      counts[f.severity] = (counts[f.severity] || 0) + 1
+      const s = normalizeSeverity(f.severity)
+      if (s) counts[s] += 1
     })
     return counts
   }, [safeFindings])
