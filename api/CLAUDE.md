@@ -20,8 +20,10 @@ agent), [sdk-go](https://github.com/openctemio/sdk-go),
 - **Docs**: `./docs/`: architecture, RFCs, development guides, user guide.
 - **Root**: `../Makefile` (`make setup`, `make hooks`, `make check`, …), `../.github/workflows/`
   (all CI; see `docs/development/ci-cd.md`), `../.githooks/`, `../CLAUDE.md` (rules that span both).
-- **Contract**: after changing a handler's request/response run `make swagger` here, then
-  `make api-types` at the root, and commit both (Web CI fails on drift).
+- **Contract**: the OpenAPI spec and the files derived from it are generated, not
+  committed. After changing a handler's request/response, a route or its gate run
+  `make generate` at the root to refresh them locally; Web CI type-checks the web
+  against the fresh contract and posts the contract diff on the pull request.
 - **Release**: one `vX.Y.Z` tag on `main` releases API + web together (`ghcr.io/openctemio/openctem-api`,
   `openctem-web`, all-in-one `openctem`, `migrations`, `seed`, `admin-cli`).
 
