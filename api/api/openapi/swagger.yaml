@@ -14353,7 +14353,26 @@ definitions:
       active_targets:
         type: integer
       coverage:
+        description: |-
+          Coverage is the percentage of the internet-facing inventory that the
+          active scope targets cover (in_scope of internet_facing), counted over
+          the assets the caller may see.
         type: number
+      inventory_in_scope:
+        description: |-
+          InventoryInScope is the part of it an active scope target covers and
+          no exclusion removes.
+        type: integer
+      inventory_internal:
+        description: |-
+          InventoryInternal counts internal names and private addresses
+          (zone-gated), left out of both.
+        type: integer
+      inventory_internet_facing:
+        description: |-
+          InventoryInternetFacing counts the caller-visible inventory domains,
+          subdomains, public addresses, services and applications.
+        type: integer
       total_exclusions:
         type: integer
       total_targets:
@@ -34751,7 +34770,10 @@ paths:
       - Scope
   /scope/stats:
     get:
-      description: Get aggregate statistics for scope targets and exclusions
+      description: Aggregate counts of scope targets and exclusions, and the share
+        of the internet-facing inventory (domains, subdomains, public addresses, services,
+        applications in the inventory) that the active scope targets cover. The inventory
+        counts include only the assets the caller may see.
       produces:
       - application/json
       responses:
