@@ -1,0 +1,234 @@
+package scanrun
+
+import (
+	"context"
+	"time"
+
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
+)
+
+// RunFilter represents filter options for listing runs.
+type RunFilter struct {
+	TenantID       *shared.ID
+	ScanWorkflowID *shared.ID
+	AssetID        *shared.ID
+	Status         *RunStatus
+	TriggerType    *scanworkflow.TriggerType
+	TriggeredBy    string
+	StartedFrom    *time.Time
+	StartedTo      *time.Time
+	// Sort orders the list; the zero value is newest first.
+	Sort RunListSort
+}
+
+// RunRepository defines the interface for scan run persistence.
+type RunRepository interface {
+	// Create creates a new run.
+	Create(ctx context.Context, run *Run) error
+
+	// GetByID retrieves a run by ID.
+	GetByID(ctx context.Context, id shared.ID) (*Run, error)
+
+	// GetByTenantAndID retrieves a run by tenant and ID.
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Run, error)
+
+	// List lists runs with filters and pagination.
+	List(ctx context.Context, filter RunFilter, page pagination.Pagination) (pagination.Result[*Run], error)
+
+	// ListByScanID lists runs for a specific scan with pagination.
+	ListByScanID(ctx context.Context, scanID shared.ID, page, perPage int) ([]*Run, int64, error)
+
+	// Update updates a run.
+	Update(ctx context.Context, run *Run) error
+
+	// Delete deletes a run.
+	Delete(ctx context.Context, id shared.ID) error
+
+	// GetWithStepRuns retrieves a run with its step runs.
+	GetWithStepRuns(ctx context.Context, id shared.ID) (*Run, error)
+
+	// GetActiveByScanWorkflowID retrieves active runs for a scan workflow.
+	GetActiveByScanWorkflowID(ctx context.Context, scanWorkflowID shared.ID) ([]*Run, error)
+
+	// GetActiveByAssetID retrieves active runs for an asset.
+	GetActiveByAssetID(ctx context.Context, assetID shared.ID) ([]*Run, error)
+
+	// CountActiveByScanWorkflowID counts active runs (pending/running) for a scan workflow.
+	CountActiveByScanWorkflowID(ctx context.Context, scanWorkflowID shared.ID) (int, error)
+
+	// CountActiveByTenantID counts active runs (pending/running) for a tenant.
+	CountActiveByTenantID(ctx context.Context, tenantID shared.ID) (int, error)
+
+	// CountActiveByScanID counts active runs (pending/running) for a scan config.
+	CountActiveByScanID(ctx context.Context, scanID shared.ID) (int, error)
+
+	// CreateRunIfUnderLimit atomically checks concurrent run limits and creates run if under limit.
+	// Returns ErrConcurrentLimitExceeded if scan or tenant limit is exceeded.
+	// This prevents race conditions where multiple triggers bypass the limit.
+	CreateRunIfUnderLimit(ctx context.Context, run *Run, maxPerScan, maxPerTenant int) error
+
+	// UpdateStats updates run statistics.
+	UpdateStats(ctx context.Context, id shared.ID, completed, failed, skipped, findings int) error
+
+	// UpdateStatus updates run status.
+	UpdateStatus(ctx context.Context, id shared.ID, status RunStatus, errorMessage string) error
+
+	// GetStatsByTenant returns aggregated run statistics for a tenant in a single query.
+	// This is optimized to avoid N+1 queries when fetching stats.
+	GetStatsByTenant(ctx context.Context, tenantID shared.ID) (RunStats, error)
+
+	// MarkTimedOutRuns marks runs as timed out if they have been running longer than
+	// their scan's timeout_seconds. Returns the number of runs marked.
+	// This is intended to be called periodically by a background worker.
+	MarkTimedOutRuns(ctx context.Context) (int64, error)
+
+	// ListPendingRetries returns failed scan_runs that are eligible for automatic retry.
+	// A run is eligible when:
+	//   - Its parent scan has max_retries > 0 and is active
+	//   - Its retry_attempt < scan.max_retries
+	//   - It is the latest run for the scan
+	//   - The exponential backoff window has elapsed since completed_at
+	// Returns RetryCandidate records (run + retry config) for the controller to process.
+	ListPendingRetries(ctx context.Context, limit int) ([]RetryCandidate, error)
+
+	// ReleaseFailedRetryDispatch releases the claim of a retry whose dispatch
+	// failed without creating a run, and spends the attempt (retry_attempt+1),
+	// so a dispatch that keeps failing runs out of budget instead of retrying
+	// every backoff interval forever.
+	ReleaseFailedRetryDispatch(ctx context.Context, runID shared.ID) error
+}
+
+// RetryCandidate represents a failed scan run eligible for retry.
+type RetryCandidate struct {
+	RunID               shared.ID
+	ScanID              shared.ID
+	TenantID            shared.ID
+	RetryAttempt        int // Current retry_attempt of the failed run; new run will be RetryAttempt+1
+	MaxRetries          int
+	RetryBackoffSeconds int
+}
+
+// RunStats represents aggregated run statistics.
+type RunStats struct {
+	Total     int64
+	Pending   int64
+	Running   int64
+	Completed int64
+	// Partial: kept results but lost some work (RFC-046 D5).
+	Partial  int64
+	Failed   int64
+	Canceled int64
+}
+
+// StepRunFilter represents filter options for listing step runs.
+type StepRunFilter struct {
+	ScanRunID *shared.ID
+	StepID    *shared.ID
+	SensorID  *shared.ID
+	Status    *StepRunStatus
+}
+
+// StepRunRepository defines the interface for step run persistence.
+type StepRunRepository interface {
+	// Create creates a new step run.
+	Create(ctx context.Context, stepRun *StepRun) error
+
+	// CreateBatch creates multiple step runs.
+	CreateBatch(ctx context.Context, stepRuns []*StepRun) error
+
+	// GetByID retrieves a step run by ID.
+	GetByID(ctx context.Context, id shared.ID) (*StepRun, error)
+
+	// GetByScanRunID retrieves all step runs for a scan run.
+	GetByScanRunID(ctx context.Context, scanRunID shared.ID) ([]*StepRun, error)
+
+	// GetByStepKey retrieves a step run by scan run ID and step key.
+	GetByStepKey(ctx context.Context, scanRunID shared.ID, stepKey string) (*StepRun, error)
+
+	// List lists step runs with filters.
+	List(ctx context.Context, filter StepRunFilter) ([]*StepRun, error)
+
+	// Update updates a step run.
+	Update(ctx context.Context, stepRun *StepRun) error
+
+	// Delete deletes a step run.
+	Delete(ctx context.Context, id shared.ID) error
+
+	// UpdateStatus updates step run status.
+	UpdateStatus(ctx context.Context, id shared.ID, status StepRunStatus, errorMessage, errorCode string) error
+
+	// AssignSensor records that a sensor started the step run with the
+	// command: running, started_at, sensor and command. Only a step run that
+	// is still pending or queued changes, so a start reported after the step
+	// finished never reopens it.
+	AssignSensor(ctx context.Context, id shared.ID, sensorID, commandID shared.ID) error
+
+	// Complete marks a step run as completed.
+	Complete(ctx context.Context, id shared.ID, findingsCount int, output map[string]any) error
+
+	// GetPendingByDependencies gets step runs that are pending and have their dependencies completed.
+	GetPendingByDependencies(ctx context.Context, scanRunID shared.ID, completedStepKeys []string) ([]*StepRun, error)
+
+	// GetStatsByTenant returns aggregated step run statistics for a tenant in a single query.
+	// This is optimized to avoid N+1 queries when fetching stats.
+	GetStatsByTenant(ctx context.Context, tenantID shared.ID) (RunStats, error)
+}
+
+// UnclaimedRunAborter ends runs whose work no sensor ever picked up (D8).
+// Optional extension of RunRepository, asserted by the timeout controller.
+type UnclaimedRunAborter interface {
+	// AbortUnclaimedRuns fails every active run all of whose commands are
+	// still pending and were never handed to a sensor, once the run is older
+	// than scheduledAfter (trigger_type 'schedule') or interactiveAfter
+	// (anything else), or than its scan's timeout if that is shorter. The run,
+	// its open steps (error code NO_SENSOR, never retried) and its commands
+	// fail with the reason, and the scan records the failure.
+	AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error)
+}
+
+// Rollover is the work a scan's previous scheduled run left unfinished at its
+// deadline (RFC-046 D5): the next scheduled run plans these targets first.
+type Rollover struct {
+	FromRunID shared.ID
+	Targets   []string
+}
+
+// RolloverStore reads the unfinished targets runs recorded at their deadline.
+// Optional extension of RunRepository, asserted by the scan trigger and the
+// run handler. Every read is scoped to the caller's tenant.
+type RolloverStore interface {
+	// GetUnfinishedTargets returns the targets runID recorded as unfinished,
+	// or shared.ErrNotFound when the run is not in tenantID.
+	GetUnfinishedTargets(ctx context.Context, tenantID, runID shared.ID) ([]string, error)
+
+	// LatestRollover returns what the scan's most recent settled run left
+	// unfinished when that run was a scheduled run that ended partial, and
+	// nil otherwise (the latest settled run finished everything, failed,
+	// was canceled, or was not a scheduled run).
+	LatestRollover(ctx context.Context, tenantID, scanID shared.ID) (*Rollover, error)
+}
+
+// CanceledRunClosure is what closing a canceled run changed.
+type CanceledRunClosure struct {
+	// Steps is how many open step runs ended canceled.
+	Steps int64
+	// Commands is how many open commands ended canceled.
+	Commands int64
+	// Sensors are the sensors that held (claimed or were pinned) one of
+	// those commands; each is told to stop on its next heartbeat.
+	Sensors []shared.ID
+}
+
+// CanceledRunCloser closes what a canceled run leaves open (RFC-046 §8).
+// Optional extension of RunRepository, asserted by the scan run service.
+type CanceledRunCloser interface {
+	// CloseCanceledRun ends the open step runs and commands of runID as
+	// canceled, in one statement, only when the run is in tenantID and is
+	// canceled. Commands lose their lease, so the expired-lease sweep never
+	// re-queues them and the sensor holding one finds it in
+	// cancel_command_ids. Repeating it changes nothing (zero closure).
+	CloseCanceledRun(ctx context.Context, tenantID, runID shared.ID) (CanceledRunClosure, error)
+}

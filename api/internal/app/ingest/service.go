@@ -99,7 +99,7 @@ type Service struct {
 	// findings of command-bound reports (RFC-036 P1). Nil-safe.
 	takeoverConfirmer TakeoverConfirmer
 
-	// stepOutputs records what command-bound reports of pipeline steps
+	// stepOutputs records what command-bound reports of workflow steps
 	// wrote, for chained stages; commandIngested is told when a v2 report
 	// of a command finished (step_outputs.go). Nil-safe.
 	stepOutputs     StepOutputRecorder
@@ -214,7 +214,7 @@ func (s *Service) SetPortReconciler(r PortReconciler) {
 }
 
 // SetAssetStateHistoryRepository wires the asset state-history store so the
-// discovery pipeline records appeared/recovered events. Optional.
+// discovery scan workflow records appeared/recovered events. Optional.
 func (s *Service) SetAssetStateHistoryRepository(repo asset.StateHistoryRepository) {
 	s.assetProcessor.SetStateHistoryRepository(repo)
 }
@@ -496,7 +496,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		}
 		s.stampScanAttribution(ctx, agt, tenantID, binding, scope, toolName, report.Metadata.ID, assetMap)
 	}
-	// What a pipeline step's report wrote, for the stages chained after it.
+	// What a workflow step's report wrote, for the stages chained after it.
 	s.recordStepOutputs(ctx, tenantID, binding, scope)
 
 	// Step 1b: Project recon-discovered assets (open ports, exposed services,

@@ -587,20 +587,20 @@ func (m *toolSvcMockCategoryRepo) AddCategory(cat *toolcategory.ToolCategory) {
 	m.categories[cat.ID.String()] = cat
 }
 
-// toolSvcMockPipelineDeactivator implements app.PipelineDeactivator for testing.
-type toolSvcMockPipelineDeactivator struct {
+// toolSvcMockScanWorkflowDeactivator implements app.ScanWorkflowDeactivator for testing.
+type toolSvcMockScanWorkflowDeactivator struct {
 	deactivatedCount int
 	deactivatedIDs   []shared.ID
 	err              error
-	calledWith       string    // tracks the tool name passed to DeactivatePipelinesByTool
-	calledForTenant  shared.ID // tracks the tenant passed to DeactivatePipelinesByTool
+	calledWith       string    // tracks the tool name passed to DeactivateScanWorkflowsByTool
+	calledForTenant  shared.ID // tracks the tenant passed to DeactivateScanWorkflowsByTool
 }
 
-func newToolSvcMockPipelineDeactivator() *toolSvcMockPipelineDeactivator {
-	return &toolSvcMockPipelineDeactivator{}
+func newToolSvcMockScanWorkflowDeactivator() *toolSvcMockScanWorkflowDeactivator {
+	return &toolSvcMockScanWorkflowDeactivator{}
 }
 
-func (m *toolSvcMockPipelineDeactivator) DeactivatePipelinesByTool(_ context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error) {
+func (m *toolSvcMockScanWorkflowDeactivator) DeactivateScanWorkflowsByTool(_ context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error) {
 	m.calledWith = toolName
 	m.calledForTenant = tenantID
 	if m.err != nil {
@@ -609,7 +609,7 @@ func (m *toolSvcMockPipelineDeactivator) DeactivatePipelinesByTool(_ context.Con
 	return m.deactivatedCount, m.deactivatedIDs, nil
 }
 
-func (m *toolSvcMockPipelineDeactivator) GetPipelinesUsingTool(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
+func (m *toolSvcMockScanWorkflowDeactivator) GetScanWorkflowsUsingTool(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
 	return m.deactivatedIDs, m.err
 }
 
@@ -626,10 +626,10 @@ func newToolSvcTestService() (*tool.Service, *toolSvcMockToolRepo, *toolSvcMockC
 	return svc, toolRepo, configRepo, execRepo
 }
 
-func newToolSvcTestServiceFull() (*tool.Service, *toolSvcMockToolRepo, *toolSvcMockConfigRepo, *toolSvcMockExecutionRepo, *toolSvcMockPipelineDeactivator) {
+func newToolSvcTestServiceFull() (*tool.Service, *toolSvcMockToolRepo, *toolSvcMockConfigRepo, *toolSvcMockExecutionRepo, *toolSvcMockScanWorkflowDeactivator) {
 	svc, toolRepo, configRepo, execRepo := newToolSvcTestService()
-	deactivator := newToolSvcMockPipelineDeactivator()
-	svc.SetPipelineDeactivator(deactivator)
+	deactivator := newToolSvcMockScanWorkflowDeactivator()
+	svc.SetScanWorkflowDeactivator(deactivator)
 	return svc, toolRepo, configRepo, execRepo, deactivator
 }
 
@@ -1171,9 +1171,9 @@ func TestToolService_DeleteTool_CascadeDeactivation(t *testing.T) {
 	existing.IsBuiltin = false
 	repo.AddTool(existing)
 
-	pipelineID := shared.NewID()
+	scanWorkflowID := shared.NewID()
 	deactivator.deactivatedCount = 2
-	deactivator.deactivatedIDs = []shared.ID{pipelineID, shared.NewID()}
+	deactivator.deactivatedIDs = []shared.ID{scanWorkflowID, shared.NewID()}
 
 	err := svc.DeleteTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
@@ -1183,9 +1183,9 @@ func TestToolService_DeleteTool_CascadeDeactivation(t *testing.T) {
 	if deactivator.calledWith != "custom-scanner" {
 		t.Errorf("expected deactivator called with custom-scanner, got %s", deactivator.calledWith)
 	}
-	// Only the tool's own tenant's pipelines may be deactivated: tool names
+	// Only the tool's own tenant's scan workflows may be deactivated: tool names
 	// are unique per tenant, so a tenant's custom "nuclei" used to switch
-	// off every other tenant's nuclei pipelines.
+	// off every other tenant's nuclei scan workflows.
 	if deactivator.calledForTenant != tenantID {
 		t.Errorf("deactivation must be scoped to the tool's tenant %s, got %s", tenantID, deactivator.calledForTenant)
 	}
@@ -1330,7 +1330,7 @@ func TestToolService_DeactivateTool_CascadeError(t *testing.T) {
 
 func TestToolService_DeactivateTool_NoPipelineDeactivator(t *testing.T) {
 	svc, repo, _, _ := newToolSvcTestService()
-	// No pipeline deactivator set
+	// No scan workflow deactivator set
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
@@ -2542,7 +2542,7 @@ func TestToolService_ListToolExecutions_InvalidTenantID(t *testing.T) {
 }
 
 // ============================================================================
-// Tests: SetAvailabilitySources / SetCategoryRepo / SetPipelineDeactivator
+// Tests: SetAvailabilitySources / SetCategoryRepo / SetScanWorkflowDeactivator
 // ============================================================================
 
 // Availability that cannot be read never blocks a picker: the tools list
@@ -2578,9 +2578,9 @@ func TestToolService_SetCategoryRepo(t *testing.T) {
 
 func TestToolService_SetPipelineDeactivator(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
-	deactivator := newToolSvcMockPipelineDeactivator()
+	deactivator := newToolSvcMockScanWorkflowDeactivator()
 	// Should not panic
-	svc.SetPipelineDeactivator(deactivator)
+	svc.SetScanWorkflowDeactivator(deactivator)
 }
 
 // ============================================================================
@@ -2742,29 +2742,29 @@ func TestToolService_ListEnabledToolsForTenant_InvalidTenantID(t *testing.T) {
 }
 
 // ============================================================================
-// Tests: RecordToolExecution with PipelineRunID and StepRunID
+// Tests: RecordToolExecution with ScanRunID and StepRunID
 // ============================================================================
 
 func TestToolService_RecordToolExecution_WithPipelineContext(t *testing.T) {
 	svc, _, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
-	pipelineRunID := shared.NewID()
+	scanRunID := shared.NewID()
 	stepRunID := shared.NewID()
 
 	input := tool.RecordToolExecutionInput{
-		TenantID:      tenantID.String(),
-		ToolID:        toolID.String(),
-		PipelineRunID: pipelineRunID.String(),
-		StepRunID:     stepRunID.String(),
-		TargetsCount:  3,
+		TenantID:     tenantID.String(),
+		ToolID:       toolID.String(),
+		ScanRunID:    scanRunID.String(),
+		StepRunID:    stepRunID.String(),
+		TargetsCount: 3,
 	}
 
 	result, err := svc.RecordToolExecution(context.Background(), input)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if result.PipelineRunID == nil || *result.PipelineRunID != pipelineRunID {
+	if result.ScanRunID == nil || *result.ScanRunID != scanRunID {
 		t.Error("expected pipeline run ID to be set")
 	}
 	if result.StepRunID == nil || *result.StepRunID != stepRunID {
@@ -2793,9 +2793,9 @@ func TestToolService_RecordToolExecution_InvalidPipelineRunID(t *testing.T) {
 	tenantID := shared.NewID()
 
 	input := tool.RecordToolExecutionInput{
-		TenantID:      tenantID.String(),
-		ToolID:        shared.NewID().String(),
-		PipelineRunID: "bad-uuid",
+		TenantID:  tenantID.String(),
+		ToolID:    shared.NewID().String(),
+		ScanRunID: "bad-uuid",
 	}
 
 	_, err := svc.RecordToolExecution(context.Background(), input)

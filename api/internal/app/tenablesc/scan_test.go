@@ -51,7 +51,7 @@ func withCatalog(intg *integration.Integration, c *Catalog) {
 func TestNewScanCommand(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	bk := map[string]string{"run_id": "r1", "scan_id": "s1", "pipeline_run_id": "r1", "step_key": "scan", "step_run_id": "sr1"}
+	bk := map[string]string{"run_id": "r1", "scan_id": "s1", "scan_run_id": "r1", "step_key": "scan", "scan_run_step_id": "sr1"}
 
 	cmd, err := e.svc.NewScanCommand(ctx, e.tenant, scanCfg(e.intg, map[string]any{"zone_id": float64(2), "max_scan_seconds": float64(3600)}),
 		[]string{"10.0.0.0/28", "10.0.1.5"}, bk)

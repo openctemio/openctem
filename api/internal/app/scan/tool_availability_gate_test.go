@@ -6,7 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -29,13 +30,13 @@ func (f *fakeAvailability) ToolAvailabilityFor(_ context.Context, _ shared.ID, z
 	return f.byTool[name], nil
 }
 
-// stubSteps serves one pipeline's steps.
+// stubSteps serves one scan workflow's steps.
 type stubSteps struct {
-	pipeline.StepRepository
-	steps []*pipeline.Step
+	scanworkflow.StepRepository
+	steps []*scanworkflow.Step
 }
 
-func (s stubSteps) GetByPipelineID(_ context.Context, _ shared.ID) ([]*pipeline.Step, error) {
+func (s stubSteps) GetByScanWorkflowID(_ context.Context, _ shared.ID) ([]*scanworkflow.Step, error) {
 	return s.steps, nil
 }
 
@@ -105,11 +106,11 @@ func TestCheckScanToolsDispatchable(t *testing.T) {
 
 	// Workflow: the first step whose tool no sensor may run refuses, named.
 	pid := shared.NewID()
-	svc.stepRepo = stubSteps{steps: []*pipeline.Step{
+	svc.stepRepo = stubSteps{steps: []*scanworkflow.Step{
 		{StepKey: "discover", Tool: "nuclei"},
 		{StepKey: "iac", Tool: "checkov"},
 	}}
-	wf := &scan.Scan{ID: shared.NewID(), TenantID: tenant, ScanType: scan.ScanTypeWorkflow, PipelineID: &pid}
+	wf := &scan.Scan{ID: shared.NewID(), TenantID: tenant, ScanType: scan.ScanTypeWorkflow, ScanWorkflowID: &pid}
 	tu = asToolUnavailable(t, svc.checkScanToolsDispatchable(ctx, wf))
 	if tu.Step != "iac" || tu.Tool != "checkov" || !strings.HasPrefix(tu.Domain.Message, `Step "iac": `) {
 		t.Errorf("workflow refusal = %+v (%s)", tu, tu.Domain.Message)
@@ -139,9 +140,9 @@ func TestPreviewStep_SameVerdictAsTrigger(t *testing.T) {
 	svc := &Service{toolRepo: &stubTools{tools: map[string]*tool.Tool{}}, toolAvailability: avail, logger: logger.NewNop()}
 	pid := shared.NewID()
 	for _, name := range []string{"nuclei", "checkov", "semgrep"} {
-		step := &pipeline.Step{StepKey: "s-" + name, Name: name, Tool: name}
-		svc.stepRepo = stubSteps{steps: []*pipeline.Step{step}}
-		wf := &scan.Scan{ID: shared.NewID(), TenantID: tenant, ScanType: scan.ScanTypeWorkflow, PipelineID: &pid}
+		step := &scanworkflow.Step{StepKey: "s-" + name, Name: name, Tool: name}
+		svc.stepRepo = stubSteps{steps: []*scanworkflow.Step{step}}
+		wf := &scan.Scan{ID: shared.NewID(), TenantID: tenant, ScanType: scan.ScanTypeWorkflow, ScanWorkflowID: &pid}
 		triggerErr := svc.checkScanToolsDispatchable(ctx, wf)
 		node := svc.previewStep(ctx, tenant, nil, step)
 		if triggerErr == nil {

@@ -52,13 +52,13 @@ func TestAttributionRepository_ScanEvidence(t *testing.T) {
 
 	templateID := seedTimeoutTemplate(ctx, t, db, tenant)
 	scanID := shared.NewID()
-	mustExec(t, db, `INSERT INTO scans (id, tenant_id, name, scan_type, pipeline_id) VALUES ($1, $2, $3, 'workflow', $4)`,
+	mustExec(t, db, `INSERT INTO scans (id, tenant_id, name, scan_type, scan_workflow_id) VALUES ($1, $2, $3, 'workflow', $4)`,
 		scanID.String(), tenant.String(), "scan-"+scanID.String(), templateID.String())
 	runID := seedRun(ctx, t, db, tenant, templateID, &scanID, "running", 0)
 	stepID, stepRunID := shared.NewID(), shared.NewID()
-	mustExec(t, db, `INSERT INTO pipeline_steps (id, pipeline_id, step_key, name, step_order) VALUES ($1, $2, 'recon', 'recon', 1)`,
+	mustExec(t, db, `INSERT INTO scan_workflow_steps (id, scan_workflow_id, step_key, name, step_order) VALUES ($1, $2, 'recon', 'recon', 1)`,
 		stepID.String(), templateID.String())
-	mustExec(t, db, `INSERT INTO step_runs (id, pipeline_run_id, step_id, step_key, step_order, status) VALUES ($1, $2, $3, 'recon', 1, 'running')`,
+	mustExec(t, db, `INSERT INTO scan_run_steps (id, scan_run_id, step_id, step_key, step_order, status) VALUES ($1, $2, $3, 'recon', 1, 'running')`,
 		stepRunID.String(), runID.String(), stepID.String())
 
 	gotRun, gotScan, err := repo.ScanRunOf(ctx, tenant, stepRunID)

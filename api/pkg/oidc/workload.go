@@ -8,6 +8,8 @@ package oidc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,7 +32,19 @@ const MaxWorkloadTokenLifetime = 24 * time.Hour
 type WorkloadExpectations struct {
 	Issuer   string
 	Audience string
+	// JTIOptional admits a token without a jti (providers that never send
+	// one). Its replay key is then the SHA-256 of the whole token
+	// (TokenHashJTIPrefix + hex): a token is still good for one exchange.
+	JTIOptional bool
+	// IgnoreTimes skips the clock checks (exp, nbf, iat); the lifetime bound
+	// and the presence of iat and exp still apply. Only for a preview that
+	// shows an administrator whether a sample token verifies; never for an
+	// exchange.
+	IgnoreTimes bool
 }
+
+// TokenHashJTIPrefix starts the replay key of a token that carries no jti.
+const TokenHashJTIPrefix = "sha256:"
 
 // WorkloadToken is a verified workload token.
 type WorkloadToken struct {
@@ -61,6 +75,27 @@ func UnverifiedIssuer(raw string) (string, error) {
 		return "", errors.New("token has no readable issuer")
 	}
 	return claims.Iss, nil
+}
+
+// UnverifiedClaims decodes a token's payload without verifying it, for a
+// display that says so (a CI trust preview). Never trust what it returns.
+func UnverifiedClaims(raw string) (map[string]any, error) {
+	if raw == "" || len(raw) > MaxTokenSize {
+		return nil, errors.New("token is empty or too large")
+	}
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return nil, errors.New("token is not a JWS compact serialization")
+	}
+	payload, err := jwtv5.NewParser().DecodeSegment(parts[1])
+	if err != nil {
+		return nil, errors.New("token payload is not readable")
+	}
+	var m map[string]any
+	if err := json.Unmarshal(payload, &m); err != nil || m == nil {
+		return nil, errors.New("token payload is not a JSON object")
+	}
+	return m, nil
 }
 
 // discoveredJWKS is the jwks_uri an issuer's discovery document named.
@@ -118,7 +153,8 @@ func (c *Client) workloadJWKSURI(ctx context.Context, issuer string) (string, er
 // VerifyWorkloadToken verifies a CI workload token with the shared core
 // (VerifyJWT: signature, alg allowlist, iss, aud, exp, nbf, iat) and the
 // workload rules: iat required, a bounded lifetime, and
-// the presence of sub and jti. Every failure is an error; the caller must
+// the presence of sub and jti (or, with JTIOptional, a replay key derived
+// from the token). Every failure is an error; the caller must
 // refuse the exchange. Replay (jti) is the caller's to check.
 func (c *Client) VerifyWorkloadToken(ctx context.Context, raw string, exp WorkloadExpectations) (*WorkloadToken, error) {
 	if raw == "" || len(raw) > MaxTokenSize {
@@ -133,10 +169,11 @@ func (c *Client) VerifyWorkloadToken(ctx context.Context, raw string, exp Worklo
 	}
 	claims := jwtv5.MapClaims{}
 	if err := c.VerifyJWT(ctx, raw, claims, TokenPolicy{
-		JWKSURI:  jwksURI,
-		Issuer:   exp.Issuer,
-		Audience: exp.Audience,
-		Leeway:   workloadLeeway,
+		JWKSURI:     jwksURI,
+		Issuer:      exp.Issuer,
+		Audience:    exp.Audience,
+		Leeway:      workloadLeeway,
+		IgnoreTimes: exp.IgnoreTimes,
 	}); err != nil {
 		return nil, fmt.Errorf("token: %w", err)
 	}
@@ -153,6 +190,10 @@ func (c *Client) VerifyWorkloadToken(ctx context.Context, raw string, exp Worklo
 	}
 	sub, _ := claims.GetSubject()
 	jti, _ := claims["jti"].(string)
+	if jti == "" && exp.JTIOptional {
+		sum := sha256.Sum256([]byte(raw))
+		jti = TokenHashJTIPrefix + hex.EncodeToString(sum[:])
+	}
 	if sub == "" || jti == "" {
 		return nil, errors.New("token: sub or jti is missing")
 	}

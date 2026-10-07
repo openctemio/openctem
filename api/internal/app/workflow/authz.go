@@ -55,7 +55,7 @@ func NodePermission(c workflowdom.NodeConfig) (permission.Permission, bool) {
 	case workflowdom.ActionTypeTriggerScan:
 		return permission.ScansWrite, true
 	case workflowdom.ActionTypeTriggerPipeline:
-		return permission.PipelinesWrite, true
+		return permission.ScanWorkflowsWrite, true
 	case workflowdom.ActionTypeHTTPRequest:
 		return permission.IntegrationsManage, true
 	default:

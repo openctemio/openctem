@@ -17,7 +17,7 @@ vi.mock('@/lib/api/pipeline-hooks', () => ({
   },
   useScanManagementStats: () => ({
     data: {
-      pipelines: {
+      scan_runs: {
         total: 40,
         running: 1,
         pending: 0,
@@ -78,7 +78,7 @@ globalThis.ResizeObserver ??= class {
 const run = (over: Record<string, unknown>) => ({
   id: 'r1',
   tenant_id: 't',
-  pipeline_id: 'p',
+  scan_workflow_id: 'p',
   scan_id: 's1',
   scan_name: 'Daily external recon',
   trigger_type: 'manual',
@@ -218,7 +218,7 @@ describe('ScanRunsTab', () => {
     await userEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
     await waitFor(() => expect(exportToCsvMock).toHaveBeenCalled())
     const url = String(exportGet.mock.calls.at(-1)?.[0])
-    expect(url).toMatch(/^\/api\/v1\/pipeline-runs\?/)
+    expect(url).toMatch(/^\/api\/v1\/scan-runs\?/)
     expect(url).toContain('status=failed')
     expect(url).toContain('sort=-started_at')
     expect(exportToCsvMock).toHaveBeenCalled()
@@ -227,7 +227,7 @@ describe('ScanRunsTab', () => {
   it('explains the missing permission instead of showing an empty table', () => {
     canReadPipelines = false
     render(<ScanRunsTab />)
-    expect(screen.getByText(/needs the "View pipelines" permission/)).toBeInTheDocument()
+    expect(screen.getByText(/needs the "View scans" permission/)).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })

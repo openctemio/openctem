@@ -633,7 +633,7 @@ if [ "$HTTP_CODE" = "200" ]; then
         print_success "Found run: $RUN_ID"
 
         print_test "Cancel pipeline run"
-        do_request "POST" "/api/v1/pipelines/runs/$RUN_ID/cancel" "" "$COOKIE_JAR" "Authorization: Bearer $ACCESS_TOKEN"
+        do_request "POST" "/api/v1/scan-workflows/runs/$RUN_ID/cancel" "" "$COOKIE_JAR" "Authorization: Bearer $ACCESS_TOKEN"
         if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
             print_success "Run cancellation accepted (cascade should cancel commands)"
         elif [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "409" ]; then

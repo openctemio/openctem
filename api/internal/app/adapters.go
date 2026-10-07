@@ -1,13 +1,14 @@
 // Package app provides adapters for connecting services to sub-packages.
-// These adapters implement the interfaces expected by the scan and pipeline
+// These adapters implement the interfaces expected by the scan and scan workflow
 // sub-packages while delegating to the concrete app-level services.
 package app
 
 import (
 	"context"
 
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -59,19 +60,19 @@ func (a *scanAuditServiceAdapter) LogEvent(ctx context.Context, actx scan.AuditC
 	return a.svc.LogEvent(ctx, appCtx, appEvent)
 }
 
-// pipelineAuditServiceAdapter adapts AuditService to pipeline.AuditService interface.
-type pipelineAuditServiceAdapter struct {
+// scanWorkflowAuditServiceAdapter adapts AuditService to scanrun.AuditService interface.
+type scanWorkflowAuditServiceAdapter struct {
 	svc *auditsvc.AuditService
 }
 
-// NewPipelineAuditServiceAdapter creates an adapter for the pipeline package's AuditService interface.
-func NewPipelineAuditServiceAdapter(svc *auditsvc.AuditService) pipeline.AuditService {
-	return &pipelineAuditServiceAdapter{svc: svc}
+// NewScanWorkflowAuditServiceAdapter creates an adapter for the scanrun package's AuditService interface.
+func NewScanWorkflowAuditServiceAdapter(svc *auditsvc.AuditService) scanrun.AuditService {
+	return &scanWorkflowAuditServiceAdapter{svc: svc}
 }
 
-// LogEvent implements pipeline.AuditService.
-func (a *pipelineAuditServiceAdapter) LogEvent(ctx context.Context, actx pipeline.AuditContext, event pipeline.AuditEvent) error {
-	// Convert pipeline.AuditEvent to app.AuditEvent
+// LogEvent implements scanrun.AuditService.
+func (a *scanWorkflowAuditServiceAdapter) LogEvent(ctx context.Context, actx scanrun.AuditContext, event scanrun.AuditEvent) error {
+	// Convert scanrun.AuditEvent to app.AuditEvent
 	appEvent := auditsvc.AuditEvent{
 		Action:       event.Action,
 		ResourceType: event.ResourceType,
@@ -91,7 +92,7 @@ func (a *pipelineAuditServiceAdapter) LogEvent(ctx context.Context, actx pipelin
 		}
 	}
 
-	// Convert pipeline.AuditContext to app.AuditContext
+	// Convert scanrun.AuditContext to app.AuditContext
 	appCtx := auditsvc.AuditContext{
 		TenantID: actx.TenantID,
 		ActorID:  actx.ActorID,
@@ -152,18 +153,18 @@ func (a *scanSensorSelectorAdapter) SelectSensor(ctx context.Context, req scan.S
 	}, nil
 }
 
-// pipelineSensorSelectorAdapter adapts SensorSelector to pipeline.SensorSelector interface.
-type pipelineSensorSelectorAdapter struct {
+// scanRunSensorSelectorAdapter adapts SensorSelector to scanrun.SensorSelector interface.
+type scanRunSensorSelectorAdapter struct {
 	selector *sensor.SensorSelector
 }
 
-// NewPipelineSensorSelectorAdapter creates an adapter for the pipeline package's SensorSelector interface.
-func NewPipelineSensorSelectorAdapter(selector *sensor.SensorSelector) pipeline.SensorSelector {
-	return &pipelineSensorSelectorAdapter{selector: selector}
+// NewScanRunSensorSelectorAdapter creates an adapter for the scanrun package's SensorSelector interface.
+func NewScanRunSensorSelectorAdapter(selector *sensor.SensorSelector) scanrun.SensorSelector {
+	return &scanRunSensorSelectorAdapter{selector: selector}
 }
 
-// SelectSensor implements pipeline.SensorSelector.
-func (a *pipelineSensorSelectorAdapter) SelectSensor(ctx context.Context, req pipeline.SelectSensorRequest) (*pipeline.SelectSensorResult, error) {
+// SelectSensor implements scanrun.SensorSelector.
+func (a *scanRunSensorSelectorAdapter) SelectSensor(ctx context.Context, req scanrun.SelectSensorRequest) (*scanrun.SelectSensorResult, error) {
 	// Make the call with app types
 	appReq := sensor.SelectSensorRequest{
 		TenantID:     req.TenantID,
@@ -178,14 +179,14 @@ func (a *pipelineSensorSelectorAdapter) SelectSensor(ctx context.Context, req pi
 		return nil, err
 	}
 
-	return &pipeline.SelectSensorResult{
+	return &scanrun.SelectSensorResult{
 		Sensor: result.Sensor,
 	}, nil
 }
 
-// CanUsePlatformSensors implements pipeline.SensorSelector.
+// CanUsePlatformSensors implements scanrun.SensorSelector.
 // In OSS edition, platform sensors are not available.
-func (a *pipelineSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
+func (a *scanRunSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
 	return false, "Platform sensors not available in OSS edition"
 }
 
@@ -230,38 +231,38 @@ func (a *scanSecurityValidatorAdapter) ValidateCronExpression(cronExpr string) e
 	return a.validator.ValidateCronExpression(cronExpr)
 }
 
-// pipelineSecurityValidatorAdapter adapts SecurityValidator to pipeline.SecurityValidator interface.
-type pipelineSecurityValidatorAdapter struct {
+// scanWorkflowSecurityValidatorAdapter adapts SecurityValidator to scanrun.SecurityValidator interface.
+type scanWorkflowSecurityValidatorAdapter struct {
 	validator *SecurityValidator
 }
 
-// NewPipelineSecurityValidatorAdapter creates an adapter for the pipeline package's SecurityValidator interface.
-func NewPipelineSecurityValidatorAdapter(validator *SecurityValidator) pipeline.SecurityValidator {
-	return &pipelineSecurityValidatorAdapter{validator: validator}
+// NewScanWorkflowSecurityValidatorAdapter creates an adapter for the scanrun package's SecurityValidator interface.
+func NewScanWorkflowSecurityValidatorAdapter(validator *SecurityValidator) scanrun.SecurityValidator {
+	return &scanWorkflowSecurityValidatorAdapter{validator: validator}
 }
 
-// ValidateIdentifier implements pipeline.SecurityValidator.
-func (a *pipelineSecurityValidatorAdapter) ValidateIdentifier(value string, maxLen int, fieldName string) *pipeline.ValidationResult {
+// ValidateIdentifier implements scanrun.SecurityValidator.
+func (a *scanWorkflowSecurityValidatorAdapter) ValidateIdentifier(value string, maxLen int, fieldName string) *scanrun.ValidationResult {
 	result := a.validator.ValidateIdentifier(value, maxLen, fieldName)
-	return convertToPipelineValidationResult(result)
+	return convertToScanWorkflowValidationResult(result)
 }
 
-// ValidateIdentifiers implements pipeline.SecurityValidator.
-func (a *pipelineSecurityValidatorAdapter) ValidateIdentifiers(values []string, maxLen int, fieldName string) *pipeline.ValidationResult {
+// ValidateIdentifiers implements scanrun.SecurityValidator.
+func (a *scanWorkflowSecurityValidatorAdapter) ValidateIdentifiers(values []string, maxLen int, fieldName string) *scanrun.ValidationResult {
 	result := a.validator.ValidateIdentifiers(values, maxLen, fieldName)
-	return convertToPipelineValidationResult(result)
+	return convertToScanWorkflowValidationResult(result)
 }
 
-// ValidateStepConfig implements pipeline.SecurityValidator.
-func (a *pipelineSecurityValidatorAdapter) ValidateStepConfig(ctx context.Context, tenantID shared.ID, tool string, capabilities []string, config map[string]any) *pipeline.ValidationResult {
+// ValidateStepConfig implements scanrun.SecurityValidator.
+func (a *scanWorkflowSecurityValidatorAdapter) ValidateStepConfig(ctx context.Context, tenantID shared.ID, tool string, capabilities []string, config map[string]any) *scanrun.ValidationResult {
 	result := a.validator.ValidateStepConfig(ctx, tenantID, tool, capabilities, config)
-	return convertToPipelineValidationResult(result)
+	return convertToScanWorkflowValidationResult(result)
 }
 
-// ValidateCommandPayload implements pipeline.SecurityValidator.
-func (a *pipelineSecurityValidatorAdapter) ValidateCommandPayload(ctx context.Context, tenantID shared.ID, payload map[string]any) *pipeline.ValidationResult {
+// ValidateCommandPayload implements scanrun.SecurityValidator.
+func (a *scanWorkflowSecurityValidatorAdapter) ValidateCommandPayload(ctx context.Context, tenantID shared.ID, payload map[string]any) *scanrun.ValidationResult {
 	result := a.validator.ValidateCommandPayload(ctx, tenantID, payload)
-	return convertToPipelineValidationResult(result)
+	return convertToScanWorkflowValidationResult(result)
 }
 
 // =============================================================================
@@ -284,17 +285,17 @@ func convertValidationResult(r *ValidationResult) *scan.ValidationResult {
 	}
 }
 
-// convertToPipelineValidationResult converts app.ValidationResult to pipeline.ValidationResult.
-func convertToPipelineValidationResult(r *ValidationResult) *pipeline.ValidationResult {
-	errors := make([]pipeline.ValidationError, len(r.Errors))
+// convertToScanWorkflowValidationResult converts app.ValidationResult to scanrun.ValidationResult.
+func convertToScanWorkflowValidationResult(r *ValidationResult) *scanrun.ValidationResult {
+	errors := make([]scanrun.ValidationError, len(r.Errors))
 	for i, e := range r.Errors {
-		errors[i] = pipeline.ValidationError{
+		errors[i] = scanrun.ValidationError{
 			Field:   e.Field,
 			Message: e.Message,
 			Code:    e.Code,
 		}
 	}
-	return &pipeline.ValidationResult{
+	return &scanrun.ValidationResult{
 		Valid:  r.Valid,
 		Errors: errors,
 	}

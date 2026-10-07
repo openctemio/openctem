@@ -156,7 +156,7 @@ describe('Scan page', () => {
 
   it('links a workflow scan to its scan workflow', () => {
     urlState.tab = 'details'
-    config = { ...config, scan_type: 'workflow', pipeline_id: 'wf-1' }
+    config = { ...config, scan_type: 'workflow', scan_workflow_id: 'wf-1' }
     render(<ScanDetailPage />)
     expect(screen.getByRole('link', { name: 'Open scan workflow' })).toHaveAttribute(
       'href',
