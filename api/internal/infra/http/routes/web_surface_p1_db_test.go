@@ -48,6 +48,9 @@ func TestWebEndpointEventsAndRetention_DB(t *testing.T) {
 			}
 			out = append(out, k)
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
 		return out
 	}
 
