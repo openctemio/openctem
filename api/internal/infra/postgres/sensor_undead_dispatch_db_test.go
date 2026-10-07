@@ -65,9 +65,9 @@ func seedSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.I
 
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO sensors (id, tenant_id, name, type, status, health,
-		                     api_key_hash, api_key_prefix, tools, execution_mode,
+		                     api_key_hash, api_key_prefix, execution_mode,
 		                     max_concurrent_jobs, current_jobs, total_scans, last_seen_at, reported_tool_names)
-		 VALUES ($1, $2, $3, 'sensor', 'active', $4, $5, $6, ARRAY[$7], 'daemon', 5, 0, $8, $9, ARRAY[$7])`,
+		 VALUES ($1, $2, $3, 'sensor', 'active', $4, $5, $6, 'daemon', 5, 0, $8, $9, ARRAY[$7])`,
 		id.String(), tenantID.String(), "undead probe "+id.String(),
 		health, "hash-"+id.String(), id.String()[:8], tool, totalScans, seenArg)
 	if err != nil {

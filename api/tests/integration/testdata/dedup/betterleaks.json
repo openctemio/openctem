@@ -19,20 +19,20 @@
       "expect": "different",
       "before": {"type": "secret", "title": "token", "severity": "high", "rule_id": "generic-api-key",
         "location": {"path": "config/app.env", "start_line": 3},
-        "secret": {"masked_value": "fake-AAAA1111BBBB-tail"}},
+        "secret": {"masked_value": "fake****1111BBBB-tail"}},
       "after": {"type": "secret", "title": "token", "severity": "high", "rule_id": "generic-api-key",
         "location": {"path": "config/app.env", "start_line": 3},
-        "secret": {"masked_value": "fake-CCCC2222DDDD-tail"}}
+        "secret": {"masked_value": "fake****2222DDDD-tail"}}
     },
     {
       "name": "the same secret in another file",
       "expect": "different",
       "before": {"type": "secret", "title": "token", "severity": "high", "rule_id": "generic-api-key",
         "location": {"path": "config/app.env", "start_line": 3},
-        "secret": {"masked_value": "fake-AAAA1111BBBB-tail"}},
+        "secret": {"masked_value": "fake****1111BBBB-tail"}},
       "after": {"type": "secret", "title": "token", "severity": "high", "rule_id": "generic-api-key",
         "location": {"path": "deploy/app.env", "start_line": 3},
-        "secret": {"masked_value": "fake-AAAA1111BBBB-tail"}}
+        "secret": {"masked_value": "fake****1111BBBB-tail"}}
     }
   ]
 }

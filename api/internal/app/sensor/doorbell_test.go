@@ -39,7 +39,7 @@ func testSensor() *sensordom.Sensor {
 	tenant := shared.NewID()
 	return &sensordom.Sensor{
 		ID: shared.NewID(), TenantID: &tenant, Status: sensordom.SensorStatusActive,
-		Capabilities: []string{"sast", "dast"}, Tools: []string{"semgrep", "nuclei"},
+		Capabilities:  []string{"sast", "dast"},
 		ExecutionMode: sensordom.ExecutionModeDaemon, MaxConcurrentJobs: 5,
 		Config: map[string]any{"b": 1, "a": "x"},
 	}
@@ -198,8 +198,7 @@ func TestConfigVersion_StableAndSensitive(t *testing.T) {
 	}
 
 	same := *a
-	same.Capabilities = []string{"dast", "sast"} // order does not matter
-	same.Tools = []string{"nuclei", "semgrep"}
+	same.Capabilities = []string{"dast", "sast"}                      // order does not matter
 	same.CPUPercent, same.MemoryPercent, same.CurrentJobs = 99, 99, 4 // metrics are not config
 	now := time.Now()
 	same.LastSeenAt, same.UpdatedAt = &now, now
@@ -208,11 +207,6 @@ func TestConfigVersion_StableAndSensitive(t *testing.T) {
 	}
 
 	changes := map[string]func() string{
-		"tools": func() string {
-			b := *a
-			b.Tools = []string{"semgrep"}
-			return ConfigVersion(&b, &exp, "z1@1")
-		},
 		"capabilities": func() string {
 			b := *a
 			b.Capabilities = []string{"sast"}

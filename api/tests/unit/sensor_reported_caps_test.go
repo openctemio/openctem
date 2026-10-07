@@ -114,48 +114,33 @@ func TestUpdateHeartbeat_ReportWithoutLists(t *testing.T) {
 	}
 }
 
-// Tools and capabilities on a sensor are limits: a present list replaces
-// the limit, [] removes it, an absent list leaves it.
-func TestUpdateSensor_ToolLimits(t *testing.T) {
+// Capabilities on a sensor are a limit: a present list replaces the limit,
+// [] removes it, an absent list leaves it. Tools have no limit on the sensor
+// (the grant narrows them).
+func TestUpdateSensor_CapabilityLimits(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)
 	tenantID := shared.NewID()
 	a := repo.seedSensor(tenantID, "s1", sensor.SensorTypeWorker)
-	a.Tools = []string{"nuclei"}
 	a.Capabilities = []string{"nuclei"}
 
-	upd := func(tools, caps []string) *sensor.Sensor {
+	upd := func(caps []string) *sensor.Sensor {
 		t.Helper()
 		out, err := svc.UpdateSensor(context.Background(), sensorapp.UpdateSensorInput{
-			TenantID: tenantID.String(), SensorID: a.ID.String(), Tools: tools, Capabilities: caps,
+			TenantID: tenantID.String(), SensorID: a.ID.String(), Capabilities: caps,
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return out
 	}
-	if got := upd(nil, nil); !reflect.DeepEqual(got.Tools, []string{"nuclei"}) {
-		t.Fatalf("absent list changed tools: %v", got.Tools)
+	if got := upd(nil); !reflect.DeepEqual(got.Capabilities, []string{"nuclei"}) {
+		t.Fatalf("absent list changed capabilities: %v", got.Capabilities)
 	}
-	if got := upd([]string{"semgrep", "nuclei"}, []string{"semgrep"}); !reflect.DeepEqual(got.Tools, []string{"semgrep", "nuclei"}) || !reflect.DeepEqual(got.Capabilities, []string{"semgrep"}) {
-		t.Fatalf("list did not replace: %v %v", got.Tools, got.Capabilities)
+	if got := upd([]string{"semgrep"}); !reflect.DeepEqual(got.Capabilities, []string{"semgrep"}) {
+		t.Fatalf("list did not replace: %v", got.Capabilities)
 	}
-	if got := upd([]string{}, []string{}); len(got.Tools) != 0 || got.Tools == nil || len(got.Capabilities) != 0 {
-		t.Fatalf("[] did not clear the limit: %#v %#v", got.Tools, got.Capabilities)
-	}
-}
-
-func TestCreateSensor_ToolLimitsAreCanonical(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	svc := newSensorSvcTestService(repo)
-	out, err := svc.CreateSensor(context.Background(), sensorapp.CreateSensorInput{
-		TenantID: shared.NewID().String(), Name: "s", Type: "worker",
-		Tools: []string{" Nuclei ", "gitleaks", "nuclei"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(out.Sensor.Tools, []string{"nuclei", "betterleaks"}) {
-		t.Fatalf("tools = %v", out.Sensor.Tools)
+	if got := upd([]string{}); len(got.Capabilities) != 0 {
+		t.Fatalf("[] did not clear the limit: %#v", got.Capabilities)
 	}
 }

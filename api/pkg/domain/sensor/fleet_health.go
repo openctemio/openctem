@@ -346,12 +346,13 @@ func (a *Sensor) healthReasons(now time.Time, p HealthPolicy, vs VersionStatus, 
 			name, a.Build.SDKVersion, p.SDKMinVersion))
 	}
 
-	if len(a.EffectiveTools()) == 0 && !a.Type.IsCollector() && a.IsDaemon() {
-		msg := "No scan tools are configured, so the platform cannot dispatch scans to this sensor."
+	// A sensor that never connected has reported nothing yet: its state
+	// (never_connected) already says so.
+	if len(a.EffectiveTools()) == 0 && !a.Type.IsCollector() && a.IsDaemon() && a.LastSeenAt != nil {
+		msg := "The sensor has not reported its tools, so the platform cannot dispatch scans to it. Upgrade it to a build that reports its tool manifest."
 		if a.Reported.Tools != nil {
-			// The sensor reported its inventory: nothing it has installed is
-			// allowed by its tool limit (or it has nothing installed).
-			msg = "None of the sensor's installed tools is allowed by its tool limit (or none is installed), so the platform cannot dispatch scans to this sensor."
+			// The sensor reported its inventory and nothing in it is installed.
+			msg = "The sensor reports no installed scan tool, so the platform cannot dispatch scans to it."
 		}
 		add(ReasonNoTools, SeverityWarning, msg)
 	}
