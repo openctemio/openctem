@@ -495,7 +495,7 @@ func (m *masker) replacer() *strings.Replacer {
 		return vals[i] < vals[j]
 	})
 	// A bounded capacity hint; the replacer still gets every value.
-	pairs := make([]string, 0, 2*min(len(vals), replacerCapacityHint))
+	pairs := make([]string, 0, replacerCapacityHint)
 	for _, v := range vals {
 		pairs = append(pairs, v, m.byValue[v])
 	}
