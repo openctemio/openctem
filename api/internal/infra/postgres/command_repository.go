@@ -53,9 +53,10 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 			result, scheduled_at, schedule_id, step_run_id,
 			is_platform_job, platform_sensor_id,
 			auth_token_hash, auth_token_prefix, auth_token_expires_at,
-			queue_priority, queued_at, dispatch_attempts, scan_zone_id, freeze_override
+			queue_priority, queued_at, dispatch_attempts, scan_zone_id, freeze_override,
+			host_keys
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -86,6 +87,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 		cmd.DispatchAttempts,
 		nullIDString(cmd.ScanZoneID),
 		cmd.FreezeOverride,
+		hostKeysArg(cmd.HostKeys),
 	)
 
 	if err != nil {
@@ -217,7 +219,21 @@ func fairPendingQuery(selectSQL, where string, limit int) string {
 // expired, and not scheduled for later.
 const pendingReadyPredicate = `commands.status = 'pending'
 		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
-		AND (commands.scheduled_at IS NULL OR commands.scheduled_at <= NOW())`
+		AND (commands.scheduled_at IS NULL OR commands.scheduled_at <= NOW())
+		AND ` + hostFreePredicate
+
+// hostFreePredicate keeps a command whose hosts are free: it carries no host
+// keys, or no other acknowledged or running command of its tenant holds one
+// of them (platform-side per-host politeness for workflow chunks, research/49
+// §3.12.3). A claim re-checks it under advisory locks on the keys
+// (lockHostKeys), so two sensors never take overlapping hosts at once.
+const hostFreePredicate = `(commands.host_keys IS NULL OR NOT EXISTS (
+			SELECT 1 FROM commands hk
+			WHERE hk.tenant_id = commands.tenant_id
+			  AND hk.id <> commands.id
+			  AND hk.host_keys IS NOT NULL
+			  AND hk.status IN ('acknowledged', 'running')
+			  AND hk.host_keys && commands.host_keys))`
 
 // capabilityClaimPredicate is the capability gate: keep a command only if it
 // declares no required capabilities, or every required capability is one the
@@ -415,6 +431,14 @@ func (r *CommandRepository) List(ctx context.Context, filter command.Filter, pag
 // capabilities are the sensor's stored effective capabilities, which the poll
 // also uses.
 func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, commandID shared.ID, sensorID string) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to claim command: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockHostKeys(ctx, tx, tenantID, []string{commandID.String()}); err != nil {
+		return false, err
+	}
 	query := `
 		UPDATE commands
 		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW(),
@@ -427,8 +451,9 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND ` + capabilityClaimPredicate(claimSensorCapabilities) + `
 		  AND ` + refusedByPredicate("$3") + `
 		  AND ` + freezeHoldPredicate + `
+		  AND ` + hostFreePredicate + `
 	`
-	result, err := r.db.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID, r.leaseSeconds())
+	result, err := tx.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID, r.leaseSeconds())
 	if err != nil {
 		return false, fmt.Errorf("failed to claim command: %w", err)
 	}
@@ -436,7 +461,100 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 	if err != nil {
 		return false, fmt.Errorf("failed to read rows affected: %w", err)
 	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("failed to claim command: %w", err)
+	}
 	return rowsAffected > 0, nil
+}
+
+// lockHostKeys takes a transaction advisory lock on every host key of the
+// given commands of tenantID, in key order, so claims of commands that share
+// a host run one after the other: the second sees the first one's claim and
+// the host-free predicate holds it back. Commands without host keys take no
+// lock.
+func lockHostKeys(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string) error {
+	_, err := tx.ExecContext(ctx, `
+		SELECT count(pg_advisory_xact_lock(hashtextextended('host|' || $1 || '|' || keys.k, 0)))
+		FROM (
+			SELECT DISTINCT k FROM commands c, unnest(c.host_keys) AS k
+			WHERE c.tenant_id = $1 AND c.id = ANY($2::uuid[]) AND c.host_keys IS NOT NULL
+			ORDER BY k
+		) keys`, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("failed to lock command hosts: %w", err)
+	}
+	return nil
+}
+
+// dropSharedHosts keeps, in order, the ids whose host keys do not overlap an
+// earlier kept id's: one batch claim never takes two commands for one host.
+func dropSharedHosts(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT c.id, c.host_keys FROM commands c
+		WHERE c.tenant_id = $1 AND c.id = ANY($2::uuid[]) AND c.host_keys IS NOT NULL`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read command hosts: %w", err)
+	}
+	defer rows.Close()
+	keysOf := map[string][]string{}
+	for rows.Next() {
+		var id string
+		var keys []string
+		if err := rows.Scan(&id, pq.Array(&keys)); err != nil {
+			return nil, fmt.Errorf("failed to read command hosts: %w", err)
+		}
+		keysOf[id] = keys
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read command hosts: %w", err)
+	}
+	if len(keysOf) == 0 {
+		return ids, nil
+	}
+	taken := map[string]bool{}
+	out := make([]string, 0, len(ids))
+next:
+	for _, id := range ids {
+		for _, k := range keysOf[id] {
+			if taken[k] {
+				continue next
+			}
+		}
+		for _, k := range keysOf[id] {
+			taken[k] = true
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// claimedIDs runs a claim statement in tx and reads the ids it returned.
+func claimedIDs(ctx context.Context, tx *sql.Tx, query string, args []any, capacity int) ([]shared.ID, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim commands: %w", err)
+	}
+	defer rows.Close()
+	out := make([]shared.ID, 0, capacity)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan claimed command: %w", err)
+		}
+		if cid, err := shared.IDFromString(id); err == nil {
+			out = append(out, cid)
+		}
+	}
+	return out, rows.Err()
+}
+
+// hostKeysArg stores an empty host key list as NULL.
+func hostKeysArg(xs []string) any {
+	if len(xs) == 0 {
+		return nil
+	}
+	return pq.Array(xs)
 }
 
 // claimSensorCapabilities is the claiming sensor's (bound to $3, same tenant
@@ -462,6 +580,17 @@ func (r *CommandRepository) ClaimManyForSensor(ctx context.Context, tenantID, se
 	for i, id := range ids {
 		want[i] = id.String()
 	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim commands: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockHostKeys(ctx, tx, tenantID, want); err != nil {
+		return nil, err
+	}
+	if want, err = dropSharedHosts(ctx, tx, tenantID, want); err != nil {
+		return nil, err
+	}
 	where, args := pendingForSensorWhere(tenantID, &sensorID, capabilities)
 	args = append(args, pq.Array(want), r.leaseSeconds())
 	idsParam, leaseParam := fmt.Sprintf("$%d", len(args)-1), fmt.Sprintf("$%d", len(args))
@@ -478,22 +607,14 @@ func (r *CommandRepository) ClaimManyForSensor(ctx context.Context, tenantID, se
 		)
 		  AND c.tenant_id = $1 AND c.status = 'pending'
 		RETURNING c.id`
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	out, err := claimedIDs(ctx, tx, query, args, len(ids))
 	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to claim commands: %w", err)
 	}
-	defer rows.Close()
-	out := make([]shared.ID, 0, len(ids))
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("failed to scan claimed command: %w", err)
-		}
-		if cid, err := shared.IDFromString(id); err == nil {
-			out = append(out, cid)
-		}
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // CountHeldScans counts the scan commands sensorID holds in tenantID.

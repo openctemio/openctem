@@ -42,9 +42,23 @@ type DataExpirationController struct {
 	suppressionRepo suppression.Repository
 	exclusionRepo   scope.ExclusionRepository
 	auditPruner     AuditChainPruner
+	targetExpirer   ScopeTargetExpirer
 	config          *DataExpirationControllerConfig
 	logger          *logger.Logger
 	warnedNoArchive bool
+}
+
+// ScopeTargetExpirer marks scope entries past their expiry as expired
+// (*postgres.ScopeTargetRepository, RFC-054). The reads already ignore them;
+// the sweep makes the status say so.
+type ScopeTargetExpirer interface {
+	ExpireOld(ctx context.Context) (int64, error)
+}
+
+// SetScopeTargetExpirer adds the scope-entry sweep (nil: none).
+func (c *DataExpirationController) SetScopeTargetExpirer(e ScopeTargetExpirer) *DataExpirationController {
+	c.targetExpirer = e
+	return c
 }
 
 // AuditChainPruner archives and prunes audit chain entries past retention
@@ -108,6 +122,14 @@ func (c *DataExpirationController) Reconcile(ctx context.Context) (int, error) {
 	if err := c.exclusionRepo.ExpireOld(ctx); err != nil {
 		c.logger.Error("failed to expire scope exclusions", "error", err)
 		// Continue with other tasks
+	}
+	if c.targetExpirer != nil {
+		if n, err := c.targetExpirer.ExpireOld(ctx); err != nil {
+			c.logger.Error("failed to expire scope entries", "error", err)
+		} else if n > 0 {
+			c.logger.Info("expired scope entries", "count", n)
+			totalProcessed += int(n)
+		}
 	}
 
 	// Step 3: Audit retention. Archive and prune the oldest prefix of each
