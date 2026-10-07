@@ -39,6 +39,11 @@ type WorkflowExecutor struct {
 	integrationService  *integration.IntegrationService
 	auditService        *auditapp.AuditService
 
+	// authorizer checks, before every action and notification step, that
+	// the person the run acts as may run it (see authz.go). Nil refuses
+	// every such step (fail closed).
+	authorizer StepAuthorizer
+
 	logger *logger.Logger
 	mu     sync.RWMutex
 
@@ -49,9 +54,10 @@ type WorkflowExecutor struct {
 	maxNodeTime       time.Duration // Max time for single node execution
 
 	// SEC-WF10: Per-tenant rate limiting
-	maxConcurrentPerTenant int            // Max concurrent runs per tenant
-	tenantRunCounts        map[string]int // Current run count per tenant
-	tenantMu               sync.Mutex     // Mutex for tenant counts
+	maxConcurrentPerTenant int                      // Max concurrent runs per tenant
+	tenantSlots            map[string]chan struct{} // Per-tenant run slots
+	tenantMu               sync.Mutex               // Guards tenantSlots
+	maxQueueWait           time.Duration            // How long a run waits for a slot
 }
 
 // WorkflowExecutorConfig holds configuration for the executor.
@@ -77,6 +83,11 @@ const (
 	defaultMaxConcurrentPerTenant = 10               // Max concurrent per tenant (SEC-WF10)
 	defaultMaxExecutionTime       = 5 * time.Minute  // Max time for entire workflow
 	defaultMaxNodeTime            = 30 * time.Second // Max time for single node
+	// A run waits this long for a free slot before it fails. Runs are
+	// bounded where they are created (hourly quotas, active caps), so
+	// waiting replaces refusing: a batch of 40 findings runs 10 at a time
+	// per tenant instead of failing 30 of them.
+	defaultMaxQueueWait = 30 * time.Minute
 )
 
 // WorkflowExecutorOption is a functional option for WorkflowExecutor.
@@ -100,6 +111,13 @@ func WithExecutorIntegrationService(svc *integration.IntegrationService) Workflo
 func WithExecutorAuditService(svc *auditapp.AuditService) WorkflowExecutorOption {
 	return func(e *WorkflowExecutor) {
 		e.auditService = svc
+	}
+}
+
+// WithExecutorStepAuthorizer sets the per-step principal check.
+func WithExecutorStepAuthorizer(a StepAuthorizer) WorkflowExecutorOption {
+	return func(e *WorkflowExecutor) {
+		e.authorizer = a
 	}
 }
 
@@ -131,7 +149,8 @@ func NewWorkflowExecutor(
 		maxNodeTime:       defaultMaxNodeTime,
 		// SEC-WF10: Per-tenant rate limiting
 		maxConcurrentPerTenant: defaultMaxConcurrentPerTenant,
-		tenantRunCounts:        make(map[string]int),
+		tenantSlots:            make(map[string]chan struct{}),
+		maxQueueWait:           defaultMaxQueueWait,
 	}
 
 	// Initialize semaphore for concurrency control
@@ -232,6 +251,7 @@ func (e *WorkflowExecutor) ExecuteWithTenant(ctx context.Context, runID shared.I
 	workflowExecCtx := &ExecutionContext{
 		Run:               run,
 		Workflow:          wf,
+		PrincipalID:       runPrincipal(run, wf),
 		TriggerData:       run.TriggerData,
 		Context:           make(map[string]any),
 		CompletedNodeKeys: make(map[string]bool),
@@ -267,8 +287,11 @@ func (e *WorkflowExecutor) runCanceled(ctx context.Context, run *workflowdom.Run
 
 // ExecutionContext holds the state during workflow execution.
 type ExecutionContext struct {
-	Run               *workflowdom.Run
-	Workflow          *workflowdom.Workflow
+	Run      *workflowdom.Run
+	Workflow *workflowdom.Workflow
+	// PrincipalID is the person the run acts as (authz.go): the member who
+	// started a manual run, otherwise the automation's owner.
+	PrincipalID       shared.ID
 	TriggerData       map[string]any
 	Context           map[string]any // Shared context across nodes
 	CompletedNodeKeys map[string]bool
@@ -489,22 +512,33 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 	var output map[string]any
 	var execErr error
 
+	// A step runs for at most maxNodeTime (declared and, until now, never
+	// applied): a hung call fails its step instead of the whole run.
+	stepCtx, cancelStep := context.WithTimeout(ctx, e.maxNodeTime)
 	switch node.NodeType {
 	case workflowdom.NodeTypeTrigger:
-		output, execErr = e.executeTriggerNode(ctx, execCtx, node)
+		output, execErr = e.executeTriggerNode(stepCtx, execCtx, node)
 	case workflowdom.NodeTypeCondition:
-		output, execErr = e.executeConditionNode(ctx, execCtx, node, nodeRun)
+		output, execErr = e.executeConditionNode(stepCtx, execCtx, node, nodeRun)
 	case workflowdom.NodeTypeAction:
-		output, execErr = e.executeActionNode(ctx, execCtx, node)
+		output, execErr = e.executeActionNode(stepCtx, execCtx, node)
 	case workflowdom.NodeTypeNotification:
-		output, execErr = e.executeNotificationNode(ctx, execCtx, node)
+		output, execErr = e.executeNotificationNode(stepCtx, execCtx, node)
 	default:
 		execErr = fmt.Errorf("unknown node type: %s", node.NodeType)
 	}
+	if execErr != nil && errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
+		execErr = fmt.Errorf("step timed out after %s: %w", e.maxNodeTime, execErr)
+	}
+	cancelStep()
 
 	// Update node run result
 	if execErr != nil {
-		nodeRun.Fail(execErr.Error(), "EXECUTION_ERROR")
+		code := "EXECUTION_ERROR"
+		if IsRunNotAuthorized(execErr) {
+			code = ErrCodeRunNotAuthorized
+		}
+		nodeRun.Fail(execErr.Error(), code)
 		e.updateRunStats(execCtx, false)
 	} else {
 		nodeRun.Complete(output)
@@ -620,6 +654,11 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 		return nil, fmt.Errorf("no handler registered for action type: %s", actionType)
 	}
 
+	stepCtx, err := e.authorizeStep(ctx, execCtx, node.Config, node.Config.ActionConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	// Build action input
 	input := &ActionInput{
 		TenantID:     execCtx.Run.TenantID,
@@ -632,14 +671,44 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 		Context:      e.buildNodeInput(execCtx, node),
 	}
 
-	// Execute the action
-	return handler.Execute(ctx, input)
+	// Execute the action as the run principal. The events the step causes
+	// (a status change, a scan) carry the run as their cause, so they cannot
+	// start a loop (loop_guard.go).
+	return handler.Execute(WithAutomationCause(stepCtx, stepCause(execCtx.Run)), input)
+}
+
+// authorizeStep checks that the run's principal may run a step with this
+// config on the run's subject, and returns the context to run it with.
+func (e *WorkflowExecutor) authorizeStep(ctx context.Context, execCtx *ExecutionContext, cfg workflowdom.NodeConfig, actionConfig map[string]any) (context.Context, error) {
+	if e.authorizer == nil {
+		return ctx, errNotAuthorized(shared.ErrForbidden, "automation run authorization is not configured")
+	}
+	perm, _ := NodePermission(cfg)
+	findings, assets := stepSubjects(actionConfig, execCtx.TriggerData)
+	stepCtx, err := e.authorizer.AuthorizeStep(ctx, StepAuthorization{
+		TenantID:    execCtx.Run.TenantID,
+		PrincipalID: execCtx.PrincipalID,
+		Permission:  perm,
+		FindingIDs:  findings,
+		AssetIDs:    assets,
+	})
+	if err != nil {
+		e.logger.Warn("automation step refused: the run's principal may not run it",
+			"run_id", execCtx.Run.ID, "workflow_id", execCtx.Workflow.ID,
+			"principal_id", execCtx.PrincipalID, "required_permission", string(perm), "error", err)
+		return ctx, err
+	}
+	return stepCtx, nil
 }
 
 // executeNotificationNode executes a notification node.
 func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx *ExecutionContext, node *workflowdom.Node) (map[string]any, error) {
 	if e.notificationHandler == nil {
 		return nil, fmt.Errorf("notification handler not configured")
+	}
+	stepCtx, err := e.authorizeStep(ctx, execCtx, node.Config, nil)
+	if err != nil {
+		return nil, err
 	}
 
 	// Build notification input
@@ -654,7 +723,7 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 		Context:            e.buildNodeInput(execCtx, node),
 	}
 
-	return e.notificationHandler.Send(ctx, input)
+	return e.notificationHandler.Send(WithAutomationCause(stepCtx, stepCause(execCtx.Run)), input)
 }
 
 // updateRunStats updates the run statistics.
@@ -697,12 +766,33 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 		e.logger.Error("failed to finalize run", "error", err)
 	}
 
-	// Update workflow statistics
+	// Update workflow statistics on the workflow as it is now: the copy
+	// loaded when the run started would write back a switch-off (or an edit)
+	// made while the run was executing.
 	wf := execCtx.Workflow
+	if fresh, err := e.workflowRepo.GetByTenantAndID(ctx, run.TenantID, wf.ID); err == nil {
+		wf = fresh
+	}
 	status := string(run.Status)
 	wf.RecordRun(run.ID, status)
+	paused := run.Status == workflowdom.RunStatusFailed && e.keepsFailing(ctx, wf)
+	if paused {
+		wf.Deactivate()
+	}
 	if err := e.workflowRepo.Update(ctx, wf); err != nil {
 		e.logger.Error("failed to update workflow stats", "error", err)
+		paused = false
+	}
+	if paused {
+		e.logger.Warn("automation paused: its latest runs all failed",
+			"workflow_id", wf.ID, "workflow_name", wf.Name, "failed_runs", maxConsecutiveFailures)
+		if e.auditService != nil {
+			_ = e.auditService.LogEvent(ctx, auditapp.AuditContext{TenantID: run.TenantID.String()},
+				auditapp.NewSuccessEvent(audit.ActionWorkflowDeactivated, audit.ResourceTypeWorkflow, wf.ID.String()).
+					WithResourceName(wf.Name).
+					WithMessage(fmt.Sprintf("Automation '%s' paused by the platform: its last %d runs failed", wf.Name, maxConsecutiveFailures)).
+					WithMetadata("reason", "consecutive_failures"))
+		}
 	}
 
 	// Audit log
@@ -744,15 +834,17 @@ func (e *WorkflowExecutor) ExecuteAsync(runID shared.ID) {
 }
 
 // ExecuteAsyncWithTenant executes a workflow run asynchronously with tenant context.
-// SEC-WF07: Uses semaphore to limit concurrent executions and passes tenant for isolation.
-// SEC-WF10: Also enforces per-tenant rate limiting.
+// SEC-WF07/SEC-WF10: at most maxConcurrentRuns runs execute at once, and
+// at most maxConcurrentPerTenant per tenant; a run waits (up to
+// maxQueueWait) for a free slot instead of being
+// failed. A run still waiting when it times out fails with that reason.
 // SEC-WF12: Includes panic recovery to prevent resource leaks.
 func (e *WorkflowExecutor) ExecuteAsyncWithTenant(runID shared.ID, tenantID shared.ID) {
 	tenantKey := tenantID.String()
 
 	go func() {
 		// SEC-WF12: Track acquired resources for cleanup
-		var tenantSlotAcquired bool
+		var tenantSlot chan struct{}
 		var globalSlotAcquired bool
 
 		// SEC-WF12: Panic recovery - ensure resources are always released
@@ -763,76 +855,43 @@ func (e *WorkflowExecutor) ExecuteAsyncWithTenant(runID shared.ID, tenantID shar
 					"tenant_id", tenantKey,
 					"panic", r,
 				)
-				// Try to mark run as failed
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if run, err := e.runRepo.GetByID(ctx, runID); err == nil {
-					run.Fail("execution failed: internal error")
-					_ = e.runRepo.Update(ctx, run)
-				}
+				e.failRun(runID, "execution failed: internal error")
 			}
-
-			// SEC-WF12: Always release global semaphore if acquired
 			if globalSlotAcquired {
 				<-e.runSemaphore
 			}
-
-			// SEC-WF12: Always release tenant slot if acquired
-			if tenantSlotAcquired {
-				e.tenantMu.Lock()
-				if e.tenantRunCounts[tenantKey] > 0 {
-					e.tenantRunCounts[tenantKey]--
-				}
-				if e.tenantRunCounts[tenantKey] <= 0 {
-					delete(e.tenantRunCounts, tenantKey)
-				}
-				e.tenantMu.Unlock()
+			if tenantSlot != nil {
+				<-tenantSlot
 			}
 		}()
 
-		// SEC-WF10: Check per-tenant limit first
+		deadline := time.NewTimer(e.maxQueueWait)
+		defer deadline.Stop()
+
+		// SEC-WF10: per-tenant slot first, so one tenant's backlog never
+		// holds global slots while it waits.
 		if !tenantID.IsZero() {
-			e.tenantMu.Lock()
-			currentCount := e.tenantRunCounts[tenantKey]
-			if currentCount >= e.maxConcurrentPerTenant {
-				e.tenantMu.Unlock()
-				e.logger.Warn("workflow execution rejected: per-tenant limit reached",
-					"run_id", runID,
-					"tenant_id", tenantKey,
-					"current_count", currentCount,
-					"max_per_tenant", e.maxConcurrentPerTenant,
-				)
-				// Mark the run as failed due to tenant capacity
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if run, err := e.runRepo.GetByID(ctx, runID); err == nil {
-					run.Fail("execution rejected: tenant at capacity")
-					_ = e.runRepo.Update(ctx, run)
-				}
+			slot := e.tenantSlot(tenantKey)
+			select {
+			case slot <- struct{}{}:
+				tenantSlot = slot
+			case <-deadline.C:
+				e.logger.Warn("workflow run not started: no free tenant slot in time",
+					"run_id", runID, "tenant_id", tenantKey, "max_per_tenant", e.maxConcurrentPerTenant)
+				e.failRun(runID, fmt.Sprintf("not started: waited %s for a free slot (at most %d runs at once per organization)",
+					e.maxQueueWait, e.maxConcurrentPerTenant))
 				return
 			}
-			e.tenantRunCounts[tenantKey]++
-			tenantSlotAcquired = true
-			e.tenantMu.Unlock()
 		}
 
-		// SEC-WF07: Try to acquire global semaphore (non-blocking check first)
+		// SEC-WF07: global slot.
 		select {
 		case e.runSemaphore <- struct{}{}:
 			globalSlotAcquired = true
-		default:
-			// Semaphore full - too many concurrent executions
-			e.logger.Warn("workflow execution rejected: max concurrent runs reached",
-				"run_id", runID,
-				"max_concurrent", e.maxConcurrentRuns,
-			)
-			// Mark the run as failed due to capacity
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if run, err := e.runRepo.GetByID(ctx, runID); err == nil {
-				run.Fail("execution rejected: system at capacity")
-				_ = e.runRepo.Update(ctx, run)
-			}
+		case <-deadline.C:
+			e.logger.Warn("workflow run not started: no free slot in time",
+				"run_id", runID, "max_concurrent", e.maxConcurrentRuns)
+			e.failRun(runID, fmt.Sprintf("not started: waited %s for a free slot", e.maxQueueWait))
 			return
 		}
 
@@ -841,4 +900,55 @@ func (e *WorkflowExecutor) ExecuteAsyncWithTenant(runID shared.ID, tenantID shar
 			e.logger.Error("async workflow execution failed", "run_id", runID, "error", err)
 		}
 	}()
+}
+
+// tenantSlot returns the run-slot channel of a tenant (created on first use).
+func (e *WorkflowExecutor) tenantSlot(tenantKey string) chan struct{} {
+	e.tenantMu.Lock()
+	defer e.tenantMu.Unlock()
+	slot, ok := e.tenantSlots[tenantKey]
+	if !ok {
+		slot = make(chan struct{}, e.maxConcurrentPerTenant)
+		e.tenantSlots[tenantKey] = slot
+	}
+	return slot
+}
+
+// failRun marks a run that never started as failed (best effort).
+func (e *WorkflowExecutor) failRun(runID shared.ID, reason string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if run, err := e.runRepo.GetByID(ctx, runID); err == nil && !run.Status.IsTerminal() {
+		run.Fail(reason)
+		_ = e.runRepo.Update(ctx, run)
+	}
+}
+
+// maxConsecutiveFailures failed runs in a row pause an automation
+// (is_active = false, audited): an automation that cannot succeed (its
+// integration is gone, its owner lost access) stops acting until someone
+// fixes and switches it on again.
+const maxConsecutiveFailures = 20
+
+// keepsFailing reports whether the workflow's latest maxConsecutiveFailures
+// finished runs all failed. A read error never pauses.
+func (e *WorkflowExecutor) keepsFailing(ctx context.Context, wf *workflowdom.Workflow) bool {
+	reader, ok := e.runRepo.(workflowdom.RunOutcomeReader)
+	if !ok {
+		return false
+	}
+	outcomes, err := reader.LatestOutcomes(ctx, wf.TenantID, wf.ID, maxConsecutiveFailures)
+	if err != nil {
+		e.logger.Warn("failed to read the latest run outcomes", "workflow_id", wf.ID, "error", err)
+		return false
+	}
+	if len(outcomes) < maxConsecutiveFailures {
+		return false
+	}
+	for _, o := range outcomes {
+		if o != workflowdom.RunStatusFailed {
+			return false
+		}
+	}
+	return true
 }

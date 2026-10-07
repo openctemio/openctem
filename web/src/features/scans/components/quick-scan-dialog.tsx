@@ -34,6 +34,8 @@ import {
 import type { QuickScanResponse } from '@/lib/api/scan-workflow-types'
 import { invalidateScanConfigsCache, useSaveQuickScan } from '@/lib/api/scan-hooks'
 import { ScannerSelect } from './scanner-select'
+import { ScopePreview } from './new-scan/scope-preview'
+import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
 
 interface QuickScanDialogProps {
   open: boolean
@@ -60,6 +62,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
   const [targets, setTargets] = useState('')
   const [scannerName, setScannerName] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [refused, setRefused] = useState<ScopeRefusal[]>([])
   const [started, setStarted] = useState<QuickScanResponse | null>(null)
   const [saveName, setSaveName] = useState('')
   const [savedName, setSavedName] = useState<string | null>(null)
@@ -82,6 +85,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
     }
 
     setIsSubmitting(true)
+    setRefused([])
     try {
       const result = await quickScan({ targets: targetList, scanner_name: scannerName })
       toast.success(`Quick scan started on ${targetList.length} target(s)`)
@@ -90,6 +94,11 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
       setSaveName(defaultSaveName(scannerName, targetList))
       onSuccess?.()
     } catch (error) {
+      const scopeRefused = refusedFromError(error)
+      if (scopeRefused.length > 0) {
+        setRefused(scopeRefused)
+        return
+      }
       toast.error(getErrorMessage(error, 'Failed to start the quick scan'))
     } finally {
       setIsSubmitting(false)
@@ -110,6 +119,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
   }
 
   const handleClose = () => {
+    setRefused([])
     setTargets('')
     setScannerName('')
     setStarted(null)
@@ -207,6 +217,12 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
                   Enter targets separated by newlines, commas, or semicolons.
                 </p>
               </div>
+
+              {refused.length > 0 ? (
+                <ScopeRefusalPanel refused={refused} />
+              ) : (
+                <ScopePreview targets={targetList} />
+              )}
 
               {/* Scanner: the tool registry's active scanners */}
               <div className="space-y-2">

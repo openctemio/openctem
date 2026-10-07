@@ -148,7 +148,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
           />
           <p className="text-muted-foreground text-xs">
             Active scanners in the tool registry. A scanner no online sensor can run is listed but
-            off. Use Workflow mode (Advanced options) to chain several tools.
+            off.{!lockMode && ' To chain several tools, choose a scan workflow under What to run.'}
           </p>
         </div>
       )}

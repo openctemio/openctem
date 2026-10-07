@@ -105,7 +105,53 @@ func (r *AttributionRepository) ListForReview(ctx context.Context, tenantID shar
 			page.Items[i].Evidence = append(page.Items[i].Evidence, e)
 		}
 	}
-	return page, ev.Err()
+	if err := ev.Err(); err != nil {
+		return nil, err
+	}
+	return page, r.labelSensors(ctx, tenantID, page)
+}
+
+// labelSensors names the sensor of "sensor:<id>" evidence (source_label and
+// observed.sensor_name), so the "why" text shows a name, not a raw id.
+func (r *AttributionRepository) labelSensors(ctx context.Context, tenantID shared.ID, page *easm.ReviewPage) error {
+	ids := []string{}
+	seen := map[string]bool{}
+	for _, it := range page.Items {
+		for _, e := range it.Evidence {
+			if id, ok := strings.CutPrefix(e.Source, "sensor:"); ok && !seen[id] {
+				if _, err := shared.IDFromString(id); err == nil {
+					seen[id] = true
+					ids = append(ids, id)
+				}
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	names, err := r.sensorNames(ctx, tenantID, ids)
+	if err != nil {
+		return err
+	}
+	for i := range page.Items {
+		for j := range page.Items[i].Evidence {
+			e := &page.Items[i].Evidence[j]
+			id, ok := strings.CutPrefix(e.Source, "sensor:")
+			if !ok {
+				continue
+			}
+			name, ok := names[id]
+			if !ok {
+				name = "a removed sensor"
+			}
+			e.SourceLabel = name
+			if e.Observed == nil {
+				e.Observed = map[string]any{}
+			}
+			e.Observed["sensor_name"] = name
+		}
+	}
+	return nil
 }
 
 // SaveDecisions records one person's decision on many assets in a single

@@ -28,6 +28,7 @@ const (
 	SectionAssetIdentity  = "asset_identity"
 	SectionAssetLifecycle = "asset_lifecycle"
 	SectionRetest         = "retest"
+	SectionEvidence       = "evidence"
 	SectionEASM           = "easm"
 	SectionScope          = "scope"
 )
@@ -47,6 +48,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionAssetIdentity:  &s.AssetIdentity,
 		SectionAssetLifecycle: &s.AssetLifecycle,
 		SectionRetest:         &s.Retest,
+		SectionEvidence:       &s.Evidence,
 		SectionEASM:           &s.EASM,
 		SectionScope:          &s.Scope,
 	}

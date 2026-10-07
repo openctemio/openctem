@@ -51,7 +51,10 @@ import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
 import { del, post } from '@/lib/api/client'
 import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { SCAN_RUN_TRIGGER_LABELS, type ScanWorkflowTriggerType } from '@/lib/api/scan-workflow-types'
+import {
+  SCAN_RUN_TRIGGER_LABELS,
+  type ScanWorkflowTriggerType,
+} from '@/lib/api/scan-workflow-types'
 import { useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
 import {
   SCAN_CONFIG_STATUS_LABELS,
@@ -544,8 +547,18 @@ export default function ScanDetailPage() {
                   <DetailCopyId id={config.id} label="Scan ID" />
                 </DetailField>
                 {config.scan_workflow_id && (
-                  <DetailField label="Workflow ID" full>
-                    <DetailCopyId id={config.scan_workflow_id} label="Workflow ID" />
+                  <DetailField label="Scan workflow" full>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Can permission={Permission.ScanWorkflowsRead}>
+                        <Link
+                          href={`/scans/workflows/${encodeURIComponent(config.scan_workflow_id)}`}
+                          className="text-primary text-sm font-medium hover:underline"
+                        >
+                          Open scan workflow
+                        </Link>
+                      </Can>
+                      <DetailCopyId id={config.scan_workflow_id} label="Scan workflow ID" />
+                    </div>
                   </DetailField>
                 )}
               </DetailFieldGrid>

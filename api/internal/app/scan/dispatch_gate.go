@@ -66,6 +66,11 @@ type DispatchTargetsInput struct {
 	PassiveOnly bool
 	// DryRun answers POST /scope/check: nothing is logged as refused.
 	DryRun bool
+	// Tier is the probe's tier (RFC-054 §4.2 step 6): a target the scope
+	// authority covers only below it is refused (tier_exceeds). Nil is t1,
+	// the safe active probe every path sends unless it says otherwise;
+	// PassiveOnly dispatches are not tier-checked.
+	Tier *scopedom.Tier
 }
 
 // RefusedTarget is a target the gate will not dispatch, with the reason and
@@ -221,6 +226,11 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		return nil, err
 	}
 
+	kept, err = s.refuseOverTier(ctx, in, kept, out)
+	if err != nil {
+		return nil, err
+	}
+
 	kept, err = s.refuseOutOfActScopeTargets(ctx, in, kept, out)
 	if err != nil {
 		return nil, err
@@ -330,6 +340,36 @@ func rejectedState(assets map[string]DispatchAsset, target string, blocked map[s
 		}
 	}
 	return false
+}
+
+// refuseOverTier moves every kept target the scope authority covers only
+// below the probe's tier to Refused (tier_exceeds). A passive dispatch is
+// not checked.
+func (s *Service) refuseOverTier(ctx context.Context, in DispatchTargetsInput, kept []string, out *DispatchTargets) ([]string, error) {
+	if in.PassiveOnly || len(kept) == 0 {
+		return kept, nil
+	}
+	tier := scopedom.TierActive
+	if in.Tier != nil {
+		tier = *in.Tier
+	}
+	over, err := s.tierExceeded(ctx, in.TenantID, kept, tier)
+	if err != nil {
+		return nil, fmt.Errorf("tier check failed, nothing dispatched: %w", err)
+	}
+	if len(over) == 0 {
+		return kept, nil
+	}
+	allowed := make([]string, 0, len(kept))
+	for _, t := range kept {
+		if _, no := over[t]; no {
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Code: scopedom.RefusalTierExceeds,
+				Reason: scopedom.RefusalMessages[scopedom.RefusalTierExceeds]})
+			continue
+		}
+		allowed = append(allowed, t)
+	}
+	return allowed, nil
 }
 
 // refuseOutOfActScopeTargets moves every kept target the actor may not scan

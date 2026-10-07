@@ -28,7 +28,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead,
-		CredentialsRead, CredentialsWrite, CredentialsReveal,
+		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
 		// Scans
@@ -105,7 +105,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete,
 		VulnerabilitiesRead,
-		CredentialsRead, CredentialsWrite, CredentialsReveal,
+		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
 		// Scans

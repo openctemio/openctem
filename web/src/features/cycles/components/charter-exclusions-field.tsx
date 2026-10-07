@@ -13,7 +13,7 @@ import type { CharterExclusion } from '../types'
 
 /**
  * The charter's exclusions, picked from the scope exclusions scans enforce
- * (Scoping › Boundaries) instead of typed as free text. Each picked exclusion
+ * (Scoping › Scope) instead of typed as free text. Each picked exclusion
  * is stored as `{item: pattern, reason}`, so the charter keeps its own
  * wording of why, and the reason defaults to the exclusion's.
  *
@@ -78,14 +78,14 @@ export function CharterExclusionsField({
         <Skeleton className="h-20 w-full" />
       ) : error ? (
         <p className="text-sm text-muted-foreground">
-          Scope exclusions could not be loaded (the Boundaries module may be off), so none can be
-          picked here.
+          Scope exclusions could not be loaded (the Scope module may be off), so none can be picked
+          here.
         </p>
       ) : exclusions.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No exclusions yet.{' '}
-          <Link href="/scope-config?tab=exclusions" className="underline">
-            Add them under Boundaries
+          <Link href="/scope?tab=exclusions" className="underline">
+            Add them under Scope
           </Link>{' '}
           so scans honour them, then pick them here.
         </p>

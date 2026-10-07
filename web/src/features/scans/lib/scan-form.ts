@@ -108,7 +108,12 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
     if (name) all.push(name)
   }
   all.push(...targets.customTargets)
-  if (all.length > 0) request.targets = all
+  if (targets.coverage && targets.coverage !== 'host') all.push(...(targets.expandedTargets ?? []))
+  const unique = [...new Map(all.map((t) => [t.trim().toLowerCase(), t.trim()])).values()].filter(
+    Boolean
+  )
+  // The API takes at most 1000 direct targets.
+  if (unique.length > 0) request.targets = unique.slice(0, 1000)
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
   if (form.mode === 'single') request.scanner_name = form.scannerName

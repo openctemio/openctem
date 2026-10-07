@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
@@ -185,9 +186,11 @@ func buildAssetsDiscoveredTriggerData(assets []*asset.Asset) map[string]any {
 	}
 }
 
-// DispatchScanCompleted fires `scan_completed` when a pipeline run finishes
-// successfully. Wired as the pipeline service's run-completed callback. Async
-// with panic recovery, like every other dispatch path.
+// DispatchScanCompleted fires `scan_completed` when a pipeline run settles
+// (completed, partial or failed). Each automation picks the outcomes it runs
+// on with status_filter (scanOutcomeMatches). Wired as the pipeline service's
+// run-settled callback. Async with panic recovery, like every other dispatch
+// path.
 func (d *WorkflowEventDispatcher) DispatchScanCompleted(_ context.Context, run *scanrun.Run) {
 	if run == nil {
 		return
@@ -227,12 +230,26 @@ func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run
 	if run.ScanID != nil {
 		data["scan"].(map[string]any)["scan_id"] = run.ScanID.String()
 	}
+	// A scan an automation started carries the automation's cause in its run
+	// context: "scan finished => run the scan" must not loop.
+	var cause *AutomationCause
+	if c, ok := automationCauseFromData(run.Context); ok {
+		cause = &c
+		data = withCause(data, cause)
+	}
 	triggered := 0
 	for _, wf := range workflows {
 		if wf.TenantID != run.TenantID {
 			continue
 		}
-		if _, ok := triggerConfigFor(wf, workflowdom.TriggerTypeScanCompleted); !ok {
+		cfg, ok := triggerConfigFor(wf, workflowdom.TriggerTypeScanCompleted)
+		if !ok || !scanOutcomeMatches(cfg, string(run.Status)) {
+			continue
+		}
+		if reason := loopBlocked(wf, cause, cfg); reason != "" {
+			d.logger.Warn("automation not started: loop guard",
+				"workflow_id", wf.ID, "workflow_name", wf.Name, "scan_run_id", run.ID,
+				"reason", reason)
 			continue
 		}
 		if err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
@@ -248,6 +265,31 @@ func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run
 		triggered++
 	}
 	return triggered
+}
+
+// scanOutcomes are the run outcomes `scan_completed` reports.
+var scanOutcomes = []string{
+	string(scanrun.RunStatusCompleted), string(scanrun.RunStatusPartial), string(scanrun.RunStatusFailed),
+}
+
+// scanOutcomeMatches applies the scan_completed trigger's status_filter
+// ([]string of completed, partial, failed). Without one the trigger fires on
+// completed runs only, as it always did: an automation written for a
+// successful scan never starts on a failed one.
+func scanOutcomeMatches(cfg map[string]any, status string) bool {
+	if !slices.Contains(scanOutcomes, status) {
+		return false
+	}
+	raw, ok := cfg["status_filter"].([]any)
+	if !ok || len(raw) == 0 {
+		return status == string(scanrun.RunStatusCompleted)
+	}
+	for _, v := range raw {
+		if s, ok := v.(string); ok && s == status {
+			return true
+		}
+	}
+	return false
 }
 
 func completedAt(run *scanrun.Run) string {

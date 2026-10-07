@@ -149,6 +149,13 @@ export interface ScanTargets {
   /** Asset names mapped by ID - used to convert to targets when submitting */
   assetNames: Record<string, string>
   customTargets: string[] // domains, IPs
+  /**
+   * How far typed domains reach (research/48 §6.7): the names themselves, plus
+   * their inventory subdomains, plus the addresses those resolved to.
+   */
+  coverage?: 'host' | 'subdomains' | 'subdomains_ips'
+  /** Targets the coverage level added (sent with the others; each one is gated). */
+  expandedTargets?: string[]
 }
 
 export const DEFAULT_TARGETS: ScanTargets = {
@@ -157,6 +164,8 @@ export const DEFAULT_TARGETS: ScanTargets = {
   assetIds: [],
   assetNames: {},
   customTargets: [],
+  coverage: 'host',
+  expandedTargets: [],
 }
 
 // ============================================

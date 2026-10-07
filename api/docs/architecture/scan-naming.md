@@ -31,10 +31,10 @@ A vendor's own word appears only as provenance, for example "GitHub workflow
 
 ## History
 
-Migration 001240 renamed `pipeline_templates`, `pipeline_steps`,
+Migration 001285 renamed `pipeline_templates`, `pipeline_steps`,
 `pipeline_runs` and `step_runs` (and their columns, indexes, constraints, RLS
 policies and trigger) in place, rewrote queued command payload keys, and
 mapped `integrations:pipelines:{read,write,delete}` one to one to
-`scans:workflows:*`. Migration 001241 removed `integrations:pipelines:execute`,
+`scans:workflows:*`. Migration 001286 removed `integrations:pipelines:execute`,
 which gated only the removed direct run. Audit entries written before the
 rename keep their `pipeline_template.*` and `pipeline_run.*` actions.

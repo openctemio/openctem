@@ -6,6 +6,8 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 )
 
 func authzCtx(isAdmin bool, perms ...string) context.Context {
@@ -67,17 +69,44 @@ func TestWorkflowActionAuthz_AdminBypass(t *testing.T) {
 	}
 }
 
-// Non-action nodes (nil config / trigger / condition) and actions that need no
-// extra permission (disabled run_script, outbound http_request) are ignored.
+// Trigger and condition nodes (and a nil config) need nothing beyond the
+// workflow permission.
 func TestWorkflowActionAuthz_NonGatedNodesIgnored(t *testing.T) {
 	ctx := authzCtx(false, string(permission.WorkflowsWrite))
 	if _, ok := authorizeActionConfigs(ctx,
 		nil,
 		&NodeConfigRequest{TriggerType: "finding_created"},
-		actionCfg("http_request"),
-		actionCfg("run_script"),
+		&NodeConfigRequest{ConditionExpr: "trigger.finding.severity == 'critical'"},
 	); !ok {
-		t.Fatal("non-gated nodes must not require extra permissions")
+		t.Fatal("trigger and condition nodes must not require extra permissions")
+	}
+}
+
+// Outbound HTTP sends run data to an address of the editor's choosing: it
+// needs integrations:manage. A notification needs integrations:read. An
+// action type with no mapping (run_script) is refused to non-admins rather
+// than allowed.
+func TestWorkflowActionAuthz_OutboundNodesGated(t *testing.T) {
+	ctx := authzCtx(false, string(permission.WorkflowsWrite), string(permission.FindingsWrite))
+	cases := []struct {
+		name string
+		cfg  *NodeConfigRequest
+		want permission.Permission
+	}{
+		{"http_request", actionCfg("http_request"), permission.IntegrationsManage},
+		{"run_script", actionCfg("run_script"), permission.IntegrationsManage},
+		{"slack notification", &NodeConfigRequest{NotificationType: "slack"}, permission.IntegrationsRead},
+		{"email notification", &NodeConfigRequest{NotificationType: "email"}, permission.IntegrationsRead},
+	}
+	for _, tc := range cases {
+		perm, ok := authorizeActionConfigs(ctx, tc.cfg)
+		if ok || perm != tc.want {
+			t.Errorf("%s: got (%q, %v), want denial for %q", tc.name, perm, ok, tc.want)
+		}
+	}
+	ok := authzCtx(false, string(permission.IntegrationsManage), string(permission.IntegrationsRead))
+	if _, allowed := authorizeActionConfigs(ok, actionCfg("http_request"), &NodeConfigRequest{NotificationType: "slack"}); !allowed {
+		t.Fatal("integration holders may build outbound nodes")
 	}
 }
 
@@ -92,5 +121,28 @@ func TestWorkflowActionAuthz_MixedGraphDeniedOnFirstGap(t *testing.T) {
 	}
 	if perm != permission.ScansWrite {
 		t.Fatalf("expected missing %q, got %q", permission.ScansWrite, perm)
+	}
+}
+
+// A stored http_request node keeps its headers only to keep running: no
+// reader of the workflow sees their values. Other configs pass unchanged.
+func TestWorkflowResponse_RedactsHTTPRequestHeaders(t *testing.T) {
+	cfg := map[string]any{"url": "https://hooks.example.com", "headers": map[string]any{"Authorization": "Bearer s3cr3t"}}
+	node, _ := workflow.NewNode(shared.NewID(), "a", workflow.NodeTypeAction, "a")
+	_ = node.SetActionConfig(workflow.ActionTypeHTTPRequest, cfg)
+	resp := toNodeResponse(node)
+	hdrs, _ := resp.Config.ActionConfig["headers"].(map[string]any)
+	if hdrs["Authorization"] != redactedValue {
+		t.Fatalf("header value in the response: %v", resp.Config.ActionConfig)
+	}
+	if cfg["headers"].(map[string]any)["Authorization"] != "Bearer s3cr3t" {
+		t.Fatal("redaction changed the stored config")
+	}
+	if resp.Config.ActionConfig["url"] != "https://hooks.example.com" {
+		t.Fatal("redaction dropped other fields")
+	}
+	other := map[string]any{"tags": []any{"x"}}
+	if got := redactActionConfig(workflow.ActionTypeAddTags, other); got["tags"] == nil {
+		t.Fatal("other actions must pass unchanged")
 	}
 }

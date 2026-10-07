@@ -1212,12 +1212,20 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if r.Incompatible > 0 {
 		runContext["incompatible_target_count"] = r.Incompatible
 	}
+	if r.TierExceeded > 0 {
+		runContext["tier_exceeded_target_count"] = r.TierExceeded
+	}
 	if len(r.TargetTypes) > 0 {
 		runContext[RunContextKeyTargetTypes] = r.TargetTypes
 	}
 	if len(r.Targets) == 0 && r.Incompatible > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
 		return shared.NewDomainError(codeNoCompatibleTargets,
 			fmt.Sprintf("Scan %q has no target its scanner can scan: %s. Pick a scanner for these asset types or change the asset group.", sc.Name, r.IncompatibleReason),
+			shared.ErrValidation)
+	}
+	if len(r.Targets) == 0 && r.TierExceeded > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
+		return shared.NewDomainError(codeTierExceeds,
+			fmt.Sprintf("No target of scan %q may be probed at this scanner's tier: the scope entries covering them allow less. Raise the entry's tier in Scoping > Targets, or use a less intrusive scanner.", sc.Name),
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {

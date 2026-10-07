@@ -176,10 +176,11 @@ export const sidebarData: SidebarData = {
           sections: BUSINESS_CONTEXT_SECTION_TABS,
         },
         {
-          // Was "Scope Config": in-scope targets and the exclusions scans
-          // enforce. Its old Schedules tab never ran; Scans owns scheduling.
-          title: 'Boundaries',
-          url: '/scope-config',
+          // What scans may touch: scope entries and exclusions (RFC-054,
+          // research/53). Was "Boundaries" under the old URL (no redirect: the
+          // owner chose a clean rename).
+          title: 'Scope',
+          url: '/scope',
           icon: Fence,
           permission: Permission.ScopeRead,
           module: 'scope_config',
