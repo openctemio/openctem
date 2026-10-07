@@ -31,12 +31,7 @@ export const API_BASE = {
   SCANNER_TEMPLATES: '/api/v1/scanner-templates',
   TEMPLATE_SOURCES: '/api/v1/template-sources',
   TOOLS: '/api/v1/tools',
-  PLATFORM_TOOLS: '/api/v1/tools/platform',
-  CUSTOM_TOOLS: '/api/v1/custom-tools',
-  TENANT_TOOLS: '/api/v1/tenant-tools',
-  TOOL_STATS: '/api/v1/tenant-tools/stats',
   TOOL_CATEGORIES: '/api/v1/tool-categories',
-  CUSTOM_TOOL_CATEGORIES: '/api/v1/custom-tool-categories',
   CAPABILITIES: '/api/v1/capabilities',
   CUSTOM_CAPABILITIES: '/api/v1/custom-capabilities',
   SCANS: '/api/v1/scans',
@@ -1208,203 +1203,35 @@ export const scannerTemplateEndpoints = {
 // TOOL ENDPOINTS
 // ============================================
 
-import type {
-  ToolListFilters,
-  TenantToolConfigListFilters,
-  ToolExecutionListFilters,
-} from './tool-types'
+import type { ToolListFilters } from './tool-types'
 
 /**
- * Tool endpoints for managing system-wide tool definitions
+ * The organization's view of the tool catalog (api tool-availability.md):
+ * platform tools plus its own custom tools, one resource. include= adds its
+ * settings, the availability from its sensors and run statistics.
  */
 export const toolEndpoints = {
-  /**
-   * List tools with optional filters
-   */
+  /** List with filters, sort, pagination and include= */
   list: (filters?: ToolListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
     return `${API_BASE.TOOLS}${queryString}`
   },
 
-  /**
-   * Get tool by ID
-   */
+  /** One tool (platform or own custom) */
   get: (toolId: string) => `${API_BASE.TOOLS}/${toolId}`,
 
-  /**
-   * Get tool by name
-   */
-  getByName: (name: string) => `${API_BASE.TOOLS}/name/${name}`,
-
-  /**
-   * Create a new tool
-   */
+  /** Create a custom tool owned by the organization */
   create: () => API_BASE.TOOLS,
 
-  /**
-   * Update tool
-   */
+  /** Update / delete one of the organization's custom tools */
   update: (toolId: string) => `${API_BASE.TOOLS}/${toolId}`,
-
-  /**
-   * Delete tool
-   */
   delete: (toolId: string) => `${API_BASE.TOOLS}/${toolId}`,
 
-  /**
-   * Activate tool
-   */
-  activate: (toolId: string) => `${API_BASE.TOOLS}/${toolId}/activate`,
+  /** PATCH: the organization's switch and config overrides of one tool */
+  settings: (toolId: string) => `${API_BASE.TOOLS}/${toolId}/settings`,
 
-  /**
-   * Deactivate tool
-   */
-  deactivate: (toolId: string) => `${API_BASE.TOOLS}/${toolId}/deactivate`,
-} as const
-
-/**
- * Platform tools endpoints (system-wide tools available to all tenants)
- * Platform tools are managed by admins and cannot be enabled/disabled by tenants
- */
-export const platformToolEndpoints = {
-  /**
-   * List platform tools with optional filters
-   */
-  list: (filters?: ToolListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.PLATFORM_TOOLS}${queryString}`
-  },
-} as const
-
-/**
- * Custom tools endpoints for tenant-specific custom tool definitions
- * Custom tools are created and managed by tenants
- */
-export const customToolEndpoints = {
-  /**
-   * List custom tools with optional filters
-   */
-  list: (filters?: ToolListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.CUSTOM_TOOLS}${queryString}`
-  },
-
-  /**
-   * Get custom tool by ID
-   */
-  get: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}`,
-
-  /**
-   * Create a new custom tool
-   */
-  create: () => API_BASE.CUSTOM_TOOLS,
-
-  /**
-   * Update custom tool
-   */
-  update: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}`,
-
-  /**
-   * Delete custom tool
-   */
-  delete: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}`,
-
-  /**
-   * Activate custom tool
-   */
-  activate: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}/activate`,
-
-  /**
-   * Deactivate custom tool
-   */
-  deactivate: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}/deactivate`,
-} as const
-
-/**
- * Tenant tool config endpoints for tenant-specific tool configurations
- */
-export const tenantToolEndpoints = {
-  /**
-   * List tenant tool configs
-   */
-  list: (filters?: TenantToolConfigListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.TENANT_TOOLS}${queryString}`
-  },
-
-  /**
-   * Get tenant tool config by tool ID
-   */
-  get: (toolId: string) => `${API_BASE.TENANT_TOOLS}/${toolId}`,
-
-  /**
-   * Get tool with effective config (combines system tool + tenant config)
-   */
-  getWithConfig: (toolId: string) => `${API_BASE.TENANT_TOOLS}/${toolId}/with-config`,
-
-  /**
-   * Update tenant tool config
-   */
-  update: (toolId: string) => `${API_BASE.TENANT_TOOLS}/${toolId}`,
-
-  /**
-   * Delete tenant tool config (reset to defaults)
-   */
-  delete: (toolId: string) => `${API_BASE.TENANT_TOOLS}/${toolId}`,
-
-  /**
-   * Bulk enable tools for tenant
-   */
-  bulkEnable: () => `${API_BASE.TENANT_TOOLS}/bulk/enable`,
-
-  /**
-   * Bulk disable tools for tenant
-   */
-  bulkDisable: () => `${API_BASE.TENANT_TOOLS}/bulk/disable`,
-
-  /**
-   * List all tools with tenant-specific enabled status
-   * Returns tools joined with tenant configs, where is_enabled defaults to true if no config exists
-   */
-  allTools: (filters?: ToolListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.TENANT_TOOLS}/all-tools${queryString}`
-  },
-
-  /**
-   * Tool availability: the catalog joined with the tools the organization's
-   * sensors report, optionally limited to one scan zone's sensors.
-   */
-  availability: (zoneId?: string | null) =>
-    `${API_BASE.TENANT_TOOLS}/availability${zoneId ? buildQueryString({ zone_id: zoneId }) : ''}`,
-} as const
-
-/**
- * Tool stats and execution endpoints
- */
-export const toolStatsEndpoints = {
-  /**
-   * Get stats for a specific tool
-   */
-  toolStats: (toolId: string) => `${API_BASE.TOOL_STATS}/${toolId}`,
-
-  /**
-   * Get tenant tool stats summary
-   */
-  tenantStats: () => `${API_BASE.TOOL_STATS}/tenant`,
-
-  /**
-   * List tool executions
-   */
-  executions: (filters?: ToolExecutionListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.TOOL_STATS}/executions${queryString}`
-  },
-
-  /**
-   * Get tool execution by ID
-   */
-  execution: (executionId: string) => `${API_BASE.TOOL_STATS}/executions/${executionId}`,
+  /** PATCH: switch several tools on or off */
+  bulkSettings: () => `${API_BASE.TOOLS}/settings`,
 } as const
 
 // ============================================
@@ -1414,46 +1241,18 @@ export const toolStatsEndpoints = {
 import type { ToolCategoryListFilters } from './tool-category-types'
 
 /**
- * Tool Category endpoints (read-only for platform + tenant custom)
+ * Tool categories: platform plus the organization's custom ones. Changes
+ * reach only its own custom categories.
  */
 export const toolCategoryEndpoints = {
-  /**
-   * List all categories (platform + tenant custom, with pagination)
-   */
   list: (filters?: ToolCategoryListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
     return `${API_BASE.TOOL_CATEGORIES}${queryString}`
   },
-
-  /**
-   * List all categories for dropdowns (no pagination)
-   */
-  all: () => `${API_BASE.TOOL_CATEGORIES}/all`,
-
-  /**
-   * Get category by ID
-   */
   get: (categoryId: string) => `${API_BASE.TOOL_CATEGORIES}/${categoryId}`,
-} as const
-
-/**
- * Custom Tool Category endpoints (tenant custom categories management)
- */
-export const customToolCategoryEndpoints = {
-  /**
-   * Create a new custom category
-   */
-  create: () => API_BASE.CUSTOM_TOOL_CATEGORIES,
-
-  /**
-   * Update a custom category
-   */
-  update: (categoryId: string) => `${API_BASE.CUSTOM_TOOL_CATEGORIES}/${categoryId}`,
-
-  /**
-   * Delete a custom category
-   */
-  delete: (categoryId: string) => `${API_BASE.CUSTOM_TOOL_CATEGORIES}/${categoryId}`,
+  create: () => API_BASE.TOOL_CATEGORIES,
+  update: (categoryId: string) => `${API_BASE.TOOL_CATEGORIES}/${categoryId}`,
+  delete: (categoryId: string) => `${API_BASE.TOOL_CATEGORIES}/${categoryId}`,
 } as const
 
 // ============================================
@@ -2165,10 +1964,6 @@ export const endpoints = {
   scanProfiles: scanProfileEndpoints,
   scannerTemplates: scannerTemplateEndpoints,
   tools: toolEndpoints,
-  platformTools: platformToolEndpoints,
-  customTools: customToolEndpoints,
-  tenantTools: tenantToolEndpoints,
-  toolStats: toolStatsEndpoints,
   pipelines: pipelineEndpoints,
   pipelineRuns: pipelineRunEndpoints,
   scanManagement: scanManagementEndpoints,
@@ -2200,10 +1995,6 @@ export {
   scanProfileEndpoints as scanProfiles,
   scannerTemplateEndpoints as scannerTemplates,
   toolEndpoints as tools,
-  platformToolEndpoints as platformTools,
-  customToolEndpoints as customTools,
-  tenantToolEndpoints as tenantTools,
-  toolStatsEndpoints as toolStats,
   pipelineEndpoints as pipelines,
   pipelineRunEndpoints as pipelineRuns,
   scanManagementEndpoints as scanManagement,
