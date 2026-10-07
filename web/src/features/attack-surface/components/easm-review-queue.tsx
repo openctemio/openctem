@@ -33,6 +33,8 @@ import {
   ATTRIBUTION_STATE_CLASS,
   ATTRIBUTION_STATE_LABEL,
   describeEvidence,
+  REVIEW_HINT_TEXT,
+  reviewNetworkText,
   type AttributionDecision,
   type AttributionEvidence,
   type AttributionState,
@@ -42,7 +44,7 @@ import { useDecideReviewBatch, useEASMReviewQueue } from '../hooks/use-easm-revi
 import { useEASMSummary } from '../hooks/use-easm-summary'
 import { EASMRuleSuggestions } from './easm-rule-suggestions'
 import { reviewReasonLabel } from '../lib/review-reasons'
-import { ScopeEntryDialog, type ScopeEntryDraft } from '@/features/scope'
+import { ScopeEntryDialog, ScopeFixButtons, type ScopeEntryDraft } from '@/features/scope'
 import {
   Select,
   SelectContent,
@@ -221,6 +223,31 @@ export function EASMReviewQueue() {
               </span>
             )
           }
+          // An address: names that resolve to it never grant it (RFC-054
+          // §4.3). The server explains why and offers the fixes this caller
+          // may take; shared provider space gets none.
+          if (row.original.hint) {
+            const net = reviewNetworkText(row.original.network)
+            const from = row.original.resolved_from ?? []
+            return (
+              <div className="max-w-sm space-y-1 text-xs text-muted-foreground">
+                <p>Not in scope. {REVIEW_HINT_TEXT[row.original.hint] ?? ''}</p>
+                {from.length > 0 && (
+                  <p>
+                    Resolved from{' '}
+                    {from.map((n, i) => (
+                      <span key={n}>
+                        {i > 0 && ', '}
+                        <code className="break-all">{n}</code>
+                      </span>
+                    ))}
+                  </p>
+                )}
+                {net && <p>{net}</p>}
+                <ScopeFixButtons fixes={row.original.fixes ?? []} onApplied={() => void mutate()} />
+              </div>
+            )
+          }
           // Nothing covers it: confirming records ownership, but scans still
           // need a scope entry (RFC-054 §4.2), so offer that first.
           return (
@@ -253,7 +280,7 @@ export function EASMReviewQueue() {
       }
     )
     return cols
-  }, [canDecide, canAddScope, setAddDraft])
+  }, [canDecide, canAddScope, setAddDraft, mutate])
 
   if (error) {
     return <ErrorState title="the review queue" error={error} onRetry={() => void mutate()} />
