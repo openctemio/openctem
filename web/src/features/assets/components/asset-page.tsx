@@ -55,19 +55,7 @@ import { useAssets, useAssetStats, type Asset } from '@/features/assets'
 import { TagFilter, TagFilterChips } from './tag-filter'
 import { PropertyFilter, PropertyFilterChips } from './property-filter'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
-import {
-  ScopeBadge,
-  getScopeMatchesForAsset,
-  useScopeTargetsApi,
-  useScopeExclusionsApi,
-  useScopeStatsApi,
-  type ScopeMatchResult,
-  type ScopeTarget,
-  type ScopeExclusion,
-  type ScopeTargetType,
-  type ScopeTargetStatus,
-} from '@/features/scope'
-import type { ApiScopeTarget, ApiScopeExclusion } from '@/features/scope/api/scope-api.types'
+import { ScopeCheckBadge, useScopeCheck, useScopeStatsApi } from '@/features/scope'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useDebounce } from '@/hooks/use-debounce'
 // Status filter is now string-based to support custom status values
@@ -85,45 +73,6 @@ import { IssuesChip, LabelChips } from './service-cells'
 import { TypedDetailSections } from './typed-detail-sections'
 
 type StatusFilter = string
-
-const PRIORITY_MAP: Record<number, 'critical' | 'high' | 'medium' | 'low'> = {
-  1: 'critical',
-  2: 'high',
-  3: 'medium',
-  4: 'low',
-}
-
-// Every field of the generated wire type is optional (swag emits no `required`
-// list for response structs), so the API-to-view-model boundary supplies the
-// defaults.
-function transformApiTarget(api: ApiScopeTarget): ScopeTarget {
-  return {
-    id: api.id ?? '',
-    type: (api.target_type ?? '') as ScopeTargetType,
-    pattern: api.pattern ?? '',
-    description: api.description ?? '',
-    status: (api.status ?? '') as ScopeTargetStatus,
-    priority: PRIORITY_MAP[api.priority ?? 0],
-    tags: api.tags,
-    addedAt: api.created_at ?? '',
-    addedBy: api.created_by ?? '',
-    updatedAt: api.updated_at ?? '',
-  }
-}
-
-function transformApiExclusion(api: ApiScopeExclusion): ScopeExclusion {
-  return {
-    id: api.id ?? '',
-    type: (api.exclusion_type ?? '') as ScopeTargetType,
-    pattern: api.pattern ?? '',
-    reason: api.reason ?? '',
-    status: (api.status ?? '') as ScopeTargetStatus,
-    expiresAt: api.expires_at,
-    approvedBy: api.approved_by,
-    addedAt: api.created_at ?? '',
-    addedBy: api.created_by ?? '',
-  }
-}
 
 const ASSET_PAGE_SIZES = [10, 20, 30, 50, 100]
 const DEFAULT_ASSET_PAGE_SIZE = 50
@@ -456,34 +405,15 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
     urlSubType,
   ])
 
-  // Scope integration — server-side stats for the coverage bar,
-  // client-side matching for per-row scope badges.
+  // Scope: the coverage bar uses the server's stats; each row's badge is the
+  // scope gate's own answer for the asset name (POST /scope/check, one call
+  // per page), so the table never disagrees with what a scan would do.
   const { data: scopeStats } = useScopeStatsApi()
-  const { data: scopeTargetsData } = useScopeTargetsApi({ status: 'active', per_page: 100 })
-  const { data: scopeExclusionsData } = useScopeExclusionsApi({ status: 'active', per_page: 100 })
-  const scopeTargets = useMemo(
-    () => (scopeTargetsData?.data ?? []).map(transformApiTarget),
-    [scopeTargetsData]
+  const pageAssetNames = useMemo(
+    () => (transformedAssets ?? []).map((a) => a.name).filter(Boolean),
+    [transformedAssets]
   )
-  const scopeExclusions = useMemo(
-    () => (scopeExclusionsData?.data ?? []).map(transformApiExclusion),
-    [scopeExclusionsData]
-  )
-  const scopeMatchesMap = useMemo(() => {
-    const map = new Map<string, ScopeMatchResult>()
-    if (!transformedAssets?.length) return map
-    for (const asset of transformedAssets) {
-      map.set(
-        asset.id,
-        getScopeMatchesForAsset(
-          { id: asset.id, type: asset.type ?? 'unclassified', name: asset.name },
-          scopeTargets,
-          scopeExclusions
-        )
-      )
-    }
-    return map
-  }, [transformedAssets, scopeTargets, scopeExclusions])
+  const { resultFor: scopeResultFor, isLoading: scopeChecking } = useScopeCheck(pageAssetNames)
 
   // Scope coverage from server-side stats endpoint (tenant-wide, not page-bounded).
   const scopeCoverage = useMemo(() => {
@@ -895,9 +825,9 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
         id: 'scope-match',
         header: 'Scope',
         cell: ({ row }) => {
-          const match = scopeMatchesMap.get(row.original.id)
-          if (!match) return <span className="text-muted-foreground">-</span>
-          return <ScopeBadge match={match} />
+          return (
+            <ScopeCheckBadge result={scopeResultFor(row.original.name)} loading={scopeChecking} />
+          )
         },
       },
       // Actions
@@ -990,7 +920,17 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
         },
       },
     ]
-  }, [config, scopeMatchesMap, dialogs, handleCopy, can, router, canWriteAssets, handleRowLabels])
+  }, [
+    config,
+    scopeResultFor,
+    scopeChecking,
+    dialogs,
+    handleCopy,
+    can,
+    router,
+    canWriteAssets,
+    handleRowLabels,
+  ])
 
   // Only sort fields the API accepts; a stale URL value must not leave an
   // arrow on a column the rows are not actually ordered by.
@@ -1114,7 +1054,7 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
         </div>
 
         {/* Compact scope indicator — only show when scope targets are configured */}
-        {scopeTargets.length > 0 && scopeCoverage.totalAssets > 0 && (
+        {(scopeStats?.active_targets ?? 0) > 0 && scopeCoverage.totalAssets > 0 && (
           <div className="mt-4 flex items-center gap-3 px-4 py-2.5 rounded-lg border bg-muted/30">
             <TrendingUp className="h-4 w-4 text-muted-foreground shrink-0" />
             <div className="flex items-center gap-2 text-sm flex-1 min-w-0">
