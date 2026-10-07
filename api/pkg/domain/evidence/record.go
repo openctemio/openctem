@@ -24,8 +24,10 @@ const (
 
 // Retention and volume bounds (server-side).
 const (
-	// MaxDetectionPerFinding: the newest detection records kept per finding.
-	MaxDetectionPerFinding = 5
+	// MaxDetectionPerFinding: the newest detection records kept per finding
+	// (one report may carry MaxItemsPerReport items; a repeated item is not
+	// stored again, so this keeps the proof of the last distinct sightings).
+	MaxDetectionPerFinding = MaxItemsPerReport
 	// MaxRetestPerFinding: the newest retest records kept per finding.
 	MaxRetestPerFinding = 20
 	// DefaultTenantDailyItems bounds new records per tenant per 24 h.
@@ -95,7 +97,7 @@ type NewRecord struct {
 type Repository interface {
 	// InsertForFingerprints stores detection records for the findings with
 	// the given fingerprints (one record list per fingerprint), skipping a
-	// record whose content hash equals the finding's newest detection record,
+	// record whose content hash the finding already holds,
 	// and prunes each finding to MaxDetectionPerFinding. It returns how many
 	// records were stored.
 	InsertForFingerprints(ctx context.Context, tenantID shared.ID, byFingerprint map[string][]NewRecord) (int, error)
