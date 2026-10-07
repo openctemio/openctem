@@ -298,6 +298,13 @@ func TestWorkflowRunAuthz_DB(t *testing.T) {
 		if run.TriggeredBy == nil || *run.TriggeredBy != operator {
 			t.Fatalf("manual run triggered_by = %v, want the caller", run.TriggeredBy)
 		}
+		var subject sql.NullString
+		if err := raw.QueryRowContext(ctx, `SELECT subject_id::text FROM workflow_runs WHERE id = $1`, run.ID).Scan(&subject); err != nil {
+			t.Fatal(err)
+		}
+		if subject.String != fIn {
+			t.Fatalf("manual run subject = %q, want the named finding", subject.String)
+		}
 		if st, code := execRun(run.ID); st != "completed" {
 			t.Fatalf("run = %s (%s), want completed", st, code)
 		}
