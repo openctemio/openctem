@@ -48,13 +48,15 @@ export function approveBlocker(
 ): string | null {
   if (c.kind === 'entry') {
     if (!perms.entries) return 'Only a scope approver can approve scope entries.'
-    if (c.item.created_by?.id === userId) return 'You requested this; another approver must approve it.'
+    if (c.item.created_by?.id === userId)
+      return 'You requested this; another approver must approve it.'
     if (!canApproveEntry(c.item, userId))
       return 'You already approved this; it waits for another approver.'
     return null
   }
   if (!perms.exclusions) return 'Only an exclusion approver can approve exclusions.'
-  if (c.item.created_by?.id === userId) return 'You requested this; another approver must approve it.'
+  if (c.item.created_by?.id === userId)
+    return 'You requested this; another approver must approve it.'
   return null
 }
 
