@@ -15,6 +15,8 @@ func TestDefaultMapping_PreservesLegacyBehaviour(t *testing.T) {
 		"high":     "High",
 		"medium":   "Medium",
 		"low":      "Low",
+		"info":     "Lowest", // informational: bottom of the backlog
+		"none":     "Lowest",
 		"weird":    "Medium",  // fallback
 		"CRITICAL": "Highest", // case-insensitive
 	}
@@ -90,7 +92,7 @@ func TestParseMappingConfig_OverlaysOverrides(t *testing.T) {
 		t.Errorf("untouched severity should keep default, got %q", got)
 	}
 	// Unmapped severity now falls back to overridden default priority.
-	if got := m.PriorityForSeverity("none"); got != "P3" {
+	if got := m.PriorityForSeverity("unknown"); got != "P3" {
 		t.Errorf("default_priority override not applied: %q", got)
 	}
 

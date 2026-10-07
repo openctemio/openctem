@@ -36,9 +36,12 @@ import {
   SEVERITY_CHART_COLORS as SEVERITY_COLORS,
   SEVERITY_TEXT_COLORS,
   SEVERITY_BORDER_COLORS,
+  severityChartData,
 } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
+import { actionableTotal, severityCounts } from '@/lib/severity'
 import { useTenant } from '@/context/tenant-provider'
+import { INFORMATIONAL_LABEL, SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
 
 // Inline skeleton for stats cards section
 function StatsCardsSkeleton() {
@@ -150,11 +153,8 @@ export function ClassicDashboard() {
     .reduce((sum, [, count]) => sum + count, 0)
 
   // Prepare severity distribution for pie chart
-  const severityData = Object.entries(findingsBySeverity).map(([name, value]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1),
-    value,
-    color: (SEVERITY_COLORS as Record<string, string>)[name.toLowerCase()] || SEVERITY_COLORS.info,
-  }))
+  // Scale order, Informational as its own slice (none folds into it).
+  const severityData = severityChartData(findingsBySeverity)
 
   // Prepare asset distribution for bar chart — sorted by count descending
   const assetDistribution = Object.entries(assetsByType)
@@ -364,42 +364,18 @@ export function ClassicDashboard() {
                       <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                       <Tooltip />
                       <Legend />
-                      <Area
-                        type="monotone"
-                        dataKey="critical"
-                        stackId="1"
-                        stroke={SEVERITY_COLORS.critical}
-                        fill={SEVERITY_COLORS.critical}
-                        fillOpacity={0.8}
-                        name="Critical"
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="high"
-                        stackId="1"
-                        stroke={SEVERITY_COLORS.high}
-                        fill={SEVERITY_COLORS.high}
-                        fillOpacity={0.8}
-                        name="High"
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="medium"
-                        stackId="1"
-                        stroke={SEVERITY_COLORS.medium}
-                        fill={SEVERITY_COLORS.medium}
-                        fillOpacity={0.8}
-                        name="Medium"
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="low"
-                        stackId="1"
-                        stroke={SEVERITY_COLORS.low}
-                        fill={SEVERITY_COLORS.low}
-                        fillOpacity={0.8}
-                        name="Low"
-                      />
+                      {SEVERITY_LEVELS.map((s) => (
+                        <Area
+                          key={s}
+                          type="monotone"
+                          dataKey={s}
+                          stackId="1"
+                          stroke={SEVERITY_COLORS[s]}
+                          fill={SEVERITY_COLORS[s]}
+                          fillOpacity={0.8}
+                          name={s === 'info' ? INFORMATIONAL_LABEL : SEVERITY_LABELS[s]}
+                        />
+                      ))}
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
@@ -537,10 +513,11 @@ export function ClassicDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                    {/* Informational findings are counted beside the total, not in it. */}
                     <QuickStat
-                      label="Total Findings"
-                      value={stats.findings.total}
-                      subtext={`Avg CVSS: ${stats.findings.averageCvss.toFixed(1)}`}
+                      label="Findings"
+                      value={actionableTotal(severityCounts(stats.findings.bySeverity))}
+                      subtext={`+${severityCounts(stats.findings.bySeverity).info} informational · Avg CVSS: ${stats.findings.averageCvss.toFixed(1)}`}
                     />
                     <QuickStat
                       label="Critical Findings"

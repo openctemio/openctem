@@ -4,18 +4,13 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { Severity } from '@/features/shared/types'
 import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
+import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 
 // Soft-tint severity badge — colors sourced from the single source of truth
 // (severity-colors.ts SEVERITY_BADGE_SOFT) so they can't drift. "none" reuses the
 // neutral (info) tint.
-const SEVERITY_LABELS: Record<Severity, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-  none: 'None',
-}
+// none (CVSS 0.0) reads as Info, like everywhere else.
+const SEVERITY_LABELS: Record<Severity, string> = { ...SHARED_SEVERITY_LABELS, none: 'Info' }
 
 function softClass(severity: Severity): string {
   const key = (severity === 'none' ? 'info' : severity) as SeverityLevel

@@ -861,6 +861,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetGroup.SetDataScope(s.DataScope)
 	s.AssetType = asset.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.Asset, log)
+	s.Scope.SetCoverage(postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}), s.DataScope)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
