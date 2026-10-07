@@ -70,6 +70,27 @@ func NewFindingImportHandler(svc *findingimport.Service, ds *datascope.Enforcer,
 	return h
 }
 
+// uploaderScope is the data scope of a person uploading a report, as the
+// ingest service consumes it.
+type uploaderScope struct {
+	enforcer *datascope.Enforcer
+	scope    *shared.DataScope
+}
+
+func (u uploaderScope) AssetsInScope(ctx context.Context, ids []shared.ID) ([]shared.ID, error) {
+	admit, err := u.enforcer.Filter(ctx, u.scope, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]shared.ID, 0, len(ids))
+	for _, id := range ids {
+		if admit(id) {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
 // SetActorResolver replaces how the uploader's data scope is resolved (nil
 // result = unrestricted). The constructor wires the data scope enforcer;
 // tests and embedders without one use this.

@@ -18,7 +18,7 @@ func renderShippedTemplates(t *testing.T, dir string) *sensorapp.RenderedTemplat
 	tenantID := shared.NewID()
 	out, err := svc.Render(sensorapp.SensorTemplateData{
 		Sensor: &sensor.Sensor{
-			ID: shared.NewID(), TenantID: &tenantID, Name: "edge-1", Tools: []string{"nuclei"},
+			ID: shared.NewID(), TenantID: &tenantID, Name: "edge-1", Reported: sensor.ReportOf("nuclei"),
 			Type: sensor.SensorTypeWorker, ExecutionMode: sensor.ExecutionModeDaemon,
 		},
 		APIKey:  "rda_test0123",

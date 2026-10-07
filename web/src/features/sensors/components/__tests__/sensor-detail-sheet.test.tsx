@@ -59,9 +59,6 @@ vi.mock('../sensor-grant-section', () => ({ SensorGrantSection: () => null }))
 vi.mock('../sensor-activity', () => ({
   SensorRecentActivity: () => <p>recent activity</p>,
 }))
-vi.mock('../../hooks', () => ({
-  useSensorFormOptions: () => ({ getCapabilitiesForTools: () => [] }),
-}))
 vi.mock('../sensor-install-snippets', () => ({
   SensorInstallSnippets: ({ sensorId }: { sensorId: string }) => <p>snippets for {sensorId}</p>,
 }))
@@ -76,7 +73,7 @@ const sensor: Sensor = {
   name: 'k8s-scanner-a',
   type: 'worker',
   capabilities: [],
-  tools: ['nuclei'],
+  effective: { tools: ['nuclei'], capabilities: [], max_concurrent_jobs: 8 },
   execution_mode: 'daemon',
   status: 'active',
   health: 'online',
@@ -338,7 +335,7 @@ describe('SensorDetailSheet', () => {
 
     it('a CI sensor has no job slots', () => {
       open({
-        sensor: { ...healthy, type: 'worker', execution_mode: 'standalone', tools: ['semgrep'] },
+        sensor: { ...healthy, type: 'worker', execution_mode: 'standalone' },
       })
       const stats = screen.getByLabelText('Key numbers')
       expect(within(stats).queryByText('Jobs running')).toBeNull()
@@ -350,7 +347,6 @@ describe('SensorDetailSheet', () => {
     open({
       sensor: {
         ...sensor,
-        tools: ['nuclei', 'semgrep'],
         reported: {
           tools: [
             { name: 'semgrep', version: '1.90.0', installed: true },
@@ -367,7 +363,6 @@ describe('SensorDetailSheet', () => {
           capabilities: ['semgrep', 'sast'],
           max_concurrent_jobs: 3,
         },
-        capability_mismatch: { tools_not_installed: ['nuclei'] },
       },
     })
     const tools = screen.getByRole('list', { name: 'Tools' })
@@ -376,50 +371,49 @@ describe('SensorDetailSheet', () => {
     expect(screen.getByText('linux/amd64')).toBeInTheDocument()
     expect(screen.getByText('3 at once')).toBeInTheDocument()
     expect(screen.getByText('operator cap 3 · your limit 8')).toBeInTheDocument()
+  })
+
+  it('a sensor that has not reported its tools: the health callout says so', () => {
+    open({
+      sensor: {
+        ...sensor,
+        reported: null,
+        effective: { tools: [], capabilities: [], max_concurrent_jobs: 8 },
+      },
+    })
     const callout = screen.getByRole('region', { name: 'Health' })
-    expect(within(callout).getByText('Tools not installed')).toBeInTheDocument()
+    expect(within(callout).getByText('Tools not reported')).toBeInTheDocument()
   })
 
-  const narrowed: Sensor = {
-    ...sensor,
-    tools: ['nuclei'],
-    reported: {
-      tools: [
-        { name: 'nuclei', version: '3.4.2', installed: true },
-        { name: 'trivy', version: '0.58.1', installed: true },
-      ],
-      capabilities: ['dast', 'sca'],
-      max_concurrent_jobs: 4,
-      reported_at: new Date(now).toISOString(),
-    },
-    effective: { tools: ['nuclei'], capabilities: ['dast', 'sca'], max_concurrent_jobs: 4 },
-  }
-
-  it('a tool installed after the list was narrowed: "installed but not allowed" + Allow', async () => {
+  it('no tool limit on the sensor: every installed reported tool is ready, no Allow button', () => {
     perms.granted.add('sensors:write')
-    open({ sensor: narrowed })
-    expect(screen.getByText('trivy is installed but not allowed')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Allow trivy' }))
-    expect(update.trigger).toHaveBeenCalledWith({ tools: ['nuclei', 'trivy'], capabilities: [] })
-  })
-
-  it('no Allow button without sensors:write, and no notice without a narrowed list', () => {
-    open({ sensor: narrowed })
-    expect(screen.getByText('trivy is installed but not allowed')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Allow trivy' })).toBeNull()
-  })
-
-  it('no notice when every reported tool is allowed', () => {
-    perms.granted.add('sensors:write')
-    open({ sensor: { ...narrowed, tools: [] } })
+    open({
+      sensor: {
+        ...sensor,
+        reported: {
+          tools: [
+            { name: 'nuclei', version: '3.4.2', installed: true },
+            { name: 'trivy', version: '0.58.1', installed: true },
+          ],
+          capabilities: ['dast', 'sca'],
+          max_concurrent_jobs: 4,
+          reported_at: new Date(now).toISOString(),
+        },
+        effective: {
+          tools: ['nuclei', 'trivy'],
+          capabilities: ['dast', 'sca'],
+          max_concurrent_jobs: 4,
+        },
+      },
+    })
     expect(screen.queryByText(/is installed but not allowed/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Allow / })).toBeNull()
   })
 
   it('shows what each tool serves and the slots it can run now (RFC-033)', () => {
     open({
       sensor: {
         ...sensor,
-        tools: [],
         max_concurrent_jobs: 5,
         reported: {
           tools: [
@@ -459,9 +453,11 @@ describe('SensorDetailSheet', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows the set tools when the sensor reports none', () => {
+  it('says it gets no scans when the sensor has not reported its tools', () => {
     open()
-    expect(screen.getByText(/it has not reported its tools yet/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/It has not reported its tools yet, so it gets no scans/)
+    ).toBeInTheDocument()
     expect(screen.getByText('your limit 8; the sensor reports none')).toBeInTheDocument()
   })
 

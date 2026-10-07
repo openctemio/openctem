@@ -7,6 +7,7 @@ import { KeyRound, Trash2 } from 'lucide-react'
 import {
   DetailHeader,
   DetailSheet,
+  DetailSheetFooter,
   DetailTabs,
   useDetailTab,
   type DetailMenuItem,
@@ -314,5 +315,51 @@ describe('DetailSheet on larger screens', () => {
     expect(el).not.toHaveAttribute('data-vaul-drawer')
     expect(el).not.toHaveClass('h-[92svh]')
     expect(el).not.toHaveClass('max-h-[92svh]')
+  })
+})
+
+describe('DetailSheetFooter', () => {
+  function Sheet({ long }: { long: boolean }) {
+    return (
+      <DetailSheet
+        open
+        onOpenChange={() => {}}
+        header={<DetailHeader title="x" onClose={() => {}} />}
+        panel="findings"
+      >
+        {long ? (
+          <ul>
+            {Array.from({ length: 50 }, (_, i) => (
+              <li key={i}>row {i}</li>
+            ))}
+          </ul>
+        ) : null}
+        <DetailSheetFooter>
+          <button>View all findings (2)</button>
+        </DetailSheetFooter>
+      </DetailSheet>
+    )
+  }
+
+  it.each([false, true])('pins the action outside the scrolling body (long list: %s)', (long) => {
+    render(<Sheet long={long} />)
+    const link = screen.getByRole('button', { name: 'View all findings (2)' })
+    const footer = link.closest('[data-slot="detail-sheet-footer"]') as HTMLElement
+    expect(footer).not.toBeNull()
+    expect(footer).toHaveClass('border-t')
+    // Not inside the scroll area, so it never scrolls away or floats mid-sheet.
+    expect(link.closest('[data-slot="detail-sheet-body"]')).toBeNull()
+    // After the body in document order: last in the focus order too.
+    const body = document.querySelector('[data-slot="detail-sheet-body"]') as HTMLElement
+    expect(body.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('renders in place outside a DetailSheet', () => {
+    render(
+      <DetailSheetFooter>
+        <button>Open</button>
+      </DetailSheetFooter>
+    )
+    expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument()
   })
 })

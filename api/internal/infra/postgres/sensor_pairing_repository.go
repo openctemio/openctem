@@ -273,10 +273,10 @@ func (r *SensorPairingRepository) Approve(ctx context.Context, a sensordom.Pairi
 		out.SensorID = a.SensorID
 		hostname := a.Hostname
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sensors
-			(id, tenant_id, name, type, description, capabilities, tools, execution_mode, status, health,
+			(id, tenant_id, name, type, description, capabilities, execution_mode, status, health,
 			 api_key_hash, api_key_prefix, hostname, version, reported_os, reported_arch,
 			 max_concurrent_jobs, auth_kind, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, '', '{}', '{}', 'daemon', 'active', 'unknown',
+			VALUES ($1, $2, $3, $4, '', '{}', 'daemon', 'active', 'unknown',
 			        $5, '', $6, $7, $8, $9, 5, 'key_bound', $10, $10)`,
 			a.SensorID.String(), a.TenantID.String(), a.Name, string(a.Type), sensordom.KeyBoundHashPlaceholder(),
 			nullString(hostname), nullString(a.Version), nullString(a.OS), nullString(a.Arch), a.Now); err != nil {

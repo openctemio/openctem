@@ -13,11 +13,15 @@ export type FindingImportResponse =
 export type ImportFileResponse =
   components['schemas']['internal_infra_http_handler.ImportFileResponse']
 
+export type ImportMinSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical'
+
 export interface FindingImportOptions {
   file: File
   /** Qualys KnowledgeBase XML, sent before the file (the server needs it first). */
   knowledgeBase?: File | null
   dryRun: boolean
+  /** Drop findings below this severity (server default: keep all). */
+  minSeverity?: ImportMinSeverity
 }
 
 /** An import the server refused, with the refused file's details when it sent them. */
@@ -37,7 +41,11 @@ export async function importFindings(opts: FindingImportOptions): Promise<Findin
   const form = new FormData()
   if (opts.knowledgeBase) form.append('knowledge_base', opts.knowledgeBase)
   form.append('file', opts.file)
-  const query = opts.dryRun ? '?dry_run=true' : ''
+  const params = new URLSearchParams()
+  if (opts.dryRun) params.set('dry_run', 'true')
+  if (opts.minSeverity) params.set('min_severity', opts.minSeverity)
+  const qs = params.toString()
+  const query = qs ? `?${qs}` : ''
   const res = await csrfFetch(`/api/v1/findings/import${query}`, { method: 'POST', body: form })
   let body: unknown = null
   try {

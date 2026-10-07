@@ -183,8 +183,6 @@ R5 POST /api/v1/assets/{id}/deactivate
 R5 POST /api/v1/assets/{id}/lifecycle/snooze
 R5 POST /api/v1/assets/import/csv
 R5 POST /api/v1/assets/import/kubernetes
-R5 POST /api/v1/assets/import/nessus
-R5 POST /api/v1/assets/import/nessus-findings
 R5 POST /api/v1/attachments/link
 R5 POST /api/v1/audit-logs/rebaseline
 R5 POST /api/v1/ci/runs/{id}/evaluate

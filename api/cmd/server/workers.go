@@ -463,6 +463,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// domain assets (SSRF-guarded, rate-limited, body-bounded) and emits
 	// subdomain_discovered + certificate_expiring ExposureEvents. Inert until a
 	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
+	// Names a permanent scope target or seed covers are confirmed: once at
+	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
+	if svc.ScopeJoin != nil {
+		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
+	}
+
 	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor != nil {
 		w.ControllerManager.Register(controller.NewCertMonitorController(
 			svc.CertMonitor,

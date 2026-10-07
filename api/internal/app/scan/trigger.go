@@ -209,6 +209,13 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		return nil, err
 	}
 
+	// A wildcard pattern: its root domain for a discovery tool, refused for
+	// any other (scans saved before this rule, or edited in the database).
+	sc, err = s.applyWildcardTargets(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+
 	// Check sensor availability before triggering - must have an online sensor
 	toolToCheck := ""
 	if sc.ScanType == scan.ScanTypeSingle && sc.ScannerName != "" {

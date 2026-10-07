@@ -237,13 +237,14 @@ type CommitResult struct {
 	AutoResolve string
 }
 
-// ErrV2ToolNotDeclared: the report's tool is not among the sensor's declared
-// tools (strict: a sensor with no declared tools may report none).
+// ErrV2ToolNotDeclared: the report's tool is not among the sensor's effective
+// tools, the ones it reported installed (strict: a sensor that reported no
+// tool may report no result).
 var ErrV2ToolNotDeclared = errors.New("tool not declared by the sensor")
 
 // SensorDeclaresTool is the v2 tool gate (RFC-026 §5.2): the tool must be one
-// the sensor declared, and never a name reserved for non-sensor sources.
-// Unlike v1 there is no allow-all for a sensor that declared nothing.
+// the sensor reported installed, and never a name reserved for non-sensor sources.
+// There is no allow-all for a sensor that reported nothing.
 func SensorDeclaresTool(tools []string, toolName string) bool {
 	name := strings.TrimSpace(toolName)
 	if name == "" {

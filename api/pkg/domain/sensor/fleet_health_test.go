@@ -28,7 +28,7 @@ func daemon(lastSeen *time.Time) *Sensor {
 		ExecutionMode: ExecutionModeDaemon,
 		Status:        SensorStatusActive,
 		Health:        SensorHealthOnline,
-		Tools:         []string{"nuclei"},
+		Reported:      ReportOf("nuclei"),
 		Version:       "v0.4.2",
 		LastSeenAt:    lastSeen,
 	}
@@ -234,7 +234,7 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 
 	t.Run("a scanning daemon without tools", func(t *testing.T) {
 		s := daemon(ago(5 * time.Second))
-		s.Tools = nil
+		s.Reported = CapabilityReport{}
 		if a := s.AssessHealth(testNow, p); !hasCode(a.Reasons, ReasonNoTools) || a.State != StateDegraded {
 			t.Errorf("state=%q reasons=%v", a.State, codes(a.Reasons))
 		}
@@ -242,7 +242,7 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 
 	t.Run("a collector needs no scan tools", func(t *testing.T) {
 		s := daemon(ago(5 * time.Second))
-		s.Type, s.Tools = SensorTypeCollector, nil
+		s.Type, s.Reported = SensorTypeCollector, CapabilityReport{}
 		if a := s.AssessHealth(testNow, p); len(a.Reasons) != 0 {
 			t.Errorf("reasons=%v", codes(a.Reasons))
 		}
@@ -298,7 +298,7 @@ func TestAssessHealth_DegradedReasons(t *testing.T) {
 
 	t.Run("every reason has a severity and a message", func(t *testing.T) {
 		s := daemon(ago(5 * time.Second))
-		s.Tools, s.Version, s.Health = nil, "0.1.0", SensorHealthError
+		s.Reported, s.Version, s.Health = CapabilityReport{}, "0.1.0", SensorHealthError
 		exp := testNow.Add(time.Hour)
 		s.InlineKeyExpiresAt = &exp
 		s.Outbox = &OutboxStats{PendingCount: 1, OldestAgeSeconds: 9999, DeadLetterCount: 1, EvictedCount: 1}

@@ -280,3 +280,21 @@ func TestNormalize_Rejects(t *testing.T) {
 		t.Errorf("normalised: %v %v", g.TargetCIDRs, g.Tools)
 	}
 }
+
+// With the sensor-level tool limit gone, the grant is what narrows a
+// sensor's tools: a sensor that reports nuclei and trivy, granted only
+// nuclei, is refused a trivy job and admitted a nuclei job.
+func TestAdmit_GrantNarrowsReportedTools(t *testing.T) {
+	a := &Sensor{Reported: ReportOf("nuclei", "trivy")}
+	if !a.HasTool("trivy") || !a.HasTool("nuclei") {
+		t.Fatalf("effective tools %v", a.EffectiveTools())
+	}
+	g := trusted(mustProfile(t, ProfileInternalScanner))
+	g.Tools = []string{"nuclei"}
+	if r := g.Admit("scan", payload(t, map[string]any{"scanner": "trivy", "targets": []string{"10.0.0.5"}}), nil); r == nil || r.Dimension != DimTools {
+		t.Fatalf("trivy outside the grant admitted: %v", r)
+	}
+	if r := g.Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{"10.0.0.5"}}), nil); r != nil {
+		t.Fatalf("nuclei inside the grant refused: %v", r)
+	}
+}

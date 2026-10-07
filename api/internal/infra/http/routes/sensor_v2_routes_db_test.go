@@ -131,9 +131,14 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 		_, _ = sqldb.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantID.String())
 	})
 	out, err := sensorSvc.CreateSensor(ctx, sensor.CreateSensorInput{TenantID: tenantID.String(), Name: "v2-sensor",
-		Type: "worker", Capabilities: []string{"sast"}, Tools: []string{"semgrep"}, ExecutionMode: "daemon"})
+		Type: "worker", Capabilities: []string{"sast"}, ExecutionMode: "daemon"})
 	if err != nil {
 		t.Fatalf("create sensor: %v", err)
+	}
+	// The sensor reported semgrep installed: the v2 tool gate reads it.
+	if _, err := sqldb.ExecContext(ctx, `UPDATE sensors SET reported_tools = '[{"name":"semgrep","installed":true}]',
+		reported_tool_names = ARRAY['semgrep'], reported_at = NOW() WHERE id = $1`, out.Sensor.ID.String()); err != nil {
+		t.Fatalf("report tools: %v", err)
 	}
 	h.key, h.sensorID, h.tenantID = out.APIKey, out.Sensor.ID.String(), tenantID.String()
 	return h
