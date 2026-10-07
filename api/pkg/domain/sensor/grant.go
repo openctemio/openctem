@@ -76,7 +76,7 @@ var (
 	// workJobTypes are the command types a grant's job_types governs;
 	// control types (health_check, cancel, refresh_content) are always
 	// allowed: they carry no targets and only narrow or inspect.
-	workJobTypes  = []string{"scan", "collect", "validate", "connector_sync", "connector_scan", "config_update"}
+	workJobTypes  = []string{"scan", "collect", "validate", "retest", "connector_sync", "connector_scan", "config_update"}
 	controlJobTyp = []string{"health_check", "cancel", "refresh_content"}
 )
 
@@ -158,12 +158,12 @@ func NewGrantFromProfile(tenantID, sensorID shared.ID, profile string, zones []s
 	base, param, _ := strings.Cut(profile, ":")
 	switch base {
 	case ProfileEASMExternal:
-		g.JobTypes, g.TierCeiling, g.TargetNetwork = []string{"scan"}, TierActive, TargetNetworkPublic
+		g.JobTypes, g.TierCeiling, g.TargetNetwork = scanJobTypes(), TierActive, TargetNetworkPublic
 	case ProfileInternalScanner:
-		g.JobTypes, g.TierCeiling = []string{"scan", "validate"}, TierActive
+		g.JobTypes, g.TierCeiling = scanJobTypes(), TierActive
 		g.ZoneIDs = zoneLimit(zones)
 	case ProfileAuthenticatedScanner:
-		g.JobTypes, g.TierCeiling, g.AllowCredentials = []string{"scan", "validate"}, TierActive, true
+		g.JobTypes, g.TierCeiling, g.AllowCredentials = scanJobTypes(), TierActive, true
 		g.ZoneIDs = zoneLimit(zones)
 	case ProfileCollector:
 		g.JobTypes, g.TierCeiling, g.TargetNetwork, g.AllowPushIngest = []string{"collect", "connector_sync"}, TierPassive, TargetNetworkNone, true
@@ -171,12 +171,20 @@ func NewGrantFromProfile(tenantID, sensorID shared.ID, profile string, zones []s
 			g.Tools = []string{CanonicalTool(param)}
 		}
 	case ProfileCIRunner:
-		g.JobTypes, g.TierCeiling, g.TargetNetwork, g.AllowPushIngest = []string{"scan"}, TierPassive, TargetNetworkNone, true
+		g.JobTypes, g.TierCeiling, g.TargetNetwork, g.AllowPushIngest = scanJobTypes(), TierPassive, TargetNetworkNone, true
 	case ProfileEndpoint:
-		g.JobTypes, g.TierCeiling, g.TargetNetwork, g.AllowPushIngest = []string{"scan", "collect"}, TierPassive, TargetNetworkNone, true
+		g.JobTypes, g.TierCeiling, g.TargetNetwork, g.AllowPushIngest = append(scanJobTypes(), "collect"), TierPassive, TargetNetworkNone, true
 	}
 	return g, nil
 }
+
+// scanJobTypes are the job types of a profile that may scan: a profile that
+// may scan a target may also validate and retest the findings it raised
+// there. Validate and retest re-run one check of a tool the sensor scans
+// with, on the same targets, zones and tier ceiling (CommandTierFor rates a
+// retest at the tier of the detection it repeats), so they widen nothing a
+// scan does not already allow.
+func scanJobTypes() []string { return []string{"scan", "validate", "retest"} }
 
 func zoneLimit(zones []shared.ID) []shared.ID {
 	if len(zones) == 0 {
@@ -479,7 +487,8 @@ func requiredCapabilities(payload json.RawMessage) []string {
 // T0, connector_scan and validate T1, a scan takes the lowest tier of the
 // stages its tool implements (stage catalog); custom templates or
 // out-of-band callbacks make any job T2, and a scan whose tool the catalog
-// does not know is T2 (fail closed).
+// does not know is T2 (fail closed). A retest is rated at the tier of the
+// detection it repeats: the scan tier of the finding's tool.
 func CommandTier(cmdType string, job Job) int { return CommandTierFor(cmdType, job, nil) }
 
 // CommandTierFor is CommandTier with the tool contract the sensor reported
@@ -496,6 +505,15 @@ func CommandTierFor(cmdType string, job Job, c *ToolContract) int {
 		return TierPassive
 	case "connector_scan", "validate":
 		return TierActive
+	case "retest":
+		// A retest re-runs the finding's own rule (template) with the tool
+		// that detected it, on the target it was found on: the same stage
+		// that already ran there. It takes that detection's tier, never a
+		// lower one and never a higher one: a T1 detection retests at T1
+		// (a default grant runs it), only a T2 detection (an intrusive
+		// tool, an operator-installed one, a declared side effect) retests
+		// at T2. The tool path below is the scan's own, with the same
+		// contract.
 	}
 	if job.Tool == "" {
 		return TierIntrusive

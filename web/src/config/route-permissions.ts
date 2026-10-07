@@ -93,7 +93,7 @@ export const Module = {
   SBOMExport: 'sbom_export',
   ScannerTemplates: 'scanner_templates',
   TemplateSources: 'template_sources',
-  ScanPipelines: 'scan_pipelines',
+  ScanWorkflows: 'scan_workflows',
   AttackSimulation: 'attack_simulation',
   ControlTesting: 'control_testing',
 } as const
@@ -410,12 +410,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.RemediationTasks,
   },
   '/pipelines': {
-    permission: Permission.PipelinesRead,
-    module: Module.ScanPipelines,
+    permission: Permission.ScanWorkflowsRead,
+    module: Module.ScanWorkflows,
   },
   '/pipelines/**': {
-    permission: Permission.PipelinesRead,
-    module: Module.ScanPipelines,
+    permission: Permission.ScanWorkflowsRead,
+    module: Module.ScanWorkflows,
   },
   '/workflows': {
     permission: Permission.WorkflowsRead,

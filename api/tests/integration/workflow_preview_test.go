@@ -15,15 +15,15 @@ import (
 // A workflow preview reads only the caller's workflows (and the system
 // ones), resolves every step as the trigger would, and bounds its sample.
 func TestWorkflowPreview(t *testing.T) {
-	p := newPipelineSaveHarness(t, "workflow-preview")
+	p := newScanWorkflowSaveHarness(t, "workflow-preview")
 	ctx := context.Background()
 	pg := &postgres.DB{DB: p.db}
 	svc := scanapp.NewService(
 		postgres.NewScanRepository(pg),
-		postgres.NewPipelineTemplateRepository(pg),
+		postgres.NewScanWorkflowRepository(pg),
 		postgres.NewAssetGroupRepository(pg),
-		postgres.NewPipelineRunRepository(pg),
-		postgres.NewPipelineStepRepository(pg),
+		postgres.NewScanRunRepository(pg),
+		postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewStepRunRepository(pg),
 		postgres.NewCommandRepository(pg),
 		nil, nil,
@@ -39,7 +39,7 @@ func TestWorkflowPreview(t *testing.T) {
 
 	// A starter (system) workflow previews for any tenant.
 	out, err := svc.PreviewWorkflow(ctx, scanapp.WorkflowPreviewInput{
-		TenantID: p.tenant.String(), PipelineID: "a0000002-0000-0000-0000-000000000002", Targets: targets,
+		TenantID: p.tenant.String(), ScanWorkflowID: "a0000002-0000-0000-0000-000000000002", Targets: targets,
 	})
 	if err != nil {
 		t.Fatalf("preview: %v", err)
@@ -66,12 +66,12 @@ func TestWorkflowPreview(t *testing.T) {
 
 	// The tenant's own workflow previews; another tenant's is not found.
 	id, _ := p.create()
-	if _, err := svc.PreviewWorkflow(ctx, scanapp.WorkflowPreviewInput{TenantID: p.tenant.String(), PipelineID: id, Targets: targets[:1]}); err != nil {
+	if _, err := svc.PreviewWorkflow(ctx, scanapp.WorkflowPreviewInput{TenantID: p.tenant.String(), ScanWorkflowID: id, Targets: targets[:1]}); err != nil {
 		t.Fatalf("own workflow: %v", err)
 	}
 	other := createTestTenant(t, p.db, "workflow-preview-other")
 	t.Cleanup(func() { _, _ = p.db.Exec(`DELETE FROM tenants WHERE id=$1`, other.String()) })
-	_, err = svc.PreviewWorkflow(ctx, scanapp.WorkflowPreviewInput{TenantID: other.String(), PipelineID: id, Targets: targets[:1]})
+	_, err = svc.PreviewWorkflow(ctx, scanapp.WorkflowPreviewInput{TenantID: other.String(), ScanWorkflowID: id, Targets: targets[:1]})
 	if !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("other tenant's workflow: err = %v, want not found", err)
 	}

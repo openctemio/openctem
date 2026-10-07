@@ -131,7 +131,7 @@ func TestRevokeSensor_ReleasesLeasedCommands_DB(t *testing.T) {
 
 	// Routed scan work A is running, routed work it only claimed, a plain
 	// scan sent to A by id, A's config update, and B's own work.
-	routed := map[string]any{"pipeline_run_id": shared.NewID().String(), "step_key": "scan", "target": "10.9.0.1"}
+	routed := map[string]any{"scan_run_id": shared.NewID().String(), "step_key": "scan", "target": "10.9.0.1"}
 	running := h.command(command.CommandTypeScan, routed, nil)
 	claimed := h.command(command.CommandTypeScan, routed, nil)
 	plain := h.command(command.CommandTypeScan, map[string]any{"target": "10.9.0.2"}, &a)
@@ -212,7 +212,7 @@ func TestDisableSensor_ReleasesLeasedCommands_DB(t *testing.T) {
 	} {
 		a := h.sensor(h.tenant)
 		routed := h.command(command.CommandTypeScan,
-			map[string]any{"pipeline_run_id": shared.NewID().String(), "step_key": "scan"}, nil)
+			map[string]any{"scan_run_id": shared.NewID().String(), "step_key": "scan"}, nil)
 		before := h.hold(a, routed, true)
 		if err := disable(a); err != nil {
 			t.Fatal(err)

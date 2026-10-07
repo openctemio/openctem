@@ -10,14 +10,14 @@ import (
 
 // Filter represents filter options for listing scans.
 type Filter struct {
-	TenantID     *shared.ID
-	AssetGroupID *shared.ID
-	PipelineID   *shared.ID
-	ScanType     *ScanType
-	ScheduleType *ScheduleType
-	Status       *Status
-	Tags         []string
-	Search       string
+	TenantID       *shared.ID
+	AssetGroupID   *shared.ID
+	ScanWorkflowID *shared.ID
+	ScanType       *ScanType
+	ScheduleType   *ScheduleType
+	Status         *Status
+	Tags           []string
+	Search         string
 	// Archived scans (never-run one-off scans the archive job retired) are
 	// left out of every list.
 	//
@@ -40,9 +40,9 @@ type Stats struct {
 
 // OverviewStats represents the scan management overview statistics.
 type OverviewStats struct {
-	Pipelines StatusCounts `json:"pipelines"`
-	Scans     StatusCounts `json:"scans"`
-	Jobs      StatusCounts `json:"jobs"`
+	ScanRuns StatusCounts `json:"scan_runs"`
+	Scans    StatusCounts `json:"scans"`
+	Jobs     StatusCounts `json:"jobs"`
 }
 
 // StatusCounts represents counts by status.
@@ -94,7 +94,7 @@ type Repository interface {
 	UpdateNextRunAt(ctx context.Context, tenantID, id shared.ID, nextRunAt *time.Time) error
 
 	// RefreshRunSummary recomputes the scan's last run and run counters from
-	// its runs (pipeline_runs), the one source of both. Called after any
+	// its runs (scan_runs), the one source of both. Called after any
 	// change to one of its runs.
 	RefreshRunSummary(ctx context.Context, tenantID, id shared.ID) error
 
@@ -111,8 +111,8 @@ type Repository interface {
 	// ListByAssetGroupID lists all scans for an asset group.
 	ListByAssetGroupID(ctx context.Context, assetGroupID shared.ID) ([]*Scan, error)
 
-	// ListByPipelineID lists all scans using a pipeline.
-	ListByPipelineID(ctx context.Context, pipelineID shared.ID) ([]*Scan, error)
+	// ListByScanWorkflowID lists all scans using a scan workflow.
+	ListByScanWorkflowID(ctx context.Context, scanWorkflowID shared.ID) ([]*Scan, error)
 
 	// UpdateStatusByAssetGroupID updates status for all scans in an asset group.
 	UpdateStatusByAssetGroupID(ctx context.Context, assetGroupID shared.ID, status Status) error

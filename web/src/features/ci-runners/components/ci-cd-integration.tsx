@@ -33,7 +33,7 @@ export function CICDIntegration() {
     <div className="space-y-4">
       <PageHeader
         title="CI/CD integration"
-        description="Scan every repository in its own pipeline: GitHub Actions and GitLab CI jobs send their results with the identity their CI provider gives them, no stored secret, and the platform decides which builds fail."
+        description="Scan every repository in its own pipeline: CI jobs (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket, CircleCI, Jenkins) send their results with the identity their CI provider gives them, no stored secret, and the platform decides which builds fail."
       >
         <Button asChild variant="outline" size="sm">
           <SafeExternalLink href={CI_GITHUB_GUIDE_URL}>

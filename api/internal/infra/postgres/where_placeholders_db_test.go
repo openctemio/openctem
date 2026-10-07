@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -14,7 +17,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/compliance"
 	"github.com/openctemio/openctem/api/pkg/domain/pentest"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
@@ -142,23 +144,23 @@ func TestDynamicWhere_AllFiltersExecute(t *testing.T) {
 		check("PentestTemplateRepository.List", err)
 	}
 	{
-		repo := NewPipelineTemplateRepository(db)
-		_, err := repo.List(ctx, pipeline.TemplateFilter{
+		repo := NewScanWorkflowRepository(db)
+		_, err := repo.List(ctx, scanworkflow.Filter{
 			TenantID: &tenantID, IsActive: &yes, IsSystemTemplate: &yes, Search: search,
 		}, page)
-		check("PipelineTemplateRepository.List", err)
-		_, err = repo.ListWithSystemTemplates(ctx, tenantID, pipeline.TemplateFilter{IsActive: &yes, Search: search}, page)
-		check("PipelineTemplateRepository.ListWithSystemTemplates", err)
+		check("ScanWorkflowRepository.List", err)
+		_, err = repo.ListWithSystemTemplates(ctx, tenantID, scanworkflow.Filter{IsActive: &yes, Search: search}, page)
+		check("ScanWorkflowRepository.ListWithSystemTemplates", err)
 	}
 	{
-		st, tt := pipeline.RunStatusPending, pipeline.TriggerTypeManual
-		_, err := NewPipelineRunRepository(db).List(ctx, pipeline.RunFilter{
-			TenantID: &tenantID, PipelineID: &id, AssetID: &id, Status: &st, TriggerType: &tt,
+		st, tt := scanrun.RunStatusPending, scanworkflow.TriggerTypeManual
+		_, err := NewScanRunRepository(db).List(ctx, scanrun.RunFilter{
+			TenantID: &tenantID, ScanWorkflowID: &id, AssetID: &id, Status: &st, TriggerType: &tt,
 		}, page)
-		check("PipelineRunRepository.List", err)
+		check("ScanRunRepository.List", err)
 
-		srs := pipeline.StepRunStatusPending
-		_, err = NewStepRunRepository(db).List(ctx, pipeline.StepRunFilter{PipelineRunID: &id, Status: &srs})
+		srs := scanrun.StepRunStatusPending
+		_, err = NewStepRunRepository(db).List(ctx, scanrun.StepRunFilter{ScanRunID: &id, Status: &srs})
 		check("StepRunRepository.List", err)
 	}
 	{

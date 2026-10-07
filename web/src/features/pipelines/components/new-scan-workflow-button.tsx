@@ -13,7 +13,7 @@ import { Can, Permission } from '@/lib/permissions'
  */
 export function NewScanWorkflowButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <Can permission={Permission.PipelinesWrite} mode="disable">
+    <Can permission={Permission.ScanWorkflowsWrite} mode="disable">
       <Button size="sm" onClick={onClick}>
         <Plus className="me-2 h-4 w-4" />
         {label}

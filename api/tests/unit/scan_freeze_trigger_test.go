@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scanfreeze"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -161,7 +162,7 @@ func TestScanFreeze_ScheduledRunIsFrozenEvenWithOverride(t *testing.T) {
 
 	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
 		TenantID: tenant.String(), ScanID: sc.ID.String(),
-		TriggerType: pipeline.TriggerTypeSchedule, FreezeOverride: true,
+		TriggerType: scanworkflow.TriggerTypeSchedule, FreezeOverride: true,
 	})
 	fe := scanservice.AsFrozen(err)
 	if fe == nil || !fe.Until.Equal(*w.ActiveUntil) {

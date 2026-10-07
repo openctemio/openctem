@@ -5,8 +5,9 @@ import (
 	"slices"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
 )
@@ -190,7 +191,7 @@ func buildAssetsDiscoveredTriggerData(assets []*asset.Asset) map[string]any {
 // on with status_filter (scanOutcomeMatches). Wired as the pipeline service's
 // run-settled callback. Async with panic recovery, like every other dispatch
 // path.
-func (d *WorkflowEventDispatcher) DispatchScanCompleted(_ context.Context, run *pipeline.Run) {
+func (d *WorkflowEventDispatcher) DispatchScanCompleted(_ context.Context, run *scanrun.Run) {
 	if run == nil {
 		return
 	}
@@ -209,7 +210,7 @@ func (d *WorkflowEventDispatcher) DispatchScanCompleted(_ context.Context, run *
 
 // dispatchScanCompleted is the synchronous body of DispatchScanCompleted. It
 // returns the number of workflows triggered.
-func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run *pipeline.Run) int {
+func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run *scanrun.Run) int {
 	workflows, err := d.findMatchingWorkflows(ctx, run.TenantID, workflowdom.TriggerTypeScanCompleted)
 	if err != nil {
 		d.logger.Error("failed to find scan_completed workflows", "tenant_id", run.TenantID, "error", err)
@@ -218,12 +219,12 @@ func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run
 	data := map[string]any{
 		"event_type": string(workflowdom.TriggerTypeScanCompleted),
 		"scan": map[string]any{
-			"run_id":         run.ID.String(),
-			"pipeline_id":    run.PipelineID.String(),
-			"status":         string(run.Status),
-			"trigger_type":   string(run.TriggerType),
-			"total_findings": run.TotalFindings,
-			"completed_at":   completedAt(run),
+			"run_id":           run.ID.String(),
+			"scan_workflow_id": run.ScanWorkflowID.String(),
+			"status":           string(run.Status),
+			"trigger_type":     string(run.TriggerType),
+			"total_findings":   run.TotalFindings,
+			"completed_at":     completedAt(run),
 		},
 	}
 	if run.ScanID != nil {
@@ -268,7 +269,7 @@ func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run
 
 // scanOutcomes are the run outcomes `scan_completed` reports.
 var scanOutcomes = []string{
-	string(pipeline.RunStatusCompleted), string(pipeline.RunStatusPartial), string(pipeline.RunStatusFailed),
+	string(scanrun.RunStatusCompleted), string(scanrun.RunStatusPartial), string(scanrun.RunStatusFailed),
 }
 
 // scanOutcomeMatches applies the scan_completed trigger's status_filter
@@ -281,7 +282,7 @@ func scanOutcomeMatches(cfg map[string]any, status string) bool {
 	}
 	raw, ok := cfg["status_filter"].([]any)
 	if !ok || len(raw) == 0 {
-		return status == string(pipeline.RunStatusCompleted)
+		return status == string(scanrun.RunStatusCompleted)
 	}
 	for _, v := range raw {
 		if s, ok := v.(string); ok && s == status {
@@ -291,7 +292,7 @@ func scanOutcomeMatches(cfg map[string]any, status string) bool {
 	return false
 }
 
-func completedAt(run *pipeline.Run) string {
+func completedAt(run *scanrun.Run) string {
 	if run.CompletedAt != nil {
 		return run.CompletedAt.UTC().Format(time.RFC3339)
 	}

@@ -428,10 +428,10 @@ Pipelines orchestrate multi-step security scan workflows.
 |--------|----------|-------------|------------|
 | GET | `/pipelines/:id/runs` | List runs for template | `pipelines:read` |
 | POST | `/pipelines/:id/runs` | Trigger new run | `pipelines:write` |
-| GET | `/pipeline-runs/:id` | Get run details with step runs | `pipelines:read` |
-| POST | `/pipeline-runs/:id/cancel` | Cancel running pipeline | `pipelines:write` |
+| GET | `/scan-runs/:id` | Get run details with step runs | `pipelines:read` |
+| POST | `/scan-runs/:id/cancel` | Cancel running pipeline | `pipelines:write` |
 
-**Rate Limiting:** `POST /pipelines/:id/runs` is rate limited to 30 requests/minute per tenant.
+**Rate Limiting:** `POST /scan-workflows/:id/runs` is rate limited to 30 requests/minute per tenant.
 
 #### Template Response
 
@@ -580,7 +580,7 @@ Scans bind asset groups with scanners/workflows and schedules to automate securi
   "description": "Weekly vulnerability scan for production",
   "asset_group_id": "uuid",
   "scan_type": "workflow",
-  "pipeline_id": "uuid",
+  "scan_workflow_id": "uuid",
   "scanner_name": null,
   "scanner_config": null,
   "targets_per_job": 30,
@@ -894,7 +894,7 @@ To prevent abuse and ensure fair resource usage, trigger endpoints are rate limi
 
 | Endpoint | Limit | Window | Scope |
 |----------|-------|--------|-------|
-| `POST /pipelines/:id/runs` | 30 | 1 minute | Per tenant |
+| `POST /scan-workflows/:id/runs` | 30 | 1 minute | Per tenant |
 | `POST /scans/:id/trigger` | 20 | 1 minute | Per tenant |
 | `POST /quick-scan` | 10 | 1 minute | Per tenant (stricter) |
 
