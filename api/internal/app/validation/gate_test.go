@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -73,6 +74,14 @@ func (a tenantAttribution) BlockedTargets(context.Context, shared.ID, []string) 
 }
 
 type failingAttribution struct{}
+
+func (tenantAttribution) TierExceeded(context.Context, shared.ID, []string, scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
+	return nil, nil
+}
+
+func (failingAttribution) TierExceeded(context.Context, shared.ID, []string, scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
+	return nil, errors.New("db down")
+}
 
 func (failingAttribution) BlockedTargets(context.Context, shared.ID, []string) (map[string]attribution.State, error) {
 	return nil, errors.New("db down")
