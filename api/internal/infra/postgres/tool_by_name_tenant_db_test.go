@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Tool lookup by name is how scans and pipeline steps resolve their tool. It
+// Tool lookup by name is how scans and workflow steps resolve their tool. It
 // ignored the tenant, so a name shared by two tenants' custom tools resolved
 // to either one, and another tenant's custom tool could be dispatched
 // (settings audit SC-M5). A name now resolves to the platform tool first,

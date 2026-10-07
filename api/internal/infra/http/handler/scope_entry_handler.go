@@ -60,6 +60,7 @@ func (h *ScopeHandler) ApproveTarget(w http.ResponseWriter, r *http.Request) {
 	h.auditTarget(r, audit.ActionScopeTargetApproved, targetID, before, target)
 	if effective {
 		h.reevaluate(tenantID, target)
+		h.discover(tenantID, target)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(h.targetOut(r, target))

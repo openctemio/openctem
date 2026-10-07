@@ -7,12 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// verifyAccessibleTemplate confirms a pipeline/workflow template is usable by
+// verifyAccessibleTemplate confirms a scan workflow/workflow template is usable by
 // the given tenant: either it belongs to the tenant, or it is a shared system
 // template. Returns shared.ErrNotFound otherwise. This prevents cross-tenant
 // IDOR when a template is resolved by raw ID (e.g. QuickScan).
@@ -67,7 +68,7 @@ func (s *Service) ListScanRuns(ctx context.Context, tenantID, scanID string, pag
 }
 
 // GetLatestScanRun gets the latest run for a specific scan.
-func (s *Service) GetLatestScanRun(ctx context.Context, tenantID, scanID string) (*pipeline.Run, error) {
+func (s *Service) GetLatestScanRun(ctx context.Context, tenantID, scanID string) (*scanrun.Run, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -92,7 +93,7 @@ func (s *Service) GetLatestScanRun(ctx context.Context, tenantID, scanID string)
 }
 
 // GetScanRun gets a specific run for a scan.
-func (s *Service) GetScanRun(ctx context.Context, tenantID, scanID, runID string) (*pipeline.Run, error) {
+func (s *Service) GetScanRun(ctx context.Context, tenantID, scanID, runID string) (*scanrun.Run, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -143,8 +144,8 @@ type QuickScanInput struct {
 
 // QuickScanResult represents the result of a quick scan.
 type QuickScanResult struct {
-	PipelineRunID string `json:"pipeline_run_id"`
-	ScanID        string `json:"scan_id"`
+	ScanRunID string `json:"scan_run_id"`
+	ScanID    string `json:"scan_id"`
 	// AssetGroupID is always empty now: quick scans create no asset group.
 	// Kept so older clients that read it do not break.
 	AssetGroupID string `json:"asset_group_id"`
@@ -196,18 +197,18 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 
 	// Determine scan type
 	scanType := scan.ScanTypeSingle
-	var pipelineID *shared.ID
+	var scanWorkflowID *shared.ID
 	if input.WorkflowID != "" {
 		scanType = scan.ScanTypeWorkflow
 		pid, err := shared.IDFromString(input.WorkflowID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid workflow_id", shared.ErrValidation)
 		}
-		pipelineID = &pid
+		scanWorkflowID = &pid
 
-		// SECURITY: verify the workflow/pipeline template belongs to this
+		// SECURITY: verify the workflow/scan workflow belongs to this
 		// tenant (or is a system template). GetByID alone is unscoped and
-		// would let a caller trigger another tenant's private pipeline (IDOR).
+		// would let a caller trigger another tenant's private scan workflow (IDOR).
 		if err := s.verifyAccessibleTemplate(ctx, tenantID, pid); err != nil {
 			s.logger.Warn("SECURITY: cross-tenant quick-scan workflow attempt",
 				"tenant_id", input.TenantID, "workflow_id", input.WorkflowID)
@@ -245,7 +246,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	sc.SetTargets(input.Targets)
 
 	if scanType == scan.ScanTypeWorkflow {
-		if err := sc.SetWorkflow(*pipelineID); err != nil {
+		if err := sc.SetWorkflow(*scanWorkflowID); err != nil {
 			return nil, fmt.Errorf("failed to set workflow: %w", err)
 		}
 	} else {
@@ -301,10 +302,10 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	)
 
 	return &QuickScanResult{
-		PipelineRunID: run.ID.String(),
-		ScanID:        sc.ID.String(),
-		Status:        string(run.Status),
-		TargetCount:   len(input.Targets),
+		ScanRunID:   run.ID.String(),
+		ScanID:      sc.ID.String(),
+		Status:      string(run.Status),
+		TargetCount: len(input.Targets),
 	}, nil
 }
 
@@ -339,9 +340,9 @@ func (s *Service) SaveQuickScan(ctx context.Context, tenantID, scanID, name stri
 
 // OverviewStats represents aggregated statistics for scan management overview.
 type OverviewStats struct {
-	Pipelines StatusCounts `json:"pipelines"`
-	Scans     StatusCounts `json:"scans"`
-	Jobs      StatusCounts `json:"jobs"`
+	ScanRuns StatusCounts `json:"scan_runs"`
+	Scans    StatusCounts `json:"scans"`
+	Jobs     StatusCounts `json:"jobs"`
 }
 
 // StatusCounts represents counts grouped by status.
@@ -356,7 +357,7 @@ type StatusCounts struct {
 }
 
 // GetOverviewStats returns aggregated statistics for scan management.
-// This includes pipeline runs, step runs (scans), and commands (jobs).
+// This includes scan runs, step runs (scans), and commands (jobs).
 func (s *Service) GetOverviewStats(ctx context.Context, tenantID string) (*OverviewStats, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -365,12 +366,12 @@ func (s *Service) GetOverviewStats(ctx context.Context, tenantID string) (*Overv
 
 	stats := &OverviewStats{}
 
-	// Get pipeline run stats
-	pipelineStats, err := s.getPipelineRunStats(ctx, tid)
+	// Get scan run stats
+	pipelineStats, err := s.getScanRunStats(ctx, tid)
 	if err != nil {
 		s.logger.Warn("failed to get pipeline stats", "error", err)
 	} else {
-		stats.Pipelines = pipelineStats
+		stats.ScanRuns = pipelineStats
 	}
 
 	// Get step run (scan) stats
@@ -392,9 +393,9 @@ func (s *Service) GetOverviewStats(ctx context.Context, tenantID string) (*Overv
 	return stats, nil
 }
 
-// getPipelineRunStats counts pipeline runs by status.
+// getScanRunStats counts scan runs by status.
 // OPTIMIZED: Uses single aggregation query instead of N queries per status.
-func (s *Service) getPipelineRunStats(ctx context.Context, tenantID shared.ID) (StatusCounts, error) {
+func (s *Service) getScanRunStats(ctx context.Context, tenantID shared.ID) (StatusCounts, error) {
 	// Use optimized single-query aggregation from repository
 	stats, err := s.runRepo.GetStatsByTenant(ctx, tenantID)
 	if err != nil {
@@ -455,7 +456,7 @@ func (s *Service) getCommandStats(ctx context.Context, tenantID shared.ID) (Stat
 // Retry Operations
 // =============================================================================
 
-// RetryScanRun creates a new pipeline run for a scan as part of automatic retry.
+// RetryScanRun creates a new scan run for a scan as part of automatic retry.
 // Called by the ScanRetryController when a previous run failed and the scan
 // has retry budget remaining.
 //

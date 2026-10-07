@@ -57,8 +57,8 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                     `flex flex-1 flex-col` propagates the flex context
                     from SidebarInset (which is `flex flex-col flex-1`)
                     down into the page. Without this, any page that uses
-                    <Main fixed> (full-viewport builders: pipeline builder,
-                    workflow builder, dashboards with side panels) has no
+                    <Main fixed> (full-viewport builders: scan workflow editor,
+                    automation builder, dashboards with side panels) has no
                     flex parent to grow into → `flex-grow` collapses →
                     canvas renders at content height and scrolls mid-page.
                     The overflow-hidden scope is gated by data-layout=fixed

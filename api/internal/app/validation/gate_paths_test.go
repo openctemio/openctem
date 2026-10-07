@@ -18,7 +18,7 @@ var commandProducers = map[string]string{
 	"internal/app/validation/retest_command.go": "CheckTarget (active-probe gate) in CommandDispatcher.DispatchToolRetest",
 	"internal/app/scan/trigger.go":              "scan trigger: resolveScanTargets (exclusions, attribution) + zone routing",
 	"internal/app/scan/zones.go":                "scan trigger: zone batches of already-gated targets",
-	"internal/app/pipeline/run.go":              "pipeline.WithTargetGate -> scan.ResolveDispatchTargets (run_targets.go)",
+	"internal/app/scanrun/run.go":               "scanrun.WithTargetGate -> scan.ResolveDispatchTargets (run_targets.go)",
 	"internal/app/command/service.go":           "POST /commands: scan.CommandGate (command_gate.go)",
 	"internal/app/sensor/content.go":            "refresh_content: no target, sends no traffic at an asset",
 	"internal/app/tenablesc/service.go":         "connector_sync: no target; the sensor reads Tenable.sc, sends no traffic at an asset",

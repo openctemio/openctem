@@ -10,7 +10,7 @@ the same checks a scan trigger applies.
 A domain scope target or exclusion `x` covers exactly `x`; `*.x` (and `**.x`)
 covers `x` **and** every name below it (RFC-054 §4.1, owner decision S1). For
 the subdomains without the apex, add the wildcard plus an exclusion of exactly
-`x`. Seeds, verified domains and the ownership gate use the same "this domain
+`x`. Verified domains (proof) and the ownership gate use the same "this domain
 and everything under it" meaning, so `vndirect.com.vn` is in scope under
 `*.vndirect.com.vn`. Matching is case-insensitive, ignores one trailing dot and
 compares IDNA ASCII forms (`pkg/domain/scope.matchDomain`).
@@ -42,21 +42,15 @@ controller then marks it `expired`.
   notifies all active owners and administrators in-app, and is audited.
 - Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one
   click.
-- **Seeds are scope entries.** A root-domain seed authorizes T1 probes of
-  every name under it and confirms them into the inventory, so `POST
-  /easm/seeds` creates the permanent entry `*.<domain>` through the same
-  path (`easm.SeedService.Create` calls `scope.Service.CreateTarget`):
-  `scope:approve` and step-up on the route, the approval count, the
-  guardrails, the administrator notification and a `scope_target.created`
-  audit record (`via: easm_seed`). A member gets `403
-  WIDENING_NEEDS_APPROVER`. Turning a seed's discovery back on
-  (`PATCH /easm/seeds/{id}`) needs `scope:approve` and step-up and notifies
-  the administrators. Seed rows made before this change keep working until
-  they are folded into entries.
-- **SSO domains never authorize.** Only verified domains of purpose `easm`
-  (verified by the organization for attack-surface work) count as authority
-  (`EASMVerifiedDomainNames`). A domain a platform administrator verified
-  for SSO sign-in (purpose `sso`) is proof of control only (§8.1).
+- **One authority: scope entries** (research/53 SC1, SC2; migration
+  `001262`). Root-domain seeds were folded into permanent `*.<domain>`
+  entries and `/api/v1/easm/seeds` is gone; a verified domain, of any
+  purpose, is proof only (§8.1 of RFC-054). `scopeauth.Load` reads the
+  active entries and the verified domain names (proof); nothing else.
+- **Discovery hangs off the entry.** `discovery` on a permanent domain
+  entry makes it a discovery root (Certificate Transparency in
+  `certmonitor`, DNS checks in `easm_dns`). One-off and non-domain entries
+  never discover. Turning discovery on needs `scope:approve` and step-up.
 
 ## Platform guardrails (RFC-054 §8)
 
@@ -80,8 +74,8 @@ Operator settings, never tenant settings:
   intrusive (T2) step on its own: the step gets only the verified targets
   and fails (`STEP_TARGETS_REFUSED`) when none is left.
 - **Tier ceilings** (RFC-054 §4.2 step 6, `scan/tier_ceiling.go`): a scope
-  entry authorizes probes up to its `max_tier`, a seed or an `easm` verified domain up
-  to T1. The probe's tier is the tool's highest stage tier (`stage.ProbeTier`,
+  entry authorizes probes up to its `max_tier` (verified domains authorize
+  nothing). The probe's tier is the tool's highest stage tier (`stage.ProbeTier`,
   unknown tools T1). A target covered only below it is refused `tier_exceeds`
   (fix `raise_tier`): scan create and quick scan refuse the request, a run
   skips the target with a warning (`TIER_EXCEEDS` when nothing is left), a
@@ -122,9 +116,8 @@ For each target, in order:
    - **one authority** (RFC-054 §4.2, `internal/app/scopeauth`): an
      internet-facing asset (domain, subdomain, IP, service, web endpoint,
      host, …), or typed text naming an internet host or public address, is
-     not covered by an active scope target of the tenant nor at or under one
-     of its root-domain seeds or `easm`-purpose verified domains (an
-     SSO-purpose domain is never authority). Without a record that is
+     not covered by an active scope entry of the tenant (a verified domain is
+     proof only). Without a record that is
      `unattributed`; with a **confirmed** record it is `out_of_scope`:
      confirming an asset on its Ownership tab records ownership, it does not
      authorize active probes by itself. Private addresses and internal names
@@ -164,16 +157,15 @@ any lookup error returns an error, and the caller dispatches nothing.
 |---|---|
 | Scan create, clone, import (`CreateScan`), quick scan, `POST /commands` | the request is refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, the targets named with the generic reason) and audited (`scan.target_refused`) |
 | Scan run: manual trigger, schedule, retry controller, workflow trigger | the target (direct or group member) is skipped with a run warning; a run left with nothing is refused (`ALL_TARGETS_UNCONFIRMED`) |
-| `POST /pipelines/runs`, `trigger_pipeline`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
+| `POST /scan-workflows/runs`, `trigger_pipeline`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
 
 `GET /api/v1/assets/{id}/attribution` answers `active_checks_allowed` with the
 same gate and names the reason in `active_checks_blocked_by`.
 
 **Existing assets (rollout).** No data migration: the rule is evaluated at
-dispatch, so an asset inside a scope target or under a seed stays scannable
+dispatch, so an asset inside a scope target stays scannable
 with no record, and adding a scope target takes effect on the next dispatch.
-An internet-facing asset outside every scope target, seed and verified
-domain is not probed, whether or not a person confirmed it (RFC-054: the
+An internet-facing asset outside every scope entry is not probed, whether or not a person confirmed it (RFC-054: the
 Ownership-tab confirmation no longer authorizes alone). Runs that skip such
 targets say so in their warnings; `GET /assets/{id}/attribution` answers
 `active_checks_blocked_by: out_of_scope`.
@@ -183,7 +175,7 @@ targets say so in their warnings; `GET /assets/{id}/attribution` answers
 | Path | Where | Notes |
 |---|---|---|
 | Scan trigger | `scan/trigger.go`, `scan/targets.go` | Same checks inline (`resolveScanTargets` + zone planning). Folding it into the gate is RFC-042 S5 (`scope.Gate`). |
-| `POST /pipelines/runs` | `pipeline/run_targets.go` | Typed targets; no assets. |
+| `POST /scan-workflows/runs` | `pipeline/run_targets.go` | Typed targets; no assets. |
 | Coverage dispatcher | `scancoverage/scheduler.go` `gateBatch` | Each candidate passes its asset id, so unconfirmed assets are skipped. |
 | Every `validate` command | `validation/dispatcher.go` `CommandDispatcher.Dispatch` | Finding re-check (`POST /findings/{id}/validate`, proof-of-fix fallback, Jira "Done"), continuous retest (both checks), attack-simulation safe-check. |
 | `POST /commands` | `scan/command_gate.go` | Member-created scan commands (RFC-040 group A). |
@@ -216,7 +208,7 @@ role (not through an API key) are unrestricted.
 | Actor | Inventory asset (a typed name that is an asset, or a group member) | Free text that is not an asset |
 |---|---|---|
 | Restricted member | only assets in their data scope | refused |
-| Unrestricted (admin, a `has_full_data_access` role, member of a fail-open organization with no scope row, system) | any asset of the tenant (the ownership gate still requires scope authority) | only if the tenant's scope authority covers it: an active scope target, or a name at or under a root-domain seed or verified domain (`scopeauth`); exclusions still apply |
+| Unrestricted (admin, a `has_full_data_access` role, member of a fail-open organization with no scope row, system) | any asset of the tenant (the ownership gate still requires scope authority) | only if the tenant's scope authority covers it: an active scope entry (`scopeauth`); exclusions still apply |
 
 **The actor** is the request's caller. With no user in the context (a
 scheduled run, a workflow action) the actor is the scan owner
@@ -228,13 +220,13 @@ system, which is unrestricted.
 | Scan create, quick scan | refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, with each target and its reason) |
 | Scan update | refused when the editor may not scan every direct target of the scan |
 | Scan run (manual, scheduled, workflow) | out-of-scope direct targets and group members are skipped, with a run warning; a run left with nothing is refused |
-| `POST /pipelines/runs`, `trigger_pipeline` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
+| `POST /scan-workflows/runs`, `trigger_pipeline` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
 | `POST /commands` | refused as a whole |
 
 Every lookup error refuses (fail closed). A dispatch that asks for the check
 when none is wired gets `ErrActScopeUnavailable`.
 
-**Live impact.** A scan of free text that no scope target, seed or verified
+**Live impact.** A scan of free text that no scope entry or verified
 domain covers has nothing to scan. Add the ranges and domains to Scoping ›
 Targets first.
 

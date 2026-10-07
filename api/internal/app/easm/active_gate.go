@@ -56,12 +56,10 @@ type ActiveGateScope interface {
 	ListActiveTargets(ctx context.Context, tenantID string) ([]*scopedom.Target, error)
 }
 
-// ActiveGateRoots lists the tenant's root-domain seeds and verified domains
-// (*postgres.EASMSeedRepository).
+// ActiveGateRoots lists the tenant's verified domains, the proof of control
+// (*postgres.VerifiedDomainNameRepository).
 type ActiveGateRoots interface {
-	RootDomainSeedNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 	VerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
-	EASMVerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 }
 
 // ActiveGate implements scan.AttributionGate.

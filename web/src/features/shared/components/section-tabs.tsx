@@ -21,6 +21,8 @@ export interface SectionTab {
   module?: string
   /** Permission the tab's route needs (ANY of them when an array). */
   permission?: string | string[]
+  /** Extra command-palette search words (older names of the page). */
+  keywords?: readonly string[]
 }
 
 interface SectionTabsProps {

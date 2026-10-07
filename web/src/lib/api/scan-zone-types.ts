@@ -80,7 +80,7 @@ export interface ScanZonePreviewRequest {
   scan_type: 'single' | 'workflow'
   scanner_name?: string
   /** Workflow scans. */
-  pipeline_id?: string
+  scan_workflow_id?: string
   targets_per_job?: number
   /** null = Automatic (narrowest zone). */
   scan_zone_id?: string | null

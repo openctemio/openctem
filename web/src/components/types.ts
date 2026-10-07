@@ -24,6 +24,8 @@ type ReleaseStatus = 'released' | 'coming_soon' | 'beta' | 'deprecated' | 'disab
 
 type BaseNavItem = {
   title: string
+  /** Extra command-palette search words (older names of the page). */
+  keywords?: readonly string[]
   badge?: string
   icon?: React.ElementType
   /**
@@ -85,6 +87,8 @@ type NavSectionLink = {
   module?: string
   /** Permission the tab's route needs (ANY of them when an array). */
   permission?: string | string[]
+  /** Extra command-palette search words (older names of the page). */
+  keywords?: readonly string[]
 }
 
 // ✅ Nav item là 1 link trực tiếp (không có submenu)

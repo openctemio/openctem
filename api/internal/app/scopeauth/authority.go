@@ -4,19 +4,16 @@
 // ask it, so a typed target and the same name as an inventory asset get the
 // same decision. Architecture: docs/architecture/active-probe-gate.md.
 //
-// The authority of a tenant is:
-//
-//   - its active scope targets (domain, IP, CIDR, URL, repository, …), matched
-//     with pkg/domain/scope (a "*.x" target covers x and everything below it);
-//   - its root-domain seeds and the domains it verified for attack-surface
-//     work (purpose easm): a name at or under one. A domain verified for SSO
-//     sign-in (purpose sso, set up by a platform administrator) never
-//     authorizes; it still counts as proof of control (§8.1), which only
-//     ever adds a requirement and never grants anything on its own.
+// The authority of a tenant is its active scope entries (domain, IP, CIDR,
+// URL, repository, ...), matched with pkg/domain/scope (a "*.x" entry covers
+// x and everything below it). Nothing else authorizes (research/53 SC1,
+// SC2): root-domain seeds were folded into entries (migration 001262), and a
+// verified domain, of any purpose, is proof of control only (§8.1): it adds
+// a requirement where proof is needed and never grants anything by itself.
 //
 // Every lookup is tenant-scoped; any lookup error refuses (the caller
-// dispatches nothing). Another tenant's targets, seeds and verified domains
-// never authorize anything here.
+// dispatches nothing). Another tenant's entries and verified domains never
+// count here.
 package scopeauth
 
 import (
@@ -37,23 +34,15 @@ type Targets interface {
 	ListActiveTargets(ctx context.Context, tenantID string) ([]*scopedom.Target, error)
 }
 
-// Roots lists the tenant's root-domain seeds and verified domains
-// (*postgres.EASMSeedRepository).
+// Roots lists the tenant's verified domains, the proof of control
+// (*postgres.VerifiedDomainNameRepository).
 type Roots interface {
-	RootDomainSeedNames(ctx context.Context, tenantID shared.ID) ([]string, error)
-	// VerifiedDomainNames: every verified domain, any purpose (proof).
+	// VerifiedDomainNames: every verified domain, any purpose.
 	VerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
-	// EASMVerifiedDomainNames: verified domains of purpose easm only
-	// (authority).
-	EASMVerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 }
 
-// Kinds of authority that cover a name.
-const (
-	KindScopeTarget    = "scope_target"
-	KindSeed           = "seed"
-	KindVerifiedDomain = "verified_domain"
-)
+// KindScopeTarget is the one kind of authority: a scope entry.
+const KindScopeTarget = "scope_target"
 
 // Proof levels of the name (RFC-054 §8.1).
 const (
@@ -74,9 +63,6 @@ type Via struct {
 // Authority is one tenant's loaded authority. Build it with Load.
 type Authority struct {
 	targets []*scopedom.Target
-	seeds   []string
-	// authorizing: verified domains that authorize (purpose easm).
-	authorizing []string
 	// verified: every verified domain, the proof of control.
 	verified []string
 }
@@ -94,29 +80,11 @@ func Load(ctx context.Context, tenantID shared.ID, targets Targets, roots Roots)
 	if err != nil {
 		return nil, fmt.Errorf("list scope targets: %w", err)
 	}
-	seeds, err := roots.RootDomainSeedNames(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list root-domain seeds: %w", err)
-	}
 	verified, err := roots.VerifiedDomainNames(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list verified domains: %w", err)
 	}
-	authorizing, err := roots.EASMVerifiedDomainNames(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("list easm verified domains: %w", err)
-	}
 	a := &Authority{targets: ts}
-	for _, r := range authorizing {
-		if r = normalizeRoot(r); r != "" {
-			a.authorizing = append(a.authorizing, r)
-		}
-	}
-	for _, r := range seeds {
-		if r = normalizeRoot(r); r != "" {
-			a.seeds = append(a.seeds, r)
-		}
-	}
 	for _, r := range verified {
 		if r = normalizeRoot(r); r != "" {
 			a.verified = append(a.verified, r)
@@ -126,11 +94,9 @@ func Load(ctx context.Context, tenantID shared.ID, targets Targets, roots Roots)
 }
 
 // Covers reports whether the tenant authorized active probes of name (an
-// address, CIDR, host, host:port, URL or repository name) and what covers it.
-// A verified domain is preferred over a seed, and a seed over a scope target,
-// so Via names the strongest authority. Only a verified domain of purpose
-// easm authorizes; a scope target or seed under an SSO-verified domain
-// reports proof "verified".
+// address, CIDR, host, host:port, URL or repository name) and which entry
+// covers it. Proof is "verified" when the name sits at or under a verified
+// domain, "asserted" otherwise.
 func (a *Authority) Covers(name string) (Via, bool) {
 	if a == nil {
 		return Via{}, false
@@ -138,14 +104,8 @@ func (a *Authority) Covers(name string) (Via, bool) {
 	host := Host(name)
 	proof := ProofAsserted
 	if host != "" {
-		if r, ok := underAny(host, a.authorizing); ok {
-			return Via{Kind: KindVerifiedDomain, Pattern: r, Proof: ProofVerified}, true
-		}
 		if _, ok := underAny(host, a.verified); ok {
 			proof = ProofVerified
-		}
-		if r, ok := underAny(host, a.seeds); ok {
-			return Via{Kind: KindSeed, Pattern: r, Proof: proof}, true
 		}
 	}
 	for _, f := range MatchForms(name) {
@@ -158,10 +118,9 @@ func (a *Authority) Covers(name string) (Via, bool) {
 	return Via{}, false
 }
 
-// CoversAt is Covers for a probe of the given tier (RFC-054 §4.2 step 6): a
-// scope target covers only when its max_tier is at or above tier; a seed or
-// an easm-purpose verified domain authorizes t1 at most. As in Covers, a
-// domain verified for SSO sign-in never authorizes; it only proves.
+// CoversAt is Covers for a probe of the given tier (RFC-054 §4.2 step 6): an
+// entry covers only when its max_tier is at or above tier. As in Covers, a
+// verified domain never authorizes; it only proves.
 func (a *Authority) CoversAt(name string, tier scopedom.Tier) (Via, bool) {
 	if a == nil {
 		return Via{}, false
@@ -171,14 +130,6 @@ func (a *Authority) CoversAt(name string, tier scopedom.Tier) (Via, bool) {
 	if host != "" {
 		if _, ok := underAny(host, a.verified); ok {
 			proof = ProofVerified
-		}
-		if tier <= scopedom.TierActive {
-			if r, ok := underAny(host, a.authorizing); ok {
-				return Via{Kind: KindVerifiedDomain, Pattern: r, Proof: ProofVerified}, true
-			}
-			if r, ok := underAny(host, a.seeds); ok {
-				return Via{Kind: KindSeed, Pattern: r, Proof: proof}, true
-			}
 		}
 	}
 	for _, f := range MatchForms(name) {
@@ -192,7 +143,7 @@ func (a *Authority) CoversAt(name string, tier scopedom.Tier) (Via, bool) {
 }
 
 // Ceiling names the tenant's scope target with the highest max_tier that
-// covers name (nil when none does: a seed or verified domain may still).
+// covers name (nil when none does).
 func (a *Authority) Ceiling(name string) *scopedom.Target {
 	if a == nil {
 		return nil

@@ -51,14 +51,14 @@ func (r *AttributionRepository) UpsertEvidenceBulk(ctx context.Context, tenantID
 	return nil
 }
 
-// ScanRunOf returns the pipeline run and scan of a step run in the tenant.
+// ScanRunOf returns the scan run and scan of a step run in the tenant.
 // An unknown step run, or one of another tenant, yields empty strings.
 func (r *AttributionRepository) ScanRunOf(ctx context.Context, tenantID, stepRunID shared.ID) (string, string, error) {
 	var runID string
 	var scanID sql.NullString
 	err := r.db.QueryRowContext(ctx, `
-		SELECT pr.id, pr.scan_id FROM step_runs sr
-		JOIN pipeline_runs pr ON pr.id = sr.pipeline_run_id
+		SELECT pr.id, pr.scan_id FROM scan_run_steps sr
+		JOIN scan_runs pr ON pr.id = sr.scan_run_id
 		WHERE sr.id = $2 AND pr.tenant_id = $1`, tenantID.String(), stepRunID.String()).Scan(&runID, &scanID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", nil

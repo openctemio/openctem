@@ -277,7 +277,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
             {formData.mode === 'workflow' && formData.workflowId && (
               <WorkflowPreviewSection
                 request={{
-                  pipeline_id: formData.workflowId,
+                  scan_workflow_id: formData.workflowId,
                   targets: previewRequest.targets,
                   asset_group_ids: previewRequest.asset_group_ids,
                   scan_zone_id: formData.scanZoneId ?? undefined,

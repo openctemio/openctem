@@ -44,7 +44,7 @@ func TestArchiveNeverRunOneOffs(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
 	repo := NewScanRepository(&DB{DB: db})
-	runs := NewPipelineRunRepository(&DB{DB: db})
+	runs := NewScanRunRepository(&DB{DB: db})
 	tenantID := seedScanTriggerTenant(ctx, t, db)
 	old := 40 * 24 * time.Hour
 
