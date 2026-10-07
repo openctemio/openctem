@@ -379,7 +379,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			AuditArchiveDir:    cfg.AuditRetention.ArchiveDir,
 			Logger:             log.With("controller", "data-expiration"),
 		},
-	))
+	).SetScopeTargetExpirer(repos.ScopeTarget))
 
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
