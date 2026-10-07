@@ -29,15 +29,21 @@ type Caller struct {
 	APIKey   bool
 }
 
+// Store is the storage the service reads (*postgres.WebEndpointRepository).
+type Store interface {
+	webendpoint.Reader
+	webendpoint.ViewReader
+}
+
 // Service reads and curates the sub-inventory.
 type Service struct {
-	repo      webendpoint.Reader
+	repo      Store
 	dataScope *datascope.Enforcer
 }
 
 // NewService creates a Service. dataScope must be wired in production; a
 // nil enforcer refuses every member read (fail closed).
-func NewService(repo webendpoint.Reader, dataScope *datascope.Enforcer) *Service {
+func NewService(repo Store, dataScope *datascope.Enforcer) *Service {
 	return &Service{repo: repo, dataScope: dataScope}
 }
 
@@ -92,6 +98,52 @@ func (s *Service) Stats(ctx context.Context, c Caller, spec *filterspec.Spec) (*
 		return nil, err
 	}
 	return s.repo.StatsWhere(ctx, w)
+}
+
+// Patterns groups the endpoints a decoded filter selects by path pattern,
+// as the caller: a scoped member's counts include only their origins.
+func (s *Service) Patterns(ctx context.Context, c Caller, spec *filterspec.Spec) (pagination.Result[*webendpoint.Pattern], error) {
+	var empty pagination.Result[*webendpoint.Pattern]
+	a, _, err := s.actor(ctx, c)
+	if err != nil {
+		return empty, err
+	}
+	spec.Sort = nil // grouped: the order is fixed (most widespread first)
+	w, err := filterspec.Compile(spec, webendpoint.Fields, a)
+	if err != nil {
+		return empty, err
+	}
+	return s.repo.PatternsWhere(ctx, w, pagination.New(spec.Page, spec.PerPage))
+}
+
+// Origins groups the endpoints a decoded filter selects by origin asset,
+// with the coverage gap, as the caller.
+func (s *Service) Origins(ctx context.Context, c Caller, spec *filterspec.Spec) (pagination.Result[*webendpoint.Origin], error) {
+	var empty pagination.Result[*webendpoint.Origin]
+	a, _, err := s.actor(ctx, c)
+	if err != nil {
+		return empty, err
+	}
+	spec.Sort = nil
+	w, err := filterspec.Compile(spec, webendpoint.Fields, a)
+	if err != nil {
+		return empty, err
+	}
+	return s.repo.OriginsWhere(ctx, w, pagination.New(spec.Page, spec.PerPage))
+}
+
+// Events lists the change feed for a decoded filter, as the caller.
+func (s *Service) Events(ctx context.Context, c Caller, spec *filterspec.Spec) (pagination.Result[*webendpoint.Event], error) {
+	var empty pagination.Result[*webendpoint.Event]
+	a, _, err := s.actor(ctx, c)
+	if err != nil {
+		return empty, err
+	}
+	w, err := filterspec.Compile(spec, webendpoint.EventFields, a)
+	if err != nil {
+		return empty, err
+	}
+	return s.repo.EventsWhere(ctx, w, pagination.New(spec.Page, spec.PerPage))
 }
 
 // Get returns one endpoint the caller may see, or shared.ErrNotFound (for

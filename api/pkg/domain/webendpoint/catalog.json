@@ -1,0 +1,1721 @@
+{
+ "version": "2026-10-07",
+ "entries": [
+  {
+   "key": "vcs.git",
+   "path": "/.git",
+   "category": "source_leak",
+   "severity": "critical",
+   "title": "Git repository metadata",
+   "tags": [
+    "exposure",
+    "git"
+   ]
+  },
+  {
+   "key": "vcs.svn",
+   "path": "/.svn",
+   "category": "source_leak",
+   "severity": "critical",
+   "title": "Subversion metadata",
+   "tags": [
+    "exposure",
+    "svn"
+   ]
+  },
+  {
+   "key": "vcs.hg",
+   "path": "/.hg",
+   "category": "source_leak",
+   "severity": "critical",
+   "title": "Mercurial metadata",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "vcs.bzr",
+   "path": "/.bzr",
+   "category": "source_leak",
+   "severity": "high",
+   "title": "Bazaar metadata",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "vcs.cvs",
+   "path": "/CVS",
+   "category": "source_leak",
+   "severity": "high",
+   "title": "CVS metadata",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "vcs.gitlab_ci",
+   "path": "/.gitlab-ci.yml",
+   "category": "source_leak",
+   "severity": "medium",
+   "title": "CI pipeline definition",
+   "tags": [
+    "exposure",
+    "config"
+   ]
+  },
+  {
+   "key": "vcs.github",
+   "path": "/.github",
+   "category": "source_leak",
+   "severity": "medium",
+   "title": "GitHub workflow files",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "config.env",
+   "path": "/.env",
+   "category": "secrets",
+   "severity": "critical",
+   "title": "Environment file with secrets",
+   "tags": [
+    "exposure",
+    "config",
+    "env"
+   ]
+  },
+  {
+   "key": "config.env_local",
+   "path": "/.env.local",
+   "category": "secrets",
+   "severity": "critical",
+   "title": "Local environment file",
+   "tags": [
+    "exposure",
+    "config",
+    "env"
+   ]
+  },
+  {
+   "key": "config.env_prod",
+   "path": "/.env.production",
+   "category": "secrets",
+   "severity": "critical",
+   "title": "Production environment file",
+   "tags": [
+    "exposure",
+    "config",
+    "env"
+   ]
+  },
+  {
+   "key": "config.aws",
+   "path": "/.aws",
+   "category": "secrets",
+   "severity": "critical",
+   "title": "AWS credentials directory",
+   "tags": [
+    "exposure",
+    "aws"
+   ]
+  },
+  {
+   "key": "config.npmrc",
+   "path": "/.npmrc",
+   "category": "secrets",
+   "severity": "high",
+   "title": "npm registry token file",
+   "tags": [
+    "exposure",
+    "config"
+   ]
+  },
+  {
+   "key": "config.docker",
+   "path": "/.docker",
+   "category": "secrets",
+   "severity": "high",
+   "title": "Docker client config",
+   "tags": [
+    "exposure",
+    "docker"
+   ]
+  },
+  {
+   "key": "config.ssh",
+   "path": "/.ssh",
+   "category": "secrets",
+   "severity": "critical",
+   "title": "SSH keys directory",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "config.htpasswd",
+   "path": "/.htpasswd",
+   "category": "secrets",
+   "severity": "high",
+   "title": "Basic auth password file",
+   "tags": [
+    "exposure",
+    "apache"
+   ]
+  },
+  {
+   "key": "config.htaccess",
+   "path": "/.htaccess",
+   "category": "config",
+   "severity": "low",
+   "title": "Apache access rules",
+   "tags": [
+    "exposure",
+    "apache"
+   ]
+  },
+  {
+   "key": "config.wp_config",
+   "path": "/wp-config.php.bak",
+   "category": "secrets",
+   "severity": "critical",
+   "title": "WordPress config backup",
+   "tags": [
+    "exposure",
+    "wordpress"
+   ]
+  },
+  {
+   "key": "config.web_config",
+   "path": "/web.config",
+   "category": "config",
+   "severity": "medium",
+   "title": "IIS configuration",
+   "tags": [
+    "exposure",
+    "iis"
+   ]
+  },
+  {
+   "key": "config.appsettings",
+   "path": "/appsettings.json",
+   "category": "secrets",
+   "severity": "high",
+   "title": ".NET application settings",
+   "tags": [
+    "exposure",
+    "config"
+   ]
+  },
+  {
+   "key": "config.config_json",
+   "path": "/config.json",
+   "category": "config",
+   "severity": "medium",
+   "title": "Application configuration",
+   "tags": [
+    "exposure",
+    "config"
+   ]
+  },
+  {
+   "key": "config.settings_py",
+   "path": "/settings.py",
+   "category": "secrets",
+   "severity": "high",
+   "title": "Python settings module",
+   "tags": [
+    "exposure",
+    "config"
+   ]
+  },
+  {
+   "key": "config.docker_compose",
+   "path": "/docker-compose.yml",
+   "category": "config",
+   "severity": "medium",
+   "title": "Compose file",
+   "tags": [
+    "exposure",
+    "docker"
+   ]
+  },
+  {
+   "key": "config.dockerfile",
+   "path": "/Dockerfile",
+   "category": "config",
+   "severity": "low",
+   "title": "Container build file",
+   "tags": [
+    "exposure",
+    "docker"
+   ]
+  },
+  {
+   "key": "config.k8s",
+   "path": "/.kube",
+   "category": "secrets",
+   "severity": "critical",
+   "title": "Kubernetes client config",
+   "tags": [
+    "exposure",
+    "kubernetes"
+   ]
+  },
+  {
+   "key": "config.terraform",
+   "path": "/terraform.tfstate",
+   "category": "secrets",
+   "severity": "critical",
+   "title": "Terraform state",
+   "tags": [
+    "exposure",
+    "terraform"
+   ]
+  },
+  {
+   "key": "config.composer",
+   "path": "/composer.json",
+   "category": "config",
+   "severity": "low",
+   "title": "PHP dependency manifest",
+   "tags": [
+    "exposure",
+    "php"
+   ]
+  },
+  {
+   "key": "config.package_json",
+   "path": "/package.json",
+   "category": "config",
+   "severity": "low",
+   "title": "Node dependency manifest",
+   "tags": [
+    "exposure",
+    "node"
+   ]
+  },
+  {
+   "key": "config.phpinfo",
+   "path": "/phpinfo.php",
+   "category": "debug",
+   "severity": "high",
+   "title": "PHP configuration dump",
+   "tags": [
+    "exposure",
+    "php"
+   ]
+  },
+  {
+   "key": "config.ds_store",
+   "path": "/.DS_Store",
+   "category": "source_leak",
+   "severity": "low",
+   "title": "macOS directory listing",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "config.idea",
+   "path": "/.idea",
+   "category": "source_leak",
+   "severity": "medium",
+   "title": "IDE project files",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "config.vscode",
+   "path": "/.vscode",
+   "category": "source_leak",
+   "severity": "medium",
+   "title": "Editor project files",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "backup.sql",
+   "path": "/backup.sql",
+   "category": "backup",
+   "severity": "critical",
+   "title": "Database dump",
+   "tags": [
+    "exposure",
+    "backup"
+   ]
+  },
+  {
+   "key": "backup.dump",
+   "path": "/dump.sql",
+   "category": "backup",
+   "severity": "critical",
+   "title": "Database dump",
+   "tags": [
+    "exposure",
+    "backup"
+   ]
+  },
+  {
+   "key": "backup.db",
+   "path": "/db.sql",
+   "category": "backup",
+   "severity": "critical",
+   "title": "Database dump",
+   "tags": [
+    "exposure",
+    "backup"
+   ]
+  },
+  {
+   "key": "backup.dir",
+   "path": "/backup",
+   "category": "backup",
+   "severity": "high",
+   "title": "Backup directory",
+   "tags": [
+    "exposure",
+    "backup"
+   ]
+  },
+  {
+   "key": "backup.backups",
+   "path": "/backups",
+   "category": "backup",
+   "severity": "high",
+   "title": "Backup directory",
+   "tags": [
+    "exposure",
+    "backup"
+   ]
+  },
+  {
+   "key": "backup.old",
+   "path": "/old",
+   "category": "backup",
+   "severity": "medium",
+   "title": "Old site copy",
+   "tags": [
+    "exposure",
+    "backup"
+   ]
+  },
+  {
+   "key": "backup.zip",
+   "path": "/backup.zip",
+   "category": "backup",
+   "severity": "high",
+   "title": "Backup archive",
+   "tags": [
+    "exposure",
+    "backup"
+   ]
+  },
+  {
+   "key": "backup.site_tar",
+   "path": "/site.tar.gz",
+   "category": "backup",
+   "severity": "high",
+   "title": "Site archive",
+   "tags": [
+    "exposure",
+    "backup"
+   ]
+  },
+  {
+   "key": "spring.actuator",
+   "path": "/actuator",
+   "category": "debug",
+   "severity": "medium",
+   "title": "Spring Boot actuator index",
+   "tags": [
+    "springboot",
+    "actuator"
+   ]
+  },
+  {
+   "key": "spring.actuator.env",
+   "path": "/actuator/env",
+   "category": "debug",
+   "severity": "critical",
+   "title": "Spring environment (secrets)",
+   "tags": [
+    "springboot",
+    "actuator"
+   ]
+  },
+  {
+   "key": "spring.actuator.heapdump",
+   "path": "/actuator/heapdump",
+   "category": "debug",
+   "severity": "critical",
+   "title": "JVM heap dump",
+   "tags": [
+    "springboot",
+    "actuator"
+   ]
+  },
+  {
+   "key": "spring.actuator.threaddump",
+   "path": "/actuator/threaddump",
+   "category": "debug",
+   "severity": "medium",
+   "title": "JVM thread dump",
+   "tags": [
+    "springboot",
+    "actuator"
+   ]
+  },
+  {
+   "key": "spring.actuator.configprops",
+   "path": "/actuator/configprops",
+   "category": "debug",
+   "severity": "high",
+   "title": "Spring configuration properties",
+   "tags": [
+    "springboot",
+    "actuator"
+   ]
+  },
+  {
+   "key": "spring.actuator.mappings",
+   "path": "/actuator/mappings",
+   "category": "debug",
+   "severity": "medium",
+   "title": "Spring route mappings",
+   "tags": [
+    "springboot",
+    "actuator"
+   ]
+  },
+  {
+   "key": "spring.actuator.logfile",
+   "path": "/actuator/logfile",
+   "category": "debug",
+   "severity": "high",
+   "title": "Application log file",
+   "tags": [
+    "springboot",
+    "actuator"
+   ]
+  },
+  {
+   "key": "spring.actuator.loggers",
+   "path": "/actuator/loggers",
+   "category": "debug",
+   "severity": "medium",
+   "title": "Logger levels (writable)",
+   "tags": [
+    "springboot",
+    "actuator"
+   ]
+  },
+  {
+   "key": "spring.actuator.jolokia",
+   "path": "/actuator/jolokia",
+   "category": "debug",
+   "severity": "critical",
+   "title": "JMX over HTTP",
+   "tags": [
+    "springboot",
+    "jolokia"
+   ]
+  },
+  {
+   "key": "spring.actuator.gateway",
+   "path": "/actuator/gateway",
+   "category": "debug",
+   "severity": "critical",
+   "title": "Spring Cloud Gateway routes (writable)",
+   "tags": [
+    "springboot",
+    "actuator"
+   ]
+  },
+  {
+   "key": "spring.env",
+   "path": "/env",
+   "category": "debug",
+   "severity": "high",
+   "title": "Legacy Spring environment endpoint",
+   "tags": [
+    "springboot"
+   ]
+  },
+  {
+   "key": "spring.heapdump",
+   "path": "/heapdump",
+   "category": "debug",
+   "severity": "critical",
+   "title": "Legacy JVM heap dump",
+   "tags": [
+    "springboot"
+   ]
+  },
+  {
+   "key": "jolokia",
+   "path": "/jolokia",
+   "category": "debug",
+   "severity": "critical",
+   "title": "JMX over HTTP",
+   "tags": [
+    "jolokia"
+   ]
+  },
+  {
+   "key": "debug.debug",
+   "path": "/debug",
+   "category": "debug",
+   "severity": "high",
+   "title": "Debug endpoint",
+   "tags": [
+    "debug"
+   ]
+  },
+  {
+   "key": "debug.pprof",
+   "path": "/debug/pprof",
+   "category": "debug",
+   "severity": "high",
+   "title": "Go profiler",
+   "tags": [
+    "go",
+    "pprof"
+   ]
+  },
+  {
+   "key": "debug.vars",
+   "path": "/debug/vars",
+   "category": "debug",
+   "severity": "medium",
+   "title": "Go expvar dump",
+   "tags": [
+    "go"
+   ]
+  },
+  {
+   "key": "debug.trace",
+   "path": "/trace",
+   "category": "debug",
+   "severity": "medium",
+   "title": "Request trace",
+   "tags": [
+    "debug"
+   ]
+  },
+  {
+   "key": "debug.console",
+   "path": "/console",
+   "category": "debug",
+   "severity": "critical",
+   "title": "Interactive console",
+   "tags": [
+    "debug"
+   ]
+  },
+  {
+   "key": "debug.werkzeug",
+   "path": "/console/werkzeug",
+   "category": "debug",
+   "severity": "critical",
+   "title": "Werkzeug debugger",
+   "tags": [
+    "werkzeug"
+   ]
+  },
+  {
+   "key": "debug.django_debug",
+   "path": "/__debug__",
+   "category": "debug",
+   "severity": "high",
+   "title": "Django debug toolbar",
+   "tags": [
+    "django"
+   ]
+  },
+  {
+   "key": "debug.rails_info",
+   "path": "/rails/info",
+   "category": "debug",
+   "severity": "high",
+   "title": "Rails info pages",
+   "tags": [
+    "rails"
+   ]
+  },
+  {
+   "key": "debug.laravel_telescope",
+   "path": "/telescope",
+   "category": "debug",
+   "severity": "high",
+   "title": "Laravel Telescope",
+   "tags": [
+    "laravel"
+   ]
+  },
+  {
+   "key": "debug.horizon",
+   "path": "/horizon",
+   "category": "admin",
+   "severity": "high",
+   "title": "Laravel Horizon dashboard",
+   "tags": [
+    "laravel"
+   ]
+  },
+  {
+   "key": "debug.elmah",
+   "path": "/elmah.axd",
+   "category": "debug",
+   "severity": "high",
+   "title": "ELMAH error log",
+   "tags": [
+    "aspnet"
+   ]
+  },
+  {
+   "key": "debug.trace_axd",
+   "path": "/trace.axd",
+   "category": "debug",
+   "severity": "high",
+   "title": "ASP.NET trace",
+   "tags": [
+    "aspnet"
+   ]
+  },
+  {
+   "key": "debug.server_status",
+   "path": "/server-status",
+   "category": "debug",
+   "severity": "medium",
+   "title": "Apache server status",
+   "tags": [
+    "apache"
+   ]
+  },
+  {
+   "key": "debug.server_info",
+   "path": "/server-info",
+   "category": "debug",
+   "severity": "medium",
+   "title": "Apache server info",
+   "tags": [
+    "apache"
+   ]
+  },
+  {
+   "key": "debug.nginx_status",
+   "path": "/nginx_status",
+   "category": "debug",
+   "severity": "low",
+   "title": "nginx status",
+   "tags": [
+    "nginx"
+   ]
+  },
+  {
+   "key": "monitor.metrics",
+   "path": "/metrics",
+   "category": "monitoring",
+   "severity": "medium",
+   "title": "Prometheus metrics",
+   "tags": [
+    "prometheus",
+    "metrics"
+   ]
+  },
+  {
+   "key": "monitor.actuator_prometheus",
+   "path": "/actuator/prometheus",
+   "category": "monitoring",
+   "severity": "medium",
+   "title": "Actuator metrics",
+   "tags": [
+    "springboot",
+    "metrics"
+   ]
+  },
+  {
+   "key": "monitor.health",
+   "path": "/health",
+   "category": "monitoring",
+   "severity": "info",
+   "title": "Health check",
+   "tags": [
+    "health"
+   ]
+  },
+  {
+   "key": "monitor.status",
+   "path": "/status",
+   "category": "monitoring",
+   "severity": "info",
+   "title": "Status page",
+   "tags": [
+    "health"
+   ]
+  },
+  {
+   "key": "monitor.grafana",
+   "path": "/grafana",
+   "category": "admin",
+   "severity": "high",
+   "title": "Grafana",
+   "tags": [
+    "grafana"
+   ]
+  },
+  {
+   "key": "monitor.kibana",
+   "path": "/app/kibana",
+   "category": "admin",
+   "severity": "high",
+   "title": "Kibana",
+   "tags": [
+    "kibana"
+   ]
+  },
+  {
+   "key": "monitor.prometheus",
+   "path": "/graph",
+   "category": "monitoring",
+   "severity": "medium",
+   "title": "Prometheus UI",
+   "tags": [
+    "prometheus"
+   ]
+  },
+  {
+   "key": "admin.admin",
+   "path": "/admin",
+   "category": "admin",
+   "severity": "high",
+   "title": "Administration area",
+   "tags": [
+    "admin",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.administrator",
+   "path": "/administrator",
+   "category": "admin",
+   "severity": "high",
+   "title": "Administration area",
+   "tags": [
+    "admin",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.wp_admin",
+   "path": "/wp-admin",
+   "category": "admin",
+   "severity": "high",
+   "title": "WordPress admin",
+   "tags": [
+    "wordpress",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.wp_login",
+   "path": "/wp-login.php",
+   "category": "auth",
+   "severity": "medium",
+   "title": "WordPress login",
+   "tags": [
+    "wordpress",
+    "login"
+   ]
+  },
+  {
+   "key": "admin.phpmyadmin",
+   "path": "/phpmyadmin",
+   "category": "admin",
+   "severity": "critical",
+   "title": "phpMyAdmin",
+   "tags": [
+    "phpmyadmin",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.adminer",
+   "path": "/adminer.php",
+   "category": "admin",
+   "severity": "critical",
+   "title": "Adminer database console",
+   "tags": [
+    "adminer",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.manager_html",
+   "path": "/manager/html",
+   "category": "admin",
+   "severity": "critical",
+   "title": "Tomcat manager",
+   "tags": [
+    "tomcat",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.host_manager",
+   "path": "/host-manager",
+   "category": "admin",
+   "severity": "critical",
+   "title": "Tomcat host manager",
+   "tags": [
+    "tomcat",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.jenkins",
+   "path": "/jenkins",
+   "category": "admin",
+   "severity": "high",
+   "title": "Jenkins",
+   "tags": [
+    "jenkins",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.script",
+   "path": "/script",
+   "category": "admin",
+   "severity": "critical",
+   "title": "Jenkins script console",
+   "tags": [
+    "jenkins"
+   ]
+  },
+  {
+   "key": "admin.solr",
+   "path": "/solr",
+   "category": "admin",
+   "severity": "high",
+   "title": "Solr admin",
+   "tags": [
+    "solr",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.rabbitmq",
+   "path": "/rabbitmq",
+   "category": "admin",
+   "severity": "high",
+   "title": "RabbitMQ management",
+   "tags": [
+    "rabbitmq",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.portainer",
+   "path": "/portainer",
+   "category": "admin",
+   "severity": "critical",
+   "title": "Portainer",
+   "tags": [
+    "portainer",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.keycloak",
+   "path": "/auth/admin",
+   "category": "admin",
+   "severity": "critical",
+   "title": "Keycloak admin console",
+   "tags": [
+    "keycloak",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.django_admin",
+   "path": "/django-admin",
+   "category": "admin",
+   "severity": "high",
+   "title": "Django admin",
+   "tags": [
+    "django",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.cpanel",
+   "path": "/cpanel",
+   "category": "admin",
+   "severity": "high",
+   "title": "cPanel",
+   "tags": [
+    "cpanel",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.webmin",
+   "path": "/webmin",
+   "category": "admin",
+   "severity": "high",
+   "title": "Webmin",
+   "tags": [
+    "webmin",
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.dashboard",
+   "path": "/dashboard",
+   "category": "admin",
+   "severity": "medium",
+   "title": "Dashboard",
+   "tags": [
+    "panel"
+   ]
+  },
+  {
+   "key": "admin.setup",
+   "path": "/setup",
+   "category": "admin",
+   "severity": "high",
+   "title": "Setup wizard",
+   "tags": [
+    "installer"
+   ]
+  },
+  {
+   "key": "admin.install",
+   "path": "/install",
+   "category": "admin",
+   "severity": "high",
+   "title": "Installer",
+   "tags": [
+    "installer"
+   ]
+  },
+  {
+   "key": "admin.installer_php",
+   "path": "/install.php",
+   "category": "admin",
+   "severity": "high",
+   "title": "PHP installer",
+   "tags": [
+    "installer",
+    "php"
+   ]
+  },
+  {
+   "key": "admin.k8s_dashboard",
+   "path": "/api/v1/namespaces/kubernetes-dashboard",
+   "category": "admin",
+   "severity": "critical",
+   "title": "Kubernetes dashboard",
+   "tags": [
+    "kubernetes"
+   ]
+  },
+  {
+   "key": "k8s.api",
+   "path": "/api/v1/pods",
+   "category": "infra_api",
+   "severity": "critical",
+   "title": "Kubernetes API (pods)",
+   "tags": [
+    "kubernetes"
+   ]
+  },
+  {
+   "key": "k8s.kubelet",
+   "path": "/pods",
+   "category": "infra_api",
+   "severity": "critical",
+   "title": "Kubelet pod list",
+   "tags": [
+    "kubernetes",
+    "kubelet"
+   ]
+  },
+  {
+   "key": "docker.api",
+   "path": "/containers/json",
+   "category": "infra_api",
+   "severity": "critical",
+   "title": "Docker Engine API",
+   "tags": [
+    "docker"
+   ]
+  },
+  {
+   "key": "docker.version",
+   "path": "/version",
+   "category": "infra_api",
+   "severity": "low",
+   "title": "Version disclosure",
+   "tags": [
+    "tech"
+   ]
+  },
+  {
+   "key": "consul.api",
+   "path": "/v1/agent/self",
+   "category": "infra_api",
+   "severity": "critical",
+   "title": "Consul agent API",
+   "tags": [
+    "consul"
+   ]
+  },
+  {
+   "key": "etcd.keys",
+   "path": "/v2/keys",
+   "category": "infra_api",
+   "severity": "critical",
+   "title": "etcd keys API",
+   "tags": [
+    "etcd"
+   ]
+  },
+  {
+   "key": "vault.sys",
+   "path": "/v1/sys",
+   "category": "infra_api",
+   "severity": "high",
+   "title": "Vault system API",
+   "tags": [
+    "vault"
+   ]
+  },
+  {
+   "key": "es.cat",
+   "path": "/_cat",
+   "category": "infra_api",
+   "severity": "high",
+   "title": "Elasticsearch cat API",
+   "tags": [
+    "elasticsearch"
+   ]
+  },
+  {
+   "key": "es.search",
+   "path": "/_search",
+   "category": "infra_api",
+   "severity": "high",
+   "title": "Elasticsearch search",
+   "tags": [
+    "elasticsearch"
+   ]
+  },
+  {
+   "key": "es.cluster",
+   "path": "/_cluster",
+   "category": "infra_api",
+   "severity": "high",
+   "title": "Elasticsearch cluster API",
+   "tags": [
+    "elasticsearch"
+   ]
+  },
+  {
+   "key": "couchdb.all_dbs",
+   "path": "/_all_dbs",
+   "category": "infra_api",
+   "severity": "high",
+   "title": "CouchDB database list",
+   "tags": [
+    "couchdb"
+   ]
+  },
+  {
+   "key": "cloud.metadata",
+   "path": "/latest/meta-data",
+   "category": "infra_api",
+   "severity": "critical",
+   "title": "Cloud instance metadata",
+   "tags": [
+    "ssrf",
+    "cloud"
+   ]
+  },
+  {
+   "key": "api.openapi_json",
+   "path": "/openapi.json",
+   "category": "api_docs",
+   "severity": "low",
+   "title": "OpenAPI description",
+   "tags": [
+    "swagger",
+    "openapi"
+   ]
+  },
+  {
+   "key": "api.v3_api_docs",
+   "path": "/v3/api-docs",
+   "category": "api_docs",
+   "severity": "low",
+   "title": "OpenAPI description (springdoc)",
+   "tags": [
+    "swagger",
+    "openapi"
+   ]
+  },
+  {
+   "key": "api.v2_api_docs",
+   "path": "/v2/api-docs",
+   "category": "api_docs",
+   "severity": "low",
+   "title": "Swagger description",
+   "tags": [
+    "swagger"
+   ]
+  },
+  {
+   "key": "api.swagger_json",
+   "path": "/swagger.json",
+   "category": "api_docs",
+   "severity": "low",
+   "title": "Swagger description",
+   "tags": [
+    "swagger"
+   ]
+  },
+  {
+   "key": "api.swagger_ui",
+   "path": "/swagger-ui",
+   "category": "api_docs",
+   "severity": "low",
+   "title": "Swagger UI",
+   "tags": [
+    "swagger"
+   ]
+  },
+  {
+   "key": "api.swagger_ui_html",
+   "path": "/swagger-ui.html",
+   "category": "api_docs",
+   "severity": "low",
+   "title": "Swagger UI",
+   "tags": [
+    "swagger"
+   ]
+  },
+  {
+   "key": "api.api_docs",
+   "path": "/api-docs",
+   "category": "api_docs",
+   "severity": "low",
+   "title": "API documentation",
+   "tags": [
+    "swagger"
+   ]
+  },
+  {
+   "key": "api.redoc",
+   "path": "/redoc",
+   "category": "api_docs",
+   "severity": "low",
+   "title": "ReDoc",
+   "tags": [
+    "swagger"
+   ]
+  },
+  {
+   "key": "api.graphql",
+   "path": "/graphql",
+   "category": "api",
+   "severity": "medium",
+   "title": "GraphQL endpoint (introspection?)",
+   "tags": [
+    "graphql"
+   ]
+  },
+  {
+   "key": "api.graphiql",
+   "path": "/graphiql",
+   "category": "api",
+   "severity": "medium",
+   "title": "GraphiQL console",
+   "tags": [
+    "graphql"
+   ]
+  },
+  {
+   "key": "api.wsdl",
+   "path": "/services",
+   "category": "api",
+   "severity": "low",
+   "title": "SOAP services listing",
+   "tags": [
+    "soap"
+   ]
+  },
+  {
+   "key": "auth.login",
+   "path": "/login",
+   "category": "auth",
+   "severity": "info",
+   "title": "Login form",
+   "tags": [
+    "login"
+   ]
+  },
+  {
+   "key": "auth.signin",
+   "path": "/signin",
+   "category": "auth",
+   "severity": "info",
+   "title": "Sign-in form",
+   "tags": [
+    "login"
+   ]
+  },
+  {
+   "key": "auth.register",
+   "path": "/register",
+   "category": "auth",
+   "severity": "info",
+   "title": "Registration",
+   "tags": [
+    "registration"
+   ]
+  },
+  {
+   "key": "auth.reset",
+   "path": "/reset-password",
+   "category": "auth",
+   "severity": "low",
+   "title": "Password reset",
+   "tags": [
+    "login"
+   ]
+  },
+  {
+   "key": "auth.oauth_authorize",
+   "path": "/oauth/authorize",
+   "category": "auth",
+   "severity": "low",
+   "title": "OAuth authorization",
+   "tags": [
+    "oauth"
+   ]
+  },
+  {
+   "key": "auth.oauth_token",
+   "path": "/oauth/token",
+   "category": "auth",
+   "severity": "low",
+   "title": "OAuth token endpoint",
+   "tags": [
+    "oauth"
+   ]
+  },
+  {
+   "key": "auth.saml",
+   "path": "/saml",
+   "category": "auth",
+   "severity": "low",
+   "title": "SAML endpoints",
+   "tags": [
+    "saml"
+   ]
+  },
+  {
+   "key": "auth.well_known_oidc",
+   "path": "/.well-known/openid-configuration",
+   "category": "auth",
+   "severity": "info",
+   "title": "OpenID discovery",
+   "tags": [
+    "oauth"
+   ]
+  },
+  {
+   "key": "auth.jwks",
+   "path": "/.well-known/jwks.json",
+   "category": "auth",
+   "severity": "info",
+   "title": "Signing keys",
+   "tags": [
+    "oauth"
+   ]
+  },
+  {
+   "key": "files.upload",
+   "path": "/upload",
+   "category": "files",
+   "severity": "medium",
+   "title": "File upload",
+   "tags": [
+    "fileupload"
+   ]
+  },
+  {
+   "key": "files.uploads",
+   "path": "/uploads",
+   "category": "files",
+   "severity": "medium",
+   "title": "Uploaded files",
+   "tags": [
+    "fileupload",
+    "exposure"
+   ]
+  },
+  {
+   "key": "files.download",
+   "path": "/download",
+   "category": "files",
+   "severity": "medium",
+   "title": "File download",
+   "tags": [
+    "lfi"
+   ]
+  },
+  {
+   "key": "files.files",
+   "path": "/files",
+   "category": "files",
+   "severity": "low",
+   "title": "File listing",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "files.tmp",
+   "path": "/tmp",
+   "category": "files",
+   "severity": "medium",
+   "title": "Temporary files",
+   "tags": [
+    "exposure"
+   ]
+  },
+  {
+   "key": "files.logs",
+   "path": "/logs",
+   "category": "files",
+   "severity": "high",
+   "title": "Log files",
+   "tags": [
+    "exposure",
+    "logs"
+   ]
+  },
+  {
+   "key": "files.log",
+   "path": "/log",
+   "category": "files",
+   "severity": "high",
+   "title": "Log files",
+   "tags": [
+    "exposure",
+    "logs"
+   ]
+  },
+  {
+   "key": "files.error_log",
+   "path": "/error_log",
+   "category": "files",
+   "severity": "medium",
+   "title": "Error log",
+   "tags": [
+    "exposure",
+    "logs"
+   ]
+  },
+  {
+   "key": "cms.xmlrpc",
+   "path": "/xmlrpc.php",
+   "category": "api",
+   "severity": "medium",
+   "title": "WordPress XML-RPC",
+   "tags": [
+    "wordpress"
+   ]
+  },
+  {
+   "key": "cms.wp_json_users",
+   "path": "/wp-json/wp/v2/users",
+   "category": "api",
+   "severity": "medium",
+   "title": "WordPress user listing",
+   "tags": [
+    "wordpress"
+   ]
+  },
+  {
+   "key": "cms.drupal_install",
+   "path": "/core/install.php",
+   "category": "admin",
+   "severity": "high",
+   "title": "Drupal installer",
+   "tags": [
+    "drupal"
+   ]
+  },
+  {
+   "key": "cms.joomla_admin",
+   "path": "/administrator/index.php",
+   "category": "admin",
+   "severity": "high",
+   "title": "Joomla admin",
+   "tags": [
+    "joomla",
+    "panel"
+   ]
+  },
+  {
+   "key": "cms.magento_admin",
+   "path": "/admin_",
+   "category": "admin",
+   "severity": "high",
+   "title": "Magento admin",
+   "tags": [
+    "magento"
+   ]
+  },
+  {
+   "key": "cms.sitecore",
+   "path": "/sitecore",
+   "category": "admin",
+   "severity": "high",
+   "title": "Sitecore",
+   "tags": [
+    "sitecore"
+   ]
+  },
+  {
+   "key": "cms.umbraco",
+   "path": "/umbraco",
+   "category": "admin",
+   "severity": "high",
+   "title": "Umbraco back office",
+   "tags": [
+    "umbraco"
+   ]
+  },
+  {
+   "key": "cms.confluence_setup",
+   "path": "/setup/setupadministrator.action",
+   "category": "admin",
+   "severity": "critical",
+   "title": "Confluence setup",
+   "tags": [
+    "confluence"
+   ]
+  },
+  {
+   "key": "cms.jira_signup",
+   "path": "/secure/Signup!default.jspa",
+   "category": "auth",
+   "severity": "medium",
+   "title": "Jira self sign-up",
+   "tags": [
+    "jira"
+   ]
+  },
+  {
+   "key": "cms.gitlab_explore",
+   "path": "/explore",
+   "category": "source_leak",
+   "severity": "low",
+   "title": "GitLab public projects",
+   "tags": [
+    "gitlab"
+   ]
+  },
+  {
+   "key": "cms.sonarqube",
+   "path": "/api/system/info",
+   "category": "debug",
+   "severity": "high",
+   "title": "SonarQube system info",
+   "tags": [
+    "sonarqube"
+   ]
+  },
+  {
+   "key": "cms.nexus",
+   "path": "/service/rest/v1/status",
+   "category": "infra_api",
+   "severity": "low",
+   "title": "Nexus status",
+   "tags": [
+    "nexus"
+   ]
+  },
+  {
+   "key": "cms.artifactory",
+   "path": "/artifactory/api/repositories",
+   "category": "infra_api",
+   "severity": "medium",
+   "title": "Artifactory repositories",
+   "tags": [
+    "artifactory"
+   ]
+  },
+  {
+   "key": "info.robots",
+   "path": "/robots.txt",
+   "category": "info",
+   "severity": "info",
+   "title": "Robots file",
+   "tags": [
+    "robots"
+   ]
+  },
+  {
+   "key": "info.sitemap",
+   "path": "/sitemap.xml",
+   "category": "info",
+   "severity": "info",
+   "title": "Sitemap",
+   "tags": [
+    "sitemap"
+   ]
+  },
+  {
+   "key": "info.security_txt",
+   "path": "/.well-known/security.txt",
+   "category": "info",
+   "severity": "info",
+   "title": "Security contact",
+   "tags": [
+    "security"
+   ]
+  },
+  {
+   "key": "info.crossdomain",
+   "path": "/crossdomain.xml",
+   "category": "config",
+   "severity": "low",
+   "title": "Flash cross-domain policy",
+   "tags": [
+    "misconfig"
+   ]
+  },
+  {
+   "key": "info.clientaccesspolicy",
+   "path": "/clientaccesspolicy.xml",
+   "category": "config",
+   "severity": "low",
+   "title": "Silverlight cross-domain policy",
+   "tags": [
+    "misconfig"
+   ]
+  },
+  {
+   "key": "info.server_side_includes",
+   "path": "/cgi-bin",
+   "category": "legacy",
+   "severity": "medium",
+   "title": "CGI scripts",
+   "tags": [
+    "cgi"
+   ]
+  },
+  {
+   "key": "info.test",
+   "path": "/test",
+   "category": "debug",
+   "severity": "low",
+   "title": "Test page",
+   "tags": [
+    "debug"
+   ]
+  },
+  {
+   "key": "info.dev",
+   "path": "/dev",
+   "category": "debug",
+   "severity": "medium",
+   "title": "Development area",
+   "tags": [
+    "debug"
+   ]
+  },
+  {
+   "key": "info.staging",
+   "path": "/staging",
+   "category": "debug",
+   "severity": "medium",
+   "title": "Staging area",
+   "tags": [
+    "debug"
+   ]
+  },
+  {
+   "key": "info.internal",
+   "path": "/internal",
+   "category": "admin",
+   "severity": "high",
+   "title": "Internal area",
+   "tags": [
+    "internal"
+   ]
+  },
+  {
+   "key": "info.private",
+   "path": "/private",
+   "category": "admin",
+   "severity": "high",
+   "title": "Private area",
+   "tags": [
+    "internal"
+   ]
+  },
+  {
+   "key": "info.api_internal",
+   "path": "/api/internal",
+   "category": "admin",
+   "severity": "high",
+   "title": "Internal API",
+   "tags": [
+    "internal",
+    "api"
+   ]
+  },
+  {
+   "key": "info.api_admin",
+   "path": "/api/admin",
+   "category": "admin",
+   "severity": "high",
+   "title": "Admin API",
+   "tags": [
+    "admin",
+    "api"
+   ]
+  },
+  {
+   "key": "info.api_debug",
+   "path": "/api/debug",
+   "category": "debug",
+   "severity": "high",
+   "title": "Debug API",
+   "tags": [
+    "debug",
+    "api"
+   ]
+  },
+  {
+   "key": "info.export",
+   "path": "/export",
+   "category": "files",
+   "severity": "medium",
+   "title": "Data export",
+   "tags": [
+    "exposure"
+   ]
+  }
+ ]
+}

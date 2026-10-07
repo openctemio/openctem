@@ -478,6 +478,18 @@ func registerWebEndpointRoutes(router Router, h *handler.WebEndpointHandler, aut
 	router.Group("/api/v1/assets/{id}/web-endpoints", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
+	router.Group("/api/v1/web-path-patterns", func(r Router) {
+		r.GET("/", h.Patterns, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/web-origins", func(r Router) {
+		r.GET("/", h.Origins, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/web-endpoint-events", func(r Router) {
+		r.GET("/", h.Events, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/web-path-catalog", func(r Router) {
+		r.GET("/", h.Catalog, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
 }
 
 // registerAssetServiceRoutes registers asset service endpoints.

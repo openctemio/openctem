@@ -646,6 +646,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Web surface (RFC-056 WS14): unseen 30 days -> gone, gone a year ->
+	// deleted, change feed kept 90 days.
+	if repos.WebEndpoint != nil {
+		w.ControllerManager.Register(controller.NewWebSurfaceRetentionController(
+			repos.WebEndpoint, log.With("controller", "web-surface-retention")))
+	}
+
 	// Per-task sensor logs (RFC-029 §4.4.1): kept 14 days.
 	if repos.CommandLog != nil {
 		w.ControllerManager.Register(controller.NewCommandLogRetentionController(

@@ -148,6 +148,9 @@ func (s *Service) planStage(ctx context.Context, run *pipeline.Run, step *pipeli
 	}
 
 	cands, inputs := deriveCandidates(st, outputs, parents, stageOf, seen, plan.Skipped, len(seedList))
+	if cands, err = s.expandEndpoints(ctx, run, st, step, cands, plan.Skipped); err != nil {
+		return nil, err
+	}
 	if total > len(outputs) {
 		plan.Skipped[pipeline.ReasonOverCap] += total - len(outputs)
 		inputs += total - len(outputs)

@@ -37,23 +37,28 @@ func NewWebEndpointHandler(svc *webendpointapp.Service, audit *auditapp.AuditSer
 
 // WebEndpointResponse is one endpoint.
 type WebEndpointResponse struct {
-	ID            string     `json:"id"`
-	OriginAssetID string     `json:"origin_asset_id"`
-	Origin        string     `json:"origin"`
-	Method        string     `json:"method"`
-	PathTemplate  string     `json:"path_template"`
-	PathHash      string     `json:"path_hash"`
-	Kind          string     `json:"kind"`
-	Sources       []string   `json:"sources"`
-	ExamplePath   string     `json:"example_path,omitempty"`
-	LastStatus    int        `json:"last_status,omitempty"`
-	ContentType   string     `json:"content_type,omitempty"`
-	AuthState     string     `json:"auth_state"`
-	Technologies  []string   `json:"technologies"`
-	Labels        []string   `json:"labels"`
-	State         string     `json:"state"`
-	InScope       bool       `json:"in_scope"`
-	CatalogKey    string     `json:"catalog_key,omitempty"`
+	ID            string   `json:"id"`
+	OriginAssetID string   `json:"origin_asset_id"`
+	Origin        string   `json:"origin"`
+	Method        string   `json:"method"`
+	PathTemplate  string   `json:"path_template"`
+	PathHash      string   `json:"path_hash"`
+	Kind          string   `json:"kind"`
+	Sources       []string `json:"sources"`
+	ExamplePath   string   `json:"example_path,omitempty"`
+	LastStatus    int      `json:"last_status,omitempty"`
+	ContentType   string   `json:"content_type,omitempty"`
+	AuthState     string   `json:"auth_state"`
+	Technologies  []string `json:"technologies"`
+	Labels        []string `json:"labels"`
+	State         string   `json:"state"`
+	InScope       bool     `json:"in_scope"`
+	CatalogKey    string   `json:"catalog_key,omitempty"`
+	// Catalog describes the sensitive-path catalog entry (platform data).
+	Catalog *webendpoint.CatalogEntry `json:"catalog,omitempty"`
+	// ExclusionID names the path exclusion holding the endpoint
+	// excluded-untested (in_scope false).
+	ExclusionID   string     `json:"exclusion_id,omitempty"`
 	ParamCount    int        `json:"param_count"`
 	FirstSeenAt   time.Time  `json:"first_seen_at"`
 	LastSeenAt    time.Time  `json:"last_seen_at"`
@@ -83,6 +88,11 @@ type WebEndpointStatsResponse struct {
 	ByAuthState      map[string]int64 `json:"by_auth_state"`
 	ByState          map[string]int64 `json:"by_state"`
 	ExcludedUntested int64            `json:"excluded_untested"`
+	// ExcludedSensitive: excluded-untested endpoints on the sensitive-path
+	// catalog. UnauthSensitive: sensitive endpoints answering 2xx without
+	// authentication.
+	ExcludedSensitive int64 `json:"excluded_sensitive"`
+	UnauthSensitive   int64 `json:"unauth_sensitive"`
 }
 
 // UpdateWebEndpointRequest changes an endpoint: state active or ignored,
@@ -93,7 +103,7 @@ type UpdateWebEndpointRequest struct {
 }
 
 func toWebEndpointResponse(e *webendpoint.Endpoint) WebEndpointResponse {
-	return WebEndpointResponse{
+	resp := WebEndpointResponse{
 		ID: e.ID.String(), OriginAssetID: e.OriginAssetID.String(), Origin: e.Origin, Method: e.Method,
 		PathTemplate: e.PathTemplate, PathHash: e.PathHash, Kind: e.Kind, Sources: nonNilStrings(e.Sources),
 		ExamplePath: e.ExamplePath, LastStatus: e.LastStatus, ContentType: e.ContentType, AuthState: e.AuthState,
@@ -101,6 +111,13 @@ func toWebEndpointResponse(e *webendpoint.Endpoint) WebEndpointResponse {
 		InScope: e.InScope, CatalogKey: e.CatalogKey, ParamCount: e.ParamCount, FirstSeenAt: e.FirstSeenAt,
 		LastSeenAt: e.LastSeenAt, LastChangedAt: e.LastChangedAt, LastTool: e.LastTool,
 	}
+	if e.CatalogKey != "" {
+		resp.Catalog = webendpoint.DefaultCatalog.ByKey(e.CatalogKey)
+	}
+	if e.ExclusionID != nil {
+		resp.ExclusionID = e.ExclusionID.String()
+	}
+	return resp
 }
 
 func webEndpointCaller(r *http.Request) webendpointapp.Caller {
@@ -173,6 +190,7 @@ func (h *WebEndpointHandler) writeList(w http.ResponseWriter, r *http.Request, s
 // @Param  label  query  []string  false  "label: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key  query  []string  false  "catalog key: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key_not  query  []string  false  "catalog key: none of (comma list)"  collectionFormat(csv)
+// @Param  sensitive  query  boolean  false  "sensitive equals"
 // @Param  path_hash  query  []string  false  "path hash: any of (comma list)"  collectionFormat(csv)
 // @Param  path_template  query  string  false  "path template contains"
 // @Param  path_template_contains  query  string  false  "path template contains"
@@ -268,6 +286,7 @@ func (h *WebEndpointHandler) ListByAsset(w http.ResponseWriter, r *http.Request)
 // @Param  label  query  []string  false  "label: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key  query  []string  false  "catalog key: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key_not  query  []string  false  "catalog key: none of (comma list)"  collectionFormat(csv)
+// @Param  sensitive  query  boolean  false  "sensitive equals"
 // @Param  path_hash  query  []string  false  "path hash: any of (comma list)"  collectionFormat(csv)
 // @Param  path_template  query  string  false  "path template contains"
 // @Param  path_template_contains  query  string  false  "path template contains"
