@@ -721,9 +721,17 @@ func activitySource(t retestdom.Trigger) vulnerability.ActivitySource {
 	}
 }
 
-// ResolveTarget picks what the template re-run targets: the finding's recorded
-// matched-at URL when its host is the asset's own host, else the asset's name.
-// A finding can never point a retest at a host that is not its asset.
+// ResolveTarget picks what the template re-run targets: the origin
+// (scheme://host[:port]) of the finding's recorded matched-at URL when its
+// host is the asset's own host, else the asset's name. A finding can never
+// point a retest at a host that is not its asset.
+//
+// It is the origin, never the matched-at URL itself: a template builds its
+// request from the input ({{BaseURL}}/wp-admin/js/theme.js), so re-running it
+// with the matched-at URL as the input requests the path twice
+// (/wp-admin/js/theme.js/wp-admin/js/theme.js), gets a 404 and reads as
+// "did not match" whether or not the issue is fixed. The origin keeps the
+// scheme and port the detection used.
 func ResolveTarget(matchedAt, assetName string) string {
 	assetName = strings.TrimSpace(assetName)
 	matchedAt = strings.TrimSpace(matchedAt)
@@ -737,10 +745,11 @@ func ResolveTarget(matchedAt, assetName string) string {
 	if !strings.EqualFold(u.Hostname(), hostOf(assetName)) {
 		return assetName
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
 		return assetName
 	}
-	return matchedAt
+	return scheme + "://" + strings.ToLower(u.Host)
 }
 
 // hostOf returns the host part of an asset name (a bare host, host:port or URL).
