@@ -35,15 +35,21 @@ For each target, in order:
      rejected asset or a live rejection tombstone), unless a person
      confirmed this very asset. This covers a rejected name that was deleted
      and came back, and free text under a rejected name;
-   - an internet-facing asset (domain, subdomain, IP, service, web
-     endpoint, host, …) has **no record** and is neither inside an active
-     scope target nor at or under a root-domain seed or verified domain
-     (`unattributed`). Private addresses and internal names are left to scan
-     zones; repositories and cloud resources keep the record-only rule.
+   - **one authority** (RFC-054 §4.2, `internal/app/scopeauth`): an
+     internet-facing asset (domain, subdomain, IP, service, web endpoint,
+     host, …), or typed text naming an internet host or public address, is
+     not covered by an active scope target of the tenant nor at or under one
+     of its root-domain seeds or verified domains. Without a record that is
+     `unattributed`; with a **confirmed** record it is `out_of_scope`:
+     confirming an asset on its Ownership tab records ownership, it does not
+     authorize active probes by itself. Private addresses and internal names
+     are left to scan zones; repositories and cloud resources keep the
+     record-only rule when they are inventory assets.
 
-   Free text that names no asset is checked here only for rejected names;
-   whether it matches a scope target is the act-scope check below. The
-   caller sees one generic reason; the state that refused the target is
+   Typed text that names no asset gets the same authority decision as an
+   inventory asset; the act-scope check below asks the same `scopeauth`
+   package, so a typed name and the same name in the inventory never
+   disagree. The caller sees one generic reason; the state that refused the target is
    logged (`active scan target refused`) with the path. A request refused as
    a whole (scan create, clone, import, quick scan, `POST /commands`) is also
    **audited** as `scan.target_refused` (medium, result `failure`) in the
@@ -71,11 +77,12 @@ same gate and names the reason in `active_checks_blocked_by`.
 
 **Existing assets (rollout).** No data migration: the rule is evaluated at
 dispatch, so an asset inside a scope target or under a seed stays scannable
-with no record, and adding a scope target or confirming the asset takes
-effect on the next dispatch. An internet-facing asset that has no record and
-is outside every scope target and seed is no longer probed until a person
-confirms it on its Ownership tab (`assets:write`, audited) or a scope target
-covers it. Runs that skip such targets say so in their warnings.
+with no record, and adding a scope target takes effect on the next dispatch.
+An internet-facing asset outside every scope target, seed and verified
+domain is not probed, whether or not a person confirmed it (RFC-054: the
+Ownership-tab confirmation no longer authorizes alone). Runs that skip such
+targets say so in their warnings; `GET /assets/{id}/attribution` answers
+`active_checks_blocked_by: out_of_scope`.
 
 ## Who calls it
 
@@ -115,7 +122,7 @@ role (not through an API key) are unrestricted.
 | Actor | Inventory asset (a typed name that is an asset, or a group member) | Free text that is not an asset |
 |---|---|---|
 | Restricted member | only assets in their data scope | refused |
-| Unrestricted (admin, a `has_full_data_access` role, member of a fail-open organization with no scope row, system) | any asset of the tenant | only if it matches an active scope target of the tenant (the allowlist); exclusions still apply |
+| Unrestricted (admin, a `has_full_data_access` role, member of a fail-open organization with no scope row, system) | any asset of the tenant (the ownership gate still requires scope authority) | only if the tenant's scope authority covers it: an active scope target, or a name at or under a root-domain seed or verified domain (`scopeauth`); exclusions still apply |
 
 **The actor** is the request's caller. With no user in the context (a
 scheduled run, a workflow action) the actor is the scan owner
@@ -133,9 +140,9 @@ system, which is unrestricted.
 Every lookup error refuses (fail closed). A dispatch that asks for the check
 when none is wired gets `ErrActScopeUnavailable`.
 
-**Live impact.** A scan of free text that matches no scope target, in an
-organization with no scope targets, now has nothing to scan. Add the ranges
-and domains to Scoping › Targets first.
+**Live impact.** A scan of free text that no scope target, seed or verified
+domain covers has nothing to scan. Add the ranges and domains to Scoping ›
+Targets first.
 
 ## Bypass guard
 
