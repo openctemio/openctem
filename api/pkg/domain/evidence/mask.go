@@ -32,6 +32,13 @@ const placeholderPrefix = "«secret:"
 
 var placeholderPattern = regexp.MustCompile(`«secret:[a-z_]{1,32}#[0-9]{1,4}»`)
 
+// RedactText masks the secrets in a free text (a reason, a summary) without
+// keeping them: for text that leaves the platform's evidence store.
+func RedactText(s string) string {
+	masked, _ := Mask(Item{Kind: KindRawText, Text: s})
+	return masked.Text
+}
+
 // Placeholders returns the distinct placeholders present in s.
 func Placeholders(s string) []string {
 	return placeholderPattern.FindAllString(s, -1)
