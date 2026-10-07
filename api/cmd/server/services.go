@@ -51,6 +51,7 @@ import (
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
+	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -85,6 +86,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -377,6 +379,52 @@ func (a pentestTenantMemberAdapter) IsTenantMember(ctx context.Context, tenantID
 		return false
 	}
 	return true
+}
+
+// workflowMemberReader is the automation principal's membership lookup.
+type workflowMemberReader struct {
+	tenants *postgres.TenantRepository
+	access  *postgres.AccessControlRepository
+}
+
+func (r workflowMemberReader) GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenant.Membership, error) {
+	return r.tenants.GetMembership(ctx, userID, tenantID)
+}
+
+func (r workflowMemberReader) IsActiveTenantMember(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	return r.access.IsActiveTenantMember(ctx, tenantID, userID)
+}
+
+// workflowPermissionReader reads the automation principal's permissions
+// from the database (the union of their roles), never from a cache.
+type workflowPermissionReader struct{ roles *postgres.RoleRepository }
+
+func (r workflowPermissionReader) GetUserPermissions(ctx context.Context, tenantID, userID string) ([]string, error) {
+	tid, err := role.ParseID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	uid, err := role.ParseID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+	}
+	return r.roles.GetUserPermissions(ctx, tid, uid)
+}
+
+// workflowPrincipalContext makes an automation step run as its principal:
+// the same auth keys a request carries, so the services the step calls
+// (data scope above all) treat it as that member and not as an
+// unrestricted internal call.
+func workflowPrincipalContext(ctx context.Context, p workflow.Principal) context.Context {
+	perms := p.Permissions
+	if perms == nil {
+		perms = []string{}
+	}
+	ctx = context.WithValue(ctx, middleware.TenantIDKey, p.TenantID.String())
+	ctx = context.WithValue(ctx, middleware.UserIDKey, p.UserID.String())
+	ctx = context.WithValue(ctx, middleware.IsAdminKey, p.IsAdmin)
+	ctx = context.WithValue(ctx, middleware.FetchedPermissionsKey, perms)
+	return ctx
 }
 
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
@@ -679,6 +727,8 @@ type Services struct {
 	ValidationEvidence *validation.EvidenceIngestService
 	// Retest runs continuous retests (RFC-039): Retest now, settle, auto ticks.
 	Retest *retestapp.Service
+	// Evidence: masked finding evidence, encrypted secret values, audited reveal.
+	Evidence *evidenceapp.Service
 
 	// ValidationRun dispatches validation (safe-check) jobs for findings.
 	ValidationRun *validation.RunService
@@ -1273,6 +1323,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Retest.SetAuditLogger(s.Audit)
 
+	// Finding evidence (docs/architecture/finding-evidence.md): secret values
+	// are sealed with the platform key (re-keyed by cmd/rekey).
+	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
+
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
@@ -1582,6 +1636,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 	}
 	// Open ports a port scan no longer sees are closed (research/22 P0-6).
+	s.Ingest.SetEvidenceStore(s.Evidence)
 	s.Ingest.SetPortReconciler(postgres.NewEASMPortRepository(&postgres.DB{DB: deps.DB}))
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
@@ -1851,12 +1906,22 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// When a tool is deactivated/deleted, all active pipelines using it will be deactivated
 	s.Tool.SetPipelineDeactivator(s.Pipeline)
 
+	// Every automation run acts as one person (a manual run: who started
+	// it; an event run: the owner), checked live before each step.
+	workflowAuthorizer := workflow.NewPrincipalAuthorizer(
+		workflowMemberReader{tenants: repos.Tenant, access: repos.AccessControl},
+		workflowPermissionReader{roles: repos.Role},
+		s.DataScope,
+		workflowPrincipalContext,
+	)
+
 	// Initialize workflow executor
 	workflowExecutor := workflow.NewWorkflowExecutor(
 		repos.Workflow,
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
 		log, workflow.WithExecutorDB(deps.DB), workflow.WithExecutorOutboxService(s.Outbox), workflow.WithExecutorIntegrationService(s.Integration), workflow.WithExecutorAuditService(s.Audit),
+		workflow.WithExecutorStepAuthorizer(workflowAuthorizer),
 	)
 
 	// Register all action handlers for the workflow executor. Use the AI-aware
@@ -1893,6 +1958,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
 		log, workflow.WithWorkflowAuditService(s.Audit), workflow.WithWorkflowExecutor(workflowExecutor),
+		workflow.WithWorkflowStepAuthorizer(workflowAuthorizer),
+		workflow.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering
