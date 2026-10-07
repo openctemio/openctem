@@ -48,18 +48,18 @@ import {
   Info,
 } from 'lucide-react'
 import {
-  type PipelineTemplate,
-  type CreatePipelineRequest,
-  type PipelineTrigger,
-  PIPELINE_TRIGGERS,
-  PIPELINE_TRIGGER_LABELS,
-  PIPELINE_SENSOR_PREFERENCES,
-  PIPELINE_SENSOR_PREFERENCE_LABELS,
-  PIPELINE_SENSOR_PREFERENCE_DESCRIPTIONS,
-  type PipelineTriggerType,
-  type PipelineSensorPreference,
+  type ScanWorkflow,
+  type CreateScanWorkflowRequest,
+  type ScanWorkflowTrigger,
+  SCAN_RUN_TRIGGERS,
+  SCAN_RUN_TRIGGER_LABELS,
+  SCAN_WORKFLOW_SENSOR_PREFERENCES,
+  SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
+  SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS,
+  type ScanWorkflowTriggerType,
+  type ScanWorkflowSensorPreference,
   type UIPosition,
-  DEFAULT_PIPELINE_SETTINGS,
+  DEFAULT_SCAN_WORKFLOW_SETTINGS,
 } from '@/lib/api'
 import { useToolAvailability, useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { availabilityByName, toolUnavailableReason } from '@/features/tools/lib/availability'
@@ -74,7 +74,7 @@ interface StepFormData {
   capabilities: string[]
   timeout_seconds: number
   depends_on: string[]
-  // Carried through (not editable in the wizard) so re-saving a pipeline
+  // Carried through (not editable in the wizard) so re-saving a workflow
   // doesn't wipe the Visual Builder layout / per-step config, which the
   // backend replaces wholesale on each step in the steps array.
   ui_position?: UIPosition
@@ -82,13 +82,13 @@ interface StepFormData {
 }
 
 interface TriggerFormData {
-  type: PipelineTriggerType
+  type: ScanWorkflowTriggerType
   schedule?: string
 }
 
-interface PipelineFormProps {
-  pipeline?: PipelineTemplate | null
-  onSubmit: (data: CreatePipelineRequest) => Promise<void>
+interface WorkflowFormProps {
+  workflow?: ScanWorkflow | null
+  onSubmit: (data: CreateScanWorkflowRequest) => Promise<void>
   onCancel: () => void
   isSubmitting?: boolean
 }
@@ -267,25 +267,25 @@ function SortableStepItem({
   )
 }
 
-export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: PipelineFormProps) {
+export function ScanWorkflowForm({ workflow, onSubmit, onCancel, isSubmitting }: WorkflowFormProps) {
   const [currentStep, setCurrentStep] = useState<WizardStep>('basics')
 
   // Fetch tools for selection
   const { data: toolsData, isLoading: toolsLoading } = useToolsWithConfig()
 
   // Form state
-  const [name, setName] = useState(pipeline?.name || '')
-  const [description, setDescription] = useState(pipeline?.description || '')
+  const [name, setName] = useState(workflow?.name || '')
+  const [description, setDescription] = useState(workflow?.description || '')
   const [tagInput, setTagInput] = useState('')
-  const [tags, setTags] = useState<string[]>(pipeline?.tags || [])
+  const [tags, setTags] = useState<string[]>(workflow?.tags || [])
   const [triggers, setTriggers] = useState<TriggerFormData[]>(
-    pipeline?.triggers?.length
-      ? pipeline.triggers.map((t) => ({ type: t.type, schedule: t.schedule }))
-      : [{ type: 'manual' as PipelineTriggerType }]
+    workflow?.triggers?.length
+      ? workflow.triggers.map((t) => ({ type: t.type, schedule: t.schedule }))
+      : [{ type: 'manual' as ScanWorkflowTriggerType }]
   )
   const [steps, setSteps] = useState<StepFormData[]>(
-    pipeline?.steps?.length
-      ? pipeline.steps.map((s) => ({
+    workflow?.steps?.length
+      ? workflow.steps.map((s) => ({
           id: s.id || generateId(),
           step_key: s.step_key,
           name: s.name,
@@ -335,31 +335,31 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
       })
     }
   }
-  const [timeoutSeconds, setTimeoutSeconds] = useState(pipeline?.settings?.timeout_seconds || 3600)
+  const [timeoutSeconds, setTimeoutSeconds] = useState(workflow?.settings?.timeout_seconds || 3600)
   const [maxParallelSteps, setMaxParallelSteps] = useState(
-    pipeline?.settings?.max_parallel_steps || 3
+    workflow?.settings?.max_parallel_steps || 3
   )
-  const [sensorPreference, setSensorPreference] = useState<PipelineSensorPreference>(
-    pipeline?.settings?.sensor_preference || 'auto'
+  const [sensorPreference, setSensorPreference] = useState<ScanWorkflowSensorPreference>(
+    workflow?.settings?.sensor_preference || 'auto'
   )
   const [notifyOnFailure, setNotifyOnFailure] = useState(
-    pipeline?.settings?.notify_on_failure ?? true
+    workflow?.settings?.notify_on_failure ?? true
   )
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Sync form state when pipeline prop changes (e.g., after fetching full pipeline with steps)
+  // Sync form state when workflow prop changes (e.g., after fetching full workflow with steps)
   useEffect(() => {
-    if (pipeline) {
-      setName(pipeline.name || '')
-      setDescription(pipeline.description || '')
-      setTags(pipeline.tags || [])
+    if (workflow) {
+      setName(workflow.name || '')
+      setDescription(workflow.description || '')
+      setTags(workflow.tags || [])
       setTriggers(
-        pipeline.triggers?.length
-          ? pipeline.triggers.map((t) => ({ type: t.type, schedule: t.schedule }))
-          : [{ type: 'manual' as PipelineTriggerType }]
+        workflow.triggers?.length
+          ? workflow.triggers.map((t) => ({ type: t.type, schedule: t.schedule }))
+          : [{ type: 'manual' as ScanWorkflowTriggerType }]
       )
-      const newSteps = pipeline.steps?.length
-        ? pipeline.steps.map((s) => ({
+      const newSteps = workflow.steps?.length
+        ? workflow.steps.map((s) => ({
             id: s.id || generateId(),
             step_key: s.step_key,
             name: s.name,
@@ -382,14 +382,14 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
             },
           ]
       setSteps(newSteps)
-      setTimeoutSeconds(pipeline.settings?.timeout_seconds || 3600)
-      setMaxParallelSteps(pipeline.settings?.max_parallel_steps || 3)
-      setSensorPreference(pipeline.settings?.sensor_preference || 'auto')
-      setNotifyOnFailure(pipeline.settings?.notify_on_failure ?? true)
+      setTimeoutSeconds(workflow.settings?.timeout_seconds || 3600)
+      setMaxParallelSteps(workflow.settings?.max_parallel_steps || 3)
+      setSensorPreference(workflow.settings?.sensor_preference || 'auto')
+      setNotifyOnFailure(workflow.settings?.notify_on_failure ?? true)
     }
-  }, [pipeline])
+  }, [workflow])
 
-  const isEditing = !!pipeline
+  const isEditing = !!workflow
   const currentStepIndex = WIZARD_STEPS.findIndex((s) => s.id === currentStep)
   const isFirstStep = currentStepIndex === 0
   const isLastStep = currentStepIndex === WIZARD_STEPS.length - 1
@@ -449,10 +449,10 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
       }
     }
 
-    const data: CreatePipelineRequest = {
+    const data: CreateScanWorkflowRequest = {
       name,
       description: description || undefined,
-      triggers: triggers as PipelineTrigger[],
+      triggers: triggers as ScanWorkflowTrigger[],
       steps: steps.map((s, idx) => ({
         step_key: s.step_key,
         name: s.name,
@@ -473,7 +473,7 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
       // keys, so spread the loaded settings (or defaults) first to avoid zeroing
       // fail_fast / retry_failed_steps / notify_on_complete / notification_channels.
       settings: {
-        ...(pipeline?.settings ?? DEFAULT_PIPELINE_SETTINGS),
+        ...(workflow?.settings ?? DEFAULT_SCAN_WORKFLOW_SETTINGS),
         timeout_seconds: timeoutSeconds,
         max_parallel_steps: maxParallelSteps,
         sensor_preference: sensorPreference,
@@ -567,7 +567,7 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">
-                Pipeline Name <span className="text-destructive">*</span>
+                Workflow Name <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="name"
@@ -583,7 +583,7 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
               <Label htmlFor="description">Description</Label>
               <Textarea
                 id="description"
-                placeholder="Brief description of what this pipeline does..."
+                placeholder="Brief description of what this workflow does..."
                 rows={3}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -631,8 +631,8 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
         <TabsContent value="triggers" className="space-y-4 mt-0">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-medium">Pipeline Triggers</h3>
-              <p className="text-xs text-muted-foreground">Define how this pipeline starts</p>
+              <h3 className="text-sm font-medium">Workflow Triggers</h3>
+              <p className="text-xs text-muted-foreground">Define how this workflow starts</p>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={addTrigger}>
               <Plus className="me-2 h-3 w-3" />
@@ -646,15 +646,15 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
                 <div className="flex-1 space-y-3">
                   <Select
                     value={trigger.type}
-                    onValueChange={(v) => updateTrigger(index, 'type', v as PipelineTriggerType)}
+                    onValueChange={(v) => updateTrigger(index, 'type', v as ScanWorkflowTriggerType)}
                   >
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select trigger" />
                     </SelectTrigger>
                     <SelectContent>
-                      {PIPELINE_TRIGGERS.map((type) => (
+                      {SCAN_RUN_TRIGGERS.map((type) => (
                         <SelectItem key={type} value={type}>
-                          {PIPELINE_TRIGGER_LABELS[type]}
+                          {SCAN_RUN_TRIGGER_LABELS[type]}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -691,11 +691,11 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
           </div>
         </TabsContent>
 
-        {/* Step 3: Pipeline Steps */}
+        {/* Step 3: Workflow Steps */}
         <TabsContent value="steps" className="space-y-4 mt-0">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-medium">Pipeline Steps</h3>
+              <h3 className="text-sm font-medium">Workflow Steps</h3>
               <p className="text-xs text-muted-foreground">
                 Drag to reorder • Define the execution steps
               </p>
@@ -748,7 +748,7 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
                 value={timeoutSeconds}
                 onChange={(e) => setTimeoutSeconds(parseInt(e.target.value) || 3600)}
               />
-              <p className="text-xs text-muted-foreground">Max time for entire pipeline</p>
+              <p className="text-xs text-muted-foreground">Max time for entire workflow</p>
             </div>
 
             <div className="space-y-2">
@@ -768,28 +768,28 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
             <Label className="text-sm">Sensor Selection</Label>
             <Select
               value={sensorPreference}
-              onValueChange={(v) => setSensorPreference(v as PipelineSensorPreference)}
+              onValueChange={(v) => setSensorPreference(v as ScanWorkflowSensorPreference)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select preference" />
               </SelectTrigger>
               <SelectContent>
-                {PIPELINE_SENSOR_PREFERENCES.map((pref) => (
+                {SCAN_WORKFLOW_SENSOR_PREFERENCES.map((pref) => (
                   <SelectItem key={pref} value={pref}>
-                    {PIPELINE_SENSOR_PREFERENCE_LABELS[pref]}
+                    {SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS[pref]}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              {PIPELINE_SENSOR_PREFERENCE_DESCRIPTIONS[sensorPreference]}
+              {SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS[sensorPreference]}
             </p>
           </div>
 
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div className="space-y-0.5">
               <Label className="text-sm">Notify on Failure</Label>
-              <p className="text-xs text-muted-foreground">Send alerts when pipeline fails</p>
+              <p className="text-xs text-muted-foreground">Send alerts when workflow fails</p>
             </div>
             <Switch
               aria-label="Notify on Failure"
@@ -824,9 +824,9 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
                   Saving...
                 </>
               ) : isEditing ? (
-                'Update Pipeline'
+                'Update Workflow'
               ) : (
-                'Create Pipeline'
+                'Create Workflow'
               )}
             </Button>
           ) : (

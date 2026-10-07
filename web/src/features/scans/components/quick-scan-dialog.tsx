@@ -27,11 +27,11 @@ import { toast } from 'sonner'
 import { CheckCircle2, Loader2, Save, Zap } from 'lucide-react'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
-  invalidatePipelineRunsCache,
+  invalidateScanRunsCache,
   invalidateScanManagementStatsCache,
   useQuickScan,
-} from '@/lib/api/pipeline-hooks'
-import type { QuickScanResponse } from '@/lib/api/pipeline-types'
+} from '@/lib/api/scan-workflow-hooks'
+import type { QuickScanResponse } from '@/lib/api/scan-workflow-types'
 import { invalidateScanConfigsCache, useSaveQuickScan } from '@/lib/api/scan-hooks'
 import { ScannerSelect } from './scanner-select'
 
@@ -85,7 +85,7 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
     try {
       const result = await quickScan({ targets: targetList, scanner_name: scannerName })
       toast.success(`Quick scan started on ${targetList.length} target(s)`)
-      await Promise.all([invalidatePipelineRunsCache(), invalidateScanManagementStatsCache()])
+      await Promise.all([invalidateScanRunsCache(), invalidateScanManagementStatsCache()])
       setStarted(result ?? null)
       setSaveName(defaultSaveName(scannerName, targetList))
       onSuccess?.()

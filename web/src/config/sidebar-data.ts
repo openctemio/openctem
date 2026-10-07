@@ -46,8 +46,8 @@ import {
   // Access Control icons
   // Integration icons
   Shield,
-  // Pipeline icons
-  GitMerge,
+  // Automation icons
+  Zap,
   // Template & Secret Store icons
   // Attack path icons
   Route,
@@ -68,6 +68,7 @@ import { type SidebarData } from '@/components/types'
 import { Permission, Role } from '@/lib/permissions'
 import {
   ASSETS_SECTION_TABS,
+  SCANS_SECTION_TABS,
   ATTACK_SURFACE_SECTION_TABS,
   BUSINESS_CONTEXT_SECTION_TABS,
   EXPOSURES_SECTION_TABS,
@@ -210,6 +211,8 @@ export const sidebarData: SidebarData = {
           icon: Radar,
           permission: Permission.ScansRead,
           module: 'scans',
+          // Scans | Runs | Workflows are route tabs (SCANS_SECTION_TABS).
+          sections: SCANS_SECTION_TABS,
         },
         // Sensors are a fleet operators open daily (offline sensors, keys,
         // zones), not a preference, so they sit next to Scans rather than in
@@ -491,18 +494,14 @@ export const sidebarData: SidebarData = {
           module: 'findings',
         },
         {
-          title: 'Workflows',
-          url: '/workflows',
-          icon: Workflow,
+          // When something happens, do something: notify, assign, open a
+          // ticket or run a saved scan.
+          title: 'Automations',
+          url: '/automations',
+          icon: Zap,
           permission: Permission.WorkflowsRead,
           module: 'workflows',
-        },
-        {
-          title: 'Scan Pipelines',
-          url: '/pipelines',
-          icon: GitMerge,
-          permission: Permission.ScanWorkflowsRead,
-          module: 'scan_workflows',
+          keywords: ['workflow', 'playbook', 'rule'],
         },
       ],
     },

@@ -57,6 +57,7 @@ export function CommandMenu() {
                     <React.Fragment key={`${navItem.url}-${i}`}>
                       <CommandItem
                         value={navItem.title}
+                        keywords={navItem.keywords ? [...navItem.keywords] : undefined}
                         onSelect={() => {
                           runCommand(() => router.push(navItem.url.toString()))
                         }}
@@ -77,7 +78,7 @@ export function CommandMenu() {
                             // Label first so "secrets" ranks it as a label
                             // match; the section name is a keyword.
                             value={`${section.label} (${navItem.title})`}
-                            keywords={[navItem.title]}
+                            keywords={[navItem.title, ...(section.keywords ?? [])]}
                             onSelect={() => {
                               runCommand(() => router.push(section.href))
                             }}

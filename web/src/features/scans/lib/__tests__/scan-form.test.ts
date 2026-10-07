@@ -54,7 +54,7 @@ describe('schedule mapping', () => {
 })
 
 describe('basicInfoError', () => {
-  it('needs a name, and a scanner (single) or a pipeline (workflow)', () => {
+  it('needs a name, and a scanner (single) or a workflow (workflow)', () => {
     expect(basicInfoError(form({ name: ' ' }))).toMatch(/name/)
     expect(basicInfoError(form({ scannerName: '' }))).toMatch(/scanner/)
     expect(basicInfoError(form({ mode: 'workflow', scannerName: '' }))).toMatch(/workflow/)
@@ -77,7 +77,7 @@ describe('formDataToCreateRequest', () => {
     expect(req.scanner_config).toBeUndefined()
   })
 
-  it('sends the real pipeline id in workflow mode, and no scanner', () => {
+  it('sends the real workflow id in workflow mode, and no scanner', () => {
     const req = formDataToCreateRequest(form({ mode: 'workflow', workflowId: 'p-123' }))
     expect(req.scan_type).toBe('workflow')
     expect(req.scan_workflow_id).toBe('p-123')
@@ -169,7 +169,7 @@ describe('scanConfigToFormData + formDataToUpdateRequest (Edit)', () => {
     ).toBe(false)
   })
 
-  it('keeps a workflow scan on its pipeline', () => {
+  it('keeps a workflow scan on its workflow', () => {
     const c = config({
       scan_type: 'workflow',
       scanner_name: undefined,

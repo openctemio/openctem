@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import useSWR from 'swr'
 import { get, post } from '@/lib/api/client'
 import { scanWorkflowEndpoints } from '@/lib/api/endpoints'
-import type { PipelineStep } from '@/lib/api'
+import type { ScanWorkflowStep } from '@/lib/api'
 import {
   EMPTY_TABLE,
   toCapabilityTable,
@@ -28,7 +28,7 @@ export function useCapabilityTable(): { table: CapabilityTable; isLoading: boole
 }
 
 /** Checks draft steps with the API's graph validator (stores nothing). */
-export function validatePipelineSteps(steps: PipelineStep[]): Promise<GraphValidation> {
+export function validateScanWorkflowSteps(steps: ScanWorkflowStep[]): Promise<GraphValidation> {
   return post<GraphValidation>(scanWorkflowEndpoints.verify(), {
     steps: steps.map((s, idx) => ({
       step_key: s.step_key,
