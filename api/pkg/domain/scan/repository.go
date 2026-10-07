@@ -18,6 +18,9 @@ type Filter struct {
 	Status       *Status
 	Tags         []string
 	Search       string
+	// Archived scans (never-run one-off scans the archive job retired) are
+	// left out of every list.
+	//
 	// ExcludeAdHoc leaves out quick scans that were never saved (Scan.AdHoc):
 	// the Configurations list shows saved configurations only.
 	ExcludeAdHoc bool
@@ -133,4 +136,11 @@ type Repository interface {
 	// still equals dueAt and the scan is active. It returns true for exactly
 	// one caller per due occurrence, across replicas.
 	ClaimScheduledRun(ctx context.Context, tenantID, id shared.ID, dueAt time.Time, next *time.Time) (bool, error)
+}
+
+// ArchivedScan is a one-off scan the archive job archived.
+type ArchivedScan struct {
+	TenantID shared.ID
+	ID       shared.ID
+	Name     string
 }
