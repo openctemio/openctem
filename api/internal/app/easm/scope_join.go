@@ -210,12 +210,8 @@ func (r *joinRoots) match(it JoinItem) string {
 // itemAddress is the item's IP address when the item is an address (or a
 // service on one); "" for names.
 func itemAddress(it JoinItem) string {
-	h := strings.TrimSpace(it.Name)
-	if a, err := netip.ParseAddr(strings.Trim(h, "[]")); err == nil {
+	if a, err := netip.ParseAddr(asset.HostOf(it.Name)); err == nil {
 		return a.Unmap().String()
-	}
-	if ap, err := netip.ParseAddrPort(h); err == nil {
-		return ap.Addr().Unmap().String()
 	}
 	return ""
 }
