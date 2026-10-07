@@ -9,6 +9,7 @@
   - The sensor's `metadata.capability` is kept only when it names one of those candidates.
   - A report that is not bound to a command has no capability.
 - **Port-closure reconciliation** (a port missing from the next scan is closed) now applies to any report bound to `scan.ports`, not only to tools on a name list.
+- **Finding source by capability.** The detection technique of a bound report (SAST, secret, SCA, container, IaC, DAST, EASM, VA, CSPM) comes from its capability, so a third-party tool needs no entry in the tool-name table. Unbound reports keep the name rules. A report bound to `secrets.code` is masked as a secret scan whatever its tool is called.
 - **Required output.** A report that misses the required output of its capability is logged and counted (`capability_contract_warned`) and applied as before. This is warn first, per decision TC13 of RFC-055.
 
 ### Security: a report's capability comes from the platform, never from the sensor alone
