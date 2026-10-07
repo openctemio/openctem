@@ -130,7 +130,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/findings":                                    {classScoped, "route guard on /findings/{id}/**, lists and bulk paths scoped"},
 	"POST /api/v1/findings/import":                        {classScoped, "runs with the uploader's rights: ingest Actor (in-scope assets only, no auto-resolve) and VEX documents applied to in-scope findings only"},
 	"POST /api/v1/findings/$":                             {classScoped, "asset_id through AssertAssetRef (tenant + caller scope), branch bound to the asset (research 21b C1)"},
-	"GET /api/v1/findings/analytics/sources":              {classGap, "L-18 (source analytics counts are tenant-wide)"},
 	"/api/v1/compliance/findings":                         {classScoped, "route guard on /compliance/findings/{id}/**"},
 	"/api/v1/verification-checklists":                     {classScoped, "route guard on the finding id"},
 	"/api/v1/comments":                                    {classScoped, "comment resolved to its finding, finding scope applies"},
@@ -266,7 +265,6 @@ func TestDataSurfaceLookup_LongestPrefixWins(t *testing.T) {
 		"GET /api/v1/compliance/frameworks/":                   classConfig,
 		"POST /api/v1/findings/":                               classScoped,
 		"POST /api/v1/findings/search":                         classScoped,
-		"GET /api/v1/findings/analytics/sources":               classGap,
 	}
 	// An exact key classifies only its own path.
 	if key, _, _ := lookupDataSurface("POST", "/api/v1/findings/search"); key == "POST /api/v1/findings/$" {

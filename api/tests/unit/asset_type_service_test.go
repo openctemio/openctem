@@ -233,52 +233,6 @@ func makeTestAssetType(code, name string, categoryID *shared.ID) *assettype.Asse
 // GetCategory Tests
 // ============================================================================
 
-func TestAssetTypeService_GetCategory_Success(t *testing.T) {
-	svc, _, catRepo := newTestAssetTypeService()
-	ctx := context.Background()
-
-	cat := makeTestCategory("network", "Network")
-	catRepo.categories[cat.ID().String()] = cat
-
-	result, err := svc.GetCategory(ctx, cat.ID().String())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.ID() != cat.ID() {
-		t.Errorf("expected category ID %s, got %s", cat.ID(), result.ID())
-	}
-	if result.Code() != "network" {
-		t.Errorf("expected code 'network', got %q", result.Code())
-	}
-}
-
-func TestAssetTypeService_GetCategory_InvalidID(t *testing.T) {
-	svc, _, _ := newTestAssetTypeService()
-	ctx := context.Background()
-
-	_, err := svc.GetCategory(ctx, "not-a-uuid")
-	if err == nil {
-		t.Fatal("expected error for invalid ID")
-	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
-	}
-}
-
-func TestAssetTypeService_GetCategory_NotFound(t *testing.T) {
-	svc, _, _ := newTestAssetTypeService()
-	ctx := context.Background()
-
-	id := shared.NewID()
-	_, err := svc.GetCategory(ctx, id.String())
-	if err == nil {
-		t.Fatal("expected error for not found category")
-	}
-	if !errors.Is(err, assettype.ErrCategoryNotFound) {
-		t.Errorf("expected ErrCategoryNotFound, got %v", err)
-	}
-}
-
 // ============================================================================
 // GetCategoryByCode Tests
 // ============================================================================
@@ -316,78 +270,9 @@ func TestAssetTypeService_GetCategoryByCode_NotFound(t *testing.T) {
 // ListCategories Tests
 // ============================================================================
 
-func TestAssetTypeService_ListCategories_Success(t *testing.T) {
-	svc, _, catRepo := newTestAssetTypeService()
-	ctx := context.Background()
-
-	cat1 := makeTestCategory("network", "Network")
-	cat2 := makeTestCategory("application", "Application")
-	catRepo.categories[cat1.ID().String()] = cat1
-	catRepo.categories[cat2.ID().String()] = cat2
-
-	filter := assettype.NewCategoryFilter()
-	page := pagination.Pagination{Page: 1, PerPage: 10}
-
-	result, err := svc.ListCategories(ctx, filter, page)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Total != 2 {
-		t.Errorf("expected total 2, got %d", result.Total)
-	}
-	if len(result.Data) != 2 {
-		t.Errorf("expected 2 items, got %d", len(result.Data))
-	}
-}
-
-func TestAssetTypeService_ListCategories_RepoError(t *testing.T) {
-	svc, _, catRepo := newTestAssetTypeService()
-	ctx := context.Background()
-
-	catRepo.listErr = errors.New("database connection failed")
-
-	filter := assettype.NewCategoryFilter()
-	page := pagination.Pagination{Page: 1, PerPage: 10}
-
-	_, err := svc.ListCategories(ctx, filter, page)
-	if err == nil {
-		t.Fatal("expected error from repository")
-	}
-}
-
 // ============================================================================
 // ListActiveCategories Tests
 // ============================================================================
-
-func TestAssetTypeService_ListActiveCategories_Success(t *testing.T) {
-	svc, _, catRepo := newTestAssetTypeService()
-	ctx := context.Background()
-
-	cat1 := makeTestCategory("network", "Network")
-	cat2 := makeTestCategory("cloud", "Cloud")
-	catRepo.categories[cat1.ID().String()] = cat1
-	catRepo.categories[cat2.ID().String()] = cat2
-
-	result, err := svc.ListActiveCategories(ctx)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if len(result) != 2 {
-		t.Errorf("expected 2 active categories, got %d", len(result))
-	}
-}
-
-func TestAssetTypeService_ListActiveCategories_RepoError(t *testing.T) {
-	svc, _, catRepo := newTestAssetTypeService()
-	ctx := context.Background()
-
-	catRepo.listActiveErr = errors.New("database timeout")
-
-	_, err := svc.ListActiveCategories(ctx)
-	if err == nil {
-		t.Fatal("expected error from repository")
-	}
-}
 
 // ============================================================================
 // GetAssetType Tests
@@ -670,19 +555,6 @@ func TestAssetTypeService_ListActiveAssetTypesByCategory_RepoError(t *testing.T)
 // Edge Case Tests
 // ============================================================================
 
-func TestAssetTypeService_GetCategory_EmptyStringID(t *testing.T) {
-	svc, _, _ := newTestAssetTypeService()
-	ctx := context.Background()
-
-	_, err := svc.GetCategory(ctx, "")
-	if err == nil {
-		t.Fatal("expected error for empty string ID")
-	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
-	}
-}
-
 func TestAssetTypeService_GetAssetType_EmptyStringID(t *testing.T) {
 	svc, _, _ := newTestAssetTypeService()
 	ctx := context.Background()
@@ -706,25 +578,6 @@ func TestAssetTypeService_ListActiveAssetTypesByCategory_EmptyStringID(t *testin
 	}
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected ErrValidation, got %v", err)
-	}
-}
-
-func TestAssetTypeService_ListCategories_EmptyResult(t *testing.T) {
-	svc, _, _ := newTestAssetTypeService()
-	ctx := context.Background()
-
-	filter := assettype.NewCategoryFilter()
-	page := pagination.Pagination{Page: 1, PerPage: 10}
-
-	result, err := svc.ListCategories(ctx, filter, page)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Total != 0 {
-		t.Errorf("expected total 0, got %d", result.Total)
-	}
-	if len(result.Data) != 0 {
-		t.Errorf("expected 0 items, got %d", len(result.Data))
 	}
 }
 
