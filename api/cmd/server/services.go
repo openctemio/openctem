@@ -1019,7 +1019,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	repos.EASMDNS.WithAlerts(easmAlerts)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
-	s.CertMonitor.SetSeedSource(repos.EASMSeed)
 	// Stored CT exposures follow their host to its own asset (research/22 P0-9).
 	s.CertMonitor.SetRelinker(repos.Exposure)
 	// Excluded names are neither queried nor discovered (RFC-042 F16).
@@ -1247,7 +1246,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
 	// Simulation targets follow the scan act-scope rule (RFC-050 W3, 21b H4).
-	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.EASMSeed), s.DataScope)
+	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames), s.DataScope)
 	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
@@ -1617,10 +1616,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Names a permanent scope target or seed covers are confirmed
 		// without review (RFC-054 §4.3); the join also backs the start-up
 		// backfill and the re-evaluation after a scope target change.
-		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, repos.EASMSeed, s.Scope, repos.Attribution, repos.Asset, log)
+		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, s.Scope, repos.Attribution, repos.Asset, log)
 		s.ScopeJoin.SetAudit(s.Audit)
 		s.ScopeJoin.SetSettings(s.Tenant)
-		stamper := easmapp.NewScanStamper(repos.Attribution, repos.EASMSeed)
+		stamper := easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)
 		stamper.SetScopeJoin(s.ScopeJoin)
 		s.Ingest.SetScanAttributionStamper(stamper)
 	}
@@ -1647,6 +1646,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetToolContractSource(repos.Sensor)
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)                   // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)                 // Wire component linking for SCA findings
+	s.Ingest.SetWebEndpointRepository(repos.WebEndpoint)             // Web endpoints under their origin asset (RFC-056)
 	s.Ingest.SetRepositoryExtensionRepository(repos.RepoExt)         // Wire repository extension for auto web_url
 	s.Ingest.SetRelationshipRepository(repos.AssetRelationship)      // Wire subdomain-to-domain relationships
 	s.Ingest.SetAssetStateHistoryRepository(repos.AssetStateHistory) // Record appeared/recovered on discovery
@@ -1754,7 +1754,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
-	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed).
+	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails, cfg.Scope.ActiveProof == config.ScopeProofAll)
 
@@ -1790,7 +1790,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
-		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.EASMSeed)),
+		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames)),
 		// Platform sensors and intrusive scans need a verified domain
 		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
 		scan.WithActiveProof(cfg.Scope.ActiveProof),
