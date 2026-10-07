@@ -8,7 +8,10 @@ import (
 	"time"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 
 	"github.com/go-chi/chi/v5"
 
@@ -29,6 +32,11 @@ type ScopeHandler struct {
 	validator *validator.Validator
 	logger    *logger.Logger
 	scopeJoin ScopeJoinReevaluator
+	settings  ScopeSettingsStore
+	dryRun    ScopeDryRunner
+	coverage  ScopeCoverage
+	// activeProof is the operator's SCOPE_ACTIVE_PROOF (read-only view).
+	activeProof string
 }
 
 // NewScopeHandler creates a new scope handler.
@@ -44,6 +52,16 @@ func NewScopeHandler(svc *scope.Service, v *validator.Validator, log *logger.Log
 // the tenant's audit log, with the state before and after (RFC-040 §5.11).
 func (h *ScopeHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
+}
+
+// notifyExclusionReduced tells every administrator that an exclusion in
+// effect was taken away or shortened: scope grew (RFC-054 §7).
+func (h *ScopeHandler) notifyExclusionReduced(tenantID string, e *scopedom.Exclusion, title string) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil || e == nil {
+		return
+	}
+	h.service.NotifyAdmins(context.Background(), id, title, e.ExclusionType().String()+" "+e.Pattern())
 }
 
 // ScopeJoinReevaluator confirms the tenant's pending discovered names that
@@ -127,19 +145,40 @@ func (h *ScopeHandler) exclusionBefore(w http.ResponseWriter, r *http.Request, t
 // Response Types
 // =============================================================================
 
-// ScopeTargetResponse represents a scope target in API responses.
+// ScopeTargetResponse represents a scope entry in API responses (RFC-054 §6.1).
 type ScopeTargetResponse struct {
-	ID          string    `json:"id"`
-	TenantID    string    `json:"tenant_id"`
-	TargetType  string    `json:"target_type"`
-	Pattern     string    `json:"pattern"`
-	Description string    `json:"description,omitempty"`
-	Priority    int       `json:"priority"`
-	Status      string    `json:"status"`
-	Tags        []string  `json:"tags,omitempty"`
-	CreatedBy   string    `json:"created_by,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID         string `json:"id"`
+	TenantID   string `json:"tenant_id"`
+	TargetType string `json:"target_type"`
+	Pattern    string `json:"pattern"`
+	// Covers: name, domain_and_subdomains, addresses or pattern.
+	Covers      string `json:"covers"`
+	Description string `json:"description,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	Priority    int    `json:"priority"`
+	// Status: active, pending, inactive, rejected or expired.
+	Status string `json:"status"`
+	// InEffect: the entry authorizes probes now (active, not expired).
+	InEffect          bool                    `json:"in_effect"`
+	ExpiresAt         *time.Time              `json:"expires_at,omitempty"`
+	MaxTier           string                  `json:"max_tier"`
+	ApprovalsRequired int                     `json:"approvals_required"`
+	Approvals         []ScopeApprovalResponse `json:"approvals"`
+	ApprovedAt        *time.Time              `json:"approved_at,omitempty"`
+	RejectedBy        string                  `json:"rejected_by,omitempty"`
+	RejectedAt        *time.Time              `json:"rejected_at,omitempty"`
+	Tags              []string                `json:"tags,omitempty"`
+	// CreatedBy is the requester: whoever created or last widened the entry.
+	// They cannot approve it.
+	CreatedBy string    `json:"created_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ScopeApprovalResponse is one approval of a scope entry.
+type ScopeApprovalResponse struct {
+	UserID     string    `json:"user_id"`
+	ApprovedAt time.Time `json:"approved_at"`
 }
 
 // ScopeExclusionResponse represents a scope exclusion in API responses.
@@ -190,14 +229,6 @@ type ScopeStatsResponse struct {
 	InventoryInternal int64 `json:"inventory_internal"`
 }
 
-// ScopeMatchResponse represents scope matching result in API responses.
-type ScopeMatchResponse struct {
-	InScope             bool     `json:"in_scope"`
-	Excluded            bool     `json:"excluded"`
-	MatchedTargetIDs    []string `json:"matched_target_ids,omitempty"`
-	MatchedExclusionIDs []string `json:"matched_exclusion_ids,omitempty"`
-}
-
 // =============================================================================
 // Request Types
 // =============================================================================
@@ -209,13 +240,27 @@ type CreateScopeTargetRequest struct {
 	Description string   `json:"description" validate:"max=1000"`
 	Priority    int      `json:"priority" validate:"min=0,max=100"`
 	Tags        []string `json:"tags" validate:"max=20,dive,max=50"`
+	// Reason is the authority statement; required for a one-off entry, a
+	// request and a t2 entry.
+	Reason string `json:"reason" validate:"max=1000"`
+	// ExpiresInDays (1..one_off_max_days) or ExpiresAt makes a one-off entry.
+	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=30"`
+	ExpiresAt     *time.Time `json:"expires_at"`
+	// MaxTier: t0, t1 or t2 (default: the organization's default_max_tier).
+	MaxTier string `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
 }
 
 // UpdateScopeTargetRequest represents the request to update a scope target.
+// A later or removed expiry, or a higher tier, widens the entry.
 type UpdateScopeTargetRequest struct {
-	Description *string  `json:"description" validate:"omitempty,max=1000"`
-	Priority    *int     `json:"priority" validate:"omitempty,min=0,max=100"`
-	Tags        []string `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+	Description   *string    `json:"description" validate:"omitempty,max=1000"`
+	Priority      *int       `json:"priority" validate:"omitempty,min=0,max=100"`
+	Tags          []string   `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+	Reason        *string    `json:"reason" validate:"omitempty,max=1000"`
+	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=30"`
+	ExpiresAt     *time.Time `json:"expires_at"`
+	ClearExpiry   bool       `json:"clear_expiry"`
+	MaxTier       *string    `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
 }
 
 // CreateScopeExclusionRequest represents the request to create a scope exclusion.
@@ -230,12 +275,6 @@ type CreateScopeExclusionRequest struct {
 type UpdateScopeExclusionRequest struct {
 	Reason    *string    `json:"reason" validate:"omitempty,max=1000"`
 	ExpiresAt *time.Time `json:"expires_at"`
-}
-
-// CheckScopeRequest represents the request to check scope matching.
-type CheckScopeRequest struct {
-	AssetType string `json:"asset_type" validate:"required"`
-	Value     string `json:"value" validate:"required"`
 }
 
 // BulkDeleteTargetsRequest represents bulk delete targets request.
@@ -262,18 +301,68 @@ type ScopeBulkOperationResponse struct {
 
 func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 	return ScopeTargetResponse{
-		ID:          t.ID().String(),
-		TenantID:    t.TenantID().String(),
-		TargetType:  t.TargetType().String(),
-		Pattern:     t.Pattern(),
-		Description: t.Description(),
-		Priority:    t.Priority(),
-		Status:      t.Status().String(),
-		Tags:        t.Tags(),
-		CreatedBy:   t.CreatedBy(),
-		CreatedAt:   t.CreatedAt(),
-		UpdatedAt:   t.UpdatedAt(),
+		ID:                t.ID().String(),
+		TenantID:          t.TenantID().String(),
+		TargetType:        t.TargetType().String(),
+		Pattern:           t.Pattern(),
+		Covers:            t.Covers(),
+		Description:       t.Description(),
+		Reason:            t.Reason(),
+		Priority:          t.Priority(),
+		Status:            t.Status().String(),
+		InEffect:          t.InEffect(time.Now()),
+		ExpiresAt:         t.ExpiresAt(),
+		MaxTier:           t.MaxTier().String(),
+		ApprovalsRequired: t.ApprovalsRequired(),
+		Approvals:         approvalsResponse(t.Approvals()),
+		ApprovedAt:        t.ApprovedAt(),
+		RejectedBy:        t.RejectedBy(),
+		RejectedAt:        t.RejectedAt(),
+		Tags:              t.Tags(),
+		CreatedBy:         t.CreatedBy(),
+		CreatedAt:         t.CreatedAt(),
+		UpdatedAt:         t.UpdatedAt(),
 	}
+}
+
+func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
+	out := make([]ScopeApprovalResponse, 0, len(list))
+	for _, a := range list {
+		out = append(out, ScopeApprovalResponse{UserID: a.UserID, ApprovedAt: a.ApprovedAt})
+	}
+	return out
+}
+
+// writeScopeEntryError answers the errors of the scope entry path (step-up
+// and the coded entry errors, RFC-054 §6.1) and reports whether it did. Every
+// route that creates or widens a scope entry answers them the same way.
+func writeScopeEntryError(w http.ResponseWriter, err error) bool {
+	if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+		return true
+	}
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code == "" {
+		return false
+	}
+	if de.Code == "STEP_UP_UNAVAILABLE" {
+		apierror.New(http.StatusForbidden, middleware.CodeStepUpUnavailable, de.Message).WriteJSON(w)
+		return true
+	}
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, shared.ErrForbidden):
+		status = http.StatusForbidden
+	case errors.Is(err, shared.ErrConflict):
+		status = http.StatusConflict
+	}
+	apierror.New(status, apierror.Code(de.Code), de.Message).WriteJSON(w)
+	return true
+}
+
+// scopeActor is the caller as a scope actor.
+func scopeActor(r *http.Request) scope.Actor {
+	ctx := r.Context()
+	return scope.Actor{UserID: middleware.GetUserID(ctx), CanApprove: middleware.HasPermission(ctx, permission.ScopeApprove.String())}
 }
 
 func toScopeExclusionResponse(e *scopedom.Exclusion) ScopeExclusionResponse {
@@ -317,6 +406,9 @@ func (h *ScopeHandler) handleValidationError(w http.ResponseWriter, err error) {
 }
 
 func (h *ScopeHandler) handleServiceError(w http.ResponseWriter, resource string, err error) {
+	if writeScopeEntryError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound),
 		errors.Is(err, scopedom.ErrTargetNotFound),
@@ -410,7 +502,7 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 
 // CreateTarget handles POST /api/v1/scope/targets
 // @Summary      Create scope target
-// @Description  Create a new scope target
+// @Description  Create a scope entry (RFC-054). With attack_surface:scope:approve it needs a recent re-authentication (403 STEP_UP_REQUIRED) and is active at once or pending the organization's approvals; without it, it is a pending request for a one-off entry of one name or address, with a reason
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -437,13 +529,18 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scope.CreateTargetInput{
-		TenantID:    tenantID,
-		TargetType:  req.TargetType,
-		Pattern:     req.Pattern,
-		Description: req.Description,
-		Priority:    req.Priority,
-		Tags:        req.Tags,
-		CreatedBy:   userID,
+		TenantID:      tenantID,
+		TargetType:    req.TargetType,
+		Pattern:       req.Pattern,
+		Description:   req.Description,
+		Priority:      req.Priority,
+		Tags:          req.Tags,
+		CreatedBy:     userID,
+		Reason:        req.Reason,
+		ExpiresAt:     req.ExpiresAt,
+		ExpiresInDays: req.ExpiresInDays,
+		MaxTier:       req.MaxTier,
+		Actor:         scopeActor(r),
 	}
 
 	target, err := h.service.CreateTarget(r.Context(), input)
@@ -502,7 +599,7 @@ func (h *ScopeHandler) GetTarget(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTarget handles PUT /api/v1/scope/targets/{id}
 // @Summary      Update scope target
-// @Description  Update an existing scope target
+// @Description  Update a scope entry. A later or removed expiry, or a higher tier, widens it: that needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED), and sends the entry back to pending when the organization requires approvals (RFC-054)
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -530,9 +627,15 @@ func (h *ScopeHandler) UpdateTarget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scope.UpdateTargetInput{
-		Description: req.Description,
-		Priority:    req.Priority,
-		Tags:        req.Tags,
+		Description:   req.Description,
+		Priority:      req.Priority,
+		Tags:          req.Tags,
+		Reason:        req.Reason,
+		ExpiresAt:     req.ExpiresAt,
+		ExpiresInDays: req.ExpiresInDays,
+		ClearExpiry:   req.ClearExpiry,
+		MaxTier:       req.MaxTier,
+		Actor:         scopeActor(r),
 	}
 
 	before, ok := h.targetBefore(w, r, tenantID, targetID)
@@ -582,7 +685,7 @@ func (h *ScopeHandler) DeleteTarget(w http.ResponseWriter, r *http.Request) {
 
 // ActivateTarget handles POST /api/v1/scope/targets/{id}/activate
 // @Summary      Activate scope target
-// @Description  Activate a scope target
+// @Description  Activate a scope entry. Widening: needs attack_surface:scope:approve and a recent re-authentication, then the organization's approvals
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -601,7 +704,7 @@ func (h *ScopeHandler) ActivateTarget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	target, err := h.service.ActivateTarget(r.Context(), targetID, tenantID)
+	target, err := h.service.ActivateTarget(r.Context(), targetID, tenantID, scopeActor(r))
 	if err != nil {
 		h.handleServiceError(w, "Scope target", err)
 		return
@@ -827,6 +930,9 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditExclusion(r, audit.ActionScopeExclusionUpdated, exclusionID, before, exclusion)
+	if req.ExpiresAt != nil && before.InEffect() && before.ShortensWindow(req.ExpiresAt) {
+		h.notifyExclusionReduced(tenantID, before, "Scope exclusion shortened")
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
@@ -869,6 +975,9 @@ func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditExclusion(r, audit.ActionScopeExclusionDeleted, exclusionID, before, nil)
+	if before.InEffect() {
+		h.notifyExclusionReduced(tenantID, before, "Scope exclusion removed")
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1003,6 +1112,9 @@ func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	h.auditExclusion(r, audit.ActionScopeExclusionDeactivated, exclusionID, before, exclusion)
+	if before.InEffect() {
+		h.notifyExclusionReduced(tenantID, before, "Scope exclusion deactivated")
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toScopeExclusionResponse(exclusion))
@@ -1047,58 +1159,160 @@ func (h *ScopeHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// ScopeDryRunner runs the active-probe gate without dispatching
+// (*scan.Service).
+type ScopeDryRunner interface {
+	DryRunTargets(ctx context.Context, in scansvc.DryRunInput) ([]scansvc.DryRunResult, error)
+}
+
+// ScopeCoverage names what covers each target (*easm.ActiveGate).
+type ScopeCoverage interface {
+	CoverOf(ctx context.Context, tenantID shared.ID, targets []string) (map[string]scopeauth.Via, error)
+}
+
+// SetDryRun wires POST /scope/check (RFC-054 §6.4).
+func (h *ScopeHandler) SetDryRun(r ScopeDryRunner, c ScopeCoverage) { h.dryRun, h.coverage = r, c }
+
+// CheckScopeRequest asks what the gate would do with each target.
+type CheckScopeRequest struct {
+	Targets []string `json:"targets" validate:"required,min=1,max=200,dive,required,max=500"`
+	// SensorPreference: auto (default), tenant or platform.
+	SensorPreference string `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	// Tier: 0 passive, 1 safe active (default), 2 intrusive.
+	Tier *int `json:"tier" validate:"omitempty,min=0,max=2"`
+}
+
+// ScopeCheckVia is what authorizes an allowed target.
+type ScopeCheckVia struct {
+	// Kind: scope_target, seed, verified_domain or internal (zone-gated).
+	Kind    string `json:"kind"`
+	ID      string `json:"id,omitempty"`
+	Pattern string `json:"pattern,omitempty"`
+	// Proof: verified or asserted.
+	Proof string `json:"proof,omitempty"`
+}
+
+// ScopeCheckZone is the scan zone an allowed private target routes to.
+type ScopeCheckZone struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ScopeCheckResult is the gate's answer for one target.
+type ScopeCheckResult struct {
+	Target  string            `json:"target"`
+	Allowed bool              `json:"allowed"`
+	Via     *ScopeCheckVia    `json:"via,omitempty"`
+	Zone    *ScopeCheckZone   `json:"zone,omitempty"`
+	Code    string            `json:"code,omitempty"`
+	Message string            `json:"message,omitempty"`
+	Rule    *scopedom.RuleRef `json:"rule,omitempty"`
+	Fixes   []scopedom.Fix    `json:"fixes,omitempty"`
+}
+
+// CheckScopeResponse lists the answers in input order.
+type CheckScopeResponse struct {
+	Results []ScopeCheckResult `json:"results"`
+}
+
 // CheckScope handles POST /api/v1/scope/check
-// @Summary      Check if value is in scope
-// @Description  Check whether a given asset type and value falls within scope targets and exclusions
+// @Summary      Dry run of the active-probe gate
+// @Description  For each target, what a scan by the caller would do now (RFC-054 §6.4): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. At most 200 targets.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
-// @Param        body  body      CheckScopeRequest  true  "Asset type and value to check"
-// @Success      200   {object}  ScopeMatchResponse
+// @Param        body  body      CheckScopeRequest  true  "Targets"
+// @Success      200   {object}  CheckScopeResponse
 // @Failure      400   {object}  apierror.Error
-// @Failure      401   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /scope/check [post]
 func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
+	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
 	var req CheckScopeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid JSON").WriteJSON(w)
 		return
 	}
-
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
 		return
 	}
-
-	result, err := h.service.CheckScope(r.Context(), tenantID, req.AssetType, req.Value)
+	if h.dryRun == nil || h.coverage == nil {
+		apierror.InternalServerError("the scope check is not available").WriteJSON(w)
+		return
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	tier := 1
+	if req.Tier != nil {
+		tier = *req.Tier
+	}
+	results, err := h.dryRun.DryRunTargets(ctx, scansvc.DryRunInput{TenantID: tid, Targets: req.Targets, SensorPreference: req.SensorPreference, Tier: tier})
 	if err != nil {
 		h.handleServiceError(w, "Scope check", err)
 		return
 	}
-
-	targetIDs := make([]string, len(result.MatchedTargetIDs))
-	for i, id := range result.MatchedTargetIDs {
-		targetIDs[i] = id.String()
+	explain, err := h.service.NewExplainer(ctx, tenantID)
+	if err != nil {
+		h.logger.Error("scope check: explain", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("the scope check failed").WriteJSON(w)
+		return
 	}
-
-	exclusionIDs := make([]string, len(result.MatchedExclusionIDs))
-	for i, id := range result.MatchedExclusionIDs {
-		exclusionIDs[i] = id.String()
+	var allowed []string
+	for _, res := range results {
+		if res.Allowed {
+			allowed = append(allowed, res.Target)
+		}
 	}
-
-	response := ScopeMatchResponse{
-		InScope:             result.InScope,
-		Excluded:            result.Excluded,
-		MatchedTargetIDs:    targetIDs,
-		MatchedExclusionIDs: exclusionIDs,
+	cover := map[string]scopeauth.Via{}
+	if len(allowed) > 0 {
+		if cover, err = h.coverage.CoverOf(ctx, tid, allowed); err != nil {
+			h.logger.Error("scope check: coverage", "error", logger.SanitizeError(err))
+			apierror.InternalServerError("the scope check failed").WriteJSON(w)
+			return
+		}
 	}
-
+	has := func(p string) bool { return middleware.HasPermission(ctx, p) }
+	out := CheckScopeResponse{Results: make([]ScopeCheckResult, 0, len(results))}
+	for _, res := range results {
+		item := ScopeCheckResult{Target: res.Target, Allowed: res.Allowed}
+		if res.Allowed {
+			if v, ok := cover[res.Target]; ok {
+				item.Via = &ScopeCheckVia{Kind: v.Kind, ID: v.ID, Pattern: v.Pattern, Proof: v.Proof}
+			} else {
+				item.Via = &ScopeCheckVia{Kind: "internal"}
+			}
+			if res.ZoneID != "" {
+				item.Zone = &ScopeCheckZone{ID: res.ZoneID, Name: res.ZoneName}
+			}
+			out.Results = append(out.Results, item)
+			continue
+		}
+		code := res.Code
+		var rule *scopedom.RuleRef
+		switch code {
+		case scopedom.RefusalNoEntry:
+			code, rule = explain.Uncovered(res.Target)
+		case scopedom.RefusalExcluded:
+			rule = explain.Exclusion(res.Target)
+		case scopedom.RefusalDenyList:
+			rule = &scopedom.RuleRef{Kind: scopedom.RulePlatformPolicy}
+		}
+		ref := scopedom.NewRefusal(res.Target, code, rule, explain.OneOffDays())
+		if ref.Message == "" {
+			ref.Message = res.Reason
+		}
+		item.Code, item.Message, item.Rule = ref.Code, ref.Message, ref.Rule
+		item.Fixes = scopedom.FilterFixes(ref.Fixes, has)
+		out.Results = append(out.Results, item)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // BulkDeleteTargets handles POST /api/v1/scope/targets/bulk/delete

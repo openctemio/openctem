@@ -7,13 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -53,26 +52,13 @@ func (s *Service) refuseOutOfActScope(ctx context.Context, tenantID shared.ID, f
 	if len(d.RefusedTargets) == 0 {
 		return nil
 	}
-	return actScopeError(d.RefusedTargets)
-}
-
-// actScopeError names the refused targets (bounded, sorted).
-func actScopeError(refused map[string]string) error {
-	keys := make([]string, 0, len(refused))
-	for t := range refused {
-		keys = append(keys, t)
+	refusals := make([]scopedom.Refusal, 0, len(d.RefusedTargets))
+	for t, reason := range d.RefusedTargets {
+		r := scopedom.NewRefusal(t, RefusalCodeForActReason(reason), nil, 0)
+		r.Message = reason
+		refusals = append(refusals, r)
 	}
-	sort.Strings(keys)
-	parts := make([]string, 0, min(len(keys), maxListedRefusals)+1)
-	for i, t := range keys {
-		if i == maxListedRefusals {
-			parts = append(parts, fmt.Sprintf("and %d more", len(keys)-i))
-			break
-		}
-		parts = append(parts, fmt.Sprintf("%s (%s)", t, refused[t]))
-	}
-	return shared.NewDomainError("TARGET_OUT_OF_SCOPE",
-		"You may not scan these targets: "+strings.Join(parts, "; "), shared.ErrValidation)
+	return refusalError(refusals)
 }
 
 // userIDPtr parses an optional user id.
