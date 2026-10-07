@@ -29,6 +29,7 @@ const (
 	SectionAssetLifecycle = "asset_lifecycle"
 	SectionRetest         = "retest"
 	SectionEASM           = "easm"
+	SectionScope          = "scope"
 )
 
 // settingsSectionTargets maps each section key to the field of s it decodes
@@ -47,6 +48,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionAssetLifecycle: &s.AssetLifecycle,
 		SectionRetest:         &s.Retest,
 		SectionEASM:           &s.EASM,
+		SectionScope:          &s.Scope,
 	}
 }
 

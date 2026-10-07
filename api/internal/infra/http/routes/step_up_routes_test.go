@@ -69,6 +69,13 @@ var stepUpRoutes = []string{
 	"GET /api/v1/integrations/github/webhook-secret",
 	"POST /api/v1/integrations/github/webhook-secret/rotate",
 	"PATCH /api/v1/attachments/storage-config",
+	// Widening scope (RFC-054 §6): approving an entry, the settings, and
+	// taking an exclusion out of effect.
+	"PUT /api/v1/scope/settings",
+	"POST /api/v1/scope/targets/{id}/approve",
+	"POST /api/v1/scope/exclusions/{id}/deactivate",
+	"POST /api/v1/scope/exclusions/bulk/delete",
+	"DELETE /api/v1/scope/exclusions/{id}",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -128,6 +135,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
+			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {

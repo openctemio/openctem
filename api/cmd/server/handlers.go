@@ -502,6 +502,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ScopeJoin != nil {
 		handlers.Scope.SetScopeJoin(svc.ScopeJoin)
 	}
+	handlers.Scope.SetSettingsStore(svc.Tenant)
 	handlers.Tool.SetAuditService(svc.Audit)
 	// Configuration changes audited with a before/after diff.
 	handlers.Integration.SetAuditService(svc.Audit)
@@ -632,6 +633,9 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 	if svc.Tenant != nil {
 		svc.Tenant.SetStepUpGate(gate)
+	}
+	if svc.Scope != nil {
+		svc.Scope.SetStepUpGate(gate)
 	}
 }
 

@@ -191,7 +191,7 @@ trends, and attack-surface "recent changes". A change event whose asset is not
 in the inventory is still listed in recent changes, but carries its
 attribution state so the UI shows "Added · needs review" instead of "Added".
 
-## 5. Data model (migration `001149`)
+## 5. Data model (migration `001152`)
 
 `scope_targets` gains:
 
@@ -290,9 +290,21 @@ A **widening** change (a later or removed expiry, a higher tier) needs
 `approvals_required` > 0 (as an exclusion's extended window does). A narrowing
 change (earlier expiry, lower tier) applies at once.
 
-**`POST /targets/{id}/activate`**: widening. With `scope:approve`: step-up,
-then `active` or `pending` as for create. Without it: a request (`pending`,
-at least one approval).
+**`POST /targets/{id}/activate`**: widening. It needs `scope:approve`
+(`403 WIDENING_NEEDS_APPROVER` otherwise) and step-up, then the entry is
+`active` or `pending` as for create. An expired entry is renewed with a new
+expiry through `PUT` instead (`409 ENTRY_EXPIRED`).
+
+While a widened entry is `pending` it authorizes nothing (as an exclusion
+whose window was extended); the UI says so before the change.
+
+Errors carry their code: `ONE_OFF_TOO_LONG`, `ONE_OFF_DISABLED`,
+`REQUEST_NOT_ALLOWED` (403), `REQUEST_MUST_BE_ONE_OFF`,
+`REQUEST_MUST_BE_SINGLE`, `REQUEST_TIER`, `REASON_REQUIRED`,
+`INTRUSIVE_NEEDS_EXPIRY`, `WIDENING_NEEDS_APPROVER` (403),
+`ENTRY_SELF_APPROVAL` (403), `ENTRY_ALREADY_APPROVED`, `ENTRY_NOT_PENDING`,
+`ENTRY_EXPIRED`, `ENTRY_REJECTED` (409), and `STEP_UP_REQUIRED` /
+`STEP_UP_UNAVAILABLE` (403).
 
 `POST /targets/{id}/deactivate`, `DELETE /targets/{id}`,
 `POST /targets/bulk/delete`: narrowing, unchanged.
@@ -318,8 +330,7 @@ the window. The approval rule (approver ≠ requester) stays.
   "default_max_tier": "t1",
 
   "effective_widening_approvals": 1,
-  "admin_count": 2,
-  "active_proof": "platform_sensors"
+  "admin_count": 2
 }
 ```
 
@@ -331,10 +342,12 @@ the window. The approval rule (approver ≠ requester) stays.
 | `widening_approvals` | `null` (default), 0, 1, 2 | `null` → `min(1, admins − 1)` |
 | `default_max_tier` | `t0`, `t1` | `t1` |
 
-The last three fields are read-only. `effective_widening_approvals` never
-exceeds `admin_count − 1` for a value the tenant could not satisfy; a tenant
-with two or more admins cannot go below 1 (S3). `active_proof` is the
-operator's setting (§8.1). `t2` is never a default.
+The last two fields are read-only. `effective_widening_approvals` is capped
+at `admin_count − 1` (the administrators other than the requester can always
+satisfy it), and an organization with two or more admins cannot go below 1
+(S3); intrusive entries always need 1. Unset fields fall back to their
+default on `PUT`. The operator's `active_proof` (§8.1) is added to this
+response by the guardrails PR. `t2` is never a default.
 
 ### 6.4 Dry run: `POST /check` (`scope:read`)
 
@@ -599,7 +612,7 @@ ranges are gated by zones and are not capped.
 | S1 | matcher, tests, docs, this RFC |
 | Authority | one authority check for typed and inventory targets; Ownership-tab bypass removed |
 | Guardrails | PSL, deny list, CIDR caps, `SCOPE_ACTIVE_PROOF` |
-| Entries | migration `001149`, expiry, requests, approvals, step-up, notification, settings, sweep |
+| Entries | migration `001152`, expiry, requests, approvals, step-up, notification, settings, sweep |
 | Discovery | `matches_scope_target` + backfill |
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
