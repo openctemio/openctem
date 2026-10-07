@@ -90,6 +90,28 @@ func (g *ActiveGate) denied(name string) bool {
 	return g.guardrails != nil && g.guardrails.Denies(name)
 }
 
+// CoverOf answers which of the tenant's authorities covers each target
+// (the dry run's "via"); a target nothing covers is absent.
+func (g *ActiveGate) CoverOf(ctx context.Context, tenantID shared.ID, targets []string) (map[string]scopeauth.Via, error) {
+	if err := g.ready(); err != nil {
+		return nil, err
+	}
+	auth, err := scopeauth.Load(ctx, tenantID, g.scope, g.roots)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]scopeauth.Via, len(targets))
+	for _, t := range targets {
+		if v, ok := auth.Covers(t); ok {
+			if auth.Verified(t) {
+				v.Proof = scopeauth.ProofVerified
+			}
+			out[t] = v
+		}
+	}
+	return out, nil
+}
+
 // UnverifiedTargets returns the targets naming an internet host or public
 // address that are not at or under a verified domain of the tenant (an
 // address never is: there is no address proof yet). Implements

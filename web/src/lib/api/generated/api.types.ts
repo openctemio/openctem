@@ -25113,8 +25113,8 @@ export interface paths {
     get?: never
     put?: never
     /**
-     * Check if value is in scope
-     * @description Check whether a given asset type and value falls within scope targets and exclusions
+     * Dry run of the active-probe gate
+     * @description For each target, what a scan by the caller would do now (RFC-054 §6.4): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. At most 200 targets.
      */
     post: {
       parameters: {
@@ -25123,7 +25123,7 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      /** @description Asset type and value to check */
+      /** @description Targets */
       requestBody: {
         content: {
           'application/json': components['schemas']['internal_infra_http_handler.CheckScopeRequest']
@@ -25136,20 +25136,11 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ScopeMatchResponse']
+            'application/json': components['schemas']['internal_infra_http_handler.CheckScopeResponse']
           }
         }
         /** @description Bad Request */
         400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Unauthorized */
-        401: {
           headers: {
             [name: string]: unknown
           }
@@ -37288,6 +37279,21 @@ export interface components {
       passed?: boolean
       reason?: string
     }
+    'github_com_openctemio_openctem_api_pkg_domain_scope.Fix': {
+      action?: string
+      days?: number
+      domain?: string
+      id?: string
+      pattern?: string
+      /** @description Requires is the permission the action needs ("" = anyone who could scan). */
+      requires?: string
+      target_type?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_scope.RuleRef': {
+      id?: string
+      kind?: string
+      pattern?: string
+    }
     'github_com_openctemio_openctem_api_pkg_domain_scoping.AssetSummary': {
       in_business_unit?: number
       total?: number
@@ -39196,8 +39202,17 @@ export interface components {
       reason?: string
     }
     'internal_infra_http_handler.CheckScopeRequest': {
-      asset_type: string
-      value: string
+      /**
+       * @description SensorPreference: auto (default), tenant or platform.
+       * @enum {string}
+       */
+      sensor_preference?: 'auto' | 'tenant' | 'platform'
+      targets: string[]
+      /** @description Tier: 0 passive, 1 safe active (default), 2 intrusive. */
+      tier?: number
+    }
+    'internal_infra_http_handler.CheckScopeResponse': {
+      results?: components['schemas']['internal_infra_http_handler.ScopeCheckResult'][]
     }
     'internal_infra_http_handler.ClassifyFindingRequest': {
       cve_id?: string
@@ -42251,6 +42266,28 @@ export interface components {
       failed_ids?: string[]
       success?: boolean
     }
+    'internal_infra_http_handler.ScopeCheckResult': {
+      allowed?: boolean
+      code?: string
+      fixes?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scope.Fix'][]
+      message?: string
+      rule?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_scope.RuleRef']
+      target?: string
+      via?: components['schemas']['internal_infra_http_handler.ScopeCheckVia']
+      zone?: components['schemas']['internal_infra_http_handler.ScopeCheckZone']
+    }
+    'internal_infra_http_handler.ScopeCheckVia': {
+      id?: string
+      /** @description Kind: scope_target, seed, verified_domain or internal (zone-gated). */
+      kind?: string
+      pattern?: string
+      /** @description Proof: verified or asserted. */
+      proof?: string
+    }
+    'internal_infra_http_handler.ScopeCheckZone': {
+      id?: string
+      name?: string
+    }
     'internal_infra_http_handler.ScopeExclusionResponse': {
       approved_at?: string
       approved_by?: string
@@ -42271,12 +42308,6 @@ export interface components {
       status?: string
       tenant_id?: string
       updated_at?: string
-    }
-    'internal_infra_http_handler.ScopeMatchResponse': {
-      excluded?: boolean
-      in_scope?: boolean
-      matched_exclusion_ids?: string[]
-      matched_target_ids?: string[]
     }
     'internal_infra_http_handler.ScopeSettingsRequest': {
       auto_join_discovered?: boolean
