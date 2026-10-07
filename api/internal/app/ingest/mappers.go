@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"net"
 	"strings"
 	"time"
 
@@ -33,7 +34,7 @@ type ctisResolvedType struct {
 // an unknown sub-type is kept in x_native_sub_type, never refused, and an
 // unknown type is `unclassified`.
 func resolveCTISAssetType(ca *ctis.Asset) ctisResolvedType {
-	raw := mapCTISAssetType(ca.Type)
+	raw := reconcileTypeWithName(mapCTISAssetType(ca.Type), assetNameOf(ca))
 	sub, _ := ca.Properties["sub_type"].(string)
 	if ca.Type == ctis.AssetTypeKubernetes && strings.TrimSpace(sub) == "" {
 		sub = kubernetesSubType(ca.Properties)
@@ -51,6 +52,64 @@ func resolveCTISAssetType(ca *ctis.Asset) ctisResolvedType {
 		out.normSubType = full.SubType
 	}
 	return out
+}
+
+// assetNameOf is the name an ingested CTIS asset is stored under.
+func assetNameOf(ca *ctis.Asset) string {
+	if v := strings.TrimSpace(ca.Value); v != "" {
+		return v
+	}
+	return strings.TrimSpace(ca.Name)
+}
+
+// reconcileTypeWithName corrects a reported type that contradicts the asset's
+// own name. Sensors and importers declare the type, and the API used to store
+// it as given, so a DNS name reported as `ip_address` (a recon tool's target
+// type, a wrong default) showed up in the inventory as an IP address. The name
+// is the identity, so it wins in the two unambiguous cases:
+//   - `ip_address` whose name is a DNS name (not an IP) becomes `domain`;
+//   - `domain`/`subdomain` whose name is an IP literal becomes `ip_address`.
+//
+// Every other type is left as reported.
+func reconcileTypeWithName(t asset.AssetType, name string) asset.AssetType {
+	if name == "" {
+		return t
+	}
+	host := strings.Trim(name, "[]")
+	isIP := net.ParseIP(host) != nil
+	switch t {
+	case asset.AssetTypeIPAddress:
+		if !isIP && looksLikeDNSName(name) {
+			return asset.AssetTypeDomain
+		}
+	case asset.AssetTypeDomain, asset.AssetTypeSubdomain:
+		if isIP {
+			return asset.AssetTypeIPAddress
+		}
+	}
+	return t
+}
+
+// looksLikeDNSName reports a dotted hostname made of letters, digits, hyphens
+// and underscores, with a non-numeric last label: not a CIDR, URL, port or IP.
+func looksLikeDNSName(s string) bool {
+	s = strings.TrimSuffix(strings.ToLower(s), ".")
+	labels := strings.Split(s, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, l := range labels {
+		if l == "" || len(l) > 63 {
+			return false
+		}
+		for _, r := range l {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' && r != '*' {
+				return false
+			}
+		}
+	}
+	last := labels[len(labels)-1]
+	return strings.Trim(last, "0123456789") != ""
 }
 
 // kubernetesSubType reads the kind of a CTIS `kubernetes` asset from

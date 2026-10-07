@@ -30,7 +30,7 @@ var baselinePermissionRow = regexp.MustCompile(`^INSERT INTO public\.permissions
 // permissions. A new permission-seeding migration MUST be added here (every
 // listed file must exist, so a typo fails loudly).
 var permSeedMigrations = []string{
-	"001152_scope_entries.up.sql", // attack_surface:scope:approve (RFC-054)
+	"001155_scope_entries.up.sql", // attack_surface:scope:approve (RFC-054)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
