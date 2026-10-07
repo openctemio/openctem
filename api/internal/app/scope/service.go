@@ -755,18 +755,6 @@ func AssetExclusionValues(assetType, name string, props map[string]any) []string
 	return values
 }
 
-// isAssetInScope checks if any asset value matches any scope target.
-func (s *Service) isAssetInScope(assetValues []string, targets []*scopedom.Target) bool {
-	for _, assetValue := range assetValues {
-		for _, target := range targets {
-			if scopedom.MatchesPattern(target.TargetType(), target.Pattern(), assetValue) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // effectiveExclusions returns the tenant's exclusions that are in effect:
 // approved, active and unexpired. The repository already filters on that;
 // re-checking here keeps a pending or rejected exclusion from ever reaching a
