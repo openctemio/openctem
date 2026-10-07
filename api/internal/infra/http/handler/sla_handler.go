@@ -103,7 +103,7 @@ type CreateSLAPolicyRequest struct {
 	HighDays     int    `json:"high_days" validate:"required,min=1,max=365"`
 	MediumDays   int    `json:"medium_days" validate:"required,min=1,max=365"`
 	LowDays      int    `json:"low_days" validate:"required,min=1,max=365"`
-	InfoDays     int    `json:"info_days" validate:"required,min=1,max=365"`
+	InfoDays     int    `json:"info_days" validate:"min=0,max=365"` // 0 = no SLA for informational findings
 	// P0Days..P3Days are optional; an omitted class keeps its default window.
 	P0Days              *int  `json:"p0_days" validate:"omitempty,min=1,max=365"`
 	P1Days              *int  `json:"p1_days" validate:"omitempty,min=1,max=365"`
@@ -122,7 +122,7 @@ type UpdateSLAPolicyRequest struct {
 	HighDays            *int    `json:"high_days" validate:"omitempty,min=1,max=365"`
 	MediumDays          *int    `json:"medium_days" validate:"omitempty,min=1,max=365"`
 	LowDays             *int    `json:"low_days" validate:"omitempty,min=1,max=365"`
-	InfoDays            *int    `json:"info_days" validate:"omitempty,min=1,max=365"`
+	InfoDays            *int    `json:"info_days" validate:"omitempty,min=0,max=365"` // 0 = no SLA for informational findings
 	P0Days              *int    `json:"p0_days" validate:"omitempty,min=1,max=365"`
 	P1Days              *int    `json:"p1_days" validate:"omitempty,min=1,max=365"`
 	P2Days              *int    `json:"p2_days" validate:"omitempty,min=1,max=365"`

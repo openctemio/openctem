@@ -373,32 +373,20 @@ func registerCapabilityRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Capabilities routes (read - list all platform + tenant custom capabilities)
+	// One collection: the platform capabilities and the organization's own
+	// custom ones (source=platform|custom). include=usage replaces the former
+	// usage-stats routes. Custom capabilities are created, changed and deleted
+	// with the custom-tool permissions; a platform capability or another
+	// organization's custom one is not found (the service resolves by tenant).
 	router.Group("/api/v1/capabilities", func(r Router) {
-		// Get all capability categories (must be before /{id})
+		r.GET("/", h.List, middleware.Require(permission.ToolsRead))
+		// Before /{id}.
 		r.GET("/categories", h.GetCategories, middleware.Require(permission.ToolsRead))
-		// List by category (must be before /{id})
-		r.GET("/by-category/{category}", h.ListCapabilitiesByCategory, middleware.Require(permission.ToolsRead))
-		// List all capabilities (no pagination, for dropdowns)
-		r.GET("/all", h.ListAllCapabilities, middleware.Require(permission.ToolsRead))
-		// Batch get usage stats (must be before /{id})
-		r.POST("/usage-stats", h.GetCapabilitiesUsageStatsBatch, middleware.Require(permission.ToolsRead))
-		// List capabilities with pagination
-		r.GET("/", h.ListCapabilities, middleware.Require(permission.ToolsRead))
-		// Get capability by ID
-		r.GET("/{id}", h.GetCapability, middleware.Require(permission.ToolsRead))
-		// Get usage stats for a capability
-		r.GET("/{id}/usage-stats", h.GetCapabilityUsageStats, middleware.Require(permission.ToolsRead))
-	}, tenantMiddlewares...)
+		r.GET("/{id}", h.Get, middleware.Require(permission.ToolsRead))
 
-	// Custom Capabilities routes (tenant-specific capabilities)
-	router.Group("/api/v1/custom-capabilities", func(r Router) {
-		// Create custom capability
-		r.POST("/", h.CreateCustomCapability, middleware.Require(permission.TenantToolsWrite))
-		// Update custom capability
-		r.PUT("/{id}", h.UpdateCustomCapability, middleware.Require(permission.TenantToolsWrite))
-		// Delete custom capability
-		r.DELETE("/{id}", h.DeleteCustomCapability, middleware.Require(permission.TenantToolsDelete))
+		r.POST("/", h.Create, middleware.Require(permission.ToolsWrite))
+		r.PUT("/{id}", h.Update, middleware.Require(permission.ToolsWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ToolsDelete))
 	}, tenantMiddlewares...)
 }
 

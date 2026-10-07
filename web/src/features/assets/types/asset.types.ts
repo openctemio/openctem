@@ -5,6 +5,7 @@
  */
 
 import type { Status } from '@/features/shared/types'
+import type { CriticalityLevel } from '@/lib/criticality'
 import {
   LEGACY_ASSET_CATEGORY_LABELS,
   type LegacyAssetCategory,
@@ -541,32 +542,11 @@ export const ASSET_TYPE_COLORS: Record<AssetType, { bg: string; text: string }> 
 }
 
 /**
- * Asset Criticality Level
- * Indicates the business importance of the asset
+ * Asset Criticality Level: the business importance of the asset, with `none` =
+ * Not rated. The scale (values, order, labels) is the shared @/lib/criticality.
  */
-export type Criticality = 'low' | 'medium' | 'high' | 'critical'
-
-export const CRITICALITY_LABELS: Record<Criticality, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  critical: 'Critical',
-}
-
-export const CRITICALITY_DESCRIPTIONS: Record<Criticality, string> = {
-  low: 'Non-critical asset with minimal business impact',
-  medium: 'Standard business asset with moderate impact',
-  high: 'Important asset with significant business impact',
-  critical: 'Mission-critical asset essential to business operations',
-}
-
-export const CRITICALITY_COLORS: Record<Criticality, { bg: string; text: string; border: string }> =
-  {
-    low: { bg: 'bg-slate-500/15', text: 'text-slate-600', border: 'border-slate-500/30' },
-    medium: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
-    high: { bg: 'bg-orange-500/15', text: 'text-orange-600', border: 'border-orange-500/30' },
-    critical: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
-  }
+export type Criticality = CriticalityLevel
+export { CRITICALITY_LABELS, CRITICALITY_DESCRIPTIONS } from '@/lib/criticality'
 
 /**
  * CIA Impact Rating (CTEM Scoping critical-asset register)

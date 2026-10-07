@@ -78,35 +78,3 @@ func (h *AssetImportHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
 }
-
-// ImportKubernetes handles POST /api/v1/assets/import/kubernetes
-func (h *AssetImportHandler) ImportKubernetes(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	// Cap body at 10 MB — K8s cluster exports are structured data, not
-	// binary blobs; even a large cluster fits. Unbounded body + decode
-	// would let an attacker OOM the process with a multi-GB JSON.
-	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
-
-	var input asset.K8sDiscoveryInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		apierror.BadRequest("invalid request body").WriteJSON(w)
-		return
-	}
-
-	result, err := h.service.ImportKubernetes(r.Context(), tenantID, input)
-	if err != nil {
-		if strings.Contains(err.Error(), "validation") {
-			apierror.BadRequest(err.Error()).WriteJSON(w)
-		} else {
-			h.logger.Error("Kubernetes import failed", "error", err)
-			apierror.InternalServerError("import failed").WriteJSON(w)
-		}
-		return
-	}
-	h.auditImport(r, "kubernetes", result)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(result)
-}
