@@ -3066,6 +3066,13 @@ definitions:
         type: integer
       rejected:
         type: integer
+      review_by_reason:
+        additionalProperties:
+          type: integer
+        description: |-
+          ReviewByReason counts the review queue (needs_review and candidate)
+          by the rule that put each asset there (RFC-054 §6.6).
+        type: object
       review_oldest_since:
         type: string
     type: object
@@ -3148,6 +3155,13 @@ definitions:
         type: string
       confidence:
         type: integer
+      covered_by:
+        allOf:
+        - $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scopeauth.Via'
+        description: |-
+          CoveredBy is the caller's scope target, seed or verified domain that
+          covers the name (RFC-054 §6.6); nil means confirming it widens scope,
+          so the UI offers "add scope entry" first.
       evidence:
         items:
           $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence'
@@ -3656,6 +3670,17 @@ definitions:
       window_days:
         description: WindowDays is the freshness window the stats were computed against.
         type: integer
+    type: object
+  github_com_openctemio_openctem_api_internal_app_scopeauth.Via:
+    properties:
+      id:
+        type: string
+      kind:
+        type: string
+      pattern:
+        type: string
+      proof:
+        type: string
     type: object
   github_com_openctemio_openctem_api_internal_app_sensorpairing.View:
     properties:
@@ -6138,8 +6163,15 @@ definitions:
           out_of_scope: confirmed, but no scope target, seed or verified domain
           covers it (confirmation alone does not authorize active checks).
         type: string
+      blocked_code:
+        description: |-
+          BlockedCode is the structured refusal code (RFC-054 §6.5) for
+          active_checks_blocked_by.
+        type: string
       confidence:
         type: integer
+      covered_by:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_internal_app_scopeauth.Via'
       decided_at:
         type: string
       evidence:
@@ -6154,6 +6186,13 @@ definitions:
         type: string
       recorded:
         type: boolean
+      scope_status:
+        description: |-
+          ScopeStatus: in_scope, out_of_scope, internal (zone-gated) or
+          not_applicable. CoveredBy is the organization's scope target, seed or
+          verified domain that covers it (RFC-054 §6.6). Removing the scope entry
+          keeps the asset and its findings; active checks stop (out_of_scope).
+        type: string
       state:
         description: |-
           State: confirmed, needs_review, candidate, dependency, monitor_only,
@@ -6203,12 +6242,24 @@ definitions:
     type: object
   internal_infra_http_handler.AssetChangeResponse:
     properties:
+      asset_id:
+        type: string
       asset_name:
         example: new-api.example.com
         type: string
       asset_type:
         example: service
         type: string
+      attribution_state:
+        description: |-
+          AttributionState: confirmed, needs_review, candidate, dependency,
+          monitor_only, rejected, or empty for an asset with no record (legacy,
+          confirmed). InInventory is false for the review queue and rejected
+          assets, so the UI shows "Added · needs review" (RFC-054 §4.4).
+        example: needs_review
+        type: string
+      in_inventory:
+        type: boolean
       timestamp:
         example: "2024-01-15T10:30:00Z"
         type: string
@@ -23935,6 +23986,10 @@ paths:
       - description: Substring of the asset name
         in: query
         name: search
+        type: string
+      - description: Only rows set by this attribution rule (e.g. fqdn_under_asserted_root)
+        in: query
+        name: reason
         type: string
       - default: 1
         description: Page number

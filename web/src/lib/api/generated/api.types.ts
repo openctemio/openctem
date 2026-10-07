@@ -11325,6 +11325,8 @@ export interface paths {
           min_confidence?: number
           /** @description Substring of the asset name */
           search?: string
+          /** @description Only rows set by this attribution rule (e.g. fqdn_under_asserted_root) */
+          reason?: string
           /** @description Page number */
           page?: number
           /** @description Items per page */
@@ -36521,6 +36523,13 @@ export interface components {
       monitor_only?: number
       needs_review?: number
       rejected?: number
+      /**
+       * @description ReviewByReason counts the review queue (needs_review and candidate)
+       *     by the rule that put each asset there (RFC-054 §6.6).
+       */
+      review_by_reason?: {
+        [key: string]: number
+      }
       review_oldest_since?: string
     }
     'github_com_openctemio_openctem_api_internal_app_easm.Decision': {
@@ -36565,6 +36574,12 @@ export interface components {
     'github_com_openctemio_openctem_api_internal_app_easm.ReviewItem': {
       asset_id?: string
       confidence?: number
+      /**
+       * @description CoveredBy is the caller's scope target, seed or verified domain that
+       *     covers the name (RFC-054 §6.6); nil means confirming it widens scope,
+       *     so the UI offers "add scope entry" first.
+       */
+      covered_by?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scopeauth.Via']
       evidence?: components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence'][]
       in_queue_since?: string
       last_seen?: string
@@ -36853,6 +36868,12 @@ export interface components {
       total_scannable?: number
       /** @description WindowDays is the freshness window the stats were computed against. */
       window_days?: number
+    }
+    'github_com_openctemio_openctem_api_internal_app_scopeauth.Via': {
+      id?: string
+      kind?: string
+      pattern?: string
+      proof?: string
     }
     'github_com_openctemio_openctem_api_internal_app_sensorpairing.View': {
       code?: string
@@ -38167,13 +38188,26 @@ export interface components {
        *     covers it (confirmation alone does not authorize active checks).
        */
       active_checks_blocked_by?: string
+      /**
+       * @description BlockedCode is the structured refusal code (RFC-054 §6.5) for
+       *     active_checks_blocked_by.
+       */
+      blocked_code?: string
       confidence?: number
+      covered_by?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scopeauth.Via']
       decided_at?: string
       evidence?: components['schemas']['internal_infra_http_handler.AssetAttributionEvidence'][]
       /** @description HumanDecided: a person set the state; automation will not change it. */
       human_decided?: boolean
       reason?: string
       recorded?: boolean
+      /**
+       * @description ScopeStatus: in_scope, out_of_scope, internal (zone-gated) or
+       *     not_applicable. CoveredBy is the organization's scope target, seed or
+       *     verified domain that covers it (RFC-054 §6.6). Removing the scope entry
+       *     keeps the asset and its findings; active checks stop (out_of_scope).
+       */
+      scope_status?: string
       /**
        * @description State: confirmed, needs_review, candidate, dependency, monitor_only,
        *     rejected. An asset with no record is a legacy asset and reports
@@ -38198,10 +38232,20 @@ export interface components {
       updated?: number
     }
     'internal_infra_http_handler.AssetChangeResponse': {
+      asset_id?: string
       /** @example new-api.example.com */
       asset_name?: string
       /** @example service */
       asset_type?: string
+      /**
+       * @description AttributionState: confirmed, needs_review, candidate, dependency,
+       *     monitor_only, rejected, or empty for an asset with no record (legacy,
+       *     confirmed). InInventory is false for the review queue and rejected
+       *     assets, so the UI shows "Added · needs review" (RFC-054 §4.4).
+       * @example needs_review
+       */
+      attribution_state?: string
+      in_inventory?: boolean
       /** @example 2024-01-15T10:30:00Z */
       timestamp?: string
       /** @example added */
