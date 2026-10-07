@@ -315,10 +315,10 @@ print_header "Section 8: Capabilities"
 
 if ! check_critical "Capabilities"; then :; else
 
-print_test "List all capabilities"
-do_request "GET" "/api/v1/capabilities/all" "" "Authorization: Bearer $ACCESS_TOKEN"
+print_test "List capabilities with their usage"
+do_request "GET" "/api/v1/capabilities?per_page=100&include=usage" "" "Authorization: Bearer $ACCESS_TOKEN"
 if [ "$HTTP_CODE" = "200" ]; then
-    print_success "All capabilities listed"
+    print_success "Capabilities listed"
 else
     print_failure "List capabilities" "Expected 200, got $HTTP_CODE"
 fi

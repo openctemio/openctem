@@ -184,64 +184,23 @@ fi
 fi
 
 # =============================================================================
-# Section 5: Trigger Sync
+# Section 5: Feed syncs are not an organization action
 # =============================================================================
-print_header "Section 5: Trigger Sync"
+print_header "Section 5: Feed syncs are not an organization action"
 
-if ! check_critical "Trigger Sync"; then :; else
-
-print_test "Enable EPSS sync"
-do_request "PATCH" "/api/v1/threat-intel/sync/epss" "{\"enabled\": true}" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
-    print_success "EPSS sync enabled"
-elif [ "$HTTP_CODE" = "403" ]; then
-    print_success "EPSS sync enable handled (permission: $HTTP_CODE)"
-else
-    print_info "Response: $(echo "$BODY" | head -c 200)"
-    print_failure "Enable EPSS sync" "Got $HTTP_CODE"
-fi
-
-print_test "Trigger sync for all sources"
-do_request "POST" "/api/v1/threat-intel/sync" "{\"source\": \"all\"}" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
-    print_success "Sync triggered for all sources"
-elif [ "$HTTP_CODE" = "206" ]; then
-    # 206 Partial Content = some sources failed (external services unavailable)
-    print_success "Sync triggered (partial: some sources unavailable)"
-elif [ "$HTTP_CODE" = "500" ]; then
-    print_success "Sync trigger endpoint reachable (server error: $HTTP_CODE)"
-elif [ "$HTTP_CODE" = "403" ]; then
-    print_success "Sync trigger handled (permission: $HTTP_CODE)"
-else
-    print_info "Response: $(echo "$BODY" | head -c 200)"
-    print_failure "Trigger sync" "Got $HTTP_CODE"
-fi
-
-print_test "Trigger sync for EPSS only"
-do_request "POST" "/api/v1/threat-intel/sync" "{\"source\": \"epss\"}" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
-    print_success "EPSS sync triggered"
-elif [ "$HTTP_CODE" = "206" ]; then
-    print_success "EPSS sync triggered (partial: external source unavailable)"
-elif [ "$HTTP_CODE" = "500" ]; then
-    print_success "EPSS sync trigger reachable (server error: $HTTP_CODE)"
-elif [ "$HTTP_CODE" = "403" ]; then
-    print_success "EPSS sync trigger handled (permission: $HTTP_CODE)"
-else
-    print_failure "Trigger EPSS sync" "Got $HTTP_CODE"
-fi
-
-print_test "Disable EPSS sync"
-do_request "PATCH" "/api/v1/threat-intel/sync/epss" "{\"enabled\": false}" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
-    print_success "EPSS sync disabled"
-elif [ "$HTTP_CODE" = "403" ]; then
-    print_success "EPSS sync disable handled (permission: $HTTP_CODE)"
-else
-    print_failure "Disable EPSS sync" "Got $HTTP_CODE"
-fi
-
-fi
+# The feeds are platform-wide: an organization can neither run nor toggle a
+# sync. The write routes do not exist on the tenant API (405); the platform
+# operator uses /api/v1/admin/threat-intel.
+for method_path in "POST /api/v1/threat-intel/sync" "PATCH /api/v1/threat-intel/sync/epss"; do
+    method=${method_path%% *}; path=${method_path#* }
+    print_test "$method $path is not served"
+    do_request "$method" "$path" "{}" "Authorization: Bearer $ACCESS_TOKEN"
+    if [ "$HTTP_CODE" = "405" ] || [ "$HTTP_CODE" = "404" ]; then
+        print_success "$method $path answers $HTTP_CODE"
+    else
+        print_failure "$method $path" "Got $HTTP_CODE, want 405 or 404"
+    fi
+done
 
 # =============================================================================
 # Section 6: EPSS Scores

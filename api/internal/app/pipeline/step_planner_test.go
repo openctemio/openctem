@@ -161,9 +161,50 @@ func TestStepDispatch_TenantRunnerOnlyNeverGoesToPlatform(t *testing.T) {
 	if len(created.cmds) != 1 {
 		t.Fatalf("commands = %d", len(created.cmds))
 	}
+	// The tenant's own sensors take it, and none is chosen up front: any
+	// of them that has the tool may claim it (research/49 W27).
 	c := created.cmds[0]
-	if c.IsPlatformJob || c.SensorID == nil || *c.SensorID != own {
-		t.Fatalf("platform=%v sensor=%v, want the tenant's own sensor", c.IsPlatformJob, c.SensorID)
+	if c.IsPlatformJob || c.SensorID != nil {
+		t.Fatalf("platform=%v sensor=%v, want an unpinned tenant command", c.IsPlatformJob, c.SensorID)
+	}
+	_ = own
+}
+
+// A step command is never pinned to one sensor, whatever the preference:
+// auto with a tenant sensor that has the tool leaves it to every such
+// sensor; platform routing makes it a platform job.
+func TestStepDispatch_NeverPinsASensor(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		pref     pipelinedom.SensorPreference
+		selector SensorSelector
+		platform bool
+	}{
+		{"auto, tenant sensor", pipelinedom.SensorPreferenceAuto, nil, false},
+		{"tenant", pipelinedom.SensorPreferenceTenant, nil, false},
+		{"platform", pipelinedom.SensorPreferencePlatform, platformSelector{}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, run, _, _, _ := gatingFixture(map[string]pipelinedom.StepRunStatus{"a": pipelinedom.StepRunStatusPending}, nil)
+			tpl, _ := s.templateRepo.GetWithSteps(context.Background(), run.PipelineID)
+			tpl.Steps[0].Tool = "nuclei"
+			tpl.Settings.SensorPreference = tc.pref
+			s.sensorRepo = tenantSensors{id: shared.NewID()}
+			s.sensorSelector = tc.selector
+			created := &capturingCommands{}
+			s.commandRepo = created
+			run.Context = map[string]any{"targets": []string{"example.com"}}
+			if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
+				t.Fatal(err)
+			}
+			if len(created.cmds) != 1 {
+				t.Fatalf("commands = %d", len(created.cmds))
+			}
+			c := created.cmds[0]
+			if c.SensorID != nil || c.IsPlatformJob != tc.platform {
+				t.Fatalf("platform=%v sensor=%v, want platform=%v and no pinned sensor", c.IsPlatformJob, c.SensorID, tc.platform)
+			}
+		})
 	}
 }
 
