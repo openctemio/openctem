@@ -34,7 +34,11 @@ vi.mock('@/features/scans/components', () => ({
 vi.mock('@/features/scans/components/scan-config-detail-sheet', () => ({
   ScanConfigDetailSheet: () => null,
 }))
-vi.mock('@/features/scans/components/scan-runs-tab', () => ({ ScanRunsTab: () => null }))
+vi.mock('@/features/scans/components/scans-section-tabs', () => ({
+  ScansPageHeader: () => null,
+  ScansSectionTabs: () => null,
+  ScanCreateActions: () => null,
+}))
 vi.mock('@/features/sensors/components/sensor-opt-in-banner', () => ({
   SensorOptInBanner: () => null,
 }))

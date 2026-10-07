@@ -5,7 +5,7 @@
  *
  * Affordance only: these lookups read the served table and never decide
  * more than the API does. Every save is validated by the API
- * (stage.ValidateGraph), and POST /pipelines/verify reports the same
+ * (stage.ValidateGraph), and POST /workflows/verify reports the same
  * issues while editing.
  */
 
@@ -15,7 +15,7 @@ import {
   type FlowEdgeLike,
   wouldCreateCycle,
 } from '@/components/flow/connection-rules'
-import type { PipelineStep } from '@/lib/api'
+import type { ScanWorkflowStep } from '@/lib/api'
 import { generateStepKey, generateTempStepId } from '@/lib/utils'
 
 type S = components['schemas']
@@ -112,7 +112,7 @@ export function toCapabilityTable(list: ScanStageList | undefined): CapabilityTa
  */
 export function capabilityForStep(
   table: CapabilityTable,
-  step: Pick<PipelineStep, 'tool' | 'capabilities'>
+  step: Pick<ScanWorkflowStep, 'tool' | 'capabilities'>
 ): Capability | null {
   const words = (step.capabilities ?? []).map((c) => c.toLowerCase().trim())
   const byWord = table.capabilities.find((c) => words.includes(c.key))
@@ -153,7 +153,7 @@ function portList(table: CapabilityTable, ports: string[]): string {
  */
 export function checkStepConnection(
   table: CapabilityTable,
-  steps: PipelineStep[],
+  steps: ScanWorkflowStep[],
   edges: FlowEdgeLike[],
   sourceId: string,
   targetId: string
@@ -196,7 +196,7 @@ export function checkStepConnection(
 }
 
 /** Edges between steps (dependencies), as source/target step ids. */
-export function stepEdges(steps: PipelineStep[]): FlowEdgeLike[] {
+export function stepEdges(steps: ScanWorkflowStep[]): FlowEdgeLike[] {
   const byKey = new Map(steps.map((s) => [s.step_key, s.id]))
   const edges: FlowEdgeLike[] = []
   for (const s of steps) {
@@ -215,11 +215,11 @@ export function stepEdges(steps: PipelineStep[]): FlowEdgeLike[] {
  */
 export function insertAdapterStep(
   table: CapabilityTable,
-  steps: PipelineStep[],
+  steps: ScanWorkflowStep[],
   sourceId: string,
   targetId: string,
   capabilityKey: string
-): PipelineStep[] {
+): ScanWorkflowStep[] {
   const cap = table.capabilities.find((c) => c.key === capabilityKey)
   const source = steps.find((s) => s.id === sourceId)
   const target = steps.find((s) => s.id === targetId)
@@ -228,7 +228,7 @@ export function insertAdapterStep(
   const key = generateStepKey(cap.defaultTool || cap.key)
   const sp = source.ui_position ?? { x: 0, y: 0 }
   const tp = target.ui_position ?? { x: sp.x + 400, y: sp.y }
-  const adapter: PipelineStep = {
+  const adapter: ScanWorkflowStep = {
     id: generateTempStepId(),
     step_key: key,
     name: cap.name,

@@ -4,7 +4,7 @@
  * Step 3: how the scan is split into jobs and its reliability settings.
  * (The option checkboxes and the intensity slider that used to be here wrote
  * scanner_config keys nothing reads; scanner-specific settings belong to the
- * scan profile or the pipeline step.)
+ * scan profile or the workflow step.)
  */
 
 'use client'
@@ -54,7 +54,7 @@ export function OptionsStep({ data, onChange }: OptionsStepProps) {
         </p>
       </div>
 
-      {/* Execution timeout & retry config — wired to backend pipeline_runs
+      {/* Execution timeout & retry config — wired to backend scan_runs
           fields. Kept under a "Reliability" group so it's discoverable but not
           in the way of the main options. */}
       <div className="space-y-4 rounded-lg border p-4">

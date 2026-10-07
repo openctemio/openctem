@@ -1303,79 +1303,79 @@ export const capabilityEndpoints = {
 } as const
 
 // ============================================
-// PIPELINE ENDPOINTS
+// SCAN_WORKFLOW ENDPOINTS
 // ============================================
 
-import type { PipelineListFilters, PipelineRunListFilters } from './pipeline-types'
+import type { ScanWorkflowListFilters, ScanRunListFilters } from './scan-workflow-types'
 import type { WorkflowListFilters, WorkflowRunListFilters } from './workflow-types'
 
 /**
- * Pipeline endpoints for managing workflow pipelines
- * Pipelines are templates for multi-step scan orchestration
+ * Scan workflow endpoints: the graph of steps a scan runs
+ * (GET/POST /api/v1/scan-workflows, scans:workflows:*).
  */
 export const scanWorkflowEndpoints = {
   /**
-   * List pipelines with optional filters
+   * List workflows with optional filters
    */
-  list: (filters?: PipelineListFilters) => {
+  list: (filters?: ScanWorkflowListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
     return `/api/v1/scan-workflows${queryString}`
   },
 
   /**
-   * Get pipeline by ID
+   * Get workflow by ID
    */
-  get: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}`,
+  get: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}`,
 
   /**
-   * Create a new pipeline
+   * Create a new workflow
    */
   create: () => '/api/v1/scan-workflows',
 
   /**
-   * Update pipeline
+   * Update workflow
    */
-  update: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}`,
+  update: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}`,
 
   /**
-   * Delete pipeline
+   * Delete workflow
    */
-  delete: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}`,
+  delete: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}`,
 
   /**
-   * Activate pipeline
+   * Activate workflow
    */
-  activate: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}/activate`,
+  activate: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}/activate`,
 
   /**
-   * Deactivate pipeline
+   * Deactivate workflow
    */
-  deactivate: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}/deactivate`,
+  deactivate: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}/deactivate`,
 
   /**
-   * Clone pipeline
+   * Clone workflow
    */
-  clone: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}/clone`,
+  clone: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}/clone`,
 
   /**
-   * Add step to pipeline
+   * Add step to workflow
    */
-  addStep: (pipelineId: string) => `/api/v1/scan-workflows/${pipelineId}/steps`,
+  addStep: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}/steps`,
 
   /**
    * Update step
    */
-  updateStep: (pipelineId: string, stepId: string) =>
-    `/api/v1/scan-workflows/${pipelineId}/steps/${stepId}`,
+  updateStep: (workflowId: string, stepId: string) =>
+    `/api/v1/scan-workflows/${workflowId}/steps/${stepId}`,
 
   /**
    * Delete step
    */
-  deleteStep: (pipelineId: string, stepId: string) =>
-    `/api/v1/scan-workflows/${pipelineId}/steps/${stepId}`,
+  deleteStep: (workflowId: string, stepId: string) =>
+    `/api/v1/scan-workflows/${workflowId}/steps/${stepId}`,
 
   /**
-   * Check a draft pipeline's steps as a workflow graph (stores nothing)
+   * Check a draft workflow's steps as a workflow graph (stores nothing)
    */
   verify: () => '/api/v1/scan-workflows/verify',
 
@@ -1386,7 +1386,7 @@ export const scanWorkflowEndpoints = {
 } as const
 
 /**
- * Pipeline Run endpoints
+ * Scan run endpoints: one execution of a scan (scans:read)
  */
 /**
  * Scan zone endpoints (RFC-023): tenant from the JWT.
@@ -1405,20 +1405,20 @@ export const scanZoneEndpoints = {
 
 export const scanRunEndpoints = {
   /**
-   * List pipeline runs with optional filters
+   * List workflow runs with optional filters
    */
-  list: (filters?: PipelineRunListFilters) => {
+  list: (filters?: ScanRunListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
     return `/api/v1/scan-runs${queryString}`
   },
 
   /**
-   * Get pipeline run by ID
+   * Get workflow run by ID
    */
   get: (runId: string) => `/api/v1/scan-runs/${runId}`,
 
   /**
-   * Cancel a running pipeline
+   * Cancel a running workflow
    */
   cancel: (runId: string) => `/api/v1/scan-runs/${runId}/cancel`,
 
@@ -1451,7 +1451,7 @@ export const scanRunEndpoints = {
  */
 export const scanManagementEndpoints = {
   /**
-   * Get overview stats (pipelines, scans, jobs)
+   * Get overview stats (workflows, scans, jobs)
    */
   stats: () => '/api/v1/scans/overview-stats',
 
@@ -1467,7 +1467,7 @@ export const scanManagementEndpoints = {
 
 /**
  * Workflow endpoints for managing automation workflows
- * Workflows are event-driven automation pipelines with visual graph builder
+ * Workflows are event-driven automation workflows with visual graph builder
  */
 export const workflowEndpoints = {
   /**
@@ -1538,7 +1538,7 @@ export const workflowEndpoints = {
 } as const
 
 /**
- * Workflow Run endpoints
+ * Scan run endpoints: one execution of a scan (scans:read)
  */
 export const workflowRunEndpoints = {
   /**
@@ -1939,8 +1939,8 @@ export const endpoints = {
   scanProfiles: scanProfileEndpoints,
   scannerTemplates: scannerTemplateEndpoints,
   tools: toolEndpoints,
-  pipelines: scanWorkflowEndpoints,
-  pipelineRuns: scanRunEndpoints,
+  scanWorkflows: scanWorkflowEndpoints,
+  scanRuns: scanRunEndpoints,
   scanManagement: scanManagementEndpoints,
   scans: scanEndpoints,
   exposures: exposureEndpoints,
@@ -1970,8 +1970,8 @@ export {
   scanProfileEndpoints as scanProfiles,
   scannerTemplateEndpoints as scannerTemplates,
   toolEndpoints as tools,
-  scanWorkflowEndpoints as pipelines,
-  scanRunEndpoints as pipelineRuns,
+  scanWorkflowEndpoints as scanWorkflows,
+  scanRunEndpoints as scanRuns,
   scanManagementEndpoints as scanManagement,
   scanEndpoints as scans,
   exposureEndpoints as exposures,

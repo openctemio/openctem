@@ -366,7 +366,7 @@ export function usePreviewPreset(tenantIdOrSlug: string | undefined, presetId: s
 
 /**
  * Returns a trigger that applies a preset to the tenant — writes the
- * resulting toggle set through the normal UpdateTenantModules pipeline
+ * resulting toggle set through the normal UpdateTenantModules path
  * so dependency validation + audit logging run unchanged.
  */
 export function useApplyPreset(tenantIdOrSlug: string | undefined, presetId: string | undefined) {

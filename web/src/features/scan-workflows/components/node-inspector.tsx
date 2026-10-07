@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import type { PipelineStep } from '@/lib/api'
+import type { ScanWorkflowStep } from '@/lib/api'
 import type { Capability, CapabilityParam } from '../lib/capability-graph'
 import {
   paramValue,
@@ -41,10 +41,10 @@ export function NodeInspector({
   onChange,
   onClose,
 }: {
-  step: PipelineStep
+  step: ScanWorkflowStep
   capability: Capability | null
   readOnly?: boolean
-  onChange: (step: PipelineStep) => void
+  onChange: (step: ScanWorkflowStep) => void
   onClose: () => void
 }) {
   const mode = selectionOf(step)
@@ -155,12 +155,12 @@ function ToolSelectionField({
   readOnly,
   onChange,
 }: {
-  step: PipelineStep
+  step: ScanWorkflowStep
   capability: Capability
   mode: ToolSelection
   missing: Record<string, string[]>
   readOnly?: boolean
-  onChange: (step: PipelineStep) => void
+  onChange: (step: ScanWorkflowStep) => void
 }) {
   const prefer = step.prefer_tools ?? []
   return (
