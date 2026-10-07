@@ -1597,6 +1597,16 @@ export const pipelineEndpoints = {
    */
   deleteStep: (pipelineId: string, stepId: string) =>
     `/api/v1/pipelines/${pipelineId}/steps/${stepId}`,
+
+  /**
+   * Check a draft pipeline's steps as a workflow graph (stores nothing)
+   */
+  validate: () => '/api/v1/pipelines/validate',
+
+  /**
+   * The scan capability catalog: contracts, port types and adapters
+   */
+  capabilities: () => '/api/v1/scans/stages',
 } as const
 
 /**
