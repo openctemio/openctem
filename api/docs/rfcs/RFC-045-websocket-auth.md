@@ -319,7 +319,7 @@ token expiry, so ticket-opened sockets are bound too until PR B removes them.
   message flood throttled then `1008`; over the cap gets `4429`.
 - Integration (`tests/integration/ws_session_binding_test.go`, Postgres +
   Redis): with two hubs on real Redis channels, the real `AuthService.Logout`,
-  `TenantService.SuspendMember`, `RemoveMember` and `UpdateMemberRole` close
+  `TenantService.SuspendMember`, `OffboardMember` and `UpdateMemberRole` close
   a socket held on the other instance; the user's other session stays open.
 - Back-channel logout records the revocation.
 - Routes (PR B, DB): upgrade without a cookie 401; foreign Origin 403;

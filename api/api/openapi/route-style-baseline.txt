@@ -40,7 +40,6 @@ R3 DELETE /api/v1/repositories/{repositoryId}/branches/{branchId}
 R3 DELETE /api/v1/roles/{roleId}
 R3 DELETE /api/v1/scan-zones/{id}/sensors/{sensorId}
 R3 DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}
-R3 DELETE /api/v1/tenants/{tenant}/members/{userId}
 R3 DELETE /api/v1/users/me/sessions/{sessionId}
 R3 DELETE /api/v1/users/{userId}/roles/{roleId}
 R3 DELETE /api/v1/workflows/{id}/edges/{edgeId}
@@ -230,7 +229,6 @@ R5 POST /api/v1/threat-models/generate
 R5 POST /api/v2/sensor/fingerprints/check
 R6 DELETE /api/v1/tenants/{tenant}
 R6 DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}
-R6 DELETE /api/v1/tenants/{tenant}/members/{userId}
 R6 GET /api/v1/tenants/{tenant}
 R6 GET /api/v1/tenants/{tenant}/invitations
 R6 GET /api/v1/tenants/{tenant}/members
@@ -282,7 +280,6 @@ R8 POST /api/v1/tenants/{tenant}/settings/modules/presets/{presetId}/preview
 R8 PUT /api/v2/sensor/commands/{command_id}/results/{report_id}/segments/{seq}
 R9 DELETE /api/v1/tenants/{tenant}
 R9 DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}
-R9 DELETE /api/v1/tenants/{tenant}/members/{userId}
 R9 DELETE /api/v1/users/me/sessions
 R9 DELETE /api/v1/users/me/sessions/{sessionId}
 R9 GET /api/v1/tenants/{tenant}

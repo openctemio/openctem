@@ -59,7 +59,6 @@ DELETE /api/v1/simulations/{}
 DELETE /api/v1/suppressions/{}
 DELETE /api/v1/tenants/{}
 DELETE /api/v1/tenants/{}/invitations/{}
-DELETE /api/v1/tenants/{}/members/{}
 DELETE /api/v1/threat-actors/{}
 DELETE /api/v1/users/{}/roles/{}
 DELETE /api/v1/workflows/{}

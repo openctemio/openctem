@@ -100,6 +100,57 @@ func routePathArg(e ast.Expr) (string, bool) {
 type routeRec struct {
 	method, path, pos string
 	gated             bool
+	// stepUp: requireStepUp() is in the route's or an enclosing group's
+	// middleware arguments.
+	stepUp bool
+	// handlerType and handlerMethod name the handler argument, e.g.
+	// TenantHandler and OffboardMember for tenantH.OffboardMember. The type
+	// is resolved from the registering function's parameters; it is "" when
+	// the receiver is a local variable.
+	handlerType, handlerMethod string
+}
+
+// exprContainsCall reports whether e calls a function or method named name.
+func exprContainsCall(e ast.Expr, name string) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if ce, ok := n.(*ast.CallExpr); ok {
+			switch f := ce.Fun.(type) {
+			case *ast.Ident:
+				found = found || f.Name == name
+			case *ast.SelectorExpr:
+				found = found || f.Sel.Name == name
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// paramTypes maps each parameter of fn to its type name without package or
+// pointer: h *handler.TenantHandler gives "h": "TenantHandler".
+func paramTypes(fn *ast.FuncDecl) map[string]string {
+	out := map[string]string{}
+	if fn.Type.Params == nil {
+		return out
+	}
+	for _, field := range fn.Type.Params.List {
+		t := field.Type
+		if st, ok := t.(*ast.StarExpr); ok {
+			t = st.X
+		}
+		var name string
+		switch v := t.(type) {
+		case *ast.Ident:
+			name = v.Name
+		case *ast.SelectorExpr:
+			name = v.Sel.Name
+		}
+		for _, n := range field.Names {
+			out[n.Name] = name
+		}
+	}
+	return out
 }
 
 func exprContainsGate(e ast.Expr) bool {
@@ -187,8 +238,18 @@ func parseRoutes(t *testing.T) []routeRec {
 		// process walks a block, resolving chi .Group(prefix, fn, mws...) nesting
 		// so a route's recorded path is the FULL path and it inherits any gate
 		// applied at the group level.
-		var process func(block *ast.BlockStmt, prefix string, inheritedGated bool, gatedVars map[string]bool)
-		process = func(block *ast.BlockStmt, prefix string, inheritedGated bool, gatedVars map[string]bool) {
+		stepUpArgs := func(args []ast.Expr) bool {
+			for _, a := range args {
+				if exprContainsCall(a, "requireStepUp") {
+					return true
+				}
+			}
+			return false
+		}
+		var params map[string]string // the enclosing FuncDecl's parameter types
+
+		var process func(block *ast.BlockStmt, prefix string, inheritedGated, inheritedStepUp bool, gatedVars map[string]bool)
+		process = func(block *ast.BlockStmt, prefix string, inheritedGated, inheritedStepUp bool, gatedVars map[string]bool) {
 			gv := collectGatedVars(block, gatedVars)
 			ast.Inspect(block, func(m ast.Node) bool {
 				ce, ok := m.(*ast.CallExpr)
@@ -218,8 +279,9 @@ func parseRoutes(t *testing.T) []routeRec {
 						}
 					}
 					groupGated := inheritedGated || argGates(ce.Args[2:], gv)
+					groupStepUp := inheritedStepUp || stepUpArgs(ce.Args[2:])
 					if body != nil {
-						process(body, prefix+gp, groupGated, gv)
+						process(body, prefix+gp, groupGated, groupStepUp, gv)
 					}
 					return false // children handled by the recursive call
 				}
@@ -236,19 +298,30 @@ func parseRoutes(t *testing.T) []routeRec {
 				if !ok {
 					return true
 				}
-				routes = append(routes, routeRec{
+				rec := routeRec{
 					method: sel.Sel.Name,
 					path:   prefix + p,
 					gated:  inheritedGated || argGates(ce.Args[1:], gv),
+					stepUp: inheritedStepUp || stepUpArgs(ce.Args[1:]),
 					pos:    fileName + ":" + itoa(fset.Position(ce.Pos()).Line),
-				})
+				}
+				if len(ce.Args) > 1 {
+					if hs, ok := ce.Args[1].(*ast.SelectorExpr); ok {
+						rec.handlerMethod = hs.Sel.Name
+						if id, ok := hs.X.(*ast.Ident); ok {
+							rec.handlerType = params[id.Name]
+						}
+					}
+				}
+				routes = append(routes, rec)
 				return true
 			})
 		}
 
 		ast.Inspect(f, func(n ast.Node) bool {
 			if fn, ok := n.(*ast.FuncDecl); ok && fn.Body != nil {
-				process(fn.Body, "", false, map[string]bool{})
+				params = paramTypes(fn)
+				process(fn.Body, "", false, false, map[string]bool{})
 			}
 			return true
 		})
