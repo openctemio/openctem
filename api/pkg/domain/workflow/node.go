@@ -96,7 +96,8 @@ func (t TriggerType) IsValid() bool {
 	case TriggerTypeManual, TriggerTypeSchedule, TriggerTypeFindingCreated,
 		TriggerTypeFindingUpdated, TriggerTypeFindingAge, TriggerTypeAssetDiscovered,
 		TriggerTypeScanCompleted, TriggerTypeWebhook,
-		TriggerTypeAITriageCompleted, TriggerTypeAITriageFailed:
+		TriggerTypeAITriageCompleted, TriggerTypeAITriageFailed,
+		TriggerTypeFindingStatusChanged:
 		return true
 	}
 	return false
