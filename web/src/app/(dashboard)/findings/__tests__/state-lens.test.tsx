@@ -94,9 +94,6 @@ vi.mock('@/features/findings', async (orig) => ({
 vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAsset: () => ({ asset: null, isLoading: false, error: undefined }),
 }))
-vi.mock('@/lib/api/scan-hooks', () => ({
-  useScanSession: () => ({ data: undefined, isLoading: false }),
-}))
 
 import FindingsPage from '../page'
 

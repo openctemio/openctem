@@ -118,49 +118,6 @@ func TestScanProfileUpdateDelete_OtherTenantIsNotFound(t *testing.T) {
 	}
 }
 
-func TestScanSessionUpdateDelete_OtherTenantIsNotFound(t *testing.T) {
-	ctx := context.Background()
-	db := openScanRecDB(t)
-	repo := NewScanSessionRepository(&DB{DB: db})
-	victim := seedScanRecTenant(ctx, t, db)
-	attacker := seedScanRecTenant(ctx, t, db)
-
-	id := shared.NewID()
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO scan_sessions (id, tenant_id, scanner_name, asset_type, asset_value, error_message)
-		 VALUES ($1, $2, 'semgrep', 'repository', 'github.com/victim/app', 'original')`,
-		id.String(), victim.String()); err != nil {
-		t.Fatalf("seed session: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM scan_sessions WHERE id = $1`, id.String())
-	})
-
-	s, err := repo.GetByTenantAndID(ctx, victim, id)
-	if err != nil {
-		t.Fatalf("load session: %v", err)
-	}
-	s.TenantID = attacker
-	s.ErrorMessage = "overwritten by another tenant"
-	if err := repo.Update(ctx, s); !errors.Is(err, shared.ErrNotFound) {
-		t.Fatalf("ScanSessionRepository.Update across tenants: err = %v, want not found", err)
-	}
-	var msg sql.NullString
-	if err := db.QueryRowContext(ctx, `SELECT error_message FROM scan_sessions WHERE id = $1`, id.String()).Scan(&msg); err != nil {
-		t.Fatal(err)
-	}
-	if msg.String != "original" {
-		t.Fatalf("another tenant overwrote the session: %q", msg.String)
-	}
-
-	if err := repo.Delete(ctx, attacker, id); !errors.Is(err, shared.ErrNotFound) {
-		t.Fatalf("ScanSessionRepository.Delete across tenants: err = %v, want not found", err)
-	}
-	if !rowExists(ctx, t, db, "scan_sessions", id) {
-		t.Fatal("another tenant deleted the session")
-	}
-}
-
 func TestCommandDelete_OtherTenantIsNotFound(t *testing.T) {
 	ctx := context.Background()
 	db := openScanRecDB(t)

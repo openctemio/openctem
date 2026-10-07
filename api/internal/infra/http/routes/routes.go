@@ -107,7 +107,6 @@ type Handlers struct {
 	// without a database.
 	CIAdmin         *handler.CIAdminHandler
 	CIRunner        *handler.CIRunnerHandler
-	ScanSession     *handler.ScanSessionHandler     // nil if not initialized (no database)
 	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
 	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
 	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
@@ -793,11 +792,6 @@ func Register(
 	// Scan routes (tenant from JWT token)
 	if h.Scan != nil {
 		registerScanRoutes(router, h.Scan, h.CI, authMiddleware, userSync, triggerRateLimiter)
-	}
-
-	// Scan Session routes (tenant from JWT token for admin, API key for sensor)
-	if h.ScanSession != nil {
-		registerScanSessionRoutes(router, h.ScanSession, authMiddleware, userSync)
 	}
 
 	// Scanner Template routes (tenant from JWT token)
