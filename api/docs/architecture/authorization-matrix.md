@@ -1298,7 +1298,6 @@ that aggregates follow the viewer's scope, with org-wide totals only through
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
-| `GET /findings/analytics/sources` | counts per tool |
 | `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
 
 **Not covered by data scope** (separate access models): pentest findings and
@@ -1715,11 +1714,11 @@ from a custom role to deny that one action.
 
 | Permission | Routes | Old gate |
 |---|---|---|
-| `assets:import` | `POST /assets/import/{csv,kubernetes}`, `POST /findings/import` (with `findings:write`) | `assets:write` |
+| `assets:import` | `POST /assets/import/csv`, `POST /findings/import` (with `findings:write`) | `assets:write` |
 | `scans:execute` | `POST /scans/{id}/trigger`, `POST /scans/quick`, `POST /assets/{id}/scan` | `scans:write` / `assets:write` |
 | `integrations:pipelines:execute` | `POST /pipelines/{id}/runs` | `integrations:pipelines:write` |
 | `ai_triage:read` | `GET /findings/{id}/ai-triage*`, `GET /findings/ai-triage/config` | `findings:read` |
-| `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` | `findings:write` |
+| `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` (deprecated, sunset 2027-01-15) | `findings:write` |
 | `findings:exposures:read` | `GET /exposures`, `/{id}`, `/stats`, `/{id}/history` | `findings:read` |
 | `findings:exposures:write` | `POST /exposures`, `/ingest`, `PUT /{id}/ctem-id` | `findings:write` |
 | `findings:exposures:triage` | `POST /exposures/{id}/resolve`, `/reactivate` (with `findings:write`), `/accept`, `/false-positive` (with `findings:approve`) | as listed |
