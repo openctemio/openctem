@@ -18934,109 +18934,6 @@ paths:
       summary: Get an asset type by ID
       tags:
       - Asset Types
-  /asset-types/categories:
-    get:
-      consumes:
-      - application/json
-      deprecated: true
-      description: Retrieves a paginated list of asset type categories. Use active_only=true
-        to get all active categories without pagination.
-      parameters:
-      - description: Return only active categories (bypasses pagination)
-        in: query
-        name: active_only
-        type: boolean
-      - description: Search by name or code
-        in: query
-        name: search
-        type: string
-      - default: 1
-        description: Page number
-        in: query
-        name: page
-        type: integer
-      - default: 20
-        description: Items per page
-        in: query
-        name: per_page
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            properties:
-              data:
-                items:
-                  $ref: '#/definitions/internal_infra_http_handler.CategoryResponse'
-                type: array
-              page:
-                type: integer
-              per_page:
-                type: integer
-              total:
-                type: integer
-              total_pages:
-                type: integer
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: List asset type categories
-      tags:
-      - Asset Types
-  /asset-types/categories/{categoryId}:
-    get:
-      consumes:
-      - application/json
-      deprecated: true
-      description: Retrieves a single asset type category by its unique identifier
-      parameters:
-      - description: Category ID (UUID)
-        in: path
-        name: categoryId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.CategoryResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      security:
-      - BearerAuth: []
-      summary: Get a category by ID
-      tags:
-      - Asset Types
   /assets:
     get:
       consumes:
@@ -38552,42 +38449,6 @@ paths:
       summary: Issue a new set-password link for a pending account
       tags:
       - Tenants
-  /threat-intel/sync:
-    post:
-      description: Always 403. The EPSS and CISA KEV feed syncs are shared by every
-        organization; a platform administrator runs or toggles them from the admin
-        console.
-      produces:
-      - application/json
-      responses:
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Run the threat-intelligence feed sync (not allowed)
-      tags:
-      - Threat Intelligence
-  /threat-intel/sync/{source}:
-    patch:
-      description: Always 403. The EPSS and CISA KEV feed syncs are shared by every
-        organization; a platform administrator runs or toggles them from the admin
-        console.
-      parameters:
-      - description: Feed (epss, kev)
-        in: path
-        name: source
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Change the threat-intelligence feed sync (not allowed)
-      tags:
-      - Threat Intelligence
   /tools:
     get:
       consumes:
@@ -39606,41 +39467,7 @@ paths:
       summary: List vulnerabilities
       tags:
       - Vulnerabilities
-    post:
-      description: Always 403. The CVE catalog is shared by every organization and
-        is maintained from sensor reports and the threat-intelligence feeds; an organization
-        cannot create, edit or delete its entries.
-      produces:
-      - application/json
-      responses:
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Write the shared CVE catalog (not allowed)
-      tags:
-      - Vulnerabilities
   /vulnerabilities/{id}:
-    delete:
-      description: Always 403. The CVE catalog is shared by every organization and
-        is maintained from sensor reports and the threat-intelligence feeds; an organization
-        cannot create, edit or delete its entries.
-      parameters:
-      - description: Vulnerability ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Edit or delete a shared CVE catalog entry (not allowed)
-      tags:
-      - Vulnerabilities
     get:
       description: Retrieves a vulnerability by ID
       parameters:
@@ -39669,26 +39496,6 @@ paths:
               type: string
             type: object
       summary: Get vulnerability
-      tags:
-      - Vulnerabilities
-    put:
-      description: Always 403. The CVE catalog is shared by every organization and
-        is maintained from sensor reports and the threat-intelligence feeds; an organization
-        cannot create, edit or delete its entries.
-      parameters:
-      - description: Vulnerability ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-      summary: Edit or delete a shared CVE catalog entry (not allowed)
       tags:
       - Vulnerabilities
   /vulnerabilities/{id}/affected-assets:
