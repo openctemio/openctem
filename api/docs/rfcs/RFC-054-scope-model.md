@@ -273,15 +273,37 @@ Response (`ScopeTargetResponse`, also for list/get/update):
   "expires_at": "2026-10-14T00:00:00Z",
   "max_tier": "t1",
   "approvals_required": 1,
-  "approvals": [{"user_id": "…", "approved_at": "…"}],
+  "approvals": [{"user_id": "…", "approver": {"kind": "user", "id": "…", "name": "Lan"}, "approved_at": "…"}],
   "approved_at": null,
   "rejected_by": null, "rejected_at": null,
-  "created_by": "…", "created_at": "…", "updated_at": "…",
+  "created_by": {"kind": "user", "id": "…", "name": "Nguyen Manh"},
+  "origin": "manual",
+  "created_at": "…", "updated_at": "…",
   "warnings": ["Pattern \"*.example.com\" is a superset of existing pattern \"api.example.com\""]
 }
 ```
 
 `covers` is `name`, `domain_and_subdomains`, `addresses` or `pattern`.
+
+**People and provenance.** Every actor field of an entry or exclusion
+(`created_by`, `approvals[].approver`, `rejected_by`, and an exclusion's
+`approved_by`) is an `ActorRef`:
+
+```json
+{ "kind": "user", "id": "019d…", "name": "Nguyen Manh" }
+{ "kind": "user", "id": "…", "former_member": true }
+{ "kind": "system", "code": "upgrade_wildcard_split" }
+```
+
+Names come only from the organization's current members (active or
+suspended); a user who left, or an id that is not a member, is a
+`former_member` with no name. No e-mail is returned. System codes:
+`upgrade_wildcard_split` (the 000292 apex rows), `seed_migration`, `system`.
+`origin` is how the row came to exist: `manual`, `request` (a member's
+request), `import`, `review_rule`, `refusal_fix` (the one value a client may
+send on create, when it fixes a refused scan target), `seed`,
+`seed_migration` or `system` (migration `001244`, existing rows `manual`,
+platform rows `system`). Audit records keep the reference without the name.
 `status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
 
 **Seeds** (`POST /api/v1/easm/seeds`, `scope:approve` + **step-up**): a
