@@ -41840,6 +41840,13 @@ export interface components {
       platform?: boolean
       sensor_id?: string
       sensor_name?: string
+      /**
+       * @description SkippedTargets are the targets the sensor's local policy skipped in a
+       *     task that completed on the rest (at most 20; sensor-supplied text,
+       *     show as plain text). SkippedTargetsTotal counts all of them.
+       */
+      skipped_targets?: components['schemas']['internal_infra_http_handler.RunTaskSkippedTarget'][]
+      skipped_targets_total?: number
       started_at?: string
       /** @description Status is queued, running, completed, failed or canceled. */
       status?: string
@@ -41847,6 +41854,12 @@ export interface components {
       step_run_id?: string
       targets?: number
       tool?: string
+    }
+    'internal_infra_http_handler.RunTaskSkippedTarget': {
+      detail?: string
+      reason?: string
+      rule?: string
+      target?: string
     }
     'internal_infra_http_handler.RunTaskSummaryResponse': {
       canceled?: number
@@ -42042,6 +42055,12 @@ export interface components {
       description?: string
       failed_runs?: number
       id?: string
+      /**
+       * @description LastRun is the scan's latest run: its real state (running with
+       *     progress, completed, partial, failed, blocked with the reason, ...).
+       *     Absent before the first run.
+       */
+      last_run?: components['schemas']['internal_infra_http_handler.ScanLastRunResponse']
       last_run_at?: string
       last_run_id?: string
       last_run_status?: string
@@ -42051,6 +42070,8 @@ export interface components {
       /** @description PartialRuns: runs that kept results but lost some work (RFC-046 D5). */
       partial_runs?: number
       pipeline_id?: string
+      /** @description PipelineName names the workflow a workflow scan runs. */
+      pipeline_name?: string
       profile_id?: string
       retry_backoff_seconds?: number
       run_on_tenant_runner?: boolean
@@ -42110,6 +42131,20 @@ export interface components {
       starts_at?: string
       timezone?: string
       updated_at?: string
+    }
+    'internal_infra_http_handler.ScanLastRunResponse': {
+      completed_at?: string
+      created_at?: string
+      error_message?: string
+      id?: string
+      /** @description Progress is 0-100 for a live run: finished tasks of all tasks. */
+      progress?: number
+      /** @description RefusalCode and ErrorMessage say why a blocked or failed run ended. */
+      refusal_code?: string
+      started_at?: string
+      status?: string
+      task_summary?: components['schemas']['internal_infra_http_handler.RunTaskSummaryResponse']
+      trigger_type?: string
     }
     'internal_infra_http_handler.ScanPortTypeResponse': {
       /** @description Carries are the stored type labels a stream of this type holds. */

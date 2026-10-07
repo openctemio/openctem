@@ -77,6 +77,9 @@ func (h *SensorHandler) SetIdentityPolicy(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := h.service.SetBearerKeysAllowed(r.Context(), *h.buildAuditContext(r), tid, req.BearerKeysAllowed); err != nil {
+		if writeStepUpError(w, err) {
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
