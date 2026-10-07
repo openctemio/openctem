@@ -23,8 +23,6 @@ endpoints.components.listByProject
 endpoints.components.update
 endpoints.sensorEndpoints.stats
 endpoints.sensors.stats
-endpoints.toolStatsEndpoints.execution
-endpoints.toolStats.execution
 endpoints.userEndpoints.create
 endpoints.userEndpoints.delete
 endpoints.userEndpoints.get
