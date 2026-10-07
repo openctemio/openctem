@@ -231,6 +231,14 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `crawl.web` and `dast.web` 10; the code, image and connector capabilities
   are not cut. A one-target tool keeps one command per step. If a later
   chunk cannot be created, the ones already created are canceled.
+  Where the chunks went: `GET /pipeline-runs/{id}/stages` gives each stage
+  its chunk counts by state and the share of each tenant sensor that took
+  one (`StepSensorShares`, tenant-scoped; platform jobs are counted as
+  platform without the platform sensor's identity). The run panel shows them
+  per lane and on the workflow graph, and the workflow preview shows each
+  step's chunk size and how many sensors can work on it at once
+  (`max_parallel_sensors`: every online eligible sensor for a chunked step,
+  one otherwise).
   Not yet: the candidate tool list per chunk (claim by any candidate),
   placement modes, a spread cap and platform-side per-host leases
   (research/49 §3.12.3).

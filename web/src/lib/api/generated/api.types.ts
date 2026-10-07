@@ -20495,7 +20495,7 @@ export interface paths {
     }
     /**
      * List a run's stage plans
-     * @description How each stage of the run was planned: inputs, planned targets and skipped targets by reason (counts only). A run of another organization is not found.
+     * @description How each stage of the run was planned: inputs, planned targets and skipped targets by reason (counts only), and how its chunks are spread over sensors. A run of another organization is not found.
      */
     get: {
       parameters: {
@@ -36733,6 +36733,17 @@ export interface components {
       blocking?: components['schemas']['github_com_openctemio_openctem_api_internal_app_scan.PreviewError']
       candidates?: string[]
       capability?: string
+      /**
+       * @description ChunkSize is how many targets one command of the step takes when
+       *     the step is cut into chunks (0: the step is one command).
+       */
+      chunk_size?: number
+      /**
+       * @description MaxParallelSensors is how many sensors can work on the step at once:
+       *     every online sensor that may run the tool for a chunked step, one
+       *     otherwise; 0 when none can (or availability is unknown).
+       */
+      max_parallel_sensors?: number
       name?: string
       pinned?: boolean
       step_key?: string
@@ -41771,12 +41782,25 @@ export interface components {
        */
       unfinished_target_count?: number
     }
+    'internal_infra_http_handler.RunStageChunks': {
+      completed?: number
+      failed?: number
+      queued?: number
+      running?: number
+      total?: number
+    }
     'internal_infra_http_handler.RunStageListResponse': {
       data?: components['schemas']['internal_infra_http_handler.RunStageResponse'][]
     }
     'internal_infra_http_handler.RunStageResponse': {
       /** @description Chained: the stage took targets an earlier stage produced. */
       chained?: boolean
+      /**
+       * @description Chunks counts the stage's commands by state; Sensors is how they are
+       *     spread over the sensors that took them (research/49 §3.12). Both are
+       *     empty before the stage is queued.
+       */
+      chunks?: components['schemas']['internal_infra_http_handler.RunStageChunks']
       /**
        * @description Inputs is how many targets were considered (seeds plus outputs of the
        *     types the stage takes); Planned how many were handed to the stage.
@@ -41789,6 +41813,7 @@ export interface components {
       max_hop?: number
       planned?: number
       planned_at?: string
+      sensors?: components['schemas']['internal_infra_http_handler.RunStageSensor'][]
       /**
        * @description Skipped counts the targets left out, by reason: excluded,
        *     unconfirmed, refused, other_zone, hop_limit, over_cap, duplicate,
@@ -41807,6 +41832,16 @@ export interface components {
       /** @enum {string} */
       tier?: 'T0' | 'T1' | 'T2'
       tool?: string
+    }
+    'internal_infra_http_handler.RunStageSensor': {
+      completed?: number
+      failed?: number
+      platform?: boolean
+      queued?: number
+      running?: number
+      sensor_id?: string
+      sensor_name?: string
+      total?: number
     }
     'internal_infra_http_handler.RunTaskLogLine': {
       fields?: {

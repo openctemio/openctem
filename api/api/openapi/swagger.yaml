@@ -3631,6 +3631,17 @@ definitions:
         type: array
       capability:
         type: string
+      chunk_size:
+        description: |-
+          ChunkSize is how many targets one command of the step takes when
+          the step is cut into chunks (0: the step is one command).
+        type: integer
+      max_parallel_sensors:
+        description: |-
+          MaxParallelSensors is how many sensors can work on the step at once:
+          every online sensor that may run the tool for a chunked step, one
+          otherwise; 0 when none can (or availability is unknown).
+        type: integer
       name:
         type: string
       pinned:
@@ -13355,6 +13366,19 @@ definitions:
           was settled at its deadline; the next scheduled run plans them first.
         type: integer
     type: object
+  internal_infra_http_handler.RunStageChunks:
+    properties:
+      completed:
+        type: integer
+      failed:
+        type: integer
+      queued:
+        type: integer
+      running:
+        type: integer
+      total:
+        type: integer
+    type: object
   internal_infra_http_handler.RunStageListResponse:
     properties:
       data:
@@ -13367,6 +13391,13 @@ definitions:
       chained:
         description: 'Chained: the stage took targets an earlier stage produced.'
         type: boolean
+      chunks:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.RunStageChunks'
+        description: |-
+          Chunks counts the stage's commands by state; Sensors is how they are
+          spread over the sensors that took them (research/49 §3.12). Both are
+          empty before the stage is queued.
       inputs:
         description: |-
           Inputs is how many targets were considered (seeds plus outputs of the
@@ -13381,6 +13412,10 @@ definitions:
         type: integer
       planned_at:
         type: string
+      sensors:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.RunStageSensor'
+        type: array
       skipped:
         additionalProperties:
           type: integer
@@ -13405,6 +13440,25 @@ definitions:
         type: string
       tool:
         type: string
+    type: object
+  internal_infra_http_handler.RunStageSensor:
+    properties:
+      completed:
+        type: integer
+      failed:
+        type: integer
+      platform:
+        type: boolean
+      queued:
+        type: integer
+      running:
+        type: integer
+      sensor_id:
+        type: string
+      sensor_name:
+        type: string
+      total:
+        type: integer
     type: object
   internal_infra_http_handler.RunTaskLogLine:
     properties:
@@ -31839,8 +31893,8 @@ paths:
   /pipeline-runs/{id}/stages:
     get:
       description: 'How each stage of the run was planned: inputs, planned targets
-        and skipped targets by reason (counts only). A run of another organization
-        is not found.'
+        and skipped targets by reason (counts only), and how its chunks are spread
+        over sensors. A run of another organization is not found.'
       parameters:
       - description: Run ID
         in: path
