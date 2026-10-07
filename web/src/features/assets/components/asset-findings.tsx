@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { EmptyState } from '@/features/shared'
+import { DetailSheetFooter, EmptyState } from '@/features/shared'
 import { SEVERITY_BADGE_SOFT, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
 
 import type { AssetFinding } from '../types/asset.types'
@@ -271,15 +271,15 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
       </ul>
 
       {/* View All Link */}
-      <div>
-        <Link href={`/findings?asset_id=${assetId}`}>
-          <Button variant="outline" className="w-full">
+      <DetailSheetFooter>
+        <Button asChild variant="outline" className="w-full">
+          <Link href={`/findings?asset_id=${assetId}`}>
             <FileWarning className="me-2 h-4 w-4" />
             View all findings ({response?.total ?? findings.length})
             <ChevronRight className="ms-2 h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
+          </Link>
+        </Button>
+      </DetailSheetFooter>
     </div>
   )
 }
