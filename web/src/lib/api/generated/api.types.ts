@@ -13696,6 +13696,172 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/findings/{id}/evidence-items': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List a finding's evidence
+     * @description The typed proof tools attached to the finding's detections and retest attempts (HTTP exchanges, text, file excerpts, ...), newest first, at most 25. Secret values (auth headers, cookies, tokens) are masked as «secret:kind#n» placeholders. Requires findings:read; out-of-scope findings are 404.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Only this retest attempt's evidence */
+          retest_id?: string
+        }
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.FindingEvidenceItemListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/findings/{id}/evidence-items/{item_id}/reveal': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Reveal masked evidence values
+     * @description Returns the plaintext of the requested placeholders of one evidence item. Requires findings:evidence:reveal, the finding in the caller's data scope, and a recent sign-in (step-up; API keys cannot). Rate limited; every reveal is audited (finding.evidence_revealed) and shown on the finding's timeline. The response is never cached.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Finding ID */
+          id: string
+          /** @description Evidence item ID */
+          item_id: string
+        }
+        cookie?: never
+      }
+      /** @description Placeholders to reveal */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.RevealEvidenceRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.RevealEvidenceResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Gone */
+        410: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Service Unavailable */
+        503: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/findings/{id}/retests': {
     parameters: {
       query?: never
@@ -19847,6 +20013,109 @@ export interface paths {
         }
       }
     }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/organization/settings/evidence': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get finding-evidence settings
+     * @description How long the encrypted secret values masked out of finding evidence are kept (secret_retention_days, default 30). After that the evidence stays readable but its masked values can no longer be revealed.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.EvidenceSettings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Update finding-evidence settings
+     * @description Sets how long revealable secret values of finding evidence are kept (1–365 days; 0 = the default 30). Applies to evidence stored from now on. Audited.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Evidence settings */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.EvidenceSettings']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_domain_tenant.EvidenceSettings']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -35985,6 +36254,83 @@ export interface components {
     /** @enum {string} */
     'github_com_openctemio_openctem_api_pkg_domain_ctemcycle.CriterionOutcome':
       'met' | 'unmet' | 'not_measurable'
+    'github_com_openctemio_openctem_api_pkg_domain_evidence.Artifact': {
+      media_type?: string
+      ref?: string
+      sha256?: string
+      size?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_evidence.File': {
+      end_line?: number
+      path?: string
+      snippet?: string
+      start_line?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_evidence.HTTP': {
+      request?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.HTTPRequest']
+      response?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.HTTPResponse']
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_evidence.HTTPRequest': {
+      body?: string
+      /** @description text (default) | base64 */
+      body_encoding?: string
+      body_size?: number
+      body_truncated?: boolean
+      headers?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.Header'][]
+      http_version?: string
+      method?: string
+      url?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_evidence.HTTPResponse': {
+      body?: string
+      body_encoding?: string
+      body_size?: number
+      body_truncated?: boolean
+      headers?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.Header'][]
+      http_version?: string
+      reason?: string
+      status?: number
+      time_ms?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_evidence.Header': {
+      name?: string
+      value?: string
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_evidence.Item': {
+      artifact?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.Artifact']
+      captured_at?: string
+      command?: string
+      content_sha256?: string
+      exit_code?: number
+      extracted?: string[]
+      file?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.File']
+      http?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.HTTP']
+      kind?: string
+      label?: string
+      match?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.Match'][]
+      protocol?: string
+      sensitive?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.Sensitive'][]
+      text?: string
+      /** @description Truncated is set by the platform when it cut anything. */
+      truncated?: boolean
+      version?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_evidence.Match': {
+      end?: number
+      /** @description request | response */
+      location?: string
+      matcher?: string
+      /** @description status | header | body | url */
+      part?: string
+      /** @description byte offset into the stored body */
+      start?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_evidence.Sensitive': {
+      end?: number
+      kind?: string
+      pointer?: string
+      start?: number
+    }
     'github_com_openctemio_openctem_api_pkg_domain_group.GroupSettings': {
       allow_self_join?: boolean
       max_members?: number
@@ -36377,6 +36723,10 @@ export interface components {
        *     member is disabled: the rows return when re-enabled).
        */
       visible_assets?: number
+    }
+    'github_com_openctemio_openctem_api_pkg_domain_tenant.EvidenceSettings': {
+      /** @description SecretRetentionDays: 0 = DefaultEvidenceSecretRetentionDays. */
+      secret_retention_days?: number
     }
     'github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef': {
       /**
@@ -38894,6 +39244,41 @@ export interface components {
       medium?: number
       total?: number
     }
+    'internal_infra_http_handler.FindingEvidenceItemListResponse': {
+      data?: components['schemas']['internal_infra_http_handler.FindingEvidenceItemResponse'][]
+    }
+    'internal_infra_http_handler.FindingEvidenceItemResponse': {
+      captured_at?: string
+      /**
+       * @description ContentSHA256 is the platform's hash of the item as the tool sent it
+       *     (before masking, within the caps).
+       */
+      content_sha256?: string
+      created_at?: string
+      /**
+       * @description Curl reproduces an HTTP exchange's request, with masked values as
+       *     placeholders.
+       */
+      curl?: string
+      finding_id?: string
+      id?: string
+      item?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_evidence.Item']
+      kind?: string
+      origin?: string
+      retest_id?: string
+      /**
+       * @description Revealable lists the placeholders whose values can be revealed (with
+       *     findings:evidence:reveal and a recent sign-in) until SecretsExpireAt.
+       */
+      revealable?: string[]
+      rule_id?: string
+      secrets_available?: boolean
+      secrets_expire_at?: string
+      size_bytes?: number
+      template_digest?: string
+      tool_name?: string
+      truncated?: boolean
+    }
     'internal_infra_http_handler.FindingImportResponse': {
       dry_run?: boolean
       files?: components['schemas']['internal_infra_http_handler.ImportFileResponse'][]
@@ -40397,6 +40782,18 @@ export interface components {
     'internal_infra_http_handler.RevealCredentialResponse': {
       id?: string
       secret_value?: string
+    }
+    'internal_infra_http_handler.RevealEvidenceRequest': {
+      placeholders?: string[]
+      /** @description Purpose is view, copy or copy_curl (recorded in the audit log). */
+      purpose?: string
+    }
+    'internal_infra_http_handler.RevealEvidenceResponse': {
+      /** @description MaskAfterSeconds is how long the client may show the values. */
+      mask_after_seconds?: number
+      values?: {
+        [key: string]: string
+      }
     }
     'internal_infra_http_handler.RotateCredentialRequest': {
       api_key?: components['schemas']['internal_infra_http_handler.APIKeyDataRequest']

@@ -4524,6 +4524,156 @@ definitions:
     - CriterionMet
     - CriterionUnmet
     - CriterionNotMeasurable
+  github_com_openctemio_openctem_api_pkg_domain_evidence.Artifact:
+    properties:
+      media_type:
+        type: string
+      ref:
+        type: string
+      sha256:
+        type: string
+      size:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_evidence.File:
+    properties:
+      end_line:
+        type: integer
+      path:
+        type: string
+      snippet:
+        type: string
+      start_line:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_evidence.HTTP:
+    properties:
+      request:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.HTTPRequest'
+      response:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.HTTPResponse'
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_evidence.HTTPRequest:
+    properties:
+      body:
+        type: string
+      body_encoding:
+        description: text (default) | base64
+        type: string
+      body_size:
+        type: integer
+      body_truncated:
+        type: boolean
+      headers:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.Header'
+        type: array
+      http_version:
+        type: string
+      method:
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_evidence.HTTPResponse:
+    properties:
+      body:
+        type: string
+      body_encoding:
+        type: string
+      body_size:
+        type: integer
+      body_truncated:
+        type: boolean
+      headers:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.Header'
+        type: array
+      http_version:
+        type: string
+      reason:
+        type: string
+      status:
+        type: integer
+      time_ms:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_evidence.Header:
+    properties:
+      name:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_evidence.Item:
+    properties:
+      artifact:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.Artifact'
+      captured_at:
+        type: string
+      command:
+        type: string
+      content_sha256:
+        type: string
+      exit_code:
+        type: integer
+      extracted:
+        items:
+          type: string
+        type: array
+      file:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.File'
+      http:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.HTTP'
+      kind:
+        type: string
+      label:
+        type: string
+      match:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.Match'
+        type: array
+      protocol:
+        type: string
+      sensitive:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.Sensitive'
+        type: array
+      text:
+        type: string
+      truncated:
+        description: Truncated is set by the platform when it cut anything.
+        type: boolean
+      version:
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_evidence.Match:
+    properties:
+      end:
+        type: integer
+      location:
+        description: request | response
+        type: string
+      matcher:
+        type: string
+      part:
+        description: status | header | body | url
+        type: string
+      start:
+        description: byte offset into the stored body
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_evidence.Sensitive:
+    properties:
+      end:
+        type: integer
+      kind:
+        type: string
+      pointer:
+        type: string
+      start:
+        type: integer
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_group.GroupSettings:
     properties:
       allow_self_join:
@@ -5218,6 +5368,12 @@ definitions:
         description: |-
           VisibleAssets is the number of materialized scope rows (0 while the
           member is disabled: the rows return when re-enabled).
+        type: integer
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_tenant.EvidenceSettings:
+    properties:
+      secret_retention_days:
+        description: 'SecretRetentionDays: 0 = DefaultEvidenceSecretRetentionDays.'
         type: integer
     type: object
   github_com_openctemio_openctem_api_pkg_domain_tenant.LifecycleRef:
@@ -10292,6 +10448,63 @@ definitions:
       total:
         type: integer
     type: object
+  internal_infra_http_handler.FindingEvidenceItemListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.FindingEvidenceItemResponse'
+        type: array
+    type: object
+  internal_infra_http_handler.FindingEvidenceItemResponse:
+    properties:
+      captured_at:
+        type: string
+      content_sha256:
+        description: |-
+          ContentSHA256 is the platform's hash of the item as the tool sent it
+          (before masking, within the caps).
+        type: string
+      created_at:
+        type: string
+      curl:
+        description: |-
+          Curl reproduces an HTTP exchange's request, with masked values as
+          placeholders.
+        type: string
+      finding_id:
+        type: string
+      id:
+        type: string
+      item:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_evidence.Item'
+      kind:
+        type: string
+      origin:
+        type: string
+      retest_id:
+        type: string
+      revealable:
+        description: |-
+          Revealable lists the placeholders whose values can be revealed (with
+          findings:evidence:reveal and a recent sign-in) until SecretsExpireAt.
+        items:
+          type: string
+        type: array
+      rule_id:
+        type: string
+      secrets_available:
+        type: boolean
+      secrets_expire_at:
+        type: string
+      size_bytes:
+        type: integer
+      template_digest:
+        type: string
+      tool_name:
+        type: string
+      truncated:
+        type: boolean
+    type: object
   internal_infra_http_handler.FindingImportResponse:
     properties:
       dry_run:
@@ -13049,6 +13262,26 @@ definitions:
         type: string
       secret_value:
         type: string
+    type: object
+  internal_infra_http_handler.RevealEvidenceRequest:
+    properties:
+      placeholders:
+        items:
+          type: string
+        type: array
+      purpose:
+        description: Purpose is view, copy or copy_curl (recorded in the audit log).
+        type: string
+    type: object
+  internal_infra_http_handler.RevealEvidenceResponse:
+    properties:
+      mask_after_seconds:
+        description: MaskAfterSeconds is how long the client may show the values.
+        type: integer
+      values:
+        additionalProperties:
+          type: string
+        type: object
     type: object
   internal_infra_http_handler.RotateCredentialRequest:
     properties:
@@ -25987,6 +26220,104 @@ paths:
       summary: Mark a finding as a duplicate of this one
       tags:
       - Findings
+  /findings/{id}/evidence-items:
+    get:
+      description: The typed proof tools attached to the finding's detections and
+        retest attempts (HTTP exchanges, text, file excerpts, ...), newest first,
+        at most 25. Secret values (auth headers, cookies, tokens) are masked as «secret:kind#n»
+        placeholders. Requires findings:read; out-of-scope findings are 404.
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Only this retest attempt's evidence
+        in: query
+        name: retest_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.FindingEvidenceItemListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: List a finding's evidence
+      tags:
+      - Findings
+  /findings/{id}/evidence-items/{item_id}/reveal:
+    post:
+      consumes:
+      - application/json
+      description: Returns the plaintext of the requested placeholders of one evidence
+        item. Requires findings:evidence:reveal, the finding in the caller's data
+        scope, and a recent sign-in (step-up; API keys cannot). Rate limited; every
+        reveal is audited (finding.evidence_revealed) and shown on the finding's timeline.
+        The response is never cached.
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Evidence item ID
+        in: path
+        name: item_id
+        required: true
+        type: string
+      - description: Placeholders to reveal
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_infra_http_handler.RevealEvidenceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.RevealEvidenceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Reveal masked evidence values
+      tags:
+      - Findings
   /findings/{id}/retests:
     get:
       description: The finding's retest history, newest first (RFC-039).
@@ -31514,6 +31845,64 @@ paths:
       security:
       - BearerAuth: []
       summary: Offboard a member
+      tags:
+      - Tenants
+  /organization/settings/evidence:
+    get:
+      description: How long the encrypted secret values masked out of finding evidence
+        are kept (secret_retention_days, default 30). After that the evidence stays
+        readable but its masked values can no longer be revealed.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.EvidenceSettings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Get finding-evidence settings
+      tags:
+      - Tenants
+    put:
+      consumes:
+      - application/json
+      description: Sets how long revealable secret values of finding evidence are
+        kept (1–365 days; 0 = the default 30). Applies to evidence stored from now
+        on. Audited.
+      parameters:
+      - description: Evidence settings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.EvidenceSettings'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_tenant.EvidenceSettings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Update finding-evidence settings
       tags:
       - Tenants
   /organization/settings/retest:

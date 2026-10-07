@@ -29,6 +29,9 @@ const (
 	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
 	// settings (RFC-039).
 	ActionTenantRetestUpdated Action = "tenant.retest_updated"
+	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
+	// settings (how long revealable secret values are kept).
+	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
 
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
@@ -112,6 +115,10 @@ const (
 	// ActionFindingEvidenceDeleted records the removal of a manually-attached
 	// evidence note from a generic (non-pentest) finding.
 	ActionFindingEvidenceDeleted Action = "finding.evidence_deleted"
+	// ActionFindingEvidenceRevealed records a reveal of masked secret values
+	// in a finding's evidence: the item, the placeholders and the purpose
+	// (view, copy, copy_curl). Never the values.
+	ActionFindingEvidenceRevealed Action = "finding.evidence_revealed"
 	// ActionFindingRemediationStepAdded records a manually-appended remediation
 	// step on a generic finding.
 	ActionFindingRemediationStepAdded Action = "finding.remediation_step_added"
@@ -536,7 +543,7 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed,
@@ -552,7 +559,7 @@ func (a Action) IsValid() bool {
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
-		ActionFindingRetestRequested,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed,
 		ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
@@ -666,7 +673,7 @@ func (a Action) Category() string {
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingRemediationStepAdded,
-		ActionFindingRetestRequested, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingCommentReactionRemoved, ActionFindingDuplicateMarked:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
 		return "saved_view"
@@ -942,7 +949,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthStepUp,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed,
