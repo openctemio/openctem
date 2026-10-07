@@ -19,6 +19,8 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
 import {
   Dialog,
@@ -60,6 +62,7 @@ import { toast } from 'sonner'
 import {
   type ScopeTargetType,
   getScopeTypeConfig,
+  wildcardApex,
   // API hooks
   useScopeTargetsApi,
   useScopeExclusionsApi,
@@ -251,6 +254,8 @@ export default function ScopeConfigPage() {
   const [deleteExclusion, setDeleteExclusion] = useState<ApiScopeExclusion | null>(null)
 
   // Form states
+  // Add dialog: also create the apex T next to a wildcard *.T (off by default).
+  const [includeApex, setIncludeApex] = useState(false)
   const [targetForm, setTargetForm] = useState({
     type: 'domain' as ScopeTargetType,
     pattern: '',
@@ -389,6 +394,7 @@ export default function ScopeConfigPage() {
   // Target handlers
   const resetTargetForm = () => {
     setTargetForm({ type: 'domain', pattern: '', description: '', priority: 0, tags: [] })
+    setIncludeApex(false)
     setValidationError(null)
   }
 
@@ -406,14 +412,34 @@ export default function ScopeConfigPage() {
       return
     }
 
+    const apex = includeApex ? wildcardApex(targetForm.type, targetForm.pattern) : null
+    if (apex && checkDuplicateTarget(apex)) {
+      setValidationError(`${apex} already exists in targets; untick "Also include ${apex}"`)
+      return
+    }
+
     try {
       const result = await createTarget({
         target_type: targetForm.type,
         pattern: targetForm.pattern,
         description: targetForm.description,
       })
+      if (apex) {
+        try {
+          await createTarget({
+            target_type: targetForm.type,
+            pattern: apex,
+            description: targetForm.description,
+          })
+        } catch (apexErr) {
+          await invalidateScopeCache()
+          throw new Error(
+            `${targetForm.pattern} was added but ${apex} was not: ${getErrorMessage(apexErr, 'request failed')}`
+          )
+        }
+      }
       await invalidateScopeCache()
-      toast.success('Target added successfully')
+      toast.success(apex ? `Added ${targetForm.pattern} and ${apex}` : 'Target added successfully')
       // Show overlap warnings if any
       const warnings = (result as unknown as { warnings?: string[] })?.warnings
       if (warnings && warnings.length > 0) {
@@ -640,6 +666,21 @@ export default function ScopeConfigPage() {
             : getTypeConfig(targetForm.type).helpText}
         </p>
       </div>
+      {!editTarget && wildcardApex(targetForm.type, targetForm.pattern) && (
+        <div className="flex items-start gap-2">
+          <Checkbox
+            id="include-apex"
+            checked={includeApex}
+            onCheckedChange={(v) => setIncludeApex(v === true)}
+          />
+          <Label htmlFor="include-apex" className="text-sm font-normal leading-snug">
+            Also include {wildcardApex(targetForm.type, targetForm.pattern)} (the apex)
+            <span className="text-muted-foreground block text-xs">
+              {targetForm.pattern} covers subdomains only, not the apex itself.
+            </span>
+          </Label>
+        </div>
+      )}
       <div className="space-y-2">
         <Label>Description</Label>
         <Input
@@ -778,7 +819,18 @@ export default function ScopeConfigPage() {
       header: 'Pattern',
       enableHiding: false,
       cell: ({ row }) => (
-        <code className="rounded bg-muted px-2 py-1 text-sm">{row.original.pattern}</code>
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="rounded bg-muted px-2 py-1 text-sm">{row.original.pattern}</code>
+          {wildcardApex(row.original.target_type, row.original.pattern) && (
+            <Badge
+              variant="outline"
+              className="text-xs font-normal"
+              title="Covers subdomains only; add the apex as its own target to scan it"
+            >
+              subdomains only
+            </Badge>
+          )}
+        </div>
       ),
     },
     {
