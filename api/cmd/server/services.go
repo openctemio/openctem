@@ -1545,6 +1545,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// backfill and the re-evaluation after a scope target change.
 		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, repos.EASMSeed, s.Scope, repos.Attribution, repos.Asset, log)
 		s.ScopeJoin.SetAudit(s.Audit)
+		s.ScopeJoin.SetSettings(s.Tenant)
 		stamper := easmapp.NewScanStamper(repos.Attribution, repos.EASMSeed)
 		stamper.SetScopeJoin(s.ScopeJoin)
 		s.Ingest.SetScanAttributionStamper(stamper)
@@ -2283,9 +2284,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	if s.SensorGrant != nil {
 		s.SensorGrant.SetNotifications(repos.MemberLifecycle, s.Notification)
 	}
-	// A path exclusion's testing mode change notifies every administrator
-	// (RFC-056).
-	s.Scope.SetNotifications(repos.MemberLifecycle, s.Notification)
+
+	// Scope entries: settings, the approval count and the widening notice to
+	// every administrator (RFC-054 §7).
+	if s.Scope != nil {
+		s.Scope.SetEntryPolicy(s.Tenant, repos.MemberLifecycle, s.Notification)
+	}
 }
 
 // InitEmailServices initializes email-related services.

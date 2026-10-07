@@ -181,7 +181,7 @@ func TestSetExclusionTesting(t *testing.T) {
 	repo := &testingRepo{byID: map[shared.ID]*scopedom.Exclusion{path.ID(): path, domain.ID(): domain}}
 	svc := newFilterService(repo)
 	n := &notices{}
-	svc.SetNotifications(admins{ids: []shared.ID{shared.NewID(), shared.NewID()}}, n)
+	svc.SetEntryPolicy(nil, admins{ids: []shared.ID{shared.NewID(), shared.NewID()}}, n)
 	ctx := context.Background()
 	in := func(tenant shared.ID, id shared.ID, mode string, until *time.Time) SetTestingInput {
 		return SetTestingInput{TenantID: tenant.String(), ExclusionID: id.String(), Testing: mode, TestingUntil: until, ChangedBy: "approver-2"}

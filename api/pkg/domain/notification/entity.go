@@ -65,6 +65,9 @@ const (
 	// sensors may act for the organization: a sensor paired or re-paired, a
 	// grant widened, a sensor promoted (RFC-052).
 	TypeSensorSecurity = "sensor_security"
+	// TypeScopeChange tells administrators that the organization's scope
+	// grew, or that a scope entry waits for their approval (RFC-054).
+	TypeScopeChange = "scope_change"
 )
 
 // Notification represents an in-app notification.

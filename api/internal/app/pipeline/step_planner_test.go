@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -216,4 +217,32 @@ type capturingCommands struct {
 func (c *capturingCommands) Create(_ context.Context, cmd *command.Command) error {
 	c.cmds = append(c.cmds, cmd)
 	return nil
+}
+
+// A chunk of an active stage carries the hosts it hits (per-host
+// politeness); a passive stage carries none.
+func TestStepDispatch_ActiveChunksCarryHostKeys(t *testing.T) {
+	for _, tc := range []struct {
+		tool string
+		want []string
+	}{
+		{"httpx", []string{"a.example.com", "b.example.com"}},
+		{"dnsx", nil},
+	} {
+		s, run, _, _, _ := gatingFixture(map[string]pipelinedom.StepRunStatus{"a": pipelinedom.StepRunStatusPending}, nil)
+		tpl, _ := s.templateRepo.GetWithSteps(context.Background(), run.PipelineID)
+		tpl.Steps[0].Tool = tc.tool
+		created := &capturingCommands{}
+		s.commandRepo = created
+		run.Context = map[string]any{"targets": []string{"https://b.example.com", "a.example.com"}}
+		if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
+			t.Fatal(err)
+		}
+		if len(created.cmds) != 1 {
+			t.Fatalf("%s: commands = %d", tc.tool, len(created.cmds))
+		}
+		if got := created.cmds[0].HostKeys; !slices.Equal(got, tc.want) {
+			t.Errorf("%s: host keys = %v, want %v", tc.tool, got, tc.want)
+		}
+	}
 }
