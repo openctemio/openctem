@@ -25,7 +25,7 @@ Grouped by CTEM stage in `src/config/sidebar-data.ts`:
 - **Scoping** (docs/ui/scoping-ia-2026-10.md) — Overview (`/scoping`, the
   readiness hub, its first row; the section header only expands), Cycles (`/cycles`, detail
   `/cycles/[id]`), Business context (tabs Crown jewels · Services · Units),
-  Boundaries (`/scope-config`: Targets · Exclusions), Threat model (tabs
+  Scope (`/scope`: Targets · Exclusions · Seeds), Threat model (tabs
   Threats · Attacker profiles).
 - **Discovery** — Scans, Sensors, Attack surface (+ external), Assets (one row;
   tabs Inventory · Groups · What changed · Suggestions), Exposures (one row; its
