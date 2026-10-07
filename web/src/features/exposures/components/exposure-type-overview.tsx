@@ -32,14 +32,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState, SeverityBadge, type Severity } from '@/features/shared'
 import { SEVERITY_CHART_COLORS, SEVERITY_ORDER, type SeverityLevel } from '@/lib/severity-colors'
 import { findingsHrefForSources } from './exposures-section'
+import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 
-export const SEVERITY_LABELS: Record<SeverityLevel, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-}
+export const SEVERITY_LABELS: Record<SeverityLevel, string> = SHARED_SEVERITY_LABELS
 
 /** Categorical series colours from the theme (they carry their own dark values). */
 export const CATEGORY_CHART_COLORS = [
