@@ -23814,33 +23814,6 @@ paths:
       summary: Get tenant dashboard stats
       tags:
       - Dashboard
-  /dashboard/stats/global:
-    get:
-      description: Returns dashboard statistics filtered by user's accessible tenants
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_infra_http_handler.DashboardStatsResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Get global dashboard stats
-      tags:
-      - Dashboard
   /easm/candidates:
     get:
       description: Assets the platform found but could not prove are the organization's

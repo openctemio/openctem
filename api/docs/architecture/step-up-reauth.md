@@ -124,7 +124,6 @@ offboarding without step-up and is removed.
 | `DELETE /api/v1/organization/members/{id}/mfa` | Removes a member's second factor. |
 | `POST /api/v1/organization/members/{id}/offboard`, `.../erase` | Removes a person's access; erases their personal data. Disabling (`POST /api/v1/tenants/{tenant}/members/{id}/suspend`) and re-enabling stay one click: they are reversible and keep everything the member holds. |
 | `POST /api/v1/ci/gate-overrides` | Break-glass past the CI security gate. |
-| `POST /api/v1/audit-logs/rebaseline` | Overwrites the tamper-evident audit chain. |
 | `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST …/webhook-secret/rotate` | Whoever holds the secret can forge inbound webhook events (issue sync, repository events) for the organization. |
 | `PATCH /api/v1/attachments/storage-config` | Decides where evidence files are written and with which credentials. |
 
