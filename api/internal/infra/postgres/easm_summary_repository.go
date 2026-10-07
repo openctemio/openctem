@@ -10,6 +10,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/easm"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -50,6 +51,13 @@ const notRejected = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions rj WHERE 
 
 func notRejectedFor(col string) string { return fmt.Sprintf(notRejected, col) }
 
+// inInventory keeps assets in the inventory (RFC-054 §4.4,
+// attribution.InInventory): not in the review queue and not rejected.
+const inInventory = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = %s AND iv.state IN ('needs_review', 'candidate', 'rejected'))`
+
+// InInventorySQL is the inventory-membership condition for an asset id column.
+func InInventorySQL(col string) string { return fmt.Sprintf(inInventory, col) }
+
 // scopeClause returns the SQL that narrows an asset id column to the data
 // scope, with its args appended; empty when the caller is unrestricted.
 func scopeClause(col string, scopeUserID *shared.ID, tenantID shared.ID, args []any) (string, []any) {
@@ -84,11 +92,18 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 	}
 	out.OldestReviewSince = nullTimeValue(oldest)
 
+	// The review queue by the rule that put each asset there.
+	byReason, err := r.reviewByReason(ctx, tenantID, scopeUserID)
+	if err != nil {
+		return nil, err
+	}
+	out.ReviewByReason = byReason
+
 	args = []any{tid}
 	sc, args = scopeClause("a.id", scopeUserID, tenantID, args)
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM assets a
-		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'service' AND a.is_internet_accessible AND a.status <> 'archived'`+notRejectedFor("a.id")+sc,
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'service' AND a.is_internet_accessible AND a.status <> 'archived'`+InInventorySQL("a.id")+sc,
 		args...).Scan(&out.ExposedServices); err != nil {
 		return nil, fmt.Errorf("easm exposed services: %w", err)
 	}
@@ -110,7 +125,7 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 		       count(*) FILTER (WHERE a.first_seen >= $4),
 		       count(*) FILTER (WHERE a.first_seen >= $5)
 		FROM assets a
-		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = ANY($2) AND a.status <> 'archived'`+notRejectedFor("a.id")+sc,
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = ANY($2) AND a.status <> 'archived'`+InInventorySQL("a.id")+sc,
 		args...).Scan(&out.NewSince7d, &out.NewSince30d, &out.NewSinceCycle); err != nil {
 		return nil, fmt.Errorf("easm new assets: %w", err)
 	}
@@ -139,6 +154,32 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 	return out, nil
 }
 
+// reviewByReason counts the review queue (needs_review, candidate) by the
+// rule that set each record, narrowed to the data scope.
+func (r *EASMSummaryRepository) reviewByReason(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID) (map[string]int, error) {
+	args := []any{tenantID.String()}
+	sc, args := scopeClause("aa.asset_id", scopeUserID, tenantID, args)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT aa.reason, count(*) FROM asset_attributions aa
+		JOIN assets a ON a.id = aa.asset_id AND a.tenant_id = aa.tenant_id AND a.deleted_at IS NULL
+		WHERE aa.tenant_id = $1 AND aa.state IN ('needs_review', 'candidate')`+sc+`
+		GROUP BY 1`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("easm review by reason: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var reason string
+		var n int
+		if err := rows.Scan(&reason, &n); err != nil {
+			return nil, err
+		}
+		out[reason] = n
+	}
+	return out, rows.Err()
+}
+
 // surfaceCounts fills the surface by type and attribution state.
 func (r *EASMSummaryRepository) surfaceCounts(ctx context.Context, tenantID shared.ID, scopeUserID *shared.ID, out *easm.SummaryData) error {
 	args := []any{tenantID.String(), pq.Array(EASMSurfaceTypes)}
@@ -159,7 +200,7 @@ func (r *EASMSummaryRepository) surfaceCounts(ctx context.Context, tenantID shar
 		if err := rows.Scan(&typ, &state, &n); err != nil {
 			return err
 		}
-		if state != "rejected" {
+		if attribution.InInventory(attribution.State(state)) {
 			out.AssetsByType[typ] += n
 		}
 		out.AttributionByState[state] += n
