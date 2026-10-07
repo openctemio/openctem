@@ -8,6 +8,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/app/asset"
@@ -57,7 +59,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
-	"github.com/openctemio/openctem/api/internal/app/pipeline"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/app/scan"
@@ -642,13 +643,13 @@ type Services struct {
 	SensorPlatformHealth *sensorapp.PlatformHealth
 	Ingest               *ingest.Service
 
-	// Scanning & Pipelines
+	// Scanning & ScanRuns
 	ScanProfile     *scan.ScanProfileService
 	Tool            *tool.Service
 	ToolCategory    *tool.CategoryService
 	Capability      *capability.CapabilityService
 	Scan            *scan.Service
-	Pipeline        *pipeline.Service
+	ScanRun         *scanrun.Service
 	ScannerTemplate *app.ScannerTemplateService
 	TemplateSource  *template.SourceService
 	SecretStore     *integration.SecretStoreService
@@ -1018,7 +1019,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	repos.EASMDNS.WithAlerts(easmAlerts)
 	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, cfg.Worker.CertMonitorFeedBaseURL, log)
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
-	s.CertMonitor.SetSeedSource(repos.EASMSeed)
 	// Stored CT exposures follow their host to its own asset (research/22 P0-9).
 	s.CertMonitor.SetRelinker(repos.Exposure)
 	// Excluded names are neither queried nor discovered (RFC-042 F16).
@@ -1246,7 +1246,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
 	// Simulation targets follow the scan act-scope rule (RFC-050 W3, 21b H4).
-	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.EASMSeed), s.DataScope)
+	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames), s.DataScope)
 	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
@@ -1371,7 +1371,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// On triage completion, enqueue an asset-scoped reclassify so a
 		// high-confidence false-positive verdict de-escalates the finding's
 		// priority. Reuses the same MemoryQueue → Reclassifier → ClassifyFinding
-		// pipeline the control/rule producers use (wired above).
+		// scan workflow the control/rule producers use (wired above).
 		s.AITriage.SetReclassifyEnqueuer(aiTriageReclassifyEnqueuer{pub: s.ControlChangePub})
 
 		// RFC-008: per-tenant LLM token budget. Always constructed so
@@ -1616,10 +1616,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Names a permanent scope target or seed covers are confirmed
 		// without review (RFC-054 §4.3); the join also backs the start-up
 		// backfill and the re-evaluation after a scope target change.
-		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, repos.EASMSeed, s.Scope, repos.Attribution, repos.Asset, log)
+		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, s.Scope, repos.Attribution, repos.Asset, log)
 		s.ScopeJoin.SetAudit(s.Audit)
 		s.ScopeJoin.SetSettings(s.Tenant)
-		stamper := easmapp.NewScanStamper(repos.Attribution, repos.EASMSeed)
+		stamper := easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)
 		stamper.SetScopeJoin(s.ScopeJoin)
 		s.Ingest.SetScanAttributionStamper(stamper)
 	}
@@ -1745,7 +1745,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// scheduling and not just the reported score.
 	s.SensorSelector.SetLoadBalancingWeights(cfg.Worker.LoadBalancing.Weights())
 
-	// Initialize security validator for pipeline/scan operations
+	// Initialize security validator for scan workflow/scan operations
 	securityValidator := app.NewSecurityValidator(repos.Tool, log)
 
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
@@ -1754,17 +1754,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	templateScanAdapter := template.NewScanAdapter(s.TemplateSyncer)
 	scanSecurityValidatorAdapter := app.NewScanSecurityValidatorAdapter(securityValidator)
 
-	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.EASMSeed).
+	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails, cfg.Scope.ActiveProof == config.ScopeProofAll)
 
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
 		repos.Scan,
-		repos.PipelineTemplate,
+		repos.ScanWorkflow,
 		repos.AssetGroup,
-		repos.PipelineRun,
-		repos.PipelineStep,
+		repos.ScanRun,
+		repos.ScanWorkflowStep,
 		repos.StepRun,
 		repos.Command,
 		repos.ScannerTemplate,
@@ -1790,7 +1790,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
-		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.EASMSeed)),
+		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames)),
 		// Platform sensors and intrusive scans need a verified domain
 		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
 		scan.WithActiveProof(cfg.Scope.ActiveProof),
@@ -1856,54 +1856,54 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Retest.SetAnnouncer(changeAnnouncer)
 	s.Ingest.SetRegressionHandler(retestapp.NewScanRegressions(regressionSLA, changeAnnouncer, log))
 
-	// Create adapters for pipeline sub-package
-	pipelineAuditAdapter := app.NewPipelineAuditServiceAdapter(s.Audit)
-	pipelineSensorSelectorAdapter := app.NewPipelineSensorSelectorAdapter(s.SensorSelector)
-	pipelineSecurityValidatorAdapter := app.NewPipelineSecurityValidatorAdapter(securityValidator)
+	// Create adapters for scanrun package
+	pipelineAuditAdapter := app.NewScanWorkflowAuditServiceAdapter(s.Audit)
+	scanRunSensorSelectorAdapter := app.NewScanRunSensorSelectorAdapter(s.SensorSelector)
+	scanWorkflowSecurityValidatorAdapter := app.NewScanWorkflowSecurityValidatorAdapter(securityValidator)
 
-	// Initialize pipeline service with security validator, audit service, transaction support, and tool repo
+	// Initialize scan run service with security validator, audit service, transaction support, and tool repo
 	// Stage chaining storage (research/27 P0-3): what each step produced and
 	// how the next stages were planned from it.
 	scanHops := postgres.NewScanHopRepository(&postgres.DB{DB: deps.DB})
-	s.Pipeline = pipeline.NewService(
-		repos.PipelineTemplate,
-		repos.PipelineStep,
-		repos.PipelineRun,
+	s.ScanRun = scanrun.NewService(
+		repos.ScanWorkflow,
+		repos.ScanWorkflowStep,
+		repos.ScanRun,
 		repos.StepRun,
 		repos.Sensor,
 		repos.Command,
-		pipelineSecurityValidatorAdapter,
+		scanWorkflowSecurityValidatorAdapter,
 		log,
-		pipeline.WithAuditService(pipelineAuditAdapter),
-		pipeline.WithDB(deps.DB),
-		pipeline.WithSensorSelector(pipelineSensorSelectorAdapter),
-		pipeline.WithToolRepo(repos.Tool),
-		pipeline.WithQualityGate(repos.ScanProfile, repos.Finding),
-		pipeline.WithScanDeactivator(s.Scan),     // Cascade pause scans when pipeline is deactivated
-		pipeline.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
+		scanrun.WithAuditService(pipelineAuditAdapter),
+		scanrun.WithDB(deps.DB),
+		scanrun.WithSensorSelector(scanRunSensorSelectorAdapter),
+		scanrun.WithToolRepo(repos.Tool),
+		scanrun.WithQualityGate(repos.ScanProfile, repos.Finding),
+		scanrun.WithScanDeactivator(s.Scan),     // Cascade pause scans when scan workflow is deactivated
+		scanrun.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
 		// Targets of a directly started run pass a scan trigger's checks:
 		// private-range policy, scope exclusions, scan zones (RFC-042 F16).
-		pipeline.WithTargetGate(s.Scan),
+		scanrun.WithTargetGate(s.Scan),
 		// A run's asset_id (copied into every step command) must be a live
 		// asset of the tenant in the caller's scope (research doc 21b, C4).
-		pipeline.WithAssetRefChecker(s.DataScope),
+		scanrun.WithAssetRefChecker(s.DataScope),
 		// Chained steps take what their predecessors produced, through the
 		// per-hop gate (hop_router.go).
-		pipeline.WithHopStore(scanHops),
+		scanrun.WithHopStore(scanHops),
 	)
 
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
-	// are queued by the pipeline service, like every later step.
-	s.Scan.SetStepQueuer(s.Pipeline)
-	// Ingest records what each step's reports wrote and tells the pipeline
+	// are queued by the scan run service, like every later step.
+	s.Scan.SetStepQueuer(s.ScanRun)
+	// Ingest records what each step's reports wrote and tells the scan run service
 	// service when a v2 report of a command finished, so a chained step
 	// waiting for it is planned.
 	s.Ingest.SetStepOutputRecorder(scanHops)
-	s.Ingest.SetCommandIngestedHook(s.Pipeline.OnCommandIngested)
+	s.Ingest.SetCommandIngestedHook(s.ScanRun.OnCommandIngested)
 
-	// Wire up pipeline deactivator to tool service for cascade deactivation
-	// When a tool is deactivated/deleted, all active pipelines using it will be deactivated
-	s.Tool.SetPipelineDeactivator(s.Pipeline)
+	// Wire up scan workflow deactivator to tool service for cascade deactivation
+	// When a tool is deactivated/deleted, all active scan workflows using it will be deactivated
+	s.Tool.SetScanWorkflowDeactivator(s.ScanRun)
 
 	// Every automation run acts as one person (a manual run: who started
 	// it; an event run: the owner), checked live before each step.
@@ -1940,7 +1940,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	workflow.RegisterAllActionHandlersWithAI(
 		workflowExecutor,
 		s.Vulnerability,
-		s.Pipeline,
+		s.ScanRun,
 		s.Scan,
 		s.Integration,
 		s.AITriage,
@@ -2220,8 +2220,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// attack surface too: same throttled notification, no asset_discovered.
 	s.Ingest.SetAssetsExposedCallback(s.AssetDiscoveryNotifier.AssetsExposed)
 
-	// A successful pipeline run fires the `scan_completed` workflow trigger.
-	s.Pipeline.SetRunCompletedCallback(s.WorkflowDispatcher.DispatchScanCompleted)
+	// A successful scan run fires the `scan_completed` workflow trigger.
+	s.ScanRun.SetRunCompletedCallback(s.WorkflowDispatcher.DispatchScanCompleted)
 
 	return s, nil
 }

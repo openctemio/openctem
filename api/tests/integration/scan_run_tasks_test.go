@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -16,7 +17,7 @@ func TestScanRun_TasksOfATriggeredRun(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newRecordingPipelineService(db)
+	pipeSvc := newRecordingScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -38,15 +39,15 @@ func TestScanRun_TasksOfATriggeredRun(t *testing.T) {
 	if tasks.Summary.Total != 1 || tasks.Summary.Queued != 1 || len(tasks.Items) != 1 || tasks.Truncated {
 		t.Fatalf("tasks = %+v, want the one queued command", tasks)
 	}
-	if tasks.Items[0].Status != pipeline.TaskStatusQueued || tasks.Items[0].Targets < 1 {
+	if tasks.Items[0].Status != scanrun.TaskStatusQueued || tasks.Items[0].Targets < 1 {
 		t.Fatalf("task = %+v", tasks.Items[0])
 	}
 
-	sums, err := pipeSvc.RunTaskSummaries(ctx, tenantID.String(), []*pipeline.Run{got})
+	sums, err := pipeSvc.RunTaskSummaries(ctx, tenantID.String(), []*scanrun.Run{got})
 	if err != nil || sums[run.ID].Total != 1 {
 		t.Fatalf("RunTaskSummaries = %+v, %v", sums, err)
 	}
-	if sums, err := pipeSvc.RunTaskSummaries(ctx, stranger.String(), []*pipeline.Run{got}); err != nil || len(sums) != 0 {
+	if sums, err := pipeSvc.RunTaskSummaries(ctx, stranger.String(), []*scanrun.Run{got}); err != nil || len(sums) != 0 {
 		t.Fatalf("stranger summaries = %+v, %v; want none", sums, err)
 	}
 

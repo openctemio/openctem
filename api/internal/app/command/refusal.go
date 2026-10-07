@@ -1,7 +1,7 @@
 package command
 
 // A sensor's refusal of a command under its policy (research/25 §3.6,
-// owner decision D8). Routed scan work (a scan with a pipeline run, the
+// owner decision D8). Routed scan work (a scan with a scan run, the
 // work the platform chose a sensor for) is re-queued to another eligible
 // sensor, and the refuser can no longer claim it; it fails once no other
 // eligible sensor accepts it (sensor.Accepts on their reported policies)
@@ -30,7 +30,7 @@ type RequeueCandidateFinder interface {
 }
 
 // routedWork reports whether cmd is work the platform routed and may hand
-// to another sensor: a scan with a pipeline run (the rule the lease and
+// to another sensor: a scan with a scan run (the rule the lease and
 // release paths use, postgres.routedScanWork).
 func routedWork(cmd *commanddom.Command) bool {
 	if cmd.Type != commanddom.CommandTypeScan || len(cmd.Payload) == 0 {
@@ -40,7 +40,7 @@ func routedWork(cmd *commanddom.Command) bool {
 	if json.Unmarshal(cmd.Payload, &p) != nil {
 		return false
 	}
-	_, ok := p["pipeline_run_id"]
+	_, ok := p["scan_run_id"]
 	return ok
 }
 

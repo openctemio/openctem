@@ -212,7 +212,7 @@ func TestReleasePending_StaleReleasesLateKeeps(t *testing.T) {
 		t.Helper()
 		id := shared.NewID()
 		if _, err := db.ExecContext(ctx, `INSERT INTO commands (id, tenant_id, sensor_id, type, status, payload)
-			VALUES ($1, $2, $3, 'scan', 'pending', '{"pipeline_run_id":"x"}'::jsonb)`,
+			VALUES ($1, $2, $3, 'scan', 'pending', '{"scan_run_id":"x"}'::jsonb)`,
 			id.String(), tenantID.String(), sensorID.String()); err != nil {
 			t.Fatalf("seed command: %v", err)
 		}

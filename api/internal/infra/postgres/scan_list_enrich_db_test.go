@@ -13,7 +13,7 @@ import (
 func TestListByTenantAndIDs_OnlyTheTenantsRuns(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
-	runs := NewPipelineRunRepository(&DB{DB: db})
+	runs := NewScanRunRepository(&DB{DB: db})
 	tenantA, scanA := seedCounterScan(ctx, t, db)
 	tenantB, scanB := seedCounterScan(ctx, t, db)
 	runA := seedCounterRun(ctx, t, runs, tenantA, scanA)
@@ -34,19 +34,19 @@ func TestListByTenantAndIDs_OnlyTheTenantsRuns(t *testing.T) {
 func TestTemplateNames_OwnAndSystemOnly(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
-	repo := NewPipelineTemplateRepository(&DB{DB: db})
+	repo := NewScanWorkflowRepository(&DB{DB: db})
 	tenantA := seedScanTriggerTenant(ctx, t, db)
 	tenantB := seedScanTriggerTenant(ctx, t, db)
 
 	seed := func(tenant shared.ID, name string) shared.ID {
 		id := shared.NewID()
 		if _, err := db.ExecContext(ctx,
-			`INSERT INTO pipeline_templates (id, tenant_id, name) VALUES ($1, $2, $3)`,
+			`INSERT INTO scan_workflows (id, tenant_id, name) VALUES ($1, $2, $3)`,
 			id.String(), tenant.String(), name); err != nil {
 			t.Fatalf("seed template: %v", err)
 		}
 		t.Cleanup(func() {
-			_, _ = db.ExecContext(context.Background(), `DELETE FROM pipeline_templates WHERE id = $1`, id.String())
+			_, _ = db.ExecContext(context.Background(), `DELETE FROM scan_workflows WHERE id = $1`, id.String())
 		})
 		return id
 	}

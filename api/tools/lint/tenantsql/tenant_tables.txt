@@ -59,7 +59,6 @@ easm_alert_throttle
 easm_dns_check_state
 easm_dns_name_state
 easm_evidence
-easm_seeds
 easm_tombstones
 exposure_events
 exposures
@@ -97,8 +96,8 @@ pentest_finding_templates
 pentest_findings
 pentest_reports
 pentest_retests
-pipeline_runs
-pipeline_templates
+scan_runs
+scan_workflows
 priority_class_audit_log
 priority_override_rules
 relationship_suggestions

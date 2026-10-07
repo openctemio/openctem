@@ -1,7 +1,7 @@
 package scope
 
 // Exclusions on the paths that discover or dispatch outside a scan trigger:
-// ingest, Certificate Transparency discovery, pipeline runs and the coverage
+// ingest, Certificate Transparency discovery, scan runs and the coverage
 // dispatcher. Design: docs/rfcs/RFC-042-asset-inventory-v2.md (§3.3 F16 and
 // §6.13).
 

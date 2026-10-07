@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -445,4 +446,61 @@ func TestGrant_DoorbellActions_DB(t *testing.T) {
 
 func ingestReport() *ctis.Report {
 	return &ctis.Report{Version: "1.0", Metadata: ctis.ReportMetadata{ID: "grant-push"}}
+}
+
+// A sensor on the default grant the insert trigger gives it retests the
+// finding of a T1 tool once it is trusted, and refuses it while New (the
+// trust level caps it at T0). Before, no default profile listed retest, so
+// "Retest now" waited out its deadline with no result.
+func TestGrant_DefaultSensorRetests_DB(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	tid, uid := f.org()
+	caps := []string{"vulnerability", "retest:nuclei"}
+	sid := f.sensor(tid, []string{"nuclei"}, caps)
+	obs := &refusals{}
+	cmds := command.NewService(postgres.NewCommandRepository(f.pg), logger.NewNop(),
+		command.WithSensorLookup(postgres.NewSensorRepository(f.pg)), command.WithGrants(f.grants, obs))
+
+	g, err := f.svc.Get(ctx, tid, sid)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !slices.Contains(g.JobTypes, "retest") {
+		t.Fatalf("default grant job types %v: no retest", g.JobTypes)
+	}
+	retest := func() *commanddom.Command {
+		return f.command(tid, commanddom.CommandTypeRetest, map[string]any{
+			"scanner": "nuclei", "retest_id": shared.NewID().String(), "timeout_seconds": 120,
+			"targets": []string{"https://app.example.com"},
+			"items": []map[string]any{{"ref": shared.NewID().String(), "target": "https://app.example.com",
+				"kind": "finding", "rule_id": "CVE-2021-41773"}},
+			"required_capabilities": []string{"retest:nuclei"},
+		}, nil)
+	}
+
+	// New: refused (tier), on poll and on claim by id.
+	first := retest()
+	if polled(t, cmds, tid, sid, caps)[first.ID] {
+		t.Fatal("New sensor was offered a T1 retest")
+	}
+	if _, err := cmds.Acknowledge(ctx, tid.String(), sid.String(), first.ID.String()); !errors.Is(err, command.ErrOutOfGrant) {
+		t.Fatalf("New sensor claimed a T1 retest: %v", err)
+	}
+	if len(obs.dims) == 0 || obs.dims[len(obs.dims)-1] != sensordom.DimTier {
+		t.Fatalf("refusal dimension: %v", obs.dims)
+	}
+
+	// Trusted: offered and claimed.
+	in := input(g)
+	in.TrustLevel = sensordom.TrustTrusted
+	if g, err = f.svc.Update(ctx, admin(tid, uid), sid, in); err != nil || g == nil {
+		t.Fatalf("promote: %v", err)
+	}
+	if !polled(t, cmds, tid, sid, caps)[first.ID] {
+		t.Fatal("trusted default sensor was not offered the retest")
+	}
+	if _, err := cmds.Acknowledge(ctx, tid.String(), sid.String(), first.ID.String()); err != nil {
+		t.Fatalf("trusted default sensor could not claim the retest: %v", err)
+	}
 }

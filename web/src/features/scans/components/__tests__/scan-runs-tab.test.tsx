@@ -4,20 +4,20 @@ import userEvent from '@testing-library/user-event'
 
 import { ScanRunsTab } from '../scan-runs-tab'
 
-// The Runs tab reads pipeline runs (the table every scan trigger writes),
+// The Runs tab reads workflow runs (the table every scan trigger writes),
 // paged on the server; it used to read scan sessions, which stayed empty.
-const pipelineRunsCalls: Array<Record<string, unknown> | undefined> = []
+const workflowRunsCalls: Array<Record<string, unknown> | undefined> = []
 let runsResponse: unknown
-let canReadPipelines = true
+let canReadScanRuns = true
 
-vi.mock('@/lib/api/pipeline-hooks', () => ({
-  usePipelineRuns: (filters?: Record<string, unknown>) => {
-    pipelineRunsCalls.push(filters)
+vi.mock('@/lib/api/scan-workflow-hooks', () => ({
+  useScanRuns: (filters?: Record<string, unknown>) => {
+    workflowRunsCalls.push(filters)
     return { data: runsResponse, isLoading: false, error: undefined }
   },
   useScanManagementStats: () => ({
     data: {
-      pipelines: {
+      scan_runs: {
         total: 40,
         running: 1,
         pending: 0,
@@ -48,7 +48,7 @@ vi.mock('@/lib/permissions', async (importOriginal) => {
   return {
     ...actual,
     Can: ({ children, fallback }: { children: React.ReactNode; fallback?: React.ReactNode }) =>
-      canReadPipelines ? <>{children}</> : <>{fallback}</>,
+      canReadScanRuns ? <>{children}</> : <>{fallback}</>,
   }
 })
 const urlState: Record<string, string> = {}
@@ -78,7 +78,7 @@ globalThis.ResizeObserver ??= class {
 const run = (over: Record<string, unknown>) => ({
   id: 'r1',
   tenant_id: 't',
-  pipeline_id: 'p',
+  scan_workflow_id: 'p',
   scan_id: 's1',
   scan_name: 'Daily external recon',
   trigger_type: 'manual',
@@ -98,8 +98,8 @@ const run = (over: Record<string, unknown>) => ({
 
 describe('ScanRunsTab', () => {
   beforeEach(() => {
-    pipelineRunsCalls.length = 0
-    canReadPipelines = true
+    workflowRunsCalls.length = 0
+    canReadScanRuns = true
     for (const k of Object.keys(urlState)) delete urlState[k]
     runsResponse = {
       items: [
@@ -121,17 +121,17 @@ describe('ScanRunsTab', () => {
     }
   })
 
-  it('lists pipeline runs, one page at a time, with the scan name and outcome', () => {
+  it('lists workflow runs, one page at a time, with the scan name and outcome', () => {
     render(<ScanRunsTab />)
-    expect(pipelineRunsCalls.at(-1)).toMatchObject({ page: 1, per_page: 25 })
-    expect(pipelineRunsCalls.at(-1)?.status).toBeUndefined()
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ page: 1, per_page: 25 })
+    expect(workflowRunsCalls.at(-1)?.status).toBeUndefined()
 
     const table = screen.getByRole('table')
     expect(within(table).getByRole('link', { name: 'Daily external recon' })).toHaveAttribute(
       'href',
       '/scans/s1'
     )
-    expect(within(table).getByText('Pipeline run')).toBeInTheDocument()
+    expect(within(table).getByText('Scan run')).toBeInTheDocument()
     expect(within(table).getByText('no sensor online')).toBeInTheDocument()
     expect(within(table).getByText('(1 failed)')).toBeInTheDocument()
     expect(within(table).getByText('3m 12s')).toBeInTheDocument()
@@ -160,14 +160,14 @@ describe('ScanRunsTab', () => {
   it('passes the status filter to the API', () => {
     urlState.run_status = 'canceled'
     render(<ScanRunsTab />)
-    expect(pipelineRunsCalls.at(-1)).toMatchObject({ status: 'canceled', page: 1 })
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ status: 'canceled', page: 1 })
   })
 
   it('keeps page, page size and sort in the URL and sends them to the API', async () => {
     urlState.run_page = '2'
     urlState.run_sort = '-total_findings'
     render(<ScanRunsTab />)
-    expect(pipelineRunsCalls.at(-1)).toMatchObject({
+    expect(workflowRunsCalls.at(-1)).toMatchObject({
       page: 2,
       per_page: 25,
       sort: '-total_findings',
@@ -188,7 +188,7 @@ describe('ScanRunsTab', () => {
   it('falls back to newest first for a stale sort link', () => {
     urlState.run_sort = 'status'
     render(<ScanRunsTab />)
-    expect(pipelineRunsCalls.at(-1)).toMatchObject({ sort: '-created_at' })
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ sort: '-created_at' })
   })
 
   it('names a quick-scan run from the server and marks a deleted scan', () => {
@@ -218,23 +218,23 @@ describe('ScanRunsTab', () => {
     await userEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
     await waitFor(() => expect(exportToCsvMock).toHaveBeenCalled())
     const url = String(exportGet.mock.calls.at(-1)?.[0])
-    expect(url).toMatch(/^\/api\/v1\/pipeline-runs\?/)
+    expect(url).toMatch(/^\/api\/v1\/scan-runs\?/)
     expect(url).toContain('status=failed')
     expect(url).toContain('sort=-started_at')
     expect(exportToCsvMock).toHaveBeenCalled()
   })
 
   it('explains the missing permission instead of showing an empty table', () => {
-    canReadPipelines = false
+    canReadScanRuns = false
     render(<ScanRunsTab />)
-    expect(screen.getByText(/needs the "View pipelines" permission/)).toBeInTheDocument()
+    expect(screen.getByText(/needs the "View scans" permission/)).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })
 
 describe('ScanRunsTab tasks', () => {
   beforeEach(() => {
-    canReadPipelines = true
+    canReadScanRuns = true
     for (const k of Object.keys(urlState)) delete urlState[k]
   })
 

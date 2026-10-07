@@ -33,10 +33,10 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		return fmt.Errorf("failed to marshal scanner_config: %w", err)
 	}
 
-	var pipelineID *string
-	if s.PipelineID != nil {
-		pid := s.PipelineID.String()
-		pipelineID = &pid
+	var scanWorkflowID *string
+	if s.ScanWorkflowID != nil {
+		pid := s.ScanWorkflowID.String()
+		scanWorkflowID = &pid
 	}
 
 	var createdBy *string
@@ -82,7 +82,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 	query := `
 		INSERT INTO scans (
 			id, tenant_id, name, description,
-			asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
+			asset_group_id, asset_group_ids, targets, scan_type, scan_workflow_id,
 			scanner_name, scanner_config, targets_per_job,
 			schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
 			tags, run_on_tenant_runner, sensor_preference, profile_id, timeout_seconds,
@@ -103,7 +103,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		pq.Array(assetGroupIDStrings), // NEW: multiple asset groups
 		pq.Array(s.Targets),           // Direct targets
 		string(s.ScanType),
-		pipelineID,
+		scanWorkflowID,
 		s.ScannerName,
 		scannerConfig,
 		s.TargetsPerJob,
@@ -209,10 +209,10 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		return fmt.Errorf("failed to marshal scanner_config: %w", err)
 	}
 
-	var pipelineID *string
-	if s.PipelineID != nil {
-		pid := s.PipelineID.String()
-		pipelineID = &pid
+	var scanWorkflowID *string
+	if s.ScanWorkflowID != nil {
+		pid := s.ScanWorkflowID.String()
+		scanWorkflowID = &pid
 	}
 
 	// Handle nullable asset_group_id
@@ -252,7 +252,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 	query := `
 		UPDATE scans
 		SET name = $2, description = $3,
-		    asset_group_id = $4, asset_group_ids = $5, targets = $6, scan_type = $7, pipeline_id = $8,
+		    asset_group_id = $4, asset_group_ids = $5, targets = $6, scan_type = $7, scan_workflow_id = $8,
 		    scanner_name = $9, scanner_config = $10, targets_per_job = $11,
 		    schedule_type = $12, schedule_cron = $13, schedule_day = $14, schedule_time = $15, schedule_timezone = $16, next_run_at = $17,
 		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
@@ -269,7 +269,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		pq.Array(assetGroupIDStrings), // Multiple asset groups
 		pq.Array(s.Targets),           // Direct targets
 		string(s.ScanType),
-		pipelineID,
+		scanWorkflowID,
 		s.ScannerName,
 		scannerConfig,
 		s.TargetsPerJob,
@@ -517,10 +517,10 @@ func (r *ScanRepository) ListByAssetGroupID(ctx context.Context, assetGroupID sh
 	return scans, nil
 }
 
-// ListByPipelineID lists all scans using a pipeline.
-func (r *ScanRepository) ListByPipelineID(ctx context.Context, pipelineID shared.ID) ([]*scan.Scan, error) {
-	query := r.selectQuery() + " WHERE pipeline_id = $1 ORDER BY name"
-	rows, err := r.db.QueryContext(ctx, query, pipelineID.String())
+// ListByScanWorkflowID lists all scans using a scan workflow.
+func (r *ScanRepository) ListByScanWorkflowID(ctx context.Context, scanWorkflowID shared.ID) ([]*scan.Scan, error) {
+	query := r.selectQuery() + " WHERE scan_workflow_id = $1 ORDER BY name"
+	rows, err := r.db.QueryContext(ctx, query, scanWorkflowID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list by pipeline: %w", err)
 	}
@@ -623,7 +623,7 @@ func (r *ScanRepository) ListOptInScans(ctx context.Context, tenantID shared.ID,
 func (r *ScanRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, name, description,
-		       asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
+		       asset_group_id, asset_group_ids, targets, scan_type, scan_workflow_id,
 		       scanner_name, scanner_config, targets_per_job,
 		       schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
 		       tags, run_on_tenant_runner, sensor_preference, profile_id, timeout_seconds,
@@ -656,7 +656,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		status              string
 		tags                pq.StringArray
 		scannerConfig       []byte
-		pipelineID          sql.NullString
+		scanWorkflowID      sql.NullString
 		profileID           sql.NullString
 		sensorPreference    sql.NullString
 		timeoutSeconds      sql.NullInt64
@@ -681,7 +681,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&assetGroupIDs,
 		&targets,
 		&scanType,
-		&pipelineID,
+		&scanWorkflowID,
 		&scannerName,
 		&scannerConfig,
 		&s.TargetsPerJob,
@@ -770,9 +770,9 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		s.RetryBackoffSeconds = scan.DefaultRetryBackoffSeconds
 	}
 
-	if pipelineID.Valid {
-		pid, _ := shared.IDFromString(pipelineID.String)
-		s.PipelineID = &pid
+	if scanWorkflowID.Valid {
+		pid, _ := shared.IDFromString(scanWorkflowID.String)
+		s.ScanWorkflowID = &pid
 	}
 	if profileID.Valid {
 		pid, _ := shared.IDFromString(profileID.String)
@@ -814,9 +814,9 @@ func (r *ScanRepository) buildWhereClause(filter scan.Filter) (string, []any) {
 		argIndex++
 	}
 
-	if filter.PipelineID != nil {
-		conditions = append(conditions, fmt.Sprintf("pipeline_id = $%d", argIndex))
-		args = append(args, filter.PipelineID.String())
+	if filter.ScanWorkflowID != nil {
+		conditions = append(conditions, fmt.Sprintf("scan_workflow_id = $%d", argIndex))
+		args = append(args, filter.ScanWorkflowID.String())
 		argIndex++
 	}
 

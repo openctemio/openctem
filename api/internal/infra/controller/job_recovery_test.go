@@ -109,7 +109,7 @@ func (r *recordingCommandRepo) GetStatsByTenant(context.Context, shared.ID) (com
 	return command.CommandStats{}, nil
 }
 
-func (r *recordingCommandRepo) CancelByPipelineRunID(context.Context, shared.ID, shared.ID) (int64, error) {
+func (r *recordingCommandRepo) CancelByScanRunID(context.Context, shared.ID, shared.ID) (int64, error) {
 	return 0, nil
 }
 
@@ -119,27 +119,27 @@ var _ command.Repository = (*recordingCommandRepo)(nil)
 // CommandRepository.ExpireOldCommands — a raw `UPDATE commands SET
 // status='expired' WHERE status='pending' AND expires_at < NOW()` that ran on
 // the same 60s tick over a strict subset of the rows FindExpired matches, with
-// no pipeline notification. Whenever it won that race, FindExpired no longer
+// no scan workflow notification. Whenever it won that race, FindExpired no longer
 // matched the row and the owning run was never told its step died.
 //
 // ExpireOldCommands has since been deleted from command.Repository, its postgres
 // implementation and the command service, so the guarantee is now enforced by
 // the compiler rather than by a test. app/command.ExpirationChecker is the only
-// expiry path and it calls pipeline.OnStepFailed(..., "COMMAND_EXPIRED").
+// expiry path and it calls scanrun.OnStepFailed(..., "COMMAND_EXPIRED").
 
 // TestJobRecoveryController_DoesNotExpirePlatformJobs pins the same removal one
 // step over, for the platform-job queue.
 //
 // This controller used to run a raw `UPDATE commands SET status='expired' ...
 // WHERE is_platform_job AND status='pending' AND queued_at < ...`. Platform jobs
-// are created by scan/pipeline dispatch carrying pipeline_run_id + step_key and
+// are created by scan/scan workflow dispatch carrying scan_run_id + step_key and
 // with expires_at NULL, so FindExpired never covered them: that raw UPDATE was
 // the only thing that ever reaped them, and it notified nobody. The step stayed
 // 'queued' until ScanTimeoutController eventually reported a generic timeout
 // instead of "expired in queue".
 //
 // Expiry now belongs to app/command.ExpirationChecker, which calls
-// pipeline.OnStepFailed(..., "PLATFORM_JOB_EXPIRED_IN_QUEUE"). Reconcile must
+// scanrun.OnStepFailed(..., "PLATFORM_JOB_EXPIRED_IN_QUEUE"). Reconcile must
 // not expire platform jobs itself — not even by reading the candidates.
 func TestJobRecoveryController_DoesNotExpirePlatformJobs(t *testing.T) {
 	repo := &recordingCommandRepo{}
@@ -206,7 +206,7 @@ func TestJobRecovery_ExhaustedCommandFailsItsPipelineStep(t *testing.T) {
 	runID := shared.NewID().String()
 	repo := &exhaustingCommandRepo{exhausted: []*command.Command{
 		{ID: shared.NewID(), DispatchAttempts: 3,
-			Payload: []byte(`{"pipeline_run_id":"` + runID + `","step_key":"quick_scan"}`)},
+			Payload: []byte(`{"scan_run_id":"` + runID + `","step_key":"quick_scan"}`)},
 		{ID: shared.NewID(), DispatchAttempts: 3, Payload: []byte(`{"kind":"not a pipeline command"}`)},
 	}}
 	steps := &recordingSteps{}

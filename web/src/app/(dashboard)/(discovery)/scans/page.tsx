@@ -8,7 +8,6 @@ import { Main } from '@/components/layout'
 import { SensorOptInBanner } from '@/features/sensors/components/sensor-opt-in-banner'
 import { FreezeBanner } from '@/features/scan-freeze'
 import {
-  PageHeader,
   MetricStrip,
   type MetricStripItem,
   DataTable,
@@ -32,11 +31,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toast } from 'sonner'
 import {
-  Plus,
   Search,
   MoreHorizontal,
   Eye,
@@ -47,8 +44,6 @@ import {
   Copy,
   Pencil,
   Tag,
-  Settings,
-  Zap,
   Loader2,
 } from 'lucide-react'
 import { useDebounce } from '@/hooks/use-debounce'
@@ -75,17 +70,16 @@ import type {
   ScanType as ApiScanType,
   ScheduleType,
 } from '@/lib/api/scan-types'
+import { CloneScanDialog, EditScanDialog } from '@/features/scans/components'
 import {
-  NewScanDialog,
-  CloneScanDialog,
-  EditScanDialog,
-  QuickScanDialog,
-} from '@/features/scans/components'
+  ScanCreateActions,
+  ScansPageHeader,
+  ScansSectionTabs,
+} from '@/features/scans/components/scans-section-tabs'
 import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-detail-sheet'
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
 import { ScheduleCell } from '@/features/scans/components/schedule-cell'
 import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
-import { ScanRunsTab } from '@/features/scans/components/scan-runs-tab'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
 import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
 import { scanSuccessRate } from '@/features/scans/lib/format'
@@ -218,63 +212,22 @@ function TableSkeleton() {
 // ============================================
 
 export default function ScansPage() {
-  // The active tab lives in the URL (`?tab=runs`) so either view can be linked to.
-  const [tabParam, setTabParam] = useUrlFilter('tab', 'configurations')
-  const mainTab: 'configurations' | 'runs' = tabParam === 'runs' ? 'runs' : 'configurations'
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [quickScanOpen, setQuickScanOpen] = useState(false)
-
   return (
-    <>
-      <NewScanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
-      <QuickScanDialog open={quickScanOpen} onOpenChange={setQuickScanOpen} />
-      <Main>
-        <PageHeader
-          title="Scans"
-          description="Schedule scan configurations and follow every run they produce."
-        >
-          <Can permission={Permission.ScansWrite} mode="disable">
-            <Button variant="outline" size="sm" onClick={() => setQuickScanOpen(true)}>
-              <Zap className="me-2 h-4 w-4" />
-              Quick scan
-            </Button>
-          </Can>
-          <Can permission={Permission.ScansWrite} mode="disable">
-            <Button size="sm" onClick={() => setDialogOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              New scan
-            </Button>
-          </Can>
-        </PageHeader>
+    <Main>
+      <ScansPageHeader>
+        <ScanCreateActions />
+      </ScansPageHeader>
+      <ScansSectionTabs />
 
-        <FreezeBanner className="mt-4" />
+      <FreezeBanner className="mt-5" />
+      <div className="mt-4">
+        <SensorOptInBanner />
+      </div>
 
-        <div className="mt-4">
-          <SensorOptInBanner />
-        </div>
-
-        <Tabs value={mainTab} onValueChange={setTabParam} className="mt-4">
-          <TabsList>
-            <TabsTrigger value="configurations" className="gap-2">
-              <Settings className="h-4 w-4" />
-              Configurations
-            </TabsTrigger>
-            <TabsTrigger value="runs" className="gap-2">
-              <Play className="h-4 w-4" />
-              Runs
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="configurations" className="mt-5">
-            <ConfigurationsTab />
-          </TabsContent>
-
-          <TabsContent value="runs" className="mt-5">
-            <ScanRunsTab />
-          </TabsContent>
-        </Tabs>
-      </Main>
-    </>
+      <div className="mt-5">
+        <ConfigurationsTab />
+      </div>
+    </Main>
   )
 }
 
