@@ -2401,62 +2401,6 @@ func TestTenantSvc_UpdateBrandingSettings_InvalidID(t *testing.T) {
 }
 
 // =============================================================================
-// UpdateBranchSettings Tests
-// =============================================================================
-
-func TestTenantSvc_UpdateBranchSettings_Success(t *testing.T) {
-	svc, repo := newTestTenantService()
-	existing := seedTenant(repo, "Team", "team-slug")
-
-	input := tenantapp.UpdateBranchSettingsInput{
-		TypeRules: []tenantapp.BranchTypeRuleInput{
-			{Pattern: "main", MatchType: "exact", BranchType: "main"},
-			{Pattern: "feature/", MatchType: "prefix", BranchType: "feature"},
-		},
-	}
-
-	result, err := svc.UpdateBranchSettings(context.Background(), existing.ID().String(), input, audit.AuditContext{})
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result == nil {
-		t.Fatal("expected settings result")
-	}
-}
-
-func TestTenantSvc_UpdateBranchSettings_InvalidID(t *testing.T) {
-	svc, _ := newTestTenantService()
-
-	input := tenantapp.UpdateBranchSettingsInput{}
-	_, err := svc.UpdateBranchSettings(context.Background(), "bad-uuid", input, audit.AuditContext{})
-	if err == nil {
-		t.Fatal("expected error for invalid ID")
-	}
-}
-
-func TestTenantSvc_UpdateBranchSettings_NotFound(t *testing.T) {
-	svc, _ := newTestTenantService()
-
-	input := tenantapp.UpdateBranchSettingsInput{}
-	_, err := svc.UpdateBranchSettings(context.Background(), shared.NewID().String(), input, audit.AuditContext{})
-	if err == nil {
-		t.Fatal("expected error for not found")
-	}
-}
-
-func TestTenantSvc_UpdateBranchSettings_RepoError(t *testing.T) {
-	svc, repo := newTestTenantService()
-	existing := seedTenant(repo, "Team", "team-slug")
-	repo.updateErr = errors.New("db error")
-
-	input := tenantapp.UpdateBranchSettingsInput{}
-	_, err := svc.UpdateBranchSettings(context.Background(), existing.ID().String(), input, audit.AuditContext{})
-	if err == nil {
-		t.Fatal("expected error from repo")
-	}
-}
-
-// =============================================================================
 // SetPermissionServices Tests
 // =============================================================================
 
@@ -2573,10 +2517,6 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 		}},
 		{"UpdateBrandingSettings", func() error {
 			_, err := svc.UpdateBrandingSettings(context.Background(), invalidID, tenantapp.UpdateBrandingSettingsInput{}, audit.AuditContext{})
-			return err
-		}},
-		{"UpdateBranchSettings", func() error {
-			_, err := svc.UpdateBranchSettings(context.Background(), invalidID, tenantapp.UpdateBranchSettingsInput{}, audit.AuditContext{})
 			return err
 		}},
 	}
