@@ -25,6 +25,7 @@ type SummaryData struct {
 	ExposedServices    int
 	AttributionByState map[string]int // "" = legacy (no record)
 	OldestReviewSince  *time.Time
+	ReviewByReason     map[string]int // review queue (needs_review, candidate) by rule
 	NewSince7d         int
 	NewSince30d        int
 	CycleStart         *time.Time
@@ -93,6 +94,9 @@ type AttributionBlock struct {
 	MonitorOnly int        `json:"monitor_only"`
 	Rejected    int        `json:"rejected"`
 	ReviewSince *time.Time `json:"review_oldest_since,omitempty"`
+	// ReviewByReason counts the review queue (needs_review and candidate)
+	// by the rule that put each asset there (RFC-054 §6.6).
+	ReviewByReason map[string]int `json:"review_by_reason"`
 }
 
 // NewBlock counts surface assets first seen recently. CycleStart is the
@@ -175,6 +179,10 @@ func build(d *SummaryData, now time.Time) *Summary {
 	a.MonitorOnly = d.AttributionByState["monitor_only"]
 	a.Rejected = d.AttributionByState["rejected"]
 	a.ReviewSince = d.OldestReviewSince
+	a.ReviewByReason = map[string]int{}
+	for k, v := range d.ReviewByReason {
+		a.ReviewByReason[k] = v
+	}
 
 	out.New = NewBlock{Last7Days: d.NewSince7d, Last30Days: d.NewSince30d, CycleStart: d.CycleStart}
 	if d.CycleStart != nil {

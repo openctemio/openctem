@@ -124,6 +124,54 @@ func (r *CommandLogRepository) ListForRunTask(ctx context.Context, tenantID, run
 		return commandlog.Page{}, fmt.Errorf("read task: %w", err)
 	}
 
+	return r.readLogs(ctx, tenantID, commandID, maxLines)
+}
+
+// ListForCommand returns a command's logs, for any command kind (scan,
+// retest, validate, system). A command of another tenant is not found.
+func (r *CommandLogRepository) ListForCommand(ctx context.Context, tenantID, commandID shared.ID, maxLines int) (commandlog.Page, error) {
+	var one int
+	err := r.db.QueryRowContext(ctx, `SELECT 1 FROM commands WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), commandID.String()).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return commandlog.Page{}, commandlog.ErrNotFound
+	}
+	if err != nil {
+		return commandlog.Page{}, fmt.Errorf("read command: %w", err)
+	}
+	return r.readLogs(ctx, tenantID, commandID, maxLines)
+}
+
+// SubjectFinding is the finding a command is about, when it has one: the
+// finding a retest checks (finding_retests) or the finding a validate job
+// re-verifies (its payload). nil for every other command.
+func (r *CommandLogRepository) SubjectFinding(ctx context.Context, tenantID, commandID shared.ID) (*shared.ID, error) {
+	var id sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(
+			(SELECT fr.finding_id::text FROM finding_retests fr
+			  WHERE fr.tenant_id = $1 AND (fr.check_command_id = $2 OR fr.reach_command_id = $2)
+			  LIMIT 1),
+			(SELECT c.payload->>'finding_id' FROM commands c
+			  WHERE c.tenant_id = $1 AND c.id = $2 AND c.type = 'validate'))`,
+		tenantID.String(), commandID.String()).Scan(&id)
+	if err != nil {
+		return nil, fmt.Errorf("read command subject: %w", err)
+	}
+	if !id.Valid || id.String == "" {
+		return nil, nil
+	}
+	fid, err := shared.IDFromString(id.String)
+	if err != nil {
+		// An unreadable finding id in a payload: treat it as a subject
+		// nobody can be shown (fail closed).
+		return &shared.ID{}, nil //nolint:nilerr // an unreadable id is a subject nobody may read, not a failure
+	}
+	return &fid, nil
+}
+
+// readLogs reads a command's stored batches, oldest first.
+func (r *CommandLogRepository) readLogs(ctx context.Context, tenantID, commandID shared.ID, maxLines int) (commandlog.Page, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT seq, lines, dropped FROM command_logs
 		WHERE tenant_id = $1 AND command_id = $2

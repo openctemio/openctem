@@ -1,5 +1,6 @@
 'use client'
 
+import { useDisplayUser } from '@/hooks/use-display-user'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -122,7 +123,6 @@ import { fetcherWithOptions } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
-import { useUser } from '@/stores/auth-store'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
 
 /**
@@ -488,7 +488,7 @@ export default function UsersPage() {
   const { isOwner, can, isAtLeast } = usePermissions()
   // Same gate as the old <Can permission={MembersManage} minRole="admin">.
   const canManageMembers = useCanMutate('PATCH /api/v1/tenants/{tenant}/members/{userId}')
-  const currentUser = useUser()
+  const currentUser = useDisplayUser()
   const caller = { isOwner: isOwner(), userId: currentUser?.id }
 
   // Search and filters live in the URL so a filtered member list can be linked to.
