@@ -30,3 +30,10 @@ export {
   type ScopeRefusal,
 } from './components/scope-check-results'
 export { ScopeCheckBadge } from './components/scope-check-badge'
+export {
+  ScopeChangePreview,
+  consequenceText,
+  previewSummary,
+  type ScopeChangeLine,
+  type ScopeChangeMark,
+} from './components/scope-change-preview'
