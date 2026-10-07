@@ -29,7 +29,7 @@ export function useCapabilityTable(): { table: CapabilityTable; isLoading: boole
 
 /** Checks draft steps with the API's graph validator (stores nothing). */
 export function validatePipelineSteps(steps: PipelineStep[]): Promise<GraphValidation> {
-  return post<GraphValidation>(pipelineEndpoints.validate(), {
+  return post<GraphValidation>(pipelineEndpoints.verify(), {
     steps: steps.map((s, idx) => ({
       step_key: s.step_key,
       name: s.name,

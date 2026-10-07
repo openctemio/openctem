@@ -1601,7 +1601,7 @@ export const pipelineEndpoints = {
   /**
    * Check a draft pipeline's steps as a workflow graph (stores nothing)
    */
-  validate: () => '/api/v1/pipelines/validate',
+  verify: () => '/api/v1/pipelines/verify',
 
   /**
    * The scan capability catalog: contracts, port types and adapters

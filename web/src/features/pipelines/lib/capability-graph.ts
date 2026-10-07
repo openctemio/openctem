@@ -5,7 +5,7 @@
  *
  * Affordance only: these lookups read the served table and never decide
  * more than the API does. Every save is validated by the API
- * (stage.ValidateGraph), and POST /pipelines/validate reports the same
+ * (stage.ValidateGraph), and POST /pipelines/verify reports the same
  * issues while editing.
  */
 
