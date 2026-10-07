@@ -24,11 +24,11 @@ type Scan struct {
 	Targets       []string    // Optional: direct target list (domains, IPs, URLs)
 
 	// Scan Type
-	ScanType      ScanType
-	PipelineID    *shared.ID     // For workflow type
-	ScannerName   string         // For single type
-	ScannerConfig map[string]any // Scanner-specific configuration
-	TargetsPerJob int            // Number of targets per job batch
+	ScanType       ScanType
+	ScanWorkflowID *shared.ID     // For workflow type
+	ScannerName    string         // For single type
+	ScannerConfig  map[string]any // Scanner-specific configuration
+	TargetsPerJob  int            // Number of targets per job batch
 
 	// Schedule
 	ScheduleType     ScheduleType
@@ -77,7 +77,7 @@ type Scan struct {
 	// (RFC-046 D5); neither a success nor a failure.
 	PartialRuns int
 	// BlockedRuns counts triggers that were refused before anything was
-	// dispatched (pipeline.RunStatusBlocked).
+	// dispatched (scanrun.RunStatusBlocked).
 	BlockedRuns int
 
 	// Audit
@@ -191,15 +191,15 @@ func (s *Scan) SetAssetGroupIDs(ids []shared.ID) {
 	s.UpdatedAt = time.Now()
 }
 
-// SetWorkflow configures the scan to use a workflow pipeline.
-func (s *Scan) SetWorkflow(pipelineID shared.ID) error {
+// SetWorkflow configures the scan to use a workflow scan workflow.
+func (s *Scan) SetWorkflow(scanWorkflowID shared.ID) error {
 	if s.ScanType != ScanTypeWorkflow {
 		return shared.NewDomainError("VALIDATION", "cannot set workflow on single scan type", shared.ErrValidation)
 	}
-	if pipelineID.IsZero() {
-		return shared.NewDomainError("VALIDATION", "pipeline_id is required for workflow type", shared.ErrValidation)
+	if scanWorkflowID.IsZero() {
+		return shared.NewDomainError("VALIDATION", "scan_workflow_id is required for workflow type", shared.ErrValidation)
 	}
-	s.PipelineID = &pipelineID
+	s.ScanWorkflowID = &scanWorkflowID
 	s.ScannerName = ""
 	s.ScannerConfig = nil
 	s.UpdatedAt = time.Now()
@@ -220,7 +220,7 @@ func (s *Scan) SetSingleScanner(scannerName string, config map[string]any, targe
 	s.ScannerName = scannerName
 	s.ScannerConfig = config
 	s.TargetsPerJob = targetsPerJob
-	s.PipelineID = nil
+	s.ScanWorkflowID = nil
 	s.UpdatedAt = time.Now()
 	return nil
 }
@@ -717,8 +717,8 @@ func (s *Scan) Validate() error {
 
 	switch s.ScanType {
 	case ScanTypeWorkflow:
-		if s.PipelineID == nil || s.PipelineID.IsZero() {
-			return shared.NewDomainError("VALIDATION", "pipeline_id is required for workflow type", shared.ErrValidation)
+		if s.ScanWorkflowID == nil || s.ScanWorkflowID.IsZero() {
+			return shared.NewDomainError("VALIDATION", "scan_workflow_id is required for workflow type", shared.ErrValidation)
 		}
 	case ScanTypeSingle:
 		if s.ScannerName == "" {
@@ -805,7 +805,7 @@ func (s *Scan) Clone(newName string) *Scan {
 		AssetGroupIDs:       make([]shared.ID, len(s.AssetGroupIDs)),
 		Targets:             make([]string, len(s.Targets)),
 		ScanType:            s.ScanType,
-		PipelineID:          s.PipelineID,
+		ScanWorkflowID:      s.ScanWorkflowID,
 		ScannerName:         s.ScannerName,
 		TargetsPerJob:       s.TargetsPerJob,
 		ScheduleType:        s.ScheduleType,

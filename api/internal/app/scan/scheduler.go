@@ -7,10 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -219,13 +221,13 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 			"triggered_by": "scheduler",
 			"scheduled_at": time.Now().Unix(),
 		},
-		TriggerType:   pipeline.TriggerTypeSchedule,
+		TriggerType:   scanworkflow.TriggerTypeSchedule,
 		SkipIfRunning: true,
 		// The run records the occurrence it serves; a second run for the
 		// same occurrence is refused by UNIQUE(scan_id, scheduled_for).
 		ScheduledFor: &occurrence,
 	})
-	if errors.Is(err, pipeline.ErrOccurrenceAlreadyRun) {
+	if errors.Is(err, scanrun.ErrOccurrenceAlreadyRun) {
 		// Another scheduler instance already started this occurrence (the
 		// next_run_at claim makes this rare; the unique index makes it
 		// impossible to double-fire). Nothing to record: that run is real.

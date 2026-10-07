@@ -6,7 +6,7 @@ package scan
 type ScanType string
 
 const (
-	// ScanTypeWorkflow executes a multi-step pipeline workflow.
+	// ScanTypeWorkflow executes a multi-step scan workflow workflow.
 	ScanTypeWorkflow ScanType = "workflow"
 	// ScanTypeSingle executes a single scanner.
 	ScanTypeSingle ScanType = "single"

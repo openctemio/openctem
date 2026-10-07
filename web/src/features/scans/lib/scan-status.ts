@@ -69,10 +69,10 @@ export function lastRunReason(run: ScanLastRun | null): string | undefined {
  * scanner of a single check. `kind` says which.
  */
 export function scanTypeLabel(
-  config: Pick<ScanConfig, 'scan_type' | 'pipeline_name' | 'scanner_name'>
+  config: Pick<ScanConfig, 'scan_type' | 'scan_workflow_name' | 'scanner_name'>
 ): { label: string; kind: 'workflow' | 'single' } {
   if (config.scan_type === 'workflow') {
-    return { label: config.pipeline_name?.trim() || 'Workflow', kind: 'workflow' }
+    return { label: config.scan_workflow_name?.trim() || 'Workflow', kind: 'workflow' }
   }
   return { label: config.scanner_name?.trim() || 'Single check', kind: 'single' }
 }

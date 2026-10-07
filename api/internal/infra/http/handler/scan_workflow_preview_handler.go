@@ -15,10 +15,10 @@ import (
 
 // WorkflowPreviewRequest is a workflow and the targets a scan would run it on.
 type WorkflowPreviewRequest struct {
-	PipelineID    string   `json:"pipeline_id" validate:"required,uuid"`
-	Targets       []string `json:"targets" validate:"max=1000,dive,max=500"`
-	AssetGroupIDs []string `json:"asset_group_ids" validate:"max=20,dive,uuid"`
-	ScanZoneID    string   `json:"scan_zone_id" validate:"omitempty,uuid"`
+	ScanWorkflowID string   `json:"scan_workflow_id" validate:"required,uuid"`
+	Targets        []string `json:"targets" validate:"max=1000,dive,max=500"`
+	AssetGroupIDs  []string `json:"asset_group_ids" validate:"max=20,dive,uuid"`
+	ScanZoneID     string   `json:"scan_zone_id" validate:"omitempty,uuid"`
 }
 
 // PreviewWorkflow handles POST /api/v1/scans/workflow-preview
@@ -44,11 +44,11 @@ func (h *ScanHandler) PreviewWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := h.service.PreviewWorkflow(r.Context(), scansvc.WorkflowPreviewInput{
-		TenantID:      middleware.GetTenantID(r.Context()),
-		PipelineID:    req.PipelineID,
-		Targets:       req.Targets,
-		AssetGroupIDs: req.AssetGroupIDs,
-		ScanZoneID:    req.ScanZoneID,
+		TenantID:       middleware.GetTenantID(r.Context()),
+		ScanWorkflowID: req.ScanWorkflowID,
+		Targets:        req.Targets,
+		AssetGroupIDs:  req.AssetGroupIDs,
+		ScanZoneID:     req.ScanZoneID,
 	})
 	if err != nil {
 		switch {

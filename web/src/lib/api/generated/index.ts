@@ -184,15 +184,15 @@ export type AuditChainClass =
 export type EASMSummary = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Summary']
 export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
 
-/** A scan run's tasks (RFC-046): GET /api/v1/pipeline-runs and /pipeline-runs/{id}. */
+/** A scan run's tasks (RFC-046): GET /api/v1/scan-runs and /scan-runs/{id}. */
 export type RunTaskSummary = Schemas['internal_infra_http_handler.RunTaskSummaryResponse']
 export type RunTask = Schemas['internal_infra_http_handler.RunTaskResponse']
-/** GET /api/v1/pipeline-runs/{id}/tasks — one cursor page of a run's tasks. */
+/** GET /api/v1/scan-runs/{id}/tasks — one cursor page of a run's tasks. */
 export type RunTaskPage = Schemas['internal_infra_http_handler.RunTaskPageResponse']
-/** GET /api/v1/pipeline-runs/{id}/tasks/{task_id}/logs — the log lines a task's sensor sent. */
+/** GET /api/v1/scan-runs/{id}/tasks/{task_id}/logs — the log lines a task's sensor sent. */
 export type RunTaskLogs = Schemas['internal_infra_http_handler.RunTaskLogsResponse']
 export type RunTaskLogLine = Schemas['internal_infra_http_handler.RunTaskLogLine']
-/** GET /api/v1/pipeline-runs/{id}/stages — how each stage of a run was planned. */
+/** GET /api/v1/scan-runs/{id}/stages — how each stage of a run was planned. */
 export type RunStage = Schemas['internal_infra_http_handler.RunStageResponse']
 export type RunStageList = Schemas['internal_infra_http_handler.RunStageListResponse']
 /** GET /api/v1/easm/candidates — the attribution review queue. */
@@ -208,8 +208,6 @@ export type EASMReviewEvidence =
 export type EASMDecisionResult =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.DecisionResult']
 /** GET/POST/PATCH /api/v1/easm/seeds — EASM seeds (RFC-036 §6.3). */
-export type EASMSeed = Schemas['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
-export type EASMSeedList = Schemas['internal_infra_http_handler.EASMSeedListResponse']
 export type EASMSettings = Schemas['internal_infra_http_handler.EASMSettingsResponse']
 export type EASMSweepTicket =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.SweepTicket']

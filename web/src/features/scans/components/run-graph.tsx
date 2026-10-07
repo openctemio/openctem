@@ -21,12 +21,12 @@ import { Badge } from '@/components/ui/badge'
 import { layeredLayout } from '@/components/flow/layered-layout'
 import { TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
-import { pipelineEndpoints, pipelineRunEndpoints } from '@/lib/api/endpoints'
+import { scanWorkflowEndpoints, scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunStage, RunStageList } from '@/lib/api/generated'
-import type { PipelineTemplate, StepRun } from '@/lib/api'
+import type { ScanWorkflow, StepRun } from '@/lib/api'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
-import { useCapabilityTable } from '@/features/pipelines/lib/use-capability-table'
+import { useCapabilityTable } from '@/features/scan-workflows/lib/use-capability-table'
 import { skipLabel, skippedReasons } from './run-stage-lanes'
 
 /** What one node of the run overlay shows. Every number comes from the API. */
@@ -154,34 +154,34 @@ const nodeTypes = { runstep: RunStepNode }
 /**
  * The run overlay: the workflow graph of a run, read-only, each step with
  * its status, counts, skip reasons and error. Data: the run's step runs,
- * GET /pipeline-runs/{id}/stages and the workflow's dependencies.
+ * GET /scan-runs/{id}/stages and the workflow's dependencies.
  */
 export function RunGraph({
   runId,
-  pipelineId,
+  workflowId,
   stepRuns,
   refreshInterval,
 }: {
   runId: string
-  pipelineId?: string
+  workflowId?: string
   stepRuns: StepRun[]
   refreshInterval?: number
 }) {
   const { table } = useCapabilityTable()
   const { data: lanes } = useSWR<RunStageList>(
-    pipelineRunEndpoints.stages(runId),
+    scanRunEndpoints.stages(runId),
     (url: string) => get<RunStageList>(url),
     { revalidateOnFocus: false, refreshInterval }
   )
-  const { data: pipeline } = useSWR<PipelineTemplate>(
-    pipelineId ? pipelineEndpoints.get(pipelineId) : null,
-    (url: string) => get<PipelineTemplate>(url),
+  const { data: workflow } = useSWR<ScanWorkflow>(
+    workflowId ? scanWorkflowEndpoints.get(workflowId) : null,
+    (url: string) => get<ScanWorkflow>(url),
     { revalidateOnFocus: false }
   )
 
   const { nodes, edges } = useMemo(() => {
     const deps: Record<string, string[]> = {}
-    for (const s of pipeline?.steps ?? []) deps[s.step_key] = s.depends_on ?? []
+    for (const s of workflow?.steps ?? []) deps[s.step_key] = s.depends_on ?? []
     const model = runGraphModel(stepRuns, lanes?.data ?? [], deps)
     // Top to bottom: the overlay lives in a narrow side sheet.
     const pos = layeredLayout(
@@ -205,7 +205,7 @@ export function RunGraph({
       markerEnd: { type: MarkerType.ArrowClosed },
     }))
     return { nodes: flowNodes, edges: flowEdges }
-  }, [stepRuns, lanes, pipeline, table])
+  }, [stepRuns, lanes, workflow, table])
 
   return (
     <div className="h-[28rem] w-full rounded-md border" aria-label="Workflow of this run">

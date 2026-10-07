@@ -15,10 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -66,8 +68,8 @@ func TestTwoReplicas_SchedulerClaimsEachOccurrenceOnce(t *testing.T) {
 	scanID := seedLifecycleScan(ctx, t, dbA, tenantID)
 	scansA := postgres.NewScanRepository(&postgres.DB{DB: dbA})
 	scansB := postgres.NewScanRepository(&postgres.DB{DB: dbB})
-	runsA := postgres.NewPipelineRunRepository(&postgres.DB{DB: dbA})
-	runsB := postgres.NewPipelineRunRepository(&postgres.DB{DB: dbB})
+	runsA := postgres.NewScanRunRepository(&postgres.DB{DB: dbA})
+	runsB := postgres.NewScanRunRepository(&postgres.DB{DB: dbB})
 
 	due := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	for round := 0; round < raceRounds; round++ {
@@ -92,9 +94,9 @@ func TestTwoReplicas_SchedulerClaimsEachOccurrenceOnce(t *testing.T) {
 
 		// Even if both went on to create the run, the occurrence key lets
 		// one through.
-		mk := func() *pipeline.Run {
+		mk := func() *scanrun.Run {
 			tpl, _ := shared.IDFromString("00000000-0000-0000-0000-000000000001")
-			r, _ := pipeline.NewRun(tpl, tenantID, nil, pipeline.TriggerTypeSchedule, "", map[string]any{})
+			r, _ := scanrun.NewRun(tpl, tenantID, nil, scanworkflow.TriggerTypeSchedule, "", map[string]any{})
 			r.ScanID = &scanID
 			occ := occurrence
 			r.ScheduledFor = &occ
@@ -110,7 +112,7 @@ func TestTwoReplicas_SchedulerClaimsEachOccurrenceOnce(t *testing.T) {
 			switch {
 			case e == nil:
 				created++
-			case errors.Is(e, pipeline.ErrOccurrenceAlreadyRun), errors.Is(e, shared.ErrConflict):
+			case errors.Is(e, scanrun.ErrOccurrenceAlreadyRun), errors.Is(e, shared.ErrConflict):
 			default:
 				t.Fatalf("round %d: create run: %v", round, e)
 			}
@@ -119,7 +121,7 @@ func TestTwoReplicas_SchedulerClaimsEachOccurrenceOnce(t *testing.T) {
 			t.Fatalf("round %d: %d runs created for one occurrence, want 1", round, created)
 		}
 		// Settle it so the next round's scheduled run is not an overlap.
-		if _, err := dbA.ExecContext(ctx, `UPDATE pipeline_runs SET status = 'completed', completed_at = NOW()
+		if _, err := dbA.ExecContext(ctx, `UPDATE scan_runs SET status = 'completed', completed_at = NOW()
 			WHERE scan_id = $1 AND status IN ('pending', 'running')`, scanID.String()); err != nil {
 			t.Fatal(err)
 		}

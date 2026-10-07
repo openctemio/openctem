@@ -49,16 +49,19 @@ import {
 } from '@/features/scans/lib/run-display'
 import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
 import { del, post } from '@/lib/api/client'
-import { pipelineRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
+import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { PIPELINE_TRIGGER_LABELS, type PipelineTriggerType } from '@/lib/api/pipeline-types'
+import {
+  SCAN_RUN_TRIGGER_LABELS,
+  type ScanWorkflowTriggerType,
+} from '@/lib/api/scan-workflow-types'
 import { useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
 import {
   SCAN_CONFIG_STATUS_LABELS,
   SCAN_TYPE_LABELS,
   SCHEDULE_TYPE_LABELS,
   SENSOR_PREFERENCE_LABELS,
-  type PipelineRun,
+  type ScanRun,
 } from '@/lib/api/scan-types'
 import { useAssetGroup } from '@/lib/api/security-hooks'
 import { Can, Permission } from '@/lib/permissions'
@@ -72,7 +75,7 @@ type Tab = (typeof TABS)[number]
 const RUN_PAGE_SIZES = [25, 50, 100]
 
 /** A run's duration, "so far" while it is still going. */
-function runDuration(run: PipelineRun): string {
+function runDuration(run: ScanRun): string {
   const ms = elapsedMs(run)
   if (ms === undefined) return run.status === 'pending' ? 'Not started' : '-'
   const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
@@ -155,10 +158,10 @@ export default function ScanDetailPage() {
   )
   const activeRun = (latestRuns?.data ?? []).find(isRunInProgress)
 
-  const handleStopRun = async (run: PipelineRun) => {
+  const handleStopRun = async (run: ScanRun) => {
     setStoppingRunId(run.id)
     try {
-      await post(pipelineRunEndpoints.cancel(run.id), {})
+      await post(scanRunEndpoints.cancel(run.id), {})
       toast.success('Run canceled. In-flight tasks stop at their next heartbeat.')
       await refetchAll()
     } catch (err) {
@@ -186,7 +189,7 @@ export default function ScanDetailPage() {
   // Rebuilt each render: the cancel action reads the in-flight run id. No
   // column sorts: this endpoint lists newest first, and sorting one page of
   // the history would misrepresent the rest.
-  const runColumns: ColumnDef<PipelineRun>[] = [
+  const runColumns: ColumnDef<ScanRun>[] = [
     {
       id: 'started',
       header: 'Started',
@@ -221,7 +224,7 @@ export default function ScanDetailPage() {
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span>
-            {PIPELINE_TRIGGER_LABELS[row.original.trigger_type as PipelineTriggerType] ??
+            {SCAN_RUN_TRIGGER_LABELS[row.original.trigger_type as ScanWorkflowTriggerType] ??
               row.original.trigger_type}
           </span>
           {runTriggeredByLabel(row.original) && (
@@ -272,9 +275,8 @@ export default function ScanDetailPage() {
         const run = row.original
         if (!isRunInProgress(run)) return null
         return (
-          // POST /pipeline-runs/{id}/cancel needs pipelines:write AND
-          // scans:write (D12).
-          <Can permission={[Permission.PipelinesWrite, Permission.ScansWrite]} requireAll>
+          // POST /scan-runs/{id}/cancel needs scans:write (D12).
+          <Can permission={Permission.ScansWrite}>
             <Button
               size="sm"
               variant="ghost"
@@ -544,18 +546,18 @@ export default function ScanDetailPage() {
                 <DetailField label="Scan ID" full>
                   <DetailCopyId id={config.id} label="Scan ID" />
                 </DetailField>
-                {config.pipeline_id && (
+                {config.scan_workflow_id && (
                   <DetailField label="Scan workflow" full>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Can permission={Permission.PipelinesRead}>
+                      <Can permission={Permission.ScanWorkflowsRead}>
                         <Link
-                          href={`/pipelines/${encodeURIComponent(config.pipeline_id)}/builder`}
+                          href={`/scans/workflows/${encodeURIComponent(config.scan_workflow_id)}`}
                           className="text-primary text-sm font-medium hover:underline"
                         >
                           Open scan workflow
                         </Link>
                       </Can>
-                      <DetailCopyId id={config.pipeline_id} label="Scan workflow ID" />
+                      <DetailCopyId id={config.scan_workflow_id} label="Scan workflow ID" />
                     </div>
                   </DetailField>
                 )}

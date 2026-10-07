@@ -84,7 +84,7 @@ func TestSimulationTargets_ActScope_DB(t *testing.T) {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, logger.NewNop())
 	svc := compliance.NewSimulationService(postgres.NewSimulationRepository(db), postgres.NewControlTestRepository(db), logger.NewNop())
-	svc.SetActScope(actscope.New(enforcer, postgres.NewAssetRepository(db), noScopeTargets{}, postgres.NewEASMSeedRepository(db)), enforcer)
+	svc.SetActScope(actscope.New(enforcer, postgres.NewAssetRepository(db), noScopeTargets{}, postgres.NewVerifiedDomainNameRepository(db)), enforcer)
 
 	as := func(user string, isAdmin bool) context.Context {
 		c := context.WithValue(ctx, middleware.UserIDKey, user)

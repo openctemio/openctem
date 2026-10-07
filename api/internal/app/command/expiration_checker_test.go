@@ -11,7 +11,7 @@ import (
 )
 
 // A platform job that times out in the dispatch queue used to be reaped by a raw
-// UPDATE in JobRecoveryController. Platform jobs carry pipeline_run_id +
+// UPDATE in JobRecoveryController. Platform jobs carry scan_run_id +
 // step_key and are created with expires_at NULL, so FindExpired never covered
 // them and that UPDATE was the only thing that ever ended them — silently. The
 // owning run kept waiting on a step that was already dead, until
@@ -66,12 +66,12 @@ func (s *stubStepFailer) OnStepFailed(_ context.Context, runID, stepKey, message
 	return nil
 }
 
-func newPipelinePlatformJob(t *testing.T, runID, stepKey string) *commanddom.Command {
+func newScanRunPlatformJob(t *testing.T, runID, stepKey string) *commanddom.Command {
 	t.Helper()
 
 	payload, err := json.Marshal(map[string]string{
-		"pipeline_run_id": runID,
-		"step_key":        stepKey,
+		"scan_run_id": runID,
+		"step_key":    stepKey,
 	})
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -89,7 +89,7 @@ func newPipelinePlatformJob(t *testing.T, runID, stepKey string) *commanddom.Com
 func newCheckerUnderTest(repo commanddom.Repository, failer stepFailer) *ExpirationChecker {
 	return &ExpirationChecker{
 		commandRepo:     repo,
-		pipelineService: failer,
+		scanRunService:  failer,
 		logger:          logger.NewNop(),
 		maxQueueMinutes: 60,
 		stopCh:          make(chan struct{}),
@@ -98,7 +98,7 @@ func newCheckerUnderTest(repo commanddom.Repository, failer stepFailer) *Expirat
 
 func TestCheckAndExpireQueuedPlatformJobs_NotifiesOwningRun(t *testing.T) {
 	runID := shared.NewID().String()
-	job := newPipelinePlatformJob(t, runID, "recon")
+	job := newScanRunPlatformJob(t, runID, "recon")
 
 	repo := &stubCommandRepo{queueExpired: []*commanddom.Command{job}}
 	failer := &stubStepFailer{}
@@ -121,7 +121,7 @@ func TestCheckAndExpireQueuedPlatformJobs_NotifiesOwningRun(t *testing.T) {
 }
 
 func TestCheckAndExpireQueuedPlatformJobs_MarksJobExpired(t *testing.T) {
-	job := newPipelinePlatformJob(t, shared.NewID().String(), "recon")
+	job := newScanRunPlatformJob(t, shared.NewID().String(), "recon")
 
 	repo := &stubCommandRepo{queueExpired: []*commanddom.Command{job}}
 	newCheckerUnderTest(repo, &stubStepFailer{}).checkAndExpireQueuedPlatformJobs()
@@ -138,7 +138,7 @@ func TestCheckAndExpireQueuedPlatformJobs_MarksJobExpired(t *testing.T) {
 	}
 }
 
-// A queued platform job with no pipeline payload (a bare command) must expire
+// A queued platform job with no scan workflow payload (a bare command) must expire
 // without the notification path erroring or panicking.
 func TestCheckAndExpireQueuedPlatformJobs_NonPipelineJobIsStillExpired(t *testing.T) {
 	cmd, err := commanddom.NewCommand(shared.NewID(), commanddom.CommandTypeScan,
@@ -156,7 +156,7 @@ func TestCheckAndExpireQueuedPlatformJobs_NonPipelineJobIsStillExpired(t *testin
 		t.Fatalf("Update called %d times, want 1", len(repo.updated))
 	}
 	if len(failer.calls) != 0 {
-		t.Errorf("OnStepFailed called %d times for a job with no pipeline_run_id, want 0", len(failer.calls))
+		t.Errorf("OnStepFailed called %d times for a job with no scan_run_id, want 0", len(failer.calls))
 	}
 }
 
@@ -164,7 +164,7 @@ func TestCheckAndExpireQueuedPlatformJobs_NonPipelineJobIsStillExpired(t *testin
 // stay distinguishable in the run's failure record.
 func TestCheckAndExpire_KeepsCommandExpiredCode(t *testing.T) {
 	runID := shared.NewID().String()
-	cmd := newPipelinePlatformJob(t, runID, "recon")
+	cmd := newScanRunPlatformJob(t, runID, "recon")
 
 	repo := &stubCommandRepo{expired: []*commanddom.Command{cmd}}
 	failer := &stubStepFailer{}

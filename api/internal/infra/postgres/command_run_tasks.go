@@ -9,13 +9,14 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-var _ pipeline.TaskReader = (*CommandRepository)(nil)
+var _ scanrun.TaskReader = (*CommandRepository)(nil)
 
 // runTaskStatusSQL maps a command status onto a task status.
 const runTaskStatusSQL = `CASE commands.status
@@ -45,20 +46,20 @@ const runTaskSummarySQL = `
 
 // ListRunTasks returns up to limit commands of runID in dispatch order, and
 // the summary of all of them. A command belongs to the run through the
-// pipeline_run_id that both the scan and the pipeline dispatcher write into
+// scan_run_id that both the scan and the scan workflow dispatcher write into
 // its payload (served by idx_commands_pipeline_run). Only commands of tenantID are read, and a sensor is named only
 // when it is a sensor of tenantID; a shared platform sensor stays anonymous.
-func (r *CommandRepository) ListRunTasks(ctx context.Context, tenantID, runID shared.ID, limit int) ([]pipeline.Task, pipeline.TaskSummary, error) {
-	if limit <= 0 || limit > pipeline.MaxRunTasks {
-		limit = pipeline.MaxRunTasks
+func (r *CommandRepository) ListRunTasks(ctx context.Context, tenantID, runID shared.ID, limit int) ([]scanrun.Task, scanrun.TaskSummary, error) {
+	if limit <= 0 || limit > scanrun.MaxRunTasks {
+		limit = scanrun.MaxRunTasks
 	}
-	membership := `commands.tenant_id = $1 AND (commands.payload->>'pipeline_run_id') = $2::text`
+	membership := `commands.tenant_id = $1 AND (commands.payload->>'scan_run_id') = $2::text`
 
-	var sum pipeline.TaskSummary
+	var sum scanrun.TaskSummary
 	if err := r.db.QueryRowContext(ctx, `SELECT `+runTaskSummarySQL+` FROM commands WHERE `+membership,
 		tenantID.String(), runID.String()).
 		Scan(&sum.Total, &sum.Queued, &sum.Running, &sum.Completed, &sum.Failed, &sum.Canceled, &sum.Sensors); err != nil {
-		return nil, pipeline.TaskSummary{}, fmt.Errorf("failed to summarize run tasks: %w", err)
+		return nil, scanrun.TaskSummary{}, fmt.Errorf("failed to summarize run tasks: %w", err)
 	}
 	if sum.Total == 0 {
 		return nil, sum, nil
@@ -66,22 +67,22 @@ func (r *CommandRepository) ListRunTasks(ctx context.Context, tenantID, runID sh
 
 	tasks, err := r.queryRunTasks(ctx, membership, []any{tenantID.String(), runID.String()}, limit, min(sum.Total, limit))
 	if err != nil {
-		return nil, pipeline.TaskSummary{}, err
+		return nil, scanrun.TaskSummary{}, err
 	}
 	return tasks, sum, nil
 }
 
-var _ pipeline.TaskPager = (*CommandRepository)(nil)
+var _ scanrun.TaskPager = (*CommandRepository)(nil)
 
 // ListRunTasksAfter returns up to limit tasks of runID after the cursor, in
 // dispatch order (created_at, id); from the first task when after is nil.
 // Only commands of tenantID are read, and sensors are named as in
 // ListRunTasks.
-func (r *CommandRepository) ListRunTasksAfter(ctx context.Context, tenantID, runID shared.ID, after *pipeline.TaskCursor, limit int) ([]pipeline.Task, error) {
-	if limit <= 0 || limit > pipeline.MaxRunTasks {
-		limit = pipeline.MaxRunTasks
+func (r *CommandRepository) ListRunTasksAfter(ctx context.Context, tenantID, runID shared.ID, after *scanrun.TaskCursor, limit int) ([]scanrun.Task, error) {
+	if limit <= 0 || limit > scanrun.MaxRunTasks {
+		limit = scanrun.MaxRunTasks
 	}
-	where := `commands.tenant_id = $1 AND (commands.payload->>'pipeline_run_id') = $2::text`
+	where := `commands.tenant_id = $1 AND (commands.payload->>'scan_run_id') = $2::text`
 	args := []any{tenantID.String(), runID.String()}
 	if after != nil {
 		where += ` AND (commands.created_at, commands.id) > ($3::timestamptz, $4::uuid)`
@@ -92,10 +93,10 @@ func (r *CommandRepository) ListRunTasksAfter(ctx context.Context, tenantID, run
 
 // queryRunTasks reads the tasks matching where (a constant predicate over
 // commands; values only in args) in dispatch order, at most limit of them.
-func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, args []any, limit, capacity int) ([]pipeline.Task, error) {
+func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, args []any, limit, capacity int) ([]scanrun.Task, error) {
 	args = append(args, limit)
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT commands.id, commands.step_run_id,
+		SELECT commands.id, commands.scan_run_step_id,
 		       COALESCE(sr.step_key, commands.payload->>'step_key', ''),
 		       COALESCE(`+commandToolSQL+`, ''),
 		       `+runTaskStatusSQL+`,
@@ -108,10 +109,10 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		       CASE WHEN jsonb_typeof(commands.result->'metadata'->'refused_targets') = 'array'
 		            THEN commands.result->'metadata'->'refused_targets' END,
 		       CASE WHEN jsonb_typeof(commands.result->'metadata'->'refused_targets_total') = 'number'
-		            THEN LEAST(GREATEST((commands.result->'metadata'->>'refused_targets_total')::numeric, 0), `+strconv.Itoa(pipeline.MaxSkippedTargetsTotal)+`)::bigint
+		            THEN LEAST(GREATEST((commands.result->'metadata'->>'refused_targets_total')::numeric, 0), `+strconv.Itoa(scanrun.MaxSkippedTargetsTotal)+`)::bigint
 		            ELSE 0 END
 		FROM commands
-		LEFT JOIN step_runs sr ON sr.id = commands.step_run_id
+		LEFT JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
 		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id
 		WHERE `+where+`
 		ORDER BY commands.created_at, commands.id
@@ -121,10 +122,10 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 	}
 	defer rows.Close()
 
-	tasks := make([]pipeline.Task, 0, capacity)
+	tasks := make([]scanrun.Task, 0, capacity)
 	for rows.Next() {
 		var (
-			t                     pipeline.Task
+			t                     scanrun.Task
 			id                    string
 			stepRunID, sensorID   sql.NullString
 			status                string
@@ -138,9 +139,9 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 			return nil, fmt.Errorf("failed to scan run task: %w", err)
 		}
 		// Sensor-supplied: parsed defensively, bounded and cleaned.
-		t.Skipped, t.SkippedTotal = pipeline.ParseSkippedTargets(skipped, skippedTotal)
+		t.Skipped, t.SkippedTotal = scanrun.ParseSkippedTargets(skipped, skippedTotal)
 		t.ID, _ = shared.IDFromString(id)
-		t.Status = pipeline.TaskStatus(status)
+		t.Status = scanrun.TaskStatus(status)
 		if stepRunID.Valid {
 			if sid, err := shared.IDFromString(stepRunID.String); err == nil {
 				t.StepRunID = &sid
@@ -169,8 +170,8 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 
 // TaskSummaries returns the task summary of each run in runIDs that has
 // tasks, in one query, reading only commands of tenantID.
-func (r *CommandRepository) TaskSummaries(ctx context.Context, tenantID shared.ID, runIDs []shared.ID) (map[shared.ID]pipeline.TaskSummary, error) {
-	out := make(map[shared.ID]pipeline.TaskSummary, len(runIDs))
+func (r *CommandRepository) TaskSummaries(ctx context.Context, tenantID shared.ID, runIDs []shared.ID) (map[shared.ID]scanrun.TaskSummary, error) {
+	out := make(map[shared.ID]scanrun.TaskSummary, len(runIDs))
 	if len(runIDs) == 0 {
 		return out, nil
 	}
@@ -179,11 +180,11 @@ func (r *CommandRepository) TaskSummaries(ctx context.Context, tenantID shared.I
 		ids[i] = id.String()
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT commands.payload->>'pipeline_run_id', `+runTaskSummarySQL+`
+		SELECT commands.payload->>'scan_run_id', `+runTaskSummarySQL+`
 		FROM commands
 		WHERE commands.tenant_id = $1
-		  AND (commands.payload->>'pipeline_run_id') = ANY($2::text[])
-		GROUP BY commands.payload->>'pipeline_run_id'`,
+		  AND (commands.payload->>'scan_run_id') = ANY($2::text[])
+		GROUP BY commands.payload->>'scan_run_id'`,
 		tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("failed to summarize tasks: %w", err)
@@ -192,7 +193,7 @@ func (r *CommandRepository) TaskSummaries(ctx context.Context, tenantID shared.I
 	for rows.Next() {
 		var (
 			runID string
-			s     pipeline.TaskSummary
+			s     scanrun.TaskSummary
 		)
 		if err := rows.Scan(&runID, &s.Total, &s.Queued, &s.Running, &s.Completed, &s.Failed, &s.Canceled, &s.Sensors); err != nil {
 			return nil, fmt.Errorf("failed to scan task summary: %w", err)

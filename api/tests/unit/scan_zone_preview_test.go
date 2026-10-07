@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -254,8 +256,8 @@ func TestScanZones_SelectedZoneOnWorkflow(t *testing.T) {
 	s := createTestScanInRepo(deps, tenant, "wf", scan.ScanTypeWorkflow)
 	s.SetTargets([]string{"10.1.0.1", "10.2.0.1"})
 	s.SetScanZone(&b.ID)
-	pid := *s.PipelineID
-	deps.stepRepo.steps[pid.String()] = []*pipeline.Step{{ID: shared.NewID(), PipelineID: pid, StepKey: "s", StepOrder: 1, Tool: "nuclei"}}
+	pid := *s.ScanWorkflowID
+	deps.stepRepo.steps[pid.String()] = []*scanworkflow.Step{{ID: shared.NewID(), ScanWorkflowID: pid, StepKey: "s", StepOrder: 1, Tool: "nuclei"}}
 
 	// Without the picker this workflow would need splitting; pinned to b it
 	// runs in b and skips the rest.
@@ -263,7 +265,7 @@ func TestScanZones_SelectedZoneOnWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pipeline.ScanZoneFromContext(run.Context); got == nil || *got != b.ID {
+	if got := scanrun.ScanZoneFromContext(run.Context); got == nil || *got != b.ID {
 		t.Errorf("workflow zone = %v, want b", got)
 	}
 	if !hasWarning(warningsOf(run), `10.1.0.1 not scanned: outside the selected scan zone "b"`) {

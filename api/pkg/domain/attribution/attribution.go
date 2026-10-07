@@ -55,7 +55,7 @@ const StateUnattributed State = "unattributed"
 
 // StateOutOfScope is never stored either: the active-scan gate's answer for
 // an internet-facing asset whose record is confirmed but that no active scope
-// target, root-domain seed or verified domain of the tenant covers (RFC-054
+// entry of the tenant covers (RFC-054
 // §4.2). Confirmation records ownership; it does not authorize active probes
 // by itself. The asset, its history and findings stay.
 const StateOutOfScope State = "out_of_scope"

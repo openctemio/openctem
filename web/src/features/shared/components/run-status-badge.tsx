@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 
 /**
- * Canonical badge for scan / pipeline RUN status. Replaces the per-page
+ * Canonical badge for scan / workflow RUN status. Replaces the per-page
  * status maps that each rendered a different color set and vocabulary, and
  * the shared StatusBadge which was label-only and collapsed running→active and
  * timeout/canceled→failed. Distinguishes every state with icon + color + label,

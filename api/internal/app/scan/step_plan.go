@@ -1,9 +1,9 @@
 package scan
 
-// One planner for every pipeline step (research/27 P0-2;
+// One planner for every workflow step (research/27 P0-2;
 // docs/architecture/scan-stages.md): the tool a step runs and the command
 // payload a sensor receives are decided here, for both the scan trigger and
-// the pipeline service. Two dispatchers used to build their own payloads and
+// the scan run service. Two dispatchers used to build their own payloads and
 // drifted apart.
 //
 // F1: a step that named only a capability passed validation (a tool matched
@@ -20,7 +20,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
@@ -82,7 +84,7 @@ type StepToolLookup interface {
 // A collector or connector is never picked for a capability. The tenant id
 // scopes the fallback lookup; a platform implementation is read by name
 // among platform tools only, never another tenant's tool of that name.
-func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.ID, step *pipeline.Step) (StepTool, error) {
+func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.ID, step *scanworkflow.Step) (StepTool, error) {
 	if step == nil {
 		return StepTool{}, shared.NewDomainError(codeStepInvalid, "step is missing", shared.ErrValidation)
 	}
@@ -148,7 +150,7 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 // stepCandidates are the tools a capability step may run, in the order
 // tried: its prefer_tools (those that implement the capability) or the
 // catalog order, the default first.
-func stepCandidates(st stage.Stage, step *pipeline.Step) []string {
+func stepCandidates(st stage.Stage, step *scanworkflow.Step) []string {
 	if len(step.PreferTools) == 0 {
 		return st.Tools()
 	}
@@ -170,7 +172,7 @@ func usableScanner(t *tool.Tool) bool {
 // WithTool returns a copy of the step that runs the resolved tool, for the
 // checks and payload that read step.Tool and step.Config: the config is the
 // one that tool receives (its keys for the standard params, its extras).
-func (t StepTool) WithTool(step *pipeline.Step) *pipeline.Step {
+func (t StepTool) WithTool(step *scanworkflow.Step) *scanworkflow.Step {
 	cp := *step
 	cp.Tool = t.Name
 	if t.HasStage {
@@ -179,7 +181,7 @@ func (t StepTool) WithTool(step *pipeline.Step) *pipeline.Step {
 	return &cp
 }
 
-// StepCommandPayload is the command payload of one pipeline step, built the
+// StepCommandPayload is the command payload of one workflow step, built the
 // same way for every dispatcher. The resolved tool is always named in
 // `scanner` (the key the sensor SDK runs, ScanCommandPayload) and in
 // `preferred_tool` (the platform's tool gate and older readers). The step's
@@ -188,27 +190,27 @@ func (t StepTool) WithTool(step *pipeline.Step) *pipeline.Step {
 // targets (the type-gated run targets, or the hop router's plan) are at the
 // top level, where sensors read them; the run context goes along without
 // platform bookkeeping (StepRunContext).
-func StepCommandPayload(run *pipeline.Run, step *pipeline.Step, toolName, stepRunID string, st *StepTargets) (map[string]any, error) {
+func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, stepRunID string, st *StepTargets) (map[string]any, error) {
 	toolName = strings.TrimSpace(toolName)
 	if toolName == "" {
 		return nil, shared.NewDomainError(codeNoMatchingTool,
 			fmt.Sprintf("step %s has no tool to run", step.StepKey), shared.ErrValidation)
 	}
-	config, err := pipeline.NormalizeStepConfig(toolName, step.Config)
+	config, err := scanworkflow.NormalizeStepConfig(toolName, step.Config)
 	if err != nil {
 		return nil, err
 	}
 	payload := map[string]any{
-		pipeline.PayloadKeyPipelineRunID: run.ID.String(),
-		pipeline.PayloadKeyStepRunID:     stepRunID,
-		pipeline.PayloadKeyStepKey:       step.StepKey,
-		"step_id":                        step.ID.String(),
-		pipeline.PayloadKeyConfig:        config,
-		"required_capabilities":          step.Capabilities,
-		"preferred_tool":                 toolName,
-		"scanner":                        toolName,
-		"timeout_seconds":                step.TimeoutSeconds,
-		"context":                        StepRunContext(run.Context, st),
+		scanrun.PayloadKeyScanRunID:   run.ID.String(),
+		scanrun.PayloadKeyStepRunID:   stepRunID,
+		scanrun.PayloadKeyStepKey:     step.StepKey,
+		"step_id":                     step.ID.String(),
+		scanworkflow.PayloadKeyConfig: config,
+		"required_capabilities":       step.Capabilities,
+		"preferred_tool":              toolName,
+		"scanner":                     toolName,
+		"timeout_seconds":             step.TimeoutSeconds,
+		"context":                     StepRunContext(run.Context, st),
 	}
 	if targets, ok := run.Context["targets"]; ok {
 		payload["targets"] = targets
@@ -234,14 +236,14 @@ func StepCommandPayload(run *pipeline.Run, step *pipeline.Step, toolName, stepRu
 // capability ("scan.ports@1"; sdk-go ScanCommandPayload.Capability).
 const PayloadKeyCapability = "capability"
 
-// StepQueuer queues one step of a run on the pipeline service's dispatcher
-// (*pipeline.Service): the one path every step command is created on.
+// StepQueuer queues one step of a run on the scan run service's dispatcher
+// (*scanrun.Service): the one path every step command is created on.
 type StepQueuer interface {
-	QueueRunStep(ctx context.Context, run *pipeline.Run, step *pipeline.Step) error
+	QueueRunStep(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step) error
 }
 
 // SetStepQueuer wires the step dispatcher the scan trigger hands workflow
-// steps to. A setter because the pipeline service is built after the scan
+// steps to. A setter because the scan run service is built after the scan
 // service. Without it a workflow scan is refused (fail closed).
 func (s *Service) SetStepQueuer(q StepQueuer) { s.stepQueuer = q }
 

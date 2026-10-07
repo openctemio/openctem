@@ -8,9 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -252,11 +254,11 @@ func TestStepRunContext(t *testing.T) {
 
 // The step payload carries the step's own targets.
 func TestStepCommandPayload_StepTargets(t *testing.T) {
-	run := &pipeline.Run{ID: shared.NewID(), Context: map[string]any{
+	run := &scanrun.Run{ID: shared.NewID(), Context: map[string]any{
 		"targets":                []string{"a", "b"},
 		RunContextKeyTargetTypes: map[string]string{"a": "host", "b": "repository"},
 	}}
-	p, err := StepCommandPayload(run, &pipeline.Step{ID: shared.NewID(), StepKey: "s", Tool: "nmap"}, "nmap", "sr", &StepTargets{Targets: []string{"a"}, Refused: 1})
+	p, err := StepCommandPayload(run, &scanworkflow.Step{ID: shared.NewID(), StepKey: "s", Tool: "nmap"}, "nmap", "sr", &StepTargets{Targets: []string{"a"}, Refused: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
