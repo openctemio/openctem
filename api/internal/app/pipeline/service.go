@@ -189,6 +189,7 @@ type Service struct {
 	assetRefChecker   AssetRefChecker        // tenant + scope check of a run's asset_id; nil refuses runs that carry one
 	hops              pipeline.HopRepository // stage chaining (hop_router.go); nil keeps every step on the run's seeds
 	webScope          WebScopeBuilder        // web_scope of web steps (web_scope.go); nil refuses web steps
+	endpoints         EndpointSelector       // incremental web scanning (web_endpoints.go)
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)

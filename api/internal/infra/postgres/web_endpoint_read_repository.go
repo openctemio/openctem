@@ -34,7 +34,7 @@ const webEndpointFrom = ` FROM web_endpoints e
 const webEndpointColumns = `e.id, e.tenant_id, e.origin_asset_id, a.name, e.method, e.path_template, e.template_hash,
 	e.path_hash, e.kind, e.sources, COALESCE(e.example_path, ''), COALESCE(e.last_status, 0), COALESCE(e.content_type, ''),
 	e.auth_state, e.technologies, e.labels, e.state, e.in_scope, COALESCE(e.catalog_key, ''), e.param_count,
-	e.first_seen_at, e.last_seen_at, e.last_changed_at, COALESCE(e.last_tool, '')`
+	e.first_seen_at, e.last_seen_at, e.last_changed_at, COALESCE(e.last_tool, ''), COALESCE(e.exclusion_id::text, '')`
 
 func checkWebEndpointWhere(w *filterspec.Where) error {
 	if w == nil || !strings.HasPrefix(w.SQL, webendpoint.Fields.TenantSQL+" = $") || w.OrderBy == "" {
@@ -49,12 +49,12 @@ func scanWebEndpoint(s interface{ Scan(...any) error }) (*webendpoint.Endpoint, 
 		id, tenant, origin   string
 		sources, techs, labs pq.StringArray
 		changed              sql.NullTime
-		state                string
+		state, exclusion     string
 	)
 	if err := s.Scan(&id, &tenant, &origin, &e.Origin, &e.Method, &e.PathTemplate, &e.TemplateHash,
 		&e.PathHash, &e.Kind, &sources, &e.ExamplePath, &e.LastStatus, &e.ContentType,
 		&e.AuthState, &techs, &labs, &state, &e.InScope, &e.CatalogKey, &e.ParamCount,
-		&e.FirstSeenAt, &e.LastSeenAt, &changed, &e.LastTool); err != nil {
+		&e.FirstSeenAt, &e.LastSeenAt, &changed, &e.LastTool, &exclusion); err != nil {
 		return nil, err
 	}
 	e.ID, e.TenantID, e.OriginAssetID = shared.MustIDFromString(id), shared.MustIDFromString(tenant), shared.MustIDFromString(origin)
@@ -64,6 +64,10 @@ func scanWebEndpoint(s interface{ Scan(...any) error }) (*webendpoint.Endpoint, 
 	if changed.Valid {
 		t := changed.Time
 		e.LastChangedAt = &t
+	}
+	if exclusion != "" {
+		x := shared.MustIDFromString(exclusion)
+		e.ExclusionID = &x
 	}
 	return &e, nil
 }
@@ -134,7 +138,10 @@ func (r *WebEndpointRepository) StatsWhere(ctx context.Context, w *filterspec.Wh
 		UNION ALL SELECT 'kind', e.kind, count(*)` + webEndpointFrom + ` WHERE ` + w.SQL + ` GROUP BY e.kind
 		UNION ALL SELECT 'auth_state', e.auth_state, count(*)` + webEndpointFrom + ` WHERE ` + w.SQL + ` GROUP BY e.auth_state
 		UNION ALL SELECT 'state', e.state, count(*)` + webEndpointFrom + ` WHERE ` + w.SQL + ` GROUP BY e.state
-		UNION ALL SELECT 'in_scope', e.in_scope::text, count(*)` + webEndpointFrom + ` WHERE ` + w.SQL + ` GROUP BY e.in_scope`
+		UNION ALL SELECT 'in_scope', e.in_scope::text, count(*)` + webEndpointFrom + ` WHERE ` + w.SQL + ` GROUP BY e.in_scope
+		UNION ALL SELECT 'gap', 'excluded_sensitive', count(*)` + webEndpointFrom + ` WHERE ` + w.SQL + ` AND NOT e.in_scope AND e.catalog_key IS NOT NULL
+		UNION ALL SELECT 'gap', 'unauth_sensitive', count(*)` + webEndpointFrom + ` WHERE ` + w.SQL +
+		` AND e.catalog_key IS NOT NULL AND e.auth_state = 'none' AND e.last_status BETWEEN 200 AND 299`
 	rows, err := tx.QueryContext(ctx, q, w.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("endpoint stats: %w", err)
@@ -160,6 +167,12 @@ func (r *WebEndpointRepository) StatsWhere(ctx context.Context, w *filterspec.Wh
 		case "in_scope":
 			if key == "false" {
 				st.ExcludedUntested = n
+			}
+		case "gap":
+			if key == "excluded_sensitive" {
+				st.ExcludedSensitive = n
+			} else {
+				st.UnauthSensitive = n
 			}
 		}
 	}

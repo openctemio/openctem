@@ -33,6 +33,8 @@ var Fields = filterspec.MustRegistry(filterspec.Registry{
 	filterspec.Field{Name: "label", Type: filterspec.TypeString, Ops: []filterspec.Op{filterspec.OpIn},
 		SQL: "e.labels", Templates: map[filterspec.Op]string{filterspec.OpIn: "e.labels && {arg}"}},
 	filterspec.Field{Name: "catalog_key", Type: filterspec.TypeString, Ops: inNotIn, SQL: "e.catalog_key", Nullable: true},
+	filterspec.Field{Name: "sensitive", Type: filterspec.TypeBool, Ops: []filterspec.Op{filterspec.OpEq}, SQL: "e.catalog_key",
+		BoolTemplate: "e.catalog_key IS NOT NULL"},
 	filterspec.Field{Name: "path_hash", Type: filterspec.TypeString, Ops: []filterspec.Op{filterspec.OpIn}, SQL: "e.path_hash", Indexed: true},
 	filterspec.Field{Name: "path_template", Type: filterspec.TypeString, Ops: []filterspec.Op{filterspec.OpContains},
 		SQL: "e.path_template", Sortable: true, FreeText: true},

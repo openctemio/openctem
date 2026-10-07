@@ -156,6 +156,7 @@ user_roles
 validation_evidence
 verified_domains
 vulnerabilities
+web_endpoint_events
 web_endpoint_params
 web_endpoints
 workflow_runs

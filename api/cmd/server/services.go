@@ -1814,6 +1814,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		pipeline.WithHopStore(scanHops),
 		// Web steps carry the path exclusions of their hosts (RFC-056).
 		pipeline.WithWebScope(s.Scope),
+		// Incremental web scanning: new or changed endpoints only (RFC-056).
+		pipeline.WithEndpointSelector(repos.WebEndpoint),
 	)
 
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps

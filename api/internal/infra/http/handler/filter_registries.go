@@ -10,7 +10,8 @@ import (
 // generated into swag annotations ("// filterspec-params: <name> ...").
 func FilterRegistries() map[string]*filterspec.Registry {
 	return map[string]*filterspec.Registry{
-		"findings":      vulnerability.FindingFields,
-		"web_endpoints": webendpoint.Fields,
+		"findings":            vulnerability.FindingFields,
+		"web_endpoints":       webendpoint.Fields,
+		"web_endpoint_events": webendpoint.EventFields,
 	}
 }

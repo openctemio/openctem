@@ -18,6 +18,11 @@ type Stats struct {
 	// ExcludedUntested counts endpoints under a scope exclusion: recorded,
 	// never tested (a coverage gap, not a clean bill of health).
 	ExcludedUntested int64 `json:"excluded_untested"`
+	// ExcludedSensitive counts excluded-untested endpoints on the
+	// sensitive-path catalog; UnauthSensitive counts sensitive endpoints
+	// answering 2xx without authentication.
+	ExcludedSensitive int64 `json:"excluded_sensitive"`
+	UnauthSensitive   int64 `json:"unauth_sensitive"`
 }
 
 // Update is a person's change to an endpoint: nil fields stay.
@@ -57,7 +62,19 @@ type RecordResult struct {
 	// ParamsOverCap counts new parameters refused because their endpoint
 	// already holds MaxParamsPerEndpoint.
 	ParamsOverCap int
+	// Events counts the change feed rows written.
+	Events int
 }
+
+// Change feed event kinds.
+const (
+	EventAppeared      = "appeared"
+	EventReturned      = "returned"
+	EventGone          = "gone"
+	EventStatusChanged = "status_changed"
+	EventAuthChanged   = "auth_changed"
+	EventParamAdded    = "param_added"
+)
 
 // Repository stores the sub-inventory. Every method is tenant-scoped: an id
 // of another tenant behaves as an id that does not exist.
