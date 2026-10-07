@@ -496,18 +496,25 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, execCtx *ExecutionCo
 	var output map[string]any
 	var execErr error
 
+	// A step runs for at most maxNodeTime (declared and, until now, never
+	// applied): a hung call fails its step instead of the whole run.
+	stepCtx, cancelStep := context.WithTimeout(ctx, e.maxNodeTime)
 	switch node.NodeType {
 	case workflowdom.NodeTypeTrigger:
-		output, execErr = e.executeTriggerNode(ctx, execCtx, node)
+		output, execErr = e.executeTriggerNode(stepCtx, execCtx, node)
 	case workflowdom.NodeTypeCondition:
-		output, execErr = e.executeConditionNode(ctx, execCtx, node, nodeRun)
+		output, execErr = e.executeConditionNode(stepCtx, execCtx, node, nodeRun)
 	case workflowdom.NodeTypeAction:
-		output, execErr = e.executeActionNode(ctx, execCtx, node)
+		output, execErr = e.executeActionNode(stepCtx, execCtx, node)
 	case workflowdom.NodeTypeNotification:
-		output, execErr = e.executeNotificationNode(ctx, execCtx, node)
+		output, execErr = e.executeNotificationNode(stepCtx, execCtx, node)
 	default:
 		execErr = fmt.Errorf("unknown node type: %s", node.NodeType)
 	}
+	if execErr != nil && errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
+		execErr = fmt.Errorf("step timed out after %s: %w", e.maxNodeTime, execErr)
+	}
+	cancelStep()
 
 	// Update node run result
 	if execErr != nil {
@@ -634,7 +641,9 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 	}
 
 	// Execute the action
-	return handler.Execute(ctx, input)
+	// The events the step causes (a status change, a scan) carry the run as
+	// their cause, so they cannot start a loop (loop_guard.go).
+	return handler.Execute(WithAutomationCause(ctx, stepCause(execCtx.Run)), input)
 }
 
 // executeNotificationNode executes a notification node.
@@ -655,7 +664,7 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 		Context:            e.buildNodeInput(execCtx, node),
 	}
 
-	return e.notificationHandler.Send(ctx, input)
+	return e.notificationHandler.Send(WithAutomationCause(ctx, stepCause(execCtx.Run)), input)
 }
 
 // updateRunStats updates the run statistics.
@@ -698,12 +707,33 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 		e.logger.Error("failed to finalize run", "error", err)
 	}
 
-	// Update workflow statistics
+	// Update workflow statistics on the workflow as it is now: the copy
+	// loaded when the run started would write back a switch-off (or an edit)
+	// made while the run was executing.
 	wf := execCtx.Workflow
+	if fresh, err := e.workflowRepo.GetByTenantAndID(ctx, run.TenantID, wf.ID); err == nil {
+		wf = fresh
+	}
 	status := string(run.Status)
 	wf.RecordRun(run.ID, status)
+	paused := run.Status == workflowdom.RunStatusFailed && e.keepsFailing(ctx, wf)
+	if paused {
+		wf.Deactivate()
+	}
 	if err := e.workflowRepo.Update(ctx, wf); err != nil {
 		e.logger.Error("failed to update workflow stats", "error", err)
+		paused = false
+	}
+	if paused {
+		e.logger.Warn("automation paused: its latest runs all failed",
+			"workflow_id", wf.ID, "workflow_name", wf.Name, "failed_runs", maxConsecutiveFailures)
+		if e.auditService != nil {
+			_ = e.auditService.LogEvent(ctx, auditapp.AuditContext{TenantID: run.TenantID.String()},
+				auditapp.NewSuccessEvent(audit.ActionWorkflowDeactivated, audit.ResourceTypeWorkflow, wf.ID.String()).
+					WithResourceName(wf.Name).
+					WithMessage(fmt.Sprintf("Automation '%s' paused by the platform: its last %d runs failed", wf.Name, maxConsecutiveFailures)).
+					WithMetadata("reason", "consecutive_failures"))
+		}
 	}
 
 	// Audit log
@@ -833,4 +863,33 @@ func (e *WorkflowExecutor) failRun(runID shared.ID, reason string) {
 		run.Fail(reason)
 		_ = e.runRepo.Update(ctx, run)
 	}
+}
+
+// maxConsecutiveFailures failed runs in a row pause an automation
+// (is_active = false, audited): an automation that cannot succeed (its
+// integration is gone, its owner lost access) stops acting until someone
+// fixes and switches it on again.
+const maxConsecutiveFailures = 20
+
+// keepsFailing reports whether the workflow's latest maxConsecutiveFailures
+// finished runs all failed. A read error never pauses.
+func (e *WorkflowExecutor) keepsFailing(ctx context.Context, wf *workflowdom.Workflow) bool {
+	reader, ok := e.runRepo.(workflowdom.RunOutcomeReader)
+	if !ok {
+		return false
+	}
+	outcomes, err := reader.LatestOutcomes(ctx, wf.TenantID, wf.ID, maxConsecutiveFailures)
+	if err != nil {
+		e.logger.Warn("failed to read the latest run outcomes", "workflow_id", wf.ID, "error", err)
+		return false
+	}
+	if len(outcomes) < maxConsecutiveFailures {
+		return false
+	}
+	for _, o := range outcomes {
+		if o != workflowdom.RunStatusFailed {
+			return false
+		}
+	}
+	return true
 }

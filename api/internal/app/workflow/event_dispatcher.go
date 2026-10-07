@@ -58,6 +58,8 @@ type FindingEvent struct {
 	Finding   *vulnerability.Finding
 	EventType workflowdom.TriggerType // finding_created, finding_updated
 	Changes   map[string]any          // For finding_updated: which fields changed
+	// Cause is set when an automation step caused the event (loop_guard.go).
+	Cause *AutomationCause
 }
 
 // DispatchFindingEvent dispatches a finding event to matching workflows.
@@ -87,16 +89,30 @@ func (d *WorkflowEventDispatcher) DispatchFindingEvent(ctx context.Context, even
 		if !d.matchesTriggerFilters(wf, event) {
 			continue
 		}
+		cfg, _ := triggerConfigFor(wf, event.EventType)
+		if reason := loopBlocked(wf, event.Cause, cfg); reason != "" {
+			d.logger.Warn("automation not started: loop guard",
+				"workflow_id", wf.ID, "workflow_name", wf.Name, "event_type", event.EventType,
+				"finding_id", event.Finding.ID(), "reason", reason)
+			continue
+		}
 
-		// Trigger the workflow
+		// Trigger the workflow. An event an automation caused starts it at
+		// most once per finding per cooldown.
 		subject := event.Finding.ID()
 		err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
-			TenantID:    event.TenantID,
-			WorkflowID:  wf.ID,
-			TriggerType: event.EventType,
-			TriggerData: triggerData,
-			SubjectID:   &subject,
+			TenantID:        event.TenantID,
+			WorkflowID:      wf.ID,
+			TriggerType:     event.EventType,
+			TriggerData:     withCause(triggerData, event.Cause),
+			SubjectID:       &subject,
+			SubjectCooldown: event.Cause != nil,
 		})
+		if errors.Is(err, workflowdom.ErrRunCooldown) {
+			d.logger.Info("automation not started: same finding within the cooldown",
+				"workflow_id", wf.ID, "finding_id", subject)
+			continue
+		}
 		if err != nil {
 			d.logger.Error("failed to trigger workflow",
 				"workflow_id", wf.ID,
@@ -384,6 +400,12 @@ func (d *WorkflowEventDispatcher) DispatchFindingStatusChanged(
 	if finding == nil {
 		return
 	}
+	// A status change made by an automation step carries its cause in ctx;
+	// read it now (the dispatch below runs on its own context).
+	var cause *AutomationCause
+	if c, ok := AutomationCauseFrom(ctx); ok {
+		cause = &c
+	}
 
 	go func() {
 		defer func() {
@@ -406,6 +428,7 @@ func (d *WorkflowEventDispatcher) DispatchFindingStatusChanged(
 				"old_status": oldStatus,
 				"new_status": newStatus,
 			},
+			Cause: cause,
 		}); err != nil {
 			d.logger.Error("failed to dispatch finding_status_changed event",
 				"tenant_id", tenantID,
@@ -457,17 +480,20 @@ func (d *WorkflowEventDispatcher) DispatchAITriageEvent(ctx context.Context, eve
 			continue
 		}
 
-		// Trigger the workflow: once per triage result.
+		// Trigger the workflow: once per triage result, and at most once per
+		// finding per cooldown (an automation that requests triage on a
+		// triage result would otherwise loop).
 		subject := event.FindingID
 		err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
-			TenantID:       event.TenantID,
-			WorkflowID:     wf.ID,
-			TriggerType:    event.EventType,
-			TriggerData:    triggerData,
-			SubjectID:      &subject,
-			IdempotencyKey: string(event.EventType) + ":" + event.TriggerID(),
+			TenantID:        event.TenantID,
+			WorkflowID:      wf.ID,
+			TriggerType:     event.EventType,
+			TriggerData:     triggerData,
+			SubjectID:       &subject,
+			IdempotencyKey:  string(event.EventType) + ":" + event.TriggerID(),
+			SubjectCooldown: true,
 		})
-		if errors.Is(err, workflowdom.ErrRunDuplicate) {
+		if errors.Is(err, workflowdom.ErrRunDuplicate) || errors.Is(err, workflowdom.ErrRunCooldown) {
 			continue
 		}
 		if err != nil {
