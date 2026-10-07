@@ -1402,9 +1402,9 @@ func (r *StepRunRepository) Create(ctx context.Context, sr *pipeline.StepRun) er
 			sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 			findings_count, output, attempt, max_attempts,
 			queued_at, started_at, completed_at, error_message, error_code, created_at,
-			step_name, tool
+			step_name, tool, capability
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -1431,6 +1431,7 @@ func (r *StepRunRepository) Create(ctx context.Context, sr *pipeline.StepRun) er
 		sr.CreatedAt,
 		nullString(sr.StepName),
 		nullString(sr.Tool),
+		nullString(sr.Capability),
 	)
 
 	if err != nil {
@@ -1441,7 +1442,7 @@ func (r *StepRunRepository) Create(ctx context.Context, sr *pipeline.StepRun) er
 }
 
 // stepRunBatchChunkSize caps rows per multi-row INSERT to stay well under
-// PostgreSQL's 65535 bind-parameter limit (23 columns × 100 = 2300 params).
+// PostgreSQL's 65535 bind-parameter limit (24 columns × 100 = 2400 params).
 const stepRunBatchChunkSize = 100
 
 // CreateBatch creates multiple step runs in a single multi-row INSERT per chunk.
@@ -1467,7 +1468,7 @@ func (r *StepRunRepository) CreateBatch(ctx context.Context, stepRuns []*pipelin
 
 // insertStepRunChunk performs a single multi-row INSERT for a chunk of step runs.
 func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*pipeline.StepRun) error {
-	const cols = 23 // number of columns per row — must match the VALUES list below
+	const cols = 24 // number of columns per row — must match the VALUES list below
 	valueStrings := make([]string, 0, len(stepRuns))
 	valueArgs := make([]interface{}, 0, len(stepRuns)*cols)
 
@@ -1507,6 +1508,7 @@ func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*
 			sr.CreatedAt,
 			nullString(sr.StepName),
 			nullString(sr.Tool),
+			nullString(sr.Capability),
 		)
 	}
 
@@ -1516,7 +1518,7 @@ func (r *StepRunRepository) insertStepRunChunk(ctx context.Context, stepRuns []*
 			sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 			findings_count, output, attempt, max_attempts,
 			queued_at, started_at, completed_at, error_message, error_code, created_at,
-			step_name, tool
+			step_name, tool, capability
 		)
 		VALUES %s
 	`, strings.Join(valueStrings, ", "))
@@ -1644,7 +1646,9 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 		    condition_evaluated = $5, condition_result = $6, skip_reason = $7,
 		    findings_count = $8, output = $9, attempt = $10,
 		    queued_at = $11, started_at = $12, completed_at = $13,
-		    error_message = $14, error_code = $15
+		    error_message = $14, error_code = $15,
+		    tool = COALESCE(NULLIF($16, ''), tool),
+		    capability = COALESCE(NULLIF($17, ''), capability)
 		WHERE id = $1
 		  AND status NOT IN ` + terminalStepRunStatusesSQL + `
 	`
@@ -1665,6 +1669,8 @@ func (r *StepRunRepository) Update(ctx context.Context, sr *pipeline.StepRun) er
 		nullTime(sr.CompletedAt),
 		sr.ErrorMessage,
 		sr.ErrorCode,
+		sr.Tool,
+		sr.Capability,
 	)
 
 	if err != nil {
@@ -1837,7 +1843,7 @@ func (r *StepRunRepository) selectQuery() string {
 		       sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 		       findings_count, output, attempt, max_attempts,
 		       queued_at, started_at, completed_at, error_message, error_code, created_at,
-		       step_name, tool
+		       step_name, tool, capability
 		FROM step_runs
 	`
 }
@@ -1850,6 +1856,7 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		stepID          sql.NullString
 		stepName        sql.NullString
 		stepTool        sql.NullString
+		stepCapability  sql.NullString
 		status          string
 		sensorID        sql.NullString
 		commandID       sql.NullString
@@ -1886,6 +1893,7 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 		&sr.CreatedAt,
 		&stepName,
 		&stepTool,
+		&stepCapability,
 	)
 
 	if err != nil {
@@ -1899,6 +1907,7 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*pipeline.StepRun, erro
 	}
 	sr.StepName = stepName.String
 	sr.Tool = stepTool.String
+	sr.Capability = stepCapability.String
 	sr.Status = pipeline.StepRunStatus(status)
 	sr.SkipReason = skipReason.String
 	sr.ErrorMessage = errorMessage.String
