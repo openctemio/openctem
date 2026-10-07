@@ -115,6 +115,59 @@ func TestScopeCheck_DryRunResponse_DB(t *testing.T) {
 	}
 }
 
+// tier_exceeds names the caller's entry with the highest ceiling and offers
+// raising it to approvers only; another tenant's higher entry is never named
+// (RFC-054 §6.5).
+func TestScopeCheck_TierExceeds_DB(t *testing.T) {
+	db, ctx := openScopingTestDB(t)
+	tenantID := seedHandlerTenant(ctx, t, db)
+	other := seedHandlerTenant(ctx, t, db)
+	mustExec(ctx, t, db, `INSERT INTO scope_targets (tenant_id, target_type, pattern, status, max_tier) VALUES ($1,'domain','*.low.example','active',0)`, tenantID)
+	mustExec(ctx, t, db, `INSERT INTO scope_targets (tenant_id, target_type, pattern, status, max_tier, expires_at, reason, approvals_required)
+		VALUES ($1,'domain','*.low.example','active',2, now() + interval '3 days', 'pentest', 1)`, other)
+
+	pg := &postgres.DB{DB: db}
+	svc := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg), postgres.NewAssetRepository(pg), logger.NewNop())
+	h := NewScopeHandler(svc, validator.New(), logger.NewNop())
+	h.SetDryRun(fakeDryRun{results: []scansvc.DryRunResult{{Target: "app.low.example", Code: scopedom.RefusalTierExceeds}}}, fakeCoverage{})
+
+	call := func(admin bool, perms []string) ScopeCheckResult {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scope/check", strings.NewReader(`{"targets":["app.low.example"],"tier":1}`))
+		c := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+		c = context.WithValue(c, middleware.IsAdminKey, admin)
+		c = context.WithValue(c, middleware.FetchedPermissionsKey, perms)
+		rec := httptest.NewRecorder()
+		h.CheckScope(rec, req.WithContext(c))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+		var out CheckScopeResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out.Results[0]
+	}
+	adm := call(true, nil)
+	if adm.Code != scopedom.RefusalTierExceeds || adm.Rule == nil || adm.Rule.Pattern != "*.low.example" {
+		t.Fatalf("admin: %+v", adm)
+	}
+	var mine string
+	if err := db.QueryRowContext(ctx, `SELECT id FROM scope_targets WHERE tenant_id = $1`, tenantID).Scan(&mine); err != nil {
+		t.Fatal(err)
+	}
+	if adm.Rule.ID != mine {
+		t.Fatalf("the rule names %s, not the caller's entry %s", adm.Rule.ID, mine)
+	}
+	if len(adm.Fixes) != 1 || adm.Fixes[0].Action != scopedom.FixRaiseTier || adm.Fixes[0].ID != mine || adm.Fixes[0].Tier != "t1" {
+		t.Fatalf("admin fixes: %+v", adm.Fixes)
+	}
+	mem := call(false, []string{"attack_surface:scope:read", "attack_surface:scope:write"})
+	if mem.Code != scopedom.RefusalTierExceeds || len(mem.Fixes) != 0 {
+		t.Fatalf("member: %+v (raising a tier is for approvers)", mem)
+	}
+}
+
 type recordingDryRun struct {
 	got     []scansvc.DryRunInput
 	results []scansvc.DryRunResult

@@ -47,6 +47,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -354,6 +355,7 @@ func (s *Service) gateCandidates(ctx context.Context, run *pipeline.Run, st stag
 	in := scanapp.DispatchTargetsInput{
 		TenantID: run.TenantID, ActScope: true, FallbackUser: runActor(run),
 		PassiveOnly: st.Tier.Passive(),
+		Tier:        stageTier(st),
 		Targets:     make([]string, 0, len(cands.gate)),
 		Assets:      make(map[string]scanapp.DispatchAsset, len(cands.gate)),
 	}
@@ -656,4 +658,10 @@ func (s *Service) ListRunStages(ctx context.Context, tenantID, runID string) ([]
 		plans = []pipeline.StagePlan{}
 	}
 	return plans, nil
+}
+
+// stageTier is the stage's tier as the target gate's ceiling check reads it.
+func stageTier(st stage.Stage) *scopedom.Tier {
+	t := scopedom.Tier(st.Tier)
+	return &t
 }
