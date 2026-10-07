@@ -13,6 +13,7 @@ export * from './api'
 
 // Utilities
 export * from './lib/scope-matcher'
+export { wildcardApex } from './lib/apex'
 
 // Mock data removed — all pages use real API
 

@@ -117,6 +117,8 @@ role (not through an API key) are unrestricted.
 | Restricted member | only assets in their data scope | refused |
 | Unrestricted (admin, a `has_full_data_access` role, member of a fail-open organization with no scope row, system) | any asset of the tenant | only if it matches an active scope target of the tenant (the allowlist); exclusions still apply |
 
+A domain wildcard target `*.example.com` (or `**.example.com`) matches subdomains only, never `example.com` itself; to scan the apex, add `example.com` as its own target. A refused apex says so, naming the tenant's own wildcard entry, and the Add target dialog offers an "Also include the apex" option.
+
 **The actor** is the request's caller. With no user in the context (a
 scheduled run, a workflow action) the actor is the scan owner
 (`scans.created_by`, resolved like `ForUser`). With neither, the actor is the

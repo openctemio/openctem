@@ -297,6 +297,20 @@ func matchDomain(pattern, domain string) bool {
 	return strings.HasSuffix(d, "."+p)
 }
 
+// CoversOnlySubdomainsOf reports whether the target is a domain wildcard
+// ("*.x" / "**.x") whose base name is exactly value: it covers value's
+// subdomains but, by design, not value itself. Used only to explain a refusal.
+func CoversOnlySubdomainsOf(targetType TargetType, pattern, value string) bool {
+	switch targetType {
+	case TargetTypeDomain, TargetTypeSubdomain, TargetTypeEmailDomain:
+	default:
+		return false
+	}
+	pWild, p := splitDomainWildcard(pattern)
+	dWild, d := splitDomainWildcard(value)
+	return pWild && !dWild && p != "" && p == d
+}
+
 // domainIDNA converts a name to its ASCII (punycode) form for comparison.
 // Lenient on purpose: underscores (_dmarc.example.com) and other non-LDH
 // labels stay as they are instead of failing the conversion.

@@ -66,6 +66,9 @@ const (
 	ReasonOutOfDataScope = "the asset is outside your data scope"
 	ReasonNotAnAsset     = "not an asset in your data scope; restricted members may scan only their assets"
 	ReasonNoScopeTarget  = "matches no scope target; add it to Scoping > Targets before scanning it"
+	// reasonApexFmt explains a refused apex when the tenant has "*.T": the
+	// wildcard covers subdomains only. %s is the tenant's own wildcard entry.
+	reasonApexFmt = "%s covers subdomains only; add the apex itself to Scoping > Targets to scan it"
 )
 
 // Checker implements the act-scope rule.
@@ -137,7 +140,7 @@ func (c *Checker) Check(ctx context.Context, in Input) (*Decision, error) {
 			allowlistLoaded = true
 		}
 		if !matchesAllowlist(allowlist, t) {
-			out.RefusedTargets[t] = ReasonNoScopeTarget
+			out.RefusedTargets[t] = refusalReason(allowlist, t)
 		}
 	}
 	return out, nil
@@ -183,6 +186,20 @@ func matchesAllowlist(allowlist []*scopedom.Target, target string) bool {
 		}
 	}
 	return false
+}
+
+// refusalReason is ReasonNoScopeTarget, or a specific one when the tenant has
+// a wildcard "*.T" whose T is the target itself (the apex). It reads only the
+// caller's own (tenant-scoped) allowlist.
+func refusalReason(allowlist []*scopedom.Target, target string) string {
+	for _, f := range MatchForms(target) {
+		for _, st := range allowlist {
+			if st != nil && scopedom.CoversOnlySubdomainsOf(st.TargetType(), st.Pattern(), f) {
+				return fmt.Sprintf(reasonApexFmt, st.Pattern())
+			}
+		}
+	}
+	return ReasonNoScopeTarget
 }
 
 // MatchForms is the target as typed, lower-cased, and the host of a URL or

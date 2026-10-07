@@ -197,3 +197,32 @@ func TestCheck_FailsClosed(t *testing.T) {
 		})
 	}
 }
+
+// "*.T" covers subdomains only: refusing the apex T names the tenant's own
+// wildcard and says to add T; a lookalike or another tenant's wildcard gives
+// the generic reason (no cross-tenant leak).
+func TestCheck_ApexRefusalExplainsWildcard(t *testing.T) {
+	f := newFixture(t)
+	c := New(&fakeEnforcer{unrestricted: true}, f.assets, f.targets)
+	d, err := c.Check(context.Background(), Input{
+		TenantID: f.tenantA,
+		Targets: []string{
+			"allowed.example.com", "https://ALLOWED.example.com/x",
+			"b-allowed.example.com", "example.com",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantApex := "*.allowed.example.com covers subdomains only; add the apex itself to Scoping > Targets to scan it"
+	for _, k := range []string{"allowed.example.com", "https://ALLOWED.example.com/x"} {
+		if d.RefusedTargets[k] != wantApex {
+			t.Fatalf("refused[%s] = %q, want %q", k, d.RefusedTargets[k], wantApex)
+		}
+	}
+	for _, k := range []string{"b-allowed.example.com", "example.com"} {
+		if d.RefusedTargets[k] != ReasonNoScopeTarget {
+			t.Fatalf("refused[%s] = %q, want the generic reason", k, d.RefusedTargets[k])
+		}
+	}
+}
