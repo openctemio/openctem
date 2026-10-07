@@ -35,6 +35,22 @@ var removedRoutes = map[string]string{
 	"POST /api/v1/custom-capabilities":                "POST /api/v1/capabilities",
 	"PUT /api/v1/custom-capabilities/{id}":            "PUT /api/v1/capabilities/{id}",
 	"DELETE /api/v1/custom-capabilities/{id}":         "DELETE /api/v1/capabilities/{id}",
+	// Tombstones that only answered 403: the shared catalogs are written by
+	// the platform operator (admin console), never by an organization.
+	"POST /api/v1/vulnerabilities":             "refusal stub (403); the shared CVE catalog has no tenant writes",
+	"PUT /api/v1/vulnerabilities/{id}":         "refusal stub (403)",
+	"DELETE /api/v1/vulnerabilities/{id}":      "refusal stub (403)",
+	"POST /api/v1/threat-intel/sync":           "refusal stub (403); feeds sync from /api/v1/admin/threat-intel",
+	"PATCH /api/v1/threat-intel/sync/{source}": "refusal stub (403)",
+	// No caller in the web, e2e, sdk-go, sensor, scripts or public docs.
+	"POST /api/v1/findings/{id}/link-ticket":             "dead: tickets are created with create-ticket",
+	"DELETE /api/v1/findings/{id}/link-ticket":           "dead",
+	"GET /api/v1/findings/analytics/sources":             "dead",
+	"PATCH /api/v1/tenants/{tenant}/settings/branch":     "dead: no screen",
+	"POST /api/v1/assets/import/kubernetes":              "dead: only the CSV import is used",
+	"POST /api/v1/integrations/{id}/import-repositories": "dead: repositories import through the integration sync",
+	"GET /api/v1/asset-types/categories":                 "deprecated alias without caller; GET /api/v1/asset-types is the registry",
+	"GET /api/v1/asset-types/categories/{categoryId}":    "deprecated alias without caller",
 }
 
 func TestRemovedRoutes_NotRegistered(t *testing.T) {
@@ -143,6 +159,76 @@ func TestRemovedRoutes_CrossTenantStatsAndTenantRebaselineAreGone(t *testing.T) 
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api/v1/dashboard/stats"},
 		{http.MethodGet, "/api/v1/audit-logs/verify"},
+	} {
+		if code := serve(tc.method, tc.path); code != reachedHandler {
+			t.Errorf("%s %s: got %d, want the handler", tc.method, tc.path, code)
+		}
+	}
+}
+
+// The shared-catalog tombstones and the dead finding, settings, import and
+// category routes: an administrator with every permission gets 404 or 405.
+func TestRemovedRoutes_TombstonesAndDeadRoutesAreGone(t *testing.T) {
+	withStepUpChecker(t, alwaysSteppedUp{})
+	tn, err := tenant.NewTenant("Acme", "acme", shared.NewID().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := userdom.NewProvisionedLocalUser("owner@acme.test", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := tenant.NewMembership(u.ID(), tn.ID(), tenant.RoleOwner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), middleware.IsAdminKey, true)
+			ctx = context.WithValue(ctx, middleware.TenantIDKey, tn.ID().String())
+			ctx = context.WithValue(ctx, middleware.UserIDKey, u.ID().String())
+			ctx = context.WithValue(ctx, middleware.SessionIDKey, "removed-routes")
+			ctx = context.WithValue(ctx, middleware.LocalUserKey, u)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	router := infrahttp.NewChiRouter()
+	registerVulnerabilityRoutes(router, &handler.VulnerabilityHandler{}, &handler.FindingActionsHandler{},
+		&handler.JiraWebhookHandler{}, nil, auth, nil)
+	registerThreatIntelRoutes(router, &handler.ThreatIntelHandler{}, auth, nil)
+	registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil)
+	mux := router.(interface{ Handler() http.Handler }).Handler()
+
+	serve := func(method, path string) (code int) {
+		defer func() {
+			if recover() != nil {
+				code = reachedHandler
+			}
+		}()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader("{}")))
+		return rec.Code
+	}
+	id := shared.NewID().String()
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/vulnerabilities"},
+		{http.MethodPut, "/api/v1/vulnerabilities/" + id},
+		{http.MethodDelete, "/api/v1/vulnerabilities/" + id},
+		{http.MethodPost, "/api/v1/threat-intel/sync"},
+		{http.MethodPatch, "/api/v1/threat-intel/sync/epss"},
+		{http.MethodPost, "/api/v1/findings/" + id + "/link-ticket"},
+		{http.MethodDelete, "/api/v1/findings/" + id + "/link-ticket"},
+		{http.MethodGet, "/api/v1/findings/analytics/sources"},
+		{http.MethodPatch, "/api/v1/tenants/acme/settings/branch"},
+	} {
+		if code := serve(tc.method, tc.path); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+			t.Errorf("%s %s: got %d, want 404 or 405", tc.method, tc.path, code)
+		}
+	}
+	// The reads on the same paths still route.
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/vulnerabilities/" + id},
+		{http.MethodGet, "/api/v1/threat-intel/sync"},
 	} {
 		if code := serve(tc.method, tc.path); code != reachedHandler {
 			t.Errorf("%s %s: got %d, want the handler", tc.method, tc.path, code)
