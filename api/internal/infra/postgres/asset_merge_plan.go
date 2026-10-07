@@ -49,7 +49,6 @@ var assetMergeRefs = []mergeRef{
 	{table: "exposures", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "suppression_rules", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "sla_policies", column: "asset_id", tenantCol: "tenant_id"},
-	{table: "scan_sessions", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "pipeline_runs", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "exposure_events", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "runtime_telemetry_events", column: "endpoint_asset_id", tenantCol: "tenant_id"},

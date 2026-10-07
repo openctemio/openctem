@@ -108,9 +108,6 @@ vi.mock('@/features/findings', async (orig) => ({
 vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAsset: () => ({ asset: null, isLoading: false, error: undefined }),
 }))
-vi.mock('@/lib/api/scan-hooks', () => ({
-  useScanSession: () => ({ data: undefined, isLoading: false }),
-}))
 vi.mock('@/lib/api/security-hooks', () => ({
   useComponent: () => ({ data: { name: 'log4j-core', version: '2.14.1' }, isLoading: false }),
 }))
