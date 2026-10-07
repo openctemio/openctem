@@ -49,9 +49,10 @@ type WorkflowExecutor struct {
 	maxNodeTime       time.Duration // Max time for single node execution
 
 	// SEC-WF10: Per-tenant rate limiting
-	maxConcurrentPerTenant int            // Max concurrent runs per tenant
-	tenantRunCounts        map[string]int // Current run count per tenant
-	tenantMu               sync.Mutex     // Mutex for tenant counts
+	maxConcurrentPerTenant int                      // Max concurrent runs per tenant
+	tenantSlots            map[string]chan struct{} // Per-tenant run slots
+	tenantMu               sync.Mutex               // Guards tenantSlots
+	maxQueueWait           time.Duration            // How long a run waits for a slot
 }
 
 // WorkflowExecutorConfig holds configuration for the executor.
@@ -77,6 +78,11 @@ const (
 	defaultMaxConcurrentPerTenant = 10               // Max concurrent per tenant (SEC-WF10)
 	defaultMaxExecutionTime       = 5 * time.Minute  // Max time for entire workflow
 	defaultMaxNodeTime            = 30 * time.Second // Max time for single node
+	// A run waits this long for a free slot before it fails. Runs are
+	// bounded where they are created (hourly quotas, active caps), so
+	// waiting replaces refusing: a batch of 40 findings runs 10 at a time
+	// per tenant instead of failing 30 of them.
+	defaultMaxQueueWait = 30 * time.Minute
 )
 
 // WorkflowExecutorOption is a functional option for WorkflowExecutor.
@@ -131,7 +137,8 @@ func NewWorkflowExecutor(
 		maxNodeTime:       defaultMaxNodeTime,
 		// SEC-WF10: Per-tenant rate limiting
 		maxConcurrentPerTenant: defaultMaxConcurrentPerTenant,
-		tenantRunCounts:        make(map[string]int),
+		tenantSlots:            make(map[string]chan struct{}),
+		maxQueueWait:           defaultMaxQueueWait,
 	}
 
 	// Initialize semaphore for concurrency control
@@ -738,15 +745,17 @@ func (e *WorkflowExecutor) ExecuteAsync(runID shared.ID) {
 }
 
 // ExecuteAsyncWithTenant executes a workflow run asynchronously with tenant context.
-// SEC-WF07: Uses semaphore to limit concurrent executions and passes tenant for isolation.
-// SEC-WF10: Also enforces per-tenant rate limiting.
+// SEC-WF07/SEC-WF10: at most maxConcurrentRuns runs execute at once, and
+// at most maxConcurrentPerTenant per tenant; a run waits (up to
+// maxQueueWait) for a free slot instead of being
+// failed. A run still waiting when it times out fails with that reason.
 // SEC-WF12: Includes panic recovery to prevent resource leaks.
 func (e *WorkflowExecutor) ExecuteAsyncWithTenant(runID shared.ID, tenantID shared.ID) {
 	tenantKey := tenantID.String()
 
 	go func() {
 		// SEC-WF12: Track acquired resources for cleanup
-		var tenantSlotAcquired bool
+		var tenantSlot chan struct{}
 		var globalSlotAcquired bool
 
 		// SEC-WF12: Panic recovery - ensure resources are always released
@@ -757,76 +766,43 @@ func (e *WorkflowExecutor) ExecuteAsyncWithTenant(runID shared.ID, tenantID shar
 					"tenant_id", tenantKey,
 					"panic", r,
 				)
-				// Try to mark run as failed
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if run, err := e.runRepo.GetByID(ctx, runID); err == nil {
-					run.Fail("execution failed: internal error")
-					_ = e.runRepo.Update(ctx, run)
-				}
+				e.failRun(runID, "execution failed: internal error")
 			}
-
-			// SEC-WF12: Always release global semaphore if acquired
 			if globalSlotAcquired {
 				<-e.runSemaphore
 			}
-
-			// SEC-WF12: Always release tenant slot if acquired
-			if tenantSlotAcquired {
-				e.tenantMu.Lock()
-				if e.tenantRunCounts[tenantKey] > 0 {
-					e.tenantRunCounts[tenantKey]--
-				}
-				if e.tenantRunCounts[tenantKey] <= 0 {
-					delete(e.tenantRunCounts, tenantKey)
-				}
-				e.tenantMu.Unlock()
+			if tenantSlot != nil {
+				<-tenantSlot
 			}
 		}()
 
-		// SEC-WF10: Check per-tenant limit first
+		deadline := time.NewTimer(e.maxQueueWait)
+		defer deadline.Stop()
+
+		// SEC-WF10: per-tenant slot first, so one tenant's backlog never
+		// holds global slots while it waits.
 		if !tenantID.IsZero() {
-			e.tenantMu.Lock()
-			currentCount := e.tenantRunCounts[tenantKey]
-			if currentCount >= e.maxConcurrentPerTenant {
-				e.tenantMu.Unlock()
-				e.logger.Warn("workflow execution rejected: per-tenant limit reached",
-					"run_id", runID,
-					"tenant_id", tenantKey,
-					"current_count", currentCount,
-					"max_per_tenant", e.maxConcurrentPerTenant,
-				)
-				// Mark the run as failed due to tenant capacity
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if run, err := e.runRepo.GetByID(ctx, runID); err == nil {
-					run.Fail("execution rejected: tenant at capacity")
-					_ = e.runRepo.Update(ctx, run)
-				}
+			slot := e.tenantSlot(tenantKey)
+			select {
+			case slot <- struct{}{}:
+				tenantSlot = slot
+			case <-deadline.C:
+				e.logger.Warn("workflow run not started: no free tenant slot in time",
+					"run_id", runID, "tenant_id", tenantKey, "max_per_tenant", e.maxConcurrentPerTenant)
+				e.failRun(runID, fmt.Sprintf("not started: waited %s for a free slot (at most %d runs at once per organization)",
+					e.maxQueueWait, e.maxConcurrentPerTenant))
 				return
 			}
-			e.tenantRunCounts[tenantKey]++
-			tenantSlotAcquired = true
-			e.tenantMu.Unlock()
 		}
 
-		// SEC-WF07: Try to acquire global semaphore (non-blocking check first)
+		// SEC-WF07: global slot.
 		select {
 		case e.runSemaphore <- struct{}{}:
 			globalSlotAcquired = true
-		default:
-			// Semaphore full - too many concurrent executions
-			e.logger.Warn("workflow execution rejected: max concurrent runs reached",
-				"run_id", runID,
-				"max_concurrent", e.maxConcurrentRuns,
-			)
-			// Mark the run as failed due to capacity
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if run, err := e.runRepo.GetByID(ctx, runID); err == nil {
-				run.Fail("execution rejected: system at capacity")
-				_ = e.runRepo.Update(ctx, run)
-			}
+		case <-deadline.C:
+			e.logger.Warn("workflow run not started: no free slot in time",
+				"run_id", runID, "max_concurrent", e.maxConcurrentRuns)
+			e.failRun(runID, fmt.Sprintf("not started: waited %s for a free slot", e.maxQueueWait))
 			return
 		}
 
@@ -835,4 +811,26 @@ func (e *WorkflowExecutor) ExecuteAsyncWithTenant(runID shared.ID, tenantID shar
 			e.logger.Error("async workflow execution failed", "run_id", runID, "error", err)
 		}
 	}()
+}
+
+// tenantSlot returns the run-slot channel of a tenant (created on first use).
+func (e *WorkflowExecutor) tenantSlot(tenantKey string) chan struct{} {
+	e.tenantMu.Lock()
+	defer e.tenantMu.Unlock()
+	slot, ok := e.tenantSlots[tenantKey]
+	if !ok {
+		slot = make(chan struct{}, e.maxConcurrentPerTenant)
+		e.tenantSlots[tenantKey] = slot
+	}
+	return slot
+}
+
+// failRun marks a run that never started as failed (best effort).
+func (e *WorkflowExecutor) failRun(runID shared.ID, reason string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if run, err := e.runRepo.GetByID(ctx, runID); err == nil && !run.Status.IsTerminal() {
+		run.Fail(reason)
+		_ = e.runRepo.Update(ctx, run)
+	}
 }

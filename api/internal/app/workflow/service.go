@@ -15,13 +15,17 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// Concurrent workflow run limits to prevent resource exhaustion.
+// Run limits: how many runs may wait or run at once (the executor runs a
+// bounded number per tenant and queues the rest). The hourly quotas are in
+// workflowdom (run_limits.go).
 const (
-	// MaxConcurrentWorkflowRunsPerWorkflow is the maximum concurrent runs per workflow.
-	MaxConcurrentWorkflowRunsPerWorkflow = 5
+	// MaxConcurrentWorkflowRunsPerWorkflow caps the waiting and running runs
+	// of one workflow.
+	MaxConcurrentWorkflowRunsPerWorkflow = workflowdom.MaxActiveRunsPerWorkflow
 
-	// MaxConcurrentWorkflowRunsPerTenant is the maximum concurrent workflow runs per tenant.
-	MaxConcurrentWorkflowRunsPerTenant = 50
+	// MaxConcurrentWorkflowRunsPerTenant caps the waiting and running runs
+	// of one tenant.
+	MaxConcurrentWorkflowRunsPerTenant = workflowdom.MaxActiveRunsPerTenant
 )
 
 // WorkflowService handles workflow-related business operations.
@@ -692,6 +696,11 @@ type TriggerWorkflowInput struct {
 	WorkflowID  shared.ID
 	TriggerType workflowdom.TriggerType
 	TriggerData map[string]any
+	// SubjectID is the finding or asset the run is about (nil for none).
+	SubjectID *shared.ID
+	// IdempotencyKey identifies the event: a second trigger with the same
+	// key for the same workflow returns workflowdom.ErrRunDuplicate.
+	IdempotencyKey string
 }
 
 // TriggerWorkflow triggers a workflow execution.
@@ -721,6 +730,7 @@ func (s *WorkflowService) TriggerWorkflow(ctx context.Context, input TriggerWork
 	if !input.UserID.IsZero() {
 		run.SetTriggeredBy(input.UserID)
 	}
+	run.SetSubject(input.SubjectID, input.IdempotencyKey)
 
 	run.TotalNodes = len(w.Nodes)
 
