@@ -4617,6 +4617,34 @@ definitions:
       reason:
         type: string
     type: object
+  github_com_openctemio_openctem_api_pkg_domain_scope.Fix:
+    properties:
+      action:
+        type: string
+      days:
+        type: integer
+      domain:
+        type: string
+      id:
+        type: string
+      pattern:
+        type: string
+      requires:
+        description: Requires is the permission the action needs ("" = anyone who
+          could scan).
+        type: string
+      target_type:
+        type: string
+    type: object
+  github_com_openctemio_openctem_api_pkg_domain_scope.RuleRef:
+    properties:
+      id:
+        type: string
+      kind:
+        type: string
+      pattern:
+        type: string
+    type: object
   github_com_openctemio_openctem_api_pkg_domain_scoping.AssetSummary:
     properties:
       in_business_unit:
@@ -8217,13 +8245,33 @@ definitions:
     type: object
   internal_infra_http_handler.CheckScopeRequest:
     properties:
-      asset_type:
+      sensor_preference:
+        description: 'SensorPreference: auto (default), tenant or platform.'
+        enum:
+        - auto
+        - tenant
+        - platform
         type: string
-      value:
-        type: string
+      targets:
+        items:
+          type: string
+        maxItems: 200
+        minItems: 1
+        type: array
+      tier:
+        description: 'Tier: 0 passive, 1 safe active (default), 2 intrusive.'
+        maximum: 2
+        minimum: 0
+        type: integer
     required:
-    - asset_type
-    - value
+    - targets
+    type: object
+  internal_infra_http_handler.CheckScopeResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ScopeCheckResult'
+        type: array
     type: object
   internal_infra_http_handler.ClassifyFindingRequest:
     properties:
@@ -14156,6 +14204,47 @@ definitions:
       success:
         type: boolean
     type: object
+  internal_infra_http_handler.ScopeCheckResult:
+    properties:
+      allowed:
+        type: boolean
+      code:
+        type: string
+      fixes:
+        items:
+          $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_scope.Fix'
+        type: array
+      message:
+        type: string
+      rule:
+        $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_scope.RuleRef'
+      target:
+        type: string
+      via:
+        $ref: '#/definitions/internal_infra_http_handler.ScopeCheckVia'
+      zone:
+        $ref: '#/definitions/internal_infra_http_handler.ScopeCheckZone'
+    type: object
+  internal_infra_http_handler.ScopeCheckVia:
+    properties:
+      id:
+        type: string
+      kind:
+        description: 'Kind: scope_target, seed, verified_domain or internal (zone-gated).'
+        type: string
+      pattern:
+        type: string
+      proof:
+        description: 'Proof: verified or asserted.'
+        type: string
+    type: object
+  internal_infra_http_handler.ScopeCheckZone:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
   internal_infra_http_handler.ScopeExclusionResponse:
     properties:
       approved_at:
@@ -14191,21 +14280,6 @@ definitions:
         type: string
       updated_at:
         type: string
-    type: object
-  internal_infra_http_handler.ScopeMatchResponse:
-    properties:
-      excluded:
-        type: boolean
-      in_scope:
-        type: boolean
-      matched_exclusion_ids:
-        items:
-          type: string
-        type: array
-      matched_target_ids:
-        items:
-          type: string
-        type: array
     type: object
   internal_infra_http_handler.ScopeSettingsRequest:
     properties:
@@ -34120,10 +34194,14 @@ paths:
     post:
       consumes:
       - application/json
-      description: Check whether a given asset type and value falls within scope targets
-        and exclusions
+      description: 'For each target, what a scan by the caller would do now (RFC-054
+        §6.4): allowed with what authorizes it, or refused with a code, the caller''s
+        own rule that refused it and the fixes the caller may take. Runs the act scope,
+        the target validator, exclusions, ownership and scope authority, the platform
+        guardrails, zones and the proof requirement; dispatches, logs and audits nothing.
+        At most 200 targets.'
       parameters:
-      - description: Asset type and value to check
+      - description: Targets
         in: body
         name: body
         required: true
@@ -34135,13 +34213,9 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_infra_http_handler.ScopeMatchResponse'
+            $ref: '#/definitions/internal_infra_http_handler.CheckScopeResponse'
         "400":
           description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
-        "401":
-          description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
         "500":
@@ -34150,7 +34224,7 @@ paths:
             $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
       security:
       - BearerAuth: []
-      summary: Check if value is in scope
+      summary: Dry run of the active-probe gate
       tags:
       - Scope
   /scope/exclusions:

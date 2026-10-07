@@ -353,13 +353,17 @@ response by the guardrails PR. `t2` is never a default.
 
 ```json
 { "targets": ["vndirect.com.vn", "promo-landing.net"],
-  "asset_ids": [],
   "sensor_preference": "auto",
   "tier": 1 }
 ```
 
-At most 200 targets. Runs §4.2 steps 1–9 for the caller (act scope included)
-without dispatching, auditing or logging a refusal.
+At most 200 targets (an inventory asset is checked by its name). Runs §4.2
+steps 1–9 for the caller (act scope included) without dispatching, auditing
+or logging a refusal. The act scope answers first for a restricted member
+(`not_an_asset`, `out_of_data_scope`), so the dry run tells them nothing
+about assets outside their data scope; `proof_required` applies with
+`sensor_preference=platform` under the operator's proof mode and to
+`tier: 2`.
 
 ```json
 { "results": [
@@ -377,9 +381,10 @@ without dispatching, auditing or logging a refusal.
 ] }
 ```
 
-`via.kind`: `scope_target`, `seed`, `verified_domain`, `internal` (zone-gated),
-`not_applicable` (repository, cloud resource). `via.proof`: `verified` or
-`asserted`. `rule` names the caller's own rule that refused: `{"kind":
+`via.kind`: `scope_target`, `seed`, `verified_domain`, or `internal` (a
+private target routed by its zone, or a target no authority needs to cover).
+`via.proof`: `verified` or `asserted`. `zone` is set for zone-routed
+targets. `rule` names the caller's own rule that refused: `{"kind":
 "exclusion"|"scope_target"|"tombstone"|"asset", "id", "pattern"}`; for
 platform policy it is `{"kind": "platform_policy"}` with no detail.
 
@@ -404,7 +409,9 @@ platform policy it is `{"kind": "platform_policy"}` with no detail.
 | `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
 
 Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
-"domain"?}`. Fixes are filtered by the caller's permissions.
+"domain"?, "requires"?}`; `requires` is the permission the action needs. The
+dry run keeps only the fixes the caller may take (an approver gets
+`allow_temporarily`, a member `request_access`, never both).
 
 The same `code` (and `fixes`) appear on every refusal the API returns:
 `TARGET_OUT_OF_SCOPE` errors list `details.refused[]` as

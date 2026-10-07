@@ -1407,8 +1407,14 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrValidation):
 		// Trigger refusals (NO_ZONE_COVERAGE, ZONE_SPLIT_REQUIRED, ...) keep
 		// their code so the client can explain them.
-		apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
-			cleanErrorMessage(err, "Invalid request")).WriteJSON(w)
+		e := apierror.New(http.StatusBadRequest, scanZoneErrorCode(err, apierror.CodeBadRequest),
+			cleanErrorMessage(err, "Invalid request"))
+		// A refusal of targets lists each with its code and fixes (RFC-054 §6.5).
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Details != nil {
+			e = e.WithDetails(de.Details)
+		}
+		e.WriteJSON(w)
 	case scansvc.AsFrozen(err) != nil:
 		// A scan freeze window is active: 409 with its own code, so the
 		// console can offer the override to those who hold it.
