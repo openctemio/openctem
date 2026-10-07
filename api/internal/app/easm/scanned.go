@@ -53,7 +53,12 @@ type VerifiedRoots interface {
 type ScanStamper struct {
 	store ScanEvidenceStore
 	roots VerifiedRoots
+	join  *ScopeJoin
 }
+
+// SetScopeJoin confirms the new names a scan found under a permanent scope
+// target or seed of the tenant (RFC-054 §4.3). Nil: they go to review.
+func (s *ScanStamper) SetScopeJoin(j *ScopeJoin) { s.join = j }
 
 var _ ingest.ScanAttributionStamper = (*ScanStamper)(nil)
 
@@ -126,6 +131,9 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 		}
 	}
 	if err := s.verifiedEvidence(ctx, tenantID, fresh, byID); err != nil {
+		return err
+	}
+	if err := s.scopeJoinEvidence(ctx, tenantID, fresh, byID); err != nil {
 		return err
 	}
 
@@ -275,6 +283,32 @@ func (s *ScanStamper) verifiedEvidence(ctx context.Context, tenantID shared.ID, 
 			Rule: attribution.RuleVerifiedRoot, Technique: TechniqueVerifiedDomain, Source: "verified_domain:" + root,
 			Weight: w, Observed: map[string]any{"root": root},
 		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// scopeJoinEvidence records matches_scope_target on the fresh names a
+// permanent scope target or seed covers. A failed lookup records nothing
+// (the names go to review) and is logged by the caller's error path only
+// when the store itself fails.
+func (s *ScanStamper) scopeJoinEvidence(ctx context.Context, tenantID shared.ID, fresh []string, byID map[string]ingest.ScannedAsset) error {
+	if len(fresh) == 0 || s.join == nil {
+		return nil
+	}
+	items := make([]JoinItem, 0, len(fresh))
+	for _, id := range fresh {
+		a := byID[id]
+		items = append(items, JoinItem{ID: id, Name: a.Name, Type: a.Type.Type, SubType: a.Type.SubType})
+	}
+	ev, err := s.join.Evidence(ctx, tenantID, items)
+	if err != nil {
+		s.join.log.Warn("scan attribution: scope join failed; names go to review", "error", err)
+		return nil
+	}
+	for _, e := range ev {
+		if err := s.store.UpsertEvidenceBulk(ctx, tenantID, []string{e.AssetID}, e); err != nil {
 			return err
 		}
 	}

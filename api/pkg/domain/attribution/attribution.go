@@ -102,6 +102,11 @@ const (
 	// named in a result). Medium: it brings a name to review, and never
 	// confirms one on its own (research/22 E7).
 	RuleScanDiscovered Rule = "tenant_scan_discovered"
+	// RuleMatchesScopeTarget: an active, permanent scope target of the
+	// tenant (or a root-domain seed) covers the name; an IP address only
+	// through an IP, range or CIDR entry that contains it. A declared scope
+	// entry is an intentional ownership claim, so it confirms (RFC-054 §4.3).
+	RuleMatchesScopeTarget Rule = "matches_scope_target"
 )
 
 // Class is the strength class of a rule.
@@ -119,10 +124,11 @@ type ruleDef struct {
 }
 
 var rules = map[Rule]ruleDef{
-	RuleVerifiedRoot:   {0.99, ClassStrong},
-	RuleTenantScanned:  {0.95, ClassStrong},
-	RuleAssertedRoot:   {0.85, ClassMedium},
-	RuleScanDiscovered: {0.60, ClassMedium},
+	RuleVerifiedRoot:       {0.99, ClassStrong},
+	RuleMatchesScopeTarget: {0.99, ClassStrong},
+	RuleTenantScanned:      {0.95, ClassStrong},
+	RuleAssertedRoot:       {0.85, ClassMedium},
+	RuleScanDiscovered:     {0.60, ClassMedium},
 }
 
 // Weight returns the base weight and class of a rule.

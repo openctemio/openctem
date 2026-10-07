@@ -393,6 +393,10 @@ platform policy it is `{"kind": "platform_policy"}` with no detail.
 Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
 "domain"?}`. Fixes are filtered by the caller's permissions.
 
+The same `code` (and `fixes`) appear on every refusal the API returns:
+`TARGET_OUT_OF_SCOPE` errors list `details.refused[]` as
+`{target, code, message, fixes}`, and dispatch-gate refusals carry `code`.
+
 ### 6.6 Review queue and inventory membership (existing routes, extended)
 
 The review queue already exists (RFC-036 §6.10); the web uses it as the
@@ -411,10 +415,10 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   `review.needs_review`, `review.candidate` and `review.by_reason`
   (`{rule: count}`) for the caller's data scope.
 - **`POST /api/v1/easm/candidates/decisions`** (`assets:write`, data-scoped,
-  at most 200 assets, audited per asset): `{"asset_ids": […], "decision":
-  "confirm"|"reject"|"dependency"|"monitor_only", "reason": "…"}`. Unchanged,
-  except that a confirmation no longer authorizes active probes by itself
-  (§4.2).
+  at most 200 assets, audited per asset): `{"asset_ids": […], "state":
+  "confirmed"|"rejected"|"dependency"|"monitor_only"|"needs_review", "note":
+  "…"}`. Unchanged, except that a confirmation no longer authorizes active
+  probes by itself (§4.2).
 - **`GET /api/v1/assets/{id}/attribution`**: adds `scope_status`
   (`in_scope`, `out_of_scope`, `internal` for zone-gated names,
   `not_applicable` for repositories and cloud resources) and `covered_by`
@@ -425,9 +429,96 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   `needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`, or
   empty for a legacy asset) and `in_inventory` (bool).
 
-The same `code` (and `fixes`) appear on every refusal the API returns:
-`TARGET_OUT_OF_SCOPE` errors list `details.refused[]` as
-`{target, code, message, fixes}`, and dispatch-gate refusals carry `code`.
+### 6.7 Review by rule
+
+The review queue can be worked a rule at a time: the platform groups pending
+items into candidate scope entries, and the tenant accepts or rejects a whole
+group. A rule **is** a scope entry or an exclusion, created through the same
+paths as §6.1/§6.2; there is no second authority.
+
+**`GET /api/v1/easm/candidates/suggestions`** (`assets:read`, data-scoped;
+query `states` default `needs_review`, `limit` ≤ 50):
+
+```json
+{ "suggestions": [
+  { "id": "domain:*.dev.ipas.com.vn",
+    "kind": "domain_wildcard",
+    "target_type": "domain",
+    "pattern": "*.dev.ipas.com.vn",
+    "strength": "strong",
+    "covered": 12,
+    "covered_sample": ["a.dev.ipas.com.vn", "b.dev.ipas.com.vn"],
+    "blocked": 1,
+    "blocked_sample": [{"name": "old.dev.ipas.com.vn", "code": "rejected"}],
+    "hints": [
+      {"kind": "discovering_seed", "value": "ipas.com.vn"},
+      {"kind": "cert_org", "value": "IPAS JSC"},
+      {"kind": "same_ns_as_verified", "value": "ns1.ipas.com.vn"}
+    ] },
+  { "id": "cidr:203.0.113.0/24", "kind": "ip_cidr", "target_type": "cidr",
+    "pattern": "203.0.113.0/24", "strength": "medium", "covered": 5, "blocked": 0,
+    "hints": [{"kind": "rdap_allocation", "value": "203.0.112.0/22 EXAMPLE-NET"}] }
+  ],
+  "individual": [
+    { "asset_id": "…", "name": "104.16.1.2", "shared_ip": true,
+      "reason": "shared or CDN provider address: accept one by one" }
+  ] }
+```
+
+- **Domains:** a wildcard at each label level from the item up to the
+  registrable domain (`*.dev.ipas.com.vn`, then `*.ipas.com.vn`), never at
+  or above a public suffix (embedded PSL, §8.2), never a deny-listed name.
+- **IPs:** the `/24` (IPv4) or `/48` (IPv6) around the items; the RDAP
+  allocation or ASN only when our data already holds it (no new outbound
+  call); never for shared, CDN or cloud-provider space (the asset's CDN flag
+  or a known provider range): those items appear under `individual` with
+  `shared_ip: true` and can only be accepted one by one. A suggested range
+  larger than the §8.3 cap is not offered.
+- **Counts:** `covered` = pending items the rule would confirm; `blocked` =
+  items it covers that an exclusion, tombstone or rejected parent keeps out
+  (they stay out; codes from §6.5).
+- **Hints** are evidence we already hold: the seed that discovered the names,
+  a certificate organization, the same NS/SOA as a verified domain, the RDAP
+  allocation. Order: by strength (strong, medium, weak), then from the most
+  specific rule to the broadest.
+
+**`POST /api/v1/easm/candidates/rules/preview`** and
+**`POST /api/v1/easm/candidates/rules`**, same body:
+
+```json
+{ "action": "accept_rule",
+  "target_type": "domain",
+  "pattern": "*.dev.ipas.com.vn",
+  "asset_ids": [],
+  "reason": "Our dev environment (ticket OPS-12)" }
+```
+
+| `action` | Effect | Permission |
+|---|---|---|
+| `accept_rule` | creates a permanent scope entry for `pattern` exactly as `POST /scope/targets` does (step-up, §7 approvals, audit, admin notification; a caller without `scope:approve` creates a pending request). Once the entry is active, the pending items it covers are re-evaluated and confirmed through `matches_scope_target` (§4.3) | `scope:write` (+ step-up for approvers) |
+| `accept_selected` | confirms only `asset_ids` (≤ 200), like the decisions route; creates no entry, so active scanning still needs a covering entry (§4.2) | `assets:write` |
+| `reject_rule` | creates a scope exclusion for `pattern` (the normal exclusion approval flow) and rejects the pending items it covers now (tombstones); future names it matches are rejected on arrival while the exclusion is in effect | `scope:write` + `assets:write` |
+
+`reason` is required for `accept_rule` and `reject_rule`. The preview
+returns exactly what the action would change and changes nothing:
+
+```json
+{ "action": "accept_rule",
+  "allowed": true,
+  "refusal": null,
+  "entry": {"target_type": "domain", "pattern": "*.dev.ipas.com.vn", "status": "pending", "approvals_required": 1},
+  "would_confirm": [{"asset_id": "…", "name": "a.dev.ipas.com.vn"}],
+  "would_reject": [],
+  "stays_blocked": [{"asset_id": "…", "name": "old.dev.ipas.com.vn", "code": "rejected"}],
+  "step_up_required": true }
+```
+
+`refusal` carries a §6.1 code (`PUBLIC_SUFFIX`, `DENY_LIST`,
+`CIDR_TOO_LARGE`, …) when the rule cannot be created. The action route
+answers the same shape plus the created `entry` or `exclusion` and the
+counts actually applied. Re-evaluation is idempotent (running it twice
+changes nothing) and tenant-scoped; items outside the caller's data scope are
+neither counted nor changed.
 
 ## 7. Approvals and notification (S3)
 
@@ -510,5 +601,6 @@ ranges are gated by zones and are not capped.
 | Guardrails | PSL, deny list, CIDR caps, `SCOPE_ACTIVE_PROOF` |
 | Entries | migration `001149`, expiry, requests, approvals, step-up, notification, settings, sweep |
 | Discovery | `matches_scope_target` + backfill |
+| Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |
 | Refusals | codes, fixes, `POST /check` dry run |
