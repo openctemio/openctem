@@ -1,5 +1,5 @@
 // Package openapicontract checks that three descriptions of this server's HTTP
-// surface agree: the // @Router annotations on the handlers, the committed
+// surface agree: the // @Router annotations on the handlers, the generated
 // OpenAPI spec, and the routes actually registered with the router.
 //
 // # WHY NOT A BYTE COMPARISON OF THE SPEC
@@ -29,9 +29,8 @@
 //
 //	A. annotations == spec
 //	   Every // @Router in internal/infra/http/handler must appear as a
-//	   path+method in the committed spec, and vice versa. This is what makes
-//	   the spec "generated": you cannot hand-add a path, and you cannot change
-//	   an annotation without running `make swagger`.
+//	   path+method in the generated spec, and vice versa: swag read every
+//	   handler, and nothing else reached the spec.
 //
 //	B. spec ⊆ routes
 //	   Every documented path+method must be registered on the router. This is
@@ -131,7 +130,7 @@ func Annotations(handlerDir string) (map[Op]string, error) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. The committed spec
+// 2. The generated spec
 // ---------------------------------------------------------------------------
 
 var httpMethods = map[string]bool{
@@ -139,7 +138,7 @@ var httpMethods = map[string]bool{
 	"head": true, "options": true,
 }
 
-// SpecOps returns every path+method declared in the committed OpenAPI document.
+// SpecOps returns every path+method declared in the generated OpenAPI document.
 func SpecOps(specPath string) (map[Op]bool, error) {
 	data, err := os.ReadFile(specPath) //nolint:gosec // repo-local path from the caller
 	if err != nil {
