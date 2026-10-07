@@ -53,10 +53,7 @@ export function VisualBuilderDialog({
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
 
   // Fetch tools for inline node editing
-  const { data: toolsData } = useToolsWithConfig({
-    is_active: true,
-    per_page: 100,
-  })
+  const { data: toolsData } = useToolsWithConfig()
 
   // Convert tools to AvailableTool format for inline editing
   const availableTools: AvailableTool[] = useMemo(() => {
