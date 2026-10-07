@@ -589,6 +589,12 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 		maxParallel = 3
 	}
 	queued, roots := 0, 0
+	// A first step that cannot be queued (no tool, incompatible targets, no
+	// sensor for the tool...) is failed with its reason by the queuer; the
+	// other first steps still start. The run is then re-evaluated at once, so
+	// a run in which nothing can start fails now, with that reason, instead
+	// of staying "running" until its deadline.
+	var queueErr error
 	for _, step := range steps { // sorted by step_order
 		if len(step.DependsOn) > 0 {
 			continue
@@ -605,9 +611,23 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 			return ErrStepQueuerUnavailable
 		}
 		if err := s.stepQueuer.QueueRunStep(ctx, run, step); err != nil {
-			return err
+			s.logger.Warn("a first step of the workflow could not be queued",
+				"run_id", run.ID.String(), "step_key", oneLine(step.StepKey), "error", err)
+			if queueErr == nil {
+				queueErr = err
+			}
+			continue
 		}
 		queued++
+	}
+	if queueErr != nil {
+		if advancer, ok := s.stepQueuer.(RunAdvancer); ok {
+			if err := advancer.AdvanceRun(ctx, run); err != nil {
+				s.logger.Error("failed to settle a run whose first step could not be queued",
+					"run_id", run.ID.String(), "error", err)
+			}
+		}
+		return nil
 	}
 	if queued == 0 {
 		msg := "workflow has no step without dependencies; nothing can start"
@@ -1350,4 +1370,10 @@ func (s *Service) filterAssetsForSingleScan(ctx context.Context, sc *scan.Scan) 
 	}
 
 	return result, nil
+}
+
+// oneLine strips line breaks from a user-supplied value before it is logged
+// (a step key is free text from the workflow author).
+func oneLine(v string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(v, "\n", " "), "\r", " ")
 }
