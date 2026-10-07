@@ -81,6 +81,14 @@ type CIExchangeRequest struct {
 	// already holds (same repository, commit and pipeline run; not yet
 	// evaluated).
 	RunID string `json:"run_id,omitempty"`
+	// CommitSHA, optional, is the job's commit. Used only when the
+	// provider's token signs none (CircleCI; Bitbucket and Jenkins tokens
+	// without a commit claim); the run then marks the commit unverified.
+	CommitSHA string `json:"commit_sha,omitempty"`
+	// Repository, optional, is the repository's name ("workspace/name"),
+	// used only when the token signs no name (Bitbucket). It is bound to the
+	// repository id the token signs.
+	Repository string `json:"repository,omitempty"`
 	// Aggregate, optional, joins the run every capability job of the same
 	// pipeline run reports into (opening it for the first job); each job
 	// gets its own token for it, and one final job asks for the verdict.
@@ -107,7 +115,7 @@ type CIExchangeResponse struct {
 
 // Exchange handles POST /api/v1/ci/oidc/exchange
 // @Summary      Exchange a CI OIDC token for a run upload token
-// @Description  A GitHub Actions or GitLab CI job presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. Each OIDC token can be exchanged once. With aggregate true, the jobs of one pipeline run (same pipeline, provider run id, attempt and commit, from the verified token) share one run, each with its own token, and one final job evaluates it. Every refusal answers the same 401.
+// @Description  A CI job (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, CircleCI, Jenkins with its OpenID Connect provider plugin) presents its OIDC token. When one of the organization's CI trust configurations admits it (issuer, audience, repository, ref, environment and event rules; fork pull requests refused by default), the platform creates a CI run on the repository asset and returns a run upload token that expires within 15 minutes. Each OIDC token can be exchanged once. With aggregate true, the jobs of one pipeline run (same pipeline, provider run id, attempt and commit, from the verified token) share one run, each with its own token, and one final job evaluates it. Every refusal answers the same 401.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
@@ -129,7 +137,8 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := h.svc.Exchange(r.Context(), cirunapp.ExchangeInput{TenantID: req.TenantID, IDToken: req.IDToken,
-		RunID: req.RunID, Aggregate: req.Aggregate, ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
+		RunID: req.RunID, Aggregate: req.Aggregate, Hints: cirun.Hints{CommitSHA: req.CommitSHA, Repository: req.Repository},
+		ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
 	if err != nil {
 		if errors.Is(err, cirunapp.ErrExchangeRefused) {
 			apierror.Unauthorized("The CI token was not accepted").WriteJSON(w)
