@@ -473,23 +473,6 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 // Filtered stats methods (multi-tenant authorization)
 // ============================================================
 
-// buildInClause builds a placeholder string and args for IN clause.
-// Returns ($1, $2, $3, ...) and []any{id1, id2, id3, ...}
-func buildInClause(ids []string, offset int) (string, []any) {
-	if len(ids) == 0 {
-		return "", nil
-	}
-
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "$" + itoa(i+1+offset)
-		args[i] = id
-	}
-
-	return joinStrings(placeholders, ", "), args
-}
-
 // itoa converts int to string (simple helper to avoid strconv import)
 func itoa(i int) string {
 	if i == 0 {
