@@ -1,6 +1,6 @@
 package integration
 
-// Migration 001211: an active automation that uses a refused trigger
+// Migration 001212: an active automation that uses a refused trigger
 // (finding_updated, webhook) or action (trigger_pipeline) is switched off;
 // one that uses only supported types stays on. Runs in a rolled-back
 // transaction.
@@ -14,12 +14,12 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-func TestMigration001211SwitchesOffRefusedAutomations(t *testing.T) {
+func TestMigration001212SwitchesOffRefusedAutomations(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	tenant := seedLifecycleTenant(ctx, t, db)
 
-	up, err := os.ReadFile("../../migrations/001211_automations_refused_types_inactive.up.sql")
+	up, err := os.ReadFile("../../migrations/001212_automations_refused_types_inactive.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
