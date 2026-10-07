@@ -500,9 +500,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Changes to what sensors scan and run (scope targets and exclusions,
 	// tools and their tenant config, scanner templates) too (RFC-040 §5.11).
 	handlers.Scope.SetAuditService(svc.Audit)
-	if svc.ScopeJoin != nil {
-		handlers.Scope.SetScopeJoin(svc.ScopeJoin)
-	}
 	handlers.Scope.SetSettingsStore(svc.Tenant)
 	// People on scope responses are named from this tenant's members only.
 	scopeActors := postgres.NewScopeActorRepository(deps.DB)
