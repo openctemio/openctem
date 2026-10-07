@@ -59,7 +59,7 @@ describe('expiry', () => {
 describe('approving', () => {
   const pending = {
     status: 'pending',
-    created_by: 'requester',
+    created_by: { kind: 'user', id: 'requester' },
     approvals: [{ user_id: 'first' }],
     approvals_required: 2,
   }

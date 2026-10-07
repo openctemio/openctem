@@ -136,7 +136,7 @@ export function canApproveEntry(
   userId: string | undefined
 ): boolean {
   if (entryStatus(e) !== 'pending' || !userId) return false
-  if (e.created_by === userId) return false
+  if (e.created_by?.id === userId) return false
   return !(e.approvals ?? []).some((a) => a.user_id === userId)
 }
 
