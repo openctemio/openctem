@@ -9,7 +9,9 @@ import (
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 
 	"github.com/go-chi/chi/v5"
 
@@ -31,6 +33,8 @@ type ScopeHandler struct {
 	logger    *logger.Logger
 	scopeJoin ScopeJoinReevaluator
 	settings  ScopeSettingsStore
+	dryRun    ScopeDryRunner
+	coverage  ScopeCoverage
 	// activeProof is the operator's SCOPE_ACTIVE_PROOF (read-only view).
 	activeProof string
 }
@@ -225,14 +229,6 @@ type ScopeStatsResponse struct {
 	InventoryInternal int64 `json:"inventory_internal"`
 }
 
-// ScopeMatchResponse represents scope matching result in API responses.
-type ScopeMatchResponse struct {
-	InScope             bool     `json:"in_scope"`
-	Excluded            bool     `json:"excluded"`
-	MatchedTargetIDs    []string `json:"matched_target_ids,omitempty"`
-	MatchedExclusionIDs []string `json:"matched_exclusion_ids,omitempty"`
-}
-
 // =============================================================================
 // Request Types
 // =============================================================================
@@ -279,12 +275,6 @@ type CreateScopeExclusionRequest struct {
 type UpdateScopeExclusionRequest struct {
 	Reason    *string    `json:"reason" validate:"omitempty,max=1000"`
 	ExpiresAt *time.Time `json:"expires_at"`
-}
-
-// CheckScopeRequest represents the request to check scope matching.
-type CheckScopeRequest struct {
-	AssetType string `json:"asset_type" validate:"required"`
-	Value     string `json:"value" validate:"required"`
 }
 
 // BulkDeleteTargetsRequest represents bulk delete targets request.
@@ -1169,58 +1159,160 @@ func (h *ScopeHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// ScopeDryRunner runs the active-probe gate without dispatching
+// (*scan.Service).
+type ScopeDryRunner interface {
+	DryRunTargets(ctx context.Context, in scansvc.DryRunInput) ([]scansvc.DryRunResult, error)
+}
+
+// ScopeCoverage names what covers each target (*easm.ActiveGate).
+type ScopeCoverage interface {
+	CoverOf(ctx context.Context, tenantID shared.ID, targets []string) (map[string]scopeauth.Via, error)
+}
+
+// SetDryRun wires POST /scope/check (RFC-054 §6.4).
+func (h *ScopeHandler) SetDryRun(r ScopeDryRunner, c ScopeCoverage) { h.dryRun, h.coverage = r, c }
+
+// CheckScopeRequest asks what the gate would do with each target.
+type CheckScopeRequest struct {
+	Targets []string `json:"targets" validate:"required,min=1,max=200,dive,required,max=500"`
+	// SensorPreference: auto (default), tenant or platform.
+	SensorPreference string `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	// Tier: 0 passive, 1 safe active (default), 2 intrusive.
+	Tier *int `json:"tier" validate:"omitempty,min=0,max=2"`
+}
+
+// ScopeCheckVia is what authorizes an allowed target.
+type ScopeCheckVia struct {
+	// Kind: scope_target, seed, verified_domain or internal (zone-gated).
+	Kind    string `json:"kind"`
+	ID      string `json:"id,omitempty"`
+	Pattern string `json:"pattern,omitempty"`
+	// Proof: verified or asserted.
+	Proof string `json:"proof,omitempty"`
+}
+
+// ScopeCheckZone is the scan zone an allowed private target routes to.
+type ScopeCheckZone struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ScopeCheckResult is the gate's answer for one target.
+type ScopeCheckResult struct {
+	Target  string            `json:"target"`
+	Allowed bool              `json:"allowed"`
+	Via     *ScopeCheckVia    `json:"via,omitempty"`
+	Zone    *ScopeCheckZone   `json:"zone,omitempty"`
+	Code    string            `json:"code,omitempty"`
+	Message string            `json:"message,omitempty"`
+	Rule    *scopedom.RuleRef `json:"rule,omitempty"`
+	Fixes   []scopedom.Fix    `json:"fixes,omitempty"`
+}
+
+// CheckScopeResponse lists the answers in input order.
+type CheckScopeResponse struct {
+	Results []ScopeCheckResult `json:"results"`
+}
+
 // CheckScope handles POST /api/v1/scope/check
-// @Summary      Check if value is in scope
-// @Description  Check whether a given asset type and value falls within scope targets and exclusions
+// @Summary      Dry run of the active-probe gate
+// @Description  For each target, what a scan by the caller would do now (RFC-054 §6.4): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. At most 200 targets.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
-// @Param        body  body      CheckScopeRequest  true  "Asset type and value to check"
-// @Success      200   {object}  ScopeMatchResponse
+// @Param        body  body      CheckScopeRequest  true  "Targets"
+// @Success      200   {object}  CheckScopeResponse
 // @Failure      400   {object}  apierror.Error
-// @Failure      401   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /scope/check [post]
 func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
+	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
 	var req CheckScopeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid JSON").WriteJSON(w)
 		return
 	}
-
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
 		return
 	}
-
-	result, err := h.service.CheckScope(r.Context(), tenantID, req.AssetType, req.Value)
+	if h.dryRun == nil || h.coverage == nil {
+		apierror.InternalServerError("the scope check is not available").WriteJSON(w)
+		return
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	tier := 1
+	if req.Tier != nil {
+		tier = *req.Tier
+	}
+	results, err := h.dryRun.DryRunTargets(ctx, scansvc.DryRunInput{TenantID: tid, Targets: req.Targets, SensorPreference: req.SensorPreference, Tier: tier})
 	if err != nil {
 		h.handleServiceError(w, "Scope check", err)
 		return
 	}
-
-	targetIDs := make([]string, len(result.MatchedTargetIDs))
-	for i, id := range result.MatchedTargetIDs {
-		targetIDs[i] = id.String()
+	explain, err := h.service.NewExplainer(ctx, tenantID)
+	if err != nil {
+		h.logger.Error("scope check: explain", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("the scope check failed").WriteJSON(w)
+		return
 	}
-
-	exclusionIDs := make([]string, len(result.MatchedExclusionIDs))
-	for i, id := range result.MatchedExclusionIDs {
-		exclusionIDs[i] = id.String()
+	var allowed []string
+	for _, res := range results {
+		if res.Allowed {
+			allowed = append(allowed, res.Target)
+		}
 	}
-
-	response := ScopeMatchResponse{
-		InScope:             result.InScope,
-		Excluded:            result.Excluded,
-		MatchedTargetIDs:    targetIDs,
-		MatchedExclusionIDs: exclusionIDs,
+	cover := map[string]scopeauth.Via{}
+	if len(allowed) > 0 {
+		if cover, err = h.coverage.CoverOf(ctx, tid, allowed); err != nil {
+			h.logger.Error("scope check: coverage", "error", logger.SanitizeError(err))
+			apierror.InternalServerError("the scope check failed").WriteJSON(w)
+			return
+		}
 	}
-
+	has := func(p string) bool { return middleware.HasPermission(ctx, p) }
+	out := CheckScopeResponse{Results: make([]ScopeCheckResult, 0, len(results))}
+	for _, res := range results {
+		item := ScopeCheckResult{Target: res.Target, Allowed: res.Allowed}
+		if res.Allowed {
+			if v, ok := cover[res.Target]; ok {
+				item.Via = &ScopeCheckVia{Kind: v.Kind, ID: v.ID, Pattern: v.Pattern, Proof: v.Proof}
+			} else {
+				item.Via = &ScopeCheckVia{Kind: "internal"}
+			}
+			if res.ZoneID != "" {
+				item.Zone = &ScopeCheckZone{ID: res.ZoneID, Name: res.ZoneName}
+			}
+			out.Results = append(out.Results, item)
+			continue
+		}
+		code := res.Code
+		var rule *scopedom.RuleRef
+		switch code {
+		case scopedom.RefusalNoEntry:
+			code, rule = explain.Uncovered(res.Target)
+		case scopedom.RefusalExcluded:
+			rule = explain.Exclusion(res.Target)
+		case scopedom.RefusalDenyList:
+			rule = &scopedom.RuleRef{Kind: scopedom.RulePlatformPolicy}
+		}
+		ref := scopedom.NewRefusal(res.Target, code, rule, explain.OneOffDays())
+		if ref.Message == "" {
+			ref.Message = res.Reason
+		}
+		item.Code, item.Message, item.Rule = ref.Code, ref.Message, ref.Rule
+		item.Fixes = scopedom.FilterFixes(ref.Fixes, has)
+		out.Results = append(out.Results, item)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // BulkDeleteTargets handles POST /api/v1/scope/targets/bulk/delete

@@ -90,6 +90,13 @@ func TestEASMReviewQueue(t *testing.T) {
 	if got := queue(nil, easm.ReviewQuery{Search: "%"}); len(got) != 0 {
 		t.Fatalf("LIKE wildcard not escaped: %v", got)
 	}
+	// By the rule that put them there (RFC-054 §6.6).
+	if got := queue(nil, easm.ReviewQuery{Reason: string(attribution.RuleAssertedRoot)}); len(got) != 2 {
+		t.Fatalf("reason filter = %v, want both", got)
+	}
+	if got := queue(nil, easm.ReviewQuery{Reason: string(attribution.RuleVerifiedRoot)}); len(got) != 0 {
+		t.Fatalf("reason filter = %v, want none", got)
+	}
 
 	// A member scoped to the candidate sees only it.
 	user := shared.NewID()

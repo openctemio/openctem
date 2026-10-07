@@ -241,6 +241,8 @@ export interface StepRun {
   step_key: string
   step_name?: string
   tool?: string
+  /** The versioned capability the step ran (scan.ports@1). */
+  capability?: string
   status: StepRunStatus
   started_at?: string
   completed_at?: string

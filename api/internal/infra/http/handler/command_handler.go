@@ -69,6 +69,9 @@ type CommandHandler struct {
 	// logs keeps the per-task logs sensors send (nil: the logs resource is
 	// not served and FeatureLogs is not advertised).
 	logs *commandlog.Service
+	// findingScope checks the finding a command is about against the
+	// caller's data scope (GET /commands/{id}/logs).
+	findingScope findingScope
 }
 
 // SetCommandLogs serves POST /api/v2/sensor/commands/{id}/logs with svc.

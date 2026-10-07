@@ -1767,3 +1767,36 @@ func TestWfExec_Execute_UnknownNodeType_NodeFails(t *testing.T) {
 		t.Fatalf("Execute with trigger-only WF failed: %v", err)
 	}
 }
+
+// A stored workflow that still holds a refused action (trigger_pipeline) never
+// runs it, even with a handler registered for the type.
+func TestWfExec_Execute_StoredUnsupportedActionNeverRuns(t *testing.T) {
+	tenantID := shared.NewID()
+	workflowRepo := newWfExecMockWorkflowRepo()
+	runRepo := newWfExecMockRunRepo()
+	nodeRunRepo := newWfExecMockNodeRunRepo()
+	executor := wfExecNewExecutor(workflowRepo, runRepo, nodeRunRepo)
+
+	handler := &wfExecMockActionHandler{}
+	executor.RegisterActionHandler(workflow.ActionTypeTriggerPipeline, handler)
+
+	wf, _, actionNode := wfExecBuildSimpleWorkflow(tenantID)
+	_ = actionNode.SetActionConfig(workflow.ActionTypeTriggerPipeline, map[string]any{"pipeline_id": shared.NewID().String()})
+	workflowRepo.Create(context.Background(), wf)
+
+	run := wfExecBuildRun(wf, tenantID)
+	runRepo.Create(context.Background(), run)
+	for _, nr := range run.NodeRuns {
+		nodeRunRepo.Create(context.Background(), nr)
+	}
+
+	_ = executor.Execute(context.Background(), run.ID)
+
+	if handler.getCallCount() != 0 {
+		t.Fatalf("trigger_pipeline handler ran %d times, want 0", handler.getCallCount())
+	}
+	finalRun, _ := runRepo.GetByID(context.Background(), run.ID)
+	if finalRun.Status == workflow.RunStatusCompleted {
+		t.Fatalf("run with a refused action completed, want it to fail")
+	}
+}

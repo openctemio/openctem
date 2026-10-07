@@ -136,6 +136,12 @@ export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
                 </Badge>
               )}
             </div>
+            {(n.chunk_size ?? 0) > 0 && (n.max_parallel_sensors ?? 0) > 0 && (
+              <p className="mt-1 text-xs text-muted-foreground" data-testid="preview-parallel">
+                Cut into chunks of {n.chunk_size}; up to {n.max_parallel_sensors} sensor(s) work on
+                it at once.
+              </p>
+            )}
             {n.blocking?.message && (
               <p className="mt-1 text-xs text-destructive break-words">{n.blocking.message}</p>
             )}
