@@ -207,9 +207,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={DEFAULT_SENTINEL}>
-                    Default (one with 2+ admins)
-                  </SelectItem>
+                  <SelectItem value={DEFAULT_SENTINEL}>Default (one with 2+ admins)</SelectItem>
                   <SelectItem value="0">None</SelectItem>
                   <SelectItem value="1">One approver</SelectItem>
                   <SelectItem value="2">Two approvers</SelectItem>
