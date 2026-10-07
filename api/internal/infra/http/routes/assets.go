@@ -231,6 +231,8 @@ func registerScopeRoutes(
 
 		// Write operations
 		r.POST("/", h.CreateTarget, middleware.Require(permission.ScopeWrite))
+		// What a new entry would do (names it would confirm); writes nothing.
+		r.POST("/preview", h.PreviewTarget, middleware.Require(permission.ScopeWrite))
 		r.PUT("/{id}", h.UpdateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/activate", h.ActivateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateTarget, middleware.Require(permission.ScopeWrite))

@@ -32,7 +32,6 @@ type ScopeHandler struct {
 	audit     *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
-	scopeJoin ScopeJoinReevaluator
 	settings  ScopeSettingsStore
 	dryRun    ScopeDryRunner
 	coverage  ScopeCoverage
@@ -104,37 +103,87 @@ func (h *ScopeHandler) notifyExclusionReduced(tenantID string, e *scopedom.Exclu
 	h.service.NotifyAdmins(context.Background(), id, title, e.ExclusionType().String()+" "+e.Pattern())
 }
 
-// ScopeJoinReevaluator confirms the tenant's pending discovered names that
-// its permanent scope targets and seeds cover (*easm.ScopeJoin).
-type ScopeJoinReevaluator interface {
-	Reevaluate(ctx context.Context, tenantID shared.ID) ([]string, error)
+// joinedOut is targetOut for a change that can confirm waiting names: it
+// runs the scope join at once and reports how many names the entry
+// confirmed that the caller may see (RFC-054 §4.3). A failed run is logged
+// and retried in the background; the change itself is committed.
+func (h *ScopeHandler) joinedOut(r *http.Request, t *scopedom.Target) ScopeTargetResponse {
+	out := h.targetOut(r, t)
+	fb, err := h.service.JoinNow(r.Context(), middleware.MustGetTenantID(r.Context()), t)
+	if err != nil {
+		h.logger.Warn("scope join after a scope entry change failed; retried in the background", "error", logger.SanitizeError(err))
+		return out
+	}
+	out.Join = toScopeJoinResponse(fb)
+	return out
 }
 
-// SetScopeJoin re-evaluates the review queue after a scope target becomes
-// active (RFC-054 §4.3). Nil: the periodic run picks the change up.
-func (h *ScopeHandler) SetScopeJoin(j ScopeJoinReevaluator) { h.scopeJoin = j }
+// ScopeJoinResponse is what the scope join did for an entry: the names
+// waiting for review it confirmed (counted over the caller's data scope) and
+// the asset-list filter that shows them.
+type ScopeJoinResponse struct {
+	ConfirmedCount int `json:"confirmed_count"`
+	// AssetsFilter is the GET /assets query that lists them (covered_by).
+	AssetsFilter *ScopeJoinAssetsFilter `json:"assets_filter,omitempty"`
+}
 
-// scopeJoinTimeout bounds one background re-evaluation.
-const scopeJoinTimeout = 2 * time.Minute
+// ScopeJoinAssetsFilter is the asset-list filter of a join result.
+type ScopeJoinAssetsFilter struct {
+	CoveredBy string `json:"covered_by"`
+}
 
-// reevaluate runs the scope join for the tenant in the background, detached
-// from the request (the change is committed; the join is idempotent and the
-// periodic run repeats it on failure).
-func (h *ScopeHandler) reevaluate(tenantID string, t *scopedom.Target) {
-	if h.scopeJoin == nil || t == nil || !t.IsActive() {
+func toScopeJoinResponse(fb *scope.JoinFeedback) *ScopeJoinResponse {
+	if fb == nil {
+		return nil
+	}
+	out := &ScopeJoinResponse{ConfirmedCount: fb.ConfirmedCount}
+	if fb.ConfirmedCount > 0 && fb.CoveredBy != "" {
+		out.AssetsFilter = &ScopeJoinAssetsFilter{CoveredBy: fb.CoveredBy}
+	}
+	return out
+}
+
+// PreviewScopeEntryRequest is a scope entry being composed.
+type PreviewScopeEntryRequest struct {
+	TargetType string `json:"target_type" validate:"required"`
+	Pattern    string `json:"pattern" validate:"required,max=500"`
+}
+
+// ScopeEntryPreviewResponse says what adding the entry would do.
+type ScopeEntryPreviewResponse struct {
+	// WouldConfirm: names waiting for review the entry would confirm, if it
+	// were permanent and in effect, counted over the caller's data scope.
+	WouldConfirm int `json:"would_confirm"`
+}
+
+// PreviewTarget handles POST /api/v1/scope/targets/preview
+// @Summary      Preview a scope entry
+// @Description  What adding a permanent scope entry would do: the discovered names waiting for review it would confirm (RFC-054 §4.3), counted over the caller's data scope. Exclusions, tombstones, rejected names and a person's decision still win. Nothing is written.
+// @Tags         Scope
+// @Accept       json
+// @Produce      json
+// @Param        body  body      PreviewScopeEntryRequest  true  "The entry"
+// @Success      200   {object}  ScopeEntryPreviewResponse
+// @Failure      400   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/targets/preview [post]
+func (h *ScopeHandler) PreviewTarget(w http.ResponseWriter, r *http.Request) {
+	var req PreviewScopeEntryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid JSON").WriteJSON(w)
 		return
 	}
-	id, err := shared.IDFromString(tenantID)
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	fb, err := h.service.PreviewJoin(r.Context(), middleware.MustGetTenantID(r.Context()), req.TargetType, req.Pattern)
 	if err != nil {
+		h.handleServiceError(w, "Scope entry", err)
 		return
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), scopeJoinTimeout)
-		defer cancel()
-		if _, err := h.scopeJoin.Reevaluate(ctx, id); err != nil {
-			h.logger.Warn("scope join after a scope target change failed", "error", logger.SanitizeError(err))
-		}
-	}()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ScopeEntryPreviewResponse{WouldConfirm: fb.ConfirmedCount})
 }
 
 func (h *ScopeHandler) auditTarget(r *http.Request, action audit.Action, id string, before, after *scopedom.Target) {
@@ -220,6 +269,9 @@ type ScopeTargetResponse struct {
 	Discovery bool      `json:"discovery"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Join is set on a change that came into effect or changed an entry in
+	// effect: the names waiting for review the entry confirmed.
+	Join *ScopeJoinResponse `json:"join,omitempty"`
 }
 
 // ScopeApprovalResponse is one approval of a scope entry.
@@ -615,8 +667,8 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditTarget(r, audit.ActionScopeTargetCreated, target.ID().String(), nil, target)
-	h.reevaluate(tenantID, target)
 	h.discover(tenantID, target)
+	out := h.joinedOut(r, target)
 
 	// Check for pattern overlaps (non-blocking warnings)
 	warnings, overlapErr := h.service.CheckPatternOverlaps(r.Context(), tenantID, req.TargetType, req.Pattern)
@@ -629,11 +681,11 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 
 	if len(warnings) > 0 {
 		json.NewEncoder(w).Encode(CreateTargetResponseWithWarnings{
-			ScopeTargetResponse: h.targetOut(r, target),
+			ScopeTargetResponse: out,
 			Warnings:            warnings,
 		})
 	} else {
-		json.NewEncoder(w).Encode(h.targetOut(r, target))
+		json.NewEncoder(w).Encode(out)
 	}
 }
 
@@ -718,7 +770,7 @@ func (h *ScopeHandler) UpdateTarget(w http.ResponseWriter, r *http.Request) {
 	h.auditTarget(r, audit.ActionScopeTargetUpdated, targetID, before, target)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(h.targetOut(r, target))
+	json.NewEncoder(w).Encode(h.joinedOut(r, target))
 }
 
 // DeleteTarget handles DELETE /api/v1/scope/targets/{id}
@@ -778,10 +830,9 @@ func (h *ScopeHandler) ActivateTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.auditTarget(r, audit.ActionScopeTargetActivated, targetID, before, target)
-	h.reevaluate(tenantID, target)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(h.targetOut(r, target))
+	json.NewEncoder(w).Encode(h.joinedOut(r, target))
 }
 
 // DeactivateTarget handles POST /api/v1/scope/targets/{id}/deactivate
