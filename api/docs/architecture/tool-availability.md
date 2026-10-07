@@ -32,7 +32,7 @@ response gives:
 | `sensors[]` | Each sensor reporting the tool: id, name, state, online, zones, version, content, exclusion. Listed only to callers holding `sensors:read`. The counts are given to everyone. |
 | `versions`, `min_reported_version`, `max_reported_version` | Distinct versions the runnable sensors report, oldest first. |
 | `content[]` | Per content name, the versions the sensors report. |
-| `min_version` | The oldest version the catalog accepts (`tools.min_version`, migration 001150). Custom tools set it through the custom tool API. |
+| `min_version` | The oldest version the catalog accepts (`tools.min_version`, migration 001153). Custom tools set it through the custom tool API. |
 | `latest_version` | The newest version known: the catalog's `latest_version`, or the newest reported version if that is newer. |
 | `update_available` | A runnable sensor reports a version below `latest_version`. |
 | `last_reported_at` | The newest manifest among the sensors listed. |
