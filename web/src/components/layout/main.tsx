@@ -14,7 +14,16 @@
 
 'use client'
 
-import { createContext, forwardRef, useContext, type HTMLAttributes, type Ref } from 'react'
+import {
+  createContext,
+  forwardRef,
+  useContext,
+  useImperativeHandle,
+  useRef,
+  type HTMLAttributes,
+  type Ref,
+} from 'react'
+import { useScrollActivity } from '@/hooks/use-scroll-activity'
 import { cn } from '@/lib/utils'
 
 const InsideMainLandmark = createContext(false)
@@ -67,13 +76,22 @@ Main.displayName = 'Main'
 /**
  * The layout-level `main` landmark and skip-link target (`#content`).
  * Every <Main> rendered inside it is a plain container.
+ *
+ * It is the app's page scroller: its scrollbar gutter is always reserved, so
+ * content never shifts when a page grows long enough to scroll, and the thumb
+ * shows only while scrolling (`scrollbar-auto-hide`).
  */
 export const MainRegion = forwardRef<HTMLElement, HTMLAttributes<HTMLElement>>(
-  ({ id = 'content', ...props }, ref) => (
-    <InsideMainLandmark.Provider value={true}>
-      <main ref={ref} id={id} {...props} />
-    </InsideMainLandmark.Provider>
-  )
+  ({ id = 'content', className, ...props }, ref) => {
+    const innerRef = useRef<HTMLElement>(null)
+    useImperativeHandle(ref, () => innerRef.current as HTMLElement)
+    useScrollActivity(innerRef)
+    return (
+      <InsideMainLandmark.Provider value={true}>
+        <main ref={innerRef} id={id} className={cn('scrollbar-auto-hide', className)} {...props} />
+      </InsideMainLandmark.Provider>
+    )
+  }
 )
 
 MainRegion.displayName = 'MainRegion'
