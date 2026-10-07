@@ -73,6 +73,10 @@ type SensorInventory struct {
 	Grant *Grant
 	// ZoneIDs are the scan zones the sensor is assigned to.
 	ZoneIDs []shared.ID
+	// Manifest is the sensor's current manifest (nil: none reported, a
+	// sensor older than the tool contract): its tool contracts give each
+	// tool's trust and the tier the platform assigns it.
+	Manifest *Manifest
 }
 
 // ToolSensor is one sensor that reports a tool installed.
@@ -90,6 +94,12 @@ type ToolSensor struct {
 	// (ToolExcluded*); "" when it can. ExcludedDetail says what refused.
 	Excluded       string
 	ExcludedDetail string
+	// Trust is the tool's trust level on this sensor (ToolTrust): builtin,
+	// unverified, or "" without a contract.
+	Trust string
+	// Tier is the tier the platform assigns a scan with the tool on this
+	// sensor (CommandTierFor): TierPassive..TierIntrusive.
+	Tier int
 }
 
 // ToolContentVersions is the versions of one piece of a tool's content
@@ -128,6 +138,13 @@ type ToolAvailability struct {
 	// UpdateAvailable: a runnable sensor reports a version below
 	// LatestVersion.
 	UpdateAvailable bool
+	// Trust is the lowest trust among the sensors that can run the tool:
+	// unverified when any of them runs an operator-installed copy, builtin
+	// when all report it built in, "" when none reports a contract.
+	Trust string
+	// Tier is the highest tier the platform assigns a scan with the tool
+	// on those sensors (-1 when no sensor can run it).
+	Tier int
 }
 
 // toolExclusion is why the sensor may not run a scan with a tool it reports
@@ -139,7 +156,7 @@ func toolExclusion(inv SensorInventory, name string, zoneID *shared.ID) (reason,
 	a := inv.Sensor
 	payload, _ := json.Marshal(map[string]string{"scanner": name})
 	if inv.Grant != nil {
-		if r := inv.Grant.Admit(scanJobType, payload, zoneID); r != nil {
+		if r := inv.Grant.AdmitContract(scanJobType, payload, zoneID, inv.contract(name)); r != nil {
 			return ToolExcludedGrant, r.Error()
 		}
 	}
@@ -147,6 +164,14 @@ func toolExclusion(inv SensorInventory, name string, zoneID *shared.ID) (reason,
 		return ToolExcludedLocalPolicy, r.Detail
 	}
 	return "", ""
+}
+
+// contract is the sensor's reported contract for the tool (nil: none).
+func (inv SensorInventory) contract(name string) *ToolContract {
+	if inv.Manifest == nil {
+		return nil
+	}
+	return inv.Manifest.ToolContract(name)
 }
 
 // scanJobType is the command type of a scan job.
@@ -188,8 +213,10 @@ func ComputeToolAvailability(catalog []CatalogTool, sensors []SensorInventory, z
 				byName[rt.Name] = t
 				order = append(order, rt.Name)
 			}
+			c := inv.contract(rt.Name)
 			ts := ToolSensor{SensorID: a.ID, Name: a.Name, State: state, Online: online,
-				ZoneIDs: inv.ZoneIDs, Version: NormalizeVersion(rt.Version), Content: rt.Content}
+				ZoneIDs: inv.ZoneIDs, Version: NormalizeVersion(rt.Version), Content: rt.Content,
+				Trust: ToolTrust(c), Tier: CommandTierFor(scanJobType, Job{Type: scanJobType, Tool: CanonicalTool(rt.Name)}, c)}
 			ts.Excluded, ts.ExcludedDetail = toolExclusion(inv, rt.Name, zoneID)
 			t.Sensors = append(t.Sensors, ts)
 			if a.Reported.ReportedAt != nil && (t.LastReportedAt == nil || a.Reported.ReportedAt.After(*t.LastReportedAt)) {
@@ -221,12 +248,21 @@ func (t *ToolAvailability) finish() {
 	content := map[string]map[string]bool{}
 	var contentOrder []string
 	meetsMin := false
+	t.Tier = -1
+	builtin, unverified := 0, 0
 	for _, s := range t.Sensors {
 		if s.Excluded != "" {
 			t.SensorsExcluded++
 			continue
 		}
 		t.SensorsTotal++
+		t.Tier = max(t.Tier, s.Tier)
+		switch s.Trust {
+		case ToolTrustBuiltin:
+			builtin++
+		case ToolTrustUnverified:
+			unverified++
+		}
 		if s.Version != "" {
 			versions[s.Version] = true
 		}
@@ -249,6 +285,12 @@ func (t *ToolAvailability) finish() {
 		}
 	}
 
+	switch {
+	case unverified > 0:
+		t.Trust = ToolTrustUnverified
+	case builtin > 0 && builtin == t.SensorsTotal:
+		t.Trust = ToolTrustBuiltin
+	}
 	t.Versions = sortedVersions(versions)
 	if n := len(t.Versions); n > 0 {
 		t.MinReported, t.MaxReported = t.Versions[0], t.Versions[n-1]
