@@ -13134,6 +13134,11 @@ definitions:
         type: string
       quality_gate_result:
         $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_domain_scanprofile.QualityGateResult'
+      refusal_code:
+        description: |-
+          RefusalCode says why a blocked run was refused (status blocked only),
+          e.g. ALL_TARGETS_EXCLUDED, SCAN_FREEZE_ACTIVE, NO_SENSOR_AVAILABLE.
+        type: string
       scan_id:
         type: string
       scan_name:
@@ -13659,6 +13664,11 @@ definitions:
         items:
           type: string
         type: array
+      blocked_runs:
+        description: |-
+          BlockedRuns: triggers refused before anything was dispatched; each
+          is a run with status blocked and its refusal_code.
+        type: integer
       created_at:
         type: string
       created_by:

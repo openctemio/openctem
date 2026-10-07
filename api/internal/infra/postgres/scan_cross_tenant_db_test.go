@@ -53,12 +53,16 @@ func TestScanDelete_OtherTenantIsNotFound(t *testing.T) {
 		t.Fatal("another tenant deleted the scan")
 	}
 
-	// The scheduler and run bookkeeping writes are tenant-bound too.
-	if err := repo.RecordRunStarted(ctx, attacker, scanID, shared.NewID()); err != nil {
-		t.Fatalf("RecordRunStarted: %v", err)
+	// The run summary refresh is tenant-bound too: the victim scan has a run,
+	// and another tenant's refresh must not write the summary.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO pipeline_runs (pipeline_id, tenant_id, scan_id, trigger_type, status)
+		 VALUES ('00000000-0000-0000-0000-000000000001', $1, $2, 'manual', 'completed')`,
+		victim.String(), scanID.String()); err != nil {
+		t.Fatalf("seed victim run: %v", err)
 	}
-	if err := repo.RecordTriggerFailure(ctx, attacker, scanID, "failed"); err != nil {
-		t.Fatalf("RecordTriggerFailure: %v", err)
+	if err := repo.RefreshRunSummary(ctx, attacker, scanID); err != nil {
+		t.Fatalf("RefreshRunSummary: %v", err)
 	}
 	var status sql.NullString
 	if err := db.QueryRowContext(ctx, `SELECT last_run_status FROM scans WHERE id = $1`, scanID.String()).Scan(&status); err != nil {

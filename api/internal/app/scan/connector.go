@@ -141,9 +141,9 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 		_ = s.runRepo.Update(ctx, run)
 		var de *shared.DomainError
 		if errors.As(err, &de) {
-			return nil, err
+			return nil, afterRunCreated(err)
 		}
-		return nil, fmt.Errorf("failed to create connector scan command: %w", err)
+		return nil, afterRunCreated(fmt.Errorf("failed to create connector scan command: %w", err))
 	}
 	if stepRun != nil {
 		stepRun.CommandID = &cmd.ID
