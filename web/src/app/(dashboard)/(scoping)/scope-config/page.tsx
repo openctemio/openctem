@@ -64,7 +64,6 @@ import {
   useScopeTargetsApi,
   useScopeExclusionsApi,
   useScopeStatsApi,
-  useCreateScopeTargetApi,
   useUpdateScopeTargetApi,
   useDeleteScopeTargetApi,
   useCreateScopeExclusionApi,
@@ -74,6 +73,7 @@ import {
   invalidateScopeTargetsCache,
   invalidateScopeExclusionsCache,
   invalidateScopeStatsCache,
+  ScopeEntryDialog,
   // API types
   type ApiScopeTarget,
   type ApiScopeExclusion,
@@ -283,7 +283,6 @@ export default function ScopeConfigPage() {
   const { data: statsData, isLoading: statsLoading } = useScopeStatsApi()
 
   // Mutation hooks
-  const { trigger: createTarget, isMutating: isCreatingTarget } = useCreateScopeTargetApi()
   const { trigger: updateTarget, isMutating: isUpdatingTarget } = useUpdateScopeTargetApi(
     editTarget?.id || ''
   )
@@ -390,40 +389,6 @@ export default function ScopeConfigPage() {
   const resetTargetForm = () => {
     setTargetForm({ type: 'domain', pattern: '', description: '', priority: 0, tags: [] })
     setValidationError(null)
-  }
-
-  const handleAddTarget = async () => {
-    // Validate pattern format
-    const validation = validatePattern(targetForm.type, targetForm.pattern)
-    if (!validation.valid) {
-      setValidationError(validation.error || 'Invalid pattern')
-      return
-    }
-
-    // Check for duplicates
-    if (checkDuplicateTarget(targetForm.pattern)) {
-      setValidationError('This pattern already exists in targets')
-      return
-    }
-
-    try {
-      const result = await createTarget({
-        target_type: targetForm.type,
-        pattern: targetForm.pattern,
-        description: targetForm.description,
-      })
-      await invalidateScopeCache()
-      toast.success('Target added successfully')
-      // Show overlap warnings if any
-      const warnings = (result as unknown as { warnings?: string[] })?.warnings
-      if (warnings && warnings.length > 0) {
-        warnings.forEach((w) => toast.warning(w))
-      }
-      setIsAddTargetOpen(false)
-      resetTargetForm()
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to add target'))
-    }
   }
 
   const handleEditTarget = async () => {
@@ -1106,33 +1071,8 @@ export default function ScopeConfigPage() {
         </Tabs>
       </Main>
 
-      {/* Add Target Dialog */}
-      <Dialog
-        open={isAddTargetOpen}
-        onOpenChange={(open) => {
-          setIsAddTargetOpen(open)
-          if (!open) {
-            resetTargetForm()
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add target</DialogTitle>
-            <DialogDescription>Add a new target to the scope</DialogDescription>
-          </DialogHeader>
-          {targetFormFields}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddTargetOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddTarget} disabled={isCreatingTarget}>
-              {isCreatingTarget && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Add Target
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Add to scope, or request a one-off (members): RFC-054 §6.1 */}
+      <ScopeEntryDialog open={isAddTargetOpen} onOpenChange={setIsAddTargetOpen} />
 
       {/* Edit Target Dialog */}
       <Dialog
