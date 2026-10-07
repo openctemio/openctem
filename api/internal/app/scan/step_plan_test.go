@@ -182,6 +182,8 @@ func TestStepCommandPayload_Golden(t *testing.T) {
 		"context":               map[string]any{"targets": []string{"a.example.com"}, "scan_id": "s-1"},
 		"targets":               []string{"a.example.com"},
 		"asset_id":              asset.String(),
+		// A capability job (RFC-055): subfinder runs them on the sensor.
+		"capability": "discover.subdomains@1",
 	}
 	if len(p) != len(want) {
 		t.Errorf("keys = %d, want %d: %v", len(p), len(want), p)
@@ -327,5 +329,35 @@ func TestStepTool_WithToolMapsTheConfig(t *testing.T) {
 	}
 	if _, ok := step.Config["top_n"]; !ok {
 		t.Fatal("resolving changed the stored step config")
+	}
+}
+
+// A step names its capability only for a tool that runs capability jobs on
+// the sensor and implements the step's stage; every other command is
+// unchanged, so an older sensor or another tool runs as before.
+func TestStepCommandPayload_Capability(t *testing.T) {
+	run := &pipeline.Run{ID: shared.NewID()}
+	cases := []struct {
+		tool string
+		caps []string
+		want string
+	}{
+		{"naabu", nil, "scan.ports@1"},
+		{"nuclei", nil, "vuln.templates@1"},
+		{"trivy", []string{"sca"}, "sca.deps@1"},
+		{"zap", nil, ""},          // no capability jobs on the sensor
+		{"acme-scanner", nil, ""}, // not in the catalog
+		{"tenable_sc", nil, ""},   // a connector
+	}
+	for _, tc := range cases {
+		step := &pipeline.Step{ID: shared.NewID(), StepKey: "s", Tool: tc.tool, Capabilities: tc.caps}
+		p, err := StepCommandPayload(run, step, tc.tool, "sr", nil)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.tool, err)
+		}
+		got, _ := p[PayloadKeyCapability].(string)
+		if got != tc.want {
+			t.Errorf("%s: capability %q, want %q", tc.tool, got, tc.want)
+		}
 	}
 }
