@@ -2,14 +2,20 @@ name: Web CI
 
 # The Next.js app lives in web/. Same shape as api-ci.yml: always starts, the
 # `changes` job gates the real jobs, `Web CI OK` is the single required check.
-# The real jobs run for web/, the API spec (below) and shared files only; the
-# routing rules are in .github/scripts/changed.sh.
+# The routing rules are in .github/scripts/changed.sh.
 #
-# The API's OpenAPI spec (api/api/openapi/swagger.yaml) counts as a web input:
-# the web wire types are generated from it, so a spec change must regenerate
-# web/src/lib/api/generated/api.types.ts in the SAME pull request, and tsc then
-# proves the web app still compiles against the new contract. This replaces the
-# old vendored copy, check:spec-vendored and the sync-api-spec workflow.
+# The web compiles against contract files generated from the Go API: the
+# OpenAPI spec (-> web/src/lib/api/generated/api.types.ts), the route
+# permission map (web/src/config/api-route-permissions.json) and the route
+# manifest (api/api/openapi/routes.txt). None of them is committed, so pull
+# requests never conflict on them (api/docs/development/ci-cd.md, "Generated
+# contract files"). The `contract` job generates them once per run and hands
+# them to the other jobs as an artifact. For an API change it also generates
+# the base's contract and:
+#   - runs the web checks when the contract changed (tsc then proves the web
+#     still compiles against the new contract);
+#   - reports the difference (breaking changes, route gate changes, routes) as
+#     the job summary and as a pull request comment (`contract-comment`).
 
 on:
   push:
@@ -37,6 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.f.outputs.web }}
+      api: ${{ steps.f.outputs.api }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,13 +56,178 @@ jobs:
           MG_HEAD: ${{ github.event.merge_group.head_sha }}
         run: bash .github/scripts/changed.sh
 
+  # Generates the contract files for this commit (artifact `contract`) and, for
+  # an API change, compares them with the base's.
+  contract:
+    name: API contract
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Generate the contract files
+        uses: ./.github/actions/generate-contract
+        with:
+          web-types: 'false'
+
+      - name: Collect them
+        run: |
+          mkdir -p "$RUNNER_TEMP/contract/head"
+          cp api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json "$RUNNER_TEMP/contract/head/"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: contract
+          path: ${{ runner.temp }}/contract/head/
+          if-no-files-found: error
+          retention-days: 5
+
+      # The commit this change is measured against: the merge base for a pull
+      # request, the queue's base for a merge group, the previous tip for a push.
+      - name: Resolve the base
+        id: base
+        if: needs.changes.outputs.api == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$EVENT" in
+            pull_request) git fetch --no-tags --quiet origin "$BASE_REF"; sha="$(git merge-base "origin/$BASE_REF" HEAD)" ;;
+            merge_group)  sha="$MG_BASE" ;;
+            push)         sha="$EVENT_BEFORE" ;;
+            *)            sha="" ;;
+          esac
+          if [ -n "$sha" ] && ! [[ "$sha" =~ ^0+$ ]]; then
+            git cat-file -e "${sha}^{commit}" 2>/dev/null || git fetch --no-tags --quiet origin "$sha" || true
+            git cat-file -e "${sha}^{commit}" 2>/dev/null && echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          fi
+          echo "base: ${sha:-none}"
+
+      # The base is trusted code (the target branch). The commands work both
+      # before and after the contract files stopped being committed.
+      - name: Generate the base's contract files
+        id: basegen
+        if: steps.base.outputs.sha != ''
+        continue-on-error: true
+        env:
+          SHA: ${{ steps.base.outputs.sha }}
+          GOWORK: 'off'
+        run: |
+          git worktree add --quiet --detach "$RUNNER_TEMP/base-src" "$SHA"
+          cd "$RUNNER_TEMP/base-src/api"
+          make swagger >/dev/null
+          UPDATE_ROUTE_MANIFEST=1 go test ./tools/lint/openapicontract/ -run '^TestWriteRouteManifest$' -count=1 >/dev/null
+          UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run '^TestRoutePermissionMap' -count=1 >/dev/null
+          mkdir -p "$RUNNER_TEMP/contract/base"
+          cp api/openapi/swagger.yaml api/openapi/routes.txt ../web/src/config/api-route-permissions.json "$RUNNER_TEMP/contract/base/"
+
+      - name: Compare with the base
+        id: diff
+        env:
+          API: ${{ needs.changes.outputs.api }}
+          BASEGEN: ${{ steps.basegen.outcome }}
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          c="$RUNNER_TEMP/contract"
+          mkdir -p "$c/report"
+          changed=true
+          if [ "$API" != true ]; then
+            changed=false # web-only change: the web checks run anyway, nothing to report
+          elif [ "$BASEGEN" = success ]; then
+            if cmp -s "$c/base/swagger.yaml" "$c/head/swagger.yaml" &&
+               cmp -s "$c/base/routes.txt" "$c/head/routes.txt" &&
+               cmp -s "$c/base/api-route-permissions.json" "$c/head/api-route-permissions.json"; then
+              changed=false
+            fi
+            (cd api && GOWORK=off go run ./tools/openapidiff -base "$c/base" -head "$c/head" \
+              -base-label "${BASE_SHA:0:9}" -head-label "${HEAD_SHA:0:9}") > "$c/report/report.md"
+          else
+            printf '%s\n## API contract changes\n\nThe base contract (`%s`) could not be generated, so the change could not be compared; the web checks run against the new contract.\n' \
+              '<!-- openctem-contract-diff -->' "${BASE_SHA:-none}" > "$c/report/report.md"
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "contract changed: $changed"
+          if [ -s "$c/report/report.md" ]; then
+            cat "$c/report/report.md" >> "$GITHUB_STEP_SUMMARY"
+            echo "${PR}" > "$c/report/pr"
+            echo "report=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the report
+        if: github.event_name == 'pull_request' && steps.diff.outputs.report == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: contract-report
+          path: ${{ runner.temp }}/contract/report/
+          retention-days: 5
+
+  # Posts the report on the pull request (one comment, updated in place). The
+  # only job with a write token: it runs no code from the pull request, it
+  # posts the report text. Pull requests from forks get a read-only token, so
+  # for them the report stays in the contract job's summary.
+  contract-comment:
+    name: API contract report
+    needs: [changes, contract]
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.contract.result == 'success' &&
+      needs.changes.outputs.api == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          name: contract-report
+          path: report
+      - name: Post or update the comment
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          f=report/report.md
+          [ -s "$f" ] || { echo "no report"; exit 0; }
+          marker='<!-- openctem-contract-diff -->'
+          id="$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)"
+          # No comment for a change that leaves the contract as it was, unless
+          # an earlier push changed it (then the comment says it no longer does).
+          if [ -z "$id" ] && grep -q '^No change to operations' "$f"; then echo "no contract change"; exit 0; fi
+          head -c 60000 "$f" > body.md
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@body.md >/dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@body.md >/dev/null
+          fi
+          echo "posted"
+
   # Quality checks and the Vitest suite in ONE job (one runner, one npm ci).
+  # Runs for a web change, and for an API change that changed the contract.
   # Same on a PR, in the merge queue and on push; `next build` stays push-only
   # (All-in-one CI builds the web image in the merge queue).
   quality:
     name: Web checks
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
+    needs: [changes, contract]
+    if: needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -73,10 +245,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Unconditional on purpose: a committed file vs a pure function of another
-      # committed file (the API's spec, in this same repository).
-      - name: Generated API types match api/api/openapi/swagger.yaml
-        run: npm run check:api-types
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: contract
+          path: ${{ runner.temp }}/contract
+
+      # The contract job's files, then the web API types from the spec.
+      - name: Place the generated contract files
+        working-directory: .
+        run: |
+          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
+          cp "$RUNNER_TEMP/contract/api-route-permissions.json" web/src/config/
+          (cd web && npm run generate:api-types)
 
       - name: Run type check
         run: npm run type-check
@@ -95,25 +275,7 @@ jobs:
           base="$(bash ../.github/scripts/effective-base.sh web "origin/${{ github.base_ref }}")"
           bash scripts/check-palette-drift.sh "$base"
 
-      # The endpoint check reads the API's route manifest, generated from the
-      # router here rather than committed (a committed copy went stale whenever
-      # two route-adding pull requests were queued together).
-      - name: Setup Go (route manifest)
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: api/go.mod
-          cache: true
-          cache-dependency-path: api/go.sum
-
-      - name: Generate the API route manifest
-        working-directory: api
-        env:
-          GOWORK: 'off'
-          UPDATE_ROUTE_MANIFEST: '1'
-        run: |
-          go test ./tools/lint/openapicontract/ -run '^TestWriteRouteManifest$' -count=1
-          test -s api/openapi/routes.txt
-
+      # The endpoint check reads api/api/openapi/routes.txt (placed above).
       - name: Run tests
         run: npm test -- --run --coverage --passWithNoTests
 
@@ -127,8 +289,10 @@ jobs:
 
   build:
     name: Build
-    needs: [changes, quality]
-    if: needs.changes.outputs.web == 'true' && github.event_name == 'push'
+    needs: [changes, contract, quality]
+    if: >-
+      (needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true') &&
+      github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -139,6 +303,16 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: contract
+          path: ${{ runner.temp }}/contract
+      - name: Place the generated contract files
+        working-directory: .
+        run: |
+          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
+          cp "$RUNNER_TEMP/contract/api-route-permissions.json" web/src/config/
+          (cd web && npm run generate:api-types)
       - name: Cache Next.js build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -155,20 +329,25 @@ jobs:
   web-ok:
     name: Web CI OK
     if: always()
-    needs: [changes, quality, build]
+    needs: [changes, contract, quality, build]
     runs-on: ubuntu-latest
     steps:
-      - name: All web jobs passed or were skipped; the checks ran when web changed
+      - name: All web jobs passed or were skipped; the checks ran where they must
         working-directory: .
         env:
           NEEDS: ${{ toJSON(needs) }}
           WEB: ${{ needs.changes.outputs.web }}
+          API: ${{ needs.changes.outputs.api }}
+          CHANGED: ${{ needs.contract.outputs.changed }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           if echo "$NEEDS" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
             echo "::error::a job failed or was cancelled"; exit 1
           fi
-          for j in changes $([ "$WEB" = true ] && echo quality); do
+          required="changes"
+          if [ "$WEB" = true ] || [ "$API" = true ]; then required="$required contract"; fi
+          if [ "$WEB" = true ] || [ "$CHANGED" = true ]; then required="$required quality"; fi
+          for j in $required; do
             r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"
             if [ "$r" != success ]; then echo "::error::$j must run and pass, got: $r"; exit 1; fi
           done

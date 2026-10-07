@@ -1806,8 +1806,8 @@ The web console shows a mutating control (Save, Delete, Add, Test, Sync) only
 when the caller passes the gate of the API route it calls. The gates come from
 `web/src/config/api-route-permissions.json`, which
 `tests/unit/route_permission_map_test.go` generates from the route source
-(`UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run TestRoutePermissionMapIsCurrent`;
-CI fails when it is stale). Components call `useCanMutate("METHOD /path")`
+(`make generate` at the repository root; the file is not committed, so it
+cannot go stale, and CI and image builds generate it before the web build). Components call `useCanMutate("METHOD /path")`
 (`web/src/lib/permissions/can-mutate.ts`) instead of picking a permission by
 hand, which is how about 15 settings controls drifted from the API (shown and
 then 403, or hidden although allowed). This is UX only; the API gate stays the
