@@ -498,7 +498,8 @@ func (m *masker) replacer() *strings.Replacer {
 		}
 		return vals[i] < vals[j]
 	})
-	pairs := make([]string, 0, 2*len(vals))
+	// No precomputed capacity: the replacer gets every value, however many.
+	var pairs []string
 	for _, v := range vals {
 		pairs = append(pairs, v, m.byValue[v])
 	}
