@@ -187,6 +187,9 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	if err := s.refuseUnprovenIntrusive(ctx, tenantID, input.ScannerName, input.Targets); err != nil {
 		return nil, err
 	}
+	if err := s.refuseTierExceeded(ctx, tenantID, input.ScannerName, input.Targets); err != nil {
+		return nil, err
+	}
 	if err := s.refuseUnownedTargets(ctx, tenantID, "quick_scan", input.Targets, IsTakeoverOnlyProbe(input.ScannerName, input.Config)); err != nil {
 		return nil, err
 	}

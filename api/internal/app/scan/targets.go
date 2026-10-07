@@ -58,7 +58,11 @@ type resolvedTargets struct {
 	// OutOfScope counts targets left out because the actor may not scan them
 	// (research/15 L-06, D9).
 	OutOfScope int
-	Warnings   []string
+	// TierExceeded counts targets left out because the scope entries
+	// covering them allow a lower tier than the scanner probes at
+	// (RFC-054 §4.2 step 6, tier_ceiling.go).
+	TierExceeded int
+	Warnings     []string
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
@@ -215,6 +219,9 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	if out.Unconfirmed > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"%d target(s) were skipped: %s", out.Unconfirmed, ReasonOwnershipNotConfirmed))
+	}
+	if err := s.dropTierExceeded(ctx, sc.TenantID, sc.ScannerName, out); err != nil {
+		return nil, err
 	}
 	if len(out.Targets) > maxResolvedTargets {
 		return nil, fmt.Errorf("%w: scan resolves to %d targets, more than the %d allowed per run",
