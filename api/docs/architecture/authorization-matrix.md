@@ -117,7 +117,6 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `DELETE /api/v1/tenants/{tenant}`
 - `DELETE /api/v1/organization/members/{id}/mfa`, `POST .../offboard`, `POST .../erase`
 - `POST /api/v1/ci/gate-overrides`
-- `POST /api/v1/audit-logs/rebaseline`
 - `GET /api/v1/integrations/{jira,github}/webhook-secret`, `POST .../webhook-secret/rotate`
 - `PATCH /api/v1/attachments/storage-config`
 
@@ -393,7 +392,7 @@ create's target validator, exclusions, zone routing) in one call.
 | `GET /api/v1/audit-logs` · `/stats` · `/{id}` · `/resource/{type}/{id}` | `audit:read` (owner/admin only) |
 | `GET /api/v1/audit-logs/user/{id}` | `audit:read`, **or `{id}` is the caller** (`RequirePermissionOrSelf`; user sessions only, not API keys) — everyone reads their own activity on `/account/activity` |
 | `GET /api/v1/audit-logs/verify` | owner/admin (`RequireAdmin`) |
-| `POST /api/v1/audit-logs/rebaseline` | **owner only** (`RequireOwner`) |
+| (no tenant rebaseline) | the audit-chain rebaseline is admin-console only: `POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline` |
 
 > The organization audit log (actor emails, IPs, every action) is owner/admin
 > only: migration `000246` removed `audit:read` from member and viewer.
@@ -560,7 +559,6 @@ the billing page in the UI.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/dashboard/stats` | `dashboard:read` |
-| `GET /api/v1/dashboard/stats/global` | `dashboard:read` |
 
 ### URL-Tenant Routes (Tenant from URL)
 
@@ -1197,7 +1195,6 @@ the default member list (`?status=offboarded|all` shows them) and out of SCIM.
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
 | `GET /dashboard/stats` recent activity | **bypass (finding titles)** | filtered |
 | `GET /dashboard/executive-summary` (+ export) `top_risks` | bypass | filtered |
-| `GET /dashboard/stats/global` recent activity | bypass | per organization: filtered where the caller is restricted there |
 | `GET /vulnerabilities/{id}/affected-assets`, `/cve/{cve}/affected-assets` | bypass | filtered |
 | In-app notifications (`GET /notifications`, unread count, live push) for finding / asset events | **bypass (audience all, body = finding message)** | a finding/asset notice is listed, counted and pushed only to users whose scope covers its asset |
 | WebSocket `finding:{id}`, `triage:{id}` | **bypass** (permission only) | also requires the finding to be in scope |

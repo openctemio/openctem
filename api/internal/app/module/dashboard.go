@@ -93,14 +93,6 @@ type DashboardStatsRepository interface {
 	GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error)
 	GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error)
 
-	// Filtered stats (by accessible tenant IDs) - for multi-tenant authorization
-	GetFilteredAssetStats(ctx context.Context, tenantIDs []string) (AssetStatsData, error)
-	GetFilteredFindingStats(ctx context.Context, tenantIDs []string) (FindingStatsData, error)
-	GetFilteredRepositoryStats(ctx context.Context, tenantIDs []string) (RepositoryStatsData, error)
-	// Findings of tenantIDs are all visible; findings of restrictedTenantIDs
-	// only when their asset is in userID's data scope for that tenant.
-	GetFilteredRecentActivity(ctx context.Context, tenantIDs, restrictedTenantIDs []string, userID string, limit int) ([]ActivityItem, error)
-
 	// Data Quality Scorecard (RFC-005)
 	GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error)
 	// Risk Trend (RFC-005 Gap 4)
@@ -545,92 +537,3 @@ func (s *DashboardService) GetMTTRAnalytics(ctx context.Context, tenantID shared
 
 // dashboardRecentActivityLimit is how many recent findings the dashboards show.
 const dashboardRecentActivityLimit = 10
-
-// splitTenantsByScope splits tenantIDs into those where the request's user is
-// unrestricted and those where their data scope applies.
-func (s *DashboardService) splitTenantsByScope(ctx context.Context, tenantIDs []string) (open, restricted []string) {
-	caller := s.dataScope.CallerOf(ctx)
-	uid, uerr := shared.IDFromString(caller.UserID)
-	if s.dataScope == nil || uerr != nil {
-		return tenantIDs, nil
-	}
-	for _, t := range tenantIDs {
-		tid, err := shared.IDFromString(t)
-		if err != nil {
-			continue
-		}
-		scope, err := s.dataScope.ForUser(ctx, tid, uid)
-		if err == nil && scope == nil {
-			open = append(open, t)
-		} else {
-			restricted = append(restricted, t)
-		}
-	}
-	return open, restricted
-}
-
-// GetStatsForTenants returns dashboard statistics filtered by accessible tenant IDs.
-// This should be used for multi-tenant authorization - only shows data from tenants
-// the user has access to.
-func (s *DashboardService) GetStatsForTenants(ctx context.Context, tenantIDs []string) (*DashboardStats, error) {
-	// If no accessible tenants, return empty stats
-	if len(tenantIDs) == 0 {
-		return &DashboardStats{
-			AssetsByType:       make(map[string]int),
-			AssetsByStatus:     make(map[string]int),
-			FindingsBySeverity: make(map[string]int),
-			FindingsByStatus:   make(map[string]int),
-			RecentActivity:     []ActivityItem{},
-			FindingTrend:       []FindingTrendPoint{},
-		}, nil
-	}
-
-	// Get asset stats filtered by accessible tenants
-	assetStats, err := s.repo.GetFilteredAssetStats(ctx, tenantIDs)
-	if err != nil {
-		s.logger.Error("failed to get filtered asset stats", "error", err, "tenant_count", len(tenantIDs))
-		assetStats = AssetStatsData{ByType: make(map[string]int), ByStatus: make(map[string]int)}
-	}
-
-	// Get finding stats filtered by accessible tenants
-	findingStats, err := s.repo.GetFilteredFindingStats(ctx, tenantIDs)
-	if err != nil {
-		s.logger.Error("failed to get filtered finding stats", "error", err, "tenant_count", len(tenantIDs))
-		findingStats = FindingStatsData{BySeverity: make(map[string]int), ByStatus: make(map[string]int)}
-	}
-
-	// Get repository stats filtered by accessible tenants
-	repoStats, err := s.repo.GetFilteredRepositoryStats(ctx, tenantIDs)
-	if err != nil {
-		s.logger.Error("failed to get filtered repository stats", "error", err, "tenant_count", len(tenantIDs))
-		repoStats = RepositoryStatsData{}
-	}
-
-	// Get recent activity filtered by accessible tenants. Layer 2: the
-	// caller's admin status is per tenant, so the scope is resolved for each
-	// tenant from their membership there; tenants where they are restricted
-	// contribute only in-scope findings. Fails closed: a tenant whose scope
-	// cannot be resolved is treated as restricted.
-	open, restricted := s.splitTenantsByScope(ctx, tenantIDs)
-	activity, err := s.repo.GetFilteredRecentActivity(ctx, open, restricted, s.dataScope.CallerOf(ctx).UserID, dashboardRecentActivityLimit)
-	if err != nil {
-		s.logger.Error("failed to get filtered recent activity", "error", err, "tenant_count", len(tenantIDs))
-		activity = []ActivityItem{}
-	}
-
-	return &DashboardStats{
-		AssetCount:               assetStats.Total,
-		AssetsByType:             assetStats.ByType,
-		AssetsByStatus:           assetStats.ByStatus,
-		AverageRiskScore:         assetStats.AverageRiskScore,
-		FindingCount:             findingStats.Total,
-		FindingsBySeverity:       findingStats.BySeverity,
-		FindingsByStatus:         findingStats.ByStatus,
-		OverdueFindings:          findingStats.Overdue,
-		AverageCVSS:              findingStats.AverageCVSS,
-		RepositoryCount:          repoStats.Total,
-		RepositoriesWithFindings: repoStats.WithFindings,
-		RecentActivity:           activity,
-		FindingTrend:             []FindingTrendPoint{},
-	}, nil
-}
