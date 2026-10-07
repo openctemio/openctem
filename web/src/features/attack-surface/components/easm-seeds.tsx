@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Boundaries › Seeds (RFC-036 §6.3): what the organization says is its own,
+ * Scope › Seeds (RFC-036 §6.3): what the organization says is its own,
  * from which external-surface discovery expands. Today a seed is a root
  * domain: the Certificate Transparency monitor watches it, and names found
  * under it wait for ownership review unless the domain is verified.
@@ -205,8 +205,9 @@ export function EASMSeedsPanel() {
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Root domains your organization owns. Discovery watches Certificate Transparency for names
-        under them; names under a domain you have not verified wait for ownership review, and scans
-        skip them until confirmed.
+        under them, and those names join your inventory automatically (unless an exclusion or a
+        &quot;not ours&quot; decision covers them). Verifying a domain proves it is yours; platform
+        sensors need that proof.
       </p>
       <DataTable
         columns={columns}

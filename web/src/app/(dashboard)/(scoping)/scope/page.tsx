@@ -4,6 +4,9 @@ import { useState, useMemo, useCallback, useEffect, useEffectEvent } from 'react
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
+  ActorChip,
+  TonePill,
+  type RowAction,
   PageHeader,
   DataTable,
   DataTableRowActions,
@@ -13,10 +16,8 @@ import {
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
-import { cn } from '@/lib/utils'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
@@ -28,33 +29,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Globe,
-  Shield,
   Plus,
   Pencil,
   Trash2,
-  Server,
-  Code,
-  Cloud,
-  GitBranch,
   Ban,
   Search as SearchIcon,
   AlertTriangle,
-  Database,
-  Box,
-  Mail,
-  Folder,
-  Link,
   Loader2,
+  Power,
+  PowerOff,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -74,6 +59,19 @@ import {
   invalidateScopeExclusionsCache,
   invalidateScopeStatsCache,
   ScopeEntryDialog,
+  ScopeTargetTypeSelect,
+  EXCLUSION_KINDS,
+  scopeKindIcon,
+  scopeKindOf,
+  scopeTargetTypeLabel,
+  storedTypesFor,
+  coversText,
+  entryStatus,
+  expiryText,
+  SCOPE_ENTRY_STATUS_HINT,
+  SCOPE_ENTRY_STATUS_LABEL,
+  SCOPE_ENTRY_STATUS_TONE,
+  scopeErrorMessage,
   // API types
   type ApiScopeTarget,
   type ApiScopeExclusion,
@@ -82,6 +80,7 @@ import { post } from '@/lib/api/client'
 import { EASMSeedsPanel } from '@/features/attack-surface/components/easm-seeds'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Use shared validation from scope feature types
 const validatePattern = (
@@ -119,62 +118,6 @@ const validatePattern = (
   return { valid: true }
 }
 
-// Extended icon mapping for all scope target types
-const targetTypeIcons: Record<string, React.ReactNode> = {
-  // Network & External
-  domain: <Globe className="h-4 w-4" />,
-  subdomain: <Globe className="h-4 w-4" />,
-  ip_address: <Server className="h-4 w-4" />,
-  ip_range: <Server className="h-4 w-4" />,
-  certificate: <Shield className="h-4 w-4" />,
-  // Applications
-  api: <Code className="h-4 w-4" />,
-  website: <Globe className="h-4 w-4" />,
-  mobile_app: <Box className="h-4 w-4" />,
-  // Cloud
-  cloud_account: <Cloud className="h-4 w-4" />,
-  cloud_resource: <Cloud className="h-4 w-4" />,
-  // Infrastructure
-  database: <Database className="h-4 w-4" />,
-  container: <Box className="h-4 w-4" />,
-  host: <Server className="h-4 w-4" />,
-  network: <Link className="h-4 w-4" />,
-  // Code & CI/CD
-  project: <GitBranch className="h-4 w-4" />,
-  repository: <GitBranch className="h-4 w-4" />,
-  // Generic
-  path: <Folder className="h-4 w-4" />,
-  email_domain: <Mail className="h-4 w-4" />,
-}
-
-// Type categories for grouped dropdown
-const targetTypeCategories = [
-  {
-    label: 'Network & External',
-    types: ['domain', 'subdomain', 'ip_address', 'ip_range', 'certificate'],
-  },
-  {
-    label: 'Applications',
-    types: ['api', 'website', 'mobile_app'],
-  },
-  {
-    label: 'Cloud',
-    types: ['cloud_account', 'cloud_resource'],
-  },
-  {
-    label: 'Infrastructure',
-    types: ['database', 'container', 'host', 'network'],
-  },
-  {
-    label: 'Code & CI/CD',
-    types: ['repository'],
-  },
-  {
-    label: 'Other',
-    types: ['path', 'email_domain'],
-  },
-]
-
 // Targets | Exclusions. The old Overview tab charted the whole inventory and the
 // Schedules tab never ran (nothing executes scope schedules; Scans owns
 // scheduling), so an old `?tab=overview` or `?tab=schedules` link lands on Targets.
@@ -184,7 +127,8 @@ const PAGE_SIZES = [10, 20, 30, 50, 100]
 
 export default function ScopeConfigPage() {
   // Permission check for write operations
-  const canWriteScope = useHasPermission(Permission.ScopeWrite)
+  const canApproveScope = useHasPermission(Permission.ScopeApprove)
+  const { t } = useTranslation()
   // A new exclusion is pending until someone else holding this approves it.
   const canApproveExclusions = useHasPermission(Permission.ScopeExclusionsApprove)
 
@@ -232,9 +176,13 @@ export default function ScopeConfigPage() {
     setTypeFilter(v)
     setPage(1)
   }
+  const kindFilter = scopeKindOf(typeFilter)
   const listParams = (forTab: ScopeTab) =>
     tab === forTab
-      ? { search: searchParam || undefined, type: typeFilter !== 'all' ? typeFilter : undefined }
+      ? {
+          search: searchParam || undefined,
+          type: kindFilter ? storedTypesFor(kindFilter) : undefined,
+        }
       : { search: undefined, type: undefined }
   const targetParams = listParams('targets')
   const exclusionParams = listParams('exclusions')
@@ -346,16 +294,22 @@ export default function ScopeConfigPage() {
     [exclusions]
   )
 
-  // Toggle target status using activate/deactivate endpoints
-  const toggleTargetStatus = async (target: ApiScopeTarget) => {
+  const setTargetActive = async (target: ApiScopeTarget, active: boolean) => {
     try {
-      const action = target.status === 'active' ? 'deactivate' : 'activate'
-      await post<ApiScopeTarget>(`/api/v1/scope/targets/${target.id}/${action}`)
+      const updated = await post<ApiScopeTarget>(
+        `/api/v1/scope/targets/${target.id}/${active ? 'activate' : 'deactivate'}`
+      )
       await invalidateScopeTargetsCache()
       await invalidateScopeStatsCache()
-      toast.success(`Target ${action}d successfully`)
+      toast.success(
+        !active
+          ? `${target.pattern} deactivated`
+          : updated?.status === 'pending'
+            ? `${target.pattern} is waiting for approval`
+            : `${target.pattern} activated`
+      )
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to update target status'))
+      toast.error(scopeErrorMessage(t, err, 'Failed to update the entry'))
     }
   }
 
@@ -539,14 +493,6 @@ export default function ScopeConfigPage() {
     }
   }
 
-  // Format type label for display
-  const formatTypeLabel = (type: string): string => {
-    return type
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ')
-  }
-
   // Form JSX
   const targetFormFields = (
     <div className="space-y-4">
@@ -557,36 +503,15 @@ export default function ScopeConfigPage() {
         </div>
       )}
       <div className="space-y-2">
-        <Label>Type</Label>
-        <Select
+        <Label>Kind</Label>
+        <ScopeTargetTypeSelect
           value={targetForm.type}
           disabled={!!editTarget}
           onValueChange={(v) => {
             setTargetForm({ ...targetForm, type: v as ScopeTargetType })
             setValidationError(null)
           }}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="max-h-80">
-            {targetTypeCategories.map((category) => (
-              <div key={category.label}>
-                <div className="text-muted-foreground px-2 py-1.5 text-xs font-semibold">
-                  {category.label}
-                </div>
-                {category.types.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {targetTypeIcons[type]}
-                      {formatTypeLabel(type)}
-                    </div>
-                  </SelectItem>
-                ))}
-              </div>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
       <div className="space-y-2">
         <Label>Pattern *</Label>
@@ -625,36 +550,16 @@ export default function ScopeConfigPage() {
         </div>
       )}
       <div className="space-y-2">
-        <Label>Type</Label>
-        <Select
+        <Label>Kind</Label>
+        <ScopeTargetTypeSelect
           value={exclusionForm.type}
           disabled={!!editExclusion}
+          only={EXCLUSION_KINDS}
           onValueChange={(v) => {
             setExclusionForm({ ...exclusionForm, type: v as ScopeTargetType })
             setValidationError(null)
           }}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="max-h-80">
-            {targetTypeCategories.map((category) => (
-              <div key={category.label}>
-                <div className="text-muted-foreground px-2 py-1.5 text-xs font-semibold">
-                  {category.label}
-                </div>
-                {category.types.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {targetTypeIcons[type]}
-                      {formatTypeLabel(type)}
-                    </div>
-                  </SelectItem>
-                ))}
-              </div>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
       <div className="space-y-2">
         <Label>Pattern *</Label>
@@ -685,29 +590,14 @@ export default function ScopeConfigPage() {
   )
 
   const typeFilterSelect = (
-    <Select value={typeFilter} onValueChange={setTypeFilterAndReset}>
-      <SelectTrigger className="h-9 w-auto min-w-36" aria-label="Filter by type">
-        <SelectValue placeholder="Filter by type" />
-      </SelectTrigger>
-      <SelectContent className="max-h-80">
-        <SelectItem value="all">All types</SelectItem>
-        {targetTypeCategories.map((category) => (
-          <div key={category.label}>
-            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-              {category.label}
-            </div>
-            {category.types.map((type) => (
-              <SelectItem key={type} value={type}>
-                <div className="flex flex-wrap items-center gap-2">
-                  {targetTypeIcons[type]}
-                  {formatTypeLabel(type)}
-                </div>
-              </SelectItem>
-            ))}
-          </div>
-        ))}
-      </SelectContent>
-    </Select>
+    <ScopeTargetTypeSelect
+      value={kindFilter ?? 'all'}
+      onValueChange={setTypeFilterAndReset}
+      withAll
+      only={tab === 'exclusions' ? EXCLUSION_KINDS : undefined}
+      className="h-9 w-auto min-w-36"
+      aria-label="Filter by kind"
+    />
   )
 
   const toolbarStart = (
@@ -737,23 +627,106 @@ export default function ScopeConfigPage() {
 
   const filtersActive = !!searchParam || typeFilter !== 'all'
 
+  // No inline toggles (research/53 SC5): activating widens scope and may wait
+  // for approval, so it is a labelled menu action that says so; deactivating
+  // narrows and applies at once.
+  const targetActions = (e: ApiScopeTarget): RowAction[] => {
+    const st = entryStatus(e)
+    const out: RowAction[] = [
+      {
+        label: 'Edit',
+        icon: Pencil,
+        onClick: () => openEditTarget(e),
+        permission: Permission.ScopeWrite,
+      },
+    ]
+    if (st === 'active') {
+      out.push({
+        label: 'Deactivate',
+        icon: PowerOff,
+        onClick: () => void setTargetActive(e, false),
+        permission: Permission.ScopeWrite,
+      })
+    } else if (st === 'inactive') {
+      out.push({
+        label: 'Activate (may need approval)',
+        icon: Power,
+        onClick: () => void setTargetActive(e, true),
+        disabled: !canApproveScope,
+        disabledReason: 'Activating widens scope: only a scope approver can do it.',
+      })
+    }
+    out.push({
+      label: 'Remove',
+      icon: Trash2,
+      onClick: () => setDeleteTarget(e),
+      destructive: true,
+      separatorBefore: true,
+      permission: Permission.ScopeDelete,
+    })
+    return out
+  }
+
+  const exclusionActions = (x: ApiScopeExclusion): RowAction[] => {
+    const out: RowAction[] = [
+      {
+        label: 'Edit',
+        icon: Pencil,
+        onClick: () => openEditExclusion(x),
+        permission: Permission.ScopeWrite,
+      },
+    ]
+    if (x.status === 'active') {
+      // Lifting an exclusion widens scope: approvers only (the API checks).
+      out.push({
+        label: 'Deactivate (scans may reach it)',
+        icon: PowerOff,
+        onClick: () => void toggleExclusionStatus(x),
+        disabled: !canApproveExclusions,
+        disabledReason:
+          'Lifting an exclusion widens scope: it needs the exclusion approve permission.',
+      })
+    } else if (x.status === 'inactive') {
+      out.push({
+        label: 'Activate',
+        icon: Power,
+        onClick: () => void toggleExclusionStatus(x),
+        permission: Permission.ScopeWrite,
+      })
+    }
+    out.push({
+      label: 'Remove',
+      icon: Trash2,
+      onClick: () => setDeleteExclusion(x),
+      destructive: true,
+      separatorBefore: true,
+      permission: Permission.ScopeDelete,
+    })
+    return out
+  }
+
   const targetColumns: ColumnDef<ApiScopeTarget>[] = [
     {
       accessorKey: 'pattern',
       header: 'Pattern',
       enableHiding: false,
       cell: ({ row }) => (
-        <code className="rounded bg-muted px-2 py-1 text-sm">{row.original.pattern}</code>
+        <div className="min-w-0 space-y-0.5">
+          <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
+            {row.original.pattern}
+          </code>
+          <p className="text-xs text-muted-foreground">Covers {coversText(row.original)}</p>
+        </div>
       ),
     },
     {
       accessorKey: 'target_type',
-      header: 'Type',
+      header: 'Kind',
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-muted-foreground">
-          {targetTypeIcons[row.original.target_type ?? '']}
-          <span className="text-sm capitalize text-foreground">
-            {(row.original.target_type ?? '').replace('_', ' ')}
+          {scopeKindIcon(row.original.target_type)}
+          <span className="text-sm text-foreground">
+            {scopeTargetTypeLabel(row.original.target_type ?? '')}
           </span>
         </div>
       ),
@@ -769,33 +742,29 @@ export default function ScopeConfigPage() {
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }) => {
-        const target = row.original
+        const e = row.original
+        const st = entryStatus(e)
+        const detail =
+          st === 'pending'
+            ? `${e.approvals?.length ?? 0} of ${e.approvals_required ?? 0} approvals`
+            : e.expires_at && (st === 'active' || st === 'expired')
+              ? expiryText(e.expires_at)
+              : undefined
         return (
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={target.status === 'active'}
-              onCheckedChange={() => toggleTargetStatus(target)}
-              disabled={!canWriteScope}
-              aria-label={`Toggle ${target.pattern}`}
-            />
-            <span
-              className={cn(
-                'text-xs capitalize',
-                target.status !== 'active' && 'text-muted-foreground'
-              )}
-            >
-              {target.status}
-            </span>
-          </div>
+          <TonePill
+            tone={SCOPE_ENTRY_STATUS_TONE[st]}
+            label={SCOPE_ENTRY_STATUS_LABEL[st]}
+            title={SCOPE_ENTRY_STATUS_HINT[st]}
+            detail={detail}
+            state={st}
+          />
         )
       },
     },
     {
       accessorKey: 'created_by',
-      header: 'Created by',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">{row.original.created_by}</span>
-      ),
+      header: 'Added by',
+      cell: ({ row }) => <ActorChip actor={row.original.created_by} at={row.original.created_at} />,
     },
     {
       id: 'actions',
@@ -803,21 +772,8 @@ export default function ScopeConfigPage() {
       cell: ({ row }) => (
         <Can permission={[Permission.ScopeWrite, Permission.ScopeDelete]}>
           <DataTableRowActions
-            actions={[
-              {
-                label: 'Edit',
-                icon: Pencil,
-                onClick: () => openEditTarget(row.original),
-                permission: Permission.ScopeWrite,
-              },
-              {
-                label: 'Remove',
-                icon: Trash2,
-                onClick: () => setDeleteTarget(row.original),
-                destructive: true,
-                permission: Permission.ScopeDelete,
-              },
-            ]}
+            label={`Actions for ${row.original.pattern}`}
+            actions={targetActions(row.original)}
           />
         </Can>
       ),
@@ -835,12 +791,12 @@ export default function ScopeConfigPage() {
     },
     {
       accessorKey: 'exclusion_type',
-      header: 'Type',
+      header: 'Kind',
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-muted-foreground">
-          {targetTypeIcons[row.original.exclusion_type ?? ''] || <Ban className="h-4 w-4" />}
-          <span className="text-sm capitalize text-foreground">
-            {(row.original.exclusion_type ?? '').replace('_', ' ')}
+          {scopeKindIcon(row.original.exclusion_type) || <Ban className="h-4 w-4" />}
+          <span className="text-sm text-foreground">
+            {scopeTargetTypeLabel(row.original.exclusion_type ?? '')}
           </span>
         </div>
       ),
@@ -860,7 +816,7 @@ export default function ScopeConfigPage() {
         if (exclusion.status === 'pending') {
           return (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Pending approval</span>
+              <TonePill tone="warning" label="Pending approval" state="pending" />
               {canApproveExclusions && (
                 <>
                   <Button
@@ -885,34 +841,24 @@ export default function ScopeConfigPage() {
           )
         }
         if (exclusion.status === 'rejected') {
-          return <span className="text-xs text-muted-foreground">Rejected</span>
+          return <TonePill tone="destructive" label="Rejected" state="rejected" />
         }
-        return (
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={exclusion.status === 'active'}
-              onCheckedChange={() => toggleExclusionStatus(exclusion)}
-              // Switching off an exclusion in effect takes the approval
-              // permission (and someone other than the requester): the API
-              // refuses scope:write alone.
-              disabled={!canWriteScope || (exclusion.status === 'active' && !canApproveExclusions)}
-              aria-label={`Toggle ${exclusion.pattern}`}
-            />
-            <span
-              className={cn('text-xs', exclusion.status !== 'active' && 'text-muted-foreground')}
-            >
-              {exclusion.status === 'active' ? 'Excluded' : 'Inactive'}
-            </span>
-          </div>
+        return exclusion.status === 'active' ? (
+          <TonePill
+            tone="success"
+            label="Excluded"
+            detail={exclusion.expires_at ? expiryText(exclusion.expires_at) : undefined}
+            state="active"
+          />
+        ) : (
+          <TonePill tone="muted" label="Inactive" state="inactive" />
         )
       },
     },
     {
       accessorKey: 'created_by',
-      header: 'Created by',
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">{row.original.created_by}</span>
-      ),
+      header: 'Added by',
+      cell: ({ row }) => <ActorChip actor={row.original.created_by} at={row.original.created_at} />,
     },
     {
       id: 'actions',
@@ -920,21 +866,8 @@ export default function ScopeConfigPage() {
       cell: ({ row }) => (
         <Can permission={[Permission.ScopeWrite, Permission.ScopeDelete]}>
           <DataTableRowActions
-            actions={[
-              {
-                label: 'Edit',
-                icon: Pencil,
-                onClick: () => openEditExclusion(row.original),
-                permission: Permission.ScopeWrite,
-              },
-              {
-                label: 'Remove',
-                icon: Trash2,
-                onClick: () => setDeleteExclusion(row.original),
-                destructive: true,
-                permission: Permission.ScopeDelete,
-              },
-            ]}
+            label={`Actions for ${row.original.pattern}`}
+            actions={exclusionActions(row.original)}
           />
         </Can>
       ),
@@ -988,8 +921,8 @@ export default function ScopeConfigPage() {
     <>
       <Main>
         <PageHeader
-          title="Boundaries"
-          description="What the program covers, and what scans must never touch. Exclusions are enforced on every scan; schedule scans on the Scans page."
+          title="Scope"
+          description="What scans may touch. Anything not listed is out of scope, and an exclusion always wins."
         >
           <Can permission={Permission.ScopeWrite}>{addButton}</Can>
         </PageHeader>

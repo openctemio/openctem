@@ -90,7 +90,6 @@
   "nav.item.scans": "Lượt quét",
   "nav.item.scim-provisioning": "Cấp phát SCIM",
   "nav.item.scms": "SCM",
-  "nav.item.scope-config": "Cấu hình phạm vi",
   "nav.item.scoping": "Phạm vi",
   "nav.item.secrets": "Secret",
   "nav.item.secret-store": "Kho secret",
@@ -349,7 +348,6 @@
   "org.signedInAs": "Đã đăng nhập với",
   "nav.item.cycles": "Chu kỳ",
   "nav.item.business-context": "Bối cảnh kinh doanh",
-  "nav.item.boundaries": "Ranh giới",
   "nav.item.threat-model": "Mô hình mối đe dọa",
   "sensors.activity.localPolicyChanged": "{summary}",
   "sensors.activity.policyDigest": "Chính sách {digest}",
@@ -503,5 +501,13 @@
   "scope.fix.contact_support": "Liên hệ hỗ trợ",
   "scope.fix.raise_tier": "Nâng mức (tier)",
   "settings.item.scope-policy": "Chính sách phạm vi",
-  "settings.desc.scope-policy": "Ai được mở rộng phạm vi, cần bao nhiêu người duyệt, mục tạm thời và tên được phát hiện."
+  "settings.desc.scope-policy": "Ai được mở rộng phạm vi, cần bao nhiêu người duyệt, mục tạm thời và tên được phát hiện.",
+  "actor.system.upgrade_wildcard_split": "Bản nâng cấp OpenCTEM (đổi quy tắc wildcard)",
+  "actor.system.seed_migration": "Bản nâng cấp OpenCTEM (trước là seed khám phá)",
+  "actor.system.review_rule": "Chấp nhận từ quy tắc rà soát",
+  "actor.system.refusal_fix": "Cho phép từ lần quét bị chặn",
+  "actor.system.system": "OpenCTEM (tự động)",
+  "actor.former": "Cựu thành viên",
+  "actor.member": "Một thành viên",
+  "nav.item.scope": "Phạm vi"
 }

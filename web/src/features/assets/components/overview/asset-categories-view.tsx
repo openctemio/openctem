@@ -214,7 +214,7 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/scope-config">
+              <Link href="/scope">
                 <Crosshair className="me-2 h-4 w-4" />
                 Scope boundaries
               </Link>
@@ -309,7 +309,7 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
                 <Link href="/integrations">Connect provider</Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
-                <Link href="/scope-config">Configure scope</Link>
+                <Link href="/scope">Configure scope</Link>
               </Button>
             </div>
           }

@@ -66,7 +66,7 @@ export function refusedFromError(err: unknown): ScopeRefusal[] {
 export function fixHref(fix: ApiScopeFix, rule?: ScopeRefusal['rule']): string | null {
   switch (fix.action) {
     case 'remove_exclusion':
-      return '/scope-config?tab=exclusions'
+      return '/scope?tab=exclusions'
     case 'review_asset':
       return rule?.kind === 'asset' && isLinkableAssetId(rule.id)
         ? assetDetailHref(rule.id)
@@ -74,7 +74,7 @@ export function fixHref(fix: ApiScopeFix, rule?: ScopeRefusal['rule']): string |
     case 'add_zone':
       return '/sensors?tab=zones'
     case 'raise_tier':
-      return '/scope-config?tab=targets'
+      return '/scope?tab=targets'
     default:
       return null
   }
