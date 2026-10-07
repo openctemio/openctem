@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -477,9 +478,12 @@ func TestResolveScanTargets_GroupLargerThanOnePage(t *testing.T) {
 type stubGate struct {
 	blocked      map[string]attribution.State
 	blockedTyped map[string]attribution.State
-	err          error
-	asked        []string
-	askedTyped   []string
+	// ceiling is the max_tier of the entry covering a target (absent: at
+	// least every tier).
+	ceiling    map[string]scopedom.Tier
+	err        error
+	asked      []string
+	askedTyped []string
 }
 
 func (g *stubGate) BlockedTargets(_ context.Context, _ shared.ID, targets []string) (map[string]attribution.State, error) {
@@ -491,6 +495,19 @@ func (g *stubGate) BlockedTargets(_ context.Context, _ shared.ID, targets []stri
 	for _, t := range targets {
 		if s, ok := g.blockedTyped[t]; ok {
 			out[t] = s
+		}
+	}
+	return out, nil
+}
+
+func (g *stubGate) TierExceeded(_ context.Context, _ shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
+	if g.err != nil {
+		return nil, g.err
+	}
+	out := map[string]*scopedom.RuleRef{}
+	for _, t := range targets {
+		if c, ok := g.ceiling[t]; ok && c < tier {
+			out[t] = &scopedom.RuleRef{Kind: scopedom.RuleScopeTarget, ID: "entry-" + t, Pattern: t}
 		}
 	}
 	return out, nil

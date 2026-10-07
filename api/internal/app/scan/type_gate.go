@@ -166,8 +166,39 @@ func (s *Service) FilterStepTargets(ctx context.Context, tenantID shared.ID, too
 		}
 	}
 	targets := contextTargets(runContext)
+	out, err := s.filterStepTypes(ctx, tenantID, toolName, targets, contextTargetTypes(runContext))
+	if err != nil {
+		return nil, err
+	}
+	// The step's own tier: its tool's ceiling against the scope entries,
+	// and proof for an intrusive tool (RFC-054 §4.2 step 6, §8.1).
+	kept, refused, reason, err := s.stepScopeFilter(ctx, tenantID, toolName, out.Targets)
+	if err != nil {
+		return nil, err
+	}
+	if refused == 0 {
+		return out, nil
+	}
+	out.Targets = kept
+	out.Refused += refused
+	if out.Reason != "" {
+		out.Reason += "; "
+	}
+	out.Reason += reason
+	if len(kept) == 0 {
+		return nil, shared.NewDomainError(CodeStepTargetsRefused,
+			"No target of this step may be probed by "+toolName+": "+reason+".", shared.ErrValidation)
+	}
+	return out, nil
+}
+
+// CodeStepTargetsRefused: a workflow step whose every target the tier
+// ceiling or the proof requirement refused.
+const CodeStepTargetsRefused = "STEP_TARGETS_REFUSED"
+
+// filterStepTypes leaves out the typed targets the step's tool cannot scan.
+func (s *Service) filterStepTypes(ctx context.Context, tenantID shared.ID, toolName string, targets []string, types map[string]string) (*StepTargets, error) {
 	out := &StepTargets{Targets: targets}
-	types := contextTargetTypes(runContext)
 	if len(targets) == 0 || len(types) == 0 {
 		return out, nil
 	}
