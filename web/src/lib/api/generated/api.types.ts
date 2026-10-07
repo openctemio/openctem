@@ -10632,475 +10632,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/custom-tools': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List custom tools
-     * @description Get a paginated list of tenant's custom tools
-     */
-    get: {
-      parameters: {
-        query?: {
-          /** @description Filter by category */
-          category?: string
-          /** @description Filter by capabilities (comma-separated) */
-          capabilities?: string
-          /** @description Filter by active status */
-          is_active?: boolean
-          /** @description Search by name or description */
-          search?: string
-          /** @description Filter by tags (comma-separated) */
-          tags?: string
-          /** @description Page number */
-          page?: number
-          /** @description Items per page */
-          per_page?: number
-        }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    /**
-     * Create custom tool
-     * @description Create a new tenant custom tool
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody: components['requestBodies']['internal_infra_http_handler.CreateToolRequest']
-      responses: {
-        /** @description Created */
-        201: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Conflict */
-        409: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/custom-tools/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get custom tool
-     * @description Get a single tenant custom tool by ID
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    /**
-     * Update custom tool
-     * @description Update a tenant custom tool
-     */
-    put: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody: components['requestBodies']['internal_infra_http_handler.UpdateToolRequest']
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    post?: never
-    /**
-     * Delete custom tool
-     * @description Delete a tenant custom tool
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/custom-tools/{id}/activate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Activate custom tool
-     * @description Activate a tenant custom tool
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/custom-tools/{id}/deactivate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Deactivate custom tool
-     * @description Deactivate a tenant custom tool
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/dashboard/program-metrics': {
     parameters: {
       query?: never
@@ -31238,771 +30769,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/tenant-tools': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List tenant tool configs
-     * @description Get a paginated list of tenant tool configurations
-     */
-    get: {
-      parameters: {
-        query?: {
-          /** @description Filter by tool ID */
-          tool_id?: string
-          /** @description Filter by enabled status */
-          is_enabled?: boolean
-          /** @description Page number */
-          page?: number
-          /** @description Items per page */
-          per_page?: number
-        }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_TenantToolConfigResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenant-tools/{tool_id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get tenant tool config
-     * @description Get tenant-specific configuration for a tool
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          tool_id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.TenantToolConfigResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    /**
-     * Update tenant tool config
-     * @description Update or create tenant-specific configuration for a tool
-     */
-    put: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          tool_id: string
-        }
-        cookie?: never
-      }
-      /** @description Config data */
-      requestBody: {
-        content: {
-          'application/json': components['schemas']['internal_infra_http_handler.TenantToolConfigRequest']
-        }
-      }
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.TenantToolConfigResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    post?: never
-    /**
-     * Delete tenant tool config
-     * @description Delete tenant-specific configuration for a tool
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          tool_id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenant-tools/{tool_id}/effective-config': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get effective tool config
-     * @description Get the merged configuration (default + tenant overrides) for a tool
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          tool_id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': {
-              [key: string]: unknown
-            }
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenant-tools/{tool_id}/with-config': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get tool with tenant config
-     * @description Get a tool with its tenant-specific configuration and effective config
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          tool_id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolWithConfigResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenant-tools/all-tools': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * List all tools with tenant config
-     * @description Get a paginated list of all tools with their tenant-specific enabled status
-     */
-    get: {
-      parameters: {
-        query?: {
-          /** @description Filter by category */
-          category?: string
-          /** @description Filter by system-wide active status */
-          is_active?: boolean
-          /** @description Filter by builtin status */
-          is_builtin?: boolean
-          /** @description Search by name or description */
-          search?: string
-          /** @description Page number */
-          page?: number
-          /** @description Items per page */
-          per_page?: number
-        }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolWithConfigResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenant-tools/availability': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Tool availability
-     * @description Every catalog tool, plus every tool the tenant's sensors report, with the sensors that have it (online and total), the versions they report and a derived status. Sensor-reported data is advice: dispatch checks every job again at claim time.
-     */
-    get: {
-      parameters: {
-        query?: {
-          /** @description Only the sensors of this scan zone */
-          zone_id?: string
-        }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolAvailabilityResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenant-tools/bulk/disable': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Bulk disable tools
-     * @description Disable multiple tools for the current tenant
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody: components['requestBodies']['internal_infra_http_handler.BulkToolIDsRequest']
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenant-tools/bulk/enable': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Bulk enable tools
-     * @description Enable multiple tools for the current tenant
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody: components['requestBodies']['internal_infra_http_handler.BulkToolIDsRequest']
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenant-tools/stats': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get tenant tool stats
-     * @description Get aggregated tool execution statistics for the current tenant
-     */
-    get: {
-      parameters: {
-        query?: {
-          /** @description Number of days to include */
-          days?: number
-        }
-        header?: never
-        path?: never
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.TenantToolStatsResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tenant-tools/stats/{toolId}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get tool stats
-     * @description Get execution statistics for a specific tool
-     */
-    get: {
-      parameters: {
-        query?: {
-          /** @description Number of days to include */
-          days?: number
-        }
-        header?: never
-        path: {
-          /** @description Tool ID */
-          toolId: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolStatsResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/tenants/{tenant}/invitations': {
     parameters: {
       query?: never
@@ -32494,7 +31260,7 @@ export interface paths {
     }
     trace?: never
   }
-  '/tools': {
+  '/tool-categories': {
     parameters: {
       query?: never
       header?: never
@@ -32502,27 +31268,19 @@ export interface paths {
       cookie?: never
     }
     /**
-     * List tools
-     * @description Get a paginated list of available tools
+     * List tool categories
+     * @description Platform categories plus the organization's custom categories.
      */
     get: {
       parameters: {
         query?: {
-          /** @description Filter by category */
-          category?: string
-          /** @description Filter by capabilities (comma-separated) */
-          capabilities?: string
-          /** @description Filter by active status */
-          is_active?: boolean
-          /** @description Filter by builtin status */
-          is_builtin?: boolean
-          /** @description Search by name or description */
-          search?: string
-          /** @description Filter by tags (comma-separated) */
-          tags?: string
+          /** @description platform or custom */
+          source?: 'platform' | 'custom'
+          /** @description Search the name and display name */
+          q?: string
           /** @description Page number */
           page?: number
-          /** @description Items per page */
+          /** @description Items per page (max 100) */
           per_page?: number
         }
         header?: never
@@ -32537,7 +31295,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolResponse']
+            'application/json': components['schemas']['internal_infra_http_handler.ToolCategoryListResponse']
           }
         }
         /** @description Bad Request */
@@ -32562,8 +31320,8 @@ export interface paths {
     }
     put?: never
     /**
-     * Create tool
-     * @description Create a new tool in the registry (admin only)
+     * Create custom tool category
+     * @description Create a custom category owned by the organization.
      */
     post: {
       parameters: {
@@ -32572,7 +31330,352 @@ export interface paths {
         path?: never
         cookie?: never
       }
-      requestBody: components['requestBodies']['internal_infra_http_handler.CreateToolRequest']
+      /** @description Category */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CreateToolCategoryRequest']
+        }
+      }
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ToolCategoryResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/tool-categories/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Get tool category
+     * @description A platform category or one of the organization's custom categories; any other id is not found.
+     */
+    get: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Category ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ToolCategoryResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    /**
+     * Update custom tool category
+     * @description Update one of the organization's custom categories. A platform category or another organization's is not found.
+     */
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Category ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Category */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateToolCategoryRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ToolCategoryResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    /**
+     * Delete custom tool category
+     * @description Delete one of the organization's custom categories (refused while a tool uses it). A platform category or another organization's is not found.
+     */
+    delete: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Category ID */
+          id: string
+        }
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown
+          }
+          content?: never
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/tools': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List tools
+     * @description The organization's view of the tool catalog: platform tools and its own custom tools. include= adds the organization's settings (credential-like config values masked), the availability from its sensors (sensor names and zones only with sensors:read) and run statistics; each needs scans:tenant_tools:read (stats, tenant-wide counts, also scans:read) and is otherwise left out and listed in meta.omitted_includes. A response that took include= is Cache-Control: private, no-store; availability and stats cost 2 more read-limit tokens each. The enabled/available filters need scans:tenant_tools:read. With include=availability the response also carries the availability summary and the tools the sensors report that the catalog does not list.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description platform or custom */
+          source?: 'platform' | 'custom'
+          /** @description Category name */
+          category?: string
+          /** @description Search the name, display name and description */
+          q?: string
+          /** @description Active in the catalog and switched on for the organization */
+          enabled?: boolean
+          /** @description A scan job can be dispatched now (an online sensor may run it) */
+          available?: boolean
+          /** @description Availability from this scan zone's sensors only */
+          zone_id?: string
+          /** @description Comma-separated, at most 3: settings, availability, stats (per_page is capped at 50 with availability or stats); one the caller may not read is left out and listed in meta.omitted_includes */
+          include?: string
+          /** @description Statistics window in days (1-365) */
+          days?: number
+          /** @description name, created_at or updated_at; '-' prefix for descending (default: category, then name) */
+          sort?: string
+          /** @description Page number */
+          page?: number
+          /** @description Items per page (max 100) */
+          per_page?: number
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ToolListResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    /**
+     * Create custom tool
+     * @description Create a custom tool owned by the organization. Platform tools are managed by the platform and cannot be created here.
+     */
+    post: {
+      parameters: {
+        query?: never
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      /** @description Tool data */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.CreateToolRequest']
+        }
+      }
       responses: {
         /** @description Created */
         201: {
@@ -32627,11 +31730,18 @@ export interface paths {
     }
     /**
      * Get tool
-     * @description Get a single tool by ID
+     * @description One tool of the organization's view: a platform tool or its own custom tool (any other id is not found). include= as on the list.
      */
     get: {
       parameters: {
-        query?: never
+        query?: {
+          /** @description Availability from this scan zone's sensors only */
+          zone_id?: string
+          /** @description Comma-separated, at most 3: settings, availability, stats; one the caller may not read is left out and listed in meta.omitted_includes */
+          include?: string
+          /** @description Statistics window in days (1-365) */
+          days?: number
+        }
         header?: never
         path: {
           /** @description Tool ID */
@@ -32647,115 +31757,8 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
+            'application/json': components['schemas']['internal_infra_http_handler.ToolViewResponse']
           }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    /**
-     * Update tool
-     * @description Update an existing tool (admin only)
-     */
-    put: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody: components['requestBodies']['internal_infra_http_handler.UpdateToolRequest']
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    post?: never
-    /**
-     * Delete tool
-     * @description Delete a tool from the registry (admin only, builtin tools cannot be deleted)
-     */
-    delete: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown
-          }
-          content?: never
         }
         /** @description Bad Request */
         400: {
@@ -32795,25 +31798,71 @@ export interface paths {
         }
       }
     }
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tools/{id}/activate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
     /**
-     * Activate tool
-     * @description Activate a tool to make it available for use
+     * Update custom tool
+     * @description Update one of the organization's custom tools. A platform tool or another organization's tool is not found.
      */
-    post: {
+    put: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Tool ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Update data */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.UpdateToolRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    post?: never
+    /**
+     * Delete custom tool
+     * @description Delete one of the organization's custom tools; active workflows using it are deactivated. A platform tool or another organization's tool is not found.
+     */
+    delete: {
       parameters: {
         query?: never
         header?: never
@@ -32825,14 +31874,12 @@ export interface paths {
       }
       requestBody?: never
       responses: {
-        /** @description OK */
-        200: {
+        /** @description No Content */
+        204: {
           headers: {
             [name: string]: unknown
           }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
-          }
+          content?: never
         }
         /** @description Bad Request */
         400: {
@@ -32840,7 +31887,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Not Found */
@@ -32849,7 +31896,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -32858,18 +31905,17 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
     }
-    delete?: never
     options?: never
     head?: never
     patch?: never
     trace?: never
   }
-  '/tools/{id}/deactivate': {
+  '/tools/{id}/settings': {
     parameters: {
       query?: never
       header?: never
@@ -32877,179 +31923,109 @@ export interface paths {
       cookie?: never
     }
     get?: never
-    put?: never
-    /**
-     * Deactivate tool
-     * @description Deactivate a tool to make it unavailable for use
-     */
-    post: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool ID */
-          id: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tools/name/{name}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get tool by name
-     * @description Get a single tool by name
-     */
-    get: {
-      parameters: {
-        query?: never
-        header?: never
-        path: {
-          /** @description Tool name */
-          name: string
-        }
-        cookie?: never
-      }
-      requestBody?: never
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ToolResponse']
-          }
-        }
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-        /** @description Internal Server Error */
-        500: {
-          headers: {
-            [name: string]: unknown
-          }
-          content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
-          }
-        }
-      }
-    }
     put?: never
     post?: never
     delete?: never
     options?: never
     head?: never
-    patch?: never
+    /**
+     * Change tool settings
+     * @description Change the organization's switch (scans:tenant_tools:write) and config overrides (also scans:tools:write: they change what the sensors run) of a platform tool or of its own custom tool. An omitted field is left as it is; "config": {} clears the overrides. A config holding a secret (by key or by value) is refused: credentials belong in the secret store, referenced by id.
+     */
+    patch: {
+      parameters: {
+        query?: never
+        header?: never
+        path: {
+          /** @description Tool ID */
+          id: string
+        }
+        cookie?: never
+      }
+      /** @description Settings to change */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.ToolSettingsRequest']
+        }
+      }
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ToolViewResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
     trace?: never
   }
-  '/tools/platform': {
+  '/tools/settings': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
     /**
-     * List platform tools
-     * @description Get a paginated list of platform-provided tools (available to all tenants)
+     * Switch tools on or off
+     * @description Switch several tools on or off for the organization. Ids of tools it cannot see (another organization's custom tools, unknown ids) are ignored.
      */
-    get: {
+    patch: {
       parameters: {
-        query?: {
-          /** @description Filter by category */
-          category?: string
-          /** @description Filter by capabilities (comma-separated) */
-          capabilities?: string
-          /** @description Filter by active status */
-          is_active?: boolean
-          /** @description Search by name or description */
-          search?: string
-          /** @description Filter by tags (comma-separated) */
-          tags?: string
-          /** @description Page number */
-          page?: number
-          /** @description Items per page */
-          per_page?: number
-        }
+        query?: never
         header?: never
         path?: never
         cookie?: never
       }
-      requestBody?: never
+      /** @description Tools and the switch */
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['internal_infra_http_handler.BulkToolSettingsRequest']
+        }
+      }
       responses: {
-        /** @description OK */
-        200: {
+        /** @description No Content */
+        204: {
           headers: {
             [name: string]: unknown
           }
-          content: {
-            'application/json': components['schemas']['internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolResponse']
-          }
+          content?: never
         }
         /** @description Bad Request */
         400: {
@@ -33057,7 +32033,7 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
         /** @description Internal Server Error */
@@ -33066,17 +32042,11 @@ export interface paths {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+            '*/*': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
           }
         }
       }
     }
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
     trace?: never
   }
   '/users/me': {
@@ -36704,6 +35674,13 @@ export interface components {
        */
       step_up?: string
     }
+    'github_com_openctemio_openctem_api_internal_infra_http_include.Meta': {
+      /**
+       * @description OmittedIncludes were asked for but left out: the caller lacks the
+       *     permission they need.
+       */
+      omitted_includes?: string[]
+    }
     /** @enum {string} */
     'github_com_openctemio_openctem_api_pkg_apierror.Code':
       | 'BAD_REQUEST'
@@ -36721,6 +35698,7 @@ export interface components {
       | 'MFA_ENROLLMENT_REQUIRED'
       | 'APPROVAL_REQUIRED'
       | 'INVALID_FILTER'
+      | 'INVALID_INCLUDE'
     'github_com_openctemio_openctem_api_pkg_apierror.Error': {
       /** @description Machine-readable error code */
       code?: components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Code']
@@ -38577,7 +37555,8 @@ export interface components {
       success?: boolean
       updated_fields?: string[]
     }
-    'internal_infra_http_handler.BulkToolIDsRequest': {
+    'internal_infra_http_handler.BulkToolSettingsRequest': {
+      is_enabled: boolean
       tool_ids: string[]
     }
     'internal_infra_http_handler.BulkUpdateRequest': {
@@ -39595,6 +38574,13 @@ export interface components {
       email: string
       name?: string
       role_ids: string[]
+    }
+    'internal_infra_http_handler.CreateToolCategoryRequest': {
+      color?: string
+      description?: string
+      display_name: string
+      icon?: string
+      name: string
     }
     'internal_infra_http_handler.CreateToolRequest': {
       capabilities?: string[]
@@ -41028,30 +40014,6 @@ export interface components {
     }
     'internal_infra_http_handler.ListResponse-internal_infra_http_handler_SensorResponse': {
       data?: components['schemas']['internal_infra_http_handler.SensorResponse'][]
-      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
-      page?: number
-      per_page?: number
-      total?: number
-      total_pages?: number
-    }
-    'internal_infra_http_handler.ListResponse-internal_infra_http_handler_TenantToolConfigResponse': {
-      data?: components['schemas']['internal_infra_http_handler.TenantToolConfigResponse'][]
-      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
-      page?: number
-      per_page?: number
-      total?: number
-      total_pages?: number
-    }
-    'internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolResponse': {
-      data?: components['schemas']['internal_infra_http_handler.ToolResponse'][]
-      links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
-      page?: number
-      per_page?: number
-      total?: number
-      total_pages?: number
-    }
-    'internal_infra_http_handler.ListResponse-internal_infra_http_handler_ToolWithConfigResponse': {
-      data?: components['schemas']['internal_infra_http_handler.ToolWithConfigResponse'][]
       links?: components['schemas']['internal_infra_http_handler.PaginationLinks']
       page?: number
       per_page?: number
@@ -43130,34 +42092,6 @@ export interface components {
         ]: components['schemas']['internal_infra_http_handler.LicensingModuleResponse'][]
       }
     }
-    'internal_infra_http_handler.TenantToolConfigRequest': {
-      config?: {
-        [key: string]: unknown
-      }
-      is_enabled?: boolean
-    }
-    'internal_infra_http_handler.TenantToolConfigResponse': {
-      config?: {
-        [key: string]: unknown
-      }
-      created_at?: string
-      custom_patterns?: components['schemas']['internal_infra_http_handler.CustomPatternResponse'][]
-      custom_templates?: components['schemas']['internal_infra_http_handler.CustomTemplateResponse'][]
-      id?: string
-      is_enabled?: boolean
-      tenant_id?: string
-      tool_id?: string
-      updated_at?: string
-      updated_by?: string
-    }
-    'internal_infra_http_handler.TenantToolStatsResponse': {
-      failed_runs?: number
-      successful_runs?: number
-      tenant_id?: string
-      tool_breakdown?: components['schemas']['internal_infra_http_handler.ToolStatsResponse'][]
-      total_findings?: number
-      total_runs?: number
-    }
     /** @description Request body for testing integration credentials */
     'internal_infra_http_handler.TestIntegrationCredentialsRequest': {
       /**
@@ -43197,17 +42131,15 @@ export interface components {
       updated_at?: string
       version?: string
     }
-    'internal_infra_http_handler.ToolAvailabilityItem': {
+    'internal_infra_http_handler.ToolAvailabilityInfo': {
       content?: components['schemas']['internal_infra_http_handler.ToolContentVersionsResponse'][]
       /** @description Enabled: active in the catalog and switched on for the tenant. */
       enabled?: boolean
-      in_catalog?: boolean
       last_reported_at?: string
       latest_version?: string
       max_reported_version?: string
       min_reported_version?: string
       min_version?: string
-      name?: string
       /**
        * @description Sensors lists every sensor that reports the tool, online first. Empty
        *     without sensors:read (the counts are always given).
@@ -43222,23 +42154,8 @@ export interface components {
       sensors_total?: number
       /** @enum {string} */
       status?: 'ready' | 'no_sensor' | 'offline_only' | 'outdated' | 'disabled'
-      /**
-       * @description Tool is the catalog entry; null for a tool a sensor reports that the
-       *     tenant's catalog does not list.
-       */
-      tool?: components['schemas']['internal_infra_http_handler.ToolResponse']
       update_available?: boolean
       versions?: string[]
-    }
-    'internal_infra_http_handler.ToolAvailabilityResponse': {
-      computed_at?: string
-      items?: components['schemas']['internal_infra_http_handler.ToolAvailabilityItem'][]
-      /** @description Summary counts the tools per status (every status present). */
-      summary?: {
-        [key: string]: number
-      }
-      /** @description ZoneID is the scan zone the view is limited to. */
-      zone_id?: string
     }
     'internal_infra_http_handler.ToolAvailabilitySensor': {
       content?: components['schemas']['internal_infra_http_handler.ToolAvailabilityContent'][]
@@ -43261,6 +42178,27 @@ export interface components {
     'internal_infra_http_handler.ToolAvailabilityZone': {
       id?: string
       name?: string
+    }
+    'internal_infra_http_handler.ToolCategoryListResponse': {
+      items?: components['schemas']['internal_infra_http_handler.ToolCategoryResponse'][]
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
+    }
+    'internal_infra_http_handler.ToolCategoryResponse': {
+      color?: string
+      created_at?: string
+      created_by?: string
+      description?: string
+      display_name?: string
+      icon?: string
+      id?: string
+      is_builtin?: boolean
+      name?: string
+      sort_order?: number
+      tenant_id?: string
+      updated_at?: string
     }
     'internal_infra_http_handler.ToolConfigRequest': {
       /** @description IDs of custom templates */
@@ -43289,6 +42227,30 @@ export interface components {
     'internal_infra_http_handler.ToolContentVersionsResponse': {
       name?: string
       versions?: string[]
+    }
+    'internal_infra_http_handler.ToolListAvailability': {
+      computed_at?: string
+      /** @description Summary counts the tools per status (every status present). */
+      summary?: {
+        [key: string]: number
+      }
+      /**
+       * @description Unlisted are the tools the sensors report that the catalog does not
+       *     list (never enabled; not filtered or paginated).
+       */
+      unlisted?: components['schemas']['internal_infra_http_handler.UnlistedToolResponse'][]
+      /** @description ZoneID is the scan zone the view is limited to. */
+      zone_id?: string
+    }
+    'internal_infra_http_handler.ToolListResponse': {
+      availability?: components['schemas']['internal_infra_http_handler.ToolListAvailability']
+      items?: components['schemas']['internal_infra_http_handler.ToolViewResponse'][]
+      /** @description Meta lists the includes asked for but left out. */
+      meta?: components['schemas']['github_com_openctemio_openctem_api_internal_infra_http_include.Meta']
+      page?: number
+      per_page?: number
+      total?: number
+      total_pages?: number
     }
     'internal_infra_http_handler.ToolResponse': {
       capabilities?: string[]
@@ -43341,6 +42303,28 @@ export interface components {
       version_cmd?: string
       version_regex?: string
     }
+    'internal_infra_http_handler.ToolSettingsRequest': {
+      config?: {
+        [key: string]: unknown
+      }
+      is_enabled?: boolean
+    }
+    'internal_infra_http_handler.ToolSettingsResponse': {
+      /** @description Config is the tenant's overrides of the tool's default config. */
+      config?: {
+        [key: string]: unknown
+      }
+      custom_patterns?: components['schemas']['internal_infra_http_handler.CustomPatternResponse'][]
+      custom_templates?: components['schemas']['internal_infra_http_handler.CustomTemplateResponse'][]
+      /** @description EffectiveConfig is the default config with the overrides applied. */
+      effective_config?: {
+        [key: string]: unknown
+      }
+      /** @description IsEnabled is the tenant's switch (a tool never configured is on). */
+      is_enabled?: boolean
+      updated_at?: string
+      updated_by?: string
+    }
     'internal_infra_http_handler.ToolStatsResponse': {
       avg_duration_ms?: number
       failed_runs?: number
@@ -43349,15 +42333,70 @@ export interface components {
       total_findings?: number
       total_runs?: number
     }
-    'internal_infra_http_handler.ToolWithConfigResponse': {
-      effective_config?: {
+    'internal_infra_http_handler.ToolViewResponse': {
+      /** @description Availability: include=availability. */
+      availability?: components['schemas']['internal_infra_http_handler.ToolAvailabilityInfo']
+      capabilities?: string[]
+      /** @description Embedded category info for UI grouping */
+      category?: components['schemas']['internal_infra_http_handler.EmbeddedCategoryResponse']
+      /** @description Foreign key to tool_categories table */
+      category_id?: string
+      config_file_path?: string
+      config_schema?: {
         [key: string]: unknown
       }
-      /** @description True if at least one sensor supports this tool */
-      is_available?: boolean
-      is_enabled?: boolean
-      tenant_config?: components['schemas']['internal_infra_http_handler.TenantToolConfigResponse']
-      tool?: components['schemas']['internal_infra_http_handler.ToolResponse']
+      created_at?: string
+      /** @description User ID who created the tool (for custom tools) */
+      created_by?: string
+      current_version?: string
+      default_config?: {
+        [key: string]: unknown
+      }
+      description?: string
+      display_name?: string
+      docs_url?: string
+      github_url?: string
+      has_update?: boolean
+      id?: string
+      install_cmd?: string
+      install_method?: string
+      is_active?: boolean
+      is_builtin?: boolean
+      /** @description true for platform tools, false for custom */
+      is_platform_tool?: boolean
+      latest_version?: string
+      logo_url?: string
+      /** @description Meta lists the includes left out (GET /tools/{id} only). */
+      meta?: components['schemas']['github_com_openctemio_openctem_api_internal_infra_http_include.Meta']
+      metadata?: {
+        [key: string]: unknown
+      }
+      min_version?: string
+      name?: string
+      output_formats?: string[]
+      /**
+       * @description OutputTypes are the asset types a report of the tool may create
+       *     (scan stage catalog); read-only.
+       */
+      output_types?: string[]
+      /** @description Settings: include=settings. */
+      settings?: components['schemas']['internal_infra_http_handler.ToolSettingsResponse']
+      /**
+       * @description Source: platform (shared, managed by the platform) or custom (this
+       *     organization's own tool).
+       * @enum {string}
+       */
+      source?: 'platform' | 'custom'
+      /** @description Stats: include=stats. */
+      stats?: components['schemas']['internal_infra_http_handler.ToolStatsResponse']
+      supported_targets?: string[]
+      tags?: string[]
+      /** @description nil for platform tools, UUID for custom tools */
+      tenant_id?: string
+      update_cmd?: string
+      updated_at?: string
+      version_cmd?: string
+      version_regex?: string
     }
     'internal_infra_http_handler.TriageFindingRequest': {
       /** @description Optional reason for confirmation */
@@ -43380,6 +42419,33 @@ export interface components {
     'internal_infra_http_handler.UIPositionRequest': {
       x?: number
       y?: number
+    }
+    'internal_infra_http_handler.UnlistedToolResponse': {
+      content?: components['schemas']['internal_infra_http_handler.ToolContentVersionsResponse'][]
+      /** @description Enabled: active in the catalog and switched on for the tenant. */
+      enabled?: boolean
+      last_reported_at?: string
+      latest_version?: string
+      max_reported_version?: string
+      min_reported_version?: string
+      min_version?: string
+      name?: string
+      /**
+       * @description Sensors lists every sensor that reports the tool, online first. Empty
+       *     without sensors:read (the counts are always given).
+       */
+      sensors?: components['schemas']['internal_infra_http_handler.ToolAvailabilitySensor'][]
+      sensors_excluded?: number
+      /**
+       * @description SensorsOnline / SensorsTotal count the sensors that may run the tool;
+       *     SensorsExcluded those that have it but may not.
+       */
+      sensors_online?: number
+      sensors_total?: number
+      /** @enum {string} */
+      status?: 'ready' | 'no_sensor' | 'offline_only' | 'outdated' | 'disabled'
+      update_available?: boolean
+      versions?: string[]
     }
     'internal_infra_http_handler.UnreadCountResponse': {
       count?: number
@@ -43726,6 +42792,12 @@ export interface components {
       name?: string
       s3_config?: components['schemas']['github_com_openctemio_openctem_api_pkg_domain_templatesource.S3SourceConfig']
     }
+    'internal_infra_http_handler.UpdateToolCategoryRequest': {
+      color?: string
+      description?: string
+      display_name: string
+      icon?: string
+    }
     'internal_infra_http_handler.UpdateToolRequest': {
       capabilities?: string[]
       /** @description Optional: link to tool_categories table */
@@ -43865,12 +42937,6 @@ export interface components {
         'application/json': components['schemas']['internal_infra_http_handler.SavedViewRequest']
       }
     }
-    /** @description Update data */
-    'internal_infra_http_handler.UpdateToolRequest': {
-      content: {
-        'application/json': components['schemas']['internal_infra_http_handler.UpdateToolRequest']
-      }
-    }
     /** @description Filter document */
     'internal_infra_http_handler.FindingSearchRequest': {
       content: {
@@ -43893,18 +42959,6 @@ export interface components {
     'internal_infra_http_handler.RefreshContentRequest': {
       content: {
         'application/json': components['schemas']['internal_infra_http_handler.RefreshContentRequest']
-      }
-    }
-    /** @description Tool data */
-    'internal_infra_http_handler.CreateToolRequest': {
-      content: {
-        'application/json': components['schemas']['internal_infra_http_handler.CreateToolRequest']
-      }
-    }
-    /** @description Tool IDs */
-    'internal_infra_http_handler.BulkToolIDsRequest': {
-      content: {
-        'application/json': components['schemas']['internal_infra_http_handler.BulkToolIDsRequest']
       }
     }
   }

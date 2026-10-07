@@ -271,10 +271,7 @@ export function PipelineForm({ pipeline, onSubmit, onCancel, isSubmitting }: Pip
   const [currentStep, setCurrentStep] = useState<WizardStep>('basics')
 
   // Fetch tools for selection
-  const { data: toolsData, isLoading: toolsLoading } = useToolsWithConfig({
-    is_active: true,
-    per_page: 100,
-  })
+  const { data: toolsData, isLoading: toolsLoading } = useToolsWithConfig()
 
   // Form state
   const [name, setName] = useState(pipeline?.name || '')

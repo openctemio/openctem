@@ -160,14 +160,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
   const { getDisplayName: getCapabilityDisplayName } = useCapabilityMetadata()
 
   // Fetch tools from API
-  const {
-    data: toolsData,
-    isLoading,
-    error,
-  } = useToolsWithConfig({
-    is_active: true,
-    per_page: 100,
-  })
+  const { data: toolsData, isLoading, error } = useToolsWithConfig()
 
   // Why a tool cannot run now (the same source as the Tools page).
   const { data: availData } = useToolAvailability()
@@ -334,7 +327,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                       const tool = toolWithConfig.tool
                       const Icon = getIconForTool(tool)
                       const iconBg = getColorForTool(tool)
-                      const isAvailable = toolWithConfig.is_available
+                      const isAvailable = toolWithConfig.is_available === true
                       const avail = availability.get(tool.name)
                       const unavailableReason =
                         toolUnavailableReason(avail) ?? 'No online sensor can run it'
