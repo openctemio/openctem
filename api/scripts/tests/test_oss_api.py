@@ -693,10 +693,10 @@ def test_tools():
     log_section("TOOL TESTS")
 
     # List platform tools
-    result = api_request("GET", "/tools/platform")
+    result = api_request("GET", "/tools?source=platform")
     if result:
-        tools = result.get("tools", [])
-        log_success(f"GET /tools/platform - Listed {len(tools)} platform tools")
+        tools = result.get("items", [])
+        log_success(f"GET /tools?source=platform - Listed {len(tools)} platform tools")
         for tool in tools[:5]:
             log_info(f"  - {tool.get('name')} ({tool.get('category')})")
     else:

@@ -71,6 +71,10 @@ type ToolAvailabilityResult struct {
 	ComputedAt time.Time
 }
 
+// ErrZoneNotFound: the scan zone the availability view was asked for is
+// not the tenant's (or does not exist).
+var ErrZoneNotFound = fmt.Errorf("%w: scan zone", shared.ErrNotFound)
+
 // ToolAvailability computes the tenant's tool availability. zoneID ("" for
 // none) limits it to the sensors of one of the tenant's scan zones; a zone
 // of another tenant is not found.
@@ -98,7 +102,7 @@ func (s *Service) ToolAvailability(ctx context.Context, tenantID, zoneID string)
 	}
 	if zone != nil {
 		if _, ok := zoneNames[*zone]; !ok {
-			return nil, fmt.Errorf("%w: scan zone", shared.ErrNotFound)
+			return nil, ErrZoneNotFound
 		}
 	}
 

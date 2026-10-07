@@ -81,10 +81,7 @@ export default function PipelineBuilderPage({ params }: PageProps) {
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
 
   // Fetch tools for selection
-  const { data: toolsData } = useToolsWithConfig({
-    is_active: true,
-    per_page: 100,
-  })
+  const { data: toolsData } = useToolsWithConfig()
 
   // Convert tools to AvailableTool format for inline editing (including capabilities)
   // Capabilities are now sourced from the normalized tool_capabilities junction table

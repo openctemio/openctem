@@ -1007,7 +1007,7 @@ Code: `pkg/domain/sensor/manifest.go`, `internal/app/sensor/manifest.go`,
 
 ### Tool availability
 
-The Tools page, the scan builder and the workflow step pickers read the tools of the current manifests through one view, `GET /api/v1/tenant-tools/availability`. It joins them with the catalog per tenant and derives a status per tool: ready, no_sensor, offline_only, outdated or disabled. See [tool-availability.md](tool-availability.md).
+The Tools page, the scan builder and the workflow step pickers read the tools of the current manifests through one view, `GET /api/v1/tools?include=availability`. It joins them with the catalog per tenant and derives a status per tool: ready, no_sensor, offline_only, outdated or disabled. See [tool-availability.md](tool-availability.md).
 
 ## Collector sensors
 
