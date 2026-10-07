@@ -27,12 +27,12 @@ func TestStepRunAssignSensor_MarksStartedOnlyFromPendingOrQueued(t *testing.T) {
 
 	seedStep := func(key, status string) (stepRunID, commandID shared.ID) {
 		stepID, stepRunID, commandID := shared.NewID(), shared.NewID(), shared.NewID()
-		mustExec(t, db, `INSERT INTO pipeline_steps (id, pipeline_id, step_key, name, step_order)
+		mustExec(t, db, `INSERT INTO scan_workflow_steps (id, scan_workflow_id, step_key, name, step_order)
 			VALUES ($1, $2, $3, $3, 1)`, stepID.String(), templateID.String(), key)
 		mustExec(t, db, `INSERT INTO commands (id, tenant_id, sensor_id, type, status, payload)
 			VALUES ($1, $2, $3, 'scan', 'running', '{}'::jsonb)`,
 			commandID.String(), tenantID.String(), sensorID.String())
-		mustExec(t, db, `INSERT INTO step_runs (id, pipeline_run_id, step_id, step_key, step_order, status)
+		mustExec(t, db, `INSERT INTO scan_run_steps (id, scan_run_id, step_id, step_key, step_order, status)
 			VALUES ($1, $2, $3, $4, 1, $5)`,
 			stepRunID.String(), runID.String(), stepID.String(), key, status)
 		return stepRunID, commandID
@@ -47,7 +47,7 @@ func TestStepRunAssignSensor_MarksStartedOnlyFromPendingOrQueued(t *testing.T) {
 		var r row
 		var sensor sql.NullString
 		var started sql.NullTime
-		if err := db.QueryRowContext(ctx, `SELECT status, started_at, sensor_id FROM step_runs WHERE id = $1`,
+		if err := db.QueryRowContext(ctx, `SELECT status, started_at, sensor_id FROM scan_run_steps WHERE id = $1`,
 			id.String()).Scan(&r.status, &started, &sensor); err != nil {
 			t.Fatalf("read step run: %v", err)
 		}

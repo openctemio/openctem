@@ -1,7 +1,7 @@
 package integration
 
 // Scope exclusions were enforced only at scan trigger (RFC-042 F16): ingest
-// and POST /pipelines/runs ignored them. These tests run the real services on
+// and POST /scan-workflows/runs ignored them. These tests run the real services on
 // a migrated database with approved exclusions. Design:
 // docs/rfcs/RFC-042-asset-inventory-v2.md.
 
@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+
 	"github.com/openctemio/ctis"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
-	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	scopesvc "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -126,12 +127,12 @@ func TestPipelineRun_TargetsPassTheScanGate(t *testing.T) {
 
 	templateID := shared.NewID()
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO pipeline_templates (id, tenant_id, name, description, is_active) VALUES ($1, $2, 'gate test', '', TRUE)`,
+		`INSERT INTO scan_workflows (id, tenant_id, name, description, is_active) VALUES ($1, $2, 'gate test', '', TRUE)`,
 		templateID.String(), tenant.String()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO pipeline_steps (id, pipeline_id, step_key, name, description, step_order, tool) VALUES ($1, $2, 'scan', 'Scan', '', 1, 'nuclei')`,
+		`INSERT INTO scan_workflow_steps (id, scan_workflow_id, step_key, name, description, step_order, tool) VALUES ($1, $2, 'scan', 'Scan', '', 1, 'nuclei')`,
 		shared.NewID().String(), templateID.String()); err != nil {
 		t.Fatal(err)
 	}
@@ -141,16 +142,16 @@ func TestPipelineRun_TargetsPassTheScanGate(t *testing.T) {
 
 	gate := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
 		scansvc.WithActScope(actScopeChecker(db)), scansvc.WithAttributionGate(ownershipGate(db)))
-	svc := pipelinesvc.NewService(
-		postgres.NewPipelineTemplateRepository(pg), postgres.NewPipelineStepRepository(pg),
-		postgres.NewPipelineRunRepository(pg), postgres.NewStepRunRepository(pg),
+	svc := scanrun.NewService(
+		postgres.NewScanWorkflowRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
+		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg),
 		postgres.NewSensorRepository(pg), postgres.NewCommandRepository(pg),
 		nil, logger.New(logger.Config{Level: "error"}),
-		pipelinesvc.WithTargetGate(gate),
-		pipelinesvc.WithWebScope(scopeService(db)),
+		scanrun.WithTargetGate(gate),
+		scanrun.WithWebScope(scopeService(db)),
 	)
 	trigger := func(runContext map[string]any) error {
-		_, err := svc.TriggerPipeline(ctx, pipelinesvc.TriggerPipelineInput{
+		_, err := svc.TriggerPipeline(ctx, scanrun.TriggerRunInput{
 			TenantID: tenant.String(), TemplateID: templateID.String(), TriggerType: "api", Context: runContext,
 		})
 		return err
@@ -219,10 +220,10 @@ func newTriggerServiceWith(db *sql.DB, opts ...scansvc.ServiceOption) *scansvc.S
 	pg := &postgres.DB{DB: db}
 	return scansvc.NewService(
 		postgres.NewScanRepository(pg),
-		postgres.NewPipelineTemplateRepository(pg),
+		postgres.NewScanWorkflowRepository(pg),
 		nil,
-		postgres.NewPipelineRunRepository(pg),
-		postgres.NewPipelineStepRepository(pg),
+		postgres.NewScanRunRepository(pg),
+		postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewStepRunRepository(pg),
 		postgres.NewCommandRepository(pg),
 		nil, nil,

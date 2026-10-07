@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
@@ -24,8 +26,8 @@ import (
 type ConnectorScans interface {
 	ValidateScanConfig(ctx context.Context, tenantID shared.ID, cfg map[string]any) error
 	// NewScanCommand builds the command; bookkeeping carries the run's
-	// pipeline keys (run_id, scan_id, pipeline_run_id, step_key,
-	// step_run_id).
+	// scan workflow keys (run_id, scan_id, scan_run_id, step_key,
+	// scan_run_step_id).
 	NewScanCommand(ctx context.Context, tenantID shared.ID, cfg map[string]any, targets []string,
 		bookkeeping map[string]string) (*command.Command, error)
 }
@@ -75,8 +77,8 @@ func connectorRunUser(sc *scan.Scan) *shared.ID {
 // private ranges only inside a scan zone, exclusions, act scope), then one
 // connector_scan command is queued for the connector's sensor.
 func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resolved *resolvedTargets,
-	triggerType pipeline.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int,
-	scheduledFor *time.Time, freezeOverride bool) (*pipeline.Run, error) {
+	triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int,
+	scheduledFor *time.Time, freezeOverride bool) (*scanrun.Run, error) {
 	if s.connectorScans == nil {
 		return nil, ErrConnectorScansUnavailable
 	}
@@ -107,7 +109,7 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 	}
 
 	quickScanTemplateID, _ := shared.IDFromString(QuickScanTemplateID)
-	run, err := pipeline.NewRun(quickScanTemplateID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
+	run, err := scanrun.NewRun(quickScanTemplateID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create run: %w", err)
 	}
@@ -127,9 +129,9 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 
 	bk := map[string]string{"run_id": run.ID.String(), "scan_id": sc.ID.String()}
 	if stepRun != nil {
-		bk[pipeline.PayloadKeyPipelineRunID] = run.ID.String()
-		bk[pipeline.PayloadKeyStepKey] = stepRun.StepKey
-		bk[pipeline.PayloadKeyStepRunID] = stepRun.ID.String()
+		bk[scanrun.PayloadKeyScanRunID] = run.ID.String()
+		bk[scanrun.PayloadKeyStepKey] = stepRun.StepKey
+		bk[scanrun.PayloadKeyStepRunID] = stepRun.ID.String()
 	}
 	cmd, err := s.connectorScans.NewScanCommand(ctx, sc.TenantID, sc.ScannerConfig, gated.Allowed, bk)
 	if err == nil {

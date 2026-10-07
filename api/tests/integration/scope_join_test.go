@@ -19,7 +19,7 @@ import (
 
 func scopeJoin(db *sql.DB) *easmapp.ScopeJoin {
 	pg := &postgres.DB{DB: db}
-	j := easmapp.NewScopeJoin(scopeService(db), postgres.NewEASMSeedRepository(pg), scopeService(db),
+	j := easmapp.NewScopeJoin(scopeService(db), scopeService(db),
 		postgres.NewAttributionRepository(pg), postgres.NewAssetRepository(pg), logger.NewNop())
 	j.SetAudit(auditapp.NewAuditService(postgres.NewAuditRepository(pg), logger.NewNop()))
 	return j
@@ -52,7 +52,7 @@ func TestScopeJoin(t *testing.T) {
 	seedScopeTarget(t, db, tenantA, "domain", "*.join-a.example")
 	seedScopeTarget(t, db, tenantA, "cidr", "198.51.100.0/24")
 	exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1, 'domain', '*.paused-a.example', 'inactive')`, tenantA.String())
-	exec(`INSERT INTO easm_seeds (id, tenant_id, kind, value) VALUES ($1, $2, 'root_domain', 'seeded-a.example')`, shared.NewID().String(), tenantA.String())
+	seedScopeTarget(t, db, tenantA, "domain", "*.seeded-a.example") // a folded seed is a permanent entry
 	exec(`INSERT INTO scope_exclusions (tenant_id, exclusion_type, pattern, reason, status, approved_by, approved_at, created_by)
 		VALUES ($1, 'domain', 'excl.join-a.example', 'not ours', 'active', 'approver', now(), 'requester')`, tenantA.String())
 	exec(`INSERT INTO easm_tombstones (tenant_id, name) VALUES ($1, 'dead.join-a.example')`, tenantA.String())

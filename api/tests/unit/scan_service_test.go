@@ -9,14 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	assettyperef "github.com/openctemio/openctem/api/pkg/domain/asset"
 
-	pipelineapp "github.com/openctemio/openctem/api/internal/app/pipeline"
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -38,15 +40,15 @@ type mockScanRepo struct {
 	lastListFilter scan.Filter
 
 	// Error overrides for specific methods
-	createErr        error
-	getByTenantErr   error
-	updateErr        error
-	deleteErr        error
-	listErr          error
-	listDueErr       error
-	statsErr         error
-	listByPipelineID []*scan.Scan
-	listByPipelineE  error
+	createErr            error
+	getByTenantErr       error
+	updateErr            error
+	deleteErr            error
+	listErr              error
+	listDueErr           error
+	statsErr             error
+	listByScanWorkflowID []*scan.Scan
+	listByScanWorkflowE  error
 
 	updateCalls int         // full-row Update calls
 	refreshes   []shared.ID // RefreshRunSummary calls (scan ids)
@@ -179,11 +181,11 @@ func (m *mockScanRepo) ListByAssetGroupID(_ context.Context, _ shared.ID) ([]*sc
 	return nil, nil
 }
 
-func (m *mockScanRepo) ListByPipelineID(_ context.Context, _ shared.ID) ([]*scan.Scan, error) {
-	if m.listByPipelineE != nil {
-		return nil, m.listByPipelineE
+func (m *mockScanRepo) ListByScanWorkflowID(_ context.Context, _ shared.ID) ([]*scan.Scan, error) {
+	if m.listByScanWorkflowE != nil {
+		return nil, m.listByScanWorkflowE
 	}
-	return m.listByPipelineID, nil
+	return m.listByScanWorkflowID, nil
 }
 
 func (m *mockScanRepo) UpdateStatusByAssetGroupID(_ context.Context, _ shared.ID, _ scan.Status) error {
@@ -200,23 +202,23 @@ func (m *mockScanRepo) addScan(s *scan.Scan) {
 }
 
 // =============================================================================
-// Mock: pipeline.TemplateRepository
+// Mock: scanrun.TemplateRepository
 // =============================================================================
 
 type mockTemplateRepo struct {
-	templates map[string]*pipeline.Template
+	templates map[string]*scanworkflow.Workflow
 }
 
 func newMockTemplateRepo() *mockTemplateRepo {
-	return &mockTemplateRepo{templates: make(map[string]*pipeline.Template)}
+	return &mockTemplateRepo{templates: make(map[string]*scanworkflow.Workflow)}
 }
 
-func (m *mockTemplateRepo) Create(_ context.Context, t *pipeline.Template) error {
+func (m *mockTemplateRepo) Create(_ context.Context, t *scanworkflow.Workflow) error {
 	m.templates[t.ID.String()] = t
 	return nil
 }
 
-func (m *mockTemplateRepo) GetByID(_ context.Context, id shared.ID) (*pipeline.Template, error) {
+func (m *mockTemplateRepo) GetByID(_ context.Context, id shared.ID) (*scanworkflow.Workflow, error) {
 	t, ok := m.templates[id.String()]
 	if !ok {
 		return nil, shared.ErrNotFound
@@ -224,7 +226,7 @@ func (m *mockTemplateRepo) GetByID(_ context.Context, id shared.ID) (*pipeline.T
 	return t, nil
 }
 
-func (m *mockTemplateRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*pipeline.Template, error) {
+func (m *mockTemplateRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*scanworkflow.Workflow, error) {
 	t, ok := m.templates[id.String()]
 	if !ok {
 		return nil, shared.ErrNotFound
@@ -232,30 +234,30 @@ func (m *mockTemplateRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) 
 	return t, nil
 }
 
-func (m *mockTemplateRepo) GetByName(_ context.Context, _ shared.ID, _ string, _ int) (*pipeline.Template, error) {
+func (m *mockTemplateRepo) GetByName(_ context.Context, _ shared.ID, _ string, _ int) (*scanworkflow.Workflow, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *mockTemplateRepo) List(_ context.Context, _ pipeline.TemplateFilter, _ pagination.Pagination) (pagination.Result[*pipeline.Template], error) {
-	return pagination.Result[*pipeline.Template]{}, nil
+func (m *mockTemplateRepo) List(_ context.Context, _ scanworkflow.Filter, _ pagination.Pagination) (pagination.Result[*scanworkflow.Workflow], error) {
+	return pagination.Result[*scanworkflow.Workflow]{}, nil
 }
 
-func (m *mockTemplateRepo) Update(_ context.Context, _ *pipeline.Template) error { return nil }
-func (m *mockTemplateRepo) Delete(_ context.Context, _ shared.ID) error          { return nil }
+func (m *mockTemplateRepo) Update(_ context.Context, _ *scanworkflow.Workflow) error { return nil }
+func (m *mockTemplateRepo) Delete(_ context.Context, _ shared.ID) error              { return nil }
 func (m *mockTemplateRepo) DeleteInTx(_ context.Context, _ *sql.Tx, _ shared.ID) error {
 	return nil
 }
-func (m *mockTemplateRepo) GetWithSteps(_ context.Context, id shared.ID) (*pipeline.Template, error) {
+func (m *mockTemplateRepo) GetWithSteps(_ context.Context, id shared.ID) (*scanworkflow.Workflow, error) {
 	if t, ok := m.templates[id.String()]; ok {
 		return t, nil
 	}
 	return nil, shared.ErrNotFound
 }
-func (m *mockTemplateRepo) GetSystemTemplateByID(_ context.Context, _ shared.ID) (*pipeline.Template, error) {
+func (m *mockTemplateRepo) GetSystemTemplateByID(_ context.Context, _ shared.ID) (*scanworkflow.Workflow, error) {
 	return nil, nil
 }
-func (m *mockTemplateRepo) ListWithSystemTemplates(_ context.Context, _ shared.ID, _ pipeline.TemplateFilter, _ pagination.Pagination) (pagination.Result[*pipeline.Template], error) {
-	return pagination.Result[*pipeline.Template]{}, nil
+func (m *mockTemplateRepo) ListWithSystemTemplates(_ context.Context, _ shared.ID, _ scanworkflow.Filter, _ pagination.Pagination) (pagination.Result[*scanworkflow.Workflow], error) {
+	return pagination.Result[*scanworkflow.Workflow]{}, nil
 }
 
 // =============================================================================
@@ -353,26 +355,26 @@ func (m *mockAssetGroupRepo) CountAssetsByType(_ context.Context, _ shared.ID) (
 }
 
 // =============================================================================
-// Mock: pipeline.RunRepository
+// Mock: scanrun.RunRepository
 // =============================================================================
 
 type mockRunRepo struct {
-	runs                map[string]*pipeline.Run
+	runs                map[string]*scanrundom.Run
 	createLimitErr      error
 	activeByScanCount   int
 	activeByTenantCount int
 }
 
 func newMockRunRepo() *mockRunRepo {
-	return &mockRunRepo{runs: make(map[string]*pipeline.Run)}
+	return &mockRunRepo{runs: make(map[string]*scanrundom.Run)}
 }
 
-func (m *mockRunRepo) Create(_ context.Context, r *pipeline.Run) error {
+func (m *mockRunRepo) Create(_ context.Context, r *scanrundom.Run) error {
 	m.runs[r.ID.String()] = r
 	return nil
 }
 
-func (m *mockRunRepo) GetByID(_ context.Context, id shared.ID) (*pipeline.Run, error) {
+func (m *mockRunRepo) GetByID(_ context.Context, id shared.ID) (*scanrundom.Run, error) {
 	r, ok := m.runs[id.String()]
 	if !ok {
 		return nil, shared.ErrNotFound
@@ -380,7 +382,7 @@ func (m *mockRunRepo) GetByID(_ context.Context, id shared.ID) (*pipeline.Run, e
 	return r, nil
 }
 
-func (m *mockRunRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*pipeline.Run, error) {
+func (m *mockRunRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*scanrundom.Run, error) {
 	r, ok := m.runs[id.String()]
 	if !ok {
 		return nil, shared.ErrNotFound
@@ -388,30 +390,30 @@ func (m *mockRunRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*pip
 	return r, nil
 }
 
-func (m *mockRunRepo) List(_ context.Context, _ pipeline.RunFilter, _ pagination.Pagination) (pagination.Result[*pipeline.Run], error) {
-	return pagination.Result[*pipeline.Run]{}, nil
+func (m *mockRunRepo) List(_ context.Context, _ scanrundom.RunFilter, _ pagination.Pagination) (pagination.Result[*scanrundom.Run], error) {
+	return pagination.Result[*scanrundom.Run]{}, nil
 }
 
-func (m *mockRunRepo) ListByScanID(_ context.Context, _ shared.ID, _, _ int) ([]*pipeline.Run, int64, error) {
+func (m *mockRunRepo) ListByScanID(_ context.Context, _ shared.ID, _, _ int) ([]*scanrundom.Run, int64, error) {
 	return nil, 0, nil
 }
 
-func (m *mockRunRepo) Update(_ context.Context, r *pipeline.Run) error {
+func (m *mockRunRepo) Update(_ context.Context, r *scanrundom.Run) error {
 	m.runs[r.ID.String()] = r
 	return nil
 }
 
 func (m *mockRunRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
-func (m *mockRunRepo) GetWithStepRuns(_ context.Context, _ shared.ID) (*pipeline.Run, error) {
+func (m *mockRunRepo) GetWithStepRuns(_ context.Context, _ shared.ID) (*scanrundom.Run, error) {
 	return nil, nil
 }
-func (m *mockRunRepo) GetActiveByPipelineID(_ context.Context, _ shared.ID) ([]*pipeline.Run, error) {
+func (m *mockRunRepo) GetActiveByScanWorkflowID(_ context.Context, _ shared.ID) ([]*scanrundom.Run, error) {
 	return nil, nil
 }
-func (m *mockRunRepo) GetActiveByAssetID(_ context.Context, _ shared.ID) ([]*pipeline.Run, error) {
+func (m *mockRunRepo) GetActiveByAssetID(_ context.Context, _ shared.ID) ([]*scanrundom.Run, error) {
 	return nil, nil
 }
-func (m *mockRunRepo) CountActiveByPipelineID(_ context.Context, _ shared.ID) (int, error) {
+func (m *mockRunRepo) CountActiveByScanWorkflowID(_ context.Context, _ shared.ID) (int, error) {
 	return 0, nil
 }
 func (m *mockRunRepo) CountActiveByTenantID(_ context.Context, _ shared.ID) (int, error) {
@@ -420,7 +422,7 @@ func (m *mockRunRepo) CountActiveByTenantID(_ context.Context, _ shared.ID) (int
 func (m *mockRunRepo) CountActiveByScanID(_ context.Context, _ shared.ID) (int, error) {
 	return m.activeByScanCount, nil
 }
-func (m *mockRunRepo) CreateRunIfUnderLimit(_ context.Context, r *pipeline.Run, _, _ int) error {
+func (m *mockRunRepo) CreateRunIfUnderLimit(_ context.Context, r *scanrundom.Run, _, _ int) error {
 	if m.createLimitErr != nil {
 		return m.createLimitErr
 	}
@@ -428,16 +430,16 @@ func (m *mockRunRepo) CreateRunIfUnderLimit(_ context.Context, r *pipeline.Run, 
 	return nil
 }
 func (m *mockRunRepo) UpdateStats(_ context.Context, _ shared.ID, _, _, _, _ int) error { return nil }
-func (m *mockRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ pipeline.RunStatus, _ string) error {
+func (m *mockRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ scanrundom.RunStatus, _ string) error {
 	return nil
 }
-func (m *mockRunRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (pipeline.RunStats, error) {
-	return pipeline.RunStats{}, nil
+func (m *mockRunRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (scanrundom.RunStats, error) {
+	return scanrundom.RunStats{}, nil
 }
 func (m *mockRunRepo) MarkTimedOutRuns(_ context.Context) (int64, error) {
 	return 0, nil
 }
-func (m *mockRunRepo) ListPendingRetries(_ context.Context, _ int) ([]pipeline.RetryCandidate, error) {
+func (m *mockRunRepo) ListPendingRetries(_ context.Context, _ int) ([]scanrundom.RetryCandidate, error) {
 	return nil, nil
 }
 func (m *mockRunRepo) ReleaseFailedRetryDispatch(_ context.Context, _ shared.ID) error {
@@ -445,74 +447,74 @@ func (m *mockRunRepo) ReleaseFailedRetryDispatch(_ context.Context, _ shared.ID)
 }
 
 // =============================================================================
-// Mock: pipeline.StepRepository
+// Mock: scanrun.StepRepository
 // =============================================================================
 
 type mockStepRepo struct {
-	steps map[string][]*pipeline.Step // keyed by pipeline ID
+	steps map[string][]*scanworkflow.Step // keyed by scan workflow ID
 }
 
 func newMockStepRepo() *mockStepRepo {
-	return &mockStepRepo{steps: make(map[string][]*pipeline.Step)}
+	return &mockStepRepo{steps: make(map[string][]*scanworkflow.Step)}
 }
 
-func (m *mockStepRepo) Create(_ context.Context, _ *pipeline.Step) error        { return nil }
-func (m *mockStepRepo) CreateBatch(_ context.Context, _ []*pipeline.Step) error { return nil }
-func (m *mockStepRepo) GetByID(_ context.Context, _ shared.ID) (*pipeline.Step, error) {
+func (m *mockStepRepo) Create(_ context.Context, _ *scanworkflow.Step) error        { return nil }
+func (m *mockStepRepo) CreateBatch(_ context.Context, _ []*scanworkflow.Step) error { return nil }
+func (m *mockStepRepo) GetByID(_ context.Context, _ shared.ID) (*scanworkflow.Step, error) {
 	return nil, nil
 }
-func (m *mockStepRepo) GetByPipelineID(_ context.Context, pipelineID shared.ID) ([]*pipeline.Step, error) {
-	steps, ok := m.steps[pipelineID.String()]
+func (m *mockStepRepo) GetByScanWorkflowID(_ context.Context, scanWorkflowID shared.ID) ([]*scanworkflow.Step, error) {
+	steps, ok := m.steps[scanWorkflowID.String()]
 	if !ok {
-		return []*pipeline.Step{}, nil
+		return []*scanworkflow.Step{}, nil
 	}
 	return steps, nil
 }
-func (m *mockStepRepo) GetByKey(_ context.Context, _ shared.ID, _ string) (*pipeline.Step, error) {
+func (m *mockStepRepo) GetByKey(_ context.Context, _ shared.ID, _ string) (*scanworkflow.Step, error) {
 	return nil, nil
 }
-func (m *mockStepRepo) Update(_ context.Context, _ *pipeline.Step) error        { return nil }
-func (m *mockStepRepo) Delete(_ context.Context, _ shared.ID) error             { return nil }
-func (m *mockStepRepo) DeleteByPipelineID(_ context.Context, _ shared.ID) error { return nil }
-func (m *mockStepRepo) DeleteByPipelineIDInTx(_ context.Context, _ *sql.Tx, _ shared.ID) error {
+func (m *mockStepRepo) Update(_ context.Context, _ *scanworkflow.Step) error        { return nil }
+func (m *mockStepRepo) Delete(_ context.Context, _ shared.ID) error                 { return nil }
+func (m *mockStepRepo) DeleteByScanWorkflowID(_ context.Context, _ shared.ID) error { return nil }
+func (m *mockStepRepo) DeleteByScanWorkflowIDInTx(_ context.Context, _ *sql.Tx, _ shared.ID) error {
 	return nil
 }
 func (m *mockStepRepo) Reorder(_ context.Context, _ shared.ID, _ map[string]int) error { return nil }
-func (m *mockStepRepo) FindPipelineIDsByToolName(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
+func (m *mockStepRepo) FindScanWorkflowIDsByToolName(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
 	return nil, nil
 }
-func (m *mockStepRepo) MutateSteps(_ context.Context, _, pipelineID shared.ID, mutate func([]*pipeline.Step) ([]*pipeline.Step, error)) ([]*pipeline.Step, error) {
-	next, err := mutate(m.steps[pipelineID.String()])
+func (m *mockStepRepo) MutateSteps(_ context.Context, _, scanWorkflowID shared.ID, mutate func([]*scanworkflow.Step) ([]*scanworkflow.Step, error)) ([]*scanworkflow.Step, error) {
+	next, err := mutate(m.steps[scanWorkflowID.String()])
 	if err != nil {
 		return nil, err
 	}
-	m.steps[pipelineID.String()] = next
+	m.steps[scanWorkflowID.String()] = next
 	return next, nil
 }
 
 // =============================================================================
-// Mock: pipeline.StepRunRepository
+// Mock: scanrun.StepRunRepository
 // =============================================================================
 
 type mockStepRunRepo struct{}
 
-func (m *mockStepRunRepo) Create(_ context.Context, _ *pipeline.StepRun) error        { return nil }
-func (m *mockStepRunRepo) CreateBatch(_ context.Context, _ []*pipeline.StepRun) error { return nil }
-func (m *mockStepRunRepo) GetByID(_ context.Context, _ shared.ID) (*pipeline.StepRun, error) {
+func (m *mockStepRunRepo) Create(_ context.Context, _ *scanrundom.StepRun) error        { return nil }
+func (m *mockStepRunRepo) CreateBatch(_ context.Context, _ []*scanrundom.StepRun) error { return nil }
+func (m *mockStepRunRepo) GetByID(_ context.Context, _ shared.ID) (*scanrundom.StepRun, error) {
 	return nil, nil
 }
-func (m *mockStepRunRepo) GetByPipelineRunID(_ context.Context, _ shared.ID) ([]*pipeline.StepRun, error) {
+func (m *mockStepRunRepo) GetByScanRunID(_ context.Context, _ shared.ID) ([]*scanrundom.StepRun, error) {
 	return nil, nil
 }
-func (m *mockStepRunRepo) GetByStepKey(_ context.Context, _ shared.ID, _ string) (*pipeline.StepRun, error) {
+func (m *mockStepRunRepo) GetByStepKey(_ context.Context, _ shared.ID, _ string) (*scanrundom.StepRun, error) {
 	return nil, nil
 }
-func (m *mockStepRunRepo) List(_ context.Context, _ pipeline.StepRunFilter) ([]*pipeline.StepRun, error) {
+func (m *mockStepRunRepo) List(_ context.Context, _ scanrundom.StepRunFilter) ([]*scanrundom.StepRun, error) {
 	return nil, nil
 }
-func (m *mockStepRunRepo) Update(_ context.Context, _ *pipeline.StepRun) error { return nil }
-func (m *mockStepRunRepo) Delete(_ context.Context, _ shared.ID) error         { return nil }
-func (m *mockStepRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ pipeline.StepRunStatus, _, _ string) error {
+func (m *mockStepRunRepo) Update(_ context.Context, _ *scanrundom.StepRun) error { return nil }
+func (m *mockStepRunRepo) Delete(_ context.Context, _ shared.ID) error           { return nil }
+func (m *mockStepRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ scanrundom.StepRunStatus, _, _ string) error {
 	return nil
 }
 func (m *mockStepRunRepo) AssignSensor(_ context.Context, _, _, _ shared.ID) error {
@@ -521,11 +523,11 @@ func (m *mockStepRunRepo) AssignSensor(_ context.Context, _, _, _ shared.ID) err
 func (m *mockStepRunRepo) Complete(_ context.Context, _ shared.ID, _ int, _ map[string]any) error {
 	return nil
 }
-func (m *mockStepRunRepo) GetPendingByDependencies(_ context.Context, _ shared.ID, _ []string) ([]*pipeline.StepRun, error) {
+func (m *mockStepRunRepo) GetPendingByDependencies(_ context.Context, _ shared.ID, _ []string) ([]*scanrundom.StepRun, error) {
 	return nil, nil
 }
-func (m *mockStepRunRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (pipeline.RunStats, error) {
-	return pipeline.RunStats{}, nil
+func (m *mockStepRunRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (scanrundom.RunStats, error) {
+	return scanrundom.RunStats{}, nil
 }
 
 // =============================================================================
@@ -611,7 +613,7 @@ func (m *mockCommandRepo) FailExhaustedCommands(_ context.Context, _ int) (int64
 func (m *mockCommandRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (commanddom.CommandStats, error) {
 	return commanddom.CommandStats{}, nil
 }
-func (m *mockCommandRepo) CancelByPipelineRunID(_ context.Context, _, _ shared.ID) (int64, error) {
+func (m *mockCommandRepo) CancelByScanRunID(_ context.Context, _, _ shared.ID) (int64, error) {
 	return 0, nil
 }
 
@@ -918,11 +920,11 @@ func newTestScanService(opts ...scanservice.ServiceOption) (*scanservice.Service
 		log,
 		append([]scanservice.ServiceOption{scanservice.WithAuditService(deps.auditSvc)}, opts...)...,
 	)
-	// A workflow scan's first steps are queued by the pipeline service, the
+	// A workflow scan's first steps are queued by the scan run service, the
 	// one step dispatcher (research/27 P0-2), as in production.
-	svc.SetStepQueuer(pipelineapp.NewService(deps.templateRepo, deps.stepRepo, deps.runRepo,
+	svc.SetStepQueuer(scanrun.NewService(deps.templateRepo, deps.stepRepo, deps.runRepo,
 		&mockStepRunRepo{}, newMockSensorRepo(), deps.commandRepo, nil, log,
-		pipelineapp.WithToolRepo(deps.toolRepo), pipelineapp.WithWebScope(noWebScope{})))
+		scanrun.WithToolRepo(deps.toolRepo), scanrun.WithWebScope(noWebScope{})))
 
 	return svc, deps
 }
@@ -941,10 +943,10 @@ func createTestScanInRepo(deps *testScanServiceDeps, tenantID shared.ID, name st
 	if scanType == scan.ScanTypeSingle {
 		_ = s.SetSingleScanner("nuclei", map[string]any{}, 1)
 	} else {
-		pipelineID := shared.NewID()
-		tmpl := &pipeline.Template{ID: pipelineID, TenantID: tenantID, IsActive: true, Name: "test-pipeline"}
-		deps.templateRepo.templates[pipelineID.String()] = tmpl
-		_ = s.SetWorkflow(pipelineID)
+		scanWorkflowID := shared.NewID()
+		tmpl := &scanworkflow.Workflow{ID: scanWorkflowID, TenantID: tenantID, IsActive: true, Name: "test-pipeline"}
+		deps.templateRepo.templates[scanWorkflowID.String()] = tmpl
+		_ = s.SetWorkflow(scanWorkflowID)
 	}
 
 	// Suppress unused variable
@@ -1012,18 +1014,18 @@ func TestScanService_CreateScan_WorkflowType_Success(t *testing.T) {
 	ag, _ := assetgroup.NewAssetGroupWithTenant(tenantID, "test-group", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 	deps.assetGroupRepo.groups[ag.ID().String()] = ag
 
-	// Create pipeline template
-	pipelineID := shared.NewID()
-	tmpl := &pipeline.Template{ID: pipelineID, TenantID: tenantID, IsActive: true, Name: "test-pipeline"}
-	deps.templateRepo.templates[pipelineID.String()] = tmpl
+	// Create scan workflow
+	scanWorkflowID := shared.NewID()
+	tmpl := &scanworkflow.Workflow{ID: scanWorkflowID, TenantID: tenantID, IsActive: true, Name: "test-pipeline"}
+	deps.templateRepo.templates[scanWorkflowID.String()] = tmpl
 
 	input := scanservice.CreateScanInput{
-		TenantID:     tenantID.String(),
-		Name:         "Test Workflow Scan",
-		AssetGroupID: ag.ID().String(),
-		ScanType:     "workflow",
-		PipelineID:   pipelineID.String(),
-		ScheduleType: "manual",
+		TenantID:       tenantID.String(),
+		Name:           "Test Workflow Scan",
+		AssetGroupID:   ag.ID().String(),
+		ScanType:       "workflow",
+		ScanWorkflowID: scanWorkflowID.String(),
+		ScheduleType:   "manual",
 	}
 
 	result, err := svc.CreateScan(context.Background(), input)
@@ -1033,8 +1035,8 @@ func TestScanService_CreateScan_WorkflowType_Success(t *testing.T) {
 	if result.ScanType != scan.ScanTypeWorkflow {
 		t.Errorf("expected scan type workflow, got %s", result.ScanType)
 	}
-	if result.PipelineID == nil || *result.PipelineID != pipelineID {
-		t.Errorf("expected pipeline ID %s", pipelineID)
+	if result.ScanWorkflowID == nil || *result.ScanWorkflowID != scanWorkflowID {
+		t.Errorf("expected pipeline ID %s", scanWorkflowID)
 	}
 }
 
@@ -1044,15 +1046,15 @@ func TestScanService_QuickScan_WorkflowRejectsInternalTarget(t *testing.T) {
 	svc, deps := newTestScanService()
 	tenantID := shared.NewID()
 
-	pipelineID := shared.NewID()
-	deps.templateRepo.templates[pipelineID.String()] = &pipeline.Template{
-		ID: pipelineID, TenantID: tenantID, IsActive: true, Name: "wf",
+	scanWorkflowID := shared.NewID()
+	deps.templateRepo.templates[scanWorkflowID.String()] = &scanworkflow.Workflow{
+		ID: scanWorkflowID, TenantID: tenantID, IsActive: true, Name: "wf",
 	}
 
 	_, err := svc.QuickScan(context.Background(), scanservice.QuickScanInput{
 		TenantID:   tenantID.String(),
 		Targets:    []string{"127.0.0.1"},
-		WorkflowID: pipelineID.String(),
+		WorkflowID: scanWorkflowID.String(),
 	})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("workflow quick-scan with internal target: want ErrValidation, got %v", err)
@@ -1067,22 +1069,22 @@ func TestScanService_QuickScan_WorkflowAppliesTargets(t *testing.T) {
 	svc, deps := newTestScanService()
 	tenantID := shared.NewID()
 
-	pipelineID := shared.NewID()
-	deps.templateRepo.templates[pipelineID.String()] = &pipeline.Template{
-		ID: pipelineID, TenantID: tenantID, IsActive: true, Name: "wf",
+	scanWorkflowID := shared.NewID()
+	deps.templateRepo.templates[scanWorkflowID.String()] = &scanworkflow.Workflow{
+		ID: scanWorkflowID, TenantID: tenantID, IsActive: true, Name: "wf",
 	}
-	step, err := pipeline.NewStep(pipelineID, "scan", "Scan", 1, []string{"vulnscan"})
+	step, err := scanworkflow.NewStep(scanWorkflowID, "scan", "Scan", 1, []string{"vulnscan"})
 	if err != nil {
 		t.Fatalf("NewStep: %v", err)
 	}
-	deps.stepRepo.steps[pipelineID.String()] = []*pipeline.Step{step}
+	deps.stepRepo.steps[scanWorkflowID.String()] = []*scanworkflow.Step{step}
 	deps.toolRepo.addTool("nuclei", true) // active tool matching the step capability
 
 	targets := []string{"example.com", "test.example.com"}
 	res, err := svc.QuickScan(context.Background(), scanservice.QuickScanInput{
 		TenantID:   tenantID.String(),
 		Targets:    targets,
-		WorkflowID: pipelineID.String(),
+		WorkflowID: scanWorkflowID.String(),
 	})
 	if err != nil {
 		t.Fatalf("workflow quick-scan: unexpected error: %v", err)
@@ -1682,7 +1684,7 @@ func TestScanService_TriggerScan_SingleScanner_Success(t *testing.T) {
 	if run == nil {
 		t.Fatal("expected run result, got nil")
 	}
-	if run.Status != pipeline.RunStatusRunning {
+	if run.Status != scanrundom.RunStatusRunning {
 		t.Errorf("expected run status running, got %s", run.Status)
 	}
 }
@@ -1823,15 +1825,15 @@ func TestScanService_TriggerScan_Workflow_Success(t *testing.T) {
 	// Create workflow scan
 	s := createTestScanInRepo(deps, tenantID, "Trigger Workflow Scan", scan.ScanTypeWorkflow)
 
-	// Add steps to the pipeline
-	pipelineID := *s.PipelineID
-	deps.stepRepo.steps[pipelineID.String()] = []*pipeline.Step{
+	// Add steps to the scan workflow
+	scanWorkflowID := *s.ScanWorkflowID
+	deps.stepRepo.steps[scanWorkflowID.String()] = []*scanworkflow.Step{
 		{
-			ID:         shared.NewID(),
-			PipelineID: pipelineID,
-			StepKey:    "scan-step",
-			StepOrder:  1,
-			Tool:       "nuclei",
+			ID:             shared.NewID(),
+			ScanWorkflowID: scanWorkflowID,
+			StepKey:        "scan-step",
+			StepOrder:      1,
+			Tool:           "nuclei",
 		},
 	}
 	deps.toolRepo.addTool("nuclei", true)
@@ -2059,29 +2061,29 @@ func TestScanService_BulkDelete_PartialFailure(t *testing.T) {
 }
 
 // =============================================================================
-// Tests: DeactivateScansByPipeline (cascade)
+// Tests: DeactivateScansByScanWorkflow (cascade)
 // =============================================================================
 
 func TestScanService_DeactivateScansByPipeline_Success(t *testing.T) {
 	svc, deps := newTestScanService()
 	tenantID := shared.NewID()
 
-	pipelineID := shared.NewID()
-	tmpl := &pipeline.Template{ID: pipelineID, TenantID: tenantID, IsActive: true, Name: "cascade-test-pipeline"}
-	deps.templateRepo.templates[pipelineID.String()] = tmpl
+	scanWorkflowID := shared.NewID()
+	tmpl := &scanworkflow.Workflow{ID: scanWorkflowID, TenantID: tenantID, IsActive: true, Name: "cascade-test-pipeline"}
+	deps.templateRepo.templates[scanWorkflowID.String()] = tmpl
 
-	// Create two active scans using this pipeline
-	s1, _ := scan.NewScan(tenantID, "Pipeline Scan 1", shared.NewID(), scan.ScanTypeWorkflow)
-	_ = s1.SetWorkflow(pipelineID)
+	// Create two active scans using this scan workflow
+	s1, _ := scan.NewScan(tenantID, "ScanRun Scan 1", shared.NewID(), scan.ScanTypeWorkflow)
+	_ = s1.SetWorkflow(scanWorkflowID)
 	deps.scanRepo.addScan(s1)
 
-	s2, _ := scan.NewScan(tenantID, "Pipeline Scan 2", shared.NewID(), scan.ScanTypeWorkflow)
-	_ = s2.SetWorkflow(pipelineID)
+	s2, _ := scan.NewScan(tenantID, "ScanRun Scan 2", shared.NewID(), scan.ScanTypeWorkflow)
+	_ = s2.SetWorkflow(scanWorkflowID)
 	deps.scanRepo.addScan(s2)
 
-	deps.scanRepo.listByPipelineID = []*scan.Scan{s1, s2}
+	deps.scanRepo.listByScanWorkflowID = []*scan.Scan{s1, s2}
 
-	count, err := svc.DeactivateScansByPipeline(context.Background(), pipelineID)
+	count, err := svc.DeactivateScansByScanWorkflow(context.Background(), scanWorkflowID)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -2100,16 +2102,16 @@ func TestScanService_DeactivateScansByPipeline_Success(t *testing.T) {
 func TestScanService_DeactivateScansByPipeline_SkipsAlreadyPaused(t *testing.T) {
 	svc, deps := newTestScanService()
 	tenantID := shared.NewID()
-	pipelineID := shared.NewID()
+	scanWorkflowID := shared.NewID()
 
 	s1, _ := scan.NewScan(tenantID, "Already Paused Scan", shared.NewID(), scan.ScanTypeWorkflow)
-	_ = s1.SetWorkflow(pipelineID)
+	_ = s1.SetWorkflow(scanWorkflowID)
 	_ = s1.Pause()
 	deps.scanRepo.addScan(s1)
 
-	deps.scanRepo.listByPipelineID = []*scan.Scan{s1}
+	deps.scanRepo.listByScanWorkflowID = []*scan.Scan{s1}
 
-	count, err := svc.DeactivateScansByPipeline(context.Background(), pipelineID)
+	count, err := svc.DeactivateScansByScanWorkflow(context.Background(), scanWorkflowID)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -2397,7 +2399,7 @@ func TestScanService_TriggerScan_ScheduledSkipsWhileRunning(t *testing.T) {
 
 	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
 		TenantID: tenantID.String(), ScanID: s.ID.String(),
-		TriggerType: pipeline.TriggerTypeSchedule, SkipIfRunning: true,
+		TriggerType: scanworkflow.TriggerTypeSchedule, SkipIfRunning: true,
 	})
 	if !errors.Is(err, scanservice.ErrScanRunInProgress) {
 		t.Fatalf("err = %v, want ErrScanRunInProgress", err)
@@ -2420,12 +2422,12 @@ func TestScanService_TriggerScan_RecordsTriggerType(t *testing.T) {
 	s.SetCreatedBy(shared.NewID()) // a scheduled run needs an owner
 
 	run, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
-		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: scanworkflow.TriggerTypeSchedule,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.TriggerType != pipeline.TriggerTypeSchedule {
+	if run.TriggerType != scanworkflow.TriggerTypeSchedule {
 		t.Fatalf("trigger_type = %s, want schedule", run.TriggerType)
 	}
 	run, err = svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
@@ -2434,7 +2436,7 @@ func TestScanService_TriggerScan_RecordsTriggerType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.TriggerType != pipeline.TriggerTypeManual {
+	if run.TriggerType != scanworkflow.TriggerTypeManual {
 		t.Fatalf("trigger_type = %s, want manual", run.TriggerType)
 	}
 }
@@ -2464,15 +2466,15 @@ func TestScanService_TriggerScan_Workflow_StartsByDependencyGraph(t *testing.T) 
 	svc, deps := newTestScanService()
 	tenantID := shared.NewID()
 	s := createTestScanInRepo(deps, tenantID, "Graph start", scan.ScanTypeWorkflow)
-	pipelineID := *s.PipelineID
+	scanWorkflowID := *s.ScanWorkflowID
 	deps.toolRepo.addTool("nuclei", true)
 	deps.toolRepo.addTool("httpx", true)
-	deps.stepRepo.steps[pipelineID.String()] = []*pipeline.Step{
-		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "probe", StepOrder: 2, Tool: "httpx"},
-		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "vulns", StepOrder: 3, Tool: "nuclei"},
-		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "off", StepOrder: 4, Tool: "nuclei",
-			Condition: pipeline.NeverCondition()},
-		{ID: shared.NewID(), PipelineID: pipelineID, StepKey: "after", StepOrder: 5, Tool: "nuclei",
+	deps.stepRepo.steps[scanWorkflowID.String()] = []*scanworkflow.Step{
+		{ID: shared.NewID(), ScanWorkflowID: scanWorkflowID, StepKey: "probe", StepOrder: 2, Tool: "httpx"},
+		{ID: shared.NewID(), ScanWorkflowID: scanWorkflowID, StepKey: "vulns", StepOrder: 3, Tool: "nuclei"},
+		{ID: shared.NewID(), ScanWorkflowID: scanWorkflowID, StepKey: "off", StepOrder: 4, Tool: "nuclei",
+			Condition: scanworkflow.NeverCondition()},
+		{ID: shared.NewID(), ScanWorkflowID: scanWorkflowID, StepKey: "after", StepOrder: 5, Tool: "nuclei",
 			DependsOn: []string{"probe"}},
 	}
 	before := len(deps.commandRepo.commands)
@@ -2535,7 +2537,7 @@ func TestScanService_TriggerScan_ScheduledRunWithoutOwnerRefused(t *testing.T) {
 	s := createTestScanInRepo(deps, tenantID, "Ownerless", scan.ScanTypeSingle)
 
 	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
-		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: scanworkflow.TriggerTypeSchedule,
 	})
 	if !errors.Is(err, scanservice.ErrScanHasNoOwner) {
 		t.Fatalf("scheduled run of an ownerless scan: err = %v, want ErrScanHasNoOwner", err)
@@ -2558,7 +2560,7 @@ func TestScanService_TriggerScan_ScheduledRunWithInactiveOwnerPauses(t *testing.
 	svc.SetOwnerActivity(fakeOwnerActivity{active: false})
 
 	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
-		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggerType: scanworkflow.TriggerTypeSchedule,
 	})
 	if !errors.Is(err, scanservice.ErrScanOwnerInactive) {
 		t.Fatalf("err = %v, want ErrScanOwnerInactive", err)
@@ -2575,7 +2577,7 @@ func TestScanService_TriggerScan_ScheduledRunWithInactiveOwnerPauses(t *testing.
 	s2 := createTestScanInRepo(deps, tenantID, "Active owner", scan.ScanTypeSingle)
 	s2.SetCreatedBy(shared.NewID())
 	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
-		TenantID: tenantID.String(), ScanID: s2.ID.String(), TriggerType: pipeline.TriggerTypeSchedule,
+		TenantID: tenantID.String(), ScanID: s2.ID.String(), TriggerType: scanworkflow.TriggerTypeSchedule,
 	}); err != nil {
 		t.Fatalf("scheduled run with an active owner: %v", err)
 	}
@@ -2590,7 +2592,7 @@ func TestScanService_TriggerScan_ScheduledRunWithInactiveOwnerPauses(t *testing.
 func dispatchedRuns(deps *testScanServiceDeps) int {
 	n := 0
 	for _, r := range deps.runRepo.runs {
-		if r.Status != pipeline.RunStatusBlocked {
+		if r.Status != scanrundom.RunStatusBlocked {
 			n++
 		}
 	}
@@ -2598,10 +2600,10 @@ func dispatchedRuns(deps *testScanServiceDeps) int {
 }
 
 // blockedRuns returns the runs of scanID recorded as blocked.
-func blockedRuns(deps *testScanServiceDeps, scanID shared.ID) []*pipeline.Run {
-	var out []*pipeline.Run
+func blockedRuns(deps *testScanServiceDeps, scanID shared.ID) []*scanrundom.Run {
+	var out []*scanrundom.Run
 	for _, r := range deps.runRepo.runs {
-		if r.ScanID != nil && *r.ScanID == scanID && r.Status == pipeline.RunStatusBlocked {
+		if r.ScanID != nil && *r.ScanID == scanID && r.Status == scanrundom.RunStatusBlocked {
 			out = append(out, r)
 		}
 	}
@@ -2633,7 +2635,7 @@ func TestScanService_TriggerScan_RefusalRecordsBlockedRun(t *testing.T) {
 	}
 	b := got[0]
 	if b.RefusalCode != "NO_SENSOR_AVAILABLE" || b.ErrorMessage == "" || b.TenantID != tenantID ||
-		b.TriggeredBy != userID || b.TriggerType != pipeline.TriggerTypeManual || b.StartedAt != nil || b.CompletedAt == nil {
+		b.TriggeredBy != userID || b.TriggerType != scanworkflow.TriggerTypeManual || b.StartedAt != nil || b.CompletedAt == nil {
 		t.Fatalf("blocked run = %+v", b)
 	}
 	if _, leaked := b.Context["caller"]; leaked {
@@ -2679,7 +2681,7 @@ func TestScanService_TriggerScan_OverlapSkipIsNotBlocked(t *testing.T) {
 
 	_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
 		TenantID: tenantID.String(), ScanID: s.ID.String(),
-		TriggerType: pipeline.TriggerTypeSchedule, SkipIfRunning: true,
+		TriggerType: scanworkflow.TriggerTypeSchedule, SkipIfRunning: true,
 	})
 	if !errors.Is(err, scanservice.ErrScanRunInProgress) {
 		t.Fatalf("err = %v, want ErrScanRunInProgress", err)

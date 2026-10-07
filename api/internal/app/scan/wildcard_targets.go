@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -89,10 +90,10 @@ func (s *Service) wildcardTaker(ctx context.Context, sc *scan.Scan) (bool, strin
 	if sc.ScanType != scan.ScanTypeWorkflow {
 		return stage.PassiveTool(sc.ScannerName), sc.ScannerName, nil
 	}
-	if sc.PipelineID == nil {
+	if sc.ScanWorkflowID == nil {
 		return false, "this workflow", nil
 	}
-	steps, err := s.stepRepo.GetByPipelineID(ctx, *sc.PipelineID)
+	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, *sc.ScanWorkflowID)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to get pipeline steps: %w", err)
 	}
@@ -109,7 +110,7 @@ func (s *Service) wildcardTaker(ctx context.Context, sc *scan.Scan) (bool, strin
 
 // passiveStep reports whether a step is passive work: its tool is a passive
 // tool of the stage catalog, or its capabilities name a passive stage.
-func passiveStep(st *pipeline.Step) bool {
+func passiveStep(st *scanworkflow.Step) bool {
 	if st.Tool != "" {
 		return stage.PassiveTool(st.Tool)
 	}
@@ -117,7 +118,7 @@ func passiveStep(st *pipeline.Step) bool {
 	return err == nil && sg.Tier.Passive()
 }
 
-func stepToolLabel(st *pipeline.Step) string {
+func stepToolLabel(st *scanworkflow.Step) string {
 	if st.Tool != "" {
 		return fmt.Sprintf("%s (step %q)", st.Tool, st.StepKey)
 	}

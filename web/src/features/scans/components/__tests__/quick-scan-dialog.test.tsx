@@ -53,7 +53,7 @@ describe('QuickScanDialog', () => {
 
   it('needs targets and a scanner chosen from the registry, then starts without saving', async () => {
     quickScan.mockResolvedValue({
-      pipeline_run_id: 'r1',
+      scan_run_id: 'r1',
       scan_id: 's1',
       status: 'pending',
       target_count: 2,
@@ -102,7 +102,7 @@ describe('QuickScanDialog', () => {
 
   it('"Save as scan" saves the started scan under the chosen name', async () => {
     quickScan.mockResolvedValue({
-      pipeline_run_id: 'r1',
+      scan_run_id: 'r1',
       scan_id: 's1',
       status: 'pending',
       target_count: 1,

@@ -34,7 +34,7 @@ R3 DELETE /api/v1/pentest/campaigns/{id}/members/{userId}
 R3 DELETE /api/v1/pentest/findings/{findingId}
 R3 DELETE /api/v1/pentest/reports/{reportId}
 R3 DELETE /api/v1/pentest/templates/{templateId}
-R3 DELETE /api/v1/pipelines/{id}/steps/{stepId}
+R3 DELETE /api/v1/scan-workflows/{id}/steps/{stepId}
 R3 DELETE /api/v1/relationships/{relationshipId}
 R3 DELETE /api/v1/repositories/{repositoryId}/branches/{branchId}
 R3 DELETE /api/v1/roles/{roleId}
@@ -121,7 +121,7 @@ R3 PUT /api/v1/groups/{groupId}/members/{userId}
 R3 PUT /api/v1/groups/{groupId}/scope-rules/{ruleId}
 R3 PUT /api/v1/pentest/findings/{findingId}
 R3 PUT /api/v1/pentest/templates/{templateId}
-R3 PUT /api/v1/pipelines/{id}/steps/{stepId}
+R3 PUT /api/v1/scan-workflows/{id}/steps/{stepId}
 R3 PUT /api/v1/relationships/{relationshipId}
 R3 PUT /api/v1/repositories/{repositoryId}/branches/{branchId}
 R3 PUT /api/v1/repositories/{repositoryId}/branches/{branchId}/default
@@ -186,9 +186,9 @@ R5 POST /api/v1/findings/{id}/validate
 R5 POST /api/v1/groups/{groupId}/scope-rules/reconcile
 R5 POST /api/v1/integrations/{id}/test-notification
 R5 POST /api/v1/notifications/read-all
-R5 POST /api/v1/pipelines/{id}/activate
-R5 POST /api/v1/pipelines/{id}/clone
-R5 POST /api/v1/pipelines/{id}/deactivate
+R5 POST /api/v1/scan-workflows/{id}/activate
+R5 POST /api/v1/scan-workflows/{id}/clone
+R5 POST /api/v1/scan-workflows/{id}/deactivate
 R5 POST /api/v1/relationships/suggestions/approve-all
 R5 POST /api/v1/relationships/suggestions/approve-batch
 R5 POST /api/v1/relationships/suggestions/generate

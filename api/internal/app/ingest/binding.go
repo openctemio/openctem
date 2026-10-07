@@ -55,8 +55,8 @@ type Binding struct {
 	// Tool is the bound command's tool ("" when it names none); a bound
 	// report must be from that tool.
 	Tool string
-	// StepRunID is the pipeline step run the bound command belongs to (nil
-	// for a command outside a pipeline): the scan run its results came from.
+	// StepRunID is the workflow step run the bound command belongs to (nil
+	// for a command outside a scan run): the scan run its results came from.
 	StepRunID *shared.ID
 	// CIRunID is the CI run the report belongs to (BindingCIRun only).
 	CIRunID *shared.ID

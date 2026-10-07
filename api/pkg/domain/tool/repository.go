@@ -33,11 +33,11 @@ type TenantToolConfigFilter struct {
 
 // ToolExecutionFilter defines filtering options for tool execution queries.
 type ToolExecutionFilter struct {
-	TenantID      shared.ID
-	ToolID        *shared.ID
-	SensorID      *shared.ID
-	PipelineRunID *shared.ID
-	Status        *ExecutionStatus
+	TenantID  shared.ID
+	ToolID    *shared.ID
+	SensorID  *shared.ID
+	ScanRunID *shared.ID
+	Status    *ExecutionStatus
 }
 
 // Repository defines the interface for tool persistence.

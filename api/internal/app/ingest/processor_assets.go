@@ -98,7 +98,7 @@ func (p *AssetProcessor) SetRelationshipRepository(repo asset.RelationshipReposi
 }
 
 // SetStateHistoryRepository wires the asset state-history store. When set, the
-// discovery pipeline records an `appeared` entry for each newly-created asset
+// discovery scan workflow records an `appeared` entry for each newly-created asset
 // and a `recovered` entry when a scan re-observes a stale/inactive asset
 // (reactivating it). Optional: nil → no history (preserves prior behaviour).
 func (p *AssetProcessor) SetStateHistoryRepository(repo asset.StateHistoryRepository) {
@@ -326,7 +326,7 @@ func (p *AssetProcessor) ProcessBatch(
 // is only marked seen, and only while it is active. scope.allowed is filled
 // with the persisted ids of the assets the report may change.
 //
-//nolint:gocognit,cyclop // the existing batch pipeline, unchanged apart from the gate
+//nolint:gocognit,cyclop // the existing batch scan workflow, unchanged apart from the gate
 func (p *AssetProcessor) processBatch(
 	ctx context.Context,
 	tenantID shared.ID,

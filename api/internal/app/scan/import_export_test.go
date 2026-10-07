@@ -111,7 +111,7 @@ func (m *mockScanRepository) ListByAssetGroupID(_ context.Context, _ shared.ID) 
 	return nil, nil
 }
 
-func (m *mockScanRepository) ListByPipelineID(_ context.Context, _ shared.ID) ([]*scan.Scan, error) {
+func (m *mockScanRepository) ListByScanWorkflowID(_ context.Context, _ shared.ID) ([]*scan.Scan, error) {
 	return nil, nil
 }
 
@@ -314,11 +314,11 @@ func TestExportConfig_PipelineIDConverted(t *testing.T) {
 	svc := newTestImportExportService(repo)
 
 	tenantID := shared.NewID()
-	pipelineID := shared.NewID()
+	scanWorkflowID := shared.NewID()
 
 	sc, err := scan.NewScan(tenantID, "Workflow Scan", shared.NewID(), scan.ScanTypeWorkflow)
 	require.NoError(t, err)
-	sc.PipelineID = &pipelineID
+	sc.ScanWorkflowID = &scanWorkflowID
 	repo.addScan(sc)
 
 	data, err := svc.ExportConfig(context.Background(), tenantID, sc.ID)
@@ -328,8 +328,8 @@ func TestExportConfig_PipelineIDConverted(t *testing.T) {
 	err = json.Unmarshal(data, &export)
 	require.NoError(t, err)
 
-	require.NotNil(t, export.PipelineID)
-	assert.Equal(t, pipelineID.String(), *export.PipelineID)
+	require.NotNil(t, export.ScanWorkflowID)
+	assert.Equal(t, scanWorkflowID.String(), *export.ScanWorkflowID)
 }
 
 func TestExportConfig_ScheduleTimeConverted(t *testing.T) {
@@ -558,7 +558,7 @@ func TestImportConfig_ParsedFieldsMapping(t *testing.T) {
 	// Test that the ScanConfigExport JSON structure round-trips correctly.
 	// This verifies the JSON tags and field types are consistent.
 
-	pipelineID := shared.NewID().String()
+	scanWorkflowID := shared.NewID().String()
 	scheduleDay := 3
 	scheduleTime := "14:30"
 
@@ -577,7 +577,7 @@ func TestImportConfig_ParsedFieldsMapping(t *testing.T) {
 		Tags:              []string{"imported", "ci"},
 		RunOnTenantRunner: true,
 		SensorPreference:  "tenant",
-		PipelineID:        &pipelineID,
+		ScanWorkflowID:    &scanWorkflowID,
 		AssetGroupIDs:     []string{shared.NewID().String()},
 		Targets:           []string{"target.example.com"},
 		Version:           "1.0",
@@ -603,8 +603,8 @@ func TestImportConfig_ParsedFieldsMapping(t *testing.T) {
 	assert.Equal(t, original.Tags, parsed.Tags)
 	assert.True(t, parsed.RunOnTenantRunner)
 	assert.Equal(t, original.SensorPreference, parsed.SensorPreference)
-	assert.NotNil(t, parsed.PipelineID)
-	assert.Equal(t, pipelineID, *parsed.PipelineID)
+	assert.NotNil(t, parsed.ScanWorkflowID)
+	assert.Equal(t, scanWorkflowID, *parsed.ScanWorkflowID)
 	assert.NotNil(t, parsed.ScheduleDay)
 	assert.Equal(t, scheduleDay, *parsed.ScheduleDay)
 	assert.NotNil(t, parsed.ScheduleTime)

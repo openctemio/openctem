@@ -208,7 +208,6 @@ const (
 	ModuleScope   = "scope"
 
 	// Operations
-	ModulePipelines    = "pipelines"
 	ModuleTools        = "tools"
 	ModuleCommands     = "commands"
 	ModuleScanProfiles = "scan_profiles"
@@ -252,7 +251,7 @@ const (
 	// Settings — seeded by migration 000161.
 	ModuleScannerTemplates = "scanner_templates"
 	ModuleTemplateSources  = "template_sources"
-	ModuleScanPipelines    = "scan_pipelines"
+	ModuleScanWorkflows    = "scan_workflows"
 )
 
 // Integration sub-module IDs (children of ModuleIntegrations)
@@ -301,7 +300,7 @@ func IsCoreModule(moduleID string) bool {
 
 // UserFacingModuleIDs defines modules shown on the Module Management page.
 // Only modules that directly map to sidebar navigation sections are included.
-// Modules like sensors, tools, pipelines are bundled under "scans" in sidebar,
+// Modules like sensors, tools, scan workflows are bundled under "scans" in sidebar,
 // so toggling them individually has no sidebar effect — they are excluded.
 var UserFacingModuleIDs = map[string]bool{
 	// Core (always enabled, shown as locked)
@@ -363,7 +362,7 @@ var UserFacingModuleIDs = map[string]bool{
 	// Settings extensions (seeded by 000161).
 	ModuleScannerTemplates: true,
 	ModuleTemplateSources:  true,
-	ModuleScanPipelines:    true,
+	ModuleScanWorkflows:    true,
 }
 
 // IsUserFacing returns true if the module should be shown in the admin
@@ -425,7 +424,6 @@ var ModulePermissionMapping = map[string]string{
 	ModuleScope:   "attack_surface:scope:read",
 
 	// Operations modules
-	ModulePipelines:    "integrations:pipelines:read",
 	ModuleTools:        "scans:tools:read",
 	ModuleScanProfiles: "scans:profiles:read",
 	ModuleIOCs:         "threat_intel:read",
@@ -470,7 +468,7 @@ var ModulePermissionMapping = map[string]string{
 	// Settings extensions.
 	ModuleScannerTemplates: "scans:templates:read",
 	ModuleTemplateSources:  "scans:templates:read",
-	ModuleScanPipelines:    "integrations:pipelines:read",
+	ModuleScanWorkflows:    "scans:workflows:read",
 }
 
 // GetRequiredPermission returns the required permission for a module.

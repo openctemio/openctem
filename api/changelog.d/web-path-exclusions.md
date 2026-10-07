@@ -1,7 +1,7 @@
 ### Security: path- and method-aware scope exclusions with a testing mode
 
 - A `path` exclusion is now a web rule: a host pattern, a segment-aware path prefix and the methods it blocks
-  (migration 001271 migrates existing `path` rows, for example `/api/v1/*` to host `*` + prefix `/api/v1`; two old
+  (migration 001290 migrates existing `path` rows, for example `/api/v1/*` to host `*` + prefix `/api/v1`; two old
   rows that read as the same rule are merged into the one in effect).
 - It is enforced at dispatch (URL targets under it are excluded), in the job (`web_scope.deny_paths`, or GET/HEAD only
   for a method-scoped rule) and at ingest (endpoints under it are recorded excluded-untested with the exclusion).

@@ -16,7 +16,7 @@ const (
 	ActionCIRunnerKeyRefused Action = "ci_run.runner_key_refused"
 
 	// ActionCIRunTokenIssued records a CI job's OIDC token exchanged for a
-	// run upload token (repository, actor, pipeline run id; never a token).
+	// run upload token (repository, actor, scan run id; never a token).
 	ActionCIRunTokenIssued Action = "ci_run.token_issued"
 	// ActionCIRunTokenRefused records a verified CI token that no trust
 	// configuration admitted, or a replayed one.
@@ -39,13 +39,13 @@ const (
 	// ActionCIPipelineCreated records a new CI pipeline (the first verified
 	// run of a workflow file of a repository).
 	ActionCIPipelineCreated Action = "ci_pipeline.created"
-	// ActionCIPipelinesRevoked records the pipelines of a trust
+	// ActionCIPipelinesRevoked records the scan workflows of a trust
 	// configuration revoked because it was disabled, deleted or re-pointed.
 	ActionCIPipelinesRevoked Action = "ci_pipeline.revoked"
-	// ActionCIPipelineRetired records an administrator retiring a pipeline
+	// ActionCIPipelineRetired records an administrator retiring a scan workflow
 	// and the findings only it reported closing as source retired.
 	ActionCIPipelineRetired Action = "ci_pipeline.retired"
-	// ActionCIStaleSourceFindings records findings only a stale pipeline
+	// ActionCIStaleSourceFindings records findings only a stale CI pipeline
 	// reported moving to not observed (source stale).
 	ActionCIStaleSourceFindings Action = "ci_pipeline.stale_source_findings"
 	// A repository marked, or no longer marked, as expected to be covered.

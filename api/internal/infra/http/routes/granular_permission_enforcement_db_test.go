@@ -34,7 +34,6 @@ var granularGateChanges = []gateChange{
 	{"POST /assets/import/*", []permission.Permission{permission.AssetsWrite}, []permission.Permission{permission.AssetsWrite, permission.AssetsImport}},
 	{"POST /assets/{id}/scan", []permission.Permission{permission.AssetsWrite}, []permission.Permission{permission.AssetsWrite, permission.ScansExecute}},
 	{"POST /scans/{id}/trigger, /scans/quick", []permission.Permission{permission.ScansWrite}, []permission.Permission{permission.ScansWrite, permission.ScansExecute}},
-	{"POST /pipelines/{id}/runs", []permission.Permission{permission.PipelinesWrite}, []permission.Permission{permission.PipelinesWrite, permission.PipelinesExecute}},
 	{"GET /findings/{id}/ai-triage*", []permission.Permission{permission.FindingsRead}, []permission.Permission{permission.FindingsRead, permission.AITriageRead}},
 	{"POST /findings/{id}/ai-triage", []permission.Permission{permission.FindingsWrite}, []permission.Permission{permission.FindingsWrite, permission.AITriageTrigger}},
 	{"GET /exposures*", []permission.Permission{permission.FindingsRead}, []permission.Permission{permission.FindingsRead, permission.ExposuresRead}},

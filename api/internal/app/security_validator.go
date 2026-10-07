@@ -1,5 +1,5 @@
 // Package app provides the security validator service for validating
-// pipeline steps, scan configurations, and command payloads to prevent
+// workflow steps, scan configurations, and command payloads to prevent
 // command injection and other security vulnerabilities.
 package app
 
@@ -13,7 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
@@ -156,8 +157,8 @@ func addValidationError(r *ValidationResult, field, message, code string) {
 	})
 }
 
-// ValidateStepConfig validates a pipeline step's tool name and configuration.
-// This is called before creating a pipeline step to ensure the tool is registered
+// ValidateStepConfig validates a workflow step's tool name and configuration.
+// This is called before creating a workflow step to ensure the tool is registered
 // and the configuration matches the tool's schema.
 func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID shared.ID, toolName string, capabilities []string, config map[string]any) *ValidationResult {
 	result := &ValidationResult{Valid: true}
@@ -216,7 +217,7 @@ func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID sha
 	// flag-like or intrusive values (the sensor refuses the same; this
 	// refuses them when the step is saved).
 	if config != nil {
-		if _, err := pipeline.NormalizeStepConfig(toolName, config); err != nil {
+		if _, err := scanworkflow.NormalizeStepConfig(toolName, config); err != nil {
 			addValidationError(result, "config", err.Error(), "INVALID_STEP_SETTING")
 		}
 	}
@@ -255,7 +256,7 @@ func (v *SecurityValidator) ValidateCommandPayload(ctx context.Context, tenantID
 	result := &ValidationResult{Valid: true}
 
 	// Check for required fields
-	requiredFields := []string{"pipeline_run_id", "step_run_id", "step_id"}
+	requiredFields := []string{"scan_run_id", "scan_run_step_id", "step_id"}
 	for _, field := range requiredFields {
 		if _, ok := payload[field]; !ok {
 			addValidationError(result, field, "required field missing", "MISSING_FIELD")
@@ -264,15 +265,15 @@ func (v *SecurityValidator) ValidateCommandPayload(ctx context.Context, tenantID
 
 	// Validate the step's settings (payload key `config`, which the sensor
 	// reads) if present
-	if stepConfig, ok := payload[pipeline.PayloadKeyConfig].(map[string]any); ok {
+	if stepConfig, ok := payload[scanworkflow.PayloadKeyConfig].(map[string]any); ok {
 		if errs := v.validateConfigKeys(stepConfig); len(errs) > 0 {
 			for _, err := range errs {
-				addValidationError(result, pipeline.PayloadKeyConfig, err, "DANGEROUS_CONFIG_KEY")
+				addValidationError(result, scanworkflow.PayloadKeyConfig, err, "DANGEROUS_CONFIG_KEY")
 			}
 		}
 		if errs := v.validateConfigValues(stepConfig); len(errs) > 0 {
 			for _, err := range errs {
-				addValidationError(result, pipeline.PayloadKeyConfig, err, "DANGEROUS_CONFIG_VALUE")
+				addValidationError(result, scanworkflow.PayloadKeyConfig, err, "DANGEROUS_CONFIG_VALUE")
 			}
 		}
 	}

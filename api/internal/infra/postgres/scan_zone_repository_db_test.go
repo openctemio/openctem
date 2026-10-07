@@ -404,17 +404,17 @@ func TestCommandRepository_StepBatchGate(t *testing.T) {
 
 	var runID, stepID, stepRunID string
 	if err := sqlDB.QueryRowContext(ctx,
-		`INSERT INTO pipeline_runs (pipeline_id, tenant_id, status, trigger_type)
+		`INSERT INTO scan_runs (scan_workflow_id, tenant_id, status, trigger_type)
 		 VALUES ('00000000-0000-0000-0000-000000000001', $1, 'running', 'manual') RETURNING id`,
 		tenant.String()).Scan(&runID); err != nil {
 		t.Skipf("seed run (quick-scan template missing?): %v", err)
 	}
 	if err := sqlDB.QueryRowContext(ctx,
-		`SELECT id FROM pipeline_steps WHERE pipeline_id = '00000000-0000-0000-0000-000000000001' LIMIT 1`).Scan(&stepID); err != nil {
+		`SELECT id FROM scan_workflow_steps WHERE scan_workflow_id = '00000000-0000-0000-0000-000000000001' LIMIT 1`).Scan(&stepID); err != nil {
 		t.Skipf("quick-scan template has no step: %v", err)
 	}
 	if err := sqlDB.QueryRowContext(ctx,
-		`INSERT INTO step_runs (pipeline_run_id, step_id, step_key, step_order) VALUES ($1, $2, 'scan', 1) RETURNING id`,
+		`INSERT INTO scan_run_steps (scan_run_id, step_id, step_key, step_order) VALUES ($1, $2, 'scan', 1) RETURNING id`,
 		runID, stepID).Scan(&stepRunID); err != nil {
 		t.Fatal(err)
 	}

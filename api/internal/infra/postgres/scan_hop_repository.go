@@ -13,13 +13,14 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// ScanHopRepository implements pipeline.HopRepository.
+// ScanHopRepository implements scanrun.HopRepository.
 type ScanHopRepository struct {
 	db *DB
 }
@@ -27,7 +28,7 @@ type ScanHopRepository struct {
 // NewScanHopRepository constructs a ScanHopRepository.
 func NewScanHopRepository(db *DB) *ScanHopRepository { return &ScanHopRepository{db: db} }
 
-var _ pipeline.HopRepository = (*ScanHopRepository)(nil)
+var _ scanrun.HopRepository = (*ScanHopRepository)(nil)
 
 // hopBatch bounds the rows of one multi-row INSERT.
 const hopBatch = 1000
@@ -54,13 +55,13 @@ func (r *ScanHopRepository) RecordStepOutputs(ctx context.Context, tenantID, ste
 	for start := 0; start < len(ids); start += hopBatch {
 		end := min(start+hopBatch, len(ids))
 		res, err := r.db.ExecContext(ctx, `
-			INSERT INTO scan_step_outputs (tenant_id, run_id, step_run_id, asset_id)
+			INSERT INTO scan_step_outputs (tenant_id, run_id, scan_run_step_id, asset_id)
 			SELECT pr.tenant_id, pr.id, sr.id, a.id
-			FROM step_runs sr
-			JOIN pipeline_runs pr ON pr.id = sr.pipeline_run_id AND pr.tenant_id = $1
+			FROM scan_run_steps sr
+			JOIN scan_runs pr ON pr.id = sr.scan_run_id AND pr.tenant_id = $1
 			JOIN assets a ON a.tenant_id = pr.tenant_id AND a.id = ANY($3::uuid[]) AND a.deleted_at IS NULL
 			WHERE sr.id = $2
-			ON CONFLICT (step_run_id, asset_id) DO NOTHING`,
+			ON CONFLICT (scan_run_step_id, asset_id) DO NOTHING`,
 			tenantID.String(), stepRunID.String(), pq.Array(ids[start:end]))
 		if err != nil {
 			return total, fmt.Errorf("record step outputs: %w", err)
@@ -73,7 +74,7 @@ func (r *ScanHopRepository) RecordStepOutputs(ctx context.Context, tenantID, ste
 
 // ListStepOutputs returns the live assets the step runs produced, oldest
 // first, up to limit, and the total count.
-func (r *ScanHopRepository) ListStepOutputs(ctx context.Context, tenantID, runID shared.ID, stepRunIDs []shared.ID, limit int) ([]pipeline.StepOutput, int, error) {
+func (r *ScanHopRepository) ListStepOutputs(ctx context.Context, tenantID, runID shared.ID, stepRunIDs []shared.ID, limit int) ([]scanrun.StepOutput, int, error) {
 	ids := hopIDStrings(stepRunIDs)
 	if len(ids) == 0 || limit <= 0 {
 		return nil, 0, nil
@@ -83,15 +84,15 @@ func (r *ScanHopRepository) ListStepOutputs(ctx context.Context, tenantID, runID
 		SELECT COUNT(DISTINCT o.asset_id)
 		FROM scan_step_outputs o
 		JOIN assets a ON a.tenant_id = o.tenant_id AND a.id = o.asset_id AND a.deleted_at IS NULL
-		WHERE o.tenant_id = $1 AND o.run_id = $2 AND o.step_run_id = ANY($3::uuid[])`,
+		WHERE o.tenant_id = $1 AND o.run_id = $2 AND o.scan_run_step_id = ANY($3::uuid[])`,
 		tenantID.String(), runID.String(), pq.Array(ids)).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count step outputs: %w", err)
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT ON (a.id) o.step_run_id, a.id, a.name, a.asset_type, COALESCE(a.sub_type, '')
+		SELECT DISTINCT ON (a.id) o.scan_run_step_id, a.id, a.name, a.asset_type, COALESCE(a.sub_type, '')
 		FROM scan_step_outputs o
 		JOIN assets a ON a.tenant_id = o.tenant_id AND a.id = o.asset_id AND a.deleted_at IS NULL
-		WHERE o.tenant_id = $1 AND o.run_id = $2 AND o.step_run_id = ANY($3::uuid[])
+		WHERE o.tenant_id = $1 AND o.run_id = $2 AND o.scan_run_step_id = ANY($3::uuid[])
 		ORDER BY a.id, o.created_at
 		LIMIT $4`,
 		tenantID.String(), runID.String(), pq.Array(ids), limit)
@@ -99,10 +100,10 @@ func (r *ScanHopRepository) ListStepOutputs(ctx context.Context, tenantID, runID
 		return nil, 0, fmt.Errorf("list step outputs: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var out []pipeline.StepOutput
+	var out []scanrun.StepOutput
 	for rows.Next() {
 		var sr, id string
-		var o pipeline.StepOutput
+		var o scanrun.StepOutput
 		if err := rows.Scan(&sr, &id, &o.Name, &o.Type, &o.SubType); err != nil {
 			return nil, 0, fmt.Errorf("scan step output: %w", err)
 		}
@@ -126,7 +127,7 @@ func (r *ScanHopRepository) PendingStepIngest(ctx context.Context, tenantID shar
 		SELECT EXISTS (
 			SELECT 1 FROM ingest_reports ir
 			JOIN commands c ON c.id = ir.command_id AND c.tenant_id = ir.tenant_id
-			WHERE ir.tenant_id = $1 AND c.step_run_id = ANY($2::uuid[])
+			WHERE ir.tenant_id = $1 AND c.scan_run_step_id = ANY($2::uuid[])
 			  AND ir.state IN ('receiving', 'queued', 'processing'))`,
 		tenantID.String(), pq.Array(ids)).Scan(&pending)
 	if err != nil {
@@ -144,7 +145,7 @@ func clampSmallint(v int) int {
 
 // SaveStagePlan claims the (run, stage) key and writes the targets in the
 // same transaction. A second planner of the same stage writes nothing.
-func (r *ScanHopRepository) SaveStagePlan(ctx context.Context, plan *pipeline.StagePlan, targets []pipeline.RunTarget) (bool, error) {
+func (r *ScanHopRepository) SaveStagePlan(ctx context.Context, plan *scanrun.StagePlan, targets []scanrun.RunTarget) (bool, error) {
 	if plan == nil {
 		return false, fmt.Errorf("%w: plan is required", shared.ErrValidation)
 	}
@@ -166,7 +167,7 @@ func (r *ScanHopRepository) SaveStagePlan(ctx context.Context, plan *pipeline.St
 		INSERT INTO scan_run_stage_plans
 			(tenant_id, run_id, stage_key, stage, tool, tier, chained, inputs, planned, max_hop, skipped)
 		SELECT pr.tenant_id, pr.id, $3, $4, $5, $6, $7, $8, $9, $10, $11
-		FROM pipeline_runs pr WHERE pr.tenant_id = $1 AND pr.id = $2
+		FROM scan_runs pr WHERE pr.tenant_id = $1 AND pr.id = $2
 		ON CONFLICT (run_id, stage_key) DO NOTHING`,
 		plan.TenantID.String(), plan.RunID.String(), plan.StageKey, plan.Stage, plan.Tool,
 		clampSmallint(plan.Tier), plan.Chained, max(plan.Inputs, 0), max(plan.Planned, 0),
@@ -202,7 +203,7 @@ func hopNullText(s string) any {
 	return s
 }
 
-func insertRunTargets(ctx context.Context, tx *sql.Tx, plan *pipeline.StagePlan, targets []pipeline.RunTarget) error {
+func insertRunTargets(ctx context.Context, tx *sql.Tx, plan *scanrun.StagePlan, targets []scanrun.RunTarget) error {
 	if len(targets) == 0 {
 		return nil
 	}
@@ -235,7 +236,7 @@ func insertRunTargets(ctx context.Context, tx *sql.Tx, plan *pipeline.StagePlan,
 }
 
 // PlannedTargets returns the planned targets of the given stages.
-func (r *ScanHopRepository) PlannedTargets(ctx context.Context, tenantID, runID shared.ID, stageKeys []string) ([]pipeline.RunTarget, error) {
+func (r *ScanHopRepository) PlannedTargets(ctx context.Context, tenantID, runID shared.ID, stageKeys []string) ([]scanrun.RunTarget, error) {
 	if len(stageKeys) == 0 {
 		return nil, nil
 	}
@@ -248,9 +249,9 @@ func (r *ScanHopRepository) PlannedTargets(ctx context.Context, tenantID, runID 
 		return nil, fmt.Errorf("list planned targets: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var out []pipeline.RunTarget
+	var out []scanrun.RunTarget
 	for rows.Next() {
-		var t pipeline.RunTarget
+		var t scanrun.RunTarget
 		var asset sql.NullString
 		if err := rows.Scan(&t.StageKey, &t.TargetKey, &asset, &t.Origin, &t.Hop); err != nil {
 			return nil, fmt.Errorf("scan planned target: %w", err)
@@ -260,14 +261,14 @@ func (r *ScanHopRepository) PlannedTargets(ctx context.Context, tenantID, runID 
 				t.AssetID = &id
 			}
 		}
-		t.TenantID, t.RunID, t.Decision = tenantID, runID, pipeline.TargetPlanned
+		t.TenantID, t.RunID, t.Decision = tenantID, runID, scanrun.TargetPlanned
 		out = append(out, t)
 	}
 	return out, rows.Err()
 }
 
 // ListStagePlans returns the run's stage plans in planning order.
-func (r *ScanHopRepository) ListStagePlans(ctx context.Context, tenantID, runID shared.ID) ([]pipeline.StagePlan, error) {
+func (r *ScanHopRepository) ListStagePlans(ctx context.Context, tenantID, runID shared.ID) ([]scanrun.StagePlan, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT stage_key, stage, tool, tier, chained, inputs, planned, max_hop, skipped, planned_at
 		FROM scan_run_stage_plans
@@ -278,9 +279,9 @@ func (r *ScanHopRepository) ListStagePlans(ctx context.Context, tenantID, runID 
 		return nil, fmt.Errorf("list stage plans: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var out []pipeline.StagePlan
+	var out []scanrun.StagePlan
 	for rows.Next() {
-		p := pipeline.StagePlan{TenantID: tenantID, RunID: runID}
+		p := scanrun.StagePlan{TenantID: tenantID, RunID: runID}
 		var skipped []byte
 		if err := rows.Scan(&p.StageKey, &p.Stage, &p.Tool, &p.Tier, &p.Chained, &p.Inputs, &p.Planned,
 			&p.MaxHop, &skipped, &p.PlannedAt); err != nil {
@@ -303,8 +304,8 @@ func (r *ScanHopRepository) StepRunOfCommand(ctx context.Context, tenantID, comm
 	err := r.db.QueryRowContext(ctx, `
 		SELECT pr.id, sr.step_key
 		FROM commands c
-		JOIN step_runs sr ON sr.id = c.step_run_id
-		JOIN pipeline_runs pr ON pr.id = sr.pipeline_run_id AND pr.tenant_id = c.tenant_id
+		JOIN scan_run_steps sr ON sr.id = c.scan_run_step_id
+		JOIN scan_runs pr ON pr.id = sr.scan_run_id AND pr.tenant_id = c.tenant_id
 		WHERE c.tenant_id = $1 AND c.id = $2`,
 		tenantID.String(), commandID.String()).Scan(&runID, &stepKey)
 	if errors.Is(err, sql.ErrNoRows) {

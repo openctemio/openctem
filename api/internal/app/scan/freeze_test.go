@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -51,20 +52,20 @@ func TestScheduler_FrozenOccurrenceIsDeferredToTheWindowEnd(t *testing.T) {
 }
 
 func TestWorkflowActive(t *testing.T) {
-	step := func(tool string, caps ...string) *pipeline.Step {
-		return &pipeline.Step{Tool: tool, Capabilities: caps}
+	step := func(tool string, caps ...string) *scanworkflow.Step {
+		return &scanworkflow.Step{Tool: tool, Capabilities: caps}
 	}
 	cases := []struct {
 		name  string
-		steps []*pipeline.Step
+		steps []*scanworkflow.Step
 		want  bool
 	}{
-		{"passive tools only", []*pipeline.Step{step("subfinder"), step("dnsx")}, false},
-		{"passive capability", []*pipeline.Step{step("", "discover.subdomains")}, false},
-		{"an active tool", []*pipeline.Step{step("subfinder"), step("nuclei")}, true},
-		{"an active capability", []*pipeline.Step{step("", "probe.http")}, true},
-		{"unknown capability counts as active", []*pipeline.Step{step("", "recon")}, true},
-		{"unknown tool counts as active", []*pipeline.Step{step("custom-scanner")}, true},
+		{"passive tools only", []*scanworkflow.Step{step("subfinder"), step("dnsx")}, false},
+		{"passive capability", []*scanworkflow.Step{step("", "discover.subdomains")}, false},
+		{"an active tool", []*scanworkflow.Step{step("subfinder"), step("nuclei")}, true},
+		{"an active capability", []*scanworkflow.Step{step("", "probe.http")}, true},
+		{"unknown capability counts as active", []*scanworkflow.Step{step("", "recon")}, true},
+		{"unknown tool counts as active", []*scanworkflow.Step{step("custom-scanner")}, true},
 	}
 	for _, tc := range cases {
 		if got := workflowActive(tc.steps); got != tc.want {

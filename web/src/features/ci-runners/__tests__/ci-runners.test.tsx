@@ -4,11 +4,26 @@ import userEvent from '@testing-library/user-event'
 import { CIRunsView } from '../components/ci-runs-view'
 import { CITrustSettings } from '../components/ci-trust-settings'
 import { ciRunsURL } from '../api/use-ci'
-import { defaultAudience, githubSnippet, gitlabSnippet, parseList } from '../lib/ci'
+import {
+  PROVIDER_TRAITS,
+  defaultAudience,
+  githubSnippet,
+  gitlabSnippet,
+  issuerFor,
+  organizationFromIssuer,
+  parseList,
+  snippetFor,
+} from '../lib/ci'
+
+// Radix Select uses pointer capture and scrollIntoView, which jsdom lacks.
+Element.prototype.hasPointerCapture ??= () => false
+Element.prototype.releasePointerCapture ??= () => {}
+Element.prototype.scrollIntoView ??= () => {}
 
 // ── mocks ──────────────────────────────────────────────────
 
 const mockSaveTrust = vi.fn()
+const mockPreview = vi.fn()
 const mockSaveSettings = vi.fn()
 let ciSettings: { require_oidc: boolean } | undefined = { require_oidc: true }
 let runs: unknown[] = []
@@ -29,6 +44,7 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   useSaveCISettings: () => ({ trigger: mockSaveSettings, isMutating: false }),
   useSaveTrustConfig: () => ({ trigger: mockSaveTrust, isMutating: false }),
   useDeleteTrustConfig: () => ({ trigger: vi.fn(), isMutating: false }),
+  usePreviewTrustConfig: () => ({ trigger: mockPreview, isMutating: false }),
   useGatePolicies: () => ({
     data: {
       data: [],
@@ -105,6 +121,47 @@ describe('lib', () => {
     expect(gl).toContain('id_tokens:')
     expect(gl).toContain('aud: aud-1')
     expect(gl).not.toMatch(/API_KEY/)
+  })
+
+  it('builds each provider issuer from what names the organization', () => {
+    const org = '00000000-1111-4222-8333-444455556666'
+    expect(issuerFor('azure_devops', org.toUpperCase())).toBe(
+      `https://vstoken.dev.azure.com/${org}`
+    )
+    expect(issuerFor('circleci', org)).toBe(`https://oidc.circleci.com/org/${org}`)
+    const bb = issuerFor('bitbucket', 'Acme')
+    expect(bb).toBe('https://api.bitbucket.org/2.0/workspaces/acme/pipelines-config/identity/oidc')
+    expect(organizationFromIssuer('bitbucket', bb)).toBe('acme')
+    expect(organizationFromIssuer('circleci', `https://oidc.circleci.com/org/${org}`)).toBe(org)
+    expect(issuerFor('jenkins', ' https://ci.example/oidc ')).toBe('https://ci.example/oidc')
+    expect(issuerFor('circleci', '  ')).toBeUndefined()
+  })
+
+  it('new provider snippets use the job identity, never a stored secret', () => {
+    const input = {
+      apiUrl: 'https://ctem.example',
+      tenantId: 't1',
+      audience: defaultAudience('t1'),
+    }
+    for (const p of ['azure_devops', 'bitbucket', 'circleci', 'jenkins'] as const) {
+      const s = snippetFor(p, input)
+      expect(s).toContain('t1')
+      expect(s).not.toMatch(/API_KEY|secrets\./)
+    }
+    expect(snippetFor('bitbucket', input)).toContain('- openctem:tenant:t1')
+    expect(snippetFor('circleci', input)).toContain('circleci run oidc get')
+    expect(snippetFor('azure_devops', input)).toContain('SYSTEM_ACCESSTOKEN: $(System.AccessToken)')
+    expect(snippetFor('jenkins', input)).toContain('withCredentials')
+  })
+
+  it('offers only the rules a provider token can back', () => {
+    expect(PROVIDER_TRAITS.azure_devops).toMatchObject({
+      events: false,
+      environments: false,
+      protectedRef: 'none',
+    })
+    expect(PROVIDER_TRAITS.bitbucket.repositoriesById).toBe(true)
+    expect(PROVIDER_TRAITS.circleci.tenantAudience).toBe(true)
   })
 
   it('builds run list URLs', () => {
@@ -243,6 +300,80 @@ describe('CITrustSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
     await userEvent.click(screen.getByLabelText('Admit fork pull requests'))
     expect(screen.getByText(/fork code would act/i)).toBeInTheDocument()
+  })
+
+  it('guides a Bitbucket trust: workspace, its UUID, repositories by UUID', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await userEvent.click(screen.getByRole('combobox', { name: /provider/i }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Bitbucket Pipelines' }))
+    expect(screen.queryByLabelText('Events')).not.toBeInTheDocument()
+    expect(screen.getByText(/the token signs the id, never the name/i)).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Name'), 'BB')
+    await userEvent.type(screen.getByLabelText('Workspace'), 'acme')
+    await userEvent.type(screen.getByLabelText('Workspace UUID'), 'ws-uuid')
+    await userEvent.type(screen.getByLabelText('Owners'), 'acme')
+    mockSaveTrust.mockResolvedValue({
+      id: 'c2',
+      name: 'BB',
+      provider: 'bitbucket',
+      audience: 'openctem:tenant:t-123',
+    })
+    await userEvent.click(screen.getByRole('button', { name: /^add$/i }))
+    expect(mockSaveTrust).toHaveBeenCalledWith({
+      id: undefined,
+      body: expect.objectContaining({
+        provider: 'bitbucket',
+        issuer: 'https://api.bitbucket.org/2.0/workspaces/acme/pipelines-config/identity/oidc',
+        rules: expect.objectContaining({ owners: ['acme'], workspace_uuid: 'ws-uuid', events: [] }),
+      }),
+    })
+  })
+
+  it('shows the fixed Azure audience and refuses pull request builds by default', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await userEvent.click(screen.getByRole('combobox', { name: /provider/i }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Azure Pipelines' }))
+    expect(screen.getByTestId('ci-fixed-audience')).toHaveTextContent('api://AzureADTokenExchange')
+    expect(screen.queryByLabelText('Audience')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Protected branches and tags only')).not.toBeInTheDocument()
+    expect(screen.getByText(/cannot tell a fork/i)).toBeInTheDocument()
+    // No organization id yet: nothing to check a sample against, nothing to save.
+    expect(screen.queryByTestId('ci-trust-preview')).not.toBeInTheDocument()
+  })
+
+  it('checks a sample token against the draft and shows the outcome', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    mockPreview.mockResolvedValue({
+      verified: true,
+      expired: true,
+      admitted: false,
+      refusal: { code: 'repository_not_allowed', detail: 'repository "acme/web" is not listed' },
+      normalized: { repository: 'acme/web', ref: 'refs/heads/main', commit_verified: true },
+      claims: { iss: 'https://token.actions.githubusercontent.com' },
+    })
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await userEvent.type(screen.getByLabelText('Owners'), 'acme')
+    await userEvent.type(screen.getByLabelText('Check a sample token'), 'a.b.c')
+    await userEvent.click(screen.getByRole('button', { name: /check token/i }))
+    expect(mockPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id_token: 'a.b.c',
+        config: expect.objectContaining({
+          provider: 'github',
+          rules: expect.objectContaining({ owners: ['acme'] }),
+        }),
+      })
+    )
+    const result = await screen.findByTestId('ci-trust-preview-result')
+    expect(within(result).getByText('Signature verified')).toBeInTheDocument()
+    expect(within(result).getByText('Expired')).toBeInTheDocument()
+    expect(within(result).getByText(/repository_not_allowed/)).toBeInTheDocument()
+    expect(mockSaveTrust).not.toHaveBeenCalled()
   })
 
   it('explains that GitHub proves protected refs with deployment environments', async () => {

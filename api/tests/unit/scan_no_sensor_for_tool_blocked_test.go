@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -67,10 +68,10 @@ func TestNoSensorForTool_BlockedOnEveryTriggerPath(t *testing.T) {
 		sc.CreatedBy = &owner
 		_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
 			TenantID: tenantID.String(), ScanID: sc.ID.String(),
-			TriggerType: pipeline.TriggerTypeSchedule, SkipIfRunning: true,
+			TriggerType: scanworkflow.TriggerTypeSchedule, SkipIfRunning: true,
 		})
 		assertNoSensorBlocked(t, deps, sc.ID, err)
-		if b := blockedRuns(deps, sc.ID); b[0].TriggerType != pipeline.TriggerTypeSchedule {
+		if b := blockedRuns(deps, sc.ID); b[0].TriggerType != scanworkflow.TriggerTypeSchedule {
 			t.Errorf("blocked run trigger = %s, want schedule", b[0].TriggerType)
 		}
 	})
