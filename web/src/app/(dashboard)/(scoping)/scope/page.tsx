@@ -913,7 +913,7 @@ export default function ScopeConfigPage() {
     ) : (
       <Button size="sm" onClick={() => setIsAddTargetOpen(true)}>
         <Plus className="me-2 h-4 w-4" />
-        Add to scope
+        {canApproveScope ? 'Add to scope' : 'Request access'}
       </Button>
     )
 
