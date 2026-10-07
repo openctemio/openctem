@@ -105,7 +105,7 @@ describe('Approvals', () => {
     const items = await screen.findAllByRole('listitem')
     expect(items[0]).toHaveTextContent('pay.acme.io')
     expect(items[0]).toHaveTextContent('Puts out of scope')
-    const mineItem = items.find((i) => i.textContent?.includes('mine.net'))!
+    const mineItem = screen.getByText('mine.net').closest('li')!
     expect(within(mineItem).getByRole('button', { name: /Approve/ })).toBeDisabled()
     expect(within(mineItem).getByText(/another approver must approve it/)).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith(
