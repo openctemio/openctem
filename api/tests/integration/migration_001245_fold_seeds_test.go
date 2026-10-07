@@ -1,6 +1,6 @@
 package integration
 
-// Migration 001242 (research/53 A1, SC1, SC2): seeds and easm verified
+// Migration 001245 (research/53 A1, SC1, SC2): seeds and easm verified
 // domains fold into scope entries with today's authority kept, SSO domains
 // get no entry, one-off entries stop discovering, and the down migration
 // brings the seeds back. Replayed in a rolled-back transaction as the
@@ -17,7 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-func TestMigration001242FoldsSeedsIntoEntries(t *testing.T) {
+func TestMigration001245FoldsSeedsIntoEntries(t *testing.T) {
 	db := openLifecycleDB(t)
 	mig := testdb.OpenMigrator(t)
 	ctx := context.Background()
@@ -41,7 +41,7 @@ func TestMigration001242FoldsSeedsIntoEntries(t *testing.T) {
 		}
 		return string(b)
 	}
-	up, down := read("001242_scope_fold_seeds.up.sql"), read("001242_scope_fold_seeds.down.sql")
+	up, down := read("001245_scope_fold_seeds.up.sql"), read("001245_scope_fold_seeds.down.sql")
 
 	tx, err := mig.BeginTx(ctx, nil)
 	if err != nil {
@@ -54,7 +54,7 @@ func TestMigration001242FoldsSeedsIntoEntries(t *testing.T) {
 			t.Fatalf("%v\n%s", err, q)
 		}
 	}
-	// Back to the state before 001242 (the scratch database is migrated).
+	// Back to the state before 001245 (the scratch database is migrated).
 	exec(down)
 
 	seed := func(tenant shared.ID, v string, discovery bool) {
