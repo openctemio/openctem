@@ -463,7 +463,10 @@ func MatchesExclusionPattern(exclusionType ExclusionType, pattern, value string)
 	case ExclusionTypeRepository:
 		return matchWildcard(pattern, value)
 	case ExclusionTypePath:
-		return matchWildcard(pattern, value)
+		// A path exclusion is a web rule (host, path, methods, testing
+		// mode): only Exclusion.Matches can apply it, never the pattern
+		// alone.
+		return false
 	case ExclusionTypeFindingType:
 		return matchWildcard(pattern, value)
 	case ExclusionTypeScanner:

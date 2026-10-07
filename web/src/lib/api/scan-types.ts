@@ -5,7 +5,7 @@
  * Scan configurations bind asset groups with scanners/workflows and schedules.
  */
 
-import type { PipelineRun } from './pipeline-types'
+import type { ScanRun } from './scan-workflow-types'
 
 // Scan types
 
@@ -109,7 +109,7 @@ export interface ScanConfig {
   status: ScanConfigStatus
   last_run_id?: string
   last_run_at?: string
-  last_run_status?: ScanRunStatus
+  last_run_status?: ScanLastRunStatus
   total_runs: number
   successful_runs: number
   failed_runs: number
@@ -150,7 +150,7 @@ export interface ScanConfigWithRelations extends ScanConfig {
     id: string
     name: string
   }
-  pipeline?: {
+  workflow?: {
     id: string
     name: string
   }
@@ -285,7 +285,7 @@ export interface ScanConfigListFilters {
  * Scan configuration list response
  */
 export interface ScanConfigListResponse {
-  items: ScanConfig[]
+  data: ScanConfig[]
   total: number
   page: number
   per_page: number
@@ -305,10 +305,10 @@ export interface ScanConfigStatsData {
 }
 
 /**
- * A scan run. Scan runs are pipeline runs; the one run type lives in
- * pipeline-types (statuses typed as the API spells them).
+ * A scan run. Scan runs are workflow runs; the one run type lives in
+ * workflow-types (statuses typed as the API spells them).
  */
-export type { PipelineRun } from './pipeline-types'
+export type { ScanRun } from './scan-workflow-types'
 
 /** A target a run did not scan, with the reason. */
 export interface RunUncoveredTarget {
@@ -375,7 +375,7 @@ export interface ScanManagementOverview {
 }
 
 /** Status of a scan's last run. */
-export type ScanRunStatus =
+export type ScanLastRunStatus =
   | 'queued'
   | 'pending'
   | 'running'
@@ -440,8 +440,8 @@ export interface FilteringResult {
 }
 
 /**
- * Extended PipelineRun with filtering result
+ * Extended ScanRun with filtering result
  */
-export interface PipelineRunWithFiltering extends PipelineRun {
+export interface ScanRunWithFiltering extends ScanRun {
   filtering_result?: FilteringResult
 }

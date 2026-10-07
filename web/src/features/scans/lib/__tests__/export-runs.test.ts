@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from 'vitest'
 
 import { buildCsv } from '@/hooks/use-csv-export'
 import { RUN_EXPORT_FIELDS, fetchRunsForExport } from '../export-runs'
-import type { PipelineRun } from '@/lib/api/pipeline-types'
+import type { ScanRun } from '@/lib/api/scan-workflow-types'
 
-const run = (i: number, over: Partial<PipelineRun> = {}): PipelineRun => ({
+const run = (i: number, over: Partial<ScanRun> = {}): ScanRun => ({
   id: `r${i}`,
   tenant_id: 't',
   scan_workflow_id: 'p',
@@ -29,7 +29,7 @@ function pages(total: number) {
     const start = (page - 1) * per
     const n = Math.max(0, Math.min(per, total - start))
     return {
-      items: Array.from({ length: n }, (_, i) => run(start + i)),
+      data: Array.from({ length: n }, (_, i) => run(start + i)),
       total,
       page,
       per_page: per,
@@ -85,11 +85,9 @@ describe('run export cells', () => {
     expect(header.split(',')).toHaveLength(RUN_EXPORT_FIELDS.length)
   })
 
-  it('names deleted scans and pipeline runs', () => {
+  it('names deleted scans and workflow runs', () => {
     const scanCol = RUN_EXPORT_FIELDS.find((f) => f.header === 'Scan')!
     expect(scanCol.accessor(run(1, { scan_name: undefined }))).toBe('Deleted scan')
-    expect(scanCol.accessor(run(1, { scan_id: undefined, scan_name: undefined }))).toBe(
-      'Pipeline run'
-    )
+    expect(scanCol.accessor(run(1, { scan_id: undefined, scan_name: undefined }))).toBe('Scan run')
   })
 })

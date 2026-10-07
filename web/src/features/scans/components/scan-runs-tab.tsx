@@ -1,17 +1,17 @@
 'use client'
 
 /**
- * Scans › Runs: every run the tenant's scans (and pipelines) started.
+ * Scans › Runs: every run the tenant's scans (and workflows) started.
  *
- * Reads pipeline runs (GET /api/v1/scan-runs, paged on the server) — the
+ * Reads workflow runs (GET /api/v1/scan-runs, paged on the server) — the
  * table every scan trigger writes. The tab used to read scan sessions, which
  * only CI/sensor-pushed runs create, so it stayed empty while scans ran.
- * Counts come from GET /api/v1/scans/overview-stats (`pipelines`).
+ * Counts come from GET /api/v1/scans/overview-stats (`workflows`).
  */
 
 import { useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
-import type { ColumnDef, SortingState } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 
 import {
   DataTable,
@@ -29,10 +29,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { Can, Permission } from '@/lib/permissions'
-import { usePipelineRuns, useScanManagementStats } from '@/lib/api/pipeline-hooks'
-import type { PipelineRun, PipelineRunListFilters } from '@/lib/api/pipeline-types'
+import { useScanRuns, useScanManagementStats } from '@/lib/api/scan-workflow-hooks'
+import type { ScanRun, ScanRunListFilters } from '@/lib/api/scan-workflow-types'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
 import {
@@ -40,12 +40,9 @@ import {
   DEFAULT_SCAN_PAGE_SIZE,
   RUN_SORT_FIELDS,
   SCAN_PAGE_SIZES,
-  parsePageSize,
-  parseSortParam,
-  toSortParam,
 } from '@/features/scans/lib/scans-url'
 import { RunDetailSheet } from './run-detail-sheet'
-import { Download, Loader2 } from 'lucide-react'
+import { Download, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { exportToCsv } from '@/hooks/use-csv-export'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -55,7 +52,7 @@ import {
   fetchRunsForExport,
 } from '@/features/scans/lib/export-runs'
 
-/** Run statuses as the API stores them (pipeline.RunStatus). */
+/** Run statuses as the API stores them (workflow.RunStatus). */
 export const RUN_STATUS_FILTERS = [
   { value: 'all', label: 'All statuses' },
   { value: 'running', label: 'Running' },
@@ -89,21 +86,20 @@ export function ScanRunsTab() {
 }
 
 function ScanRunsTable() {
-  const [statusFilter, setStatusFilter] = useUrlFilter('run_status', 'all') as [
-    RunStatusFilterValue,
-    (v: RunStatusFilterValue) => void,
-  ]
-  // Page, page size and sort live in the URL (prefixed: the Configurations
-  // tab shares it) so a paged, sorted view of runs can be linked.
-  const [pageParam, setPageParam] = useUrlFilterNumber('run_page', 1)
-  const [perPageParam, setPerPageParam] = useUrlFilterNumber('run_per_page', RUNS_PAGE_SIZE)
-  const perPage = parsePageSize(perPageParam)
-  const [sortParam, setSortParam] = useUrlFilter('run_sort', DEFAULT_RUN_SORT)
-  const sorting = useMemo<SortingState>(
-    () => parseSortParam(sortParam, RUN_SORT_FIELDS, DEFAULT_RUN_SORT),
-    [sortParam]
-  )
-  const pagination = { pageIndex: pageParam - 1, pageSize: perPage }
+  // One list per route (/scans/runs), so plain page / per_page / sort and
+  // field-named filters: `status`, and `scan_id` from a scan's "View all runs".
+  const list = useListParams({
+    pageSizes: SCAN_PAGE_SIZES,
+    defaultPageSize: RUNS_PAGE_SIZE,
+    sortFields: RUN_SORT_FIELDS,
+    defaultSort: DEFAULT_RUN_SORT,
+    filters: { status: 'all', scan_id: '' },
+  })
+  const statusFilter = (
+    RUN_STATUS_FILTERS.some((f) => f.value === list.filters.status) ? list.filters.status : 'all'
+  ) as RunStatusFilterValue
+  const scanFilter = list.filters.scan_id
+  const { pagination, sorting, perPage } = list
   const [openRunId, setOpenRunId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
 
@@ -114,28 +110,24 @@ function ScanRunsTable() {
 
   // Statuses are typed as the API stores them, so the filter value goes
   // through unchanged.
-  const filters: PipelineRunListFilters = {
+  const filters: ScanRunListFilters = {
     status: statusFilter === 'all' ? undefined : statusFilter,
-    sort: toSortParam(sorting, RUN_SORT_FIELDS, DEFAULT_RUN_SORT),
-    page: pageParam,
+    scan_id: scanFilter || undefined,
+    sort: list.sort,
+    page: list.page,
     per_page: perPage,
   }
 
-  const { data, isLoading, error } = usePipelineRuns(filters, swrConfig)
+  const { data, isLoading, error } = useScanRuns(filters, swrConfig)
   const { data: overview, isLoading: isLoadingStats } = useScanManagementStats(swrConfig)
-  const runs = data?.items ?? []
+  const runs = data?.data ?? []
   const counts = overview?.scan_runs
 
-  const setStatus = useCallback(
-    (v: RunStatusFilterValue) => {
-      setStatusFilter(v)
-      setPageParam(1)
-    },
-    [setStatusFilter, setPageParam]
-  )
+  const { setFilter } = list
+  const setStatus = useCallback((v: RunStatusFilterValue) => setFilter('status', v), [setFilter])
   const toggleStatus = (v: RunStatusFilterValue) => setStatus(statusFilter === v ? 'all' : v)
 
-  const columns: ColumnDef<PipelineRun>[] = useMemo(
+  const columns: ColumnDef<ScanRun>[] = useMemo(
     () => [
       {
         id: 'scan',
@@ -144,7 +136,7 @@ function ScanRunsTable() {
         cell: ({ row }) => {
           const run = row.original
           if (!run.scan_id) {
-            return <span className="text-muted-foreground">Pipeline run</span>
+            return <span className="text-muted-foreground">Scan run</span>
           }
           // Named by the server (quick scans and every page included); a run
           // whose scan was deleted keeps its row.
@@ -321,18 +313,32 @@ function ScanRunsTable() {
   ]
 
   const toolbarStart = (
-    <Select value={statusFilter} onValueChange={(v) => setStatus(v as RunStatusFilterValue)}>
-      <SelectTrigger className="h-9 w-auto min-w-36" aria-label="Filter runs by status">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {RUN_STATUS_FILTERS.map((f) => (
-          <SelectItem key={f.value} value={f.value}>
-            {f.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex flex-wrap items-center gap-2">
+      <Select value={statusFilter} onValueChange={(v) => setStatus(v as RunStatusFilterValue)}>
+        <SelectTrigger className="h-9 w-auto min-w-36" aria-label="Filter runs by status">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {RUN_STATUS_FILTERS.map((f) => (
+            <SelectItem key={f.value} value={f.value}>
+              {f.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {scanFilter && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-9"
+          onClick={() => list.setFilter('scan_id', '')}
+          aria-label="Show runs of every scan"
+        >
+          One scan
+          <X className="ms-1.5 h-3.5 w-3.5" aria-hidden />
+        </Button>
+      )}
+    </div>
   )
 
   const filtered = statusFilter !== 'all'
@@ -347,6 +353,7 @@ function ScanRunsTable() {
         capped,
       } = await fetchRunsForExport({
         status: filters.status,
+        scan_id: filters.scan_id,
         sort: filters.sort,
       })
       if (exportToCsv(all, RUN_EXPORT_FIELDS, 'scan-runs') && capped) {
@@ -406,21 +413,11 @@ function ScanRunsTable() {
             rowCount={data?.total ?? 0}
             pageCount={data?.total_pages}
             pagination={pagination}
-            onPaginationChange={(next) => {
-              if (next.pageSize !== perPage) {
-                setPerPageParam(next.pageSize)
-                setPageParam(1)
-              } else {
-                setPageParam(next.pageIndex + 1)
-              }
-            }}
+            onPaginationChange={list.setPagination}
             pageSize={perPage}
             pageSizeOptions={[...SCAN_PAGE_SIZES]}
             sorting={sorting}
-            onSortingChange={(next) => {
-              setSortParam(toSortParam(next, RUN_SORT_FIELDS, DEFAULT_RUN_SORT))
-              setPageParam(1)
-            }}
+            onSortingChange={list.setSorting}
             paginationNoun="runs"
             emptyMessage={filtered ? 'No runs with this status' : 'No scan runs yet'}
             emptyDescription={

@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -444,7 +445,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	chunks := stepChunks(resolved, stepTargets)
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
-		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
+		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk, stageKeyOf(resolved))
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
 			// chunk, so no other sensor hits them at the same time.
@@ -473,6 +474,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	return s.stepRunRepo.Update(ctx, stepRun)
 }
 
+// stageKeyOf is the catalog stage a resolved step runs ("" when none).
+func stageKeyOf(resolved scanapp.StepTool) stage.Key {
+	if !resolved.HasStage {
+		return ""
+	}
+	return resolved.Stage.Key
+}
+
 // stepChunks cuts a step's targets into the chunks its commands carry:
 // pieces of the capability's chunk size for a tool that takes a target
 // list (stage.ChunkSizeFor), else one chunk with every target. A step with
@@ -495,9 +504,14 @@ func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets) []*scanapp.S
 
 // stepCommand builds one command of a step for the given chunk of its
 // targets, after the payload passed the security validator.
-func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun, chunk *scanapp.StepTargets) (*command.Command, error) {
+func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun,
+	chunk *scanapp.StepTargets, key stage.Key,
+) (*command.Command, error) {
 	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
 	if err != nil {
+		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
+	if err := s.applyWebScope(ctx, run.TenantID, key, payload); err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 
@@ -1385,6 +1399,9 @@ func (s *Service) RunTaskSummaries(ctx context.Context, tenantID string, runs []
 type ListRunsInput struct {
 	TenantID       string `json:"tenant_id" validate:"required,uuid"`
 	ScanWorkflowID string `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScanID         string `json:"scan_id" validate:"omitempty,uuid"`
+	AssetID        string `json:"asset_id" validate:"omitempty,uuid"`
+	Status         string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout blocked"`
 	// Kinds narrows to these run kinds (scan, quick, retest, ...).
 	Kinds []string `json:"kind"`
 	// IncludeSystem lists system runs too (hidden by default).
@@ -1392,8 +1409,6 @@ type ListRunsInput struct {
 	// ExcludeKinds leaves these kinds out (set by the handler, not the
 	// client: runs about a finding the caller may not see).
 	ExcludeKinds []string `json:"-"`
-	AssetID      string   `json:"asset_id" validate:"omitempty,uuid"`
-	Status       string   `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout"`
 	// Sort is one sort key, `field` or `-field` (scanrun.RunListSortFields);
 	// an unknown field is a validation error.
 	Sort    string `json:"sort"`
@@ -1418,18 +1433,24 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 		Sort:     sort,
 	}
 
-	if input.ScanWorkflowID != "" {
-		pid, err := shared.IDFromString(input.ScanWorkflowID)
-		if err == nil {
-			filter.ScanWorkflowID = &pid
+	// A filter id that does not parse is refused: silently dropping it would
+	// answer with every run of the tenant instead of the narrowed list.
+	for _, f := range []struct {
+		name, raw string
+		dst       **shared.ID
+	}{
+		{"scan_workflow_id", input.ScanWorkflowID, &filter.ScanWorkflowID},
+		{"scan_id", input.ScanID, &filter.ScanID},
+		{"asset_id", input.AssetID, &filter.AssetID},
+	} {
+		if f.raw == "" {
+			continue
 		}
-	}
-
-	if input.AssetID != "" {
-		aid, err := shared.IDFromString(input.AssetID)
-		if err == nil {
-			filter.AssetID = &aid
+		id, err := shared.IDFromString(f.raw)
+		if err != nil {
+			return pagination.Result[*scanrun.Run]{}, fmt.Errorf("%w: invalid %s", shared.ErrValidation, f.name)
 		}
+		*f.dst = &id
 	}
 
 	for _, k := range input.Kinds {
@@ -1447,6 +1468,9 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 
 	if input.Status != "" {
 		st := scanrun.RunStatus(input.Status)
+		if !st.IsValid() {
+			return pagination.Result[*scanrun.Run]{}, fmt.Errorf("%w: invalid status", shared.ErrValidation)
+		}
 		filter.Status = &st
 	}
 

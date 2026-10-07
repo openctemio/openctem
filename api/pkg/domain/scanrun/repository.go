@@ -20,12 +20,14 @@ type RunFilter struct {
 	ExcludeKinds   []RunKind
 	TenantID       *shared.ID
 	ScanWorkflowID *shared.ID
-	AssetID        *shared.ID
-	Status         *RunStatus
-	TriggerType    *scanworkflow.TriggerType
-	TriggeredBy    string
-	StartedFrom    *time.Time
-	StartedTo      *time.Time
+	// ScanID narrows to the runs of one scan (a scan's "View all runs").
+	ScanID      *shared.ID
+	AssetID     *shared.ID
+	Status      *RunStatus
+	TriggerType *scanworkflow.TriggerType
+	TriggeredBy string
+	StartedFrom *time.Time
+	StartedTo   *time.Time
 	// Sort orders the list; the zero value is newest first.
 	Sort RunListSort
 }

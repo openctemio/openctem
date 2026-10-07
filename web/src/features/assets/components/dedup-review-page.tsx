@@ -26,7 +26,7 @@ import {
 } from '../api/use-asset-dedup'
 import { dedupReasonLabel, describeEvidence } from '../lib/asset-identity'
 
-// DedupReviewPage surfaces the identity/dedup pipeline that was previously
+// DedupReviewPage surfaces the identity/dedup flow that was previously
 // invisible: the correlator enqueues a pending review when several assets share
 // identity, and an operator approves (merge) or rejects (keep separate). The
 // backend + hooks already existed; this is the missing operator UI.

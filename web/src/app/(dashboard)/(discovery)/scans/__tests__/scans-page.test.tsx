@@ -34,7 +34,11 @@ vi.mock('@/features/scans/components', () => ({
 vi.mock('@/features/scans/components/scan-config-detail-sheet', () => ({
   ScanConfigDetailSheet: () => null,
 }))
-vi.mock('@/features/scans/components/scan-runs-tab', () => ({ ScanRunsTab: () => null }))
+vi.mock('@/features/scans/components/scans-section-tabs', () => ({
+  ScansPageHeader: () => null,
+  ScansSectionTabs: () => null,
+  ScanCreateActions: () => null,
+}))
 vi.mock('@/features/sensors/components/sensor-opt-in-banner', () => ({
   SensorOptInBanner: () => null,
 }))
@@ -53,23 +57,17 @@ vi.mock('@/lib/permissions', async (importOriginal) => {
     useHasPermission: () => true,
   }
 })
-const urlState: Record<string, string> = {}
-vi.mock('@/hooks/use-url-param', () => ({
-  useUrlFilter: (key: string, fallback: string) => [
-    urlState[key] ?? fallback,
-    (v: string) => {
-      if (v === fallback || v === '') delete urlState[key]
-      else urlState[key] = v
-    },
-  ],
-  useUrlFilterNumber: (key: string, fallback: number) => [
-    urlState[key] ? Number(urlState[key]) : fallback,
-    (v: number) => {
-      if (v === fallback) delete urlState[key]
-      else urlState[key] = String(v)
-    },
-  ],
-}))
+// The real URL is the list state (useListParams reads and writes it).
+const urlState = new Proxy({} as Record<string, string | undefined>, {
+  get: (_, key) => new URLSearchParams(window.location.search).get(String(key)) ?? undefined,
+  set: (_, key, value) => {
+    const params = new URLSearchParams(window.location.search)
+    params.set(String(key), String(value))
+    window.history.replaceState(null, '', `/scans?${params}`)
+    return true
+  },
+})
+const resetUrl = () => window.history.replaceState(null, '', '/scans')
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -92,9 +90,9 @@ const scan = (i: number) => ({
 describe('Scans › Configurations', () => {
   beforeEach(() => {
     configCalls.length = 0
-    for (const k of Object.keys(urlState)) delete urlState[k]
+    resetUrl()
     configsResponse = {
-      items: Array.from({ length: 25 }, (_, i) => scan(i + 26)),
+      data: Array.from({ length: 25 }, (_, i) => scan(i + 26)),
       total: 57,
       page: 2,
       per_page: 25,
