@@ -9535,6 +9535,12 @@ definitions:
       logo_url:
         maxLength: 500
         type: string
+      min_version:
+        description: |-
+          MinVersion is the oldest tool version the catalog accepts (a release
+          version such as "3.2.0"; empty: no minimum).
+        maxLength: 50
+        type: string
       name:
         maxLength: 50
         minLength: 1
@@ -15821,6 +15827,132 @@ definitions:
         example: octocat
         type: string
     type: object
+  internal_infra_http_handler.ToolAvailabilityContent:
+    properties:
+      name:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
+  internal_infra_http_handler.ToolAvailabilityItem:
+    properties:
+      content:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ToolContentVersionsResponse'
+        type: array
+      enabled:
+        description: 'Enabled: active in the catalog and switched on for the tenant.'
+        type: boolean
+      in_catalog:
+        type: boolean
+      last_reported_at:
+        type: string
+      latest_version:
+        type: string
+      max_reported_version:
+        type: string
+      min_reported_version:
+        type: string
+      min_version:
+        type: string
+      name:
+        type: string
+      sensors:
+        description: |-
+          Sensors lists every sensor that reports the tool, online first. Empty
+          without sensors:read (the counts are always given).
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ToolAvailabilitySensor'
+        type: array
+      sensors_excluded:
+        type: integer
+      sensors_online:
+        description: |-
+          SensorsOnline / SensorsTotal count the sensors that may run the tool;
+          SensorsExcluded those that have it but may not.
+        type: integer
+      sensors_total:
+        type: integer
+      status:
+        enum:
+        - ready
+        - no_sensor
+        - offline_only
+        - outdated
+        - disabled
+        type: string
+      tool:
+        allOf:
+        - $ref: '#/definitions/internal_infra_http_handler.ToolResponse'
+        description: |-
+          Tool is the catalog entry; null for a tool a sensor reports that the
+          tenant's catalog does not list.
+      update_available:
+        type: boolean
+      versions:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_infra_http_handler.ToolAvailabilityResponse:
+    properties:
+      computed_at:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ToolAvailabilityItem'
+        type: array
+      summary:
+        additionalProperties:
+          type: integer
+        description: Summary counts the tools per status (every status present).
+        type: object
+      zone_id:
+        description: ZoneID is the scan zone the view is limited to.
+        type: string
+    type: object
+  internal_infra_http_handler.ToolAvailabilitySensor:
+    properties:
+      content:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ToolAvailabilityContent'
+        type: array
+      excluded:
+        description: |-
+          Excluded is why the sensor may not run the tool although it has it:
+          grant or local_policy; empty when it may.
+        enum:
+        - grant
+        - local_policy
+        type: string
+      excluded_detail:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      online:
+        description: 'Online: the sensor takes work now.'
+        type: boolean
+      state:
+        description: State is the sensor's state as the Sensors page shows it.
+        type: string
+      version:
+        type: string
+      zones:
+        items:
+          $ref: '#/definitions/internal_infra_http_handler.ToolAvailabilityZone'
+        type: array
+    type: object
+  internal_infra_http_handler.ToolAvailabilityZone:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
   internal_infra_http_handler.ToolConfigRequest:
     properties:
       custom_template_ids:
@@ -15860,6 +15992,15 @@ definitions:
         type: string
       timeout:
         type: integer
+    type: object
+  internal_infra_http_handler.ToolContentVersionsResponse:
+    properties:
+      name:
+        type: string
+      versions:
+        items:
+          type: string
+        type: array
     type: object
   internal_infra_http_handler.ToolResponse:
     properties:
@@ -15919,6 +16060,8 @@ definitions:
       metadata:
         additionalProperties: {}
         type: object
+      min_version:
+        type: string
       name:
         type: string
       output_formats:
@@ -16868,6 +17011,12 @@ definitions:
         type: string
       logo_url:
         maxLength: 500
+        type: string
+      min_version:
+        description: |-
+          MinVersion is the oldest tool version the catalog accepts (a release
+          version such as "3.2.0"; empty: no minimum).
+        maxLength: 50
         type: string
       output_formats:
         items:
@@ -38238,6 +38387,41 @@ paths:
       security:
       - BearerAuth: []
       summary: List all tools with tenant config
+      tags:
+      - Tenant Tools
+  /tenant-tools/availability:
+    get:
+      description: 'Every catalog tool, plus every tool the tenant''s sensors report,
+        with the sensors that have it (online and total), the versions they report
+        and a derived status. Sensor-reported data is advice: dispatch checks every
+        job again at claim time.'
+      parameters:
+      - description: Only the sensors of this scan zone
+        in: query
+        name: zone_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_infra_http_handler.ToolAvailabilityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_openctemio_openctem_api_pkg_apierror.Error'
+      security:
+      - BearerAuth: []
+      summary: Tool availability
       tags:
       - Tenant Tools
   /tenant-tools/bulk/disable:

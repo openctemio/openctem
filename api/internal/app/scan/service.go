@@ -204,14 +204,15 @@ type Service struct {
 	freezeWindows       FreezeWindows        // optional; nil = no trigger-time freeze check (freeze.go)
 	actScope            ActScopeChecker      // optional; nil = act scope not enforced (research/15 L-06)
 	// activeProof is the operator's SCOPE_ACTIVE_PROOF (active_proof.go).
-	activeProof    string
-	connectorScans ConnectorScans        // optional; nil = a connector cannot be a scanner (RFC-047)
-	policySensors  AvailableSensorLister // optional; nil = no policy preflight outside zones (policy_preflight.go)
-	privatePolicy  PrivateTargetPolicy   // optional; nil = the private-target switch is not read at trigger
-	tenantTools    TenantToolConfigs     // optional; nil = per-organization tool switch not enforced
-	optIns         OptInPolicy           // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
-	stepQueuer     StepQueuer            // the pipeline service's step dispatcher; nil refuses workflow scans
-	logger         *logger.Logger
+	activeProof      string
+	connectorScans   ConnectorScans        // optional; nil = a connector cannot be a scanner (RFC-047)
+	policySensors    AvailableSensorLister // optional; nil = no policy preflight outside zones (policy_preflight.go)
+	privatePolicy    PrivateTargetPolicy   // optional; nil = the private-target switch is not read at trigger
+	toolAvailability ToolAvailability      // optional; nil = no tool availability check at trigger (tool_availability_gate.go)
+	tenantTools      TenantToolConfigs     // optional; nil = per-organization tool switch not enforced
+	optIns           OptInPolicy           // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
+	stepQueuer       StepQueuer            // the pipeline service's step dispatcher; nil refuses workflow scans
+	logger           *logger.Logger
 }
 
 // ScopeExclusionFilter reports which of the given candidate targets match an
