@@ -29,10 +29,14 @@ type Service struct {
 	toolRepo            tooldom.Repository
 	configRepo          tooldom.TenantToolConfigRepository
 	executionRepo       tooldom.ToolExecutionRepository
-	sensorRepo          sensor.Repository     // For checking tool availability
 	categoryRepo        tooldomcat.Repository // For fetching category info
 	pipelineDeactivator PipelineDeactivator   // For cascade deactivation when tool is disabled/deleted
 	logger              *logger.Logger
+
+	// Tool availability sources (availability.go).
+	availSensors SensorLister
+	availZones   ZoneLister
+	availGrants  GrantLister
 }
 
 // NewService creates a new Service.
@@ -48,12 +52,6 @@ func NewService(
 		executionRepo: executionRepo,
 		logger:        log.With("service", "tool"),
 	}
-}
-
-// SetSensorRepo sets the sensor repository for tool availability checks.
-// This is optional - if not set, IsAvailable will always be true.
-func (s *Service) SetSensorRepo(repo sensor.Repository) {
-	s.sensorRepo = repo
 }
 
 // SetCategoryRepo sets the category repository for fetching category info.
@@ -74,15 +72,18 @@ func (s *Service) SetPipelineDeactivator(deactivator PipelineDeactivator) {
 
 // CreateInput represents the input for creating a tool.
 type CreateInput struct {
-	Name             string         `json:"name" validate:"required,min=1,max=50"`
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	CategoryID       string         `json:"category_id" validate:"omitempty,uuid"` // UUID of tool_categories
-	InstallMethod    string         `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	Name          string `json:"name" validate:"required,min=1,max=50"`
+	DisplayName   string `json:"display_name" validate:"max=100"`
+	Description   string `json:"description" validate:"max=1000"`
+	CategoryID    string `json:"category_id" validate:"omitempty,uuid"` // UUID of tool_categories
+	InstallMethod string `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
+	InstallCmd    string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd     string `json:"update_cmd" validate:"max=500"`
+	VersionCmd    string `json:"version_cmd" validate:"max=500"`
+	VersionRegex  string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -124,6 +125,9 @@ func (s *Service) CreateTool(ctx context.Context, input CreateInput) (*tooldom.T
 	t.UpdateCmd = input.UpdateCmd
 	t.VersionCmd = input.VersionCmd
 	t.VersionRegex = input.VersionRegex
+	if t.MinVersion, err = minVersionOf(input.MinVersion); err != nil {
+		return nil, err
+	}
 	t.ConfigFilePath = ""
 	t.DocsURL = input.DocsURL
 	t.GithubURL = input.GithubURL
@@ -245,14 +249,17 @@ func (s *Service) ListToolsByCapability(ctx context.Context, capability string) 
 
 // UpdateInput represents the input for updating a tool.
 type UpdateInput struct {
-	ToolID           string         `json:"tool_id" validate:"required,uuid"`
-	TenantID         string         `json:"-"` // set from the JWT tenant context, not the body
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	ToolID       string `json:"tool_id" validate:"required,uuid"`
+	TenantID     string `json:"-"` // set from the JWT tenant context, not the body
+	DisplayName  string `json:"display_name" validate:"max=100"`
+	Description  string `json:"description" validate:"max=1000"`
+	InstallCmd   string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd    string `json:"update_cmd" validate:"max=500"`
+	VersionCmd   string `json:"version_cmd" validate:"max=500"`
+	VersionRegex string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -292,6 +299,9 @@ func (s *Service) UpdateTool(ctx context.Context, input UpdateInput) (*tooldom.T
 	// Update additional fields
 	t.VersionCmd = input.VersionCmd
 	t.VersionRegex = input.VersionRegex
+	if t.MinVersion, err = minVersionOf(input.MinVersion); err != nil {
+		return nil, err
+	}
 	t.DocsURL = input.DocsURL
 	t.GithubURL = input.GithubURL
 	t.LogoURL = input.LogoURL
@@ -468,17 +478,20 @@ func (s *Service) UpdateToolVersion(ctx context.Context, input UpdateToolVersion
 
 // CreateCustomToolInput represents the input for creating a tenant custom tool.
 type CreateCustomToolInput struct {
-	TenantID         string         `json:"tenant_id" validate:"required,uuid"`
-	CreatedBy        string         `json:"created_by" validate:"omitempty,uuid"` // User ID who created the tool
-	Name             string         `json:"name" validate:"required,min=1,max=50"`
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	CategoryID       string         `json:"category_id" validate:"omitempty,uuid"` // UUID of tool_categories
-	InstallMethod    string         `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	TenantID      string `json:"tenant_id" validate:"required,uuid"`
+	CreatedBy     string `json:"created_by" validate:"omitempty,uuid"` // User ID who created the tool
+	Name          string `json:"name" validate:"required,min=1,max=50"`
+	DisplayName   string `json:"display_name" validate:"max=100"`
+	Description   string `json:"description" validate:"max=1000"`
+	CategoryID    string `json:"category_id" validate:"omitempty,uuid"` // UUID of tool_categories
+	InstallMethod string `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
+	InstallCmd    string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd     string `json:"update_cmd" validate:"max=500"`
+	VersionCmd    string `json:"version_cmd" validate:"max=500"`
+	VersionRegex  string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -540,6 +553,9 @@ func (s *Service) CreateCustomTool(ctx context.Context, input CreateCustomToolIn
 	t.UpdateCmd = input.UpdateCmd
 	t.VersionCmd = input.VersionCmd
 	t.VersionRegex = input.VersionRegex
+	if t.MinVersion, err = minVersionOf(input.MinVersion); err != nil {
+		return nil, err
+	}
 	t.ConfigFilePath = ""
 	t.DocsURL = input.DocsURL
 	t.GithubURL = input.GithubURL
@@ -684,14 +700,17 @@ func (s *Service) ListAvailableTools(ctx context.Context, input ListAvailableToo
 
 // UpdateCustomToolInput represents the input for updating a tenant custom tool.
 type UpdateCustomToolInput struct {
-	TenantID         string         `json:"tenant_id" validate:"required,uuid"`
-	ToolID           string         `json:"tool_id" validate:"required,uuid"`
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	TenantID     string `json:"tenant_id" validate:"required,uuid"`
+	ToolID       string `json:"tool_id" validate:"required,uuid"`
+	DisplayName  string `json:"display_name" validate:"max=100"`
+	Description  string `json:"description" validate:"max=1000"`
+	InstallCmd   string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd    string `json:"update_cmd" validate:"max=500"`
+	VersionCmd   string `json:"version_cmd" validate:"max=500"`
+	VersionRegex string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -729,6 +748,9 @@ func (s *Service) UpdateCustomTool(ctx context.Context, input UpdateCustomToolIn
 	// Update additional fields
 	t.VersionCmd = input.VersionCmd
 	t.VersionRegex = input.VersionRegex
+	if t.MinVersion, err = minVersionOf(input.MinVersion); err != nil {
+		return nil, err
+	}
 	t.DocsURL = input.DocsURL
 	t.GithubURL = input.GithubURL
 	t.LogoURL = input.LogoURL
@@ -1223,34 +1245,17 @@ func (s *Service) ListToolsWithConfig(ctx context.Context, input ListToolsWithCo
 		return result, err
 	}
 
-	// Enrich with tool availability info if sensorRepo is available
-	if s.sensorRepo != nil {
-		// Get all tools that have at least one sensor available
-		availableTools, err := s.sensorRepo.GetAvailableToolsForTenant(ctx, tenantID)
-		if err != nil {
-			s.logger.Warn("Failed to get available tools, defaulting to all available",
-				"error", err, "tenant_id", tenantID)
-			// On error, mark all as available to not block UI
-			for _, twc := range result.Data {
-				twc.IsAvailable = true
-			}
-		} else {
-			// Create a set for O(1) lookup
-			availableSet := make(map[string]bool, len(availableTools))
-			for _, t := range availableTools {
-				availableSet[t] = true
-			}
-
-			// Mark each tool's availability
-			for _, twc := range result.Data {
-				twc.IsAvailable = availableSet[twc.Tool.Name]
-			}
-		}
-	} else {
-		// No sensor repo, default to all available
-		for _, twc := range result.Data {
-			twc.IsAvailable = true
-		}
+	// is_available: the tool can be dispatched now (availability.go); every
+	// tool when availability is unknown or cannot be read, so a picker is
+	// never blocked by a failure here (trigger time refuses for real).
+	runnable, err := s.RunnableToolNames(ctx, input.TenantID)
+	if err != nil {
+		s.logger.Warn("tool availability unavailable; marking every tool available",
+			"error", err, "tenant_id", tenantID)
+		runnable = nil
+	}
+	for _, twc := range result.Data {
+		twc.IsAvailable = runnable == nil || runnable[twc.Tool.Name]
 	}
 
 	return result, nil
@@ -1304,12 +1309,20 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 		}
 	}
 
+	runnable, err := s.RunnableToolNames(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("tool availability unavailable; marking the tool available",
+			"error", err, "tenant_id", tenantID)
+		runnable = nil
+	}
+
 	return &tooldom.ToolWithConfig{
 		Tool:            t,
 		Category:        embeddedCat,
 		TenantConfig:    tenantConfig,
 		EffectiveConfig: effectiveConfig,
 		IsEnabled:       isEnabled,
+		IsAvailable:     runnable == nil || runnable[t.Name],
 	}, nil
 }
 
@@ -1557,4 +1570,16 @@ func (s *Service) ListToolExecutions(ctx context.Context, input ListToolExecutio
 
 	page := pagination.New(input.Page, input.PerPage)
 	return s.executionRepo.List(ctx, filter, page)
+}
+
+// minVersionOf validates a catalog minimum version: empty (no minimum) or a
+// release version, stored in its normalized form ("3.2" -> "v3.2.0").
+func minVersionOf(v string) (string, error) {
+	if v == "" {
+		return "", nil
+	}
+	if !sensor.IsReleaseVersion(v) {
+		return "", fmt.Errorf("%w: min_version must be a release version such as 3.2.0", shared.ErrValidation)
+	}
+	return sensor.NormalizeVersion(v), nil
 }

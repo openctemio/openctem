@@ -31639,6 +31639,75 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/tenant-tools/availability': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Tool availability
+     * @description Every catalog tool, plus every tool the tenant's sensors report, with the sensors that have it (online and total), the versions they report and a derived status. Sensor-reported data is advice: dispatch checks every job again at claim time.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description Only the sensors of this scan zone */
+          zone_id?: string
+        }
+        header?: never
+        path?: never
+        cookie?: never
+      }
+      requestBody?: never
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ToolAvailabilityResponse']
+          }
+        }
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Internal Server Error */
+        500: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+      }
+    }
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/tenant-tools/bulk/disable': {
     parameters: {
       query?: never
@@ -39468,6 +39537,11 @@ export interface components {
       /** @enum {string} */
       install_method: 'go' | 'pip' | 'npm' | 'docker' | 'binary'
       logo_url?: string
+      /**
+       * @description MinVersion is the oldest tool version the catalog accepts (a release
+       *     version such as "3.2.0"; empty: no minimum).
+       */
+      min_version?: string
       name: string
       output_formats?: string[]
       supported_targets?: string[]
@@ -42922,6 +42996,76 @@ export interface components {
       /** @example octocat */
       username?: string
     }
+    'internal_infra_http_handler.ToolAvailabilityContent': {
+      name?: string
+      updated_at?: string
+      version?: string
+    }
+    'internal_infra_http_handler.ToolAvailabilityItem': {
+      content?: components['schemas']['internal_infra_http_handler.ToolContentVersionsResponse'][]
+      /** @description Enabled: active in the catalog and switched on for the tenant. */
+      enabled?: boolean
+      in_catalog?: boolean
+      last_reported_at?: string
+      latest_version?: string
+      max_reported_version?: string
+      min_reported_version?: string
+      min_version?: string
+      name?: string
+      /**
+       * @description Sensors lists every sensor that reports the tool, online first. Empty
+       *     without sensors:read (the counts are always given).
+       */
+      sensors?: components['schemas']['internal_infra_http_handler.ToolAvailabilitySensor'][]
+      sensors_excluded?: number
+      /**
+       * @description SensorsOnline / SensorsTotal count the sensors that may run the tool;
+       *     SensorsExcluded those that have it but may not.
+       */
+      sensors_online?: number
+      sensors_total?: number
+      /** @enum {string} */
+      status?: 'ready' | 'no_sensor' | 'offline_only' | 'outdated' | 'disabled'
+      /**
+       * @description Tool is the catalog entry; null for a tool a sensor reports that the
+       *     tenant's catalog does not list.
+       */
+      tool?: components['schemas']['internal_infra_http_handler.ToolResponse']
+      update_available?: boolean
+      versions?: string[]
+    }
+    'internal_infra_http_handler.ToolAvailabilityResponse': {
+      computed_at?: string
+      items?: components['schemas']['internal_infra_http_handler.ToolAvailabilityItem'][]
+      /** @description Summary counts the tools per status (every status present). */
+      summary?: {
+        [key: string]: number
+      }
+      /** @description ZoneID is the scan zone the view is limited to. */
+      zone_id?: string
+    }
+    'internal_infra_http_handler.ToolAvailabilitySensor': {
+      content?: components['schemas']['internal_infra_http_handler.ToolAvailabilityContent'][]
+      /**
+       * @description Excluded is why the sensor may not run the tool although it has it:
+       *     grant or local_policy; empty when it may.
+       * @enum {string}
+       */
+      excluded?: 'grant' | 'local_policy'
+      excluded_detail?: string
+      id?: string
+      name?: string
+      /** @description Online: the sensor takes work now. */
+      online?: boolean
+      /** @description State is the sensor's state as the Sensors page shows it. */
+      state?: string
+      version?: string
+      zones?: components['schemas']['internal_infra_http_handler.ToolAvailabilityZone'][]
+    }
+    'internal_infra_http_handler.ToolAvailabilityZone': {
+      id?: string
+      name?: string
+    }
     'internal_infra_http_handler.ToolConfigRequest': {
       /** @description IDs of custom templates */
       custom_template_ids?: string[]
@@ -42945,6 +43089,10 @@ export interface components {
       /** @description "default", "custom", "both" */
       template_mode?: string
       timeout?: number
+    }
+    'internal_infra_http_handler.ToolContentVersionsResponse': {
+      name?: string
+      versions?: string[]
     }
     'internal_infra_http_handler.ToolResponse': {
       capabilities?: string[]
@@ -42980,6 +43128,7 @@ export interface components {
       metadata?: {
         [key: string]: unknown
       }
+      min_version?: string
       name?: string
       output_formats?: string[]
       /**
@@ -43393,6 +43542,11 @@ export interface components {
       github_url?: string
       install_cmd?: string
       logo_url?: string
+      /**
+       * @description MinVersion is the oldest tool version the catalog accepts (a release
+       *     version such as "3.2.0"; empty: no minimum).
+       */
+      min_version?: string
       output_formats?: string[]
       supported_targets?: string[]
       tags?: string[]

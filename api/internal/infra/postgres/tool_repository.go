@@ -68,9 +68,9 @@ func (r *ToolRepository) Create(ctx context.Context, t *tool.Tool) error {
 			config_file_path, config_schema, default_config,
 			capabilities, supported_targets, output_formats,
 			docs_url, github_url, is_active, is_builtin,
-			tags, metadata, created_by, created_at, updated_at
+			tags, metadata, created_by, created_at, updated_at, min_version
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, NULLIF($30, ''))
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -103,6 +103,7 @@ func (r *ToolRepository) Create(ctx context.Context, t *tool.Tool) error {
 		createdBy,
 		t.CreatedAt,
 		t.UpdatedAt,
+		t.MinVersion,
 	)
 
 	if err != nil {
@@ -248,7 +249,7 @@ func (r *ToolRepository) ListByCategoryName(ctx context.Context, categoryName st
 		       t.config_file_path, t.config_schema, t.default_config,
 		       t.capabilities, t.supported_targets, t.output_formats, t.output_types,
 		       t.docs_url, t.github_url, t.is_active, t.is_builtin,
-		       t.tags, t.metadata, t.created_by, t.created_at, t.updated_at
+		       t.tags, t.metadata, t.created_by, t.created_at, t.updated_at, t.min_version
 		FROM tools t
 		JOIN tool_categories tc ON t.category_id = tc.id
 		WHERE tc.name = $1 AND t.is_active = true
@@ -365,7 +366,8 @@ func (r *ToolRepository) Update(ctx context.Context, t *tool.Tool) error {
 		    config_file_path = $11, config_schema = $12, default_config = $13,
 		    capabilities = $14, supported_targets = $15, output_formats = $16,
 		    docs_url = $17, github_url = $18, is_active = $19,
-		    tags = $20, metadata = $21, updated_at = $22, category_id = $23
+		    tags = $20, metadata = $21, updated_at = $22, category_id = $23,
+		    min_version = NULLIF($24, '')
 		WHERE id = $1
 	`
 
@@ -393,6 +395,7 @@ func (r *ToolRepository) Update(ctx context.Context, t *tool.Tool) error {
 		metadata,
 		t.UpdatedAt,
 		categoryID,
+		t.MinVersion,
 	)
 
 	if err != nil {
@@ -586,7 +589,7 @@ func (r *ToolRepository) selectQuery() string {
 		       config_file_path, config_schema, default_config,
 		       capabilities, supported_targets, output_formats, output_types,
 		       docs_url, github_url, is_active, is_builtin,
-		       tags, metadata, created_by, created_at, updated_at
+		       tags, metadata, created_by, created_at, updated_at, min_version
 		FROM tools
 	`
 }
@@ -700,6 +703,7 @@ func (r *ToolRepository) scanTool(row *sql.Row) (*tool.Tool, error) {
 		docsURL        sql.NullString
 		githubURL      sql.NullString
 		createdBy      sql.NullString
+		minVersion     sql.NullString
 	)
 
 	err := row.Scan(
@@ -733,6 +737,7 @@ func (r *ToolRepository) scanTool(row *sql.Row) (*tool.Tool, error) {
 		&createdBy,
 		&t.CreatedAt,
 		&t.UpdatedAt,
+		&minVersion,
 	)
 
 	if err != nil {
@@ -771,6 +776,7 @@ func (r *ToolRepository) scanTool(row *sql.Row) (*tool.Tool, error) {
 	t.VersionRegex = versionRegex.String
 	t.CurrentVersion = currentVersion.String
 	t.LatestVersion = latestVersion.String
+	t.MinVersion = minVersion.String
 	t.ConfigFilePath = configFilePath.String
 	t.DocsURL = docsURL.String
 	t.GithubURL = githubURL.String
@@ -825,6 +831,7 @@ func (r *ToolRepository) scanToolFromRows(rows *sql.Rows) (*tool.Tool, error) {
 		docsURL        sql.NullString
 		githubURL      sql.NullString
 		createdBy      sql.NullString
+		minVersion     sql.NullString
 	)
 
 	err := rows.Scan(
@@ -858,6 +865,7 @@ func (r *ToolRepository) scanToolFromRows(rows *sql.Rows) (*tool.Tool, error) {
 		&createdBy,
 		&t.CreatedAt,
 		&t.UpdatedAt,
+		&minVersion,
 	)
 
 	if err != nil {
@@ -893,6 +901,7 @@ func (r *ToolRepository) scanToolFromRows(rows *sql.Rows) (*tool.Tool, error) {
 	t.VersionRegex = versionRegex.String
 	t.CurrentVersion = currentVersion.String
 	t.LatestVersion = latestVersion.String
+	t.MinVersion = minVersion.String
 	t.ConfigFilePath = configFilePath.String
 	t.DocsURL = docsURL.String
 	t.GithubURL = githubURL.String
