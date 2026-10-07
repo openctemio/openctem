@@ -37,6 +37,8 @@ type Service struct {
 	availSensors SensorLister
 	availZones   ZoneLister
 	availGrants  GrantLister
+	// availManifests are the sensors' manifests (SetManifestSource).
+	availManifests ManifestLister
 }
 
 // NewService creates a new Service.
