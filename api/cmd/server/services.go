@@ -86,6 +86,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -378,6 +379,52 @@ func (a pentestTenantMemberAdapter) IsTenantMember(ctx context.Context, tenantID
 		return false
 	}
 	return true
+}
+
+// workflowMemberReader is the automation principal's membership lookup.
+type workflowMemberReader struct {
+	tenants *postgres.TenantRepository
+	access  *postgres.AccessControlRepository
+}
+
+func (r workflowMemberReader) GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenant.Membership, error) {
+	return r.tenants.GetMembership(ctx, userID, tenantID)
+}
+
+func (r workflowMemberReader) IsActiveTenantMember(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	return r.access.IsActiveTenantMember(ctx, tenantID, userID)
+}
+
+// workflowPermissionReader reads the automation principal's permissions
+// from the database (the union of their roles), never from a cache.
+type workflowPermissionReader struct{ roles *postgres.RoleRepository }
+
+func (r workflowPermissionReader) GetUserPermissions(ctx context.Context, tenantID, userID string) ([]string, error) {
+	tid, err := role.ParseID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	uid, err := role.ParseID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+	}
+	return r.roles.GetUserPermissions(ctx, tid, uid)
+}
+
+// workflowPrincipalContext makes an automation step run as its principal:
+// the same auth keys a request carries, so the services the step calls
+// (data scope above all) treat it as that member and not as an
+// unrestricted internal call.
+func workflowPrincipalContext(ctx context.Context, p workflow.Principal) context.Context {
+	perms := p.Permissions
+	if perms == nil {
+		perms = []string{}
+	}
+	ctx = context.WithValue(ctx, middleware.TenantIDKey, p.TenantID.String())
+	ctx = context.WithValue(ctx, middleware.UserIDKey, p.UserID.String())
+	ctx = context.WithValue(ctx, middleware.IsAdminKey, p.IsAdmin)
+	ctx = context.WithValue(ctx, middleware.FetchedPermissionsKey, perms)
+	return ctx
 }
 
 // workflowJiraTicketAdapter adapts *jira.SyncService to the workflow ticket
@@ -881,6 +928,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
 	s.AttackSurface.SetDataScope(s.DataScope)
 	s.AttackSurface.SetStateHistory(repos.AssetStateHistory) // recent changes: real removals + exposure changes
+	if repos.Attribution != nil {
+		// recent changes say "Added · needs review" for names not in the inventory (RFC-054 §4.4)
+		s.AttackSurface.SetAttributionRecords(repos.Attribution)
+	}
 	// Continuous threat modeling: composes exposure chains + attacker profiles +
 	// ATT&CK catalog + live findings into a per-scope threat model.
 	s.ThreatModel = threatmodel.NewService(
@@ -1853,12 +1904,22 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// When a tool is deactivated/deleted, all active pipelines using it will be deactivated
 	s.Tool.SetPipelineDeactivator(s.Pipeline)
 
+	// Every automation run acts as one person (a manual run: who started
+	// it; an event run: the owner), checked live before each step.
+	workflowAuthorizer := workflow.NewPrincipalAuthorizer(
+		workflowMemberReader{tenants: repos.Tenant, access: repos.AccessControl},
+		workflowPermissionReader{roles: repos.Role},
+		s.DataScope,
+		workflowPrincipalContext,
+	)
+
 	// Initialize workflow executor
 	workflowExecutor := workflow.NewWorkflowExecutor(
 		repos.Workflow,
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
 		log, workflow.WithExecutorDB(deps.DB), workflow.WithExecutorOutboxService(s.Outbox), workflow.WithExecutorIntegrationService(s.Integration), workflow.WithExecutorAuditService(s.Audit),
+		workflow.WithExecutorStepAuthorizer(workflowAuthorizer),
 	)
 
 	// Register all action handlers for the workflow executor. Use the AI-aware
@@ -1895,6 +1956,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
 		log, workflow.WithWorkflowAuditService(s.Audit), workflow.WithWorkflowExecutor(workflowExecutor),
+		workflow.WithWorkflowStepAuthorizer(workflowAuthorizer),
+		workflow.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering

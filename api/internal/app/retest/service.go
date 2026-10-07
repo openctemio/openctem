@@ -851,17 +851,4 @@ func ResolveTarget(matchedAt, assetName string) string {
 }
 
 // hostOf returns the host part of an asset name (a bare host, host:port or URL).
-func hostOf(name string) string {
-	if strings.Contains(name, "://") {
-		if u, err := url.Parse(name); err == nil {
-			return u.Hostname()
-		}
-	}
-	if h, _, ok := strings.Cut(name, "/"); ok {
-		name = h
-	}
-	if strings.Count(name, ":") == 1 {
-		name, _, _ = strings.Cut(name, ":")
-	}
-	return strings.Trim(name, "[]")
-}
+func hostOf(name string) string { return asset.HostOf(name) }

@@ -63,6 +63,12 @@ type Run struct {
 	// Audit
 	TriggeredBy *shared.ID
 	CreatedAt   time.Time
+
+	// SubjectID is the finding or asset the run is about (nil when none).
+	SubjectID *shared.ID
+	// IdempotencyKey makes the same event start an automation at most once
+	// (unique per automation; "" when the event has no stable identity).
+	IdempotencyKey string
 }
 
 // NewRun creates a new workflow run.

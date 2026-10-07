@@ -1282,6 +1282,42 @@ trend window takes the same scope). A schedule with no recorded creator, or whos
 longer be resolved (left the organization), is not rendered or sent
 (`failed`).
 
+### Automation runs act as one person
+
+An automation run (`/api/v1/workflows`, research doc 61 §1.6) acts as one
+person, its principal, and never as the system:
+
+- a manual run (`POST /workflows/{id}/runs`) acts as the caller. The body
+  names at most one subject, `finding_id` or `asset_id`; the run's data is
+  built from the stored entity. `trigger_data` and any trigger type other
+  than `manual` are refused, so a caller cannot point an automation at an
+  entity by forging the event that names it. The caller must hold the
+  permission of every step, and the subject must be in their data scope (a
+  subject outside it answers 404, like one that does not exist);
+- an event run acts as the automation's owner (`workflows.created_by`, the
+  column the member lifecycle pauses and reassigns). Whoever creates,
+  switches on, or changes what an automation does (graph, node, edge)
+  becomes its owner.
+
+Before every action and notification step the principal is checked again,
+live (`workflow.PrincipalAuthorizer`): an active member with an active
+account, holding the step's permission (`workflow.NodePermission`: the
+direct route's permission, e.g. `findings:write` for a status change,
+`scans:write` to start a scan, `integrations:manage` for outbound HTTP,
+`integrations:read` for a notification), with the run's subject and any
+finding the step names in its config inside their data scope. A failed check
+fails the step with `AUTOMATION_RUN_NOT_AUTHORIZED` and changes nothing. The
+step then runs with the principal in its context, so the services it calls
+apply the same scope. An automation with no owner runs no step.
+
+Editing needs the same permissions: building a node needs its permission,
+and any change to what an existing automation does (an edge, deleting a
+node, a node edit, switching it on) needs the permission of every step it
+has. The `http_request` action is retired: new nodes are refused, a stored
+one no longer runs (its step fails), its header values are never returned by
+the API, and no response body or header is stored with a run. Building one
+needed `integrations:manage`.
+
 ### Tenant-wide aggregates still to scope (counts only, no row data)
 
 These still return aggregates over the whole tenant to every holder of the
