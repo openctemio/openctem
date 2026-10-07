@@ -11674,7 +11674,7 @@ export interface paths {
     put?: never
     /**
      * Add an EASM seed
-     * @description Adds a seed discovery expands from. The caller must attest that the organization is authorized to have it discovered and checked (recorded with the user and time). Public suffixes and providers' shared domains are refused. Audited.
+     * @description Adds a root-domain seed as the permanent scope entry "*.<domain>" (RFC-054): it authorizes active checks of the domain and every name below it, confirms discovered names under it and starts discovery. Adding one widens scope, so it goes through the scope entry path: attack_surface:scope:approve, a recent re-authentication (403 STEP_UP_REQUIRED), the organization's approval count (202 with a pending entry that authorizes nothing until approved), the platform guardrails (public suffixes, the deny list), and a notification to every administrator. A member cannot add a seed (403 WIDENING_NEEDS_APPROVER); members request one-off entries on POST /scope/targets. The caller must attest that the organization is authorized to have it discovered and checked. Audited as a scope entry.
      */
     post: {
       parameters: {
@@ -11690,17 +11690,35 @@ export interface paths {
         }
       }
       responses: {
-        /** @description Created */
+        /** @description in effect */
         201: {
           headers: {
             [name: string]: unknown
           }
           content: {
-            'application/json': components['schemas']['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
+            'application/json': components['schemas']['internal_infra_http_handler.ScopeTargetResponse']
+          }
+        }
+        /** @description pending approval */
+        202: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['internal_infra_http_handler.ScopeTargetResponse']
           }
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown
           }
@@ -11791,7 +11809,7 @@ export interface paths {
     head?: never
     /**
      * Change an EASM seed
-     * @description Changes a seed's label or turns discovery from it on or off. The kind and value cannot change: delete and add instead. Audited.
+     * @description Changes a seed's label or turns discovery from it on or off. The kind and value cannot change: delete and add instead. Needs attack_surface:scope:approve and a recent re-authentication (403 STEP_UP_REQUIRED); turning discovery on notifies every administrator. Audited.
      */
     patch: {
       parameters: {
@@ -11821,6 +11839,15 @@ export interface paths {
         }
         /** @description Bad Request */
         400: {
+          headers: {
+            [name: string]: unknown
+          }
+          content: {
+            'application/json': components['schemas']['github_com_openctemio_openctem_api_pkg_apierror.Error']
+          }
+        }
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown
           }
