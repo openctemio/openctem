@@ -23,6 +23,9 @@ vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useTenantModules: () => ({ moduleIds: ['attack_surface'], isLoading: false }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }))
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 't1', name: 'ORG' } }),
+}))
 
 const { EASMReviewQueue } = await import('../easm-review-queue')
 const { useEASMReviewCount } = await import('../../hooks/use-easm-review')
@@ -30,6 +33,9 @@ const { useEASMReviewCount } = await import('../../hooks/use-easm-review')
 const swr = ({ children }: { children: ReactNode }) => (
   <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig>
 )
+
+const queueCall = () =>
+  api.get.mock.calls.map((c) => c[0] as string).find((u) => u.includes('/easm/candidates?')) ?? ''
 
 beforeEach(() => {
   api.get.mockReset().mockResolvedValue({ total: 7, data: [] })
@@ -43,7 +49,7 @@ describe('review queue reachability', () => {
     window.history.replaceState(null, '', '/attack-surface/review?tab=rejected')
     render(<EASMReviewQueue />, { wrapper: swr })
     await waitFor(() => expect(api.get).toHaveBeenCalled())
-    expect(api.get.mock.calls[0][0]).toContain('states=rejected')
+    expect(queueCall()).toContain('states=rejected')
     expect(screen.getByRole('tab', { name: 'Not ours' })).toHaveAttribute('data-state', 'active')
   })
 
@@ -51,7 +57,7 @@ describe('review queue reachability', () => {
     window.history.replaceState(null, '', '/attack-surface/review?tab=bogus')
     render(<EASMReviewQueue />, { wrapper: swr })
     await waitFor(() => expect(api.get).toHaveBeenCalled())
-    expect(api.get.mock.calls[0][0]).toContain('states=needs_review%2Ccandidate')
+    expect(queueCall()).toContain('states=needs_review%2Ccandidate')
   })
 
   it('counts the awaiting states with the queue query', async () => {
