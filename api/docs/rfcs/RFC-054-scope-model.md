@@ -367,11 +367,17 @@ response by the guardrails PR. `t2` is never a default.
 
 ```json
 { "targets": ["vndirect.com.vn", "promo-landing.net"],
+  "asset_ids": ["5f0c…"],
   "sensor_preference": "auto",
   "tier": 1 }
 ```
 
-At most 200 targets (an inventory asset is checked by its name). Runs §4.2
+At most 200 targets and assets together, at least one. An inventory asset
+(`asset_ids`) is checked by its name, as a scan of it would be (its other
+names, such as its address, count for exclusions); its result carries
+`asset_id`. An asset outside the caller's data scope, another tenant's, a
+deleted or an unknown id all answer the same `out_of_data_scope` with the id
+as `target` and nothing else, so the dry run is no existence oracle. Runs §4.2
 steps 1–9 for the caller (act scope included) without dispatching, auditing
 or logging a refusal. The act scope answers first for a restricted member
 (`not_an_asset`, `out_of_data_scope`), so the dry run tells them nothing
