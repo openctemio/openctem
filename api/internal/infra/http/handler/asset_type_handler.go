@@ -282,7 +282,8 @@ func (h *AssetTypeHandler) GetCategory(w http.ResponseWriter, r *http.Request) {
 
 // AssetTypeRegistryResponse is the body of GET /api/v1/asset-types: the
 // RFC-042 asset type registry (version, lenses, classes, types, sections,
-// cards, core_fields), generated from api/configs/asset-types.yaml.
+// cards, core_fields, the property schema), generated from
+// api/configs/asset-types.yaml.
 //
 // data, total, page, per_page and total_pages are the legacy asset_types
 // rows that this route returned before the registry. They are kept,
@@ -296,6 +297,11 @@ type AssetTypeRegistryResponse struct {
 	Sections   []asset.SectionDefinition `json:"sections"`
 	Cards      []string                  `json:"cards"`
 	CoreFields []string                  `json:"core_fields"`
+	// Properties is the property dictionary (RFC-042 §6.3.9): every key's
+	// labels, display format, synonyms and allowed classes;
+	// CommonProperties the keys every type may hold besides its attributes.
+	Properties       []asset.PropertyDefinition `json:"properties"`
+	CommonProperties []string                   `json:"common_properties"`
 
 	// Deprecated: the legacy asset_types rows; use Types.
 	Data       []AssetTypeResponse `json:"data"`
@@ -307,7 +313,7 @@ type AssetTypeRegistryResponse struct {
 
 // ListAssetTypes handles GET /api/v1/asset-types
 // @Summary      Asset type registry
-// @Description  Returns the asset type registry (RFC-042): every asset type with its class, lens, attribute schema, facets, group-by fields, row columns, card renderer, detail sections, allowed relationships and identity keys, plus the classes, lenses and the closed sets of sections and cards. The registry is generated from api/configs/asset-types.yaml and holds no tenant data. The response carries a strong ETag; If-None-Match with it answers 304. The data/total/page/per_page/total_pages fields are the legacy asset_types rows (deprecated, kept for one release); the query parameters below filter only those.
+// @Description  Returns the asset type registry (RFC-042): every asset type with its class, lens, attribute schema, facets, group-by fields, row columns, card renderer, detail sections, allowed relationships and identity keys, plus the classes, lenses, the closed sets of sections and cards, and the property schema (every property key with its labels, display format, synonyms and the classes that may hold it). The registry is generated from api/configs/asset-types.yaml and holds no tenant data. The response carries a strong ETag; If-None-Match with it answers 304. The data/total/page/per_page/total_pages fields are the legacy asset_types rows (deprecated, kept for one release); the query parameters below filter only those.
 // @Tags         Asset Types
 // @Accept       json
 // @Produce      json
@@ -340,6 +346,9 @@ func (h *AssetTypeHandler) ListAssetTypes(w http.ResponseWriter, r *http.Request
 		Sections:   reg.Sections,
 		Cards:      reg.Cards,
 		CoreFields: reg.CoreFields,
+
+		Properties:       reg.Properties,
+		CommonProperties: reg.CommonProperties,
 	}
 	if err := h.legacyAssetTypeRows(r, &resp); err != nil {
 		h.handleServiceError(w, err)

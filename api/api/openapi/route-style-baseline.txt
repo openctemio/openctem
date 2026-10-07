@@ -134,7 +134,6 @@ R4 DELETE /api/v1/notification-outbox/{id}
 R4 DELETE /api/v1/secret-store/{id}
 R4 GET /api/v1/audit-logs/resource/{type}/{id}
 R4 GET /api/v1/audit-logs/user/{id}
-R4 GET /api/v1/capabilities/by-category/{category}
 R4 GET /api/v1/findings/{id}/ai-triage/{triageId}
 R4 GET /api/v1/finding-sources/code/{code}
 R4 GET /api/v1/notification-outbox/{id}
