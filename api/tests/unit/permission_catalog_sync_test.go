@@ -30,7 +30,7 @@ var baselinePermissionRow = regexp.MustCompile(`^INSERT INTO public\.permissions
 // permissions. A new permission-seeding migration MUST be added here (every
 // listed file must exist, so a typo fails loudly).
 var permSeedMigrations = []string{
-	"001176_finding_evidence.up.sql",
+	"001196_finding_evidence.up.sql",
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
