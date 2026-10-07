@@ -25,6 +25,8 @@ import (
 // removedRoutes: "METHOD /path" (parameter names do not matter) and why.
 var removedRoutes = map[string]string{
 	"DELETE /api/v1/tenants/{tenant}/members/{userId}": "offboarding without step-up; POST /api/v1/organization/members/{member_id}/offboard is the one route",
+	"GET /api/v1/dashboard/stats/global":               "summed every organization in the token, skipping the other organizations' IP allowlist, SSO, modules and data scope",
+	"POST /api/v1/audit-logs/rebaseline":               "the owner could re-sign the chain that guards against them; the admin console keeps the rebaseline",
 	// One capability resource: /capabilities with filters and include=usage.
 	"GET /api/v1/capabilities/all":                    "the list with per_page (capped at 100)",
 	"GET /api/v1/capabilities/by-category/{category}": "the list with category=",
@@ -98,5 +100,52 @@ func TestRemovedRoutes_TenantMemberDeleteIsGone(t *testing.T) {
 	// the router's answer for the removed method, not a missing group.
 	if code := serve(http.MethodPatch, path); code == http.StatusNotFound || code == http.StatusMethodNotAllowed {
 		t.Errorf("PATCH %s: got %d from the router, want the handler", path, code)
+	}
+}
+
+// An administrator with every permission gets 404 or 405 on the removed
+// dashboard and audit routes, never a handler.
+func TestRemovedRoutes_CrossTenantStatsAndTenantRebaselineAreGone(t *testing.T) {
+	withStepUpChecker(t, alwaysSteppedUp{})
+	auth := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := context.WithValue(r.Context(), middleware.IsAdminKey, true)
+			ctx = context.WithValue(ctx, middleware.TenantIDKey, shared.NewID().String())
+			ctx = context.WithValue(ctx, middleware.UserIDKey, shared.NewID().String())
+			ctx = context.WithValue(ctx, middleware.SessionIDKey, "removed-routes")
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	router := infrahttp.NewChiRouter()
+	registerDashboardRoutes(router, &handler.DashboardHandler{}, auth, nil)
+	registerAuditRoutes(router, &handler.AuditHandler{}, auth, nil)
+	mux := router.(interface{ Handler() http.Handler }).Handler()
+
+	serve := func(method, path string) (code int) {
+		defer func() {
+			if recover() != nil {
+				code = reachedHandler
+			}
+		}()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader("{}")))
+		return rec.Code
+	}
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/dashboard/stats/global"},
+		{http.MethodPost, "/api/v1/audit-logs/rebaseline"},
+	} {
+		if code := serve(tc.method, tc.path); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+			t.Errorf("%s %s: got %d, want 404 or 405", tc.method, tc.path, code)
+		}
+	}
+	// The sibling routes still route, so the 404/405 above is the removal.
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/dashboard/stats"},
+		{http.MethodGet, "/api/v1/audit-logs/verify"},
+	} {
+		if code := serve(tc.method, tc.path); code != reachedHandler {
+			t.Errorf("%s %s: got %d, want the handler", tc.method, tc.path, code)
+		}
 	}
 }
