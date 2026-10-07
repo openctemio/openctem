@@ -72,9 +72,14 @@ func TestScanOwnershipGate(t *testing.T) {
 	}
 
 	// Allowed: unrecorded inside a scope target, unrecorded under a seed,
-	// confirmed by a person outside both.
+	// confirmed by a person inside a scope target.
 	seedOwnedAsset(t, db, tenantA, "app.scoped.example.com", "subdomain")
 	seedOwnedAsset(t, db, tenantA, "www.example.org", "subdomain")
+	confirmedIn := seedOwnedAsset(t, db, tenantA, "mine.scoped.example.com", "subdomain")
+	decide(t, db, tenantA, confirmedIn, attribution.StateConfirmed)
+	// Refused: confirmed by a person on the Ownership tab but outside every
+	// scope target, seed and verified domain (RFC-054 §4.2: ownership is not
+	// authority).
 	confirmed := seedOwnedAsset(t, db, tenantA, "confirmed.example.net", "domain")
 	decide(t, db, tenantA, confirmed, attribution.StateConfirmed)
 
@@ -94,7 +99,7 @@ func TestScanOwnershipGate(t *testing.T) {
 	decide(t, db, tenantB, bName, attribution.StateRejected)
 	seedScopeTarget(t, db, tenantB, "domain", "*.example.net")
 
-	allowed := []string{"app.scoped.example.com", "www.example.org", "confirmed.example.net"}
+	allowed := []string{"app.scoped.example.com", "www.example.org", "mine.scoped.example.com"}
 	refusedTargets := []string{
 		"www.scoped.example.com",               // rejected asset (B1)
 		"https://www.scoped.example.com/login", // the same, as a URL
@@ -102,6 +107,8 @@ func TestScanOwnershipGate(t *testing.T) {
 		"dev.scoped.example.com",               // needs review
 		"cand.example.org",                     // candidate
 		"manual.example.net",                   // no record, outside scope and seeds
+		"confirmed.example.net",                // confirmed, outside scope and seeds
+		"free.example.net",                     // free text outside scope (tenant B's *.example.net does not count)
 	}
 
 	svc := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
@@ -228,12 +235,22 @@ func TestScanOwnershipGate(t *testing.T) {
 		// Tenant B's rejection of app.scoped.example.com does not refuse
 		// tenant A (checked above: allowed). Tenant B's scope target does not
 		// authorize tenant A's manual.example.net (checked above: refused).
-		// Tenant A's rejection does not refuse tenant B's free text, and tenant
-		// A's asset ids resolve to nothing in tenant B.
+		// Tenant A's rejection does not refuse tenant B's free text as
+		// rejected (B has no scope there, so it is unattributed, never
+		// rejected), tenant B's own scope target covers its free text, and
+		// tenant A's asset ids resolve to nothing in tenant B.
 		gate := ownershipGate(db)
-		b, err := gate.BlockedTargets(ctx, tenantB, []string{"www.scoped.example.com", "api.www.scoped.example.com"})
-		if err != nil || len(b) != 0 {
-			t.Fatalf("tenant A's rejection refused tenant B: %v %v", b, err)
+		b, err := gate.BlockedTargets(ctx, tenantB, []string{"www.scoped.example.com", "api.www.scoped.example.com", "x.example.net"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range []string{"www.scoped.example.com", "api.www.scoped.example.com"} {
+			if b[n] != attribution.StateUnattributed {
+				t.Fatalf("tenant B %s = %q, want unattributed (never tenant A's rejection)", n, b[n])
+			}
+		}
+		if st, no := b["x.example.net"]; no {
+			t.Fatalf("tenant B's own scope target did not cover its free text: %s", st)
 		}
 		ids, err := gate.ActiveCheckBlocked(ctx, tenantB, []string{confirmed.String()})
 		if err != nil || ids[confirmed.String()] != attribution.StateUnattributed {

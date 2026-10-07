@@ -53,6 +53,13 @@ func (s State) Valid() bool {
 // not probed until a person confirms it or a scope target covers it.
 const StateUnattributed State = "unattributed"
 
+// StateOutOfScope is never stored either: the active-scan gate's answer for
+// an internet-facing asset whose record is confirmed but that no active scope
+// target, root-domain seed or verified domain of the tenant covers (RFC-054
+// §4.2). Confirmation records ownership; it does not authorize active probes
+// by itself. The asset, its history and findings stay.
+const StateOutOfScope State = "out_of_scope"
+
 // AllowsActiveChecks reports whether a recorded state lets a sensor touch an
 // asset (RFC-036 §6.3 active_allowed: confirmed only). The empty state (no
 // record) answers true here only as far as the record goes: the active-scan
