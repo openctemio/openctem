@@ -3,10 +3,25 @@ import { render, screen, within } from '@testing-library/react'
 import { SWRConfig } from 'swr'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { RunStageLanes, skipLabel, skippedReasons, stageLabel } from '../run-stage-lanes'
+import {
+  RunStageLanes,
+  chunkSummary,
+  skipLabel,
+  skippedReasons,
+  stageLabel,
+} from '../run-stage-lanes'
 
 const getMock = vi.fn()
-vi.mock('@/lib/api/client', () => ({ get: (...a: unknown[]) => getMock(...a) }))
+// Labels come from the served capability catalog (GET /scans/stages).
+const CATALOG = {
+  stages: [
+    { key: 'discover.subdomains', name: 'Subdomain discovery', implementations: [] },
+    { key: 'scan.ports', name: 'Port scan', implementations: [] },
+  ],
+}
+vi.mock('@/lib/api/client', () => ({
+  get: (url: string) => (url === '/api/v1/scans/stages' ? Promise.resolve(CATALOG) : getMock(url)),
+}))
 
 const fresh = (ui: React.ReactNode) =>
   render(
@@ -99,9 +114,50 @@ describe('RunStageLanes', () => {
   })
 })
 
+describe('RunStageLanes chunks', () => {
+  beforeEach(() => getMock.mockReset())
+
+  it('shows chunk counts and the sensors that took them, as the API gives them', async () => {
+    getMock.mockResolvedValue({
+      data: [
+        {
+          stage_key: 'http',
+          stage: 'probe.http',
+          tool: 'httpx',
+          tier: 'T1',
+          inputs: 450,
+          planned: 450,
+          skipped: {},
+          chunks: { total: 3, queued: 1, running: 1, completed: 1, failed: 0 },
+          sensors: [
+            { sensor_id: 's1', sensor_name: 'edge-1', total: 1, completed: 1 },
+            { platform: true, total: 1, running: 1 },
+          ],
+        },
+      ],
+    })
+    fresh(<RunStageLanes runId="run-c" />)
+    const chunks = await screen.findByTestId('stage-chunks')
+    expect(chunks.textContent).toContain('1 of 3 chunks done, 1 running, 1 queued')
+    const bySensor = within(chunks).getByRole('list', { name: 'Chunks by sensor' })
+    const rows = within(bySensor).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('edge-1')
+    expect(rows[0].textContent).toContain('1 chunk(s), 1 done')
+    expect(rows[1].textContent).toContain('Platform sensors')
+  })
+})
+
 describe('stage lane helpers', () => {
+  it('summarizes chunks only for a chunked stage', () => {
+    expect(chunkSummary(undefined)).toBe('')
+    expect(chunkSummary({ total: 1, completed: 1 })).toBe('')
+    expect(chunkSummary({ total: 4, completed: 2, failed: 2 })).toBe('2 of 4 chunks done, 2 failed')
+  })
+
   it('labels stages and skip reasons, with fallbacks', () => {
-    expect(stageLabel('probe.http')).toBe('HTTP probe')
+    expect(stageLabel('probe.http', { 'probe.http': 'HTTP probe' })).toBe('HTTP probe')
+    expect(stageLabel('probe.http')).toBe('probe.http')
     expect(stageLabel('future.stage')).toBe('future.stage')
     expect(stageLabel(undefined)).toBe('Custom step')
     expect(skipLabel('hop_limit')).toBe('too many hops from the seeds')
