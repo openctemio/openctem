@@ -41567,6 +41567,13 @@ export interface components {
       platform?: boolean
       sensor_id?: string
       sensor_name?: string
+      /**
+       * @description SkippedTargets are the targets the sensor's local policy skipped in a
+       *     task that completed on the rest (at most 20; sensor-supplied text,
+       *     show as plain text). SkippedTargetsTotal counts all of them.
+       */
+      skipped_targets?: components['schemas']['internal_infra_http_handler.RunTaskSkippedTarget'][]
+      skipped_targets_total?: number
       started_at?: string
       /** @description Status is queued, running, completed, failed or canceled. */
       status?: string
@@ -41574,6 +41581,12 @@ export interface components {
       step_run_id?: string
       targets?: number
       tool?: string
+    }
+    'internal_infra_http_handler.RunTaskSkippedTarget': {
+      detail?: string
+      reason?: string
+      rule?: string
+      target?: string
     }
     'internal_infra_http_handler.RunTaskSummaryResponse': {
       canceled?: number
