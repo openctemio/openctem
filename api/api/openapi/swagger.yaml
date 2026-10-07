@@ -9400,6 +9400,14 @@ definitions:
         type: string
       order:
         type: integer
+      prefer_tools:
+        description: |-
+          PreferTools are the tools to try, in order, for the step's capability
+          when no tool is pinned. Each must implement the capability.
+        items:
+          type: string
+        maxItems: 5
+        type: array
       retry_delay_seconds:
         type: integer
       step_key:
@@ -15490,6 +15498,9 @@ definitions:
     properties:
       attempt:
         type: integer
+      capability:
+        description: Capability is the versioned capability the step run ran.
+        type: string
       completed_at:
         type: string
       error_code:

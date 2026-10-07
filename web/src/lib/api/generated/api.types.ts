@@ -39570,6 +39570,11 @@ export interface components {
       max_retries?: number
       name: string
       order?: number
+      /**
+       * @description PreferTools are the tools to try, in order, for the step's capability
+       *     when no tool is pinned. Each must implement the capability.
+       */
+      prefer_tools?: string[]
       retry_delay_seconds?: number
       step_key: string
       timeout_seconds?: number
@@ -42962,6 +42967,8 @@ export interface components {
     }
     'internal_infra_http_handler.StepRunResponse': {
       attempt?: number
+      /** @description Capability is the versioned capability the step run ran. */
+      capability?: string
       completed_at?: string
       error_code?: string
       error_message?: string

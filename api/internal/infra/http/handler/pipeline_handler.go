@@ -86,14 +86,17 @@ type CreateStepRequest struct {
 	// a whole pipeline (PUT): the step is updated in place and keeps its run
 	// history. Optional; an id that is not one of the pipeline's steps (for
 	// example a client-side temporary id) makes the entry a new step.
-	ID                string                 `json:"id,omitempty" validate:"max=64"`
-	StepKey           string                 `json:"step_key" validate:"required,min=1,max=100"`
-	Name              string                 `json:"name" validate:"required,min=1,max=255"`
-	Description       string                 `json:"description" validate:"max=1000"`
-	Order             int                    `json:"order"`
-	UIPosition        *UIPositionRequest     `json:"ui_position"`
-	Tool              string                 `json:"tool" validate:"max=100"`
-	Capabilities      []string               `json:"capabilities" validate:"omitempty,max=10,dive,max=50"`
+	ID           string             `json:"id,omitempty" validate:"max=64"`
+	StepKey      string             `json:"step_key" validate:"required,min=1,max=100"`
+	Name         string             `json:"name" validate:"required,min=1,max=255"`
+	Description  string             `json:"description" validate:"max=1000"`
+	Order        int                `json:"order"`
+	UIPosition   *UIPositionRequest `json:"ui_position"`
+	Tool         string             `json:"tool" validate:"max=100"`
+	Capabilities []string           `json:"capabilities" validate:"omitempty,max=10,dive,max=50"`
+	// PreferTools are the tools to try, in order, for the step's capability
+	// when no tool is pinned. Each must implement the capability.
+	PreferTools       []string               `json:"prefer_tools" validate:"omitempty,max=5,dive,max=100"`
 	Config            map[string]interface{} `json:"config"`
 	TimeoutSeconds    int                    `json:"timeout_seconds"`
 	DependsOn         []string               `json:"depends_on" validate:"max=20,dive,max=50"`
@@ -155,14 +158,19 @@ type UIPositionResponse struct {
 
 // StepResponse represents a step in the response.
 type StepResponse struct {
-	ID                string                 `json:"id"`
-	StepKey           string                 `json:"step_key"`
-	Name              string                 `json:"name"`
-	Description       string                 `json:"description,omitempty"`
-	Order             int                    `json:"order"`
-	UIPosition        UIPositionResponse     `json:"ui_position"`
-	Tool              string                 `json:"tool,omitempty"`
-	Capabilities      []string               `json:"capabilities"`
+	ID           string             `json:"id"`
+	StepKey      string             `json:"step_key"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description,omitempty"`
+	Order        int                `json:"order"`
+	UIPosition   UIPositionResponse `json:"ui_position"`
+	Tool         string             `json:"tool,omitempty"`
+	Capabilities []string           `json:"capabilities"`
+	// PreferTools are the tools to try, in order, when no tool is pinned.
+	PreferTools []string `json:"prefer_tools"`
+	// ToolSelection is how the step picks its tool: pin (tool), prefer
+	// (prefer_tools) or auto (any implementation of its capability).
+	ToolSelection     string                 `json:"tool_selection" enums:"auto,prefer,pin"`
 	Config            map[string]interface{} `json:"config,omitempty"`
 	TimeoutSeconds    int                    `json:"timeout_seconds,omitempty"`
 	DependsOn         []string               `json:"depends_on,omitempty"`
@@ -384,10 +392,12 @@ type StepRunResponse struct {
 	ID string `json:"id"`
 	// StepID is empty once the step was removed from the pipeline; the step
 	// run keeps its key, name and tool.
-	StepID        string  `json:"step_id,omitempty"`
-	StepKey       string  `json:"step_key"`
-	StepName      string  `json:"step_name,omitempty"`
-	Tool          string  `json:"tool,omitempty"`
+	StepID   string `json:"step_id,omitempty"`
+	StepKey  string `json:"step_key"`
+	StepName string `json:"step_name,omitempty"`
+	Tool     string `json:"tool,omitempty"`
+	// Capability is the versioned capability the step run ran.
+	Capability    string  `json:"capability,omitempty"`
 	Status        string  `json:"status"`
 	StartedAt     *string `json:"started_at,omitempty"`
 	CompletedAt   *string `json:"completed_at,omitempty"`
@@ -717,6 +727,7 @@ func toAddStepInput(tenantID, templateID string, req CreateStepRequest) pipeline
 		Order:             req.Order,
 		Tool:              req.Tool,
 		Capabilities:      req.Capabilities,
+		PreferTools:       req.PreferTools,
 		Config:            req.Config,
 		TimeoutSeconds:    req.TimeoutSeconds,
 		DependsOn:         req.DependsOn,
@@ -1273,6 +1284,8 @@ func toStepResponse(s *pipeline.Step) *StepResponse {
 		},
 		Tool:              s.Tool,
 		Capabilities:      s.Capabilities,
+		PreferTools:       append([]string{}, s.PreferTools...),
+		ToolSelection:     string(s.Selection()),
 		Config:            s.Config,
 		TimeoutSeconds:    s.TimeoutSeconds,
 		DependsOn:         s.DependsOn,
@@ -1500,6 +1513,7 @@ func toStepRunResponse(sr *pipeline.StepRun) StepRunResponse {
 		StepKey:       sr.StepKey,
 		StepName:      sr.StepName,
 		Tool:          sr.Tool,
+		Capability:    sr.Capability,
 		Status:        string(sr.Status),
 		ErrorMessage:  sr.ErrorMessage,
 		ErrorCode:     sr.ErrorCode,

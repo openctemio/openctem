@@ -159,3 +159,57 @@ func withURLParam(r *http.Request, key, value string) *http.Request {
 	chi.RouteContext(r.Context()).URLParams.Add(key, value)
 	return r
 }
+
+// A capability step picks its tool by auto, prefer or pin, and its settings
+// follow the capability contract.
+func TestPipelineSave_ToolSelectionAndSettings(t *testing.T) {
+	p := newPipelineSaveHarness(t, "pipeline-tool-selection")
+	id, _ := p.create()
+
+	ok := p.do(p.tenant, http.MethodPut, id, map[string]any{
+		"steps": []map[string]any{
+			{"step_key": "secrets", "name": "Secrets", "capabilities": []string{"secrets.code"}, "prefer_tools": []string{"gitleaks", "betterleaks"}},
+			{"step_key": "ports", "name": "Ports", "capabilities": []string{"scan.ports"}, "config": map[string]any{"top_n": 100, "rate": 500}},
+		},
+	}, p.h.UpdateTemplate)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", ok.Code, ok.Body.String())
+	}
+	var out struct {
+		Steps []struct {
+			StepKey       string   `json:"step_key"`
+			PreferTools   []string `json:"prefer_tools"`
+			ToolSelection string   `json:"tool_selection"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal(ok.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	modes := map[string]string{}
+	for _, s := range out.Steps {
+		modes[s.StepKey] = s.ToolSelection
+	}
+	if modes["secrets"] != "prefer" || modes["ports"] != "auto" {
+		t.Fatalf("selection modes: %v", modes)
+	}
+
+	for name, steps := range map[string][]map[string]any{
+		"prefer a tool that does not implement the capability": {
+			{"step_key": "s", "name": "S", "capabilities": []string{"secrets.code"}, "prefer_tools": []string{"nuclei"}},
+		},
+		"pin and prefer": {
+			{"step_key": "s", "name": "S", "tool": "gitleaks", "capabilities": []string{"secrets.code"}, "prefer_tools": []string{"betterleaks"}},
+		},
+		"out of contract value": {
+			{"step_key": "p", "name": "P", "capabilities": []string{"scan.ports"}, "config": map[string]any{"rate": 10000000}},
+		},
+		"tool setting without a pin": {
+			{"step_key": "p", "name": "P", "capabilities": []string{"scan.ports"}, "config": map[string]any{"exclude_cdn": true}},
+		},
+	} {
+		rec := p.do(p.tenant, http.MethodPut, id, map[string]any{"steps": steps}, p.h.UpdateTemplate)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s, want 400", name, rec.Code, rec.Body.String())
+		}
+	}
+}
