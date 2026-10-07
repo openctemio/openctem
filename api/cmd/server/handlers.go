@@ -372,7 +372,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Scanning & Pipelines
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
-		ScanSession:     handler.NewScanSessionHandler(svc.ScanSession, v, log),
 		ScannerTemplate: handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
 		TemplateSource:  handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
 		SecretStore:     handler.NewSecretStoreHandler(svc.SecretStore, v, log),
