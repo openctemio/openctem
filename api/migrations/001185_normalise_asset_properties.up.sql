@@ -20,28 +20,28 @@
 --
 -- The lists below are the registry's at this version
 -- (api/configs/asset-types.yaml). Every changed row's previous properties
--- are kept in asset_properties_pre_001181 for the down migration; names,
+-- are kept in asset_properties_pre_001185 for the down migration; names,
 -- ids and updated_at are not touched. No audit or history rows are written.
 
 -- A ledger of this migration, like asset_type_reclassifications (000684):
 -- a row goes with its asset (delete, merge) and with its tenant (erasure).
-CREATE TABLE asset_properties_pre_001181 (
+CREATE TABLE asset_properties_pre_001185 (
     asset_id   uuid PRIMARY KEY,
     tenant_id  uuid NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
     properties jsonb NOT NULL,
     saved_at   timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT fk_asset_properties_pre_001181_tenant_asset
+    CONSTRAINT fk_asset_properties_pre_001185_tenant_asset
         FOREIGN KEY (tenant_id, asset_id) REFERENCES assets (tenant_id, id) ON DELETE CASCADE
 );
 
-COMMENT ON TABLE asset_properties_pre_001181 IS
-    'Asset properties before migration 001181 normalised them (RFC-042 6.3.9); read only by its down migration.';
+COMMENT ON TABLE asset_properties_pre_001185 IS
+    'Asset properties before migration 001185 normalised them (RFC-042 6.3.9); read only by its down migration.';
 
--- mig001181_fold appends the values v holds to acc, without duplicates:
+-- mig001185_fold appends the values v holds to acc, without duplicates:
 -- strings and the strings of a list; for an address key also the address
 -- of an object, every value split on , ; and space and kept only when it
 -- is one address (canonical form).
-CREATE FUNCTION mig001181_fold(acc text[], v jsonb, as_ip boolean)
+CREATE FUNCTION mig001185_fold(acc text[], v jsonb, as_ip boolean)
 RETURNS text[] LANGUAGE plpgsql IMMUTABLE AS $fn$
 DECLARE
     item text;
@@ -87,9 +87,9 @@ BEGIN
 END
 $fn$;
 
--- mig001181_normalize returns p folded and without misplaced keys, for an
+-- mig001185_normalize returns p folded and without misplaced keys, for an
 -- asset of class cls named own.
-CREATE FUNCTION mig001181_normalize(p jsonb, cls text, own text)
+CREATE FUNCTION mig001185_normalize(p jsonb, cls text, own text)
 RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $fn$
 DECLARE
     f      record;
@@ -119,17 +119,17 @@ BEGIN
             FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p -> f.key) = 'array' THEN p -> f.key ELSE '[]'::jsonb END) AS e
             WHERE jsonb_typeof(e) NOT IN ('string', 'null')
         ), '[]'::jsonb);
-        vals := mig001181_fold('{}'::text[], p -> f.key, f.is_ip);
+        vals := mig001185_fold('{}'::text[], p -> f.key, f.is_ip);
         FOREACH syn IN ARRAY f.synonyms LOOP
             v := p -> syn;
             CONTINUE WHEN v IS NULL;
-            vals := mig001181_fold(vals, v, f.is_ip);
+            vals := mig001185_fold(vals, v, f.is_ip);
             IF jsonb_typeof(v) <> 'object' THEN
                 p := p - syn;
             END IF;
         END LOOP;
         IF f.is_ip AND cls = 'ip_address' THEN
-            self := mig001181_fold('{}'::text[], to_jsonb(own), true);
+            self := mig001185_fold('{}'::text[], to_jsonb(own), true);
             IF cardinality(self) = 1 THEN
                 vals := array_remove(vals, self[1]);
             END IF;
@@ -163,21 +163,21 @@ BEGIN
 END
 $fn$;
 
-INSERT INTO asset_properties_pre_001181 (asset_id, tenant_id, properties)
+INSERT INTO asset_properties_pre_001185 (asset_id, tenant_id, properties)
 SELECT a.id, a.tenant_id, a.properties
 FROM assets a
 WHERE a.properties ?| ARRAY['ip', 'ips', 'ip_address', 'resolved_ip', 'resolved_ips', 'addresses', 'ip_addresses',
                             'nameserver', 'nameservers', 'technology', 'technologies', 'san', 'sans',
                             'port', 'status_code', 'content_length', 'content_type', 'response_time_ms', 'banner']
-  AND mig001181_normalize(a.properties, a.asset_class, a.name) IS DISTINCT FROM a.properties;
+  AND mig001185_normalize(a.properties, a.asset_class, a.name) IS DISTINCT FROM a.properties;
 
 -- A data fix, not an edit: updated_at keeps its value.
 ALTER TABLE assets DISABLE TRIGGER trigger_assets_updated_at;
 UPDATE assets a
-SET properties = mig001181_normalize(a.properties, a.asset_class, a.name)
-FROM asset_properties_pre_001181 b
+SET properties = mig001185_normalize(a.properties, a.asset_class, a.name)
+FROM asset_properties_pre_001185 b
 WHERE b.asset_id = a.id AND b.tenant_id = a.tenant_id;
 ALTER TABLE assets ENABLE TRIGGER trigger_assets_updated_at;
 
-DROP FUNCTION mig001181_normalize(jsonb, text, text);
-DROP FUNCTION mig001181_fold(text[], jsonb, boolean);
+DROP FUNCTION mig001185_normalize(jsonb, text, text);
+DROP FUNCTION mig001185_fold(text[], jsonb, boolean);
