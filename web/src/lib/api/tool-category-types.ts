@@ -58,17 +58,11 @@ export interface ToolCategoryListResponse {
  * Tool category list filters
  */
 export interface ToolCategoryListFilters {
-  is_builtin?: boolean
-  search?: string
+  source?: 'platform' | 'custom'
+  q?: string
   page?: number
+  /** At most 100 */
   per_page?: number
-}
-
-/**
- * Tool category all list response (for dropdowns, no pagination)
- */
-export interface ToolCategoryAllResponse {
-  items: ToolCategory[]
 }
 
 // Default icons for categories
