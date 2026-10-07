@@ -428,14 +428,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	zoneID := scanrun.ScanZoneFromContext(run.Context)
 	usePlatform := false
 	if zoneID == nil {
-		pref := settings.SensorPreference
-		// A scan that runs on the tenant's own sensors only
-		// (scans.run_on_tenant_runner, carried in the run context) never
-		// goes to platform sensors, whatever the template says.
-		if tenantRunnerOnly(run.Context) {
-			pref = scanworkflow.SensorPreferenceTenant
-		}
-		usePlatform = s.routeToPlatform(ctx, run.TenantID, step.Tool, pref)
+		usePlatform = s.stepUsesPlatform(ctx, run, step, settings.SensorPreference)
 	}
 
 	// A large step is cut into chunks of the capability's size, so every
@@ -572,6 +565,29 @@ func (s *Service) routeToPlatform(ctx context.Context, tenantID shared.ID, tool 
 		}
 	}
 	return false
+}
+
+// stepUsesPlatform reports whether a step of run goes to platform sensors.
+// A run started from a scan carries the scan's trigger-time decision
+// (sensor_routing), made with the platform checks; it wins over the
+// workflow's own preference. A run with no decision (started from a
+// workflow directly) follows the workflow's preference.
+func (s *Service) stepUsesPlatform(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, pref scanworkflow.SensorPreference) bool {
+	switch scanrun.SensorRoutingFromContext(run.Context) {
+	case scanrun.SensorRoutingTenant:
+		return false
+	case scanrun.SensorRoutingPlatform:
+		return true
+	case scanrun.SensorRoutingAuto:
+		return s.routeToPlatform(ctx, run.TenantID, step.Tool, scanworkflow.SensorPreferenceAuto)
+	}
+	// A scan that runs on the tenant's own sensors only
+	// (scans.run_on_tenant_runner, carried in the run context) never goes
+	// to platform sensors, whatever the template says.
+	if tenantRunnerOnly(run.Context) {
+		pref = scanworkflow.SensorPreferenceTenant
+	}
+	return s.routeToPlatform(ctx, run.TenantID, step.Tool, pref)
 }
 
 // calculateScanRunInitialPriority calculates the initial queue priority for platform jobs.
