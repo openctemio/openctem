@@ -291,13 +291,15 @@ func WithScanRunRecorder(recorder ScanRunRecorder) Option {
 	}
 }
 
-// RunCompletedCallback is notified when a pipeline run completes successfully.
-// Implementations must not block (the workflow dispatcher runs async).
+// RunCompletedCallback is notified when a pipeline run settles: completed,
+// partial or failed (run.Status says which). Implementations must not block
+// (the workflow dispatcher runs async).
 type RunCompletedCallback func(ctx context.Context, run *pipeline.Run)
 
-// SetRunCompletedCallback wires the consumer of successful run completions
-// (the `scan_completed` workflow trigger). A setter rather than an Option
-// because the workflow dispatcher is built after the pipeline service.
+// SetRunCompletedCallback wires the consumer of settled runs (the
+// `scan_completed` workflow trigger, which filters on the outcome). A setter
+// rather than an Option because the workflow dispatcher is built after the
+// pipeline service.
 func (s *Service) SetRunCompletedCallback(cb RunCompletedCallback) {
 	s.runCompleted = cb
 }

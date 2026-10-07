@@ -217,3 +217,13 @@ type NodeRunCanceler interface {
 	// canceled. Returns how many it ended; repeating it ends none.
 	SkipOpenNodeRuns(ctx context.Context, tenantID, runID shared.ID) (int64, error)
 }
+
+// OwnerSetter records who owns an automation (workflows.created_by), the
+// person its event runs act as. Optional extension of WorkflowRepository;
+// a dedicated write so a concurrent full-row update (run statistics) never
+// puts back a previous owner.
+type OwnerSetter interface {
+	// SetOwner sets the owner of the workflow id in tenantID; ErrNotFound
+	// when there is none.
+	SetOwner(ctx context.Context, tenantID, id, ownerID shared.ID) error
+}
