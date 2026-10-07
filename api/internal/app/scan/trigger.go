@@ -265,6 +265,10 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 		)
 	}
 
+	if template.RetiredAt != nil {
+		return nil, scanworkflow.ErrScanWorkflowRetired
+	}
+
 	// Verify template is active
 	if !template.IsActive {
 		return nil, shared.NewDomainError(
