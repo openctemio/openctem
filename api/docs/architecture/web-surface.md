@@ -68,3 +68,48 @@ with step-up. It is enforced in three places:
 
 `GET /web-endpoints/stats` counts `excluded_untested`, so "0 findings" on an
 origin with excluded paths is not read as "safe".
+
+## API
+
+| Route | Permission | Notes |
+|---|---|---|
+| `GET /api/v1/web-endpoints` | `assets:read` | list query contract (RFC-048, strict: an unknown param is 400); filters `origin_asset_id`, `method`, `kind`, `auth_state`, `state`, `in_scope`, `source`, `label`, `catalog_key`, `path_hash`, `path_template_contains`, `last_status`, `param_count`, seen and changed times; `q` searches the template |
+| `GET /api/v1/web-endpoints/stats` | `assets:read` | the same WHERE: counts by method, kind, auth state and state, and `excluded_untested` |
+| `GET /api/v1/web-endpoints/{id}` | `assets:read` | 404 for another tenant's id and for an origin outside the caller's data scope |
+| `GET /api/v1/web-endpoints/{id}/parameters` | `assets:read` | names, locations, risk hints; never a value |
+| `PATCH /api/v1/web-endpoints/{id}` | `assets:write` | `state` (active, ignored) and `labels`; audit-logged on the origin asset |
+| `GET /api/v1/assets/{id}/web-endpoints` | `assets:read` | one origin's endpoints; the `/assets/{id}` data-scope guard applies |
+
+The list compiles through `pkg/filterspec` with the caller as the actor, so
+the tenant predicate and the caller's data scope (on `origin_asset_id`) are
+always in the WHERE, for the list and the stats alike.
+
+## Sensitive paths, patterns, origins and the change feed
+
+- **Catalog** (`pkg/domain/webendpoint/catalog.json`, `GET /web-path-catalog`):
+  platform-curated sensitive paths (VCS and configuration files, backups,
+  debug and actuator endpoints, admin consoles, infrastructure APIs, API
+  descriptions). Ingest stamps `catalog_key` with the most specific entry
+  matching the template. Never learned from tenant data.
+- **Path patterns** (`GET /web-path-patterns`): the endpoint filter grouped by
+  `path_hash` (the template without host or method): how many origins serve
+  it, how many answer 2xx, without authentication, or are excluded-untested.
+  Within the tenant and the caller's data scope only.
+- **Origins** (`GET /web-origins`): per origin asset, endpoints, active,
+  excluded-untested, the sensitive ones among those (`excluded_sensitive`),
+  sensitive endpoints answering 2xx without authentication
+  (`unauth_sensitive`) and new in the last 7 days: the coverage-gap read.
+- **Change feed** (`web_endpoint_events`, `GET /web-endpoint-events`):
+  appeared, returned, gone, status_changed, auth_changed, param_added,
+  written in the same transaction as the change; `detail` holds status codes
+  and auth states only.
+- **Retention** (`WebSurfaceRetentionController`, hourly): unseen 30 days ->
+  gone (with an event), gone 365 days -> deleted with its parameters and
+  events, events older than 90 days deleted. Findings are never touched.
+- **Incremental scanning:** a template step chained after a crawl with the
+  step setting `endpoint_selector: new | changed` takes the URLs of the
+  endpoints the crawl found new (or new or changed) in this run instead of
+  each origin; an origin with none is skipped as `unchanged`. URLs are built
+  from the example path with typed placeholders, never recorded values, and
+  pass the same per-hop gate (path exclusions included). The setting is the
+  platform's and never reaches the sensor.
