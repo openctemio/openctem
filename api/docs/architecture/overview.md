@@ -164,7 +164,7 @@ DELETE /api/v1/tenants/{tenant}     # Delete tenant
 GET    /api/v1/tenants/{tenant}/members
 POST   /api/v1/tenants/{tenant}/members
 PATCH  /api/v1/tenants/{tenant}/members/{id}
-DELETE /api/v1/tenants/{tenant}/members/{id}
+POST   /api/v1/organization/members/{id}/offboard   # step-up
 
 # Invitations
 POST   /api/v1/tenants/{tenant}/invitations

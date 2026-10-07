@@ -321,12 +321,6 @@ export const tenantEndpoints = {
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}`,
 
   /**
-   * Remove member from tenant
-   */
-  removeMember: (tenantIdOrSlug: string, memberId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}`,
-
-  /**
    * Create a user account directly (POST, owner/admin) — no self-registration
    */
   createUser: (tenantIdOrSlug: string) => `${API_BASE.TENANTS}/${tenantIdOrSlug}/users`,
