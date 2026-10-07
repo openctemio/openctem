@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -49,13 +50,13 @@ func (s *Service) refuseUnownedTargets(ctx context.Context, tenantID shared.ID, 
 	if len(blocked) == 0 {
 		return nil
 	}
-	refused := make(map[string]string, len(blocked))
+	refusals := make([]scopedom.Refusal, 0, len(blocked))
 	for t, state := range blocked {
 		s.logRefusedTarget(ctx, tenantID, path, t, state)
-		refused[t] = ReasonOwnershipNotConfirmed
+		refusals = append(refusals, scopedom.NewRefusal(t, RefusalCodeForState(state), nil, 0))
 	}
 	s.auditRefusedTargets(ctx, tenantID, path, blocked)
-	return actScopeError(refused)
+	return refusalError(refusals)
 }
 
 // maxAuditedRefusals bounds how many refused targets one audit entry lists;

@@ -28,6 +28,8 @@ type Service struct {
 	admins   AdminDirectory
 	inApp    InAppNotifier
 	stepUp   shared.RecentAuthGate
+	// guardrails are the platform's scope guardrails (nil: the defaults).
+	guardrails *scopedom.Guardrails
 	// Coverage of the inventory (GetStats): counted in SQL over the
 	// caller's data scope.
 	coverage  CoverageCounter
@@ -94,6 +96,14 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	}
 	if exists {
 		return nil, scopedom.ErrTargetAlreadyExists
+	}
+
+	g := scopedom.DefaultGuardrails()
+	if s.guardrails != nil {
+		g = *s.guardrails
+	}
+	if err := g.CheckPattern(targetType, input.Pattern); err != nil {
+		return nil, err
 	}
 
 	now := time.Now().UTC()
