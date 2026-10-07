@@ -514,6 +514,27 @@ platform ingest: CTIS validate → output binding (capability ∩ catalogue ∩ 
 - The fallback is removed after one release train.
 - The availability view shows "sensor needs update" for such sensors.
 
+### 10.1 Retiring the legacy capability vocabulary (OC5, decided 2026-10-07)
+
+OC5 is **deferred** until one release train after the sensor release that
+ships command logs (research/62 P0-2) is live on every sensor. Then:
+
+- **Custom capabilities stay, as tenant labels.**
+  - The `capabilities` resource (`/api/v1/capabilities`, #1304) keeps every
+    tenant's custom rows. **Tenant rows are never deleted.**
+  - Each label may be mapped to one ctis taxonomy capability id
+    (`scan.ports@1`). The mapping drives routing.
+  - An unmapped label is for display and grouping only.
+- **Dropped at that point, and nothing else:**
+  - the legacy matching columns (the capability words on tools and sensors
+    that dispatch matches against);
+  - the old-sensor name fallback of TC12 (built-in tool name → catalogue
+    capability).
+- **Before the drop:**
+  - the availability view must show no sensor without a descriptor;
+  - the drop ships as an ordinary migration with a working down, tested up,
+    down, up on a restore of live.
+
 ## 11. Developer experience
 
 - **No-Go tools.** A `tool.yaml` with `run.profile: exec` around a CLI that
@@ -628,7 +649,7 @@ Every implementation PR carries:
 | OC2 | api | `tool_descriptors` per tenant; param, batch and step-setting maps → descriptor lookups, with the one-train fallback | OC1, SG3 |
 | OC3 | api | Tier classification and trust overlay; `CommandTier` per §5; publish gate for unverified tools | OC2, the tools API consolidation |
 | OC4 | api | Ingest: capability carries, required paths (warn → quarantine), derivations keyed by capability, CTIS 1.5 members | CT2, OC1 |
-| OC5 | api | Drop the legacy vocabulary: `capabilities` table, legacy `tools` columns, `Legacy` words; add the codeql row | OC2–OC4 |
+| OC5 | api | Retire the legacy vocabulary (§10.1): custom capabilities stay as tenant labels with an optional taxonomy mapping; drop only the legacy matching columns and the TC12 fallback, one train after the logs sensor release; the codeql row shipped in #1306 | OC2–OC4, logs sensor release + one train |
 | OC6 | web | Builder palette and forms from capabilities × descriptors; trust, tier and availability badges | OC2 |
 | CT4 | ctis | `weburl` (parse, normalise, template, redact web URLs) | — |
 | CT5 | ctis | CTIS 1.6: `endpoints[]`, `finding.web`, `finding.evidence_items` | CT4 |

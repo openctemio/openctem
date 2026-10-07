@@ -402,3 +402,32 @@ func TestActiveGate_PlatformPolicy(t *testing.T) {
 		t.Fatalf("tenant A's verified domain proved another tenant's target: %v", un)
 	}
 }
+
+// The asset attribution view says whether scope covers the asset and what
+// covers it (RFC-054 §6.6).
+func TestActiveGate_ScopeOfAsset(t *testing.T) {
+	f := newGateFixture(t)
+	g := NewActiveGate(f, f, f, f)
+	in := f.add(t, "app.scoped.com", asset.AssetTypeSubdomain)
+	out := f.add(t, "elsewhere.example.net", asset.AssetTypeDomain)
+	priv := f.add(t, "10.1.2.3", asset.AssetTypeIPAddress)
+	repo := f.add(t, "github.com/org/r", asset.AssetTypeRepository)
+	cases := map[string]string{
+		in.ID().String(): ScopeStatusInScope, out.ID().String(): ScopeStatusOutOfScope,
+		priv.ID().String(): ScopeStatusInternal, repo.ID().String(): ScopeStatusNotApplicable,
+		shared.NewID().String(): ScopeStatusOutOfScope,
+	}
+	for id, want := range cases {
+		got, via, err := g.ScopeOfAsset(context.Background(), f.tenant, id)
+		if err != nil || got != want {
+			t.Errorf("%s: %s (%v), want %s", id, got, err, want)
+		}
+		if want == ScopeStatusInScope && (via == nil || via.Pattern != "*.scoped.com") {
+			t.Errorf("covered_by = %+v", via)
+		}
+	}
+	// Another tenant: tenant A's asset id is unknown there.
+	if got, _, _ := g.ScopeOfAsset(context.Background(), shared.NewID(), in.ID().String()); got != ScopeStatusOutOfScope {
+		t.Errorf("another tenant saw %s", got)
+	}
+}

@@ -1251,6 +1251,28 @@ func TestTenantSvc_SearchMembers_Success(t *testing.T) {
 	}
 }
 
+// The handler accepts status=offboarded and status=all and the repository
+// filters on them; the service used to refuse both (400 "unknown member
+// status filter" on GET /tenants/{t}/members?include=user&status=all).
+func TestTenantSvc_SearchMembers_StatusFilters(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-status")
+	repo.memberSearchResult = &tenant.MemberSearchResult{}
+	for _, st := range []string{"", "active", "suspended", "offboarded", "all"} {
+		if _, err := svc.SearchMembersWithUserInfo(context.Background(), existing.ID().String(),
+			tenant.MemberSearchFilters{Status: st}); err != nil {
+			t.Errorf("status %q: unexpected error %v", st, err)
+		}
+	}
+	for _, st := range []string{"deleted", "ALL", "active,offboarded"} {
+		_, err := svc.SearchMembersWithUserInfo(context.Background(), existing.ID().String(),
+			tenant.MemberSearchFilters{Status: st})
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("status %q: want ErrValidation, got %v", st, err)
+		}
+	}
+}
+
 func TestTenantSvc_SearchMembers_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 

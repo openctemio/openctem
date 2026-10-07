@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -178,6 +179,48 @@ func TestGetRecentChanges_MergesHistory(t *testing.T) {
 	scoped := svc.getRecentChanges(context.Background(), tenant, &shared.DataScope{TenantID: tenant, UserID: shared.NewID()}, 5)
 	if len(scoped) != 1 || scoped[0].Type != "added" {
 		t.Fatalf("restricted member must see only in-scope additions, got %+v", scoped)
+	}
+}
+
+type fakeRecords struct {
+	tenant shared.ID
+	recs   map[string]attribution.Record
+}
+
+func (f fakeRecords) Records(_ context.Context, tenantID shared.ID, ids []string) (map[string]attribution.Record, error) {
+	out := map[string]attribution.Record{}
+	if !tenantID.Equals(f.tenant) {
+		return out, nil
+	}
+	for _, id := range ids {
+		if r, ok := f.recs[id]; ok {
+			out[id] = r
+		}
+	}
+	return out, nil
+}
+
+// A name the scan found that waits for review is listed as added, with its
+// state and outside the inventory (RFC-054 §4.4: "Added · needs review").
+func TestGetRecentChanges_AttributionState(t *testing.T) {
+	tenant := shared.NewID()
+	review := mustAsset(t, tenant, "a.vndirect.com.vn")
+	legacy := mustAsset(t, tenant, "legacy.example.com")
+	repo := &fakeSurfaceAssets{list: []*asset.Asset{review, legacy}}
+	svc := NewSurfaceService(repo, nil, logger.NewNop())
+	svc.SetAttributionRecords(fakeRecords{tenant: tenant, recs: map[string]attribution.Record{
+		review.ID().String(): {State: attribution.StateNeedsReview},
+	}})
+	got := svc.getRecentChanges(context.Background(), tenant, nil, 5)
+	by := map[string]AssetChange{}
+	for _, c := range got {
+		by[c.AssetName] = c
+	}
+	if c := by["a.vndirect.com.vn"]; c.Type != "added" || c.AttributionState != "needs_review" || c.InInventory || c.AssetID != review.ID().String() {
+		t.Errorf("review asset change = %+v", c)
+	}
+	if c := by["legacy.example.com"]; c.AttributionState != "" || !c.InInventory {
+		t.Errorf("legacy asset change = %+v", c)
 	}
 }
 
