@@ -68,6 +68,17 @@ var stepUpRoutes = []string{
 	"GET /api/v1/integrations/github/webhook-secret",
 	"POST /api/v1/integrations/github/webhook-secret/rotate",
 	"PATCH /api/v1/attachments/storage-config",
+	// Widening scope (RFC-054 §6): approving an entry, the settings, and
+	// taking an exclusion out of effect.
+	"PUT /api/v1/scope/settings",
+	"POST /api/v1/scope/targets/{id}/approve",
+	"POST /api/v1/scope/exclusions/{id}/deactivate",
+	"POST /api/v1/scope/exclusions/bulk/delete",
+	"DELETE /api/v1/scope/exclusions/{id}",
+	// A seed authorizes every name under it: adding one or turning its
+	// discovery on widens scope.
+	"POST /api/v1/easm/seeds",
+	"PATCH /api/v1/easm/seeds/{id}",
 	"POST /api/v1/sensors",
 	"POST /api/v1/sensors/{id}/regenerate-key",
 	"POST /api/v1/credentials/{id}/reveal",
@@ -130,6 +141,8 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
+			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
+			registerEASMSeedRoutes(router, &handler.EASMSeedHandler{}, auth, nil, chain())
 			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
 			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()

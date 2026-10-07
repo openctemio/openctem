@@ -163,7 +163,9 @@ func (w *Workflow) ValidateGraph() error {
 		return shared.NewDomainError("VALIDATION", "workflow must have at least one trigger node", shared.ErrValidation)
 	}
 
-	return nil
+	// No edge into a trigger, condition edges carry yes/no, no cycle, and
+	// every node is reached from a trigger.
+	return w.validateTopology(true)
 }
 
 // RecordRun records the result of a workflow run.

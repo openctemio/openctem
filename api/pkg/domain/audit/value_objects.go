@@ -48,6 +48,13 @@ const (
 	// names that a scope target or seed of the organization covers (RFC-054
 	// §4.3). A system decision; one event per run and organization.
 	ActionAssetAttributionAutoConfirmed Action = "asset.attribution_auto_confirmed"
+	// ActionScopeSettingsUpdated: the organization's scope settings changed
+	// (RFC-054 §6.3).
+	ActionScopeSettingsUpdated Action = "scope.settings_updated"
+	// ActionScopeTargetApproved / Rejected: an approver decided a pending
+	// scope entry (RFC-054 §6.1).
+	ActionScopeTargetApproved Action = "scope_target.approved"
+	ActionScopeTargetRejected Action = "scope_target.rejected"
 	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
 	// existing repository asset and attached its SCM data to it. POST
 	// /assets no longer merges (a duplicate is a 409); older rows from it
@@ -546,7 +553,8 @@ func (a Action) IsValid() bool {
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
-		ActionAssetAttributionAutoConfirmed,
+		ActionAssetAttributionAutoConfirmed, ActionScopeSettingsUpdated,
+		ActionScopeTargetApproved, ActionScopeTargetRejected,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
@@ -937,6 +945,7 @@ func SeverityForAction(a Action) Severity {
 		ActionPipelineTemplateDeleted, ActionPipelineRunFailed, ActionPipelineRunCanceled,
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
+		ActionScopeTargetApproved, ActionScopeSettingsUpdated,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		// Deleting an asset also deletes its findings.

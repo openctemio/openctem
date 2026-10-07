@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -26,7 +27,8 @@ func NewScopeTargetRepository(db *DB) *ScopeTargetRepository {
 
 const scopeTargetSelectQuery = `
 	SELECT id, tenant_id, target_type, pattern, description, priority, status, tags,
-	       created_by, created_at, updated_at
+	       created_by, created_at, updated_at,
+	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at
 	FROM scope_targets
 `
 
@@ -43,11 +45,19 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		createdBy   sql.NullString
 		createdAt   sql.NullTime
 		updatedAt   sql.NullTime
+		expiresAt   sql.NullTime
+		reason      string
+		maxTier     int
+		approvals   int
+		approvedAt  sql.NullTime
+		rejectedBy  sql.NullString
+		rejectedAt  sql.NullTime
 	)
 
 	err := row.Scan(
 		&id, &tenantID, &targetType, &pattern, &description, &priority, &status, &tags,
 		&createdBy, &createdAt, &updatedAt,
+		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -56,7 +66,7 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 	tid, _ := shared.IDFromString(id)
 	tntID, _ := shared.IDFromString(tenantID)
 
-	return scope.ReconstituteTarget(
+	t := scope.ReconstituteTarget(
 		tid,
 		tntID,
 		scope.TargetType(targetType),
@@ -68,7 +78,78 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		createdBy.String,
 		createdAt.Time,
 		updatedAt.Time,
-	), nil
+	)
+	t.RestoreEntry(scope.EntryState{
+		Reason: reason, ExpiresAt: scopeTimePtr(expiresAt), MaxTier: scope.Tier(maxTier),
+		ApprovalsRequired: approvals, ApprovedAt: scopeTimePtr(approvedAt),
+		RejectedBy: rejectedBy.String, RejectedAt: scopeTimePtr(rejectedAt),
+	})
+	return t, nil
+}
+
+func scopeTimePtr(t sql.NullTime) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	v := t.Time
+	return &v
+}
+
+// loadApprovals fills the approvals of the given targets (one query).
+func (r *ScopeTargetRepository) loadApprovals(ctx context.Context, tenantID string, targets []*scope.Target) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(targets))
+	byID := make(map[string]*scope.Target, len(targets))
+	for _, t := range targets {
+		ids = append(ids, t.ID().String())
+		byID[t.ID().String()] = t
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT target_id, approver_id, approved_at FROM scope_target_approvals
+		WHERE tenant_id = $1 AND target_id = ANY($2::uuid[])
+		ORDER BY approved_at, approver_id`, tenantID, pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("list scope target approvals: %w", err)
+	}
+	defer rows.Close()
+	got := map[string][]scope.Approval{}
+	for rows.Next() {
+		var tid string
+		var a scope.Approval
+		if err := rows.Scan(&tid, &a.UserID, &a.ApprovedAt); err != nil {
+			return err
+		}
+		got[tid] = append(got[tid], a)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for id, list := range got {
+		t := byID[id]
+		t.RestoreEntry(scope.EntryState{
+			Reason: t.Reason(), ExpiresAt: t.ExpiresAt(), MaxTier: t.MaxTier(), ApprovalsRequired: t.ApprovalsRequired(),
+			Approvals: list, ApprovedAt: t.ApprovedAt(), RejectedBy: t.RejectedBy(), RejectedAt: t.RejectedAt(),
+		})
+	}
+	return nil
+}
+
+// saveApprovals replaces the target's approval rows with its current list.
+func (r *ScopeTargetRepository) saveApprovals(ctx context.Context, tx *sql.Tx, t *scope.Target) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM scope_target_approvals WHERE tenant_id = $1 AND target_id = $2`,
+		t.TenantID().String(), t.ID().String()); err != nil {
+		return fmt.Errorf("clear scope target approvals: %w", err)
+	}
+	for _, a := range t.Approvals() {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO scope_target_approvals (tenant_id, target_id, approver_id, approved_at)
+			VALUES ($1, $2, $3, $4)`, t.TenantID().String(), t.ID().String(), a.UserID, a.ApprovedAt); err != nil {
+			return fmt.Errorf("save scope target approval: %w", err)
+		}
+	}
+	return nil
 }
 
 // Create persists a new scope target.
@@ -76,8 +157,9 @@ func (r *ScopeTargetRepository) Create(ctx context.Context, target *scope.Target
 	query := `
 		INSERT INTO scope_targets (
 			id, tenant_id, target_type, pattern, description, priority, status, tags,
-			created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			created_by, created_at, updated_at,
+			expires_at, reason, max_tier, approvals_required, approved_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -92,6 +174,11 @@ func (r *ScopeTargetRepository) Create(ctx context.Context, target *scope.Target
 		nullString(target.CreatedBy()),
 		target.CreatedAt(),
 		target.UpdatedAt(),
+		target.ExpiresAt(),
+		target.Reason(),
+		int(target.MaxTier()),
+		target.ApprovalsRequired(),
+		target.ApprovedAt(),
 	)
 
 	if err != nil {
@@ -116,11 +203,14 @@ func (r *ScopeTargetRepository) GetByID(ctx context.Context, tenantID, id shared
 		}
 		return nil, fmt.Errorf("failed to get scope target: %w", err)
 	}
-
+	if err := r.loadApprovals(ctx, tenantID.String(), []*scope.Target{target}); err != nil {
+		return nil, err
+	}
 	return target, nil
 }
 
-// Update updates an existing scope target.
+// Update updates an existing scope target and replaces its approvals, in
+// one transaction.
 func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target) error {
 	query := `
 		UPDATE scope_targets SET
@@ -128,11 +218,24 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 			priority = $3,
 			status = $4,
 			tags = $5,
-			updated_at = $6
+			updated_at = $6,
+			created_by = $8,
+			expires_at = $9,
+			reason = $10,
+			max_tier = $11,
+			approvals_required = $12,
+			approved_at = $13,
+			rejected_by = $14,
+			rejected_at = $15
 		WHERE id = $1 AND tenant_id = $7
 	`
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin scope target update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
 
-	result, err := r.db.ExecContext(ctx, query,
+	result, err := tx.ExecContext(ctx, query,
 		target.ID().String(),
 		nullString(target.Description()),
 		target.Priority(),
@@ -140,6 +243,14 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 		pq.StringArray(target.Tags()),
 		target.UpdatedAt(),
 		target.TenantID().String(),
+		nullString(target.CreatedBy()),
+		target.ExpiresAt(),
+		target.Reason(),
+		int(target.MaxTier()),
+		target.ApprovalsRequired(),
+		target.ApprovedAt(),
+		nullString(target.RejectedBy()),
+		target.RejectedAt(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope target: %w", err)
@@ -152,8 +263,23 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 	if rows == 0 {
 		return scope.ErrTargetNotFound
 	}
+	if err := r.saveApprovals(ctx, tx, target); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
-	return nil
+// ExpireOld marks every active or pending entry past its expiry as expired
+// (the sweep; the reads already ignore them). A system write across tenants
+// that only ever narrows. It returns how many rows changed.
+func (r *ScopeTargetRepository) ExpireOld(ctx context.Context) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE scope_targets SET status = 'expired', updated_at = now()
+		WHERE status IN ('active', 'pending') AND expires_at IS NOT NULL AND expires_at <= now()`)
+	if err != nil {
+		return 0, fmt.Errorf("expire scope targets: %w", err)
+	}
+	return res.RowsAffected()
 }
 
 // Delete removes a scope target by its tenant ID and ID.
@@ -254,13 +380,20 @@ func (r *ScopeTargetRepository) List(ctx context.Context, filter scope.TargetFil
 	if err := rows.Err(); err != nil {
 		return pagination.Result[*scope.Target]{}, fmt.Errorf("iterate scope targets: %w", err)
 	}
+	if filter.TenantID != nil {
+		if err := r.loadApprovals(ctx, *filter.TenantID, targets); err != nil {
+			return pagination.Result[*scope.Target]{}, err
+		}
+	}
 
 	return pagination.NewResult(targets, total, page), nil
 }
 
-// ListActive retrieves all active scope targets for a tenant.
+// ListActive retrieves the tenant's scope targets in effect: active and not
+// past their expiry. An expired entry stops authorizing at once, before the
+// sweep marks it (RFC-054 §6.1).
 func (r *ScopeTargetRepository) ListActive(ctx context.Context, tenantID shared.ID) ([]*scope.Target, error) {
-	query := scopeTargetSelectQuery + " WHERE tenant_id = $1 AND status = 'active' ORDER BY priority DESC"
+	query := scopeTargetSelectQuery + " WHERE tenant_id = $1 AND status = 'active' AND (expires_at IS NULL OR expires_at > now()) ORDER BY priority DESC"
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {

@@ -36,6 +36,7 @@ import {
 import { useCapabilityMetadata } from '@/lib/api'
 import type { ToolWithConfig } from '@/lib/api/tool-types'
 import { safeImageSrc } from '@/lib/safe-href'
+import { ToolTrustBadge } from '@/features/tools/components/tool-availability'
 import Image from 'next/image'
 
 // Map Lucide icon names from database to actual components
@@ -400,6 +401,9 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                                   <User className="h-2.5 w-2.5" />
                                   Custom
                                 </span>
+                              )}
+                              {avail && (
+                                <ToolTrustBadge item={avail} className="text-[9px] px-1 py-0" />
                               )}
                               {/* Show badge for unavailable tools */}
                               {!isAvailable && (
