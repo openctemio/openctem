@@ -54,6 +54,7 @@ R3 GET /api/v1/admin/tenants/{tenantId}/sso/verified-domains
 R3 GET /api/v1/admin/tenants/{tenantId}/users
 R3 GET /api/v1/assets/{assetId}/sla-policy
 R3 GET /api/v1/commands/{id}
+R3 GET /api/v1/commands/{id}/logs
 R3 GET /api/v1/compliance/findings/{findingId}/controls
 R3 GET /api/v1/findings/{id}/ai-triage/{triageId}
 R3 GET /api/v1/finding-sources/categories/{categoryId}
