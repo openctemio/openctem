@@ -251,6 +251,23 @@ func (a *Sensor) AssessHealth(now time.Time, p HealthPolicy) HealthAssessment {
 	return out
 }
 
+// TakesJobs reports whether a sensor in state st takes new work: online,
+// degraded (heartbeating with a problem) or late (past its deadline, still
+// dispatchable). It is the one definition of "online" the Sensors page, the
+// fleet stats and the tool availability view share.
+func (st State) TakesJobs() bool {
+	return st == StateOnline || st == StateDegraded || st == StateLate
+}
+
+// CanTakeJobs reports whether the sensor takes new work at now: its state
+// takes jobs and it is not a one-shot (CI) sensor, which only runs the job it
+// was started for. The health policy does not change the answer (it only
+// tells online from degraded and stale from offline), so the default one is
+// used.
+func (a *Sensor) CanTakeJobs(now time.Time) bool {
+	return !a.IsOneShot() && a.AssessHealth(now, DefaultHealthPolicy()).State.TakesJobs()
+}
+
 func hasReason(rs []HealthReason, code HealthReasonCode) bool {
 	for _, r := range rs {
 		if r.Code == code {

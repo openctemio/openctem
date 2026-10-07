@@ -1641,7 +1641,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.TemplateSource.SetCredentialGuard(s.SecretStore, s.Audit)
 
 	s.Tool = tool.NewService(repos.Tool, repos.TenantToolConfig, repos.ToolExecution, log)
-	s.Tool.SetSensorRepo(repos.Sensor)         // Enable tool availability checking
+	// Tool availability: the catalog joined with the tools the sensors report.
+	s.Tool.SetAvailabilitySources(s.Sensor, repos.ScanZone, repos.SensorGrant)
 	s.Tool.SetCategoryRepo(repos.ToolCategory) // Enable category info in responses
 	s.ToolCategory = tool.NewCategoryService(repos.ToolCategory, repos.Tool, log)
 	s.Capability = capability.NewCapabilityService(repos.Capability, s.Audit, log)
@@ -1705,6 +1706,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A batch goes only to a sensor whose reported local policy accepts
 		// it; a trigger no sensor would accept is refused (research/25 §3.6).
 		scan.WithDispatchPolicy(repos.Sensor, s.Tenant),
+		// A tool no online sensor may run refuses the trigger with the
+		// reason (docs/architecture/tool-availability.md).
+		scan.WithToolAvailability(s.Tool),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),

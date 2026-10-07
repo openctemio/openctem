@@ -181,6 +181,11 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	if err := s.validateToolsAtTriggerTime(ctx, sc); err != nil {
 		return nil, err
 	}
+	// A tool no online sensor may run refuses the trigger with the reason,
+	// rather than queueing jobs nobody claims.
+	if err := s.checkScanToolsDispatchable(ctx, sc); err != nil {
+		return nil, err
+	}
 
 	// Check sensor availability before triggering - must have an online sensor
 	toolToCheck := ""
