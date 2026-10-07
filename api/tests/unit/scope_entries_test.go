@@ -341,3 +341,30 @@ func TestScopeEntry_ExpiredStopsAuthorizing(t *testing.T) {
 		t.Fatalf("activating an expired entry: %v", err)
 	}
 }
+
+// The platform's guardrails apply to every new entry, an approver's too: no
+// public suffix, no government name, no oversized public range.
+func TestScopeEntry_PlatformGuardrails(t *testing.T) {
+	svc, tr, _ := entryService(t, 1, tenant.ScopeSettings{})
+	tenantID := shared.NewID()
+	for _, c := range []struct {
+		typ, pattern string
+		want         error
+	}{
+		{"domain", "*.com.vn", scopedom.ErrPublicSuffix},
+		{"domain", "*.gov.vn", scopedom.ErrDenyList},
+		{"cidr", "0.0.0.0/0", scopedom.ErrDenyList},
+		{"cidr", "8.0.0.0/8", scopedom.ErrCIDRTooLarge},
+	} {
+		_, err := svc.CreateTarget(context.Background(), scope.CreateTargetInput{TenantID: tenantID.String(), TargetType: c.typ, Pattern: c.pattern, Actor: approverA})
+		if !errors.Is(err, c.want) {
+			t.Errorf("%s %s: %v, want %v", c.typ, c.pattern, err, c.want)
+		}
+	}
+	if len(tr.targets) != 0 {
+		t.Fatal("a refused pattern was saved")
+	}
+	if _, err := svc.CreateTarget(context.Background(), scope.CreateTargetInput{TenantID: tenantID.String(), TargetType: "domain", Pattern: "*.vndirect.com.vn", Actor: approverA}); err != nil {
+		t.Fatalf("a registrable domain: %v", err)
+	}
+}
