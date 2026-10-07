@@ -152,10 +152,10 @@ var assetMergeLeftAlone = map[string]string{
 	// that migration moved it; its down migration restores only rows still
 	// holding that pair, so a merged asset's entry goes with it.
 	"asset_type_reclassifications.asset_id": "ledger of one migration; removed with the merged asset",
-	// The property normalisation ledger (migration 001181, RFC-042 §6.3.9)
+	// The property normalisation ledger (migration 001185, RFC-042 §6.3.9)
 	// keeps an asset's properties as they were before it, for its down
 	// migration only.
-	"asset_properties_pre_001181.asset_id": "ledger of one migration; removed with the merged asset",
+	"asset_properties_pre_001185.asset_id": "ledger of one migration; removed with the merged asset",
 }
 
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.
