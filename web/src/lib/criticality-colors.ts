@@ -21,7 +21,7 @@ export const CRITICALITY_BADGE_SOFT: Record<CriticalityLevel, string> = {
   medium:
     'bg-yellow-500/10 text-yellow-500 border-yellow-500/20 dark:bg-yellow-900/30 dark:text-yellow-400',
   low: 'bg-green-500/10 text-green-500 border-green-500/20 dark:bg-green-900/30 dark:text-green-400',
-  none: 'bg-slate-500/10 text-slate-500 border-slate-500/20 dark:bg-slate-800/40 dark:text-slate-400',
+  none: 'bg-muted text-muted-foreground border-border',
 }
 
 /** Light pill (solid-ish, for lists/tables). */
@@ -31,7 +31,7 @@ export const CRITICALITY_BADGE_LIGHT: Record<CriticalityLevel, string> = {
   medium:
     'bg-yellow-100 text-yellow-900 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400',
   low: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400',
-  none: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-400',
+  none: 'bg-muted text-muted-foreground border-border',
 }
 
 /** Inline text color. */
@@ -40,7 +40,7 @@ export const CRITICALITY_TEXT_COLORS: Record<CriticalityLevel, string> = {
   high: 'text-orange-500 dark:text-orange-400',
   medium: 'text-yellow-600 dark:text-yellow-400',
   low: 'text-green-600 dark:text-green-400',
-  none: 'text-slate-500 dark:text-slate-400',
+  none: 'text-muted-foreground',
 }
 
 /** Dot/indicator background token. */
@@ -49,7 +49,7 @@ export const CRITICALITY_DOT_COLORS: Record<CriticalityLevel, string> = {
   high: 'bg-orange-500',
   medium: 'bg-yellow-500',
   low: 'bg-green-500',
-  none: 'bg-slate-400',
+  none: 'bg-muted-foreground',
 }
 
 /** Chart hex colors. */
