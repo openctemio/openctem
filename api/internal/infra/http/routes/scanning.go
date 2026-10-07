@@ -3,6 +3,7 @@ package routes
 import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 )
 
@@ -213,10 +214,17 @@ func registerPipelineRoutes(
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 	triggerRateLimiter *middleware.TriggerRateLimiter,
-	moduleGate Middleware,
+	moduleGate *middleware.ModuleGate,
 ) {
-	// Build tenant middleware chain from JWT token; gate after tenant extraction.
-	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	// Build tenant middleware chains from JWT token; gate after tenant
+	// extraction. Scan workflow templates belong to the scan_pipelines module.
+	// Their runs are scan runs: the Scans Runs tab, a scan's run history, task
+	// logs and cancel all read them, so they follow the core scans module.
+	// Gating runs on scan_pipelines broke those views for every tenant on a
+	// preset without scan_pipelines (minimal, asset_inventory, compliance).
+	base := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	tenantMiddlewares := append(append([]Middleware{}, base...), moduleGate.RequireModule(moduledom.ModuleScanPipelines))
+	runMiddlewares := append(append([]Middleware{}, base...), moduleGate.RequireModule(moduledom.ModuleScans))
 
 	// Pipeline Template routes - tenant from JWT token
 	router.Group("/api/v1/pipelines", func(r Router) {
@@ -269,7 +277,7 @@ func registerPipelineRoutes(
 		// scan run is stopped, so it also needs scans:write (owner decision
 		// D12, scans redesign 2026-10).
 		r.POST("/{id}/cancel", h.CancelRun, middleware.RequireAll(permission.PipelinesWrite, permission.ScansWrite))
-	}, tenantMiddlewares...)
+	}, runMiddlewares...)
 }
 
 // registerScanProfileRoutes registers scan profile management endpoints.
