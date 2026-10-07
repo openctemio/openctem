@@ -15,6 +15,7 @@ package sensor
 // tool) and the contract's produces allow them.
 
 import (
+	"encoding/json"
 	"regexp"
 	"slices"
 	"strings"
@@ -63,6 +64,9 @@ type ToolContract struct {
 	// the sensor) or "adapter" (installed by its operator). A sensor
 	// claim; trust is assigned by the platform.
 	Origin string `json:"origin,omitempty" enums:"builtin,adapter"`
+	// Descriptor is the full descriptor of the tool (canonical JSON of its
+	// tool.yaml), kept only when it hashes to Digest (SanitizeToolDescriptor).
+	Descriptor json.RawMessage `json:"descriptor,omitempty" swaggertype:"object"`
 }
 
 // Tool origins a sensor reports.
