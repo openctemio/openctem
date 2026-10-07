@@ -103,3 +103,19 @@ func ClassifyVersion(version, latest, minimum string) VersionStatus {
 func IsReleaseVersion(v string) bool {
 	return comparableVersion(v) != ""
 }
+
+// CompareVersions orders two reported versions: release versions by semver,
+// a release version above anything that is not one, and two non-release
+// versions ("dev", "") by their text. It returns -1, 0 or +1.
+func CompareVersions(a, b string) int {
+	ca, cb := comparableVersion(a), comparableVersion(b)
+	switch {
+	case ca != "" && cb != "":
+		return semver.Compare(ca, cb)
+	case ca != "":
+		return 1
+	case cb != "":
+		return -1
+	}
+	return strings.Compare(NormalizeVersion(a), NormalizeVersion(b))
+}
