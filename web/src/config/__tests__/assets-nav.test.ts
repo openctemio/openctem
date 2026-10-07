@@ -37,6 +37,7 @@ describe('Discovery > Assets', () => {
       ['Inventory', '/assets', 'assets'],
       ['Groups', '/assets/groups', 'assets'],
       ['What changed', '/assets/changes', 'assets'],
+      ['Web surface', '/assets/web', 'assets'],
       ['Suggestions', '/assets/suggestions', 'relationships'],
     ])
   })
