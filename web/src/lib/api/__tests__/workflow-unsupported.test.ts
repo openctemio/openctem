@@ -40,6 +40,7 @@ describe('workflow picker lists', () => {
     expect([...WORKFLOW_UNSUPPORTED_TRIGGER_TYPES].sort()).toEqual(['finding_age', 'schedule'])
     expect([...WORKFLOW_UNSUPPORTED_ACTION_TYPES].sort()).toEqual([
       'assign_team',
+      'run_script',
       'update_priority',
     ])
   })
