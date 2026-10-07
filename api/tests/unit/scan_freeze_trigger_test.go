@@ -80,8 +80,11 @@ func TestScanFreeze_ManualTriggerRefusedInFrozenZone(t *testing.T) {
 	if !errors.Is(err, shared.ErrConflict) || fe.WindowName != "dc-a patching" {
 		t.Errorf("refusal = %v (%+v), want a conflict naming the window", err, fe)
 	}
-	if len(deps.commandRepo.commands) != 0 || len(deps.runRepo.runs) != 0 {
-		t.Errorf("a refused trigger created %d commands and %d runs", len(deps.commandRepo.commands), len(deps.runRepo.runs))
+	if len(deps.commandRepo.commands) != 0 || dispatchedRuns(deps) != 0 {
+		t.Errorf("a refused trigger created %d commands and %d runs", len(deps.commandRepo.commands), dispatchedRuns(deps))
+	}
+	if b := blockedRuns(deps, sc.ID); len(b) != 1 || b[0].RefusalCode != scanservice.CodeScanFrozen {
+		t.Errorf("the refusal is not one blocked run with code %s: %+v", scanservice.CodeScanFrozen, b)
 	}
 	if !slices.Contains(auditActions(deps), audit.ActionScanFreezeRefused) {
 		t.Errorf("refusal not audited: %v", auditActions(deps))

@@ -69,11 +69,17 @@ func (s StepRunStatus) ProducedResults() bool {
 type StepRun struct {
 	ID            shared.ID
 	PipelineRunID shared.ID
-	StepID        shared.ID
+	// StepID is the pipeline step this run executed. It is zero once that
+	// step was removed from the pipeline: the step run keeps its history
+	// (StepKey, StepName, Tool) and is never deleted with the step.
+	StepID shared.ID
 
-	// Step identification
+	// Step identification, copied from the step when the step run was
+	// created, so history says what ran after the step is edited or removed.
 	StepKey   string
 	StepOrder int
+	StepName  string
+	Tool      string
 
 	// Execution
 	Status StepRunStatus
@@ -128,6 +134,16 @@ func NewStepRun(
 		MaxAttempts:   1 + maxRetries,
 		CreatedAt:     time.Now(),
 	}
+}
+
+// NewStepRunForStep creates the step run of a step and records the step's
+// name and tool on it, so the run's history stays readable after the step
+// is edited or removed.
+func NewStepRunForStep(pipelineRunID shared.ID, step *Step) *StepRun {
+	sr := NewStepRun(pipelineRunID, step.ID, step.StepKey, step.StepOrder, step.MaxRetries)
+	sr.StepName = step.Name
+	sr.Tool = step.Tool
+	return sr
 }
 
 // Queue marks the step as queued for execution.

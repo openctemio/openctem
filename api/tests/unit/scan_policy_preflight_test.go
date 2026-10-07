@@ -129,8 +129,11 @@ func TestPolicyPreflight_AllSensorsRefuse(t *testing.T) {
 			t.Errorf("refusal %q does not name %q", err.Error(), want)
 		}
 	}
-	if len(deps.commandRepo.commands) != 0 || len(deps.runRepo.runs) != 0 {
-		t.Errorf("left %d command(s) and %d run(s) behind", len(deps.commandRepo.commands), len(deps.runRepo.runs))
+	if len(deps.commandRepo.commands) != 0 || dispatchedRuns(deps) != 0 {
+		t.Errorf("left %d command(s) and %d run(s) behind", len(deps.commandRepo.commands), dispatchedRuns(deps))
+	}
+	if b := blockedRuns(deps, sc.ID); len(b) != 1 || b[0].RefusalCode != "SENSOR_POLICY_REFUSED" {
+		t.Errorf("the refusal is not one blocked run: %+v", b)
 	}
 }
 

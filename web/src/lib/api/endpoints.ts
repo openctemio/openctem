@@ -326,12 +326,6 @@ export const tenantEndpoints = {
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}`,
 
   /**
-   * Remove member from tenant
-   */
-  removeMember: (tenantIdOrSlug: string, memberId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}`,
-
-  /**
    * Create a user account directly (POST, owner/admin) — no self-registration
    */
   createUser: (tenantIdOrSlug: string) => `${API_BASE.TENANTS}/${tenantIdOrSlug}/users`,
@@ -1376,6 +1370,13 @@ export const tenantToolEndpoints = {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
     return `${API_BASE.TENANT_TOOLS}/all-tools${queryString}`
   },
+
+  /**
+   * Tool availability: the catalog joined with the tools the organization's
+   * sensors report, optionally limited to one scan zone's sensors.
+   */
+  availability: (zoneId?: string | null) =>
+    `${API_BASE.TENANT_TOOLS}/availability${zoneId ? buildQueryString({ zone_id: zoneId }) : ''}`,
 } as const
 
 /**

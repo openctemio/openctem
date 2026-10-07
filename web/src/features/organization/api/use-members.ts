@@ -173,28 +173,6 @@ export function useUpdateMemberRole(
   }
 }
 
-async function removeMember(url: string) {
-  return fetcherWithOptions<void>(url, {
-    method: 'DELETE',
-  })
-}
-
-/**
- * Hook to remove a member
- */
-export function useRemoveMember(tenantIdOrSlug: string | undefined, memberId: string | undefined) {
-  const { trigger, isMutating, error } = useSWRMutation(
-    tenantIdOrSlug && memberId ? tenantEndpoints.removeMember(tenantIdOrSlug, memberId) : null,
-    removeMember
-  )
-
-  return {
-    removeMember: trigger,
-    isRemoving: isMutating,
-    error,
-  }
-}
-
 // ============================================
 // MEMBER LIFECYCLE (RFC-050)
 // ============================================

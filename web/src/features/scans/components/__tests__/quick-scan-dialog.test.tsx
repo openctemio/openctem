@@ -26,6 +26,8 @@ vi.mock('@/lib/api/tool-hooks', () => ({
     data: { items: [{ id: 't1', name: 'nuclei', display_name: 'Nuclei', is_active: true }] },
     isLoading: false,
   }),
+  // Availability unknown: nothing is disabled.
+  useToolAvailability: () => ({ data: undefined }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 

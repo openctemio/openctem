@@ -80,6 +80,9 @@ var stepUpRoutes = []string{
 	// discovery on widens scope.
 	"POST /api/v1/easm/seeds",
 	"PATCH /api/v1/easm/seeds/{id}",
+	"POST /api/v1/sensors",
+	"POST /api/v1/sensors/{id}/regenerate-key",
+	"POST /api/v1/credentials/{id}/reveal",
 }
 
 func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
@@ -141,6 +144,8 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			registerEASMSeedRoutes(router, &handler.EASMSeedHandler{}, auth, nil, chain())
+			registerSensorManagementRoutes(router, &handler.SensorHandler{}, nil, nil, auth, nil)
+			registerCredentialRoutes(router, &handler.CredentialImportHandler{}, auth, nil, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {
