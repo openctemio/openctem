@@ -38,7 +38,7 @@ gap, and never overrides a known exposure).
 | Trigger | Fired from | Payload |
 |---|---|---|
 | `asset_discovered` | `ingest.AssetProcessor.ProcessBatch` via the discovered callback, wired in `cmd/server/services.go` | `asset` (first), `assets` (up to 100), `asset_count`, `internet_facing`, `internet_facing_count`, `truncated` |
-| `scan_completed` | `pipeline.Service.OnStepCompleted` when a run completes without failures | `scan.{run_id, pipeline_id, scan_id, status, trigger_type, total_findings, completed_at}` |
+| `scan_completed` | `pipeline.Service.finishRun` when a run settles `completed`, `partial` or `failed` | `scan.{run_id, pipeline_id, scan_id, status, trigger_type, total_findings, completed_at}` |
 
 `asset_discovered` fires only for assets an ingest actually inserted: not for a
 re-scan merge, and not for a local asset whose insert lost a concurrent-create
@@ -49,6 +49,13 @@ hand already knows about it, and "discovered" is what automation keys on.
 Each matching workflow runs **once per ingest batch** with the batch in the
 payload, not once per asset. Trigger filters: `internet_facing_only` (bool) and
 `asset_type_filter` (list of asset types).
+
+`scan_completed` takes `status_filter`, a list of the run outcomes it runs on
+(`completed`, `partial`, `failed`). Without one it fires on `completed` runs
+only, so an automation written for a successful scan never starts on a failed
+one; "scan failed: alert" is `{"status_filter": ["failed", "partial"]}`. Any
+other value is refused on save (`INVALID_TRIGGER_CONFIG`). A canceled run fires
+nothing.
 
 ## 3. Notification: new internet-facing assets
 

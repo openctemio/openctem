@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -43,13 +44,19 @@ type ReviewQuery struct {
 	Reason string
 	Limit  int
 	Offset int
+	// Caller decides which fixes an address row offers (set by the handler
+	// from the token, never from the request).
+	Caller ReviewCaller
 }
 
 // ReviewEvidence is one reason in a queue row.
 type ReviewEvidence struct {
-	Rule            string         `json:"rule"`
-	Technique       string         `json:"technique"`
-	Source          string         `json:"source"`
+	Rule      string `json:"rule"`
+	Technique string `json:"technique"`
+	Source    string `json:"source"`
+	// SourceLabel names the source for people: a sensor's name for
+	// "sensor:<id>" (a platform sensor is "platform sensor").
+	SourceLabel     string         `json:"source_label,omitempty"`
 	Weight          float64        `json:"weight"`
 	Observed        map[string]any `json:"observed,omitempty"`
 	FirstObservedAt time.Time      `json:"first_observed_at"`
@@ -71,6 +78,16 @@ type ReviewItem struct {
 	// covers the name (RFC-054 §6.6); nil means confirming it widens scope,
 	// so the UI offers "add scope entry" first.
 	CoveredBy *scopeauth.Via `json:"covered_by"`
+	// Address rows (an IP, or a service on one): an address never inherits
+	// from the names that resolve to it (review_ip.go).
+	// ResolvedFrom: the caller's in-scope names that resolve to it.
+	ResolvedFrom []string `json:"resolved_from,omitempty"`
+	// Network: the ASN, its organization, and whether it is shared space.
+	Network *ReviewNetwork `json:"network,omitempty"`
+	// Hint: why the row stays in review (ip_needs_ip_entry).
+	Hint string `json:"hint,omitempty"`
+	// Fixes the caller may take (POST /scope/targets).
+	Fixes []scopedom.Fix `json:"fixes,omitempty"`
 }
 
 // ReviewCoverage names what covers each name (*ActiveGate).
@@ -102,6 +119,8 @@ type ReviewService struct {
 	dataScope *datascope.Enforcer
 	effects   *DecisionEffects
 	coverage  ReviewCoverage
+	addrs     ReviewAddressStore
+	orgName   OrgNamer
 }
 
 // SetDecisionEffects runs reclassification and rejection hygiene after each
@@ -171,6 +190,9 @@ func (s *ReviewService) Queue(ctx context.Context, tenantID shared.ID, q ReviewQ
 			v := v
 			page.Items[i].CoveredBy = &v
 		}
+	}
+	if err := s.explainAddresses(ctx, tenantID, scopeUser, q.Caller, page); err != nil {
+		return nil, err
 	}
 	return page, nil
 }
