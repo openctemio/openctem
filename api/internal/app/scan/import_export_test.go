@@ -95,15 +95,7 @@ func (m *mockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ s
 	return nil
 }
 
-func (m *mockScanRepository) RecordRunStarted(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID) error {
-	return nil
-}
-
-func (m *mockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ shared.ID, _ string) error {
-	return nil
-}
-
-func (m *mockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
+func (m *mockScanRepository) RefreshRunSummary(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 

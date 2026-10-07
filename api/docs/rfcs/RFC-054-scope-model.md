@@ -109,7 +109,10 @@ trigger):
 5. its attribution record, if any, is `confirmed`;
 6. **authority**: an internet-facing target is covered by an *active* scope
    entry (approved, unexpired) with `max_tier` at or above the probe's tier, or
-   sits at or under a root-domain seed or verified domain (T1 at most);
+   sits at or under a root-domain seed or a verified domain of purpose `easm`
+   (T1 at most). A domain verified for SSO sign-in (purpose `sso`, set up by
+   a platform administrator) never authorizes; it counts only as proof
+   (step 7);
 7. proof, when §8.1 requires it: the target sits at or under a verified domain;
 8. the actor may act on it (D9: data scope; restricted members only their
    assets);
@@ -191,7 +194,7 @@ trends, and attack-surface "recent changes". A change event whose asset is not
 in the inventory is still listed in recent changes, but carries its
 attribution state so the UI shows "Added · needs review" instead of "Added".
 
-## 5. Data model (migration `001158`)
+## 5. Data model (migration `001166`)
 
 `scope_targets` gains:
 
@@ -274,6 +277,17 @@ Response (`ScopeTargetResponse`, also for list/get/update):
 
 `covers` is `name`, `domain_and_subdomains`, `addresses` or `pattern`.
 `status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
+
+**Seeds** (`POST /api/v1/easm/seeds`, `scope:approve` + **step-up**): a
+root-domain seed authorizes T1 probes of every name under it and confirms
+them (§4.3), so a new seed is created as the permanent entry `*.<domain>`
+through the path above (approval count, guardrails, notification, audit
+`scope_target.created` with `via: easm_seed`). The answer is the entry:
+`201` when it is active, `202` when it is pending. A member gets `403
+WIDENING_NEEDS_APPROVER` (members request one-off entries here). Turning a
+seed's discovery on (`PATCH /easm/seeds/{id}`) needs `scope:approve` and
+step-up and notifies the administrators. Seed rows created before this rule
+keep working until they fold into entries.
 
 **`POST /targets/{id}/approve`** (`scope:approve`, **step-up**): records the
 caller's approval. The requester cannot approve; nobody approves twice. When
@@ -660,7 +674,7 @@ are gated by zones and are not capped.
 | S1 | matcher, tests, docs, this RFC |
 | Authority | one authority check for typed and inventory targets; Ownership-tab bypass removed |
 | Guardrails | PSL, deny list, CIDR caps, `SCOPE_ACTIVE_PROOF` |
-| Entries | migration `001158`, expiry, requests, approvals, step-up, notification, settings, sweep |
+| Entries | migration `001166`, expiry, requests, approvals, step-up, notification, settings, sweep |
 | Discovery | `matches_scope_target` + backfill |
 | Review by rule | §6.7 suggestions, preview, accept/reject as a rule |
 | Inventory | §4.4 one membership definition; `attribution_state` on recent changes; review counts by reason; `covered_by` on queue items |

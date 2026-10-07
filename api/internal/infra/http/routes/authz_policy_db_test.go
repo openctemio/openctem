@@ -106,6 +106,7 @@ func newAuthzPolicyHarness(t *testing.T) *authzPolicyHarness {
 	auditSvc := auditapp.NewAuditService(postgres.NewAuditRepository(db), log)
 	keys := apikey.NewService(postgres.NewAPIKeyRepository(db), "authz-policy-pepper", log)
 	tenantSvc := tenantapp.NewTenantService(tenantRepo, log, tenantapp.WithTenantAuditService(auditSvc))
+	tenantSvc.SetLifecycleRepository(postgres.NewMemberLifecycleRepository(db))
 	v := validator.New()
 
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "authz-policy-route-test-secret-0123456789abcdef", Issuer: "test",
@@ -328,10 +329,12 @@ func TestAuthzPolicy_AuditLogIsAdminOnly_DB(t *testing.T) {
 	}
 	h.expect(admin, http.MethodGet, "/api/v1/audit-logs/user/"+member.id, "", http.StatusOK)
 
-	// Rebaseline overwrites the tamper-evident chain: owner only.
-	h.expect(admin, http.MethodPost, "/api/v1/audit-logs/rebaseline", `{"reason":"benign hashing change"}`, http.StatusForbidden)
-	if code, body := h.do(owner, http.MethodPost, "/api/v1/audit-logs/rebaseline", `{"reason":"benign hashing change"}`); code == http.StatusForbidden {
-		t.Fatalf("owner rebaseline refused: %s", body)
+	// Rebaseline overwrites the tamper-evident chain: not from the
+	// organization at all, not even its owner (admin console only).
+	for _, u := range []policyUser{owner, admin, member} {
+		if code, _ := h.do(u, http.MethodPost, "/api/v1/audit-logs/rebaseline", `{"reason":"benign hashing change"}`); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+			t.Fatalf("tenant rebaseline as %s: status %d, want 404 or 405", u.role, code)
+		}
 	}
 }
 
@@ -444,11 +447,12 @@ func TestAuthzPolicy_PeerAdminsAreOwnerManaged_DB(t *testing.T) {
 	owner, admin, peer := h.member(tid, "owner"), h.member(tid, "admin"), h.member(tid, "admin")
 	member := h.member(tid, "member")
 	base := "/api/v1/tenants/" + tid + "/members/"
+	offboard := func(m policyUser) string { return "/api/v1/organization/members/" + m.membershipID + "/offboard" }
 
 	// An administrator cannot act on a peer administrator.
 	h.expect(admin, http.MethodPatch, base+peer.membershipID, `{"role":"member"}`, http.StatusForbidden)
 	h.expect(admin, http.MethodPost, base+peer.membershipID+"/suspend", "", http.StatusForbidden)
-	h.expect(admin, http.MethodDelete, base+peer.membershipID, "", http.StatusForbidden)
+	h.expect(admin, http.MethodPost, offboard(peer), "", http.StatusForbidden)
 	var status string
 	if err := h.db.QueryRow(`SELECT COALESCE(status,'active') FROM tenant_members WHERE id = $1`, peer.membershipID).Scan(&status); err != nil {
 		t.Fatal(err)
@@ -465,7 +469,7 @@ func TestAuthzPolicy_PeerAdminsAreOwnerManaged_DB(t *testing.T) {
 	h.expect(owner, http.MethodPost, base+peer.membershipID+"/suspend", "", http.StatusOK)
 	h.expect(admin, http.MethodPost, base+peer.membershipID+"/reactivate", "", http.StatusForbidden)
 	h.expect(owner, http.MethodPost, base+peer.membershipID+"/reactivate", "", http.StatusOK)
-	h.expect(owner, http.MethodDelete, base+peer.membershipID, "", http.StatusNoContent)
+	h.expect(owner, http.MethodPost, offboard(peer), "", http.StatusOK)
 }
 
 func TestAuthzPolicy_SCIMTokensAreOwnerOnly_DB(t *testing.T) {

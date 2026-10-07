@@ -504,7 +504,7 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
           iconClassName: st.className,
           iconLabel: st.label,
           label: r.name,
-          muted: r.status !== 'ready',
+          muted: r.status !== 'ready' || !!r.excluded,
           meta: (
             <>
               {r.version && <span className={cn('text-xs tabular-nums', muted)}>{r.version}</span>}
@@ -522,6 +522,12 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
           tag:
             r.status === 'not_installed' ? (
               <SensorTag tone="warning">not installed</SensorTag>
+            ) : r.excluded ? (
+              <span title={r.excluded.detail}>
+                <SensorTag tone="warning">
+                  {r.excluded.reason === 'grant' ? 'not in grant' : 'local policy refuses'}
+                </SensorTag>
+              </span>
             ) : undefined,
         }
       })}
