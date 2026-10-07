@@ -72,7 +72,11 @@ type Run struct {
 	RunAttempt      string
 	// ExternalJobID is the CI job that exchanged the token (GitHub
 	// check_run_id, GitLab job_id), from the verified claims.
-	ExternalJobID  string
+	ExternalJobID string
+	// Aggregate marks the run shared by every capability job of one
+	// pipeline run: each job joins it with its own upload token
+	// (ci_run_tokens) and one final job asks for the verdict.
+	Aggregate      bool
 	Workflow       string
 	PipelineURL    string
 	Fork           bool

@@ -40,6 +40,10 @@ func (r *AttributionRepository) ListForReview(ctx context.Context, tenantID shar
 		args = append(args, wrapLikePattern(q.Search))
 		where = append(where, fmt.Sprintf("a.name ILIKE $%d", len(args)))
 	}
+	if q.Reason != "" {
+		args = append(args, q.Reason)
+		where = append(where, fmt.Sprintf("aa.reason = $%d", len(args)))
+	}
 	sc, args := scopeClause("a.id", scopeUserID, tenantID, args)
 	from := " FROM asset_attributions aa JOIN assets a ON a.id = aa.asset_id WHERE " + strings.Join(where, " AND ") + sc
 

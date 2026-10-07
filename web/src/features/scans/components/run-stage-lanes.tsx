@@ -35,6 +35,19 @@ const TIER_LABELS: Record<string, string> = {
  * A stage's label: its capability name as GET /api/v1/scans/stages serves
  * it, else the key itself.
  */
+/**
+ * A stage's chunks in one line, from the API's counts: "3 of 10 chunks
+ * done, 2 running, 4 queued, 1 failed". Empty for a stage of one command.
+ */
+export function chunkSummary(c?: RunStage['chunks']): string {
+  if (!c || (c.total ?? 0) <= 1) return ''
+  const parts = [`${c.completed ?? 0} of ${c.total} chunks done`]
+  if (c.running) parts.push(`${c.running} running`)
+  if (c.queued) parts.push(`${c.queued} queued`)
+  if (c.failed) parts.push(`${c.failed} failed`)
+  return parts.join(', ')
+}
+
 export function stageLabel(stage?: string, names?: Record<string, string>): string {
   if (!stage) return 'Custom step'
   return names?.[stage] ?? stage
@@ -131,6 +144,33 @@ function StageLane({ lane, names }: { lane: RunStage; names: Record<string, stri
           </span>
         )}
       </div>
+      {chunkSummary(lane.chunks) && (
+        <div className="mt-2 text-xs" data-testid="stage-chunks">
+          <p className="tabular-nums text-muted-foreground">{chunkSummary(lane.chunks)}</p>
+          {(lane.sensors?.length ?? 0) > 0 && (
+            <ul className="mt-1 space-y-0.5" aria-label="Chunks by sensor">
+              {lane.sensors!.map((s, i) => (
+                <li key={s.sensor_id ?? `platform-${i}`} className="flex items-center gap-2">
+                  {s.platform ? (
+                    <span>Platform sensors</span>
+                  ) : (
+                    <TruncatedText
+                      value={s.sensor_name || s.sensor_id || 'Sensor'}
+                      label="Sensor"
+                      className="max-w-[180px]"
+                    />
+                  )}
+                  <span className="ms-auto tabular-nums text-muted-foreground">
+                    {s.total} chunk(s){s.completed ? `, ${s.completed} done` : ''}
+                    {s.running ? `, ${s.running} running` : ''}
+                    {s.failed ? `, ${s.failed} failed` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {reasons.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Skipped targets by reason">
           {reasons.map(([reason, n]) => (

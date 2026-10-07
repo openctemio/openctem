@@ -969,8 +969,11 @@ func (s *TenantService) SearchMembersWithUserInfo(ctx context.Context, tenantID 
 		return nil, fmt.Errorf("%w: search string exceeds maximum of %d characters", shared.ErrValidation, maxSearchLength)
 	}
 
+	// The same statuses the members handler accepts and the repository
+	// filters on: empty (active and suspended), one status, or all.
 	switch filters.Status {
-	case "", string(tenantdom.MemberStatusActive), string(tenantdom.MemberStatusSuspended):
+	case "", string(tenantdom.MemberStatusActive), string(tenantdom.MemberStatusSuspended),
+		string(tenantdom.MemberStatusOffboarded), tenantdom.MemberFilterAll:
 	default:
 		return nil, fmt.Errorf("%w: unknown member status filter", shared.ErrValidation)
 	}
