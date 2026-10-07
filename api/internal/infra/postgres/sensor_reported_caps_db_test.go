@@ -31,7 +31,7 @@ func TestSensorEffectiveColumnsMatchDomain(t *testing.T) {
 			for i, rmax := range maxes {
 				slot := slots[(n+i)%len(slots)]
 				n++
-				a, err := sensor.NewSensor(tenantID, fmt.Sprintf("parity-%d", n), sensor.SensorTypeWorker, "", declared, declared, sensor.ExecutionModeDaemon)
+				a, err := sensor.NewSensor(tenantID, fmt.Sprintf("parity-%d", n), sensor.SensorTypeWorker, "", declared, sensor.ExecutionModeDaemon)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -183,7 +183,7 @@ func TestEffectiveMaxJobs_BoundedBySlots(t *testing.T) {
 		{"no load report: as before", 5, 64, 0, 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			a, err := sensor.NewSensor(tenantID, "slots-"+shared.NewID().String()[:8], sensor.SensorTypeWorker, "", []string{}, []string{}, sensor.ExecutionModeDaemon)
+			a, err := sensor.NewSensor(tenantID, "slots-"+shared.NewID().String()[:8], sensor.SensorTypeWorker, "", []string{}, sensor.ExecutionModeDaemon)
 			if err != nil {
 				t.Fatal(err)
 			}

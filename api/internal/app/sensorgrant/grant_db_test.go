@@ -90,9 +90,9 @@ func (f *fixture) sensor(tenantID shared.ID, tools []string, caps []string) shar
 	f.t.Helper()
 	id := shared.NewID()
 	f.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, api_key_hash, api_key_prefix,
-		tools, capabilities, execution_mode, max_concurrent_jobs, current_jobs, last_seen_at,
+		capabilities, execution_mode, max_concurrent_jobs, current_jobs, last_seen_at,
 		reported_tool_names, reported_capabilities)
-		VALUES ($1, $2, $3, 'worker', 'active', 'online', $4, $5, $6, $7, 'daemon', 5, 0, NOW(), $6, $7)`,
+		VALUES ($1, $2, $3, 'worker', 'active', 'online', $4, $5, $7, 'daemon', 5, 0, NOW(), $6, $7)`,
 		id.String(), tenantID.String(), "grant-sensor-"+id.String(), "hash-"+id.String(), id.String()[:8],
 		pqArray(tools), pqArray(caps))
 	return id

@@ -80,7 +80,6 @@ import {
   SensorVersionCell,
 } from './sensor-cells'
 import { SensorInstallSnippets } from './sensor-install-snippets'
-import { SensorToolsNotAllowedNotice } from './sensor-tool-review'
 import { SENSOR_TYPE_LABELS } from './sensor-type-icon'
 import {
   capacityLabel,
@@ -429,12 +428,10 @@ function ToolsAndCapacity({
   sensor,
   now,
   thresholds,
-  canManage,
 }: {
   sensor: Sensor
   now: number
   thresholds?: FleetThresholds
-  canManage: boolean
 }) {
   const cap = sensorCapacity(sensor)
   const reported = hasReportedTools(sensor)
@@ -451,11 +448,10 @@ function ToolsAndCapacity({
     <DetailSection title="Tools & capacity">
       <div className="space-y-2">
         <SensorToolList rows={sensorToolRows(sensor)} />
-        <SensorToolsNotAllowedNotice sensor={sensor} canManage={canManage} />
         <p className="text-xs text-muted-foreground">
           {reported
-            ? 'As the sensor reported. Scans go only to tools it has installed and its limit allows.'
-            : 'Set on the sensor; it has not reported its tools yet.'}
+            ? 'As the sensor reported. Scans go only to tools it has installed and its grant allows.'
+            : 'It has not reported its tools yet, so it gets no scans.'}
         </p>
       </div>
       <DetailFieldGrid>
@@ -931,12 +927,7 @@ export function SensorDetailSheet({
 
           <DetailSections>
             {(!oneShot || sensorToolRows(sensor).length > 0) && (
-              <ToolsAndCapacity
-                sensor={sensor}
-                now={now}
-                thresholds={thresholds}
-                canManage={canWrite}
-              />
+              <ToolsAndCapacity sensor={sensor} now={now} thresholds={thresholds} />
             )}
             {(sensor.content?.length ?? 0) > 0 && (
               <SensorContentSection sensor={sensor} now={now} canManage={canWrite} />

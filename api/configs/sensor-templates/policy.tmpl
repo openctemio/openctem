@@ -44,7 +44,7 @@ targets:
   # RFC 1918 / ULA ranges. The sensor must also run with
   # SENSOR_ALLOW_PRIVATE_TARGETS=1: the policy only narrows.
   allow_private: {{.Policy.AllowPrivate}}
-{{- with tools .Sensor.Tools}}
+{{- with tools .Sensor.EffectiveTools}}
 
 tools:
   # The tools this sensor may run.

@@ -20,13 +20,12 @@ const ago = (s: number) => new Date(NOW - s * 1000).toISOString()
 let seq = 0
 function sensor(over: Partial<Sensor> = {}): Sensor {
   seq++
-  return {
+  const s: Sensor = {
     id: `s${seq}`,
     tenant_id: 't',
     name: `sensor-${seq}`,
     type: 'worker',
     capabilities: [],
-    tools: ['nuclei'],
     execution_mode: 'daemon',
     status: 'active',
     health: 'online',
@@ -47,6 +46,17 @@ function sensor(over: Partial<Sensor> = {}): Sensor {
     version: 'v0.4.2',
     ...over,
   }
+  // The sensor reported nuclei unless the case says otherwise.
+  return over.effective
+    ? s
+    : {
+        ...s,
+        effective: {
+          tools: ['nuclei'],
+          capabilities: [],
+          max_concurrent_jobs: s.max_concurrent_jobs,
+        },
+      }
 }
 
 const fleet = () => {
@@ -75,7 +85,7 @@ const fleet = () => {
       type: 'collector',
       status: 'disabled',
       version: 'v0.4.1',
-      tools: [],
+      effective: { tools: [], capabilities: [], max_concurrent_jobs: 5 },
     }),
   ]
 }
