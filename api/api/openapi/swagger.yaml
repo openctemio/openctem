@@ -31682,7 +31682,7 @@ paths:
       summary: A run task's logs
       tags:
       - Pipelines
-  /pipelines/validate:
+  /pipelines/verify:
     post:
       consumes:
       - application/json
