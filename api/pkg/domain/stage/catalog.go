@@ -99,7 +99,9 @@ type Stage struct {
 	Relations []string `json:"relations,omitempty"`
 	// Findings: the stage reports findings.
 	Findings bool `json:"findings"`
-	Tier     Tier `json:"tier"`
+	// Endpoints: the stage reports web endpoints (CTIS 1.6 endpoints[]).
+	Endpoints bool `json:"endpoints,omitempty"`
+	Tier      Tier `json:"tier"`
 	// Implementations, the default first.
 	Implementations []Implementation `json:"implementations"`
 	// MaxFanout bounds how many derived targets one run hands this stage.
@@ -110,7 +112,7 @@ type Stage struct {
 	// wildcard); 0 means MaxFanout.
 	MaxPerParent int `json:"max_per_parent,omitempty"`
 	// Legacy are the capability words of the pre-catalog vocabulary
-	// (tools.capabilities, pipeline step capabilities) that name this stage
+	// (tools.capabilities, workflow step capabilities) that name this stage
 	// on their own.
 	Legacy []string `json:"-"`
 
@@ -241,7 +243,8 @@ var catalog = []Stage{
 		Key: CrawlWeb, Name: "Web crawl",
 		Description: "Crawl web services for URLs, staying on the same host.",
 		Inputs:      []asset.TypeRef{tHTTPService, tDiscoveredURL, tWebsite},
-		Outputs:     []asset.TypeRef{tDiscoveredURL},
+		Outputs:     []asset.TypeRef{tHTTPService},
+		Endpoints:   true,
 		Tier:        TierActive,
 		Implementations: []Implementation{
 			{Tool: "katana", Default: true},
@@ -269,6 +272,7 @@ var catalog = []Stage{
 		Description: "Dynamic application security testing of a web application.",
 		Inputs:      []asset.TypeRef{tWebsite, tAPI, tHTTPService, tDiscoveredURL},
 		Findings:    true,
+		Endpoints:   true,
 		// An active DAST scan sends attack payloads: intrusive.
 		Tier: TierIntrusive,
 		Implementations: []Implementation{
@@ -589,7 +593,7 @@ func ForCapabilities(caps []string) (Stage, error) {
 	return Stage{}, ErrAmbiguousCapability
 }
 
-// ForStep is the stage a pipeline step runs: its pinned tool's stage when
+// ForStep is the stage a workflow step runs: its pinned tool's stage when
 // the tool implements exactly one, else the one its capabilities name and
 // the tool implements, else the one its capabilities name. ok is false for a
 // step the catalog cannot place (a tenant tool, a tool with several stages

@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/internal/app/pipeline"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
@@ -350,17 +351,17 @@ func (h *FindingActionHandler) getFindingID(input *ActionInput) (string, error) 
 
 // PipelineTriggerHandler handles pipeline and scan triggering actions.
 type PipelineTriggerHandler struct {
-	pipelineService *pipeline.Service
-	scanService     *scansvc.Service
-	logger          *logger.Logger
+	scanRunService *scanrun.Service
+	scanService    *scansvc.Service
+	logger         *logger.Logger
 }
 
 // NewPipelineTriggerHandler creates a new PipelineTriggerHandler.
-func NewPipelineTriggerHandler(pipelineSvc *pipeline.Service, scanSvc *scansvc.Service, log *logger.Logger) *PipelineTriggerHandler {
+func NewPipelineTriggerHandler(scanRunSvc *scanrun.Service, scanSvc *scansvc.Service, log *logger.Logger) *PipelineTriggerHandler {
 	return &PipelineTriggerHandler{
-		pipelineService: pipelineSvc,
-		scanService:     scanSvc,
-		logger:          log,
+		scanRunService: scanRunSvc,
+		scanService:    scanSvc,
+		logger:         log,
 	}
 }
 
@@ -377,13 +378,13 @@ func (h *PipelineTriggerHandler) Execute(ctx context.Context, input *ActionInput
 }
 
 func (h *PipelineTriggerHandler) triggerPipeline(ctx context.Context, input *ActionInput) (map[string]any, error) {
-	pipelineID, ok := input.ActionConfig["pipeline_id"].(string)
-	if !ok || pipelineID == "" {
+	scanWorkflowID, ok := input.ActionConfig["pipeline_id"].(string)
+	if !ok || scanWorkflowID == "" {
 		return nil, fmt.Errorf("pipeline_id is required for trigger_pipeline action")
 	}
 
 	// Validate pipeline_id format
-	if _, err := shared.IDFromString(pipelineID); err != nil {
+	if _, err := shared.IDFromString(scanWorkflowID); err != nil {
 		return nil, fmt.Errorf("invalid pipeline_id: %w", err)
 	}
 
@@ -394,29 +395,29 @@ func (h *PipelineTriggerHandler) triggerPipeline(ctx context.Context, input *Act
 	}
 
 	h.logger.Info("triggering pipeline from workflow",
-		"pipeline_id", pipelineID,
+		"pipeline_id", scanWorkflowID,
 		"asset_id", assetID,
 		"workflow_id", input.WorkflowID,
 	)
 
-	if h.pipelineService != nil {
-		// Build trigger input using TriggerPipelineInput
-		triggerInput := pipeline.TriggerPipelineInput{
+	if h.scanRunService != nil {
+		// Build trigger input using TriggerRunInput
+		triggerInput := scanrun.TriggerRunInput{
 			TenantID:    input.TenantID.String(),
-			TemplateID:  pipelineID,
+			TemplateID:  scanWorkflowID,
 			AssetID:     assetID,
 			TriggerType: "api",
 			TriggeredBy: "workflow:" + input.WorkflowID.String(),
 			Context:     runContextWithCause(ctx, input.TriggerData),
 		}
 
-		run, err := h.pipelineService.TriggerPipeline(ctx, triggerInput)
+		run, err := h.scanRunService.TriggerPipeline(ctx, triggerInput)
 		if err != nil {
 			return nil, fmt.Errorf("failed to trigger pipeline: %w", err)
 		}
 
 		return map[string]any{
-			"pipeline_id": pipelineID,
+			"pipeline_id": scanWorkflowID,
 			"run_id":      run.ID.String(),
 			"triggered":   true,
 			"action":      "trigger_pipeline",
@@ -731,12 +732,12 @@ func (h *ScriptRunnerHandler) Execute(ctx context.Context, input *ActionInput) (
 func RegisterAllActionHandlers(
 	executor *WorkflowExecutor,
 	vulnSvc *finding.VulnerabilityService,
-	pipelineSvc *pipeline.Service,
+	scanRunSvc *scanrun.Service,
 	scanSvc *scansvc.Service,
 	integrationSvc *integration.IntegrationService,
 	log *logger.Logger,
 ) {
-	RegisterAllActionHandlersWithAI(executor, vulnSvc, pipelineSvc, scanSvc, integrationSvc, nil, nil, nil, log)
+	RegisterAllActionHandlersWithAI(executor, vulnSvc, scanRunSvc, scanSvc, integrationSvc, nil, nil, nil, log)
 }
 
 // RegisterAllActionHandlersWithAI registers all built-in action handlers,
@@ -746,7 +747,7 @@ func RegisterAllActionHandlers(
 func RegisterAllActionHandlersWithAI(
 	executor *WorkflowExecutor,
 	vulnSvc *finding.VulnerabilityService,
-	pipelineSvc *pipeline.Service,
+	scanRunSvc *scanrun.Service,
 	scanSvc *scansvc.Service,
 	integrationSvc *integration.IntegrationService,
 	aiTriageSvc *aitriage.AITriageService,
@@ -766,8 +767,8 @@ func RegisterAllActionHandlersWithAI(
 	}
 
 	// Pipeline/Scan actions
-	if pipelineSvc != nil || scanSvc != nil {
-		pipelineHandler := NewPipelineTriggerHandler(pipelineSvc, scanSvc, log)
+	if scanRunSvc != nil || scanSvc != nil {
+		pipelineHandler := NewPipelineTriggerHandler(scanRunSvc, scanSvc, log)
 		executor.RegisterActionHandler(workflowdom.ActionTypeTriggerPipeline, pipelineHandler)
 		executor.RegisterActionHandler(workflowdom.ActionTypeTriggerScan, pipelineHandler)
 	}

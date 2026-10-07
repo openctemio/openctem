@@ -236,7 +236,7 @@ func createTypedCommand(ctx context.Context, t *testing.T, repo *CommandReposito
 	return cmd.ID
 }
 
-// The claim-time hold: whatever created a command (trigger, pipeline step,
+// The claim-time hold: whatever created a command (trigger, workflow step,
 // direct POST /commands, validation, EASM), active work of a frozen tenant
 // or zone is neither offered, counted for the doorbell, nor claimable by id.
 func TestScanFreezeWindow_ClaimHold(t *testing.T) {

@@ -43,6 +43,11 @@ const (
 	PortCloudAccount   PortType = "cloud_account"
 	// PortFinding is an output sink (and an input only for enrichers).
 	PortFinding PortType = "finding"
+	// PortEndpoint is a stream of web endpoints (CTIS 1.6 endpoints[]). They
+	// are a sub-inventory of their origin, not assets (RFC-056), so the
+	// stream carries the origin: a consumer runs against the origin and the
+	// incremental selector expands it to the origin's endpoints.
+	PortEndpoint PortType = "endpoint"
 )
 
 // PortTypeInfo describes one port type.
@@ -66,6 +71,7 @@ var portTypes = []PortTypeInfo{
 	{Type: PortContainerImage, Label: "Container image", Carries: []asset.TypeRef{tContainer}},
 	{Type: PortCloudAccount, Label: "Cloud account", Carries: []asset.TypeRef{canonical(asset.AssetTypeCloudAccount)}},
 	{Type: PortFinding, Label: "Finding"},
+	{Type: PortEndpoint, Label: "Web endpoint", Carries: []asset.TypeRef{tHTTPService}},
 }
 
 // PortTypes returns the closed port type set, in display order.
@@ -202,7 +208,7 @@ var chunkSizes = map[Key]int{
 // toolParams maps a tool's standard params to its own config keys: the keys
 // the sensor's settings schema for that tool declares. A tool listed with
 // no entry for a param does not accept it yet. Keep in step with
-// pipeline.stepToolSettings.
+// scan workflow.stepToolSettings.
 var toolParams = map[string]map[string]string{
 	"naabu":  {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
 	"nuclei": {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},

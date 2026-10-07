@@ -3,10 +3,10 @@ package ingest
 // Ingest semantics of sensor protocol v2 results (RFC-026 §5,
 // docs/rfcs/RFC-026-sensor-results-ingest.md).
 //
-// A v2 segment runs through the same pipeline as v1 (Service.Ingest) with the
+// A v2 segment runs through the same ingest path as v1 (Service.Ingest) with the
 // v2 Options on: no fallback asset, no writes to the global vulnerability
 // catalog, no auto-resolve. Findings whose asset cannot be resolved inside
-// their own segment are rejected per item before the pipeline runs, and every
+// their own segment are rejected per item before the scan runs, and every
 // finding and asset ends up either accepted or rejected with a pointer and a
 // fixed reason. Auto-resolve runs once, at commit, over the union of the
 // assets the report's segments touched, behind the blinding guard.
@@ -161,7 +161,7 @@ func addItemError(o *ingestreport.SegmentOutcome, e protov2.ItemError) {
 }
 
 // resolveV2Assets binds every finding to an asset of its own segment
-// (RFC-026 §5.2) before the pipeline runs. A finding with an asset_ref keeps
+// (RFC-026 §5.2) before the scan runs. A finding with an asset_ref keeps
 // it when the segment has that asset; a finding without one is bound to the
 // segment's asset when there is exactly one. Anything else is rejected:
 // v2 never falls back to a made-up or shared asset. Assets without an id get

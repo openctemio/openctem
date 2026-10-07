@@ -11,7 +11,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 )
 
@@ -22,11 +24,11 @@ import (
 // The rollover never adds a target: it only reorders the targets the gate
 // resolved for this run, so a leftover target that has since been excluded by
 // scope, removed from the group or archived is dropped, not scanned.
-func (s *Service) planRolloverFirst(ctx context.Context, sc *scan.Scan, triggerType pipeline.TriggerType, resolved *resolvedTargets, runContext map[string]any) {
-	if triggerType != pipeline.TriggerTypeSchedule || resolved == nil || len(resolved.Targets) == 0 {
+func (s *Service) planRolloverFirst(ctx context.Context, sc *scan.Scan, triggerType scanworkflow.TriggerType, resolved *resolvedTargets, runContext map[string]any) {
+	if triggerType != scanworkflow.TriggerTypeSchedule || resolved == nil || len(resolved.Targets) == 0 {
 		return
 	}
-	store, ok := s.runRepo.(pipeline.RolloverStore)
+	store, ok := s.runRepo.(scanrun.RolloverStore)
 	if !ok {
 		return
 	}

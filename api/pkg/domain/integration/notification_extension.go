@@ -143,7 +143,7 @@ const (
 	EventTypeSensorOffline EventType = "sensor.offline"
 
 	// CI pipeline signals (RFC-051 §10.6), emitted by the CI alert job once
-	// per pipeline or repository while the condition holds, never per run.
+	// per scan workflow or repository while the condition holds, never per run.
 	EventTypeCIScheduleMissed     EventType = "ci.schedule_missed"
 	EventTypeCICoverageRegression EventType = "ci.coverage_regression"
 	EventTypeCIGateFailing        EventType = "ci.gate_failing"
@@ -275,7 +275,7 @@ func DefaultEnabledEventTypes() []EventType {
 		// A scheduled CI scan that silently stopped, a repository that lost
 		// its scanning, or a runner below the supported version are the
 		// failures nobody notices otherwise. A failing default branch is
-		// opt-in: the pipeline itself already reports it.
+		// opt-in: the scan workflow itself already reports it.
 		EventTypeCIScheduleMissed,
 		EventTypeCICoverageRegression,
 		EventTypeCIRunnerOutdated,

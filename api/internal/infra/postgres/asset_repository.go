@@ -556,7 +556,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 // RFC-004 Phase 0.
 //
 // Direct UPDATE rather than load-modify-save so we do not have to
-// extend the scan pipeline just for two fields. The query is a
+// extend the scan workflow just for two fields. The query is a
 // single statement that atomically sets the pause column and —
 // when reactivate is true — reactivates stale/inactive assets in
 // one go. Archived assets are explicitly excluded: archived is a

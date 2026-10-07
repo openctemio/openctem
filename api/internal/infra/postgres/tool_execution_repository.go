@@ -37,7 +37,7 @@ func (r *ToolExecutionRepository) Create(ctx context.Context, execution *tool.To
 
 	query := `
 		INSERT INTO tool_executions (
-			id, tenant_id, tool_id, sensor_id, pipeline_run_id, step_run_id,
+			id, tenant_id, tool_id, sensor_id, scan_run_id, scan_run_step_id,
 			status, input_config, targets_count, findings_count, output_summary,
 			error_message, started_at, completed_at, duration_ms, created_at
 		) VALUES (
@@ -51,7 +51,7 @@ func (r *ToolExecutionRepository) Create(ctx context.Context, execution *tool.To
 		execution.TenantID.String(),
 		execution.ToolID.String(),
 		nullStringFromIDPtr(execution.SensorID),
-		nullStringFromIDPtr(execution.PipelineRunID),
+		nullStringFromIDPtr(execution.ScanRunID),
 		nullStringFromIDPtr(execution.StepRunID),
 		string(execution.Status),
 		inputConfigJSON,
@@ -72,7 +72,7 @@ func (r *ToolExecutionRepository) Create(ctx context.Context, execution *tool.To
 	return nil
 }
 
-const toolExecutionSelectCols = `id, tenant_id, tool_id, sensor_id, pipeline_run_id, step_run_id,
+const toolExecutionSelectCols = `id, tenant_id, tool_id, sensor_id, scan_run_id, scan_run_step_id,
 			status, input_config, targets_count, findings_count, output_summary,
 			error_message, started_at, completed_at, duration_ms, created_at`
 
@@ -83,7 +83,7 @@ func (r *ToolExecutionRepository) scanToolExecutionRow(row *sql.Row) (*tool.Tool
 		tenantID      string
 		toolID        string
 		sensorID      sql.NullString
-		pipelineRunID sql.NullString
+		scanRunID     sql.NullString
 		stepRunID     sql.NullString
 		status        string
 		inputConfig   []byte
@@ -98,7 +98,7 @@ func (r *ToolExecutionRepository) scanToolExecutionRow(row *sql.Row) (*tool.Tool
 	)
 
 	err := row.Scan(
-		&execID, &tenantID, &toolID, &sensorID, &pipelineRunID, &stepRunID,
+		&execID, &tenantID, &toolID, &sensorID, &scanRunID, &stepRunID,
 		&status, &inputConfig, &targetsCount, &findingsCount, &outputSummary,
 		&errorMessage, &startedAt, &completedAt, &durationMs, &createdAt,
 	)
@@ -110,7 +110,7 @@ func (r *ToolExecutionRepository) scanToolExecutionRow(row *sql.Row) (*tool.Tool
 	}
 
 	return rowToToolExecution(
-		execID, tenantID, toolID, sensorID, pipelineRunID, stepRunID,
+		execID, tenantID, toolID, sensorID, scanRunID, stepRunID,
 		status, inputConfig, targetsCount, findingsCount, outputSummary,
 		errorMessage, startedAt, completedAt, durationMs, createdAt,
 	)
@@ -145,9 +145,9 @@ func (r *ToolExecutionRepository) List(
 		argIndex++
 	}
 
-	if filter.PipelineRunID != nil {
-		baseQuery += fmt.Sprintf(" AND pipeline_run_id = $%d", argIndex)
-		args = append(args, filter.PipelineRunID.String())
+	if filter.ScanRunID != nil {
+		baseQuery += fmt.Sprintf(" AND scan_run_id = $%d", argIndex)
+		args = append(args, filter.ScanRunID.String())
 		argIndex++
 	}
 
@@ -166,7 +166,7 @@ func (r *ToolExecutionRepository) List(
 
 	// Get items
 	selectQuery := `
-		SELECT id, tenant_id, tool_id, sensor_id, pipeline_run_id, step_run_id,
+		SELECT id, tenant_id, tool_id, sensor_id, scan_run_id, scan_run_step_id,
 			status, input_config, targets_count, findings_count, output_summary,
 			error_message, started_at, completed_at, duration_ms, created_at
 		` + baseQuery + " ORDER BY started_at DESC LIMIT $" + fmt.Sprint(argIndex) + " OFFSET $" + fmt.Sprint(argIndex+1)
@@ -185,7 +185,7 @@ func (r *ToolExecutionRepository) List(
 			tenantID      string
 			toolID        string
 			sensorID      sql.NullString
-			pipelineRunID sql.NullString
+			scanRunID     sql.NullString
 			stepRunID     sql.NullString
 			status        string
 			inputConfig   []byte
@@ -200,7 +200,7 @@ func (r *ToolExecutionRepository) List(
 		)
 
 		if err := rows.Scan(
-			&execID, &tenantID, &toolID, &sensorID, &pipelineRunID, &stepRunID,
+			&execID, &tenantID, &toolID, &sensorID, &scanRunID, &stepRunID,
 			&status, &inputConfig, &targetsCount, &findingsCount, &outputSummary,
 			&errorMessage, &startedAt, &completedAt, &durationMs, &createdAt,
 		); err != nil {
@@ -208,7 +208,7 @@ func (r *ToolExecutionRepository) List(
 		}
 
 		execution, err := rowToToolExecution(
-			execID, tenantID, toolID, sensorID, pipelineRunID, stepRunID,
+			execID, tenantID, toolID, sensorID, scanRunID, stepRunID,
 			status, inputConfig, targetsCount, findingsCount, outputSummary,
 			errorMessage, startedAt, completedAt, durationMs, createdAt,
 		)
@@ -391,7 +391,7 @@ func (r *ToolExecutionRepository) GetTenantStats(
 // rowToToolExecution converts scanned values to a ToolExecution entity.
 func rowToToolExecution(
 	execID, tenantIDStr, toolIDStr string,
-	sensorID, pipelineRunID, stepRunID sql.NullString,
+	sensorID, scanRunID, stepRunID sql.NullString,
 	status string,
 	inputConfig []byte,
 	targetsCount, findingsCount int,
@@ -436,7 +436,7 @@ func rowToToolExecution(
 		TenantID:      tenantID,
 		ToolID:        toolID,
 		SensorID:      idPtrFromNullString(sensorID),
-		PipelineRunID: idPtrFromNullString(pipelineRunID),
+		ScanRunID:     idPtrFromNullString(scanRunID),
 		StepRunID:     idPtrFromNullString(stepRunID),
 		Status:        tool.ExecutionStatus(status),
 		InputConfig:   inputCfg,

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -54,7 +56,7 @@ func refusal(err error) (code, message string, ok bool) {
 	var started *runStartError
 	if errors.As(err, &started) ||
 		errors.Is(err, ErrScanRunInProgress) ||
-		errors.Is(err, pipeline.ErrOccurrenceAlreadyRun) {
+		errors.Is(err, scanrun.ErrOccurrenceAlreadyRun) {
 		return "", "", false
 	}
 	if fe := AsFrozen(err); fe != nil {
@@ -72,7 +74,7 @@ func refusal(err error) (code, message string, ok bool) {
 
 // recordBlockedRun records a refused trigger as a blocked run of the scan.
 // Best-effort: a failure is logged and the refusal is returned as before.
-func (s *Service) recordBlockedRun(ctx context.Context, sc *scan.Scan, input TriggerScanExecInput, triggerType pipeline.TriggerType, cause error) {
+func (s *Service) recordBlockedRun(ctx context.Context, sc *scan.Scan, input TriggerScanExecInput, triggerType scanworkflow.TriggerType, cause error) {
 	code, message, ok := refusal(cause)
 	if !ok {
 		return
@@ -83,7 +85,7 @@ func (s *Service) recordBlockedRun(ctx context.Context, sc *scan.Scan, input Tri
 	if r := []rune(message); len(r) > maxRefusalMessage {
 		message = string(r[:maxRefusalMessage])
 	}
-	run, err := pipeline.NewRun(blockedRunPipelineID(sc, code), sc.TenantID, nil, triggerType, input.TriggeredBy,
+	run, err := scanrun.NewRun(blockedRunScanWorkflowID(sc, code), sc.TenantID, nil, triggerType, input.TriggeredBy,
 		map[string]any{"scan_id": sc.ID.String()})
 	if err != nil {
 		s.logger.Warn("failed to build blocked run", "scan_id", sc.ID.String(), "error", err)
@@ -101,11 +103,11 @@ func (s *Service) recordBlockedRun(ctx context.Context, sc *scan.Scan, input Tri
 		"scan_id", sc.ID.String(), "run_id", run.ID.String(), "code", code)
 }
 
-// blockedRunPipelineID is the template a blocked run points at: the
+// blockedRunScanWorkflowID is the template a blocked run points at: the
 // workflow's own template, unless the refusal is that it is gone.
-func blockedRunPipelineID(sc *scan.Scan, code string) shared.ID {
-	if sc.ScanType == scan.ScanTypeWorkflow && sc.PipelineID != nil && code != "PIPELINE_NOT_FOUND" {
-		return *sc.PipelineID
+func blockedRunScanWorkflowID(sc *scan.Scan, code string) shared.ID {
+	if sc.ScanType == scan.ScanTypeWorkflow && sc.ScanWorkflowID != nil && code != "PIPELINE_NOT_FOUND" {
+		return *sc.ScanWorkflowID
 	}
 	id, _ := shared.IDFromString(QuickScanTemplateID)
 	return id

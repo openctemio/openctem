@@ -6,21 +6,21 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// Pipeline metrics
+// Scan workflow metrics
 var (
-	// PipelineRunsTotal tracks total pipeline runs by status
-	PipelineRunsTotal = promauto.NewCounterVec(
+	// ScanRunsTotal tracks total scan runs by status
+	ScanRunsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "pipeline_runs_total",
+			Name: "scan_runs_total",
 			Help: "Total number of pipeline runs by status",
 		},
 		[]string{"status"},
 	)
 
-	// PipelineRunsInProgress tracks currently running pipelines
-	PipelineRunsInProgress = promauto.NewGaugeVec(
+	// ScanRunsInProgress tracks currently running scan workflows
+	ScanRunsInProgress = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "pipeline_runs_in_progress",
+			Name: "scan_runs_in_progress",
 			Help: "Number of pipeline runs currently in progress",
 		},
 		[]string{},
@@ -29,7 +29,7 @@ var (
 	// StepRunsTotal tracks total step runs by status
 	StepRunsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "step_runs_total",
+			Name: "scan_run_steps_total",
 			Help: "Total number of step runs by status",
 		},
 		[]string{"step_key", "status"},

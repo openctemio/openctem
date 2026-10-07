@@ -777,10 +777,10 @@ func TestSecValValidateCommandPayload_ValidPayload(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "run-001",
-		"step_run_id":     "step-run-001",
-		"step_id":         "step-001",
-		"preferred_tool":  "nuclei",
+		"scan_run_id":      "run-001",
+		"scan_run_step_id": "step-run-001",
+		"step_id":          "step-001",
+		"preferred_tool":   "nuclei",
 	}
 
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
@@ -800,16 +800,16 @@ func TestSecValValidateCommandPayload_MissingRequiredFields(t *testing.T) {
 		missingCode string
 	}{
 		{
-			name:    "missing pipeline_run_id",
-			payload: map[string]any{"step_run_id": "sr1", "step_id": "s1"},
+			name:    "missing scan_run_id",
+			payload: map[string]any{"scan_run_step_id": "sr1", "step_id": "s1"},
 		},
 		{
-			name:    "missing step_run_id",
-			payload: map[string]any{"pipeline_run_id": "pr1", "step_id": "s1"},
+			name:    "missing scan_run_step_id",
+			payload: map[string]any{"scan_run_id": "pr1", "step_id": "s1"},
 		},
 		{
 			name:    "missing step_id",
-			payload: map[string]any{"pipeline_run_id": "pr1", "step_run_id": "sr1"},
+			payload: map[string]any{"scan_run_id": "pr1", "scan_run_step_id": "sr1"},
 		},
 		{
 			name:    "all missing",
@@ -835,9 +835,9 @@ func TestSecValValidateCommandPayload_DangerousStepConfig(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
 		"config": map[string]any{
 			"bash": "id",
 		},
@@ -858,9 +858,9 @@ func TestSecValValidateCommandPayload_InjectionInStepConfig(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
 		"config": map[string]any{
 			"target": "host; cat /etc/passwd",
 		},
@@ -881,10 +881,10 @@ func TestSecValValidateCommandPayload_InvalidPreferredTool(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
-		"preferred_tool":  "nonexistent-tool-xyz",
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
+		"preferred_tool":   "nonexistent-tool-xyz",
 	}
 
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
@@ -902,10 +902,10 @@ func TestSecValValidateCommandPayload_InvalidPreferredToolFormat(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
-		"preferred_tool":  "tool with spaces; rm -rf /",
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
+		"preferred_tool":   "tool with spaces; rm -rf /",
 	}
 
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
@@ -923,10 +923,10 @@ func TestSecValValidateCommandPayload_EmptyPreferredTool_Skipped(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
-		"preferred_tool":  "", // empty → should skip validation
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
+		"preferred_tool":   "", // empty → should skip validation
 	}
 
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
@@ -941,8 +941,8 @@ func TestSecValValidateCommandPayload_ValidRequiredCapabilities(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id":       "pr1",
-		"step_run_id":           "sr1",
+		"scan_run_id":           "pr1",
+		"scan_run_step_id":      "sr1",
 		"step_id":               "s1",
 		"required_capabilities": []string{"scan", "web"},
 	}
@@ -959,8 +959,8 @@ func TestSecValValidateCommandPayload_InvalidRequiredCapabilities(t *testing.T) 
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id":       "pr1",
-		"step_run_id":           "sr1",
+		"scan_run_id":           "pr1",
+		"scan_run_step_id":      "sr1",
 		"step_id":               "s1",
 		"required_capabilities": []string{"scan", "totally-unknown-xyz"},
 	}

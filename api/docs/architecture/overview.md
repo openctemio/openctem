@@ -22,7 +22,7 @@
 │   Clients    │                    ├─────────────────────────────────────┤
 ├──────────────┤                    │  HTTP API (REST)                    │
 │  Web App     │───────────────────▶│  - /api/v1/sensors/*                │
-│  Mobile App  │                    │  - /api/v1/pipelines/*              │
+│  Mobile App  │                    │  - /api/v1/scan-workflows/*              │
 │  CLI         │                    │  - /api/v1/findings/*               │
 └──────────────┘                    │  - /api/v2/sensor/* (sensor API)    │
                                                                         │  - /api/v1/audit-logs/verify        │
