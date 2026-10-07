@@ -74,7 +74,15 @@ describe('scanStanding', () => {
         state: 'confirmed',
         active_checks_blocked_by: 'unattributed',
       })
-    ).toMatch(/no scope target or seed/)
+    ).toMatch(/no scope target, seed or verified domain/)
+    // Confirmed by a person, but nothing in Scoping covers it (RFC-054).
+    expect(
+      scanStanding({
+        active_checks_allowed: false,
+        state: 'confirmed',
+        active_checks_blocked_by: 'out_of_scope',
+      })
+    ).toMatch(/confirmed as yours, but no scope target/)
     expect(
       scanStanding({
         active_checks_allowed: false,

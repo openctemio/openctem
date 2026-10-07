@@ -37854,8 +37854,10 @@ export interface components {
        * @description ActiveChecksBlockedBy says why a scan may not touch the asset when
        *     active_checks_allowed is false: its state (needs_review, candidate,
        *     dependency, monitor_only, rejected; rejected also for a name under a
-       *     rejected name), or unattributed: no record, and neither inside a scope
-       *     target nor under a root-domain seed or verified domain.
+       *     rejected name), unattributed: no record, and neither inside a scope
+       *     target nor under a root-domain seed or verified domain, or
+       *     out_of_scope: confirmed, but no scope target, seed or verified domain
+       *     covers it (confirmation alone does not authorize active checks).
        */
       active_checks_blocked_by?: string
       confidence?: number

@@ -1178,7 +1178,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
 	// Simulation targets follow the scan act-scope rule (RFC-050 W3, 21b H4).
-	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope), s.DataScope)
+	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.EASMSeed), s.DataScope)
 	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
@@ -1696,7 +1696,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
-		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope)),
+		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.EASMSeed)),
 		// A tenable_sc scan launches Tenable.sc scans through the connector (RFC-047).
 		// Only once the connector ships (D-14): without it a tenable_sc scan is refused.
 		scan.WithConnectorScans(connectorScansIfEnabled(s.TenableSC)),
