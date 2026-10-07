@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -71,12 +73,42 @@ func TestCICoverageRepository(t *testing.T) {
 	run(tenant, pB, now.Add(-time.Hour), `[{"name":"trivy"}]`, "fp-shared")
 	run(other, pOther, now, `[{"name":"semgrep"}]`, "fp-only-a")
 
-	// A daemon scan of repository B with checkov (iac).
-	if _, err := db.ExecContext(ctx, `INSERT INTO scan_sessions (tenant_id, scanner_name, asset_type, asset_value, asset_id,
-		status, completed_at) VALUES ($1, 'checkov', 'repository', 'github.com/acme/web', $2, 'completed', $3)`,
-		tenant.String(), repoB.String(), now.Add(-2*24*time.Hour)); err != nil {
-		t.Fatal(err)
+	// Daemon scans: sensor commands whose completed reports touched a
+	// repository. Only a completed command counts.
+	sensorOf := func(tid shared.ID) shared.ID {
+		id := shared.NewID()
+		if _, err := db.ExecContext(ctx, `INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status)
+			VALUES ($1, $2, $3, $4, 'p', 'active')`, id.String(), tid.String(), "cov-"+id.String()[:8], "h-"+id.String()); err != nil {
+			t.Fatal(err)
+		}
+		return id
 	}
+	sensorT, sensorO := sensorOf(tenant), sensorOf(other)
+	daemonScan := func(tid, sensorID shared.ID, cmdStatus, tool string, at time.Time, touched ...shared.ID) {
+		cmd := shared.NewID()
+		if _, err := db.ExecContext(ctx, `INSERT INTO commands (id, tenant_id, sensor_id, type, status, payload)
+			VALUES ($1, $2, $3, 'scan', $4, '{}')`, cmd.String(), tid.String(), sensorID.String(), cmdStatus); err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]string, len(touched))
+		for i, a := range touched {
+			ids[i] = a.String()
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO ingest_reports (id, tenant_id, sensor_id, report_id, command_id, state,
+			media_type, header_digest, tool_name, touched_asset_ids, expires_at, committed_at)
+			VALUES ($1, $2, $3, $4, $5, 'completed', 'application/vnd.ctis+json', 'd', $6, $7::uuid[], $8, $8)`,
+			shared.NewID().String(), tid.String(), sensorID.String(), shared.NewID().String(), cmd.String(), tool,
+			pq.Array(ids), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// checkov (iac) on repository B: observed.
+	daemonScan(tenant, sensorT, "completed", "checkov", now.Add(-2*24*time.Hour), repoB)
+	// A failed command, and a scan older than the window: not observed.
+	daemonScan(tenant, sensorT, "failed", "semgrep", now.Add(-time.Hour), repoA)
+	daemonScan(tenant, sensorT, "completed", "semgrep", now.Add(-100*24*time.Hour), repoA)
+	// Another tenant's scan naming this tenant's repository: never observed.
+	daemonScan(other, sensorO, "completed", "semgrep", now.Add(-time.Hour), repoA, otherRepo)
 
 	obs, err := repo.CoverageObservations(ctx, tenant, now.Add(-90*24*time.Hour))
 	if err != nil {
@@ -87,6 +119,9 @@ func TestCICoverageRepository(t *testing.T) {
 	for _, o := range obs {
 		if o.RepositoryAssetID == otherRepo {
 			t.Fatal("another tenant's run observed")
+		}
+		if o.RepositoryAssetID == repoA && o.SourceKind == cirun.SourceScan {
+			t.Fatalf("a failed, expired or other tenant's scan observed: %+v", o)
 		}
 		got[o.RepositoryAssetID.String()+"/"+string(o.Capability)+"/"+o.SourceKind]++
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/compliance"
 	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
-	"github.com/openctemio/openctem/api/pkg/domain/scansession"
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
@@ -161,14 +160,6 @@ func TestDynamicWhere_AllFiltersExecute(t *testing.T) {
 		srs := pipeline.StepRunStatusPending
 		_, err = NewStepRunRepository(db).List(ctx, pipeline.StepRunFilter{PipelineRunID: &id, Status: &srs})
 		check("StepRunRepository.List", err)
-	}
-	{
-		st := scansession.StatusQueued
-		_, err := NewScanSessionRepository(db).List(ctx, scansession.Filter{
-			TenantID: &tenantID, SensorID: &id, AssetID: &id, ScannerName: "nuclei", AssetType: "domain",
-			AssetValue: "example.com", Branch: "main", Status: &st, Since: &since, Until: &until,
-		}, page)
-		check("ScanSessionRepository.List", err)
 	}
 	{
 		statuses := []scope.Status{scope.StatusActive}

@@ -537,31 +537,6 @@ func registerScanRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerScanSessionRoutes registers scan session endpoints.
-// Scan sessions track individual scan executions from sensors.
-func registerScanSessionRoutes(
-	router Router,
-	h *handler.ScanSessionHandler,
-	authMiddleware Middleware,
-	userSyncMiddleware Middleware,
-) {
-	// Build tenant middleware chain from JWT token for admin routes
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-
-	// Admin routes - tenant from JWT token
-	router.Group("/api/v1/scan-sessions", func(r Router) {
-		// Stats endpoint (must be before /{id} to avoid matching)
-		r.GET("/stats", h.GetStats, middleware.Require(permission.ScansRead))
-
-		// Read operations
-		r.GET("/", h.List, middleware.Require(permission.ScansRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.ScansRead))
-
-		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScansDelete))
-	}, tenantMiddlewares...)
-}
-
 // registerScannerTemplateRoutes registers scanner template management endpoints.
 // Scanner templates are custom templates for security tools (Nuclei, Semgrep, Betterleaks).
 func registerScannerTemplateRoutes(
