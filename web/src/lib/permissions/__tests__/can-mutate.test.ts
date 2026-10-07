@@ -45,11 +45,18 @@ describe('route gates from the API route table', () => {
       why: 'source credentials need secret_store:write, not the leaked-credentials permission',
     },
     {
-      key: 'PUT /api/v1/custom-tools/{id}',
+      key: 'PUT /api/v1/tools/{id}',
+      perms: ['scans:tenant_tools:write'],
+      role: 'member',
+      allowed: false,
+      why: 'custom tools need tools:write; tenant_tools:write only changes settings',
+    },
+    {
+      key: 'PATCH /api/v1/tools/settings',
       perms: ['scans:tenant_tools:write'],
       role: 'member',
       allowed: true,
-      why: 'custom tools need tenant_tools:write, not tools:write',
+      why: 'switching tools on or off needs tenant_tools:write',
     },
     {
       key: 'POST /api/v1/integrations/{id}/test',

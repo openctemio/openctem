@@ -53,8 +53,7 @@ vi.mock('@/lib/api/tool-hooks', () => ({
   useDeleteCustomTool: () => ({ trigger: vi.fn(), isMutating: false }),
   useEnableTool: () => ({ trigger: enable }),
   useDisableTool: () => ({ trigger: disable }),
-  invalidateCustomToolsCache: vi.fn(),
-  invalidateTenantToolsCache: vi.fn(),
+  invalidateToolsCache: vi.fn(),
 }))
 
 const catalogTool = (name: string, display: string) =>
