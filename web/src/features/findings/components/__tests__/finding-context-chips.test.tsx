@@ -2,13 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
 const useAsset = vi.fn()
-const useScanSession = vi.fn()
 
 vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAsset: (id: string | null) => useAsset(id),
-}))
-vi.mock('@/lib/api/scan-hooks', () => ({
-  useScanSession: (id: string | null) => useScanSession(id),
 }))
 
 import { FindingContextChips } from '../finding-context-chips'
@@ -18,9 +14,7 @@ const SCAN_ID = '019feab9-aaaa-7bbb-8ccc-ddddeeeeffff'
 
 beforeEach(() => {
   useAsset.mockReset()
-  useScanSession.mockReset()
   useAsset.mockReturnValue({ asset: null, isLoading: false, error: undefined })
-  useScanSession.mockReturnValue({ data: undefined, isLoading: false, error: undefined })
 })
 
 describe('FindingContextChips', () => {
@@ -66,21 +60,14 @@ describe('FindingContextChips', () => {
   it('never sends a non-UUID id to the API', () => {
     render(<FindingContextChips assetId="../../users/me" scanId="x" onRemove={() => {}} />)
     expect(useAsset).toHaveBeenCalledWith(null)
-    expect(useScanSession).toHaveBeenCalledWith(null)
     expect(screen.getByTestId('context-chip-asset_id-label')).toHaveTextContent('Unknown asset')
-    expect(screen.getByTestId('context-chip-scan_id-label')).toHaveTextContent('Unknown scan')
   })
 
-  it('labels a scan run by scanner and target', () => {
-    useScanSession.mockReturnValue({
-      data: { id: SCAN_ID, scanner_name: 'nuclei', asset_value: 'example.com' },
-      isLoading: false,
-    })
+  it('shows the scan filter as the producer id, as text, without a lookup', () => {
     render(<FindingContextChips scanId={SCAN_ID} onRemove={() => {}} />)
-    expect(useScanSession).toHaveBeenCalledWith(SCAN_ID)
-    expect(screen.getByTestId('context-chip-scan_id-label')).toHaveTextContent(
-      'nuclei · example.com'
-    )
+    expect(screen.getByTestId('context-chip-scan_id-label')).toHaveTextContent(SCAN_ID)
+    render(<FindingContextChips scanId="<img src=x onerror=alert(1)>" onRemove={() => {}} />)
+    expect(document.querySelector('img')).toBeNull()
   })
 
   it('renders CVE and rule chips from the URL value directly', () => {

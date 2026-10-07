@@ -174,7 +174,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/vulnerabilities/active":      {classScoped, "aggregated over in-scope findings, REST and MCP (L-10)"},
 	"GET /api/v1/groups/{groupId}/assets": {classScoped, "only the group's assets in the caller's scope (L-10)"},
 	"/api/v1/scans":                       {classGap, "L-06 (scan reads and targets; D9)"},
-	"/api/v1/scan-sessions":               {classGap, "L-06 (scan reads)"},
 	"/api/v1/commands":                    {classGap, "L-06 (command payloads)"},
 	"/api/v1/pipelines":                   {classGap, "L-06 (pipeline reads)"},
 	"POST /api/v1/pipelines/{id}/runs":    {classPartial, "asset_id through AssertAssetRef (research 21b C4), run targets through the act-scope gate (D9); step config targets unchecked (21b LOW)"},

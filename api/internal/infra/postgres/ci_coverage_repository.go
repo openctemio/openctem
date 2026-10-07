@@ -52,9 +52,9 @@ func (r *CIRunRepository) ListRepositories(ctx context.Context, tenantID shared.
 
 // CoverageObservations returns, per repository and capability, the newest
 // observation by a pipeline (non-fork default-branch runs, through the tools
-// they reported) and by a daemon scan (completed scan sessions), since a
-// time. A tool's capabilities come from the tool catalog (platform tools and
-// the tenant's own).
+// they reported) and by a daemon scan (a completed command whose report
+// touched the repository), since a time. A tool's capabilities come from the
+// tool catalog (platform tools and the tenant's own).
 func (r *CIRunRepository) CoverageObservations(ctx context.Context, tenantID shared.ID, since time.Time) ([]cirun.CoverageObservation, error) {
 	out := []cirun.CoverageObservation{}
 	rows, err := r.db.QueryContext(ctx, `
@@ -92,15 +92,19 @@ func (r *CIRunRepository) CoverageObservations(ctx context.Context, tenantID sha
 	}
 	_ = rows.Close()
 
+	// A daemon scan: a completed run of a sensor's command whose report
+	// (protocol v2) touched the repository, through the tool it named.
 	rows, err = r.db.QueryContext(ctx, `
-		SELECT DISTINCT ON (s.asset_id, cap.c) s.asset_id, cap.c, s.completed_at, s.scanner_name
-		FROM scan_sessions s
-		JOIN assets a ON a.tenant_id = s.tenant_id AND a.id = s.asset_id AND a.asset_type = 'repository'
-		JOIN tools tt ON lower(tt.name) = lower(s.scanner_name) AND (tt.tenant_id IS NULL OR tt.tenant_id = s.tenant_id)
+		SELECT DISTINCT ON (a.id, cap.c) a.id, cap.c, ir.committed_at, ir.tool_name
+		FROM ingest_reports ir
+		JOIN commands c ON c.tenant_id = ir.tenant_id AND c.id = ir.command_id AND c.status = 'completed'
+		CROSS JOIN LATERAL unnest(ir.touched_asset_ids) AS ta(asset_id)
+		JOIN assets a ON a.tenant_id = ir.tenant_id AND a.id = ta.asset_id AND a.asset_type = 'repository'
+		JOIN tools tt ON lower(tt.name) = lower(ir.tool_name) AND (tt.tenant_id IS NULL OR tt.tenant_id = ir.tenant_id)
 		CROSS JOIN LATERAL unnest(tt.capabilities) AS cap(c)
-		WHERE s.tenant_id = $1 AND s.status = 'completed' AND s.asset_id IS NOT NULL AND s.completed_at >= $2
+		WHERE ir.tenant_id = $1 AND ir.state = 'completed' AND ir.committed_at >= $2
 		  AND cap.c IN `+repositoryCapabilities+`
-		ORDER BY s.asset_id, cap.c, s.completed_at DESC`, tenantID.String(), since)
+		ORDER BY a.id, cap.c, ir.committed_at DESC`, tenantID.String(), since)
 	if err != nil {
 		return nil, fmt.Errorf("scan observations: %w", err)
 	}

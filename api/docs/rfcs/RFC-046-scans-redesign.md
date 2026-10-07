@@ -231,7 +231,7 @@ every open PR (350+ in this cycle).
 | `controller_leases` | `(name text PK, holder text, epoch bigint, expires_at timestamptz)` | P1.8 |
 | `domain_events` | uuidv7 id, `tenant_id`, `type`, `subject`, `actor`, `causation_id`, `correlation_id`, `depth`, CloudEvents payload, `published_at`; partial index on unpublished | P2 |
 | engines | `engine_specs (id, tenant_id NULL=system, name, version, spec jsonb, tier)`, `scans.engine_spec_id` | P2 |
-| retire sessions | `scan_sessions` → read-only view over runs with `trigger=ci`, dropped one release later | P2 |
+| retire sessions | `scan_sessions` dropped (migration 001148; no view: nothing wrote it after protocol v1 was removed) | **done** |
 
 ## 5. Engines: the spec and the stage catalogue (D3, P2)
 

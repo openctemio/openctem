@@ -4,7 +4,6 @@ import { useMemo } from 'react'
 import { Box, Boxes, FileCode, Layers, Radar, ShieldAlert, Tag, UserRound } from 'lucide-react'
 import { ContextFilterChips, type ContextFilterChip } from '@/features/shared'
 import { useAsset } from '@/features/assets/hooks/use-assets'
-import { useScanSession } from '@/lib/api/scan-hooks'
 import { useComponent } from '@/lib/api/security-hooks'
 
 /**
@@ -12,18 +11,18 @@ import { useComponent } from '@/lib/api/security-hooks'
  * drill-down filters of the other group dimensions: family, type, component,
  * owner), shown as inline toolbar chips with human labels.
  *
- * Asset and scan names are resolved through the existing tenant- and
- * permission-gated hooks (GET /assets/{id}, GET /scan-sessions/{id}); the API
- * applies the caller's tenant and data scope, so an id from another tenant or
- * outside the caller's scope comes back 404 / 403 and the chip reads "Unknown
- * asset" / "Unknown scan" — nothing about the record is shown. An id that is
- * not a UUID is never sent to the API at all (it is user-editable URL input).
+ * Asset names are resolved through the tenant- and permission-gated hook
+ * (GET /assets/{id}); the API applies the caller's tenant and data scope, so
+ * an id from another tenant or outside the caller's scope comes back 404 / 403
+ * and the chip reads "Unknown asset": nothing about the record is shown. An id
+ * that is not a UUID is never sent to the API at all (it is user-editable URL
+ * input). The scan filter is the producer id findings carry (a scan run's
+ * report or an import), shown as given, like the CVE and rule filters.
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const UNKNOWN_ASSET_LABEL = 'Unknown asset'
-export const UNKNOWN_SCAN_LABEL = 'Unknown scan'
 export const UNKNOWN_COMPONENT_LABEL = 'Unknown component'
 
 export interface FindingContextChipsProps {
@@ -72,7 +71,6 @@ export function FindingContextChips({
   className,
 }: FindingContextChipsProps) {
   const validAssetId = assetId && UUID_RE.test(assetId) ? assetId : null
-  const validScanId = scanId && UUID_RE.test(scanId) ? scanId : null
   const validComponentId = componentId && UUID_RE.test(componentId) ? componentId : null
   const { data: component, isLoading: componentLoading } = useComponent(validComponentId)
   const componentName = (() => {
@@ -82,12 +80,8 @@ export function FindingContextChips({
   })()
 
   const { asset, isLoading: assetLoading } = useAsset(validAssetId)
-  const { data: session, isLoading: sessionLoading } = useScanSession(validScanId)
 
   const assetName = asset?.name?.trim()
-  const scanName = session
-    ? [session.scanner_name, session.asset_value].filter((v) => v && v.trim()).join(' · ')
-    : ''
 
   const chips = useMemo<ContextFilterChip[]>(() => {
     const out: ContextFilterChip[] = []
@@ -106,9 +100,8 @@ export function FindingContextChips({
         param: 'scan_id',
         kind: 'Scan',
         icon: Radar,
-        fixedWidth: true,
-        loading: !!validScanId && sessionLoading && !scanName,
-        label: scanName || UNKNOWN_SCAN_LABEL,
+        mono: true,
+        label: scanId,
       })
     }
     if (cveId) {
@@ -161,13 +154,10 @@ export function FindingContextChips({
     ownerId,
     ownerUnassigned,
     validAssetId,
-    validScanId,
     validComponentId,
     assetLoading,
-    sessionLoading,
     componentLoading,
     assetName,
-    scanName,
     componentName,
   ])
 

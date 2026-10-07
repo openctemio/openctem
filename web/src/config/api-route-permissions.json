@@ -63,7 +63,6 @@
 "DELETE /api/v1/roles/{roleId}": {"permissions":["team:roles:delete"]},
 "DELETE /api/v1/scan-freeze-windows/{id}": {"permissions":["sensors:zones:delete"]},
 "DELETE /api/v1/scan-profiles/{id}": {"permissions":["scans:profiles:delete"]},
-"DELETE /api/v1/scan-sessions/{id}": {"permissions":["scans:delete"]},
 "DELETE /api/v1/scan-zones/{id}": {"permissions":["sensors:zones:delete"]},
 "DELETE /api/v1/scan-zones/{id}/sensors/{sensorId}": {"permissions":["sensors:zones:write"]},
 "DELETE /api/v1/scanner-templates/{id}": {"permissions":["scans:templates:delete"]},

@@ -109,7 +109,7 @@ export interface ScanConfig {
   status: ScanConfigStatus
   last_run_id?: string
   last_run_at?: string
-  last_run_status?: ScanSessionStatus
+  last_run_status?: ScanRunStatus
   total_runs: number
   successful_runs: number
   failed_runs: number
@@ -351,50 +351,10 @@ export interface ScanManagementOverview {
   jobs: StatusCounts
 }
 
-// Scan Session/Run status types
-export const SCAN_SESSION_STATUSES = [
-  'queued',
-  'pending',
-  'running',
-  'completed',
-  'failed',
-  'canceled',
-  'timeout',
-] as const
-export type ScanSessionStatus = (typeof SCAN_SESSION_STATUSES)[number]
+/** Status of a scan's last run. */
+export type ScanRunStatus =
+  'queued' | 'pending' | 'running' | 'completed' | 'failed' | 'canceled' | 'timeout'
 
-export const SCAN_SESSION_STATUS_LABELS: Record<ScanSessionStatus, string> = {
-  queued: 'Queued',
-  pending: 'Pending',
-  running: 'Running',
-  completed: 'Completed',
-  failed: 'Failed',
-  canceled: 'Canceled',
-  timeout: 'Timed Out',
-}
-
-/**
- * Helper functions for status checking
- */
-export function isTerminalStatus(status: ScanSessionStatus): boolean {
-  return ['completed', 'failed', 'canceled', 'timeout'].includes(status)
-}
-
-export function isActiveStatus(status: ScanSessionStatus): boolean {
-  return ['queued', 'pending', 'running'].includes(status)
-}
-
-export function isSuccessStatus(status: ScanSessionStatus): boolean {
-  return status === 'completed'
-}
-
-export function isErrorStatus(status: ScanSessionStatus): boolean {
-  return ['failed', 'timeout'].includes(status)
-}
-
-/**
- * Scan Session entity (matches backend ScanSessionResponse)
- */
 /**
  * Quality gate evaluation result returned by the backend after a scan run
  * completes if the parent scan was linked to a profile with a quality gate.
@@ -415,47 +375,6 @@ export interface QualityGateResult {
     info: number
     total: number
   }
-}
-
-export interface ScanSession {
-  id: string
-  tenant_id?: string
-  sensor_id?: string
-  scanner_name: string
-  scanner_version?: string
-  scanner_type?: string
-  asset_type: string
-  asset_value: string
-  asset_id?: string
-  commit_sha?: string
-  branch?: string
-  base_commit_sha?: string
-  status: ScanSessionStatus
-  error_message?: string
-  findings_total: number
-  findings_new: number
-  findings_fixed: number
-  findings_by_severity?: Record<string, number>
-  started_at?: string
-  completed_at?: string
-  duration_ms?: number
-  created_at: string
-
-  /** Current retry attempt (0 = first attempt, 1 = first retry, ...) */
-  retry_attempt?: number
-  /** Quality gate evaluation result (only when parent scan has profile_id linked) */
-  quality_gate_result?: QualityGateResult
-}
-
-/**
- * Scan Session list response (matches backend pagination)
- */
-export interface ScanSessionListResponse {
-  data: ScanSession[]
-  total: number
-  page: number
-  per_page: number
-  total_pages: number
 }
 
 // ============================================

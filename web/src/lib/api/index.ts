@@ -301,37 +301,21 @@ export {
   useTestIntegration,
 } from './security-hooks'
 
-// Scan Sessions hooks (from scan-hooks)
+// Scan hooks (from scan-hooks)
 export {
-  useScanSessions,
-  useScanSession,
-  useScanSessionStats,
   useScanConfigs,
   useScanConfig,
   useScanConfigStats,
   invalidateScanConfigsCache,
   invalidateAllScanConfigCaches,
-  type ScanSessionStats,
-  type ScanSessionListFilters,
 } from './scan-hooks'
 
 export type {
-  ScanSession,
-  ScanSessionListResponse,
   ScanConfig,
   ScanConfigListResponse,
   ScanConfigListFilters,
   ScanConfigStatsData,
-  ScanSessionStatus,
-} from './scan-types'
-
-export {
-  SCAN_SESSION_STATUSES,
-  SCAN_SESSION_STATUS_LABELS,
-  isTerminalStatus,
-  isActiveStatus,
-  isSuccessStatus,
-  isErrorStatus,
+  ScanRunStatus,
 } from './scan-types'
 
 // ============================================

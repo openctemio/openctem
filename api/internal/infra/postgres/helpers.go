@@ -193,3 +193,11 @@ func nullIngestChannel(c vulnerability.IngestChannel) interface{} {
 	}
 	return string(c)
 }
+
+// nullableString maps an empty string to SQL NULL.
+func nullableString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
