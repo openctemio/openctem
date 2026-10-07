@@ -42288,6 +42288,11 @@ export interface components {
       widening_approvals?: number
     }
     'internal_infra_http_handler.ScopeSettingsResponse': {
+      /**
+       * @description ActiveProof is the operator's setting: off, platform_sensors or all.
+       *     Read-only; no tenant setting changes it.
+       */
+      active_proof?: string
       admin_count?: number
       auto_join_discovered?: boolean
       default_max_tier?: string

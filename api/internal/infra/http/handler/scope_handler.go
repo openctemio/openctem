@@ -31,6 +31,8 @@ type ScopeHandler struct {
 	logger    *logger.Logger
 	scopeJoin ScopeJoinReevaluator
 	settings  ScopeSettingsStore
+	// activeProof is the operator's SCOPE_ACTIVE_PROOF (read-only view).
+	activeProof string
 }
 
 // NewScopeHandler creates a new scope handler.
