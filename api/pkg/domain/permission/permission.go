@@ -109,9 +109,7 @@ const (
 	SuppressionsApprove Permission = "findings:suppressions:approve"
 
 	// Vulnerability permissions (findings:vulnerabilities:*)
-	VulnerabilitiesRead   Permission = "findings:vulnerabilities:read"
-	VulnerabilitiesWrite  Permission = "findings:vulnerabilities:write"
-	VulnerabilitiesDelete Permission = "findings:vulnerabilities:delete"
+	VulnerabilitiesRead Permission = "findings:vulnerabilities:read"
 
 	// Credential leak permissions (findings:credentials:*)
 	CredentialsRead  Permission = "findings:credentials:read"
@@ -156,9 +154,8 @@ const (
 	ToolsDelete Permission = "scans:tools:delete"
 
 	// Tenant Tool Config permissions (scans:tenant_tools:*)
-	TenantToolsRead   Permission = "scans:tenant_tools:read"
-	TenantToolsWrite  Permission = "scans:tenant_tools:write"
-	TenantToolsDelete Permission = "scans:tenant_tools:delete"
+	TenantToolsRead  Permission = "scans:tenant_tools:read"
+	TenantToolsWrite Permission = "scans:tenant_tools:write"
 
 	// Scanner Template permissions (scans:templates:*)
 	ScannerTemplatesRead   Permission = "scans:templates:read"
@@ -430,7 +427,7 @@ func AllPermissions() []Permission {
 		FindingsFixApply, FindingsVerify,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
-		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
+		VulnerabilitiesRead,
 		CredentialsRead, CredentialsWrite, CredentialsReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
@@ -440,7 +437,7 @@ func AllPermissions() []Permission {
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
 		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,
-		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
+		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
 		CIRead, CIWrite, CIOverride,

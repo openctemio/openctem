@@ -77,58 +77,6 @@ func (s *CapabilityService) ListCapabilities(ctx context.Context, input ListCapa
 	return s.repo.List(ctx, filter, page)
 }
 
-// ListAllCapabilities returns all capabilities for a tenant context (for dropdowns).
-func (s *CapabilityService) ListAllCapabilities(ctx context.Context, tenantID string) ([]*capabilitydom.Capability, error) {
-	s.logger.Debug("listing all capabilities", "tenant_id", tenantID)
-
-	var tid *shared.ID
-	if tenantID != "" {
-		t, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		tid = &t
-	}
-
-	return s.repo.ListAll(ctx, tid)
-}
-
-// ListCapabilitiesByNames returns capabilities by their names.
-func (s *CapabilityService) ListCapabilitiesByNames(ctx context.Context, tenantID string, names []string) ([]*capabilitydom.Capability, error) {
-	s.logger.Debug("listing capabilities by names", "tenant_id", tenantID, "names", names)
-
-	if len(names) == 0 {
-		return nil, nil
-	}
-
-	var tid *shared.ID
-	if tenantID != "" {
-		t, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		tid = &t
-	}
-
-	return s.repo.ListByNames(ctx, tid, names)
-}
-
-// ListCapabilitiesByCategory returns all capabilities in a category.
-func (s *CapabilityService) ListCapabilitiesByCategory(ctx context.Context, tenantID string, category string) ([]*capabilitydom.Capability, error) {
-	s.logger.Debug("listing capabilities by category", "tenant_id", tenantID, "category", category)
-
-	var tid *shared.ID
-	if tenantID != "" {
-		t, err := shared.IDFromString(tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-		}
-		tid = &t
-	}
-
-	return s.repo.ListByCategory(ctx, tid, category)
-}
-
 // GetCapability returns a capability by ID, scoped to the caller's tenant.
 // Platform capabilities (TenantID == nil) are visible to everyone; tenant
 // custom capabilities are only visible to their owning tenant. Without this
@@ -310,14 +258,11 @@ func (s *CapabilityService) UpdateCapability(ctx context.Context, input UpdateCa
 		return nil, fmt.Errorf("%w: invalid capability id", shared.ErrValidation)
 	}
 
-	c, err := s.repo.GetByID(ctx, capabilityID)
+	// Only the tenant's own custom capabilities can change. A platform
+	// capability or another tenant's is not found (never 403: no oracle).
+	c, err := s.repo.GetByTenantAndID(ctx, tenantID, capabilityID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Check ownership - only tenant's own capabilities can be updated
-	if !c.CanBeModifiedByTenant(tenantID) {
-		return nil, fmt.Errorf("%w: cannot modify this capability", shared.ErrForbidden)
 	}
 
 	// Track changes for audit
@@ -385,6 +330,32 @@ type CapabilityUsageStatsOutput struct {
 	SensorNames []string `json:"sensor_names,omitempty"`
 }
 
+// UsageStats returns the usage of the capabilities ids as seen by tenantID,
+// in one batch (the include=usage loader of a page). The repository resolves
+// every id within the tenant (its own capabilities and platform ones), so an
+// id the tenant cannot see is counted against nothing.
+func (s *CapabilityService) UsageStats(ctx context.Context, tenantIDStr string, ids []shared.ID) (map[shared.ID]*CapabilityUsageStatsOutput, error) {
+	out := make(map[shared.ID]*CapabilityUsageStatsOutput, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	tid, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	stats, err := s.repo.GetUsageStatsBatch(ctx, tid, ids)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get usage stats: %w", err)
+	}
+	for id, st := range stats {
+		out[id] = &CapabilityUsageStatsOutput{
+			ToolCount: st.ToolCount, SensorCount: st.SensorCount,
+			ToolNames: st.ToolNames, SensorNames: st.SensorNames,
+		}
+	}
+	return out, nil
+}
+
 // DeleteCapability deletes a tenant custom capability.
 // If capability is in use and Force is false, returns ErrConflict with usage info.
 func (s *CapabilityService) DeleteCapability(ctx context.Context, input DeleteCapabilityInput) error {
@@ -400,14 +371,11 @@ func (s *CapabilityService) DeleteCapability(ctx context.Context, input DeleteCa
 		return fmt.Errorf("%w: invalid capability id", shared.ErrValidation)
 	}
 
-	c, err := s.repo.GetByID(ctx, cid)
+	// Only the tenant's own custom capabilities can be deleted. A platform
+	// capability or another tenant's is not found (never 403: no oracle).
+	c, err := s.repo.GetByTenantAndID(ctx, tid, cid)
 	if err != nil {
 		return err
-	}
-
-	// Check ownership - only tenant's own capabilities can be deleted
-	if !c.CanBeModifiedByTenant(tid) {
-		return fmt.Errorf("%w: cannot delete this capability", shared.ErrForbidden)
 	}
 
 	capabilityName := c.Name
@@ -425,7 +393,7 @@ func (s *CapabilityService) DeleteCapability(ctx context.Context, input DeleteCa
 		}
 	}
 
-	if err := s.repo.Delete(ctx, cid); err != nil {
+	if err := s.repo.Delete(ctx, tid, cid); err != nil {
 		return err
 	}
 
@@ -489,70 +457,4 @@ func (s *CapabilityService) GetCapabilityUsageStats(ctx context.Context, tenantI
 		ToolNames:   stats.ToolNames,
 		SensorNames: stats.SensorNames,
 	}, nil
-}
-
-// GetCapabilitiesUsageStatsBatch returns usage statistics for multiple capabilities.
-// Security: Filters out capabilities the tenant doesn't have access to.
-func (s *CapabilityService) GetCapabilitiesUsageStatsBatch(ctx context.Context, tenantIDStr string, capabilityIDs []string) (map[string]*CapabilityUsageStatsOutput, error) {
-	s.logger.Debug("getting capability usage stats batch", "count", len(capabilityIDs), "tenantID", tenantIDStr)
-
-	if len(capabilityIDs) == 0 {
-		return map[string]*CapabilityUsageStatsOutput{}, nil
-	}
-
-	// The stats are always computed for one tenant (its own tools and sensors
-	// plus the platform catalog), so a tenant is required.
-	tid, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	tenantID := &tid
-
-	ids := make([]shared.ID, 0, len(capabilityIDs))
-	for _, idStr := range capabilityIDs {
-		id, err := shared.IDFromString(idStr)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid capability id %s", shared.ErrValidation, idStr)
-		}
-		ids = append(ids, id)
-	}
-
-	// Security: Get capabilities and filter to only those tenant can access
-	// This prevents information disclosure about other tenants' capabilities
-	accessibleIDs := make([]shared.ID, 0, len(ids))
-	for _, id := range ids {
-		cap, err := s.repo.GetByID(ctx, id)
-		if err != nil {
-			// Skip capabilities that don't exist
-			continue
-		}
-		// Platform capabilities are accessible to all
-		// Custom capabilities only to their owning tenant
-		if cap.IsBuiltin {
-			accessibleIDs = append(accessibleIDs, id)
-		} else if cap.TenantID != nil && tenantID != nil && *cap.TenantID == *tenantID {
-			accessibleIDs = append(accessibleIDs, id)
-		}
-	}
-
-	if len(accessibleIDs) == 0 {
-		return map[string]*CapabilityUsageStatsOutput{}, nil
-	}
-
-	stats, err := s.repo.GetUsageStatsBatch(ctx, tid, accessibleIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get usage stats: %w", err)
-	}
-
-	result := make(map[string]*CapabilityUsageStatsOutput, len(stats))
-	for id, stat := range stats {
-		result[id.String()] = &CapabilityUsageStatsOutput{
-			ToolCount:   stat.ToolCount,
-			SensorCount: stat.SensorCount,
-			ToolNames:   stat.ToolNames,
-			SensorNames: stat.SensorNames,
-		}
-	}
-
-	return result, nil
 }
