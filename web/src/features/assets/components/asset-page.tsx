@@ -826,7 +826,10 @@ export function AssetPage({ config, headerExtra }: AssetPageProps) {
         header: 'Scope',
         cell: ({ row }) => {
           return (
-            <ScopeCheckBadge result={scopeResultFor(row.original.name)} loading={scopeChecking} />
+            // min-w-max: the pill never sits under the pinned actions column.
+            <div className="min-w-max">
+              <ScopeCheckBadge result={scopeResultFor(row.original.name)} loading={scopeChecking} />
+            </div>
           )
         },
       },
