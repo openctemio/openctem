@@ -62,7 +62,7 @@ describe('RunStageLanes', () => {
     })
     fresh(<RunStageLanes runId="run-1" />)
     const lanes = await screen.findAllByTestId('stage-lane')
-    expect(getMock).toHaveBeenCalledWith('/api/v1/pipeline-runs/run-1/stages')
+    expect(getMock).toHaveBeenCalledWith('/api/v1/scan-runs/run-1/stages')
     expect(lanes).toHaveLength(2)
     expect(within(lanes[0]).getByText('Subdomain discovery')).toBeInTheDocument()
     expect(within(lanes[0]).getByText(/T0/)).toBeInTheDocument()

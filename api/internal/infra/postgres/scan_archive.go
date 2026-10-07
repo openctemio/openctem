@@ -23,7 +23,7 @@ func (r *ScanRepository) ArchiveNeverRunOneOffs(ctx context.Context, olderThan t
 			  AND s.archived_at IS NULL
 			  AND s.created_at < NOW() - make_interval(secs => $1)
 			  AND NOT EXISTS (
-			        SELECT 1 FROM pipeline_runs pr
+			        SELECT 1 FROM scan_runs pr
 			        WHERE pr.tenant_id = s.tenant_id AND pr.scan_id = s.id)
 			ORDER BY s.created_at
 			LIMIT $2

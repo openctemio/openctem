@@ -746,13 +746,12 @@ func (afl *AuthFailureLimiter) GetStats() (trackedIPs int, bannedIPs int) {
 }
 
 // =============================================================================
-// Trigger Rate Limiting (Pipeline/Scan Execution)
+// Trigger Rate Limiting (Scan workflow/Scan Execution)
 // =============================================================================
 
-// TriggerRateLimiter provides rate limiting for pipeline and scan trigger endpoints.
+// TriggerRateLimiter provides rate limiting for scan trigger endpoints.
 // This prevents abuse and ensures fair resource usage.
 type TriggerRateLimiter struct {
-	pipelineLimiter  *RateLimiter // Per-tenant pipeline triggers
 	scanLimiter      *RateLimiter // Per-tenant scan triggers
 	quickScanLimiter *RateLimiter // Per-tenant quick scan triggers (stricter)
 	log              *logger.Logger
@@ -760,9 +759,6 @@ type TriggerRateLimiter struct {
 
 // TriggerRateLimitConfig configures trigger-specific rate limits.
 type TriggerRateLimitConfig struct {
-	// PipelineTriggersPerMin is the max pipeline triggers per minute per tenant.
-	// Default: 30
-	PipelineTriggersPerMin int
 	// ScanTriggersPerMin is the max scan triggers per minute per tenant.
 	// Default: 20
 	ScanTriggersPerMin int
@@ -777,7 +773,6 @@ type TriggerRateLimitConfig struct {
 // DefaultTriggerRateLimitConfig returns secure defaults for trigger rate limiting.
 func DefaultTriggerRateLimitConfig() TriggerRateLimitConfig {
 	return TriggerRateLimitConfig{
-		PipelineTriggersPerMin:  30,
 		ScanTriggersPerMin:      20,
 		QuickScanTriggersPerMin: 10,
 		CleanupInterval:         time.Minute,
@@ -786,9 +781,6 @@ func DefaultTriggerRateLimitConfig() TriggerRateLimitConfig {
 
 // NewTriggerRateLimiter creates a rate limiter specialized for trigger endpoints.
 func NewTriggerRateLimiter(cfg TriggerRateLimitConfig, log *logger.Logger) *TriggerRateLimiter {
-	if cfg.PipelineTriggersPerMin == 0 {
-		cfg.PipelineTriggersPerMin = 30
-	}
 	if cfg.ScanTriggersPerMin == 0 {
 		cfg.ScanTriggersPerMin = 20
 	}
@@ -800,17 +792,10 @@ func NewTriggerRateLimiter(cfg TriggerRateLimitConfig, log *logger.Logger) *Trig
 	}
 
 	// Convert per-minute rates to per-second for rate.Limit
-	pipelineRate := float64(cfg.PipelineTriggersPerMin) / 60.0
 	scanRate := float64(cfg.ScanTriggersPerMin) / 60.0
 	quickScanRate := float64(cfg.QuickScanTriggersPerMin) / 60.0
 
 	return &TriggerRateLimiter{
-		pipelineLimiter: NewRateLimiter(&config.RateLimitConfig{
-			Enabled:         true,
-			RequestsPerSec:  pipelineRate,
-			Burst:           cfg.PipelineTriggersPerMin,
-			CleanupInterval: cfg.CleanupInterval,
-		}, log),
 		scanLimiter: NewRateLimiter(&config.RateLimitConfig{
 			Enabled:         true,
 			RequestsPerSec:  scanRate,
@@ -829,15 +814,8 @@ func NewTriggerRateLimiter(cfg TriggerRateLimitConfig, log *logger.Logger) *Trig
 
 // Stop gracefully shuts down all rate limiters.
 func (t *TriggerRateLimiter) Stop() {
-	t.pipelineLimiter.Stop()
 	t.scanLimiter.Stop()
 	t.quickScanLimiter.Stop()
-}
-
-// PipelineMiddleware returns middleware for pipeline trigger endpoints.
-// Uses tenant ID as the rate limit key for per-tenant limiting.
-func (t *TriggerRateLimiter) PipelineMiddleware() func(http.Handler) http.Handler {
-	return t.wrapWithTenantKey(t.pipelineLimiter)
 }
 
 // ScanMiddleware returns middleware for scan trigger endpoints.

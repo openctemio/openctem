@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { EmptyState, TonePill, type PillTone } from '@/features/shared'
 import { get } from '@/lib/api/client'
-import { pipelineRunEndpoints } from '@/lib/api/endpoints'
+import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunTask, RunTaskLogLine, RunTaskLogs } from '@/lib/api/generated'
 import { toDisplayBlock, toDisplayText } from '@/lib/untrusted-text'
 
@@ -129,7 +129,7 @@ export function RunTaskLogsDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { data, error, isLoading } = useSWR<RunTaskLogs>(
-    open ? pipelineRunEndpoints.taskLogs(runId, taskId) : null,
+    open ? scanRunEndpoints.taskLogs(runId, taskId) : null,
     (url: string) => get<RunTaskLogs>(url),
     { revalidateOnFocus: false }
   )

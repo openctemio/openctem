@@ -4,9 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/internal/metrics"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -20,7 +21,7 @@ type ScanTimeoutControllerConfig struct {
 	Logger *logger.Logger
 }
 
-// ScanTimeoutController periodically marks pipeline_runs as timed out when they
+// ScanTimeoutController periodically marks scan_runs as timed out when they
 // exceed their scan's configured timeout_seconds.
 //
 // This complements JobRecoveryController (which marks stuck commands) by
@@ -28,14 +29,14 @@ type ScanTimeoutControllerConfig struct {
 // (default 1h, max 24h), and runs that exceed that are forcefully marked
 // as timeout with an appropriate error message.
 type ScanTimeoutController struct {
-	runRepo pipeline.RunRepository
+	runRepo scanrun.RunRepository
 	config  *ScanTimeoutControllerConfig
 	logger  *logger.Logger
 }
 
 // NewScanTimeoutController creates a new ScanTimeoutController.
 func NewScanTimeoutController(
-	runRepo pipeline.RunRepository,
+	runRepo scanrun.RunRepository,
 	config *ScanTimeoutControllerConfig,
 ) *ScanTimeoutController {
 	if config == nil {
@@ -76,7 +77,7 @@ func (c *ScanTimeoutController) Reconcile(ctx context.Context) (int, error) {
 	// First, so an unclaimed run ends with the reason instead of as a
 	// generic timeout (and is not retried: no sensor is a permanent class).
 	aborted := int64(0)
-	if a, ok := c.runRepo.(pipeline.UnclaimedRunAborter); ok {
+	if a, ok := c.runRepo.(scanrun.UnclaimedRunAborter); ok {
 		n, err := a.AbortUnclaimedRuns(ctx, UnclaimedScheduledRunAfter, UnclaimedInteractiveRunAfter)
 		if err != nil {
 			c.logger.Error("failed to abort unclaimed scan runs", "error", err)

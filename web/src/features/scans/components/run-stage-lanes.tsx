@@ -8,9 +8,9 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TruncatedText } from '@/features/shared'
 import { get } from '@/lib/api/client'
-import { pipelineRunEndpoints } from '@/lib/api/endpoints'
+import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunStage, RunStageList } from '@/lib/api/generated'
-import { useCapabilityTable } from '@/features/pipelines/lib/use-capability-table'
+import { useCapabilityTable } from '@/features/scan-workflows/lib/use-capability-table'
 
 /** Why the hop router left targets out (scan_run_targets reasons). */
 const SKIP_LABELS: Record<string, string> = {
@@ -67,7 +67,7 @@ export function skippedReasons(skipped?: Record<string, number>): Array<[string,
 /**
  * One row per stage of a run (research/27 §9.3): what it ran, its tier,
  * how many targets it considered and was handed, and why the others were
- * left out. Counts come from GET /pipeline-runs/{id}/stages; nothing is
+ * left out. Counts come from GET /scan-runs/{id}/stages; nothing is
  * derived here.
  */
 export function RunStageLanes({
@@ -83,7 +83,7 @@ export function RunStageLanes({
     [table]
   )
   const { data, error, isLoading } = useSWR<RunStageList>(
-    pipelineRunEndpoints.stages(runId),
+    scanRunEndpoints.stages(runId),
     (url: string) => get<RunStageList>(url),
     { revalidateOnFocus: false, refreshInterval }
   )

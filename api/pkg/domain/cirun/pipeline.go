@@ -125,18 +125,62 @@ type PipelineKey struct {
 // pipeline (no repository id, or no usable workflow path).
 const RefusePipelineIdentity = "pipeline_identity"
 
-// PipelineKeyFromClaims derives the pipeline key from verified claims.
+// PipelineKeyFromClaims derives the pipeline key from verified claims:
+//
+//   - GitHub, GitLab: the numeric repository or project id and the workflow
+//     file;
+//   - Azure Pipelines: the project id and "pipelines/<definition id>";
+//   - CircleCI: the project id and "pipelines/<pipeline definition id>"
+//     (".circleci/config.yml" when the token names no definition);
+//   - Bitbucket: the repository UUID and "bitbucket-pipelines.yml";
+//   - Jenkins: an id derived from the repository claim and the job's full
+//     name (without the branch of a multibranch job).
 func PipelineKeyFromClaims(provider Provider, issuer string, c Claims) (PipelineKey, *Refusal) {
-	repoID := strings.TrimSpace(c.RepositoryID)
-	if repoID == "" || len(repoID) > 64 || !isDigits(repoID) {
-		return PipelineKey{}, refuse(RefusePipelineIdentity, "the token carries no numeric repository or project id")
+	repoID, wp := strings.TrimSpace(c.RepositoryID), ""
+	switch provider {
+	case ProviderGitHub, ProviderGitLab:
+		if repoID == "" || len(repoID) > 64 || !isDigits(repoID) {
+			return PipelineKey{}, refuse(RefusePipelineIdentity, "the token carries no numeric repository or project id")
+		}
+		wp = WorkflowPath(provider, c.Repository, c.Workflow)
+	case ProviderAzureDevOps:
+		repoID = c.ProjectID
+		if isDigits(c.DefinitionID) && len(c.DefinitionID) <= 20 {
+			wp = "pipelines/" + c.DefinitionID
+		}
+	case ProviderCircleCI:
+		repoID = c.ProjectID
+		switch {
+		case uuidRE.MatchString(c.DefinitionID):
+			wp = "pipelines/" + c.DefinitionID
+		case c.DefinitionID == "":
+			wp = CircleCIDefaultConfigPath
+		}
+	case ProviderBitbucket:
+		wp = BitbucketConfigPath
+	case ProviderJenkins:
+		if len(repoID) != 32 {
+			repoID = ""
+		}
+		wp = cleanWorkflowPath(c.Workflow)
 	}
-	wp := WorkflowPath(provider, c.Repository, c.Workflow)
+	if provider != ProviderGitHub && provider != ProviderGitLab && provider != ProviderJenkins && !uuidRE.MatchString(repoID) {
+		return PipelineKey{}, refuse(RefusePipelineIdentity, "the token carries no project or repository id")
+	}
+	if repoID == "" {
+		return PipelineKey{}, refuse(RefusePipelineIdentity, "the token carries no repository")
+	}
 	if wp == "" {
 		return PipelineKey{}, refuse(RefusePipelineIdentity, "the token carries no usable workflow path")
 	}
 	return PipelineKey{Provider: provider, Issuer: issuer, ExternalRepoID: repoID, WorkflowPath: wp}, nil
 }
+
+// Pipeline paths of providers whose token names no workflow file.
+const (
+	CircleCIDefaultConfigPath = ".circleci/config.yml"
+	BitbucketConfigPath       = "bitbucket-pipelines.yml"
+)
 
 // WorkflowPath is the workflow file of a job, relative to its repository and
 // without the ref: GitHub "owner/name/.github/workflows/scan.yml@refs/heads/x"

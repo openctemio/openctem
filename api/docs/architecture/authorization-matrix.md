@@ -293,7 +293,7 @@ closed):
 | Path | Effect of a match |
 |------|-------------------|
 | Scan trigger (direct targets and asset-group members) | Target dropped from the run; a run whose every target is excluded is refused (`ALL_TARGETS_EXCLUDED`) |
-| `POST /api/v1/pipelines/runs`, the `trigger_pipeline` workflow action | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
+| `POST /api/v1/scan-workflows/runs`, the `trigger_pipeline` workflow action | Target dropped from `context.targets`, the rest run; every target excluded is refused. The same run is refused (400 `TARGET_REFUSED`) for a target the scan target validator or zone routing refuses (private address outside every zone, loopback, link-local/metadata, uncovered). `scan_zone_id` in the caller's context is ignored and set from the routing |
 | Tenable rolling coverage dispatcher | Asset skipped this rotation (its cursor still moves, so it does not hold the top of every batch); same for a target the validator or zone routing refuses. A batch stays in one zone and the command is stamped with it |
 | Certificate Transparency discovery | An excluded watched domain is not queried; an excluded host gets no exposure |
 | Ingest | A NEW asset matching by name, repository URL or address (and a root domain or resolved IP derived from one) is not added: counted as `assets_skipped_excluded`, named in the warnings, its findings skipped and never attached to another asset. An asset already in the inventory is not changed or deleted |
@@ -1355,7 +1355,7 @@ research doc 21b, C1/C3/C4). Used by:
 - `POST /exposures` and `POST /exposures/ingest` (`asset_id`; the bulk ingest
   uses the batch form `FilterAssetRefs` and drops refused items with the one
   reason `asset not found`);
-- `POST /pipelines/{id}/runs` (`asset_id`, which is copied into every step
+- `POST /scan-workflows/{id}/runs` (`asset_id`, which is copied into every step
   command; a workflow trigger with no user gets the tenant check).
 
 **Database backstop** (migrations 000920-000922): every column that references
@@ -1389,7 +1389,7 @@ module. It is wired onto **26 route groups** in
 `suppressions`, `remediation`, `compliance`, `pentest`, `threat_intel`,
 `reports`, `ctem_cycles`, `attacker_profiles`, `business_services`,
 `compensating_controls`, `priority_rules`, `scope_config`, `components`,
-`relationships`, `credentials`, `workflows`, `integrations`, `scan_pipelines`,
+`relationships`, `credentials`, `workflows`, `integrations`, `scan_workflows`,
 `scanner_templates`, `template_sources`, `attack_simulation`, `control_testing`,
 `branches`, `iocs`.
 
@@ -1752,7 +1752,7 @@ from a custom role to deny that one action.
 |---|---|---|
 | `assets:import` | `POST /assets/import/csv`, `POST /findings/import` (with `findings:write`) | `assets:write` |
 | `scans:execute` | `POST /scans/{id}/trigger`, `POST /scans/quick`, `POST /assets/{id}/scan` | `scans:write` / `assets:write` |
-| `integrations:pipelines:execute` | `POST /pipelines/{id}/runs` | `integrations:pipelines:write` |
+| `scans:workflows:execute` | `POST /scan-workflows/{id}/runs` | `scans:workflows:write` |
 | `ai_triage:read` | `GET /findings/{id}/ai-triage*`, `GET /findings/ai-triage/config` | `findings:read` |
 | `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` (deprecated, sunset 2027-01-15) | `findings:write` |
 | `findings:exposures:read` | `GET /exposures`, `/{id}`, `/stats`, `/{id}/history` | `findings:read` |
@@ -1805,7 +1805,7 @@ These tests fail the build if the model erodes. Treat them as executable spec:
 
 Each module in `ModulePermissionMapping` names the permission its routes gate
 on, so the sidebar and the API agree (for example Attack Surface → `assets:read`,
-CTEM Cycles → `ctem:cycles:read`, Scan Pipelines → `integrations:pipelines:read`).
+CTEM Cycles → `ctem:cycles:read`, Scan Pipelines → `scans:workflows:read`).
 
 ## How to … (recipes that stay inside the invariants)
 

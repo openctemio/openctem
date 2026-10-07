@@ -27,7 +27,7 @@ import (
 //     only the threshold and the SQL hardcoded `dispatch_attempts < 3`.
 //
 //   - ExpireOldPlatformJobs was a raw UPDATE that flipped queued jobs to
-//     'expired' and told nobody. Platform jobs carry pipeline_run_id + step_key
+//     'expired' and told nobody. Platform jobs carry scan_run_id + step_key
 //     and have expires_at NULL, so FindExpired never saw them; this was the only
 //     thing that reaped them, and the owning run was never notified.
 //
@@ -104,9 +104,9 @@ func seedPlatformJob(ctx context.Context, t *testing.T, db *sql.DB, tenantID sha
 		platformSensorID = seedJobSensor(ctx, t, db, tenantID).String()
 	}
 
-	// A pipeline payload: this is what makes silent expiry damaging, because the
+	// A scan workflow payload: this is what makes silent expiry damaging, because the
 	// run is waiting on step_key and nothing else will tell it.
-	payload := `{"pipeline_run_id":"` + shared.NewID().String() + `","step_key":"probe-step"}`
+	payload := `{"scan_run_id":"` + shared.NewID().String() + `","step_key":"probe-step"}`
 
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO commands (
@@ -158,7 +158,7 @@ func commandState(ctx context.Context, t *testing.T, db *sql.DB, id shared.ID) (
 // by design (is_platform_job = FALSE, migration 000172), ExpireOldPlatformJobs
 // only looked at 'pending', and fail_exhausted_commands needs
 // dispatch_attempts >= max — which only the recovery functions ever increment.
-// The job sat in 'acknowledged' forever and its pipeline run waited on it.
+// The job sat in 'acknowledged' forever and its scan run waited on it.
 func TestRecoverStuckJobs_RecoversJobClaimedByTenantSensor(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
@@ -316,7 +316,7 @@ func TestRecoverStuckJobs_IgnoresTenantCommands(t *testing.T) {
 // =============================================================================
 
 // The rows the old raw UPDATE reaped silently must now be handed back to the
-// caller, which expires them *and* fails the pipeline step.
+// caller, which expires them *and* fails the workflow step.
 func TestFindQueueExpiredPlatformJobs_ReturnsOverdueQueuedJob(t *testing.T) {
 	db := openPlatformJobDB(t)
 	ctx := context.Background()
@@ -340,7 +340,7 @@ func TestFindQueueExpiredPlatformJobs_ReturnsOverdueQueuedJob(t *testing.T) {
 		if j.ID == id {
 			found = true
 			if len(j.Payload) == 0 {
-				t.Error("payload not loaded: without pipeline_run_id/step_key the caller cannot " +
+				t.Error("payload not loaded: without scan_run_id/step_key the caller cannot " +
 					"notify the run, which is the entire reason this returns rows instead of expiring them")
 			}
 		}

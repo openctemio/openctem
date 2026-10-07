@@ -17,6 +17,9 @@ import {
   FileKey,
   FileWarning,
   FolderKanban,
+  GitBranch,
+  ListChecks,
+  Radar,
   History,
   Link2,
   Swords,
@@ -93,6 +96,37 @@ export const THREAT_MODEL_SECTION_TABS: readonly SectionTab[] = [
     icon: Swords,
     module: 'attacker_profiles',
     permission: Permission.AttackerProfilesRead,
+  },
+]
+
+/**
+ * Discovery > Scans: the scan configurations, every run they produced, and the
+ * scan workflows (the graph of steps a scan runs). One table per route, so each
+ * list keeps plain page, per_page and sort parameters. Workflows is its own
+ * module (`scan_workflows`); the keywords keep the older names searchable.
+ */
+export const SCANS_SECTION_TABS: readonly SectionTab[] = [
+  {
+    label: 'Scans',
+    href: '/scans',
+    icon: Radar,
+    module: 'scans',
+    permission: Permission.ScansRead,
+  },
+  {
+    label: 'Runs',
+    href: '/scans/runs',
+    icon: ListChecks,
+    module: 'scans',
+    permission: Permission.ScansRead,
+  },
+  {
+    label: 'Workflows',
+    href: '/scans/workflows',
+    icon: GitBranch,
+    module: 'scan_workflows',
+    permission: Permission.ScanWorkflowsRead,
+    keywords: ['pipeline', 'pipelines', 'builder'],
   },
 ]
 

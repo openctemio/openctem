@@ -140,10 +140,10 @@ type Repositories struct {
 	TemplateSource   *postgres.TemplateSourceRepository
 	SecretStore      *postgres.SecretStoreRepository
 
-	// Pipelines
-	PipelineTemplate *postgres.PipelineTemplateRepository
-	PipelineRun      *postgres.PipelineRunRepository
-	PipelineStep     *postgres.PipelineStepRepository
+	// ScanRuns
+	ScanWorkflow     *postgres.ScanWorkflowRepository
+	ScanRun          *postgres.ScanRunRepository
+	ScanWorkflowStep *postgres.ScanWorkflowStepRepository
 	StepRun          *postgres.StepRunRepository
 
 	// Workflows
@@ -196,7 +196,7 @@ type Repositories struct {
 	CTMonitorState *postgres.CTMonitorStateRepository
 	Attribution    *postgres.AttributionRepository
 	EASMDNS        *postgres.EASMDNSRepository
-	EASMSeed       *postgres.EASMSeedRepository
+	VerifiedNames  *postgres.VerifiedDomainNameRepository
 	// CI runs, trust configurations and the gate (RFC-051)
 	CIRun       *postgres.CIRunRepository
 	EASMSummary *postgres.EASMSummaryRepository
@@ -382,10 +382,10 @@ func newRepositories(db *postgres.DB) *Repositories {
 		TemplateSource:   postgres.NewTemplateSourceRepository(db),
 		SecretStore:      postgres.NewSecretStoreRepository(db),
 
-		// Pipelines
-		PipelineTemplate: postgres.NewPipelineTemplateRepository(db),
-		PipelineRun:      postgres.NewPipelineRunRepository(db),
-		PipelineStep:     postgres.NewPipelineStepRepository(db),
+		// ScanRuns
+		ScanWorkflow:     postgres.NewScanWorkflowRepository(db),
+		ScanRun:          postgres.NewScanRunRepository(db),
+		ScanWorkflowStep: postgres.NewScanWorkflowStepRepository(db),
 		StepRun:          postgres.NewStepRunRepository(db),
 
 		// Workflows
@@ -434,7 +434,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
-		EASMSeed:         postgres.NewEASMSeedRepository(db),
+		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 

@@ -5,10 +5,10 @@ import userEvent from '@testing-library/user-event'
 import { BasicInfoStep } from '../new-scan/basic-info-step'
 import { DEFAULT_NEW_SCAN } from '../../types'
 
-const pipelineCalls: unknown[] = []
-vi.mock('@/lib/api/pipeline-hooks', () => ({
-  usePipelines: (filters: unknown) => {
-    pipelineCalls.push(filters)
+const workflowCalls: unknown[] = []
+vi.mock('@/lib/api/scan-workflow-hooks', () => ({
+  useScanWorkflows: (filters: unknown) => {
+    workflowCalls.push(filters)
     return {
       data: filters
         ? {
@@ -60,7 +60,7 @@ Element.prototype.scrollIntoView ??= () => {}
 
 describe('BasicInfoStep', () => {
   beforeEach(() => {
-    pipelineCalls.length = 0
+    workflowCalls.length = 0
   })
 
   it('single mode asks for a scanner from the tool registry (no fake scan types)', () => {
@@ -110,14 +110,14 @@ describe('BasicInfoStep', () => {
     expect(onChange).toHaveBeenCalledWith({ scannerName: 'trivy' })
   })
 
-  it('workflow mode lists the real pipelines and shows the chosen one’s steps', () => {
+  it('workflow mode lists the real workflows and shows the chosen one’s steps', () => {
     render(
       <BasicInfoStep
         data={{ ...DEFAULT_NEW_SCAN, mode: 'workflow', workflowId: 'p1' }}
         onChange={vi.fn()}
       />
     )
-    expect(pipelineCalls.at(-1)).toMatchObject({ is_active: true })
+    expect(workflowCalls.at(-1)).toMatchObject({ is_active: true })
     expect(screen.getAllByText('External discovery').length).toBeGreaterThan(0)
     expect(screen.getByText('1. subfinder')).toBeInTheDocument()
     expect(screen.getByText('2. httpx')).toBeInTheDocument()
@@ -131,6 +131,6 @@ describe('BasicInfoStep', () => {
     expect(screen.queryByText('Workflow Scan')).not.toBeInTheDocument()
     expect(screen.getByText('Sensor Preference')).toBeInTheDocument()
     // Nothing to offer: the workflows are not fetched.
-    expect(pipelineCalls.every((f) => f === undefined)).toBe(true)
+    expect(workflowCalls.every((f) => f === undefined)).toBe(true)
   })
 })

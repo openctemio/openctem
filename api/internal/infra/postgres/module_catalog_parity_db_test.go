@@ -44,7 +44,7 @@ import (
 //
 // Direction matters: the database legitimately holds MORE rows than the Go
 // maps. UserFacingModuleIDs is deliberately sidebar-visible-only — its own
-// comment excludes sensors/tools/pipelines because toggling them has no sidebar
+// comment excludes sensors/tools/scan workflows because toggling them has no sidebar
 // effect. So DB ⊋ code is expected and never asserted; only code ⊆ DB is.
 
 // catalogRow is one row of the `modules` table. Column names verified
@@ -434,7 +434,7 @@ func TestModuleCatalog_GatedModulesHaveActiveRows(t *testing.T) {
 // UserFacingModuleIDs and ModulePermissionMapping must have a row.
 //
 // Existence only, not active: the maps legitimately retain retired IDs
-// (sources, secrets, scope, pipelines and webhooks are all seeded
+// (sources, secrets, scope, scan workflows and webhooks are all seeded
 // is_active = FALSE / deprecated) so that historic permission lookups still
 // resolve. What must never happen is an ID present in Go and absent from the
 // table entirely.

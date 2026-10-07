@@ -47,9 +47,9 @@ type ScanZonePreviewRequest struct {
 	ScannerName   string   `json:"scanner_name"`
 	TargetsPerJob int      `json:"targets_per_job"`
 	ScanZoneID    *string  `json:"scan_zone_id"`
-	// PipelineID is accepted so a client can send its whole draft; a workflow
+	// ScanWorkflowID is accepted so a client can send its whole draft; a workflow
 	// is routed the same whatever its steps, so it does not change the result.
-	PipelineID *string `json:"pipeline_id,omitempty"`
+	ScanWorkflowID *string `json:"scan_workflow_id,omitempty"`
 }
 
 // ScanZoneResponse is a scan zone.

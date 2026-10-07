@@ -116,7 +116,7 @@ found these, now closed:
 | Data | Was | Now |
 |---|---|---|
 | Threat-intel feed sync (`threat_intel_sync_status`, `epss_scores`, `kev_catalog`) | `POST /threat-intel/sync` and `PATCH /threat-intel/sync/{source}` let any organization's admin run the sync or switch EPSS/KEV off for everyone | no tenant write route (405); the platform administrator uses `GET/POST /api/v1/admin/threat-intel/sync` and `PATCH /api/v1/admin/threat-intel/sync/{source}` (ops_admin+, audited `threat_intel.sync` / `threat_intel.sync_toggle`) |
-| System pipeline templates (`pipeline_templates.is_system_template`, e.g. Quick Scan) | readable by every tenant (so it can clone them), but `DELETE /pipelines/{id}` and the step add/update/delete routes did not check `is_system_template`: a tenant could edit the Quick Scan step or delete the template, cascading to every tenant's runs of it | 403 (`getWritableTemplate`); clone it to change it |
+| System pipeline templates (`scan_workflows.is_system_template`, e.g. Quick Scan) | readable by every tenant (so it can clone them), but `DELETE /scan-workflows/{id}` and the step add/update/delete routes did not check `is_system_template`: a tenant could edit the Quick Scan step or delete the template, cascading to every tenant's runs of it | 403 (`getWritableTemplate`); clone it to change it |
 | Other tenants' pipelines on tool deactivation | deactivating or deleting a tenant's custom tool deactivated every active pipeline, in any tenant, with a step using a tool of that name (names are unique per tenant, so a custom tool named `nuclei` hit everyone) | only the tool's own tenant's pipelines (`FindPipelineIDsByToolName` is tenant-scoped) |
 
 Left as is, by decision: `pentest_finding_templates.usage_count` is bumped

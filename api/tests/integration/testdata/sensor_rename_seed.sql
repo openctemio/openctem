@@ -56,7 +56,7 @@ INSERT INTO integration_notification_extensions (integration_id, enabled_event_t
     ('11111111-0000-0000-0000-00000000000c', '["agent.error", "finding.created"]');
 INSERT INTO notification_preferences (tenant_id, user_id, muted_types) VALUES
     ('11111111-0000-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', '["agent.offline"]');
-INSERT INTO pipeline_templates (id, tenant_id, name, settings) VALUES
+INSERT INTO scan_workflows (id, tenant_id, name, settings) VALUES
     ('11111111-0000-0000-0000-00000000000e', '11111111-0000-0000-0000-000000000001', 'pipe',
      '{"agent_preference":"platform","max_parallel_steps":2}');
 
