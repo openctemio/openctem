@@ -62,19 +62,25 @@ const pendingEntry = {
   target_type: 'domain',
   covers: 'domain_and_subdomains',
   status: 'pending',
-  created_by: 'someone',
+  created_by: { kind: 'user', id: 'someone' },
   created_at: '2026-10-07T10:00:00Z',
   approvals: [],
   approvals_required: 1,
   reason: 'dev env',
 }
-const mine = { ...pendingEntry, id: 'e2', pattern: 'mine.net', covers: 'name', created_by: 'me' }
+const mine = {
+  ...pendingEntry,
+  id: 'e2',
+  pattern: 'mine.net',
+  covers: 'name',
+  created_by: { kind: 'user', id: 'me' },
+}
 const pendingExclusion = {
   id: 'x1',
   pattern: 'pay.acme.io',
   exclusion_type: 'domain',
   status: 'pending',
-  created_by: 'someone',
+  created_by: { kind: 'user', id: 'someone' },
   created_at: '2026-10-07T09:00:00Z',
   reason: 'PCI',
 }
