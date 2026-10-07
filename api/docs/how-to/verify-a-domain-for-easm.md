@@ -16,7 +16,7 @@ with the Attack surface module. Removing a domain needs `scope:delete`.
 
 ## Steps
 
-1. Open **Scoping › Boundaries › Seeds** (`/scope-config?tab=seeds`). Add the
+1. Open **Scoping › Scope › Seeds** (`/scope?tab=seeds`). Add the
    root domain as a seed first if it is not there.
 2. On the seed's row, select **Verify**, then **Start verification**.
 3. Publish the TXT record shown at your DNS provider:

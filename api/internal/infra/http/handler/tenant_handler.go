@@ -2196,6 +2196,71 @@ func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(rs)
 }
 
+// GetEvidenceSettings handles GET /api/v1/organization/settings/evidence.
+// @Summary      Get finding-evidence settings
+// @Description  How long the encrypted secret values masked out of finding evidence are kept (secret_retention_days, default 30). After that the evidence stays readable but its masked values can no longer be revealed.
+// @Tags         Tenants
+// @Produce      json
+// @Success      200     {object}  tenant.EvidenceSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/evidence [get]
+func (h *TenantHandler) GetEvidenceSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	es, err := h.service.GetEvidenceSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionEvidence)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(es)
+}
+
+// UpdateEvidenceSettings handles PUT /api/v1/organization/settings/evidence.
+// @Summary      Update finding-evidence settings
+// @Description  Sets how long revealable secret values of finding evidence are kept (1–365 days; 0 = the default 30). Applies to evidence stored from now on. Audited.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        body    body      tenant.EvidenceSettings  true  "Evidence settings"
+// @Success      200     {object}  tenant.EvidenceSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/evidence [put]
+func (h *TenantHandler) UpdateEvidenceSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var req tenant.EvidenceSettings
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+	es, err := h.service.UpdateEvidenceSettings(settingsWriteCtx(r), tenantID.String(), req, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionEvidence)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(es)
+}
+
 // GetAssetLifecycleSettings handles
 // GET /api/v1/tenants/{tenant}/settings/asset-lifecycle.
 // Returns the zero-value struct when nothing has been configured so

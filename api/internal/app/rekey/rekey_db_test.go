@@ -93,6 +93,17 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		jsonb_build_object('provider', 's3', 'access_key', $2::text, 'secret_key', $3::text))`,
 		tenantID, put("settings.value_json.access_key", "AKIASTORAGE"), put("settings.value_json.secret_key", "storage-secret"))
 
+	// A finding evidence secret (bound plaintext, as the evidence service seals it).
+	assetID, findingID, evidenceID := "55555555-5555-7555-8555-555555555555", "66666666-6666-7666-8666-666666666666", "77777777-7777-7777-8777-777777777777"
+	exec(`INSERT INTO assets (id, tenant_id, name, asset_type, status) VALUES ($1, $2, 'rekey.example.com', 'domain', 'active')`, assetID, tenantID)
+	exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, rule_id, message, severity, fingerprint, status)
+		VALUES ($1::uuid, $2, $3, 'dast', 'nuclei', 'r', 'm', 'high', $1::text, 'confirmed')`, findingID, tenantID, assetID)
+	exec(`INSERT INTO finding_evidence (id, tenant_id, finding_id, origin, kind, content, content_sha256)
+		VALUES ($1, $2, $3, 'detection', 'http_exchange', '{}', 'sha256:x')`, evidenceID, tenantID, findingID)
+	exec(`INSERT INTO finding_evidence_secrets (tenant_id, evidence_id, placeholder, secret_kind, ciphertext, expires_at)
+		VALUES ($1, $2, '«secret:token#1»', 'token', $3, NOW() + interval '1 day')`, tenantID, evidenceID,
+		put("finding_evidence_secrets.ciphertext", "evidence:v1|t|e|p|bearer-token"))
+
 	// Leaked credential, sealed by the production protector.
 	details := map[string]any{credential.DetailSecretValue: "hunter2-leaked", "credential_type": "password"}
 	if err := credential.NewSecretProtector(c, []byte(key)).Seal(details); err != nil {
@@ -155,6 +166,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		"admin_credentials.mfa_secret_encrypted":              `SELECT mfa_secret_encrypted FROM admin_credentials`,
 		"user_mfa.secret_encrypted":                           `SELECT secret_encrypted FROM user_mfa`,
 		"user_mfa.pending_secret_encrypted":                   `SELECT pending_secret_encrypted FROM user_mfa`,
+		"finding_evidence_secrets.ciphertext":                 `SELECT ciphertext FROM finding_evidence_secrets`,
 		"settings.value_json.access_key":                      `SELECT value_json->>'access_key' FROM settings WHERE key = 'storage_config'`,
 		"settings.value_json.secret_key":                      `SELECT value_json->>'secret_key' FROM settings WHERE key = 'storage_config'`,
 		"exposure_events.details.secret_value_enc":            `SELECT details->>'secret_value_enc' FROM exposure_events`,

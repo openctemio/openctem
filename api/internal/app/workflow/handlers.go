@@ -448,23 +448,15 @@ func (h *HTTPRequestHandler) Execute(ctx context.Context, input *ActionInput) (m
 	}
 	defer resp.Body.Close()
 
-	// Read response body with limit
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, h.maxBodySize))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	// Parse response body as JSON if possible
-	var respJSON any
-	if err := json.Unmarshal(respBody, &respJSON); err != nil {
-		respJSON = string(respBody)
-	}
+	// Drain (bounded) so the connection can be reused. The response body
+	// and headers are never kept: the step output is stored with the run
+	// and shown to every reader of the automation, and a response can
+	// carry tokens or data of the remote system.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, h.maxBodySize))
 
 	output := map[string]any{
 		"status_code": resp.StatusCode,
 		"status":      resp.Status,
-		"headers":     resp.Header,
-		"body":        respJSON,
 	}
 
 	// Check for error status codes
