@@ -445,9 +445,12 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   and `covered_by` (new: the caller's scope entry, seed or verified domain
   that covers the name, or null; a null `covered_by` on approval means
   widening, so the UI offers "add scope entry" first).
-- **`GET /api/v1/easm/summary`** (`assets:read`): adds
-  `review.needs_review`, `review.candidate` and `review.by_reason`
-  (`{rule: count}`) for the caller's data scope.
+- **`GET /api/v1/easm/summary`** (`assets:read`): `attribution` already
+  counts `needs_review` and `candidate`; it adds `review_by_reason`
+  (`{rule: count}`) for the caller's data scope. `surface` (by type), `new`
+  and `exposed_services` count inventory members only (§4.4); exposures
+  still count on review assets (a `subdomain_discovered` exposure is what
+  sends a name to review).
 - **`POST /api/v1/easm/candidates/decisions`** (`assets:write`, data-scoped,
   at most 200 assets, audited per asset): `{"asset_ids": […], "state":
   "confirmed"|"rejected"|"dependency"|"monitor_only"|"needs_review", "note":
@@ -459,9 +462,11 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   (as above); `active_checks_allowed` / `active_checks_blocked_by` use the
   same gate, with `blocked_code` (a §6.5 code).
 - **`GET /api/v1/attack-surface/stats`**: every count uses §4.4;
-  `recent_changes[]` items add `attribution_state` (`confirmed`,
-  `needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`, or
-  empty for a legacy asset) and `in_inventory` (bool).
+  `recent_changes[]` items add `asset_id`, `attribution_state`
+  (`confirmed`, `needs_review`, `candidate`, `dependency`, `monitor_only`,
+  `rejected`, or empty for a legacy asset) and `in_inventory` (bool).
+- **`GET /api/v1/dashboard/stats`**: asset totals and breakdowns count
+  inventory members only (§4.4).
 
 ### 6.7 Review by rule
 
