@@ -1631,6 +1631,55 @@ func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRu
 	return b, nil
 }
 
+// StepSensorShares groups a run's step commands by step and by the tenant
+// sensor that holds or ran them, with their states. Tenant-scoped on the
+// commands, the run and the sensor; a platform job is counted as platform
+// without naming the platform sensor; a command nobody holds counts under no
+// sensor.
+func (r *CommandRepository) StepSensorShares(ctx context.Context, tenantID, runID shared.ID) ([]command.StepSensorShare, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT sr.step_key,
+		       CASE WHEN c.is_platform_job THEN NULL ELSE s.id END,
+		       CASE WHEN c.is_platform_job THEN '' ELSE COALESCE(s.name, '') END,
+		       c.is_platform_job,
+		       count(*),
+		       count(*) FILTER (WHERE c.status = 'pending'),
+		       count(*) FILTER (WHERE c.status IN ('acknowledged', 'running')),
+		       count(*) FILTER (WHERE c.status = 'completed'),
+		       count(*) FILTER (WHERE c.status IN ('failed', 'expired', 'canceled'))
+		FROM commands c
+		JOIN step_runs sr ON sr.id = c.step_run_id
+		JOIN pipeline_runs pr ON pr.id = sr.pipeline_run_id AND pr.tenant_id = c.tenant_id
+		LEFT JOIN sensors s ON s.id = c.sensor_id AND s.tenant_id = c.tenant_id
+		WHERE c.tenant_id = $1 AND pr.id = $2
+		GROUP BY 1, 2, 3, 4
+		ORDER BY 1, 3`,
+		tenantID.String(), runID.String())
+	if err != nil {
+		return nil, fmt.Errorf("step sensor shares: %w", err)
+	}
+	defer rows.Close()
+	var out []command.StepSensorShare
+	for rows.Next() {
+		var sh command.StepSensorShare
+		var sensorID sql.NullString
+		if err := rows.Scan(&sh.StepKey, &sensorID, &sh.SensorName, &sh.Platform,
+			&sh.Total, &sh.Queued, &sh.Running, &sh.Completed, &sh.Failed); err != nil {
+			return nil, fmt.Errorf("step sensor shares: %w", err)
+		}
+		if sensorID.Valid {
+			if id, err := shared.IDFromString(sensorID.String); err == nil {
+				sh.SensorID = &id
+			}
+		}
+		out = append(out, sh)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("step sensor shares: %w", err)
+	}
+	return out, nil
+}
+
 // ClaimStepFinalization stamps completed_at on a step run that has none yet.
 // Two batches finishing at the same moment both see "no batch active"; only
 // the one whose UPDATE matches records the outcome.
