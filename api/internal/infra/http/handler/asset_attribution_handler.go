@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"time"
 
+	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -43,6 +46,7 @@ type AssetAttributionHandler struct {
 	assets      ScopedAssetGetter
 	audit       AttributionAuditor
 	activeGate  ActiveScanGate
+	scope       AssetScopeReader
 	effects     *easmapp.DecisionEffects
 	logger      *logger.Logger
 }
@@ -58,6 +62,15 @@ type ActiveScanGate interface {
 
 // SetActiveGate makes active_checks_allowed answer with the gate scans use.
 func (h *AssetAttributionHandler) SetActiveGate(g ActiveScanGate) { h.activeGate = g }
+
+// AssetScopeReader answers whether the organization's scope covers an asset
+// (*easm.ActiveGate).
+type AssetScopeReader interface {
+	ScopeOfAsset(ctx context.Context, tenantID shared.ID, assetID string) (string, *scopeauth.Via, error)
+}
+
+// SetScopeReader fills scope_status and covered_by (RFC-054 §6.6).
+func (h *AssetAttributionHandler) SetScopeReader(s AssetScopeReader) { h.scope = s }
 
 // SetAuditService records decisions in the audit log.
 func (h *AssetAttributionHandler) SetAuditService(a AttributionAuditor) { h.audit = a }
@@ -87,9 +100,18 @@ type AssetAttributionResponse struct {
 	// target nor under a root-domain seed or verified domain, or
 	// out_of_scope: confirmed, but no scope target, seed or verified domain
 	// covers it (confirmation alone does not authorize active checks).
-	ActiveChecksBlockedBy string                     `json:"active_checks_blocked_by,omitempty"`
-	DecidedAt             *time.Time                 `json:"decided_at,omitempty"`
-	Evidence              []AssetAttributionEvidence `json:"evidence"`
+	ActiveChecksBlockedBy string `json:"active_checks_blocked_by,omitempty"`
+	// BlockedCode is the structured refusal code (RFC-054 §6.5) for
+	// active_checks_blocked_by.
+	BlockedCode string `json:"blocked_code,omitempty"`
+	// ScopeStatus: in_scope, out_of_scope, internal (zone-gated) or
+	// not_applicable. CoveredBy is the organization's scope target, seed or
+	// verified domain that covers it (RFC-054 §6.6). Removing the scope entry
+	// keeps the asset and its findings; active checks stop (out_of_scope).
+	ScopeStatus string                     `json:"scope_status,omitempty"`
+	CoveredBy   *scopeauth.Via             `json:"covered_by,omitempty"`
+	DecidedAt   *time.Time                 `json:"decided_at,omitempty"`
+	Evidence    []AssetAttributionEvidence `json:"evidence"`
 }
 
 // AssetAttributionEvidence is one reason.
@@ -167,6 +189,15 @@ func (h *AssetAttributionHandler) applyActiveGate(ctx context.Context, tenantID 
 	resp.ActiveChecksAllowed = !no
 	if no {
 		resp.ActiveChecksBlockedBy = string(state)
+		resp.BlockedCode = scansvc.RefusalCodeForState(state)
+	}
+	if h.scope != nil {
+		status, via, err := h.scope.ScopeOfAsset(ctx, tenantID, assetID)
+		if err != nil {
+			h.logger.Warn("asset scope lookup failed", "error", logger.SanitizeError(err))
+			return
+		}
+		resp.ScopeStatus, resp.CoveredBy = status, via
 	}
 }
 
