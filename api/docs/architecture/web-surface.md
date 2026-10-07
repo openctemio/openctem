@@ -121,7 +121,7 @@ always in the WHERE, for the list and the stats alike.
   capture or a GraphQL introspection result (`pkg/domain/apispec`).
 - Only the declared operations (method, path, parameter names, deprecated) and
   the document's sha256 are stored (`api_specs`, `api_spec_operations`,
-  migration 001233). The document, its examples and a capture's values
+  migration 001273). The document, its examples and a capture's values
   (tokens, cookies, headers) are never stored. No remote `$ref` is fetched;
   YAML alias bombs are refused; operations are capped at 5,000.
 - `GET /api/v1/api-specs/{id}/drift` compares the declaration with the
