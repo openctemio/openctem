@@ -32,6 +32,8 @@ import type {
   BulkDeleteExclusionsInput,
   BulkUpdateTargetsInput,
   BulkOperationResponse,
+  ApiScopeSettings,
+  UpdateScopeSettingsInput,
 } from './scope-api.types'
 
 // ============================================
@@ -73,8 +75,9 @@ function buildTargetsEndpoint(filters?: ScopeTargetFilters): string {
 
   const params = new URLSearchParams()
 
-  if (filters.target_type) params.set('target_type', filters.target_type)
-  if (filters.status) params.set('status', filters.status)
+  // The API reads comma-separated `types` and `statuses`.
+  if (filters.target_type) params.set('types', filters.target_type)
+  if (filters.status) params.set('statuses', filters.status)
   if (filters.search) params.set('search', filters.search)
   if (filters.page) params.set('page', String(filters.page))
   if (filters.per_page) params.set('per_page', String(filters.per_page))
@@ -91,8 +94,8 @@ function buildExclusionsEndpoint(filters?: ScopeExclusionFilters): string {
 
   const params = new URLSearchParams()
 
-  if (filters.exclusion_type) params.set('exclusion_type', filters.exclusion_type)
-  if (filters.status) params.set('status', filters.status)
+  if (filters.exclusion_type) params.set('types', filters.exclusion_type)
+  if (filters.status) params.set('statuses', filters.status)
   if (filters.search) params.set('search', filters.search)
   if (filters.page) params.set('page', String(filters.page))
   if (filters.per_page) params.set('per_page', String(filters.per_page))
@@ -430,6 +433,64 @@ export function useCheckScopeApi() {
       return post<ApiCheckScopeResponse>(url, arg)
     }
   )
+}
+
+// ============================================
+// ENTRY DECISIONS (RFC-054 §6.1)
+//
+// Widening routes (create as an approver, approve, activate, a later expiry
+// or a higher tier) answer 403 STEP_UP_REQUIRED until the session
+// re-authenticated; the shared client opens the re-authentication dialog and
+// retries once, so callers only see the final result.
+// ============================================
+
+/** POST /scope/targets: an entry (approver) or a request (member). */
+export function createScopeTarget(input: CreateScopeTargetInput) {
+  return post<ApiScopeTarget>(`${BASE_URL}/targets`, input)
+}
+
+/** POST /scope/targets/{id}/approve (scope:approve, step-up). */
+export function approveScopeTarget(id: string) {
+  return post<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}/approve`, {})
+}
+
+/** POST /scope/targets/{id}/reject (scope:approve). */
+export function rejectScopeTarget(id: string) {
+  return post<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}/reject`, {})
+}
+
+/** POST /scope/targets/{id}/activate (widening) or /deactivate (narrowing). */
+export function setScopeTargetActive(id: string, active: boolean) {
+  const action = active ? 'activate' : 'deactivate'
+  return post<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}/${action}`, {})
+}
+
+/** PUT /scope/targets/{id} */
+export function updateScopeTarget(id: string, input: UpdateScopeTargetInput) {
+  return put<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}`, input)
+}
+
+// ============================================
+// SETTINGS (RFC-054 §6.3)
+// ============================================
+
+const SETTINGS_URL = `${BASE_URL}/settings`
+
+/** GET /scope/settings (scope:read). */
+export function useScopeSettingsApi(enabled = true, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && enabled ? SETTINGS_URL : null
+  return useSWR<ApiScopeSettings>(key, (url: string) => get<ApiScopeSettings>(url), {
+    ...defaultConfig,
+    // A member without scope:read gets 403; the caller hides what needs it.
+    onError: () => undefined,
+    ...config,
+  })
+}
+
+/** PUT /scope/settings (scope:approve, step-up). */
+export function updateScopeSettings(input: UpdateScopeSettingsInput) {
+  return put<ApiScopeSettings>(SETTINGS_URL, input)
 }
 
 // ============================================
