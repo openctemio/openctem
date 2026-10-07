@@ -251,8 +251,8 @@ export default function ScanWorkflowsPage() {
 
   // Calculate stats
   // Split workflows into tenant-owned and system templates for clearer stats
-  const tenantWorkflows = workflows?.items?.filter((p) => !p.is_system_template) ?? []
-  const systemTemplates = workflows?.items?.filter((p) => p.is_system_template) ?? []
+  const tenantWorkflows = workflows?.data?.filter((p) => !p.is_system_template) ?? []
+  const systemTemplates = workflows?.data?.filter((p) => p.is_system_template) ?? []
 
   // "My Workflows" = only tenant-owned workflows (not system templates)
   const totalWorkflows = tenantWorkflows.length
@@ -269,7 +269,7 @@ export default function ScanWorkflowsPage() {
       ? Math.round((stats.scan_runs.completed / stats.scan_runs.total) * 100)
       : 0
 
-  const allWorkflows = workflows?.items ?? []
+  const allWorkflows = workflows?.data ?? []
   const visibleWorkflows =
     owner === 'mine' ? tenantWorkflows : owner === 'system' ? systemTemplates : allWorkflows
 

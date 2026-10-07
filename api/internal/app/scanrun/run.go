@@ -1399,8 +1399,9 @@ func (s *Service) RunTaskSummaries(ctx context.Context, tenantID string, runs []
 type ListRunsInput struct {
 	TenantID       string `json:"tenant_id" validate:"required,uuid"`
 	ScanWorkflowID string `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScanID         string `json:"scan_id" validate:"omitempty,uuid"`
 	AssetID        string `json:"asset_id" validate:"omitempty,uuid"`
-	Status         string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout"`
+	Status         string `json:"status" validate:"omitempty,oneof=pending running completed partial failed canceled timeout blocked"`
 	// Sort is one sort key, `field` or `-field` (scanrun.RunListSortFields);
 	// an unknown field is a validation error.
 	Sort    string `json:"sort"`
@@ -1425,22 +1426,31 @@ func (s *Service) ListRuns(ctx context.Context, input ListRunsInput) (pagination
 		Sort:     sort,
 	}
 
-	if input.ScanWorkflowID != "" {
-		pid, err := shared.IDFromString(input.ScanWorkflowID)
-		if err == nil {
-			filter.ScanWorkflowID = &pid
+	// A filter id that does not parse is refused: silently dropping it would
+	// answer with every run of the tenant instead of the narrowed list.
+	for _, f := range []struct {
+		name, raw string
+		dst       **shared.ID
+	}{
+		{"scan_workflow_id", input.ScanWorkflowID, &filter.ScanWorkflowID},
+		{"scan_id", input.ScanID, &filter.ScanID},
+		{"asset_id", input.AssetID, &filter.AssetID},
+	} {
+		if f.raw == "" {
+			continue
 		}
-	}
-
-	if input.AssetID != "" {
-		aid, err := shared.IDFromString(input.AssetID)
-		if err == nil {
-			filter.AssetID = &aid
+		id, err := shared.IDFromString(f.raw)
+		if err != nil {
+			return pagination.Result[*scanrun.Run]{}, fmt.Errorf("%w: invalid %s", shared.ErrValidation, f.name)
 		}
+		*f.dst = &id
 	}
 
 	if input.Status != "" {
 		st := scanrun.RunStatus(input.Status)
+		if !st.IsValid() {
+			return pagination.Result[*scanrun.Run]{}, fmt.Errorf("%w: invalid status", shared.ErrValidation)
+		}
 		filter.Status = &st
 	}
 

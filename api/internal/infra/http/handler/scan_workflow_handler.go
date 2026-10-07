@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 
 	"github.com/go-chi/chi/v5"
 
@@ -532,13 +533,17 @@ func (h *ScanWorkflowHandler) ListTemplates(w http.ResponseWriter, r *http.Reque
 		isActive = &active
 	}
 
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := scanrun.ListTemplatesInput{
 		TenantID: tenantID,
 		IsActive: isActive,
 		Tags:     parseQueryArray(r.URL.Query().Get("tags")),
 		Search:   r.URL.Query().Get("search"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:     page.Page,
+		PerPage:  page.PerPage,
 	}
 
 	result, err := h.service.ListTemplates(r.Context(), input)
@@ -547,18 +552,7 @@ func (h *ScanWorkflowHandler) ListTemplates(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	items := make([]*TemplateResponse, len(result.Data))
-	for i, t := range result.Data {
-		items[i] = toTemplateResponse(t)
-	}
-
-	resp := map[string]interface{}{
-		"items":       items,
-		"total":       result.Total,
-		"page":        result.Page,
-		"per_page":    result.PerPage,
-		"total_pages": result.TotalPages,
-	}
+	resp := pagination.Map(result, toTemplateResponse)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -1034,14 +1028,19 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := scanrun.ListRunsInput{
 		TenantID:       tenantID,
 		ScanWorkflowID: r.URL.Query().Get("scan_workflow_id"),
+		ScanID:         r.URL.Query().Get("scan_id"),
 		AssetID:        r.URL.Query().Get("asset_id"),
 		Status:         r.URL.Query().Get("status"),
 		Sort:           r.URL.Query().Get("sort"),
-		Page:           parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:        parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:           page.Page,
+		PerPage:        page.PerPage,
 	}
 
 	result, err := h.service.ListRuns(r.Context(), input)
@@ -1073,12 +1072,12 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp := map[string]interface{}{
-		"items":       items,
-		"total":       result.Total,
-		"page":        result.Page,
-		"per_page":    result.PerPage,
-		"total_pages": result.TotalPages,
+	resp := pagination.Result[*RunResponse]{
+		Data:       items,
+		Total:      result.Total,
+		Page:       result.Page,
+		PerPage:    result.PerPage,
+		TotalPages: result.TotalPages,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
