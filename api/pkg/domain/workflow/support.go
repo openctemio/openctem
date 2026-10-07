@@ -15,10 +15,16 @@ import (
 //   - the assign_team and update_priority actions have no backing service and
 //     fail every time they run;
 //   - the run_script action is disabled (there is no sandbox to run a
-//     tenant-supplied script in), so it fails every time it runs.
+//     tenant-supplied script in), so it fails every time it runs;
 //   - the trigger_pipeline action is refused by design: it ran a scan
 //     workflow outside any scan, with no targets, scope gate or scan history.
-//     An automation runs a saved scan through trigger_scan instead.
+//     An automation runs a saved scan through trigger_scan instead;
+//   - the http_request action is retired: it sends run data to any address,
+//     and its headers (often credentials) are stored in plain node config.
+//     Outbound calls go through a notification integration, whose
+//     credentials are stored encrypted. Like every type here, a stored
+//     http_request node no longer runs (its step fails) and its header
+//     values are never returned by the API.
 //
 // They stay in the enum so stored workflows that use them still load, read
 // and render. New writes are refused: creating a workflow, replacing its
@@ -42,7 +48,8 @@ func (t TriggerType) IsSupported() bool {
 // IsSupported reports whether the platform actually executes this action type.
 func (t ActionType) IsSupported() bool {
 	switch t {
-	case ActionTypeAssignTeam, ActionTypeUpdatePriority, ActionTypeRunScript, ActionTypeTriggerPipeline:
+	case ActionTypeAssignTeam, ActionTypeUpdatePriority, ActionTypeRunScript, ActionTypeTriggerPipeline,
+		ActionTypeHTTPRequest:
 		return false
 	}
 	return true

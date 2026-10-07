@@ -148,10 +148,17 @@ type EdgeResponse struct {
 
 // --- Run Request/Response Types ---
 
-// TriggerWorkflowRequest represents the request body for triggering a workflow run.
+// TriggerWorkflowRequest represents the request body for starting a workflow
+// run by hand. The run acts as the caller, on at most one subject named by id
+// (finding_id or asset_id); its data is built from the stored entity. Only
+// the manual trigger type is accepted, and trigger_data is refused: a caller
+// must not be able to make an automation act on an entity by forging the
+// event that names it.
 type TriggerWorkflowRequest struct {
-	TriggerType string         `json:"trigger_type" validate:"omitempty,oneof=manual finding_created finding_updated asset_discovered scan_completed webhook"`
+	TriggerType string         `json:"trigger_type" validate:"omitempty,oneof=manual"`
 	TriggerData map[string]any `json:"trigger_data"`
+	FindingID   string         `json:"finding_id" validate:"omitempty,uuid"`
+	AssetID     string         `json:"asset_id" validate:"omitempty,uuid"`
 }
 
 // WorkflowRunResponse represents the response for a workflow run.
@@ -389,6 +396,12 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 
 	userUUID, _ := shared.IDFromString(userID)
 
+	// Switching a workflow on makes its steps run (as the caller, who
+	// becomes its owner): it needs the permission of every step.
+	if req.IsActive != nil && *req.IsActive && !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
+		return
+	}
+
 	input := workflowsvc.UpdateWorkflowInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
@@ -571,8 +584,8 @@ func (h *WorkflowHandler) AddNode(w http.ResponseWriter, r *http.Request) {
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	// AuthZ: gate action nodes by their underlying mutation's permission.
-	if !h.requireActionPermissions(w, r, req.Config) {
+	// AuthZ: the new node and every step already in the workflow.
+	if !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID, req.Config) {
 		return
 	}
 
@@ -650,8 +663,11 @@ func (h *WorkflowHandler) UpdateNode(w http.ResponseWriter, r *http.Request) {
 
 	userUUID, _ := shared.IDFromString(userID)
 
-	// AuthZ: gate action nodes by their underlying mutation's permission.
-	if !h.requireActionPermissions(w, r, req.Config) {
+	// AuthZ: a config edit needs the edited config's permission and that of
+	// every step already in the workflow (a trigger or condition edit
+	// changes what those steps run on). A name or position edit changes
+	// nothing that runs.
+	if req.Config != nil && !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID, req.Config) {
 		return
 	}
 
@@ -706,7 +722,14 @@ func (h *WorkflowHandler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteNode(r.Context(), tenantUUID, workflowUUID, nodeUUID); err != nil {
+	// AuthZ: deleting a node (a condition in front of an action) changes
+	// what the remaining steps run on.
+	if !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
+		return
+	}
+
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	if err := h.service.DeleteNode(r.Context(), tenantUUID, userUUID, workflowUUID, nodeUUID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -746,6 +769,12 @@ func (h *WorkflowHandler) AddEdge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userUUID, _ := shared.IDFromString(userID)
+
+	// AuthZ: rewiring changes what the steps run on, so it needs the
+	// permission of every step, like editing a node.
+	if !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
+		return
+	}
 
 	input := workflowsvc.AddEdgeInput{
 		TenantID:      tenantUUID,
@@ -792,7 +821,14 @@ func (h *WorkflowHandler) DeleteEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteEdge(r.Context(), tenantUUID, workflowUUID, edgeUUID); err != nil {
+	// AuthZ: removing an edge (the one through a condition) changes what
+	// the steps run on.
+	if !h.requireWorkflowPermissions(w, r, tenantUUID, workflowUUID) {
+		return
+	}
+
+	userUUID, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	if err := h.service.DeleteEdge(r.Context(), tenantUUID, userUUID, workflowUUID, edgeUUID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -831,22 +867,40 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	userUUID, _ := shared.IDFromString(userID)
-
-	triggerType := workflow.TriggerTypeManual
-	if req.TriggerType != "" {
-		triggerType = workflow.TriggerType(req.TriggerType)
+	if len(req.TriggerData) > 0 {
+		apierror.BadRequest("trigger_data is not accepted; name the subject with finding_id or asset_id").WriteJSON(w)
+		return
 	}
 
-	input := workflowsvc.TriggerWorkflowInput{
-		TenantID:    tenantUUID,
-		UserID:      userUUID,
-		WorkflowID:  workflowUUID,
-		TriggerType: triggerType,
-		TriggerData: req.TriggerData,
+	userUUID, err := shared.IDFromString(userID)
+	if err != nil {
+		apierror.Forbidden("a manual run acts as the person who starts it").WriteJSON(w)
+		return
 	}
 
-	run, err := h.service.TriggerWorkflow(r.Context(), input)
+	input := workflowsvc.ManualRunInput{
+		TenantID:   tenantUUID,
+		UserID:     userUUID,
+		WorkflowID: workflowUUID,
+	}
+	if req.FindingID != "" {
+		id, err := shared.IDFromString(req.FindingID)
+		if err != nil {
+			apierror.BadRequest("Invalid finding ID").WriteJSON(w)
+			return
+		}
+		input.FindingID = &id
+	}
+	if req.AssetID != "" {
+		id, err := shared.IDFromString(req.AssetID)
+		if err != nil {
+			apierror.BadRequest("Invalid asset ID").WriteJSON(w)
+			return
+		}
+		input.AssetID = &id
+	}
+
+	run, err := h.service.TriggerManualRun(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1047,12 +1101,39 @@ func toNodeResponse(n *workflow.Node) *NodeResponse {
 			TriggerConfig:      n.Config.TriggerConfig,
 			ConditionExpr:      n.Config.ConditionExpr,
 			ActionType:         string(n.Config.ActionType),
-			ActionConfig:       n.Config.ActionConfig,
+			ActionConfig:       redactActionConfig(n.Config.ActionType, n.Config.ActionConfig),
 			NotificationType:   string(n.Config.NotificationType),
 			NotificationConfig: n.Config.NotificationConfig,
 		},
 		CreatedAt: n.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
+}
+
+// redactedValue replaces a secret in a response.
+const redactedValue = "[redacted]"
+
+// redactActionConfig hides the header values of a stored http_request node
+// (they are often credentials). The action is refused for new nodes; a
+// stored one keeps its headers only to keep running, and no reader of the
+// workflow sees them.
+func redactActionConfig(t workflow.ActionType, cfg map[string]any) map[string]any {
+	if t != workflow.ActionTypeHTTPRequest || cfg == nil {
+		return cfg
+	}
+	hdrs, ok := cfg["headers"].(map[string]any)
+	if !ok || len(hdrs) == 0 {
+		return cfg
+	}
+	out := make(map[string]any, len(cfg))
+	for k, v := range cfg {
+		out[k] = v
+	}
+	masked := make(map[string]any, len(hdrs))
+	for k := range hdrs {
+		masked[k] = redactedValue
+	}
+	out["headers"] = masked
+	return out
 }
 
 func toEdgeResponse(e *workflow.Edge) *EdgeResponse {
@@ -1155,6 +1236,13 @@ func (h *WorkflowHandler) handleValidationError(w http.ResponseWriter, err error
 func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code == workflowsvc.ErrCodeRunNotAuthorized {
+			// A run subject outside the caller's data scope: the same
+			// answer as one that does not exist.
+			apierror.New(http.StatusNotFound, apierror.Code(de.Code), de.Message).WriteJSON(w)
+			return
+		}
 		apierror.NotFound("Workflow").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
 		apierror.Conflict("Workflow already exists").WriteJSON(w)
@@ -1170,6 +1258,11 @@ func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Code == workflowsvc.ErrCodeRunNotAuthorized {
+			apierror.Forbidden(de.Message).WriteJSON(w)
+			return
+		}
 		apierror.Forbidden("").WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)
