@@ -30,7 +30,6 @@ type Service struct {
 	stepUp   shared.RecentAuthGate
 	// guardrails are the platform's scope guardrails (nil: the defaults).
 	guardrails *scopedom.Guardrails
-
 	// Coverage of the inventory (GetStats): counted in SQL over the
 	// caller's data scope.
 	coverage  CoverageCounter

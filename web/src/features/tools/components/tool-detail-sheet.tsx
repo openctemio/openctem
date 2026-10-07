@@ -43,7 +43,7 @@ import { INSTALL_METHOD_DISPLAY_NAMES } from '@/lib/api/tool-types'
 import { getCategoryNameById, getCategoryDisplayNameById } from '@/lib/api/tool-category-hooks'
 import { CapabilityBadge } from '@/components/capability-badge'
 import { ToolCategoryIcon, getCategoryBadgeColor } from './tool-category-icon'
-import { ToolSensorList, ToolStatusBadge } from './tool-availability'
+import { ToolSensorList, ToolStatusBadge, ToolTrustBadge } from './tool-availability'
 import {
   sensorsLabel,
   toolDisplayName,
@@ -213,6 +213,7 @@ export function ToolDetailSheet({
           badges={
             <>
               <ToolStatusBadge item={item} />
+              <ToolTrustBadge item={item} />
               {tool?.is_builtin && (
                 <Badge variant="outline" className="text-xs">
                   Built-in
