@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
@@ -132,7 +133,7 @@ func TestLoopGuard_ScanCompletedFromItsOwnScan(t *testing.T) {
 	d := newTestDispatcher(repo, rec)
 
 	own := AutomationCause{RunID: shared.NewID(), WorkflowID: wf.ID, ChainDepth: 1}
-	run := &pipeline.Run{ID: shared.NewID(), TenantID: tenant, PipelineID: shared.NewID(), Status: pipeline.RunStatusCompleted,
+	run := &scanrun.Run{ID: shared.NewID(), TenantID: tenant, ScanWorkflowID: shared.NewID(), Status: scanrun.RunStatusCompleted,
 		Context: runContextWithCause(WithAutomationCause(context.Background(), own), map[string]any{"targets": []any{"a"}})}
 	if n := d.dispatchScanCompleted(context.Background(), run); n != 0 {
 		t.Fatalf("its own scan's completion started %d runs, want 0", n)

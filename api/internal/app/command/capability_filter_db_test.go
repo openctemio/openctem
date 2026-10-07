@@ -34,7 +34,7 @@ func TestGetPendingForSensor_CapabilityFilter(t *testing.T) {
 	// An unscoped command: any sensor may claim it.
 	plainCmd := mustCreateCommand(ctx, t, repo, tenantID,
 		commanddom.CommandTypeScan,
-		map[string]any{"pipeline_run_id": shared.NewID().String()})
+		map[string]any{"scan_run_id": shared.NewID().String()})
 
 	sensorID := shared.NewID()
 

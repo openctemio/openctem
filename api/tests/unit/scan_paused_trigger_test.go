@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -53,11 +54,11 @@ func TestPausedScan_RunByHandButNotAutomatically(t *testing.T) {
 }
 
 func TestLastRun_Progress(t *testing.T) {
-	run := &pipeline.Run{TotalSteps: 4, CompletedSteps: 1}
+	run := &scanrun.Run{TotalSteps: 4, CompletedSteps: 1}
 	if got := (scanservice.LastRun{Run: run}).Progress(); got != 25 {
 		t.Errorf("steps progress = %d, want 25", got)
 	}
-	tasks := &pipeline.TaskSummary{Total: 8, Completed: 3, Failed: 1, Running: 4}
+	tasks := &scanrun.TaskSummary{Total: 8, Completed: 3, Failed: 1, Running: 4}
 	if got := (scanservice.LastRun{Run: run, Tasks: tasks}).Progress(); got != 50 {
 		t.Errorf("task progress = %d, want 50 (tasks win over steps)", got)
 	}

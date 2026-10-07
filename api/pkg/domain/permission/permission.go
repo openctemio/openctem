@@ -173,7 +173,7 @@ const (
 
 	// CI runs, CI trust configurations and the CI gate (scans:ci:*,
 	// RFC-051). Write (trust configurations issue upload credentials, gate
-	// policies decide what blocks a pipeline) and override (break-glass) are
+	// policies decide what blocks a scan workflow) and override (break-glass) are
 	// admin-only.
 	CIRead     Permission = "scans:ci:read"
 	CIWrite    Permission = "scans:ci:write"
@@ -276,11 +276,10 @@ const (
 	APIKeysWrite  Permission = "integrations:api_keys:write"
 	APIKeysDelete Permission = "integrations:api_keys:delete"
 
-	// Pipeline permissions (integrations:pipelines:*)
-	PipelinesRead    Permission = "integrations:pipelines:read"
-	PipelinesWrite   Permission = "integrations:pipelines:write"
-	PipelinesDelete  Permission = "integrations:pipelines:delete"
-	PipelinesExecute Permission = "integrations:pipelines:execute"
+	// Scan workflow permissions (scans:workflows:*): the graph of steps a Scan runs
+	ScanWorkflowsRead   Permission = "scans:workflows:read"
+	ScanWorkflowsWrite  Permission = "scans:workflows:write"
+	ScanWorkflowsDelete Permission = "scans:workflows:delete"
 )
 
 // =============================================================================
@@ -465,7 +464,7 @@ func AllPermissions() []Permission {
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
-		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
+		ScanWorkflowsRead, ScanWorkflowsWrite, ScanWorkflowsDelete,
 
 		// Settings module
 		SLARead, SLAWrite, SLADelete,

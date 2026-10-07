@@ -6,7 +6,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -30,10 +32,10 @@ func seedCounterScan(ctx context.Context, t *testing.T, db *sql.DB) (tenantID, s
 	return tenantID, scanID
 }
 
-func seedCounterRun(ctx context.Context, t *testing.T, repo *PipelineRunRepository, tenantID, scanID shared.ID) *pipeline.Run {
+func seedCounterRun(ctx context.Context, t *testing.T, repo *ScanRunRepository, tenantID, scanID shared.ID) *scanrun.Run {
 	t.Helper()
 	tpl, _ := shared.IDFromString(quickScanTemplate)
-	run, err := pipeline.NewRun(tpl, tenantID, nil, pipeline.TriggerTypeManual, "", map[string]any{})
+	run, err := scanrun.NewRun(tpl, tenantID, nil, scanworkflow.TriggerTypeManual, "", map[string]any{})
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
@@ -60,37 +62,37 @@ func readCounters(ctx context.Context, t *testing.T, db *sql.DB, scanID shared.I
 func TestUpdateStatus_TerminalRunIsFinal(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
-	runs := NewPipelineRunRepository(&DB{DB: db})
+	runs := NewScanRunRepository(&DB{DB: db})
 	tenantID, scanID := seedCounterScan(ctx, t, db)
 	run := seedCounterRun(ctx, t, runs, tenantID, scanID)
 
-	if err := runs.UpdateStatus(ctx, run.ID, pipeline.RunStatusCompleted, ""); err != nil {
+	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusCompleted, ""); err != nil {
 		t.Fatalf("first terminal transition: %v", err)
 	}
 	// A cancel (or a second parallel final step) arriving afterwards.
-	err := runs.UpdateStatus(ctx, run.ID, pipeline.RunStatusCanceled, "Canceled by user")
-	if !errors.Is(err, pipeline.ErrRunAlreadyFinished) {
+	err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusCanceled, "Canceled by user")
+	if !errors.Is(err, scanrun.ErrRunAlreadyFinished) {
 		t.Fatalf("second terminal transition: err=%v, want ErrRunAlreadyFinished", err)
 	}
 	got, err := runs.GetByID(ctx, run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != pipeline.RunStatusCompleted {
+	if got.Status != scanrun.RunStatusCompleted {
 		t.Fatalf("status=%s, want completed to stay", got.Status)
 	}
 
 	// A stale full-row write (the copy read before completion) must not reopen it.
-	run.Status = pipeline.RunStatusRunning
-	if err := runs.Update(ctx, run); !errors.Is(err, pipeline.ErrRunAlreadyFinished) {
+	run.Status = scanrun.RunStatusRunning
+	if err := runs.Update(ctx, run); !errors.Is(err, scanrun.ErrRunAlreadyFinished) {
 		t.Fatalf("stale Update: err=%v, want ErrRunAlreadyFinished", err)
 	}
 	got, _ = runs.GetByID(ctx, run.ID)
-	if got.Status != pipeline.RunStatusCompleted {
+	if got.Status != scanrun.RunStatusCompleted {
 		t.Fatalf("status after stale Update=%s, want completed", got.Status)
 	}
 
-	if err := runs.UpdateStatus(ctx, shared.NewID(), pipeline.RunStatusFailed, ""); !errors.Is(err, shared.ErrNotFound) {
+	if err := runs.UpdateStatus(ctx, shared.NewID(), scanrun.RunStatusFailed, ""); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("missing run: err=%v, want ErrNotFound", err)
 	}
 }

@@ -64,7 +64,7 @@ func (v *TriageOutputValidator) ValidateAndSanitize(content string) (*aitriagedo
 	// into emitting an out-of-set severity (e.g. "informational" via a
 	// jailbreak). The previous behaviour silently coerced to "medium"
 	// — that hid the manipulation. We still default to medium so the
-	// existing pipeline keeps moving, but flag a ValidationWarning so
+	// existing scan workflow keeps moving, but flag a ValidationWarning so
 	// downstream logic can refuse to auto-apply this triage to the
 	// finding's persisted severity until a human reviews it.
 	if severity, ok := raw["severity_assessment"].(string); ok {

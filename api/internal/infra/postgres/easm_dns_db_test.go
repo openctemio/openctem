@@ -175,9 +175,11 @@ func TestEASMDNSRepository_EmailNameTargets(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Discovery roots are permanent domain entries with discovery on
+	// (research/53 SC1; seeds folded into entries).
 	seed := func(tn shared.ID, v string, on bool) {
-		exec(`INSERT INTO easm_seeds (id, tenant_id, kind, value, discovery_enabled) VALUES ($1, $2, 'root_domain', $3, $4)`,
-			shared.NewID().String(), tn.String(), v, on)
+		exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status, discovery) VALUES ($1, 'domain', $2, 'active', $3)`,
+			tn.String(), "*."+v, on)
 	}
 	seed(tenant, "seeded.example", true)
 	seed(tenant, "paused.example", false)

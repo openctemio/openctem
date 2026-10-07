@@ -18,7 +18,7 @@ func TestScanLoop_StartedCommandMarksTheStepRunning(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newPipelineService(db)
+	pipeSvc := newScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -45,7 +45,7 @@ func TestScanLoop_StartedCommandMarksTheStepRunning(t *testing.T) {
 	step := func() (status string, started sql.NullTime, sensor sql.NullString) {
 		t.Helper()
 		if err := db.QueryRowContext(ctx,
-			`SELECT status, started_at, sensor_id FROM step_runs WHERE pipeline_run_id = $1 AND step_key = $2`,
+			`SELECT status, started_at, sensor_id FROM scan_run_steps WHERE scan_run_id = $1 AND step_key = $2`,
 			run.ID.String(), p.StepKey).Scan(&status, &started, &sensor); err != nil {
 			t.Fatalf("read step run: %v", err)
 		}
@@ -56,7 +56,7 @@ func TestScanLoop_StartedCommandMarksTheStepRunning(t *testing.T) {
 		t.Fatalf("precondition: the step run is %q (started_at set: %v) before any sensor started it", status, started.Valid)
 	}
 
-	if err := pipeSvc.OnStepStarted(ctx, p.PipelineRunID, p.StepKey, sensorID, shared.MustIDFromString(commandID)); err != nil {
+	if err := pipeSvc.OnStepStarted(ctx, p.ScanRunID, p.StepKey, sensorID, shared.MustIDFromString(commandID)); err != nil {
 		t.Fatalf("OnStepStarted: %v", err)
 	}
 	status, started, sensor := step()
@@ -65,11 +65,11 @@ func TestScanLoop_StartedCommandMarksTheStepRunning(t *testing.T) {
 			status, started.Valid, sensor.String, sensorID)
 	}
 
-	if err := pipeSvc.OnStepCompleted(ctx, p.PipelineRunID, p.StepKey, 0, nil); err != nil {
+	if err := pipeSvc.OnStepCompleted(ctx, p.ScanRunID, p.StepKey, 0, nil); err != nil {
 		t.Fatalf("OnStepCompleted: %v", err)
 	}
 	// A start replayed after the result must not reopen the step.
-	if err := pipeSvc.OnStepStarted(ctx, p.PipelineRunID, p.StepKey, sensorID, shared.MustIDFromString(commandID)); err != nil {
+	if err := pipeSvc.OnStepStarted(ctx, p.ScanRunID, p.StepKey, sensorID, shared.MustIDFromString(commandID)); err != nil {
 		t.Fatalf("late OnStepStarted: %v", err)
 	}
 	status, after, _ := step()

@@ -70,7 +70,7 @@ var sensorRenameProbes = []upgradeProbe{
 		     + (SELECT count(*) FROM notification_preferences
 		        WHERE jsonb_typeof(muted_types) = 'array' AND muted_types ?| ARRAY['agent.offline', 'agent.error'])`},
 	{area: "data", what: "pipeline templates with settings.agent_preference", query: `
-		SELECT count(*) FROM pipeline_templates WHERE settings ? 'agent_preference'`},
+		SELECT count(*) FROM scan_workflows WHERE settings ? 'agent_preference'`},
 	{area: "data", what: "Tenable integrations with execution_mode 'agent' or an agent_id pin", query: `
 		SELECT count(*) FROM integrations
 		WHERE provider = 'tenable' AND (config ->> 'execution_mode' = 'agent' OR config ? 'agent_id')`},

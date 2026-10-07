@@ -8,7 +8,7 @@
 
 ```mermaid
 graph TD
-  subgraph CI["CI job (GitHub Actions / GitLab CI)"]
+  subgraph CI["CI job (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket, CircleCI, Jenkins)"]
     R["sensor, runner mode<br/>sdk-go sensorkit.CIRun"]
     P["CI provider OIDC token"]
     P --> R
@@ -35,6 +35,8 @@ graph TD
 | Piece | Where |
 |---|---|
 | Domain: trust rules, claims parsing, run, gate evaluation | `pkg/domain/cirun` |
+| Per-provider issuers, audiences and claim mapping (RFC-051 section 3.1) | `pkg/domain/cirun/providers.go` |
+| Trust preview (sample token against a draft) | `internal/app/cirun/preview.go` |
 | Workload token verification | `pkg/oidc/workload.go` |
 | Service: exchange, continuation, upload scoping, policy resolution, evaluate, administration | `internal/app/cirun` |
 | Ingest entry point and the `ci_run` binding | `internal/app/ingest/ci_run.go`, `binding.go` |
@@ -55,6 +57,7 @@ graph TD
 | Route | Chain |
 |---|---|
 | `POST /api/v1/ci/oidc/exchange` | per-IP token-exchange limit (60/min, shared store) → handler (32 KB body, unknown fields refused) |
+| `POST /api/v1/ci/trust-configs/preview` | session tenant chain → `scans` module → `scans:ci:write` → per-person limit (10/min) |
 | `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
 
@@ -85,7 +88,14 @@ findings per run.
   cascade; the job id; expiry), one per job exchange; it keeps none in
   `ci_runs.token_hash`. Token lookup reads `ci_runs.token_hash` first, then
   `ci_run_tokens`.
-- `ci_oidc_replay`: `(issuer, jti)`, global.
+- `ci_oidc_replay`: `(issuer, jti)`, global. A provider that sends no `jti`
+  (Bitbucket, CircleCI, Jenkins) is recorded under `sha256:<token hash>`.
+- `ci_runs.commit_verified` (migration `001261`): false when the provider
+  signs no commit and the run's commit is the job's report; such a commit
+  never matches a break-glass.
+- Providers: `github`, `gitlab`, `azure_devops`, `bitbucket`, `circleci`,
+  `jenkins` (the `ci_trust_configs` and `ci_pipelines` CHECKs, migration
+  `001261`).
 - `ci_gate_policies`: one per scope. A repository policy names
   `repository_asset_id`, a business-unit policy `business_unit_id`, each a
   composite FK (cascade); the repository's policy follows it on asset merge
@@ -99,7 +109,7 @@ findings per run.
   (cascade; moved by asset merge). Holds the run summary the status is
   computed from (last run, fork run, default-branch and pull request
   verdicts, scanner failures, runner version, tools, median and schedule
-  intervals, revocation, retirement). `ci_runs.pipeline_id` (composite FK)
+  intervals, revocation, retirement). `ci_runs.scan_workflow_id` (composite FK)
   links each run.
 - `ci_coverage_expectations`: one per `(tenant, repository asset)`, composite
   FK to the asset (cascade; moved by asset merge); the expected capabilities
@@ -138,7 +148,7 @@ touches a finding it cannot attribute to a run).
   will reference a CI run as one possible source.
 - A definition is `<x>`, its executions `<x>_runs` (`ci_pipelines`,
   `ci_runs`). A CI run is not a scan run: it is never dispatched, has its own
-  credential and its own verdict, and lives in `ci_runs`, not `pipeline_runs`.
+  credential and its own verdict, and lives in `ci_runs`, not `scan_runs`.
 
 ### Exchange and pipeline flow
 
@@ -152,7 +162,7 @@ sequenceDiagram
   S->>S: PipelineKeyFromClaims (repository id + workflow path)
   S->>DB: claim jti
   S->>DB: UpsertPipeline (advisory lock per tenant, caps, legacy adoption)
-  S->>DB: CreateRun (pipeline_id, runner version)
+  S->>DB: CreateRun (scan_workflow_id, runner version)
   S->>DB: RefreshPipeline (summary from runs; fork runs excluded)
   S-->>J: run + octci_ token
 ```
@@ -174,7 +184,11 @@ sequenceDiagram
   out of exposure views until a counting branch sees it
   (`branch-only-findings.md`).
 - Neither the CI provider's token nor the run token is logged, stored (only the
-  run token's SHA-256) or audited.
+  run token's SHA-256) or audited. The trust preview stores nothing and
+  records no token id.
+- A trust configuration is read only for the tenant the exchange names, by
+  its exact issuer, and a token is read with that configuration's provider
+  mapping only.
 - Coverage lists only repositories in the caller's data scope; marking a
   repository or retiring a pipeline out of scope is a 404. The alert job lists
   tenants once and every later query is tenant-scoped.

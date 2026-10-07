@@ -147,7 +147,7 @@ func registerTenantRoutes(
 		// (VM, ASM, Pentest, SBOM, Compliance, CTEM Full, …).
 		// List endpoint serves the static catalog; preview is a
 		// dry-run diff; apply writes the diff through the normal
-		// UpdateTenantModules pipeline (validation + audit reuse).
+		// UpdateTenantModules scan workflow (validation + audit reuse).
 		r.GET("/settings/modules/presets", h.ListModulePresets, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
 		r.POST("/settings/modules/presets/{presetId}/preview", h.PreviewModulePreset, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.POST("/settings/modules/presets/{presetId}/apply", h.ApplyModulePreset, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))

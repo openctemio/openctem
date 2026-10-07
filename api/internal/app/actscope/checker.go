@@ -5,9 +5,8 @@
 //     can act on that asset (datascope.Enforcer.CanActOnAssets).
 //   - A free-text target that is not an inventory asset may be scanned only by
 //     an unrestricted actor, and only when the tenant's scope authority covers
-//     it: an active scope target, or a name at or under a root-domain seed or
-//     verified domain (scopeauth, the same answer the ownership gate gives an
-//     inventory asset; RFC-054 §4.2). Exclusions are applied by the dispatch
+//     it: an active scope entry (scopeauth, the same answer the ownership
+//     gate gives an inventory asset; RFC-054 §4.2). Exclusions are applied by the dispatch
 //     gate on top of this.
 //   - A restricted actor may scan only inventory assets in their data scope.
 //
@@ -70,7 +69,7 @@ func (d *Decision) Refused() bool {
 const (
 	ReasonOutOfDataScope = "the asset is outside your data scope"
 	ReasonNotAnAsset     = "not an asset in your data scope; restricted members may scan only their assets"
-	ReasonNoScopeTarget  = "no scope target, seed or verified domain covers it; add it to Scoping before scanning it"
+	ReasonNoScopeTarget  = "no scope entry covers it; add it to Scoping before scanning it"
 )
 
 // Checker implements the act-scope rule.

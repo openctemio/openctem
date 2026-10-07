@@ -33,14 +33,6 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
     destination: '/settings/authentication',
     permanent: true,
   },
-  // Domain verification for attack-surface management lives on each seed in
-  // Scoping > Scope > Seeds; domains for SSO sign-in stay with the
-  // platform administrator.
-  {
-    source: '/settings/integrations/verified-domains',
-    destination: '/scope?tab=seeds',
-    permanent: true,
-  },
   // Personal notification settings moved to the user's own area.
   { source: '/settings/notifications', destination: '/account/notifications', permanent: true },
   // Access group: identity and machine access, out of Integrations.

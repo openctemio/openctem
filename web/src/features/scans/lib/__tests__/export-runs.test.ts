@@ -2,12 +2,12 @@ import { describe, it, expect, vi } from 'vitest'
 
 import { buildCsv } from '@/hooks/use-csv-export'
 import { RUN_EXPORT_FIELDS, fetchRunsForExport } from '../export-runs'
-import type { PipelineRun } from '@/lib/api/pipeline-types'
+import type { ScanRun } from '@/lib/api/scan-workflow-types'
 
-const run = (i: number, over: Partial<PipelineRun> = {}): PipelineRun => ({
+const run = (i: number, over: Partial<ScanRun> = {}): ScanRun => ({
   id: `r${i}`,
   tenant_id: 't',
-  pipeline_id: 'p',
+  scan_workflow_id: 'p',
   scan_id: 's1',
   scan_name: 'Nightly recon',
   trigger_type: 'manual',
@@ -50,7 +50,7 @@ describe('fetchRunsForExport', () => {
     expect(out.capped).toBe(false)
     expect(fetchPage).toHaveBeenCalledTimes(3)
     for (const [url] of fetchPage.mock.calls) {
-      expect(url.startsWith('/api/v1/pipeline-runs?')).toBe(true)
+      expect(url.startsWith('/api/v1/scan-runs?')).toBe(true)
       const q = new URL(url, 'http://x').searchParams
       expect(q.get('status')).toBe('failed')
       expect(q.get('sort')).toBe('-total_findings')
@@ -85,11 +85,9 @@ describe('run export cells', () => {
     expect(header.split(',')).toHaveLength(RUN_EXPORT_FIELDS.length)
   })
 
-  it('names deleted scans and pipeline runs', () => {
+  it('names deleted scans and workflow runs', () => {
     const scanCol = RUN_EXPORT_FIELDS.find((f) => f.header === 'Scan')!
     expect(scanCol.accessor(run(1, { scan_name: undefined }))).toBe('Deleted scan')
-    expect(scanCol.accessor(run(1, { scan_id: undefined, scan_name: undefined }))).toBe(
-      'Pipeline run'
-    )
+    expect(scanCol.accessor(run(1, { scan_id: undefined, scan_name: undefined }))).toBe('Scan run')
   })
 })

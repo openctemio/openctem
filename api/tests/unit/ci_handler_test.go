@@ -111,7 +111,7 @@ func (m *ciMockScanRepository) ListByAssetGroupID(_ context.Context, _ shared.ID
 	return nil, nil
 }
 
-func (m *ciMockScanRepository) ListByPipelineID(_ context.Context, _ shared.ID) ([]*scan.Scan, error) {
+func (m *ciMockScanRepository) ListByScanWorkflowID(_ context.Context, _ shared.ID) ([]*scan.Scan, error) {
 	return nil, nil
 }
 

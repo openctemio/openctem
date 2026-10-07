@@ -71,7 +71,7 @@ describe('lastRunReason', () => {
 
 describe('scanTypeLabel', () => {
   it("shows the workflow's name, not 'Single Scan' on every row", () => {
-    expect(scanTypeLabel({ scan_type: 'workflow', pipeline_name: 'External recon' })).toEqual({
+    expect(scanTypeLabel({ scan_type: 'workflow', scan_workflow_name: 'External recon' })).toEqual({
       label: 'External recon',
       kind: 'workflow',
     })

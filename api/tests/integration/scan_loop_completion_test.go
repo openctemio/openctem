@@ -7,12 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	_ "github.com/lib/pq"
 
-	pipelinesvc "github.com/openctemio/openctem/api/internal/app/pipeline"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	pipelinedom "github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -22,7 +23,7 @@ import (
 // trigger produces a run, a step run, and a command carrying the routing keys.
 // Nothing covered what happens when that command comes back — which is precisely
 // where the defect lived. The dispatcher wrote `run_id`, the reader wanted
-// `pipeline_run_id`, and so every finished command was discarded in silence: the
+// `scan_run_id`, and so every finished command was discarded in silence: the
 // run was never advanced, never completed, never failed, and no error was raised
 // anywhere. Seven runs over the product's history, none completed.
 //
@@ -34,18 +35,18 @@ import (
 //
 // Deliberately driven through pipelinesvc rather than an HTTP request: the
 // handler's own job (decode, check routable, dispatch) is pinned by
-// TestStepCommandPayloadKeysMatchHandlerContract in pkg/domain/pipeline. Between
+// TestStepCommandPayloadKeysMatchHandlerContract in pkg/domain/scan workflow. Between
 // the two, every link from dispatch to terminal state is covered without standing
 // up a server.
 
-// newPipelineService builds the pipeline service with the real repositories.
+// newScanRunService builds the scan run service with the real repositories.
 // sensorRepo and securityValidator are unused on the completion path.
-func newPipelineService(db *sql.DB) *pipelinesvc.Service {
+func newScanRunService(db *sql.DB) *scanrun.Service {
 	pg := &postgres.DB{DB: db}
-	return pipelinesvc.NewService(
-		postgres.NewPipelineTemplateRepository(pg),
-		postgres.NewPipelineStepRepository(pg),
-		postgres.NewPipelineRunRepository(pg),
+	return scanrun.NewService(
+		postgres.NewScanWorkflowRepository(pg),
+		postgres.NewScanWorkflowStepRepository(pg),
+		postgres.NewScanRunRepository(pg),
 		postgres.NewStepRunRepository(pg),
 		nil, // sensorRepo
 		postgres.NewCommandRepository(pg),
@@ -58,7 +59,7 @@ func newPipelineService(db *sql.DB) *pipelinesvc.Service {
 // handler does — through the shared contract type — and fails the test if it is
 // not routable. Decoding here rather than reading columns is the point: if the
 // dispatcher stops emitting the keys, this is where it shows.
-func routingFromCommand(ctx context.Context, t *testing.T, db *sql.DB, tenantID string) pipelinedom.StepCommandPayload {
+func routingFromCommand(ctx context.Context, t *testing.T, db *sql.DB, tenantID string) scanrundom.StepCommandPayload {
 	t.Helper()
 
 	var raw []byte
@@ -68,14 +69,14 @@ func routingFromCommand(ctx context.Context, t *testing.T, db *sql.DB, tenantID 
 		t.Fatalf("read command payload: %v", err)
 	}
 
-	var p pipelinedom.StepCommandPayload
+	var p scanrundom.StepCommandPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 	if !p.IsRoutable() {
-		t.Fatalf("the dispatched command is not routable (pipeline_run_id=%q step_key=%q) — "+
+		t.Fatalf("the dispatched command is not routable (scan_run_id=%q step_key=%q) — "+
 			"the command handler would treat it as 'not a pipeline command' and discard the result",
-			p.PipelineRunID, p.StepKey)
+			p.ScanRunID, p.StepKey)
 	}
 	return p
 }
@@ -83,7 +84,7 @@ func routingFromCommand(ctx context.Context, t *testing.T, db *sql.DB, tenantID 
 func runState(ctx context.Context, t *testing.T, db *sql.DB, runID string) (status string, errMsg sql.NullString, completedSteps int) {
 	t.Helper()
 	if err := db.QueryRowContext(ctx,
-		`SELECT status, error_message, completed_steps FROM pipeline_runs WHERE id = $1`, runID).
+		`SELECT status, error_message, completed_steps FROM scan_runs WHERE id = $1`, runID).
 		Scan(&status, &errMsg, &completedSteps); err != nil {
 		t.Fatalf("read run state: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestScanLoop_CompletedCommandCompletesTheRun(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newPipelineService(db)
+	pipeSvc := newScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -117,7 +118,7 @@ func TestScanLoop_CompletedCommandCompletesTheRun(t *testing.T) {
 	p := routingFromCommand(ctx, t, db, tenantID.String())
 
 	// Exactly what CommandHandler.Complete does with a finished command.
-	if err := pipeSvc.OnStepCompleted(ctx, p.PipelineRunID, p.StepKey, 3,
+	if err := pipeSvc.OnStepCompleted(ctx, p.ScanRunID, p.StepKey, 3,
 		map[string]any{"probe": true}); err != nil {
 		t.Fatalf("OnStepCompleted: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestScanLoop_FailedCommandSurfacesTheRealError(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newPipelineService(db)
+	pipeSvc := newScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -157,7 +158,7 @@ func TestScanLoop_FailedCommandSurfacesTheRealError(t *testing.T) {
 
 	// The exact error five production runs actually hit.
 	const realErr = "scanner not found: nuclei"
-	if err := pipeSvc.OnStepFailed(ctx, p.PipelineRunID, p.StepKey, realErr, "COMMAND_FAILED"); err != nil {
+	if err := pipeSvc.OnStepFailed(ctx, p.ScanRunID, p.StepKey, realErr, "COMMAND_FAILED"); err != nil {
 		t.Fatalf("OnStepFailed: %v", err)
 	}
 
@@ -179,7 +180,7 @@ func TestScanLoop_FailedCommandSurfacesTheRealError(t *testing.T) {
 // than half-processed. This is the shape every production command had before the
 // fix, so it is worth keeping as an explicit case.
 func TestScanLoop_LegacyPayloadIsNotRoutable(t *testing.T) {
-	var p pipelinedom.StepCommandPayload
+	var p scanrundom.StepCommandPayload
 	if err := json.Unmarshal([]byte(`{"run_id":"r-1","scan_id":"s-1","scanner":"nuclei"}`), &p); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -203,7 +204,7 @@ func TestScanLoop_RunFindingsCountIsNotDoubled(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	svc := newTriggerService(db)
-	pipeSvc := newPipelineService(db)
+	pipeSvc := newScanRunService(db)
 
 	tenantID := seedLifecycleTenant(ctx, t, db)
 	scanID := seedLifecycleScan(ctx, t, db, tenantID)
@@ -219,13 +220,13 @@ func TestScanLoop_RunFindingsCountIsNotDoubled(t *testing.T) {
 	p := routingFromCommand(ctx, t, db, tenantID.String())
 
 	const reported = 2
-	if err := pipeSvc.OnStepCompleted(ctx, p.PipelineRunID, p.StepKey, reported, nil); err != nil {
+	if err := pipeSvc.OnStepCompleted(ctx, p.ScanRunID, p.StepKey, reported, nil); err != nil {
 		t.Fatalf("OnStepCompleted: %v", err)
 	}
 
 	var total int
 	if err := db.QueryRowContext(ctx,
-		`SELECT total_findings FROM pipeline_runs WHERE id = $1`, run.ID.String()).Scan(&total); err != nil {
+		`SELECT total_findings FROM scan_runs WHERE id = $1`, run.ID.String()).Scan(&total); err != nil {
 		t.Fatalf("read total_findings: %v", err)
 	}
 	if total != reported {
@@ -238,7 +239,7 @@ func TestScanLoop_RunFindingsCountIsNotDoubled(t *testing.T) {
 	// run total is derived from.
 	var stepFindings int
 	if err := db.QueryRowContext(ctx,
-		`SELECT findings_count FROM step_runs WHERE pipeline_run_id = $1`, run.ID.String()).Scan(&stepFindings); err != nil {
+		`SELECT findings_count FROM scan_run_steps WHERE scan_run_id = $1`, run.ID.String()).Scan(&stepFindings); err != nil {
 		t.Fatalf("read step findings_count: %v", err)
 	}
 	if stepFindings != reported {

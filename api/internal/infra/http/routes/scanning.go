@@ -209,77 +209,57 @@ func registerScanFreezeWindowRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerPipelineRoutes registers pipeline management endpoints.
-// Pipelines orchestrate multi-step scan workflows via templates, steps, and runs.
-func registerPipelineRoutes(
+// registerScanWorkflowRoutes registers the scan workflow and scan run
+// endpoints.
+//
+// A scan workflow is the graph of steps a Scan runs; it belongs to the
+// scan_workflows module and the scans:workflows:* permissions. A scan run is
+// one execution of a Scan: the Runs list, a scan's run history, task logs and
+// cancel all read it, so it follows the core scans module and scans:read
+// (cancel needs scans:write). A run is started only by triggering a Scan
+// (POST /api/v1/scans/{id}/trigger), so every run passes the scan gate.
+func registerScanWorkflowRoutes(
 	router Router,
-	h *handler.PipelineHandler,
+	h *handler.ScanWorkflowHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
-	triggerRateLimiter *middleware.TriggerRateLimiter,
 	moduleGate *middleware.ModuleGate,
 ) {
-	// Build tenant middleware chains from JWT token; gate after tenant
-	// extraction. Scan workflow templates belong to the scan_pipelines module.
-	// Their runs are scan runs: the Scans Runs tab, a scan's run history, task
-	// logs and cancel all read them, so they follow the core scans module.
-	// Gating runs on scan_pipelines broke those views for every tenant on a
-	// preset without scan_pipelines (minimal, asset_inventory, compliance).
 	base := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
-	tenantMiddlewares := append(append([]Middleware{}, base...), moduleGate.RequireModule(moduledom.ModuleScanPipelines))
+	workflowMiddlewares := append(append([]Middleware{}, base...), moduleGate.RequireModule(moduledom.ModuleScanWorkflows))
 	runMiddlewares := append(append([]Middleware{}, base...), moduleGate.RequireModule(moduledom.ModuleScans))
 
-	// Pipeline Template routes - tenant from JWT token
-	router.Group("/api/v1/pipelines", func(r Router) {
-		// Read operations
-		r.GET("/", h.ListTemplates, middleware.Require(permission.PipelinesRead))
-		r.GET("/{id}", h.GetTemplate, middleware.Require(permission.PipelinesRead))
+	router.Group("/api/v1/scan-workflows", func(r Router) {
+		r.GET("/", h.ListTemplates, middleware.Require(permission.ScanWorkflowsRead))
+		r.GET("/{id}", h.GetTemplate, middleware.Require(permission.ScanWorkflowsRead))
 
-		// Write operations
-		r.POST("/", h.CreateTemplate, middleware.Require(permission.PipelinesWrite))
-		r.PUT("/{id}", h.UpdateTemplate, middleware.Require(permission.PipelinesWrite))
+		r.POST("/", h.CreateTemplate, middleware.Require(permission.ScanWorkflowsWrite))
+		r.PUT("/{id}", h.UpdateTemplate, middleware.Require(permission.ScanWorkflowsWrite))
 		// Check a draft graph without saving it (the editor, while editing).
-		r.POST("/verify", h.ValidatePipeline, middleware.Require(permission.PipelinesWrite))
+		r.POST("/verify", h.ValidateScanWorkflow, middleware.Require(permission.ScanWorkflowsWrite))
 
-		// Status operations
-		r.POST("/{id}/activate", h.ActivateTemplate, middleware.Require(permission.PipelinesWrite))
-		r.POST("/{id}/deactivate", h.DeactivateTemplate, middleware.Require(permission.PipelinesWrite))
-		r.POST("/{id}/clone", h.CloneTemplate, middleware.Require(permission.PipelinesWrite))
+		r.POST("/{id}/activate", h.ActivateTemplate, middleware.Require(permission.ScanWorkflowsWrite))
+		r.POST("/{id}/deactivate", h.DeactivateTemplate, middleware.Require(permission.ScanWorkflowsWrite))
+		r.POST("/{id}/clone", h.CloneTemplate, middleware.Require(permission.ScanWorkflowsWrite))
 
-		// Delete operations
-		r.DELETE("/{id}", h.DeleteTemplate, middleware.Require(permission.PipelinesDelete))
+		r.DELETE("/{id}", h.DeleteTemplate, middleware.Require(permission.ScanWorkflowsDelete))
 
-		// Template steps management
-		r.POST("/{id}/steps", h.AddStep, middleware.Require(permission.PipelinesWrite))
-		r.PUT("/{id}/steps/{stepId}", h.UpdateStep, middleware.Require(permission.PipelinesWrite))
-		r.DELETE("/{id}/steps/{stepId}", h.DeleteStep, middleware.Require(permission.PipelinesDelete))
+		r.POST("/{id}/steps", h.AddStep, middleware.Require(permission.ScanWorkflowsWrite))
+		r.PUT("/{id}/steps/{stepId}", h.UpdateStep, middleware.Require(permission.ScanWorkflowsWrite))
+		r.DELETE("/{id}/steps/{stepId}", h.DeleteStep, middleware.Require(permission.ScanWorkflowsDelete))
+	}, workflowMiddlewares...)
 
-		// Pipeline runs (executions)
-		r.GET("/{id}/runs", h.ListRuns, middleware.Require(permission.PipelinesRead))
-		// Apply rate limiting to pipeline triggers
-		if triggerRateLimiter != nil {
-			r.POST("/{id}/runs", h.TriggerRun, middleware.RequireAll(permission.PipelinesWrite, permission.PipelinesExecute), triggerRateLimiter.PipelineMiddleware())
-		} else {
-			r.POST("/{id}/runs", h.TriggerRun, middleware.RequireAll(permission.PipelinesWrite, permission.PipelinesExecute))
-		}
-	}, tenantMiddlewares...)
-
-	// Pipeline Run routes - direct access
-	router.Group("/api/v1/pipeline-runs", func(r Router) {
-		// Read operations
-		r.GET("/", h.ListRuns, middleware.Require(permission.PipelinesRead))
-		r.GET("/{id}", h.GetRun, middleware.Require(permission.PipelinesRead))
+	router.Group("/api/v1/scan-runs", func(r Router) {
+		r.GET("/", h.ListRuns, middleware.Require(permission.ScansRead))
+		r.GET("/{id}", h.GetRun, middleware.Require(permission.ScansRead))
 		// A run's tasks, paged by cursor (the run read embeds the first page).
-		r.GET("/{id}/tasks", h.ListRunTasks, middleware.Require(permission.PipelinesRead))
-		// One task's log lines, as its sensor sent them (RFC-029 §4.4.1).
-		r.GET("/{id}/tasks/{task_id}/logs", h.GetRunTaskLogs, middleware.Require(permission.PipelinesRead))
+		r.GET("/{id}/tasks", h.ListRunTasks, middleware.Require(permission.ScansRead))
+		// One task's log lines, as its sensor sent them (RFC-029 4.4.1).
+		r.GET("/{id}/tasks/{task_id}/logs", h.GetRunTaskLogs, middleware.Require(permission.ScansRead))
 		// How each stage of the run was planned (counts by reason).
-		r.GET("/{id}/stages", h.ListRunStages, middleware.Require(permission.PipelinesRead))
+		r.GET("/{id}/stages", h.ListRunStages, middleware.Require(permission.ScansRead))
 
-		// Write operations. Scan runs are pipeline runs, and this is how a
-		// scan run is stopped, so it also needs scans:write (owner decision
-		// D12, scans redesign 2026-10).
-		r.POST("/{id}/cancel", h.CancelRun, middleware.RequireAll(permission.PipelinesWrite, permission.ScansWrite))
+		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.ScansWrite))
 	}, runMiddlewares...)
 }
 
