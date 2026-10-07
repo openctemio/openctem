@@ -13,16 +13,34 @@ nuclei template (`findings.rule_id`) against the finding's own target (the
 origin of its matched-at URL, see below) — plus a
 **reachability probe** of the same target, and settles the finding:
 
-| Template re-run | Target reachable? | Outcome | Finding |
+A non-match is **not** proof of a fix ([RFC-057](../rfcs/RFC-057-finding-evidence-and-retest.md) R2).
+The re-run's own evidence (the HTTP exchange it reports, `evidence_items`)
+decides:
+
+| Re-run | Attempt evidence | Outcome (`reason_code`) | Finding |
 |---|---|---|---|
-| matched | any | `still_present` | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress` · `validated_fixed` / `not_observed` → `confirmed` |
-| no match | yes | `fixed` | → `resolved`, `resolution_method = retest_verified` (`resolved` stays) |
-| no match | no / unknown | `unknown` | unchanged ("target unreachable") |
-| inconclusive / error / no result / deadline passed | any | `unknown` | unchanged |
+| matched | any | `still_vulnerable` (`matched`) | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress` · `validated_fixed` / `not_observed` → `confirmed` |
+| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429 | `confirmed_fixed` (`not_matched`) | → `validated_fixed` ("verified fixed — awaiting confirmation"); → `resolved` (`retest_verified`) only with `settings.retest.auto_resolve`; `resolved` stays |
+| no match | answered 403 / 429 | `inconclusive` (`blocked`) | unchanged |
+| no match | answered 401 / 407 | `inconclusive` (`auth_changed`) | unchanged |
+| no match | answered 5xx | `inconclusive` (`server_error`) | unchanged |
+| no match | request to another URL | `inconclusive` (`endpoint_mismatch`) | unchanged |
+| no match | no response | `inconclusive` (`unreachable`) | unchanged |
+| no match | none, target answered the probe | `not_reproduced` (`no_endpoint_proof`) | unchanged |
+| no match | none, target did not answer | `inconclusive` (`unreachable`) | unchanged |
+| error / no result / deadline passed | any | `inconclusive` (`error`, `no_result`) | unchanged |
+
+The endpoint is the finding's matched-at: scheme, host, port (default ports
+dropped), path and the parameter names (values are not compared: a token
+differs between runs and is masked). A conclusive outcome becomes
+`inconclusive` (`template_changed`) when the template digest differs from the
+last sighting's, or when a fix reports none. Reasons never carry secrets: URLs
+show parameter names only and text goes through the evidence masker.
 
 The probe exists because nuclei prints nothing and exits 0 when a host does not
 answer, which the sensor reports as `not_detected`: without it a down host, a
-firewall change or a sensor in the wrong zone would read as "fixed".
+firewall change or a sensor in the wrong zone would read as "fixed". It only
+separates "unreachable" from "not reproduced"; it never proves a fix.
 
 Eligible findings: `tool_name = nuclei` with a template id that passes the
 template guard (no path, no `dos`/`fuzz`/`intrusive`/`brute-force` marker), in
@@ -187,14 +205,31 @@ reopened.
 - `internal/infra/postgres/finding_reopen_regression_db_test.go` — a scan
   regression keeps the previous resolver; `validated_fixed` reopens.
 
+## Run linkage
+
+A retest attempt is a run of kind `retest`: `GET /findings/{id}/retests`
+returns, per attempt, `run_kind: "retest"`, the `check_command_id` (and the
+validate path's `reach_command_id`) and the `sensor_id` that claimed the
+check (stored on the retest when it settles, migration 001242), so a runs
+view can link finding, command and sensor.
+
+## Evidence
+
+A retest attempt's proof (what the re-run requested and what came back) is
+stored as finding evidence with `origin = retest` and the retest id, masked,
+and shown under the attempt ("View evidence"); see
+[finding-evidence.md](finding-evidence.md).
+
 ## Tool retest
 
 A finding whose tool has a retest handler on a tenant sensor (capability
 `retest:<tool>`, sdk-go tool contract) is retested by **one `retest` command**
 to that tool instead of the two `validate` commands. The tool answers a verdict
-per finding: `still_present`, `fixed` or `unverifiable`. The retest service
-settles from the verdict for its own finding: still present, fixed, or unknown
-for anything else. The nuclei validate pair remains the fallback for nuclei
+per finding: `still_present`, `fixed` or `unverifiable`, with the attempt's
+`evidence` and the `template_digest` it ran. The retest service settles from
+the verdict for its own finding: still vulnerable; a `fixed` verdict decided
+from its evidence like a validate non-match (a bare `fixed` is
+`not_reproduced`); inconclusive for anything else. The nuclei validate pair remains the fallback for nuclei
 findings when no sensor offers `retest:nuclei`. The payload names the tool as
 `scanner` and lists plain addresses, so it passes the same claim-time tool
 predicate, active-probe gate, zone pinning and sensor-side local policy as a
