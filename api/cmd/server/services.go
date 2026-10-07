@@ -538,7 +538,6 @@ type Services struct {
 	Vulnerability   *finding.VulnerabilityService
 	FindingActivity *activity.FindingActivityService
 	FindingActions  *finding.FindingActionsService
-	SourceAnalytics *finding.SourceAnalyticsService
 	Exposure        *exposure.ExposureService
 	ThreatIntel     *threat.IntelService
 	CTEMID          *ctemidapp.Service
@@ -938,7 +937,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
-	s.SourceAnalytics = finding.NewSourceAnalyticsService(repos.Finding, log)
 
 	s.Exposure = exposure.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.Exposure.SetDataScope(s.DataScope)
