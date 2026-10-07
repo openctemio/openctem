@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
@@ -54,8 +55,8 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 		if !result.Valid {
 			s.logger.Warn("step_key validation failed",
 				"template_id", templateID.String(),
-				"step_key", input.StepKey,
-				"errors", result.Errors)
+				"step_key", sanitizeLogValue(input.StepKey),
+				"errors", len(result.Errors))
 			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, result.Errors[0].Message)
 		}
 	}
@@ -82,8 +83,8 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 		if !result.Valid {
 			s.logger.Warn("step config validation failed",
 				"template_id", templateID.String(),
-				"step_key", input.StepKey,
-				"errors", result.Errors)
+				"step_key", sanitizeLogValue(input.StepKey),
+				"errors", len(result.Errors))
 			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, result.Errors[0].Message)
 		}
 	}
@@ -177,9 +178,9 @@ func (s *Service) AddStep(ctx context.Context, input AddStepInput) (*pipeline.St
 	if err != nil {
 		if errors.Is(err, shared.ErrAlreadyExists) {
 			s.logger.Warn("step_key collision detected",
-				"tenant_id", input.TenantID,
-				"template_id", input.TemplateID,
-				"step_key", input.StepKey,
+				"tenant_id", sanitizeLogValue(input.TenantID),
+				"template_id", sanitizeLogValue(input.TemplateID),
+				"step_key", sanitizeLogValue(input.StepKey),
 			)
 			s.logAudit(ctx, AuditContext{TenantID: input.TenantID},
 				NewFailureEvent(audit.ActionPipelineStepCreated, audit.ResourceTypePipelineStep, "", err).
@@ -346,8 +347,8 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, input.Capabilities, input.Config)
 		if !result.Valid {
 			s.logger.Warn("step config validation failed",
-				"step_id", stepID,
-				"errors", result.Errors)
+				"step_id", sid.String(),
+				"errors", len(result.Errors))
 			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, result.Errors[0].Message)
 		}
 	}
@@ -466,4 +467,24 @@ func (s *Service) auditStep(ctx context.Context, tenantID string, action audit.A
 			WithMessage(fmt.Sprintf("Pipeline step '%s' %s", step.Name, what)).
 			WithMetadata("template_id", step.PipelineID.String()).
 			WithMetadata("step_key", step.StepKey))
+}
+
+// sanitizeLogValue strips CR/LF and other control characters from a
+// request-supplied value before it is logged (log forging in text mode),
+// and caps its length.
+func sanitizeLogValue(v string) string {
+	const maxLen = 128
+	if len(v) > maxLen {
+		v = v[:maxLen]
+	}
+	// The explicit ReplaceAll pair is the form CodeQL go/log-injection
+	// accepts as a barrier; strings.Map then drops other control characters.
+	v = strings.ReplaceAll(v, "\n", "")
+	v = strings.ReplaceAll(v, "\r", "")
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, v)
 }

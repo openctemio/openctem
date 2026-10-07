@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
@@ -82,5 +83,16 @@ func TestMatchSteps_IDBeatsKey(t *testing.T) {
 	}
 	if len(added) != 1 || len(updated) != 1 || len(removed) != 1 || removed[0].ID != a.ID {
 		t.Fatalf("added=%d updated=%d removed=%d", len(added), len(updated), len(removed))
+	}
+}
+
+func TestSanitizeLogValue(t *testing.T) {
+	got := sanitizeLogValue("a\nb\r\x1bc")
+	if got != "abc" {
+		t.Fatalf("sanitizeLogValue = %q", got)
+	}
+	long := sanitizeLogValue(strings.Repeat("x", 300))
+	if len(long) != 128 {
+		t.Fatalf("not capped: %d", len(long))
 	}
 }
