@@ -28,8 +28,8 @@ func TestPartialRun_StoredFinalAndCountedOnItsOwn(t *testing.T) {
 	if err := runs.UpdateStatus(ctx, run.ID, pipeline.RunStatusPartial, "partial"); err != nil {
 		t.Fatalf("run -> partial: %v", err)
 	}
-	if err := scans.RecordRun(ctx, tenantID, scanID, run.ID, string(pipeline.RunStatusPartial)); err != nil {
-		t.Fatalf("RecordRun: %v", err)
+	if err := scans.RefreshRunSummary(ctx, tenantID, scanID); err != nil {
+		t.Fatalf("RefreshRunSummary: %v", err)
 	}
 
 	// partial is terminal for both.

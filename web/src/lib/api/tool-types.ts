@@ -56,6 +56,8 @@ export interface Tool {
   update_cmd?: string
   version_cmd?: string
   version_regex?: string
+  /** Oldest version the catalog accepts (a release version; empty: none). */
+  min_version?: string
   current_version?: string
   latest_version?: string
   has_update: boolean
@@ -90,6 +92,8 @@ export interface CreateToolRequest {
   update_cmd?: string
   version_cmd?: string
   version_regex?: string
+  /** Oldest version the catalog accepts (a release version; empty: none). */
+  min_version?: string
   config_schema?: Record<string, unknown>
   default_config?: Record<string, unknown>
   capabilities?: string[]
@@ -112,6 +116,8 @@ export interface UpdateToolRequest {
   update_cmd?: string
   version_cmd?: string
   version_regex?: string
+  /** Oldest version the catalog accepts (a release version; empty: none). */
+  min_version?: string
   config_schema?: Record<string, unknown>
   default_config?: Record<string, unknown>
   capabilities?: string[]
@@ -323,4 +329,62 @@ export const INSTALL_METHOD_DISPLAY_NAMES: Record<InstallMethod, string> = {
   npm: 'NPM Install',
   docker: 'Docker Pull',
   binary: 'Binary Download',
+}
+
+// ============================================
+// TOOL AVAILABILITY (GET /api/v1/tenant-tools/availability)
+// api/docs/architecture/tool-availability.md
+// ============================================
+
+/** A tool's availability for the organization, derived by the API. */
+export type ToolAvailabilityStatus =
+  'ready' | 'no_sensor' | 'offline_only' | 'outdated' | 'disabled'
+
+/** One sensor that reports a tool installed. */
+export interface ToolAvailabilitySensor {
+  id: string
+  name: string
+  /** The sensor's state as the Sensors page shows it. */
+  state: string
+  /** The sensor takes work now. */
+  online: boolean
+  zones: { id: string; name: string }[]
+  version?: string
+  content?: { name: string; version?: string; updated_at?: string }[]
+  /** Why the sensor may not run the tool although it has it. */
+  excluded?: 'grant' | 'local_policy'
+  excluded_detail?: string
+}
+
+/** One tool of the availability view. */
+export interface ToolAvailabilityItem {
+  name: string
+  /** The catalog entry; null for a tool a sensor reports that the catalog does not list. */
+  tool: Tool | null
+  in_catalog: boolean
+  /** Active in the catalog and switched on for the organization. */
+  enabled: boolean
+  status: ToolAvailabilityStatus
+  /** Sensors that may run the tool, and how many of them take work now. */
+  sensors_online: number
+  sensors_total: number
+  /** Sensors that have the tool but may not run it. */
+  sensors_excluded: number
+  /** Empty without sensors:read (the counts are always given). */
+  sensors: ToolAvailabilitySensor[]
+  versions: string[]
+  min_reported_version?: string
+  max_reported_version?: string
+  min_version?: string
+  latest_version?: string
+  update_available: boolean
+  content: { name: string; versions: string[] }[]
+  last_reported_at?: string
+}
+
+export interface ToolAvailabilityResponse {
+  items: ToolAvailabilityItem[]
+  summary: Record<ToolAvailabilityStatus, number>
+  zone_id?: string
+  computed_at: string
 }

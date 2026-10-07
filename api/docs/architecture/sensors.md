@@ -990,6 +990,11 @@ Code: `pkg/domain/sensor/manifest.go`, `internal/app/sensor/manifest.go`,
 `sensor_manifest_handler.go`. Migration 000258. Tests:
 `routes/sensor_manifest_db_test.go`, `sensor/manifest_test.go`.
 
+
+### Tool availability
+
+The Tools page, the scan builder and the workflow step pickers read the tools of the current manifests through one view, `GET /api/v1/tenant-tools/availability`. It joins them with the catalog per tenant and derives a status per tool: ready, no_sensor, offline_only, outdated or disabled. See [tool-availability.md](tool-availability.md).
+
 ## Collector sensors
 
 A sensor of type `collector` (`sensor.SensorTypeCollector`) pulls asset

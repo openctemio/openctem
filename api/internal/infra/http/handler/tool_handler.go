@@ -95,15 +95,18 @@ func (h *ToolHandler) tenantConfigSnapshot(r *http.Request, tenantID, toolID str
 
 // CreateToolRequest represents the request body for creating a tool.
 type CreateToolRequest struct {
-	Name             string         `json:"name" validate:"required,min=1,max=50"`
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	CategoryID       string         `json:"category_id" validate:"omitempty,uuid"` // UUID reference to tool_categories table
-	InstallMethod    string         `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	Name          string `json:"name" validate:"required,min=1,max=50"`
+	DisplayName   string `json:"display_name" validate:"max=100"`
+	Description   string `json:"description" validate:"max=1000"`
+	CategoryID    string `json:"category_id" validate:"omitempty,uuid"` // UUID reference to tool_categories table
+	InstallMethod string `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
+	InstallCmd    string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd     string `json:"update_cmd" validate:"max=500"`
+	VersionCmd    string `json:"version_cmd" validate:"max=500"`
+	VersionRegex  string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -117,13 +120,16 @@ type CreateToolRequest struct {
 
 // UpdateToolRequest represents the request body for updating a tool.
 type UpdateToolRequest struct {
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	CategoryID       string         `json:"category_id" validate:"omitempty,uuid"` // Optional: link to tool_categories table
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	DisplayName  string `json:"display_name" validate:"max=100"`
+	Description  string `json:"description" validate:"max=1000"`
+	CategoryID   string `json:"category_id" validate:"omitempty,uuid"` // Optional: link to tool_categories table
+	InstallCmd   string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd    string `json:"update_cmd" validate:"max=500"`
+	VersionCmd   string `json:"version_cmd" validate:"max=500"`
+	VersionRegex string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -161,6 +167,7 @@ type ToolResponse struct {
 	VersionRegex     string                    `json:"version_regex,omitempty"`
 	CurrentVersion   string                    `json:"current_version,omitempty"`
 	LatestVersion    string                    `json:"latest_version,omitempty"`
+	MinVersion       string                    `json:"min_version,omitempty"`
 	HasUpdate        bool                      `json:"has_update"`
 	ConfigFilePath   string                    `json:"config_file_path,omitempty"`
 	ConfigSchema     map[string]any            `json:"config_schema,omitempty"`
@@ -443,6 +450,7 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		UpdateCmd:        req.UpdateCmd,
 		VersionCmd:       req.VersionCmd,
 		VersionRegex:     req.VersionRegex,
+		MinVersion:       req.MinVersion,
 		ConfigSchema:     req.ConfigSchema,
 		DefaultConfig:    req.DefaultConfig,
 		Capabilities:     req.Capabilities,
@@ -502,6 +510,7 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		UpdateCmd:        req.UpdateCmd,
 		VersionCmd:       req.VersionCmd,
 		VersionRegex:     req.VersionRegex,
+		MinVersion:       req.MinVersion,
 		ConfigSchema:     req.ConfigSchema,
 		DefaultConfig:    req.DefaultConfig,
 		Capabilities:     req.Capabilities,
@@ -796,6 +805,7 @@ func (h *ToolHandler) CreateCustomTool(w http.ResponseWriter, r *http.Request) {
 		UpdateCmd:        req.UpdateCmd,
 		VersionCmd:       req.VersionCmd,
 		VersionRegex:     req.VersionRegex,
+		MinVersion:       req.MinVersion,
 		ConfigSchema:     req.ConfigSchema,
 		DefaultConfig:    req.DefaultConfig,
 		Capabilities:     req.Capabilities,
@@ -885,6 +895,7 @@ func (h *ToolHandler) UpdateCustomTool(w http.ResponseWriter, r *http.Request) {
 		UpdateCmd:        req.UpdateCmd,
 		VersionCmd:       req.VersionCmd,
 		VersionRegex:     req.VersionRegex,
+		MinVersion:       req.MinVersion,
 		ConfigSchema:     req.ConfigSchema,
 		DefaultConfig:    req.DefaultConfig,
 		Capabilities:     req.Capabilities,
@@ -1486,6 +1497,7 @@ func toToolResponse(t *tooldom.Tool) *ToolResponse {
 		VersionRegex:     t.VersionRegex,
 		CurrentVersion:   t.CurrentVersion,
 		LatestVersion:    t.LatestVersion,
+		MinVersion:       t.MinVersion,
 		HasUpdate:        t.HasUpdateAvailable(),
 		ConfigFilePath:   t.ConfigFilePath,
 		ConfigSchema:     t.ConfigSchema,

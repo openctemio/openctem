@@ -359,6 +359,8 @@ func registerToolRoutes(
 
 		// List all tools with tenant-specific enabled status (must be before /{toolId})
 		r.GET("/all-tools", h.ListAllTools, middleware.Require(permission.TenantToolsRead))
+		// Tool availability from the sensors' manifests (must be before /{toolId}).
+		r.GET("/availability", h.ToolAvailability, middleware.Require(permission.TenantToolsRead))
 
 		// Read operations
 		r.GET("/", h.ListTenantConfigs, middleware.Require(permission.TenantToolsRead))

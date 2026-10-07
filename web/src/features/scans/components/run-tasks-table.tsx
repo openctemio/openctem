@@ -198,6 +198,7 @@ export function RunTasksTable({
           runId={runId}
           taskId={logsOf.id}
           tool={logsOf.tool}
+          task={logsOf}
           open
           onOpenChange={(o) => {
             if (!o) setLogsOf(null)

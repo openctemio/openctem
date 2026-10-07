@@ -727,7 +727,7 @@ func (h *SensorHandler) addFleetSummary(resp *SensorStatsResponse, sensors []*se
 		if enabled && len(hl.Reasons) > 0 {
 			resp.NeedsAttention++
 		}
-		if (hl.State == sensor.StateOnline || hl.State == sensor.StateDegraded || hl.State == sensor.StateLate) && !a.IsOneShot() {
+		if hl.State.TakesJobs() && !a.IsOneShot() {
 			resp.CanTakeJobs++
 			resp.JobsRunning += a.CurrentJobs
 			resp.JobSlots += a.MaxConcurrentJobs
