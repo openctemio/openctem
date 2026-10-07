@@ -250,6 +250,9 @@ func registerScopeRoutes(
 		// exclusion is pending and suppresses nothing until approved.
 		r.POST("/{id}/approve", h.ApproveExclusion, middleware.Require(permission.ScopeExclusionsApprove))
 		r.POST("/{id}/reject", h.RejectExclusion, middleware.Require(permission.ScopeExclusionsApprove))
+		// How a path exclusion may be tested (RFC-056): the approval
+		// permission and a recent sign-in.
+		r.PUT("/{id}/testing", h.SetExclusionTesting, middleware.Require(permission.ScopeExclusionsApprove), requireStepUp())
 		r.POST("/{id}/activate", h.ActivateExclusion, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite))
 

@@ -102,7 +102,7 @@ func gatingFixture(statuses map[string]pipelinedom.StepRunStatus, deps map[strin
 	runs := &statusRuns{run: run}
 	cmds := &countingCommands{}
 	s := &Service{stepRunRepo: store, runRepo: runs, templateRepo: fixedTemplate{tpl: tpl},
-		commandRepo: cmds, logger: logger.NewNop()}
+		commandRepo: cmds, webScope: &fakeWebScope{}, logger: logger.NewNop()}
 	return s, run, store, runs, cmds
 }
 

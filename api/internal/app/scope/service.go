@@ -27,6 +27,10 @@ type Service struct {
 	// caller's data scope.
 	coverage  CoverageCounter
 	dataScope DataScopeResolver
+
+	// Administrators told when a path exclusion's testing mode changes.
+	admins   AdminDirectory
+	notifier InAppNotifier
 }
 
 // NewService creates a new Service.
@@ -303,6 +307,10 @@ type CreateExclusionInput struct {
 	Reason        string     `validate:"required,max=1000"`
 	ExpiresAt     *time.Time `validate:"omitempty"`
 	CreatedBy     string     `validate:"max=200"`
+	// PathPrefix and Methods make a `path` exclusion's web rule (RFC-056):
+	// the pattern is then a host pattern.
+	PathPrefix *string
+	Methods    []string
 }
 
 // CreateExclusion creates a new scope exclusion.
@@ -319,10 +327,19 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
-	exclusion, err := scopedom.NewExclusion(tenantID, exclusionType, input.Pattern, input.Reason, input.ExpiresAt, input.CreatedBy)
+	web, err := webRuleFor(exclusionType, input.Pattern, input.PathPrefix, input.Methods)
 	if err != nil {
 		return nil, err
 	}
+	pattern := input.Pattern
+	if web != nil {
+		pattern = scopedom.PathRulePattern(pattern, web.PathPrefix)
+	}
+	exclusion, err := scopedom.NewExclusion(tenantID, exclusionType, pattern, input.Reason, input.ExpiresAt, input.CreatedBy)
+	if err != nil {
+		return nil, err
+	}
+	exclusion.SetWeb(web)
 
 	if err := s.exclusionRepo.Create(ctx, exclusion); err != nil {
 		return nil, fmt.Errorf("failed to create scope exclusion: %w", err)
@@ -758,7 +775,7 @@ func (s *Service) isAssetExcluded(assetValues []string, exclusions []*scopedom.E
 	for _, raw := range assetValues {
 		for _, av := range exclusionMatchForms(raw) {
 			for _, exclusion := range exclusions {
-				if scopedom.MatchesExclusionPattern(exclusion.ExclusionType(), exclusion.Pattern(), av) {
+				if exclusion.Matches(av) {
 					return true
 				}
 			}

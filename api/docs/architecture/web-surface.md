@@ -51,3 +51,19 @@ The ingest output reports `endpoints_created`, `endpoints_updated`,
 
 A crawl step's outputs are its origin assets, so a chained template scan
 runs per origin, not once per crawled URL.
+
+## Path exclusions
+
+An exclusion of type `path` (RFC-054 §6.2) is a web rule: a host pattern, a
+segment-aware path prefix, the methods it blocks, and a testing mode
+(`blocked`, `read_only`, `allowed` until a deadline) a scope approver sets
+with step-up. It is enforced in three places:
+
+| Where | What |
+|---|---|
+| Dispatch (`scope.Service.ExcludedTargets`) | a URL target under a blocking rule (for GET) is excluded; a host target never is |
+| Job (`pipeline.applyWebScope`) | a crawl, template or web application step carries `web_scope`: `deny_paths` for rules that block GET or HEAD, `methods: [GET, HEAD]` when a rule there blocks only other methods; nothing when no rule applies. A failed lookup refuses the step |
+| Ingest (`markExcluded`) | an endpoint whose method a rule blocks is stored `in_scope = false` with `exclusion_id`: excluded-untested, visible, never targeted |
+
+`GET /web-endpoints/stats` counts `excluded_untested`, so "0 findings" on an
+origin with excluded paths is not read as "safe".

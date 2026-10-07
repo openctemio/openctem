@@ -304,6 +304,32 @@ Unchanged, except that the widening exclusion routes require **step-up**:
 `POST /exclusions/bulk/delete`, and `PUT /exclusions/{id}` when it shortens
 the window. The approval rule (approver ≠ requester) stays.
 
+**Path exclusions (RFC-056 §5, migration `001198`).** An exclusion of type
+`path` is a web rule, not an asset exclusion:
+
+- `POST /exclusions` with `exclusion_type: "path"` takes `pattern` as a host
+  pattern (`*`, `*.example.com` covering the apex as in S1, a host, or an
+  origin URL), `path_prefix` (required; segment-aware, `*` only as a whole
+  segment, no dot segments or encoded slashes) and `methods` (optional; the
+  methods it blocks, empty = every method). The UI suggests a method-scoped
+  rule (POST, PUT, PATCH, DELETE) for sensitive paths, so read-only checks
+  still run there. The rule cannot be edited later; replace it instead.
+- Each path exclusion has a **testing mode**:
+  `PUT /exclusions/{id}/testing` `{"testing": "blocked"|"read_only"|"allowed",
+  "testing_until": RFC 3339}`. New exclusions are `blocked`; `read_only` lets
+  GET and HEAD through; `allowed` treats the path as in scope until
+  `testing_until` (at most 90 days), then it is `blocked` again. The route
+  needs `attack_surface:scope:exclusions:approve` and step-up, is audited
+  (`scope_exclusion.updated` with before and after) and notifies every
+  administrator. There is no switch that lifts every exclusion at once (S5).
+- Lifting an exclusion never widens scope: a target must still pass the one
+  authority check (§4.2) and the tier ceilings, guardrails and deny list
+  (§8). A host the exclusion's pattern covers that is not the organization's
+  asset stays refused.
+- Responses carry `path_prefix`, `methods`, `testing`, `testing_effective`
+  (the mode in force now), `testing_until`, `testing_changed_by` and
+  `testing_changed_at`.
+
 ### 6.3 Settings (S5)
 
 **`GET /settings`** (`scope:read`) and **`PUT /settings`** (`scope:approve`,

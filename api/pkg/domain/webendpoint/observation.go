@@ -11,6 +11,8 @@ import (
 
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/weburl"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Observation is one endpoint as one report saw it, normalised by the
@@ -36,6 +38,8 @@ type Observation struct {
 	// OutOfScope: the endpoint lies under a scope exclusion. It is stored
 	// for visibility and never targeted or alerted on.
 	OutOfScope bool
+	// ExclusionID names the path exclusion that holds it (OutOfScope).
+	ExclusionID *shared.ID
 }
 
 // ResponseSig is the hash of what "changed" means for an endpoint: its

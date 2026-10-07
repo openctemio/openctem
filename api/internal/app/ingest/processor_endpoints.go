@@ -28,6 +28,8 @@ import (
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/weburl"
 
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -38,6 +40,23 @@ import (
 // SetWebEndpointRepository wires the web surface sub-inventory. Unwired,
 // endpoints are dropped (and discovered_url assets are still not created).
 func (s *Service) SetWebEndpointRepository(repo webendpoint.Repository) { s.webEndpoints = repo }
+
+// WebRuleSource loads a tenant's path exclusions in effect (*scope.Service).
+type WebRuleSource interface {
+	LoadWebRules(ctx context.Context, tenantID shared.ID) (*scopeapp.WebRules, error)
+}
+
+// markExcluded stores an endpoint a path exclusion blocks (for its method)
+// as excluded-untested, naming the exclusion. It never drops it: the tenant
+// learns what lies behind an exclusion without anything being sent there.
+func markExcluded(rules *scopeapp.WebRules, obs []webendpoint.Observation) {
+	for i := range obs {
+		if e := rules.Blocking(obs[i].Origin, obs[i].Method, obs[i].ExamplePath); e != nil {
+			id := e.ID()
+			obs[i].OutOfScope, obs[i].ExclusionID = true, &id
+		}
+	}
+}
 
 // endpointPlan is the endpoints of one report, grouped by the report asset
 // ref of their origin.
@@ -249,12 +268,26 @@ func (s *Service) recordEndpoints(ctx context.Context, agt *sensor.Sensor, tenan
 		id := agt.ID
 		prov.SensorID = &id
 	}
+	var rules *scopeapp.WebRules
+	if s.webRules != nil {
+		var err error
+		if rules, err = s.webRules.LoadWebRules(ctx, tenantID); err != nil {
+			// Fail closed: without the exclusions nothing says which
+			// endpoints must never be targeted.
+			for _, obs := range plan.byOrigin {
+				output.EndpointsRefused += len(obs)
+			}
+			addError(output, "web endpoints: scope exclusions could not be read")
+			return
+		}
+	}
 	for ref, obs := range plan.byOrigin {
 		id, ok := assetMap[ref]
 		if !ok || id.IsZero() || !scope.allowedAsset(id) || !isOriginAsset(scope, id) {
 			output.EndpointsRefused += len(obs)
 			continue
 		}
+		markExcluded(rules, obs)
 		res, err := s.webEndpoints.Record(ctx, tenantID, id, obs, prov)
 		if err != nil {
 			s.logger.Warn("ingest: web endpoints not recorded",
