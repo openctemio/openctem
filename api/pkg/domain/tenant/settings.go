@@ -28,6 +28,8 @@ type Settings struct {
 	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
 	AssetLifecycle AssetLifecycleSettings `json:"asset_lifecycle"`
 	Retest         RetestSettings         `json:"retest"`
+	// Evidence is finding evidence retention (docs/architecture/finding-evidence.md).
+	Evidence EvidenceSettings `json:"evidence,omitempty"`
 	// EASM is attack-surface monitoring (research/22 P0-11).
 	EASM EASMSettings `json:"easm,omitempty"`
 	// Scope is the organization's scope knobs (RFC-054 §6.3).
