@@ -427,3 +427,36 @@ func TestActiveGate_ScopeOfAsset(t *testing.T) {
 		t.Errorf("another tenant saw %s", got)
 	}
 }
+
+// The dry run names an asset only for its own tenant: another tenant asking
+// for the id, or an unknown id, gets nothing back (RFC-054 §6.4).
+func TestActiveGate_AssetTargets(t *testing.T) {
+	f := newGateFixture(t)
+	g := NewActiveGate(f, f, f, f)
+	a := f.add(t, "app.scoped.com", asset.AssetTypeSubdomain)
+	a.SetTenantID(f.tenant)
+	ip := f.add(t, "198.51.100.7", asset.AssetTypeIPAddress)
+	ip.SetTenantID(f.tenant)
+	unknown := shared.NewID()
+
+	got, err := g.AssetTargets(context.Background(), f.tenant, []shared.ID{a.ID(), ip.ID(), unknown})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := got[a.ID()]; len(v) == 0 || v[0] != "app.scoped.com" {
+		t.Fatalf("own asset = %v", v)
+	}
+	if v := got[ip.ID()]; len(v) == 0 || v[0] != "198.51.100.7" {
+		t.Fatalf("own address = %v", v)
+	}
+	if _, ok := got[unknown]; ok {
+		t.Fatal("an unknown id was answered")
+	}
+	other, err := g.AssetTargets(context.Background(), shared.NewID(), []shared.ID{a.ID()})
+	if err != nil || len(other) != 0 {
+		t.Fatalf("another tenant got %v, %v", other, err)
+	}
+	if _, err := (&ActiveGate{}).AssetTargets(context.Background(), f.tenant, []shared.ID{a.ID()}); err == nil {
+		t.Fatal("an unwired gate must refuse")
+	}
+}
