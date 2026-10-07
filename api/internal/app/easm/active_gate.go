@@ -63,6 +63,7 @@ type ActiveGateScope interface {
 type ActiveGateRoots interface {
 	RootDomainSeedNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 	VerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
+	EASMVerifiedDomainNames(ctx context.Context, tenantID shared.ID) ([]string, error)
 }
 
 // ActiveGate implements scan.AttributionGate.

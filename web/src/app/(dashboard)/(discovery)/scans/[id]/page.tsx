@@ -12,16 +12,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Pause,
-  Play,
-  RefreshCw,
-  Tag,
-  Trash2,
-  XCircle,
-} from 'lucide-react'
+import { AlertTriangle, ArrowLeft, RefreshCw, Tag, Trash2, XCircle } from 'lucide-react'
 
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
@@ -41,12 +32,13 @@ import {
   MetricStrip,
   PageHeader,
   RunStatusBadge,
-  StatusBadge,
   TruncatedText,
   type MetricStripItem,
 } from '@/features/shared'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
-import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
+import { LastRunCell } from '@/features/scans/components/last-run-cell'
+import { ScanControls, scanStateLabel } from '@/features/scans/components/scan-controls'
+import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
   elapsedMs,
@@ -60,14 +52,13 @@ import { del, post } from '@/lib/api/client'
 import { pipelineRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { PIPELINE_TRIGGER_LABELS, type PipelineTriggerType } from '@/lib/api/pipeline-types'
-import { invalidateScanConfigsCache, useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
+import { useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
 import {
   SCAN_CONFIG_STATUS_LABELS,
   SCAN_TYPE_LABELS,
   SCHEDULE_TYPE_LABELS,
   SENSOR_PREFERENCE_LABELS,
   type PipelineRun,
-  type ScanConfig,
 } from '@/lib/api/scan-types'
 import { useAssetGroup } from '@/lib/api/security-hooks'
 import { Can, Permission } from '@/lib/permissions'
@@ -86,14 +77,6 @@ function runDuration(run: PipelineRun): string {
   if (ms === undefined) return run.status === 'pending' ? 'Not started' : '-'
   const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
   return run.completed_at ? label : `${label} so far`
-}
-
-function scanStatusBadge(status: ScanConfig['status']) {
-  return (
-    <StatusBadge
-      status={status === 'active' ? 'active' : status === 'paused' ? 'pending' : 'inactive'}
-    />
-  )
 }
 
 /**
@@ -144,8 +127,6 @@ export default function ScanDetailPage() {
   const [runPerPageParam, setRunPerPage] = useUrlFilterNumber('run_per_page', 25)
   const runPerPage = RUN_PAGE_SIZES.includes(runPerPageParam) ? runPerPageParam : 25
 
-  const [isPausing, setIsPausing] = useState(false)
-  const [isActivating, setIsActivating] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [stoppingRunId, setStoppingRunId] = useState<string | null>(null)
@@ -166,17 +147,8 @@ export default function ScanDetailPage() {
   const runs = useMemo(() => runsResponse?.data ?? [], [runsResponse])
   const refetchAll = () => Promise.all([refetchLatest(), refetchRuns()])
 
-  // Trigger asks first when a run is already in progress and ignores a second
-  // click while the first is in flight.
-  const {
-    trigger: triggerScan,
-    isTriggering: isScanTriggering,
-    dialog: triggerDialog,
-  } = useScanTrigger({ onViewRun: setOpenRunId, onTriggered: () => void refetchAll() })
-  const isTriggering = isScanTriggering(scanId)
-
-  // The scan's counters move when a run finishes; the total adds the runs in
-  // progress (scanRunCounts). Success rate is null before any run settled.
+  // The scan's run counts come from its runs (the total includes runs in
+  // progress). Success rate is null before any run settled.
   const counts = useMemo(
     () => (config ? scanRunCounts(config, latestRuns?.data ?? []) : null),
     [config, latestRuns]
@@ -193,24 +165,6 @@ export default function ScanDetailPage() {
       toast.error(getErrorMessage(err, 'Failed to cancel run'))
     } finally {
       setStoppingRunId(null)
-    }
-  }
-
-  const setStatus = async (action: 'pause' | 'activate') => {
-    if (!config) return
-    const setBusy = action === 'pause' ? setIsPausing : setIsActivating
-    setBusy(true)
-    try {
-      await post(
-        action === 'pause' ? scanEndpoints.pause(config.id) : scanEndpoints.activate(config.id),
-        {}
-      )
-      toast.success(`Scan "${config.name}" ${action === 'pause' ? 'paused' : 'activated'}`)
-      await invalidateScanConfigsCache()
-    } catch (err) {
-      toast.error(getErrorMessage(err, `Failed to ${action} scan "${config.name}"`))
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -424,10 +378,12 @@ export default function ScanDetailPage() {
         title={config.name}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            {scanStatusBadge(config.status)}
-            <span>{SCAN_TYPE_LABELS[config.scan_type]}</span>
+            <LastRunCell run={lastRunOf(config)} onOpen={setOpenRunId} />
+            <span>{scanTypeLabel(config).label}</span>
             <span aria-hidden="true">·</span>
             <span>{SCHEDULE_TYPE_LABELS[config.schedule_type]}</span>
+            <span aria-hidden="true">·</span>
+            <span>{scanStateLabel(config)}</span>
             {activeRun && (
               <Button
                 variant="link"
@@ -442,52 +398,13 @@ export default function ScanDetailPage() {
           </span>
         }
       >
-        {/* The gates mirror the API: trigger needs scans:write AND
-            scans:execute; pause, resume and enable need scans:write. */}
-        {config.status !== 'disabled' && (
-          <Can
-            permission={[Permission.ScansWrite, Permission.ScansExecute]}
-            requireAll
-            mode="disable"
-          >
-            <Button
-              size="sm"
-              onClick={() => void triggerScan(config)}
-              disabled={isTriggering}
-              aria-busy={isTriggering}
-            >
-              {isTriggering ? (
-                <RefreshCw className="me-2 h-4 w-4 animate-spin motion-reduce:animate-none" />
-              ) : (
-                <Play className="me-2 h-4 w-4" />
-              )}
-              Trigger
-            </Button>
-          </Can>
-        )}
-        <Can permission={Permission.ScansWrite} mode="disable">
-          {config.status === 'active' ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setStatus('pause')}
-              disabled={isPausing}
-            >
-              <Pause className="me-2 h-4 w-4" />
-              Pause
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant={config.status === 'disabled' ? 'default' : 'outline'}
-              onClick={() => setStatus('activate')}
-              disabled={isActivating}
-            >
-              <Play className="me-2 h-4 w-4" />
-              {config.status === 'disabled' ? 'Enable' : 'Resume'}
-            </Button>
-          )}
-        </Can>
+        {/* Run now, schedule on/off, enable: the same controls as the scan
+            drawer, gated as the API gates them. */}
+        <ScanControls
+          config={config}
+          onViewRun={setOpenRunId}
+          onChanged={() => void refetchAll()}
+        />
       </PageHeader>
 
       <MetricStrip className="mt-5" items={metrics} />
@@ -676,7 +593,6 @@ export default function ScanDetailPage() {
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfig}
       />
-      {triggerDialog}
       <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
     </Main>
   )

@@ -41,7 +41,8 @@ make dev
 
 | Command | Description |
 |---------|-------------|
-| `make swagger` | Generate Swagger documentation |
+| `make swagger` | Generate the OpenAPI spec (not committed) |
+| `make contract` | Generate the spec, the route manifest and the web route permission map |
 | `make swagger-install` | Install Swagger CLI tool |
 
 ## Docker Commands

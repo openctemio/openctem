@@ -2,7 +2,7 @@
 
 import useSWR from 'swr'
 import { del, get, patch, post } from '@/lib/api/client'
-import type { EASMSeed, EASMSeedList } from '@/lib/api/generated'
+import type { EASMSeed, EASMSeedList, ScopeTargetResponse } from '@/lib/api/generated'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 
@@ -34,9 +34,13 @@ export interface NewSeed {
   discovery_enabled?: boolean
 }
 
-/** POST /api/v1/easm/seeds — attested: the caller states the authority. */
+/**
+ * POST /api/v1/easm/seeds — attested: the caller states the authority. The
+ * seed is created as the scope entry *.<domain> (RFC-054): active at once, or
+ * pending another administrator's approval.
+ */
 export function createSeed(seed: NewSeed) {
-  return post<EASMSeed>(EASM_SEEDS_KEY, { ...seed, attested: true })
+  return post<ScopeTargetResponse>(EASM_SEEDS_KEY, { ...seed, attested: true })
 }
 
 /** PATCH /api/v1/easm/seeds/{id} */
