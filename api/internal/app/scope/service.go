@@ -32,6 +32,9 @@ type Service struct {
 	// caller's data scope.
 	coverage  CoverageCounter
 	dataScope DataScopeResolver
+	// The scope join after a committed change (join.go).
+	joiner  ScopeJoiner
+	visible VisibleAssetCounter
 }
 
 // NewService creates a new Service.
@@ -146,6 +149,9 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	case !input.Actor.system():
 		s.notifyWidened(ctx, target, "Scope entry added")
 	}
+	if target.IsActive() {
+		s.scheduleJoin(tenantID)
+	}
 	s.logger.Info("scope target created", "id", target.ID().String(), "pattern", logSafe(input.Pattern), "status", target.Status().String())
 	return target, nil
 }
@@ -234,6 +240,9 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 		s.notifyWidened(ctx, target, "Discovery turned on for a scope entry")
 	}
 
+	if target.IsActive() {
+		s.scheduleJoin(target.TenantID())
+	}
 	s.logger.Info("scope target updated", "id", logSafe(targetID), "widened", widened)
 	return target, nil
 }
@@ -465,6 +474,9 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 		s.notifyWidened(ctx, target, "Scope entry activated")
 	}
 
+	if target.IsActive() {
+		s.scheduleJoin(parsedTenantID)
+	}
 	s.logger.Info("scope target activated", "id", logSafe(targetID), "status", target.Status().String())
 	return target, nil
 }
@@ -626,6 +638,7 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 		return nil, fmt.Errorf("failed to update scope exclusion: %w", err)
 	}
 
+	s.scheduleJoin(parsedTenantID) // a shorter exclusion may let a name join
 	s.logger.Info("scope exclusion updated", "id", logSafe(exclusionID))
 	return exclusion, nil
 }
@@ -656,6 +669,7 @@ func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenan
 		return err
 	}
 
+	s.scheduleJoin(parsedTenantID)
 	s.logger.Info("scope exclusion deleted", "id", logSafe(exclusionID))
 	return nil
 }
@@ -834,6 +848,7 @@ func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, t
 		return nil, fmt.Errorf("failed to deactivate scope exclusion: %w", err)
 	}
 
+	s.scheduleJoin(parsedTenantID)
 	s.logger.Info("scope exclusion deactivated", "id", logSafe(exclusionID))
 	return exclusion, nil
 }
