@@ -49,8 +49,13 @@ import { get, post, put, del } from '@/lib/api/client'
 import { Can, Permission } from '@/lib/permissions'
 import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import {
+  CRITICALITY_LABELS,
+  RATED_CRITICALITY_LEVELS,
+  type RatedCriticality,
+} from '@/lib/criticality'
 
-type Criticality = 'critical' | 'high' | 'medium' | 'low'
+type Criticality = RatedCriticality
 
 interface BusinessService {
   id: string
@@ -522,10 +527,11 @@ export default function BusinessServicesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
+                  {RATED_CRITICALITY_LEVELS.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {CRITICALITY_LABELS[c]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

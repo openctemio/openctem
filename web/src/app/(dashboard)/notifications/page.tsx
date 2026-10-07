@@ -47,6 +47,7 @@ import {
   NOTIFICATION_TYPE_LABELS,
 } from '@/features/notifications/lib/notification-types'
 import { safeHref } from '@/lib/safe-href'
+import { SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
 
 const severityColors: Record<string, string> = { ...SEVERITY_TEXT_COLORS }
 
@@ -300,11 +301,11 @@ export default function NotificationsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All severities</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="high">High</SelectItem>
-            <SelectItem value="medium">Medium</SelectItem>
-            <SelectItem value="low">Low</SelectItem>
-            <SelectItem value="info">Info</SelectItem>
+            {SEVERITY_LEVELS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {SEVERITY_LABELS[s]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={readFilter} onValueChange={handleReadFilterChange}>

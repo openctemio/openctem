@@ -36,4 +36,15 @@ describe('slaPolicySchema', () => {
       false
     )
   })
+
+  it('gives informational findings no SLA by default; 0 skips the info order', () => {
+    expect(DEFAULT_SLA_FORM.info_days).toBe(0)
+    expect(slaPolicySchema.safeParse({ ...valid, info_days: 0, low_days: 60 }).success).toBe(true)
+    expect(slaPolicySchema.safeParse({ ...valid, info_days: -1 }).success).toBe(false)
+    // An opted-in info window still has to be at least the low window.
+    expect(slaPolicySchema.safeParse({ ...valid, info_days: 30, low_days: 60 }).success).toBe(false)
+    expect(slaPolicySchema.safeParse({ ...valid, info_days: 120, low_days: 60 }).success).toBe(true)
+    // Only info may be 0.
+    expect(slaPolicySchema.safeParse({ ...valid, low_days: 0 }).success).toBe(false)
+  })
 })

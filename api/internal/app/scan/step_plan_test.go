@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -263,3 +264,68 @@ func TestScheduleWorkflowSteps_DelegatesToTheOneDispatcher(t *testing.T) {
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }
+
+// prefer_tools: the step tries its own order, among the capability's
+// implementations, not the catalog order.
+func TestResolveStepTool_PreferOrder(t *testing.T) {
+	tools := &fakeToolLookup{platform: map[string]*tool.Tool{
+		"betterleaks": activeTool("betterleaks"),
+		"gitleaks":    activeTool("gitleaks"),
+	}}
+	step := &pipeline.Step{StepKey: "secrets", Capabilities: []string{"secrets.code"}, PreferTools: []string{"gitleaks", "betterleaks"}}
+	got, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "gitleaks" || got.Pinned || got.Capability() != "secrets.code@1" {
+		t.Fatalf("resolved = %+v", got)
+	}
+	if !reflect.DeepEqual(got.Candidates, []string{"gitleaks", "betterleaks"}) {
+		t.Fatalf("candidates = %v", got.Candidates)
+	}
+}
+
+// A tool that does not take a standard param the step sets is never picked:
+// the value would otherwise be dropped silently.
+func TestResolveStepTool_SkipsToolsThatDoNotTakeTheParams(t *testing.T) {
+	tools := &fakeToolLookup{platform: map[string]*tool.Tool{
+		"betterleaks": activeTool("betterleaks"),
+		"trufflehog":  activeTool("trufflehog"),
+		"gitleaks":    activeTool("gitleaks"),
+	}}
+	step := &pipeline.Step{StepKey: "secrets", Capabilities: []string{"secrets.code"}, Config: map[string]any{"history": true}}
+	_, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
+	if domainCode(err) != codeNoMatchingTool {
+		t.Fatalf("err = %v, want NO_MATCHING_TOOL", err)
+	}
+	if de := err.Error(); !strings.Contains(de, "does not take history") {
+		t.Fatalf("the reason is missing: %v", err)
+	}
+	if len(tools.asked) != 0 {
+		t.Fatalf("looked up %v though none takes the params", tools.asked)
+	}
+}
+
+// The resolved step carries the config the tool receives: standard params
+// under the tool's own keys, and the extras for that tool only.
+func TestStepTool_WithToolMapsTheConfig(t *testing.T) {
+	tools := &fakeToolLookup{platform: map[string]*tool.Tool{"naabu": activeTool("naabu")}}
+	step := &pipeline.Step{StepKey: "ports", Capabilities: []string{"scan.ports"},
+		Config: map[string]any{"top_n": float64(100)}}
+	got, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &pipeline.Run{ID: shared.NewID(), Context: map[string]any{}}
+	p, err := StepCommandPayload(run, got.WithTool(step), got.Name, "sr", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := p[pipeline.PayloadKeyConfig].(map[string]any)
+	if _, std := cfg["top_n"]; std || cfg["top_ports"] == nil {
+		t.Fatalf("sensor config = %v, want top_ports", cfg)
+	}
+	if _, ok := step.Config["top_n"]; !ok {
+		t.Fatal("resolving changed the stored step config")
+	}
+}

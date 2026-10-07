@@ -184,8 +184,9 @@ export function ComponentTable({ data, onViewDetails }: ComponentTableProps) {
         sortingFn: (rowA, rowB) => {
           const a = rowA.original.vulnerabilityCount
           const b = rowB.original.vulnerabilityCount
-          const scoreA = a.critical * 1000 + a.high * 100 + a.medium * 10 + a.low
-          const scoreB = b.critical * 1000 + b.high * 100 + b.medium * 10 + b.low
+          // Lexicographic by severity, info as the last tiebreaker.
+          const scoreA = a.critical * 1e4 + a.high * 1e3 + a.medium * 100 + a.low * 10 + a.info
+          const scoreB = b.critical * 1e4 + b.high * 1e3 + b.medium * 100 + b.low * 10 + b.info
           return scoreA - scoreB
         },
       },

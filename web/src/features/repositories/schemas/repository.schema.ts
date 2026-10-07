@@ -1,6 +1,7 @@
 import { z } from 'zod'
+import { ASSET_CRITICALITY_LEVELS, criticalityOptions } from '@/lib/criticality'
 
-export const criticalitySchema = z.enum(['critical', 'high', 'medium', 'low'])
+export const criticalitySchema = z.enum(ASSET_CRITICALITY_LEVELS)
 export const assetScopeSchema = z.enum(['internal', 'external', 'partner'])
 export const exposureLevelSchema = z.enum([
   'public',
@@ -44,16 +45,7 @@ export const createRepositorySchema = z.object({
 
 export type CreateRepositoryFormData = z.infer<typeof createRepositorySchema>
 
-export const CRITICALITY_OPTIONS = [
-  {
-    value: 'critical',
-    label: 'Critical',
-    description: 'Business-critical, requires immediate attention',
-  },
-  { value: 'high', label: 'High', description: 'Important, requires priority handling' },
-  { value: 'medium', label: 'Medium', description: 'Standard priority' },
-  { value: 'low', label: 'Low', description: 'Lower priority' },
-] as const
+export const CRITICALITY_OPTIONS = criticalityOptions(ASSET_CRITICALITY_LEVELS)
 
 export const SCOPE_OPTIONS = [
   { value: 'internal', label: 'Internal', description: 'Used internally by the organization' },
