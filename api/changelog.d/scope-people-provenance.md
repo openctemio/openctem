@@ -8,7 +8,7 @@
   only from the organization's current members; no e-mail is returned.
   **Upgrade note:** API clients that read `created_by` as a string read
   `created_by.id` now.
-- New `origin` on entries and exclusions (migration `001241`): `manual`,
+- New `origin` on entries and exclusions (migration `001244`): `manual`,
   `request`, `import`, `review_rule`, `refusal_fix`, `seed`,
   `seed_migration` or `system`, set by the path that created the row.
   Existing rows are `manual`, rows the platform wrote are `system`.
