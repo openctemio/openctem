@@ -4,8 +4,6 @@ package scope
 import (
 	"context"
 	"fmt"
-	"net"
-	"net/url"
 	"strings"
 	"time"
 
@@ -946,15 +944,7 @@ func (s *Service) isAssetExcluded(assetValues []string, exclusions []*scopedom.E
 func exclusionMatchForms(value string) []string {
 	v := strings.TrimSpace(value)
 	forms := []string{v}
-	host := ""
-	if strings.Contains(v, "://") {
-		if u, err := url.Parse(v); err == nil {
-			host = u.Hostname()
-		}
-	} else if h, _, err := net.SplitHostPort(v); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
+	host := asset.HostOf(v)
 	if host != "" && !strings.EqualFold(host, v) {
 		forms = append(forms, strings.ToLower(host))
 	}
