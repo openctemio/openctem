@@ -23,7 +23,7 @@ import {
 } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
-import type { PipelineRun } from '@/lib/api/scan-types'
+import type { ScanRun } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { formatScanDuration } from '@/features/scans/lib/format'
@@ -47,7 +47,7 @@ function formatTime(ts?: string) {
   return ts ? new Date(ts).toLocaleString() : '—'
 }
 
-function durationOf(run: PipelineRun): string | null {
+function durationOf(run: ScanRun): string | null {
   const ms = elapsedMs(run)
   if (ms === undefined) return null
   const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
@@ -88,9 +88,9 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
     error,
     isLoading,
     mutate,
-  } = useSWR<PipelineRun>(
+  } = useSWR<ScanRun>(
     runId ? scanRunEndpoints.get(runId) : null,
-    (url: string) => get<PipelineRun>(url),
+    (url: string) => get<ScanRun>(url),
     {
       revalidateOnFocus: false,
       // Live while the run is: status, task counts and duration refresh every
@@ -167,7 +167,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               <DetailSection title="Workflow">
                 <RunGraph
                   runId={run.id}
-                  pipelineId={run.scan_workflow_id}
+                  workflowId={run.scan_workflow_id}
                   stepRuns={run.step_runs ?? []}
                   refreshInterval={runRefreshInterval(run)}
                 />

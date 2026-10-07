@@ -1,4 +1,4 @@
-import type { PipelineRun } from '@/lib/api/scan-types'
+import type { ScanRun } from '@/lib/api/scan-types'
 import { scanSuccessRate } from './format'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -18,7 +18,7 @@ export function isRunInProgress(run: { status: string }): boolean {
  * (a deleted user) reads "Unknown user".
  */
 export function runTriggeredByLabel(
-  run: Pick<PipelineRun, 'triggered_by' | 'triggered_by_name'>
+  run: Pick<ScanRun, 'triggered_by' | 'triggered_by_name'>
 ): string | null {
   if (run.triggered_by_name) return run.triggered_by_name
   if (!run.triggered_by) return null
