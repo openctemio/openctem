@@ -508,7 +508,7 @@ func (s *WorkflowService) AddNode(ctx context.Context, input AddNodeInput) (*wor
 		return nil, err
 	}
 
-	if err := workflowdom.ValidateSupported(input.Config); err != nil {
+	if err := validateNodeConfigs(input.Config); err != nil {
 		return nil, err
 	}
 
@@ -568,7 +568,7 @@ func (s *WorkflowService) UpdateNode(ctx context.Context, input UpdateNodeInput)
 		node.SetUIPosition(*input.UIPositionX, *input.UIPositionY)
 	}
 	if input.Config != nil {
-		if err := workflowdom.ValidateSupported(*input.Config); err != nil {
+		if err := validateNodeConfigs(*input.Config); err != nil {
 			return nil, err
 		}
 		node.Config = *input.Config
@@ -891,5 +891,14 @@ func validateSupportedNodeInputs(nodes []CreateNodeInput) error {
 	for _, n := range nodes {
 		configs = append(configs, n.Config)
 	}
-	return workflowdom.ValidateSupported(configs...)
+	return validateNodeConfigs(configs...)
+}
+
+// validateNodeConfigs refuses unsupported trigger and action types and
+// trigger options that would never match.
+func validateNodeConfigs(configs ...workflowdom.NodeConfig) error {
+	if err := workflowdom.ValidateSupported(configs...); err != nil {
+		return err
+	}
+	return workflowdom.ValidateTriggerConfig(configs...)
 }
