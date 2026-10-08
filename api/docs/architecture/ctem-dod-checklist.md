@@ -35,9 +35,9 @@ breadth (more cloud connectors, more RLS tables) or UI consumers.
 | B2 | Compensating-control change triggers reclassify | `controller.ControlChangePublisher` | Q1 gate tests |
 | B3 | Jira "Done" → verification scan | `internal/app/jira/rescan_hook.go` | `TestCTEM_B3_*` |
 | B4 | SLA breach → notification outbox | `internal/app/sla/breach_outbox_adapter.go` | `TestCTEM_B4_*` |
-| B5 | CTEM cycle review writes audit | `internal/app/audit_service.go` (hash-chain) | `TestCTEM_B5_*` |
+| B5 | CTEM cycle review writes audit | `internal/app/audit/service.go` (hash-chain) | `TestCTEM_B5_*` |
 | B6 | Runtime match → auto-reopen | `internal/app/ioc/correlator.go` | `TestCTEM_B6_*` |
-| B7 | Scope delta mid-cycle | `internal/app/ctem_cycle_service.go` | completed separately |
+| B7 | Scope delta mid-cycle | `internal/infra/http/handler/ctem_cycle_handler.go` | completed separately |
 
 ## Observability invariants (O-edges)
 
@@ -49,15 +49,15 @@ breadth (more cloud connectors, more RLS tables) or UI consumers.
 
 ## Anti-flap safeguards
 
-- **Priority flood guard** — `internal/app/priority_flood_guard.go` caps
+- **Priority flood guard** — `internal/app/finding/priority_flood_guard.go` caps
   top-class fan-out at 50/hour/tenant. Classification still records;
   only downstream side effects are suppressed.
-- **Bulk-action guard** — `internal/app/bulk_action_guard.go` enforces
+- **Bulk-action guard** — `internal/app/finding/bulk_action_guard.go` enforces
   500 rows/request + 10k rows/tenant/hour on bulk finding ops.
 
 ## Coverage gate
 
-- **Validation coverage SLO** — `internal/app/validation_coverage.go`
+- **Validation coverage SLO** — `internal/app/validation/coverage.go`
   `Enforce(coverage, thresholds)` blocks cycle close when P0 or P1
   evidence coverage drops below threshold.
 - Default thresholds: P0=100%, P1=100%, P2=80%, P3=unenforced.

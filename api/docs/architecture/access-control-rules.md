@@ -512,10 +512,10 @@ Every query includes `WHERE tenant_id = ?` to prevent cross-tenant data access:
 | `pkg/domain/accesscontrol/scope_rule.go` | `ScopeRule` entity with match criteria |
 | `pkg/domain/accesscontrol/value_objects.go` | `OwnershipType`, `AssignmentConditions`, `AssignmentOptions` |
 | `pkg/domain/accesscontrol/repository.go` | Repository interface (84 lines, ~40 methods) |
-| `internal/app/assignment_rule_service.go` | Assignment rule CRUD + TestRule |
-| `internal/app/assignment_engine.go` | Finding evaluation engine (`EvaluateRules`, `MatchesConditions`) |
-| `internal/app/scope_rule_service.go` | Scope rule CRUD + reconciliation + asset evaluation |
-| `internal/app/vulnerability_service.go` | `evaluateAssignmentRules()` integration point |
+| `internal/app/assignment/rule.go` | Assignment rule CRUD + TestRule |
+| `internal/app/assignment/engine.go` | Finding evaluation engine (`EvaluateRules`, `MatchesConditions`) |
+| `internal/app/scope/rule.go` | Scope rule CRUD + reconciliation + asset evaluation |
+| `internal/app/finding/vulnerability_service.go` | `evaluateAssignmentRules()` integration point |
 | `internal/infra/postgres/access_control_repository.go` | PostgreSQL implementation |
 | `internal/infra/http/handler/assignment_rule_handler.go` | Assignment rule HTTP handler |
 | `internal/infra/http/handler/scope_rule_handler.go` | Scope rule HTTP handler |
