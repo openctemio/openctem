@@ -1852,6 +1852,13 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		WithMessage(fmt.Sprintf("Team '%s' created", newTenant.Name())).
 		WithMetadata("via", "create_first_team"))
 
+	// The new organization requires two-factor authentication for its owner:
+	// without it, no access token is minted. The organization exists; the
+	// owner signs in again, enrolls a second factor, then selects it.
+	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), newTenant.ID().String()); err != nil {
+		return nil, err
+	}
+
 	// Mark old refresh token as used (token rotation)
 	if err := storedToken.MarkUsed(); err != nil {
 		s.logger.Error("failed to mark refresh token as used", "error", err)

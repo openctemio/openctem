@@ -137,6 +137,16 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
         teamSlug: data.slug,
       })
 
+      if (!result.success && result.mfaEnrollmentRequired) {
+        // The team exists; its owner must use two-factor authentication.
+        // Signing in again walks through the authenticator set-up.
+        toast.success('Team created. Secure your account to continue.', {
+          description: 'Sign in again to set up two-factor authentication.',
+        })
+        window.location.href = '/login?mfa=setup'
+        return
+      }
+
       if (result.success && result.tenant) {
         toast.success('Team created successfully', {
           description: `Welcome to ${result.tenant.name}!`,

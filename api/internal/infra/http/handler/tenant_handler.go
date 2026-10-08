@@ -1842,6 +1842,7 @@ type SecuritySettingsResponse struct {
 	// SSOEnforced is read-only here: set by the platform administrator.
 	SSOEnforced           bool     `json:"sso_enforced"`
 	MFARequired           bool     `json:"mfa_required"`
+	MFARequiredForAdmins  bool     `json:"mfa_required_for_admins"`
 	SessionTimeoutMin     int      `json:"session_timeout_min"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
@@ -1883,6 +1884,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 		Security: &SecuritySettingsResponse{
 			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
+			MFARequiredForAdmins:  s.Security.MFARequiredForAdmins,
 			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
@@ -2001,6 +2003,7 @@ type UpdateSecuritySettingsRequest struct {
 	// silently ignored field would look like it saved.
 	SSOEnforced           *bool    `json:"sso_enforced"`
 	MFARequired           *bool    `json:"mfa_required"`
+	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
@@ -2045,6 +2048,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	clientIP := getClientIP(r)
 	input := tenantapp.UpdateSecuritySettingsInput{
 		MFARequired:           req.MFARequired,
+		MFARequiredForAdmins:  req.MFARequiredForAdmins,
 		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,
 		AllowedDomains:        req.AllowedDomains,
