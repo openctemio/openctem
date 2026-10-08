@@ -81,6 +81,9 @@ type RunStageListResponse struct {
 // @Router       /scan-runs/{id}/stages [get]
 func (h *ScanWorkflowHandler) ListRunStages(w http.ResponseWriter, r *http.Request) {
 	tenantID, runID := middleware.GetTenantID(r.Context()), chi.URLParam(r, "id")
+	if !h.guardRun(w, r) {
+		return
+	}
 	plans, err := h.service.ListRunStages(r.Context(), tenantID, runID)
 	if err != nil {
 		h.handleServiceError(w, err)
