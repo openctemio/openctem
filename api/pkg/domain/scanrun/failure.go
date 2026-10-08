@@ -143,6 +143,10 @@ const (
 	// FailureScopeChanged: the scope changed while the job was queued and
 	// the claim-time re-check refused every target.
 	FailureScopeChanged = "SCOPE_CHANGED"
+	// FailureGateRecordMissing: a probing job queued without a dispatch
+	// gate record whose targets the claim cannot read to re-check them;
+	// it is refused, and its owner creates it again.
+	FailureGateRecordMissing = "GATE_RECORD_MISSING"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -157,6 +161,7 @@ var failureClasses = map[string]FailureClass{
 	FailureAllTargetsExcluded:  FailureClassScope,
 	FailureAllTargetsUnconfirm: FailureClassScope,
 	FailureScopeChanged:        FailureClassScope,
+	FailureGateRecordMissing:   FailureClassScope,
 	FailureNoSensor:            FailureClassPlacement,
 	FailureNoSensorForTool:     FailureClassPlacement,
 	FailureNoSensorAvailable:   FailureClassPlacement,

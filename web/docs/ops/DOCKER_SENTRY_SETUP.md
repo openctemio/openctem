@@ -6,10 +6,10 @@ To deploy OpenCTEM, use the published images and the guides at
 
 ## Docker files
 
-| File | Purpose |
-|---|---|
-| `web/Dockerfile` | Multi-target build on `node:26-alpine`: `development` (hot reload), `builder`, `production` (standalone output, user `nextjs`, health check on `/api/health`) |
-| `web/docker-compose.yml` | Development: service `nextjs`, source mounted, `WATCHPACK_POLLING=true`, port `${UI_PORT:-3000}` |
+| File                     | Purpose                                                                                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web/Dockerfile`         | Multi-target build on `node:26-alpine`: `development` (hot reload), `builder`, `production` (standalone output, user `nextjs`, health check on `/api/health`) |
+| `web/docker-compose.yml` | Development: service `nextjs`, source mounted, `WATCHPACK_POLLING=true`, port `${UI_PORT:-3000}`                                                              |
 
 The supported production layout is the platform stack in
 `api/deploy/docker-compose.yml` (gateway, web, API, PostgreSQL, Redis) or the

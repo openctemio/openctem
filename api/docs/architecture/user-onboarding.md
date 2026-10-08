@@ -75,6 +75,35 @@ exists signs in as before: a mode change never locks anyone out.
 sign-in created an account that could never get an organization). Startup
 logs a warning when it is still set.
 
+### Request access
+
+When the policy is `admin_only` with `request_access` on, the "not set up"
+page offers **Request access** (`/request-access`, en/vi):
+
+- `POST /api/v1/auth/access-requests` `{company, email, note, captcha_token?}`
+  (public, registration rate limit) answers 202 with one message for every
+  accepted submission. Over the per-address limit (3 an hour, the IP kept only
+  as a hash) or the per-domain limit (5 a day), or from a disposable-address
+  service, the request is dropped silently, so the answer reveals nothing.
+  Closed (`self_service`, or requests off): 403 `SIGNUP_NOT_AVAILABLE`.
+- With SMTP, the request waits as `unconfirmed` until the requester opens the
+  emailed link (`/request-access/confirm#token=…`; the token travels in the
+  fragment and then in the body of `POST /auth/access-requests/confirm`,
+  single use, 24 hours). Without SMTP it is `pending` at once.
+- Console > Organizations > Access requests (any admin reads;
+  **ops_admin+** decides, admin-audited `access_request.approve` /
+  `access_request.reject`): **Approve** creates the organization with the
+  requester as owner through the same creator as "Register organization" (a
+  new account gets the one-time set-password link) and only for a confirmed
+  request; two administrators approving at once create one organization.
+  **Reject** sends a neutral email to a confirmed requester.
+- Retention (`access-request-retention` controller, hourly): unconfirmed
+  requests are deleted after 24 hours, decided ones after 90 days.
+- CAPTCHA: `CAPTCHA_TURNSTILE_SECRET` makes the API require a Cloudflare
+  Turnstile token on submissions; `CAPTCHA_TURNSTILE_SITE_KEY` is published as
+  `captcha_site_key` on `/auth/providers`. The web widget is not wired yet:
+  leave the secret unset until it is, or every submission is refused.
+
 ### Invitation tokens stay out of URLs
 
 The invitation token is a bearer credential (whoever holds it can see and
@@ -274,6 +303,7 @@ UPDATE tenants
 | Domain / IP policy | `pkg/domain/tenant/security_policy.go` |
 | IP allowlist middleware | `internal/infra/http/middleware/ip_allowlist.go` (wired in `routes/routes.go`, `routes/tenant.go`) |
 | Registration gate | `AuthService.Register` / `pendingInvitationFor` (`internal/app/auth/service.go`) |
+| Request access | `internal/app/accessrequest`, `pkg/domain/accessrequest`, `handler/access_request_handler.go`, `controller/access_request_retention.go` (migration 001380) |
 | Sign-up policy | `internal/app/signup`, `pkg/domain/signup`, `internal/infra/postgres/signup_policy_repository.go`, `handler/admin_signup_handler.go` |
 | SSO admission | `SSOService.jitProvisioningAllowed` (`internal/app/auth/sso.go`) |
 | Set-password email | `EmailService.SendAccountSetupEmail`, template `account_setup` |

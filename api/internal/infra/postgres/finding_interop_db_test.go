@@ -25,7 +25,7 @@ func TestFindingInterop_DB(t *testing.T) {
 			VALUES ($1, $2, $3, $4, 'nessus', 'm', 'high', $5, $6)`, id, tenant, asset, source, fp, status)
 		return id
 	}
-	mine := insert(f.tenant, f.host, "fp-shared", "open", "va")
+	mine := insert(f.tenant, f.host, "fp-shared", "new", "va")
 
 	otherTenant := shared.NewID()
 	f.exec(t, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, otherTenant, "interop-o-"+otherTenant.String())
@@ -33,7 +33,7 @@ func TestFindingInterop_DB(t *testing.T) {
 	otherAsset := shared.NewID()
 	f.exec(t, `INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, 'h-o', 'host')`, otherAsset, otherTenant)
 	// The other tenant has a finding under the very same fingerprint.
-	foreign := insert(otherTenant, otherAsset, "fp-shared", "open", "va")
+	foreign := insert(otherTenant, otherAsset, "fp-shared", "new", "va")
 
 	v81, v92 := 8.1, 9.2
 	cred := true
