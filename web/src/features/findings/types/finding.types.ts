@@ -296,6 +296,8 @@ export const SEVERITY_CONFIG: Record<
 // ============================================
 // PRIORITY CLASS (RFC-004)
 // ============================================
+// The remediation window of each class is the organization's SLA policy,
+// read from the API (features/sla PriorityClassSla); it is not kept here.
 
 export type PriorityClass = 'P0' | 'P1' | 'P2' | 'P3'
 
@@ -307,7 +309,6 @@ export const PRIORITY_CLASS_CONFIG: Record<
     color: string
     bgColor: string
     textColor: string
-    sla: string
   }
 > = {
   P0: {
@@ -316,7 +317,6 @@ export const PRIORITY_CLASS_CONFIG: Record<
     color: 'border-red-600/70',
     bgColor: 'bg-red-600/20',
     textColor: 'text-red-500',
-    sla: '7 days',
   },
   P1: {
     label: 'P1',
@@ -324,7 +324,6 @@ export const PRIORITY_CLASS_CONFIG: Record<
     color: 'border-orange-500/70',
     bgColor: 'bg-orange-500/20',
     textColor: 'text-orange-500',
-    sla: '30 days',
   },
   P2: {
     label: 'P2',
@@ -332,7 +331,6 @@ export const PRIORITY_CLASS_CONFIG: Record<
     color: 'border-yellow-500/70',
     bgColor: 'bg-yellow-500/20',
     textColor: 'text-yellow-500',
-    sla: '60 days',
   },
   P3: {
     label: 'P3',
@@ -340,7 +338,6 @@ export const PRIORITY_CLASS_CONFIG: Record<
     color: 'border-slate-500/70',
     bgColor: 'bg-slate-500/20',
     textColor: 'text-slate-400',
-    sla: 'Opportunistic',
   },
 }
 

@@ -6,7 +6,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { csrfFetch } from '@/lib/api/client'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Main } from '@/components/layout'
 import {
   RiskScoreBadge,
@@ -2102,10 +2102,13 @@ function DetailPageSkeleton() {
 // Main Page Component
 // ============================================
 
-export default function RepositoryDetailPage() {
-  const params = useParams()
+/**
+ * The repository workspace, shown at /assets/{id} for a repository asset:
+ * overview, branches (compare), findings by branch and scanner, and scan
+ * settings.
+ */
+export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) {
   const router = useRouter()
-  const repositoryId = params.id as string
 
   // Reactive URL params for shareable links
   const searchParams = useSearchParams()

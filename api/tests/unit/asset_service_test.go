@@ -2306,3 +2306,7 @@ func TestAssetService_GetAssetDisplayInfo_InvalidTenant(t *testing.T) {
 func (m *MockAssetRepository) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
 	return 0, nil
 }
+
+func (m *MockAssetRepository) GetInventoryOverview(_ context.Context, _ shared.ID, _ asset.AccessScope) ([]asset.InventoryOverviewRow, error) {
+	return nil, nil
+}
