@@ -15,10 +15,31 @@ import {
   ASSET_TYPE_PROPERTIES,
   type AssetPropertyDefinition,
   type AssetPropertyFormat,
+  type AssetPropertyKey,
 } from '../registry.generated'
 
+export type { AssetPropertyKey }
+
 /** The canonical key of an asset's IP addresses. */
-export const IP_ADDRESSES_KEY = 'ip_addresses'
+export const IP_ADDRESSES_KEY: AssetPropertyKey = 'ip_addresses'
+
+/** True when `key` is a property key of the schema (not a synonym, not custom). */
+export function isPropertyKey(key: string): key is AssetPropertyKey {
+  return Object.prototype.hasOwnProperty.call(ASSET_PROPERTIES, key)
+}
+
+/**
+ * The value an asset holds for a schema key. Web code reads a property only
+ * through a typed key (this, or `propertyStrings` for list keys), so a key
+ * outside the registry does not compile (docs/architecture/asset-inventory-v2.md,
+ * "Property names").
+ */
+export function propertyValue(
+  properties: Record<string, unknown> | undefined | null,
+  key: AssetPropertyKey
+): unknown {
+  return properties?.[key]
+}
 
 const SYNONYM_OF: Readonly<Record<string, string>> = Object.fromEntries(
   Object.entries(ASSET_PROPERTIES).flatMap(([key, def]) =>
@@ -33,9 +54,7 @@ export function canonicalPropertyKey(key: string): string {
 
 /** The schema entry of a canonical key. */
 export function propertyDefinition(key: string): AssetPropertyDefinition | undefined {
-  return Object.prototype.hasOwnProperty.call(ASSET_PROPERTIES, key)
-    ? ASSET_PROPERTIES[key]
-    : undefined
+  return isPropertyKey(key) ? ASSET_PROPERTIES[key] : undefined
 }
 
 /** Humanized fallback label for a key outside the schema. */

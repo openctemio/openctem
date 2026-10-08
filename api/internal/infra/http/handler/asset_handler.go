@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -1576,8 +1578,8 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	tagsFilter := parseQueryArray(query.Get("tags"))
 	subTypeFilter := query.Get("sub_type")
 
-	// Parse count_by fields for metadata counting (e.g., ?count_by=is_virtual,os,ssl)
-	countByFields := parseQueryArray(query.Get("count_by"))
+	// Property keys to count values of (e.g. ?count_by=is_virtual,os_name).
+	countByFields := statsCountByFields(parseQueryArray(query.Get("count_by")))
 
 	// Use service method with SQL aggregation for efficient stats
 	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID,
@@ -1612,6 +1614,29 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(stats)
+}
+
+// maxStatsCountBy caps ?count_by: each field adds one GROUP BY over the
+// caller's assets to the stats query.
+const maxStatsCountBy = 10
+
+// statsCountByFields keeps the count_by fields that are property keys of the
+// schema (a synonym counts as its canonical key), without duplicates, up to
+// maxStatsCountBy. Anything else is dropped: it would only ever count keys
+// the schema does not have.
+func statsCountByFields(fields []string) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		key := asset.CanonicalPropertyKey(strings.TrimSpace(f))
+		if _, ok := asset.LookupProperty(key); !ok || slices.Contains(out, key) {
+			continue
+		}
+		out = append(out, key)
+		if len(out) == maxStatsCountBy {
+			break
+		}
+	}
+	return out
 }
 
 // ListTags returns distinct tags across all assets for the tenant.
