@@ -57,7 +57,11 @@ type VerifiedDomainResponse struct {
 	// Purpose: sso (admits SSO JIT and SCIM users) or easm (the organization
 	// verified it itself for attack-surface management; admits nobody).
 	// Adding an easm domain here makes it sso (research/22 E6).
-	Purpose       string                 `json:"purpose"`
+	Purpose string `json:"purpose"`
+	// ClaimConflict: another organization also held this domain verified for
+	// SSO when domain claims became exclusive. Both keep working until a
+	// platform administrator removes one of the claims.
+	ClaimConflict bool                   `json:"claim_conflict"`
 	Instructions  domainverify.TXTRecord `json:"instructions"`
 	VerifiedAt    *string                `json:"verified_at,omitempty"`
 	LastCheckedAt *string                `json:"last_checked_at,omitempty"`
@@ -240,6 +244,8 @@ func (h *VerifiedDomainHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, verifieddomain.ErrNotFound):
 		apierror.NotFound("Domain not found").WriteJSON(w)
+	case errors.Is(err, verifieddomain.ErrDomainClaimed):
+		apierror.Conflict("This domain is verified by another organization. A claim can move only 7 days after that organization's DNS proof lapses.").WriteJSON(w)
 	case errors.Is(err, verifieddomain.ErrAlreadyExists):
 		apierror.Conflict("Domain already added for this organization").WriteJSON(w)
 	case errors.Is(err, verifieddomain.ErrBlockedDomain):
@@ -255,13 +261,14 @@ func (h *VerifiedDomainHandler) handleError(w http.ResponseWriter, err error) {
 func toVerifiedDomainResponse(vd *verifieddomain.VerifiedDomain, txt domainverify.TXTRecord) VerifiedDomainResponse {
 	const layout = "2006-01-02T15:04:05Z"
 	resp := VerifiedDomainResponse{
-		ID:           vd.ID().String(),
-		Domain:       vd.Domain(),
-		Status:       string(vd.Status()),
-		Purpose:      string(vd.Purpose()),
-		Instructions: txt,
-		CreatedAt:    vd.CreatedAt().Format(layout),
-		UpdatedAt:    vd.UpdatedAt().Format(layout),
+		ID:            vd.ID().String(),
+		Domain:        vd.Domain(),
+		Status:        string(vd.Status()),
+		Purpose:       string(vd.Purpose()),
+		ClaimConflict: vd.ClaimConflict(),
+		Instructions:  txt,
+		CreatedAt:     vd.CreatedAt().Format(layout),
+		UpdatedAt:     vd.UpdatedAt().Format(layout),
 	}
 	if t := vd.VerifiedAt(); t != nil {
 		s := t.Format(layout)
