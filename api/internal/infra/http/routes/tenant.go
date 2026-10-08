@@ -244,6 +244,19 @@ func tenantPerm(p permission.Permission) Middleware {
 	}
 }
 
+// registerOrganizationPlanRoutes serves the organization's plan, limits and
+// usage (Settings > Plan & usage) under the token singleton
+// /api/v1/organization: owners and administrators with settings:read
+// (docs/architecture/plans-and-limits.md).
+func registerOrganizationPlanRoutes(router Router, h *handler.PlanHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/plan", func(r Router) {
+		r.GET("/", h.GetOwnPlan, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerOrganizationMemberRoutes wires member administration under the
 // token singleton /api/v1/organization: the tenant comes from the credential,
 // never from the path (docs/architecture/api-conventions.md §2).
