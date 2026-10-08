@@ -459,6 +459,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "member-access-expiry")))
 	}
 
+	// Idle Free workspaces: reminder, read-only, warnings, deletion due.
+	if svc.IdleWorkspaces != nil {
+		w.ControllerManager.Register(controller.NewIdleWorkspaceController(svc.IdleWorkspaces, 6*time.Hour,
+			log.With("controller", "idle-workspaces")))
+	}
+
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
 
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(

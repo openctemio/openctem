@@ -978,3 +978,7 @@ func TestComputeAttackPathScores_DirectlyExposedCrownJewelAtRisk(t *testing.T) {
 func (m *mockAttackSurfaceRepo) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
 	return 0, nil
 }
+
+func (m *mockAttackSurfaceRepo) GetInventoryOverview(_ context.Context, _ shared.ID, _ asset.AccessScope) ([]asset.InventoryOverviewRow, error) {
+	return nil, nil
+}

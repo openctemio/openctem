@@ -1,237 +1,233 @@
 'use client'
 
 /**
- * Asset Inventory Overview Page
+ * The inventory overview (`/assets?view=categories`, research/77 §9): what
+ * the organization has, where the gaps are, and where to start.
  *
- * Provides a high-level view of all assets organized by category:
- * - External Attack Surface (domains, certificates, IP addresses)
- * - Applications (websites, APIs, mobile apps, services)
- * - Cloud (cloud accounts, compute, storage, serverless)
- * - Infrastructure (hosts, containers, databases, networks)
- * - Code & CI/CD (repositories)
+ * One card per lens of the asset type registry, in registry order, with its
+ * types and their counts, and what needs attention (new this week, unowned,
+ * high risk, names awaiting review), each a link into the filtered
+ * inventory. A lens with no assets says how to discover them. The counts
+ * come from one aggregate (GET /assets/overview) over the assets the viewer
+ * may list, and the totals match the inventory each link opens. No type is
+ * named here: a new registry type or lens appears on its own.
  */
 
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import Link from 'next/link'
-import { Main } from '@/components/layout'
-import { PageHeader, EmptyState, StatsCard } from '@/features/shared'
-import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import type { ReactNode } from 'react'
+import { useMemo } from 'react'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
+  AppWindow,
+  ArrowRight,
+  Boxes,
+  Cloud,
   Container,
-  Globe,
-  MonitorSmartphone,
-  Server,
   Database,
   GitBranch,
   GitMerge,
-  Cloud,
-  ShieldCheck,
+  Globe,
   Network,
-  ArrowRight,
-  AlertTriangle,
-  TrendingUp,
-  Target,
-  ShieldAlert,
-  Crosshair,
-  MoreHorizontal,
+  RefreshCw,
+  Users,
   type LucideIcon,
 } from 'lucide-react'
-import { useMemo, type ReactNode } from 'react'
-import { useAssetStats } from '@/features/assets/hooks/use-assets'
-import { getAssetTypeIcon } from '@/features/assets/lib/asset-type-icon'
-import {
-  ASSET_TYPE_CATEGORIES,
-  LEGACY_ASSET_TYPES,
-  type AssetTypeCategory,
-  type AssetType,
-} from '@/features/assets/types/asset.types'
-import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
-import { useDedupReviews } from '@/features/assets/api/use-asset-dedup'
+import { Main } from '@/components/layout'
+import { EmptyState, PageHeader } from '@/features/shared'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
+import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
+import { useDedupReviews } from '../../api/use-asset-dedup'
+import { useInventoryOverview } from '../../api/use-inventory-overview'
+import { buildOverview, type OverviewLens } from '../../lib/inventory-overview'
 
-// Category icons mapping
-const CATEGORY_ICONS: Record<AssetTypeCategory, LucideIcon> = {
-  external: Globe,
-  applications: MonitorSmartphone,
-  infrastructure: Server,
-  network: Network,
-  cloud: Cloud,
-  data: Database,
-  identity: ShieldCheck,
+/** Icons of the registry's lenses; an unknown lens gets the generic one. */
+const LENS_ICONS: Record<string, LucideIcon> = {
+  external_surface: Globe,
+  applications: AppWindow,
+  cloud_infra: Cloud,
+  containers_k8s: Container,
   code: GitBranch,
+  identities: Users,
+  data: Database,
+  network: Network,
 }
 
-// Asset type to URL mapping
-const ASSET_TYPE_URLS: Record<string, string> = {
-  domain: '/assets/domains',
-  subdomain: '/assets/domains',
-  certificate: '/assets/certificates',
-  ip_address: '/assets/ip-addresses',
-  application: '/assets/websites',
-  service: '/assets/services',
-  host: '/assets/hosts',
-  container: '/assets/containers',
-  kubernetes: '/assets/containers',
-  network: '/assets/networks',
-  cloud_account: '/assets/cloud-accounts',
-  storage: '/assets/storage',
-  database: '/assets/databases',
-  identity: '/assets/identity',
-  repository: '/assets/repositories',
+/** How a lens's assets get into the inventory, for an empty lens. */
+const LENS_HINTS: Record<string, { text: string; action: string; href: string }> = {
+  external_surface: {
+    text: 'Add your domains to the scope, then run a discovery scan.',
+    action: 'Open scope',
+    href: '/scope',
+  },
+  applications: {
+    text: 'Discovery finds web applications behind your domains; add an API or a mobile app by hand.',
+    action: 'Run a scan',
+    href: '/scans',
+  },
+  code: {
+    text: 'Connect a source-code integration to import your repositories.',
+    action: 'Connect source code',
+    href: '/settings/integrations/scm',
+  },
+  cloud_infra: {
+    text: 'Import hosts and cloud accounts from an integration, or run a network scan.',
+    action: 'Open integrations',
+    href: '/settings/integrations',
+  },
+  containers_k8s: {
+    text: 'Import clusters and registries from an integration, or add them by hand.',
+    action: 'Open integrations',
+    href: '/settings/integrations',
+  },
+  identities: {
+    text: 'Import users, roles and service accounts from an integration, or add them by hand.',
+    action: 'Open integrations',
+    href: '/settings/integrations',
+  },
+}
+const DEFAULT_HINT = {
+  text: 'Run a discovery scan, or add assets by hand.',
+  action: 'Run a scan',
+  href: '/scans',
 }
 
-// Mapping from asset type to sub-module slug (for filtering based on module visibility)
-const ASSET_TYPE_TO_SUBMODULE: Record<string, string> = {
-  // Core types → sub-module slugs (must match Module Management config)
-  domain: 'domains',
-  subdomain: 'domains',
-  certificate: 'certificates',
-  ip_address: 'ip-addresses',
-  application: 'websites',
-  service: 'services',
-  host: 'hosts',
-  container: 'containers',
-  kubernetes: 'containers',
-  network: 'networks',
-  cloud_account: 'cloud-accounts',
-  storage: 'storage',
-  database: 'databases',
-  identity: 'identity',
-  repository: 'repositories',
+function AttentionChip({
+  count,
+  label,
+  href,
+  tone,
+}: {
+  count: number
+  label: string
+  href: string
+  tone?: 'danger'
+}) {
+  if (count <= 0) return null
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'inline-flex items-center rounded-md border px-2 py-0.5 text-xs tabular-nums transition-colors hover:bg-accent/60',
+        tone === 'danger' ? 'border-destructive/40 text-destructive' : 'text-muted-foreground'
+      )}
+    >
+      {count.toLocaleString()} {label}
+    </Link>
+  )
+}
+
+function LensCard({ lens }: { lens: OverviewLens }) {
+  const Icon = LENS_ICONS[lens.id] ?? Boxes
+  const hint = LENS_HINTS[lens.id] ?? DEFAULT_HINT
+  const empty = lens.total === 0 && lens.needsReview === 0
+  return (
+    <Card className={cn(empty && 'border-dashed shadow-none')}>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 space-y-1">
+              <CardTitle className="text-base">
+                {empty ? (
+                  lens.label
+                ) : (
+                  <Link href={lens.href} className="hover:underline">
+                    {lens.label}
+                  </Link>
+                )}
+              </CardTitle>
+              {lens.description && <CardDescription>{lens.description}</CardDescription>}
+            </div>
+          </div>
+          <span className="text-lg font-semibold tabular-nums">{lens.total.toLocaleString()}</span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        {empty ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">{hint.text}</p>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={hint.href}>{hint.action}</Link>
+            </Button>
+          </div>
+        ) : (
+          <>
+            {(lens.new7d > 0 || lens.unowned > 0 || lens.highRisk > 0 || lens.needsReview > 0) && (
+              <div className="flex flex-wrap gap-1.5">
+                <AttentionChip count={lens.new7d} label="new this week" href="/assets/changes" />
+                <AttentionChip
+                  count={lens.unowned}
+                  label="unowned"
+                  href={lens.unownedHref}
+                  tone="danger"
+                />
+                <AttentionChip
+                  count={lens.highRisk}
+                  label="high risk"
+                  href={lens.highRiskHref}
+                  tone="danger"
+                />
+                <AttentionChip
+                  count={lens.needsReview}
+                  label="awaiting review"
+                  href={lens.reviewHref}
+                />
+              </div>
+            )}
+            <ul className="space-y-0.5">
+              {lens.types.map((t) => (
+                <li key={t.key}>
+                  <Link
+                    href={t.href}
+                    className="group flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-accent/50"
+                  >
+                    <span className="text-sm">{t.label}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="text-sm tabular-nums text-muted-foreground">
+                        {t.count.toLocaleString()}
+                      </span>
+                      <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
 export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode }) {
-  // Fetch assets data with permission check (built into hook)
-  const { stats, isLoading: statsLoading } = useAssetStats()
-
-  // Fetch sub-modules for filtering
-  const { subModules } = useTenantModules()
-
-  // Pending duplicate reviews — surfaced as a card here instead of a nav item.
+  const { registry, isLoading: registryLoading } = useAssetTypeRegistry()
+  const { rows, isLoading, error, mutate } = useInventoryOverview()
   const { data: dedupData } = useDedupReviews()
   const dedupCount = dedupData?.data?.length ?? 0
 
-  // Filter all category types based on sub-module visibility
-  const filteredCategoryTypes = useMemo(() => {
-    // Get asset sub-modules inside useMemo to avoid stale dependency issues
-    const assetSubModules = subModules['assets'] || []
-    const result: Record<AssetTypeCategory, AssetType[]> = {} as Record<
-      AssetTypeCategory,
-      AssetType[]
-    >
-
-    for (const categoryKey of Object.keys(ASSET_TYPE_CATEGORIES) as AssetTypeCategory[]) {
-      const types = ASSET_TYPE_CATEGORIES[categoryKey].types
-        .filter((type) => !LEGACY_ASSET_TYPES.includes(type))
-        .filter((type) => ASSET_TYPE_URLS[type]) // Only show types with pages
-
-      // If no sub-modules configured yet, show all types
-      if (assetSubModules.length === 0) {
-        result[categoryKey] = types
-        continue
-      }
-
-      // Filter based on sub-module visibility
-      result[categoryKey] = types.filter((type) => {
-        const subModuleSlug = ASSET_TYPE_TO_SUBMODULE[type]
-        if (!subModuleSlug) return true // Show types without mapping
-
-        const subModule = assetSubModules.find((m) => m.slug === subModuleSlug)
-        if (!subModule) return true // Show if sub-module not configured (graceful fallback)
-
-        // Hide only if explicitly inactive or disabled
-        if (!subModule.is_active) return false
-        if (subModule.release_status === 'disabled') return false
-
-        return true
-      })
-    }
-
-    return result
-  }, [subModules])
-
-  // Extract stats values (hook returns empty defaults if no permission)
-  const totalAssets = stats.total
-  const averageRiskScore = stats.averageRiskScore
-  const highRiskCount = stats.highRiskCount
-  const totalFindings = stats.totalFindings
-
-  // Get count for an asset type or sub_type
-  const getItemCount = (key: string): number => {
-    // Check sub_type first (more specific), then type
-    return stats.bySubType[key] ?? stats.byType[key] ?? 0
-  }
-
-  // Calculate category total based on type counts
-  const getCategoryTotal = (category: AssetTypeCategory): number => {
-    const config = ASSET_TYPE_CATEGORIES[category]
-    return config.types.reduce((sum, type) => sum + (stats.byType[type] ?? 0), 0)
-  }
-
-  // Calculate unclassified count (category total - sum of visible items)
-  const getUnclassifiedCount = (category: AssetTypeCategory): number => {
-    const config = ASSET_TYPE_CATEGORIES[category]
-    const total = getCategoryTotal(category)
-    const classifiedSum = (config.items || []).reduce(
-      (sum, item) => sum + getItemCount(item.countKey),
-      0
-    )
-    return total - classifiedSum
-  }
+  const lenses = useMemo(() => buildOverview(registry, rows), [registry, rows])
+  const total = lenses.reduce((n, l) => n + l.total, 0)
+  const loading = isLoading || registryLoading
+  // Lenses with assets first, in registry order; empty ones after, as hints.
+  const ordered = [
+    ...lenses.filter((l) => l.total + l.needsReview > 0),
+    ...lenses.filter((l) => l.total + l.needsReview === 0),
+  ]
 
   return (
     <Main>
       <PageHeader
         title="Assets"
-        description="Everything you own that can be attacked, grouped by category — open a category to work with its assets."
+        description="Everything your organization owns that can be attacked, by area: open one to work with its assets."
       >
-        <Button variant="outline" size="sm" asChild>
-          <Link href="/attack-surface">
-            <Target className="me-2 h-4 w-4" />
-            Attack surface
-          </Link>
-        </Button>
         {viewSwitcher}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="h-8 w-8" aria-label="More actions">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <Link href="/scans">
-                <Target className="me-2 h-4 w-4" />
-                Run discovery scan
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/scope">
-                <Crosshair className="me-2 h-4 w-4" />
-                Scope boundaries
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/findings">
-                <AlertTriangle className="me-2 h-4 w-4" />
-                View all findings
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </PageHeader>
       <AssetsSectionTabs />
 
-      {/* Duplicate review — surfaced contextually (only when the correlator
-          has flagged something) instead of a permanent sidebar item. */}
       {dedupCount > 0 && (
         <Alert className="mt-5">
           <GitMerge className="h-4 w-4" />
@@ -240,7 +236,7 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
           </AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
             <span>
-              The correlator flagged assets that look like the same thing — approve the merges or
+              The correlator flagged assets that look like the same thing: approve the merges or
               keep them separate.
             </span>
             <Button variant="outline" size="sm" asChild>
@@ -253,189 +249,49 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
         </Alert>
       )}
 
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {statsLoading ? (
-          [1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-[104px] w-full rounded-xl" />)
-        ) : (
-          <>
-            <StatsCard
-              title="Total assets"
-              value={totalAssets.toLocaleString()}
-              description="Across all categories"
-              icon={Container}
+      {error ? (
+        <Alert variant="destructive" className="mt-5">
+          <AlertTitle>The overview did not load</AlertTitle>
+          <AlertDescription>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
+              <RefreshCw className="me-2 h-4 w-4" />
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : loading ? (
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-44 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : (
+        <>
+          {total === 0 && (
+            <EmptyState
+              className="mt-5 border-dashed"
+              icon={Boxes}
+              title="No assets discovered yet"
+              description="Add your domains to the scope and run a discovery scan, connect an integration, or add assets by hand."
+              action={
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button size="sm" asChild>
+                    <Link href="/scans">Run a discovery scan</Link>
+                  </Button>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href="/scope">Open scope</Link>
+                  </Button>
+                </div>
+              }
             />
-            <StatsCard
-              title="High-risk assets"
-              value={highRiskCount.toLocaleString()}
-              valueClassName={highRiskCount > 0 ? 'text-destructive' : undefined}
-              description="Risk score 70 or more"
-              icon={AlertTriangle}
-            />
-            <StatsCard
-              title="Average risk score"
-              value={averageRiskScore.toFixed(1)}
-              description="Out of 100"
-              icon={TrendingUp}
-            />
-            <StatsCard
-              title="Open findings"
-              value={totalFindings.toLocaleString()}
-              description="Across all assets"
-              icon={ShieldAlert}
-            />
-          </>
-        )}
-      </div>
-
-      {/* Empty state — when the tenant has zero assets across the board,
-            show an onboarding CTA instead of an empty grid. This is the
-            "first-run" experience: clarifies the next step rather than
-            leaving the user staring at an empty page. */}
-      {!statsLoading && totalAssets === 0 && (
-        <EmptyState
-          className="mt-5 border-dashed"
-          icon={Container}
-          title="No assets discovered yet"
-          description="Run a discovery scan, connect a cloud provider, or add assets manually to start building your inventory."
-          action={
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button size="sm" asChild>
-                <Link href="/scans">
-                  <Target className="me-2 h-4 w-4" />
-                  Run discovery scan
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/integrations">Connect provider</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/scope">Configure scope</Link>
-              </Button>
-            </div>
-          }
-        />
+          )}
+          <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {ordered.map((l) => (
+              <LensCard key={l.id || 'other'} lens={l} />
+            ))}
+          </div>
+        </>
       )}
-
-      {/* Asset Categories — hide empty categories once stats finish loading
-            so the overview only surfaces what the tenant actually has. While
-            stats are loading we keep all visible categories so the layout
-            doesn't pop in. */}
-      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        {(Object.keys(ASSET_TYPE_CATEGORIES) as AssetTypeCategory[])
-          .filter((categoryKey) => {
-            // Hide categories with no visible types (sub-module gating)
-            const types = filteredCategoryTypes[categoryKey] || []
-            if (types.length === 0) return false
-            // Once stats are loaded, hide categories with zero assets
-            if (!statsLoading && getCategoryTotal(categoryKey) === 0) return false
-            return true
-          })
-          .map((categoryKey) => {
-            const category = ASSET_TYPE_CATEGORIES[categoryKey]
-            const CategoryIcon = CATEGORY_ICONS[categoryKey]
-            const categoryTotal = getCategoryTotal(categoryKey)
-
-            return (
-              <Card key={categoryKey}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-2.5">
-                      <CategoryIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 space-y-1">
-                        <CardTitle className="text-base">{category.label}</CardTitle>
-                        <CardDescription>{category.description}</CardDescription>
-                      </div>
-                    </div>
-                    {statsLoading ? (
-                      <Skeleton className="h-6 w-12" />
-                    ) : (
-                      <span className="text-lg font-semibold tabular-nums">
-                        {categoryTotal.toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="space-y-2">
-                    {(category.items || [])
-                      .filter((item) => statsLoading || getItemCount(item.countKey) > 0)
-                      .slice(0, 8)
-                      .map((item) => {
-                        const TypeIcon = getAssetTypeIcon(item.key)
-                        const count = getItemCount(item.countKey)
-
-                        return (
-                          <Link
-                            key={item.key}
-                            href={item.url}
-                            className="flex items-center justify-between p-2 rounded-lg hover:bg-accent/50 transition-colors group"
-                          >
-                            <div className="flex items-center gap-2">
-                              <TypeIcon className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm">{item.label}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {statsLoading ? (
-                                <Skeleton className="h-5 w-8" />
-                              ) : (
-                                <span className="text-sm text-muted-foreground tabular-nums">
-                                  {count.toLocaleString()}
-                                </span>
-                              )}
-                              <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                          </Link>
-                        )
-                      })}
-                    {/* Show "Other" row for assets without sub_type */}
-                    {!statsLoading &&
-                      (() => {
-                        const unclassified = getUnclassifiedCount(categoryKey)
-                        if (unclassified <= 0) return null
-                        const baseUrl =
-                          category.types.length === 1
-                            ? ASSET_TYPE_URLS[category.types[0]]
-                            : undefined
-                        // Multi-type categories (or types without a dedicated
-                        // route) have no valid "Other" destination — render a
-                        // non-clickable row instead of a dead href="#" link.
-                        if (!baseUrl) {
-                          return (
-                            <div className="flex items-center justify-between p-2 rounded-lg">
-                              <div className="flex items-center gap-2">
-                                <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm text-muted-foreground">Other</span>
-                              </div>
-                              <span className="text-sm text-muted-foreground">
-                                {unclassified.toLocaleString()}
-                              </span>
-                            </div>
-                          )
-                        }
-                        return (
-                          <Link
-                            href={baseUrl}
-                            className="flex items-center justify-between p-2 rounded-lg hover:bg-accent/50 transition-colors group"
-                          >
-                            <div className="flex items-center gap-2">
-                              <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm text-muted-foreground">Other</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-muted-foreground">
-                                {unclassified.toLocaleString()}
-                              </span>
-                              <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                          </Link>
-                        )
-                      })()}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-      </div>
     </Main>
   )
 }

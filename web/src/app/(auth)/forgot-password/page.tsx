@@ -21,10 +21,13 @@ import { Input } from '@/components/ui/input'
 
 import { forgotPasswordSchema, type ForgotPasswordInput } from '@/features/auth/schemas/auth.schema'
 import { forgotPasswordAction } from '@/features/auth/actions/local-auth-actions'
+import { usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
+import { formatLinkLifetime } from '@/features/auth/lib/password-policy'
 
 export default function ForgotPasswordPage() {
   const [isPending, startTransition] = useTransition()
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const passwordPolicy = usePasswordPolicy()
 
   const form = useForm<ForgotPasswordInput>({
     resolver: zodResolver(forgotPasswordSchema),
@@ -53,7 +56,9 @@ export default function ForgotPasswordPage() {
           <CardTitle className="text-lg tracking-tight">Check your email</CardTitle>
           <CardDescription>
             If an account exists with the email you entered, we&apos;ve sent a password reset link.
-            Please check your inbox and spam folder. The link will expire in 24 hours.
+            Please check your inbox and spam folder.
+            {passwordPolicy &&
+              ` The link expires in ${formatLinkLifetime(passwordPolicy.reset_link_valid_minutes)}.`}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3">
