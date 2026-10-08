@@ -15,6 +15,7 @@ func TestOf(t *testing.T) {
 		{"/api/v1/agents/{id}", User, true},
 		{"/api/v1/agent/heartbeat", Sensor, true},
 		{"/api/v2/sensor/hello", Sensor, false},
+		{"/api/v3/sensor/openctem.sensor.v3.SensorService/Heartbeat", Sensor, false},
 		{"/api/v1/validation/evidence", Sensor, true},
 		{"/api/v1/validation/coverage", User, false},
 		{"/api/v1/admin/tenants/{tenantId}", Admin, false},

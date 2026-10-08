@@ -23,6 +23,8 @@ import type {
   MemberAccessReport,
   OffboardMemberInput,
   OffboardResult,
+  MemberKind,
+  UpdateMemberAccessInput,
 } from '../types/member.types'
 
 // ============================================
@@ -47,6 +49,8 @@ export interface UseMembersOptions {
   status?: MemberStatusFilter | 'current'
   /** Effective system role filter (server-side) */
   role?: 'owner' | 'admin' | 'member' | 'viewer'
+  /** Internal or external members only (server-side, api RFC-058) */
+  kind?: MemberKind
 }
 
 /**
@@ -100,6 +104,9 @@ export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMemb
   }
   if (options?.role) {
     params.set('role', options.role)
+  }
+  if (options?.kind) {
+    params.set('kind', options.kind)
   }
 
   const { data, error, isLoading, mutate } = useSWR<MemberListResponse>(
@@ -285,6 +292,16 @@ export function useDeleteInvitation(
 // ============================================
 
 /**
+ * Change when an external member's access ends (owner/admin, api RFC-058).
+ */
+export function updateMemberAccess(memberId: string, input: UpdateMemberAccessInput) {
+  return fetcherWithOptions<unknown>(tenantEndpoints.memberAccess(memberId), {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
+/**
  * Create an invitation. The response is the only place the raw invitation token
  * appears (the API stores a hash), so the caller shows the link from it.
  */
@@ -344,6 +361,9 @@ export function getMembersKey(tenantIdOrSlug: string, options?: UseMembersOption
   }
   if (options?.role) {
     params.set('role', options.role)
+  }
+  if (options?.kind) {
+    params.set('kind', options.kind)
   }
 
   return `${tenantEndpoints.members(tenantIdOrSlug)}?${params.toString()}`

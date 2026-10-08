@@ -20,12 +20,13 @@ function asset(metadata: Record<string, unknown>, name = 'x.example.com'): Asset
 describe('certStatus', () => {
   it('is unknown, not valid, when the certificate has no expiry', () => {
     expect(certStatus(asset({}), NOW)).toBe('unknown')
-    expect(certStatus(asset({ cert_not_after: 'not a date' }), NOW)).toBe('unknown')
+    expect(certStatus(asset({ not_after: 'not a date' }), NOW)).toBe('unknown')
   })
 
-  it('reads the flat form key', () => {
+  it('reads the flat schema key, and never a key outside the schema', () => {
     const iso = new Date(NOW + 10 * DAY).toISOString()
-    expect(certStatus(asset({ cert_not_after: iso }), NOW)).toBe('expiring')
+    expect(certStatus(asset({ not_after: iso }), NOW)).toBe('expiring')
+    expect(certStatus(asset({ cert_not_after: iso }), NOW)).toBe('unknown')
   })
 
   it('reads the nested map ingest writes', () => {
@@ -42,8 +43,9 @@ describe('certStatus', () => {
 })
 
 describe('certIssuer', () => {
-  it('prefers the form key, then the ingest organisation, then the CN', () => {
-    expect(certIssuer(asset({ cert_issuer: 'Manual' }))).toBe('Manual')
+  it('prefers the flat keys, then the ingest organisation, then the CN', () => {
+    expect(certIssuer(asset({ issuer_org: 'Org A', issuer_cn: 'CN A' }))).toBe('Org A')
+    expect(certIssuer(asset({ issuer_cn: 'CN A' }))).toBe('CN A')
     expect(certIssuer(asset({ certificate: { issuer_org: 'Org', issuer_cn: 'CN' } }))).toBe('Org')
     expect(certIssuer(asset({ certificate: { issuer_cn: 'R11' } }))).toBe('R11')
     expect(certIssuer(asset({}))).toBeUndefined()
@@ -51,7 +53,7 @@ describe('certIssuer', () => {
 })
 
 describe('certificate details', () => {
-  it('reads the ingest map as well as the form keys', () => {
+  it('reads the ingest map as well as the flat keys', () => {
     const ingest = asset({
       certificate: {
         subject_cn: '*.example.com',
@@ -64,8 +66,9 @@ describe('certificate details', () => {
     expect(certKeySize(ingest)).toBe(2048)
     expect(certIsWildcard(ingest)).toBe(true)
 
-    const form = asset({ cert_subject: 'CN=a', cert_sans: 'a.example.com, b.example.com' })
-    expect(certSans(form)).toEqual(['a.example.com', 'b.example.com'])
+    const flat = asset({ subject_cn: 'a.example.com', sans: ['a.example.com', 'b.example.com'] })
+    expect(certSubject(flat)).toBe('a.example.com')
+    expect(certSans(flat)).toEqual(['a.example.com', 'b.example.com'])
   })
 
   it('does not say "not a wildcard" when nothing is known', () => {

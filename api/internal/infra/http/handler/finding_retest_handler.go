@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -162,7 +161,11 @@ func (h *FindingRetestHandler) List(w http.ResponseWriter, r *http.Request) {
 		apierror.NotFound("Finding").WriteJSON(w)
 		return
 	}
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	// 0: the store's default page of retests.
+	limit, ok := listLimit(w, r, 0, 100)
+	if !ok {
+		return
+	}
 	list, err := h.service.List(r.Context(), tenantID, findingID, limit)
 	if err != nil {
 		h.writeError(w, err)

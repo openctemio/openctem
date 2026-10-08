@@ -1064,6 +1064,8 @@ export interface CreateFirstTeamInput {
 export interface CreateFirstTeamResult {
   success: boolean
   error?: string
+  /** The team exists but its owner must set up two-factor authentication first. */
+  mfaEnrollmentRequired?: boolean
   tenant?: {
     id: string
     slug: string
@@ -1117,6 +1119,11 @@ export async function createFirstTeamAction(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: response.statusText }))
+      // The new organization requires two-factor authentication for its
+      // owner: it exists, and the owner signs in again to set up 2FA.
+      if (errorData.code === 'MFA_ENROLLMENT_REQUIRED') {
+        return { success: false, error: errorData.message, mfaEnrollmentRequired: true }
+      }
       throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
     }
 
