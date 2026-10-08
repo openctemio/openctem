@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -2261,6 +2262,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	if os.Getenv("AUTH_ALLOW_REGISTRATION") != "" {
+		log.Warn("AUTH_ALLOW_REGISTRATION is retired and ignored: who may sign up is the sign-up policy (Console > System > Sign-up)")
+	}
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2353,6 +2357,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.
+		// A social sign-in creates an account only when the sign-up policy
+		// admits it (self-service, or a pending invitation for the email).
+		if s.Signup != nil {
+			s.OAuth.SetSignupPolicy(s.Signup)
+		}
+		s.OAuth.SetInvitationLookup(repos.Tenant)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {

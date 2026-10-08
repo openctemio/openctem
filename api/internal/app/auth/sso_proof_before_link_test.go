@@ -271,7 +271,7 @@ func TestProofBeforeLink_NewUser_CreatedNormally(t *testing.T) {
 // people only through JIT on a verified domain).
 func TestProofBeforeLink_NewUser_UnverifiedDomain_Refused(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: nil}
-	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: true},
+	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService},
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"other.com": true}}}
 
 	_, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
