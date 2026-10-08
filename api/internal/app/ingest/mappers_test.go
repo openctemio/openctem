@@ -10,6 +10,8 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // =============================================================================
@@ -341,12 +343,58 @@ func TestBuildServiceProperties_AllFields(t *testing.T) {
 	assert.Equal(t, "nginx/1.21.0", props["banner"])
 }
 
-func TestBuildServiceProperties_TLSAlwaysPresent(t *testing.T) {
-	svc := &ctis.ServiceTechnical{}
-	props := buildServiceProperties(svc)
-	// TLS is always set (even if false)
-	assert.Contains(t, props, "tls")
-	assert.Equal(t, false, props["tls"])
+// A false TLS is also what a report that never measured TLS sends, so it is
+// not recorded: the web shows "not collected", never "No TLS", for it.
+func TestBuildServiceProperties_TLSOnlyWhenSeen(t *testing.T) {
+	props := buildServiceProperties(&ctis.ServiceTechnical{})
+	assert.NotContains(t, props, "tls")
+}
+
+// The whole report path: a CTIS asset's technical blocks are stored as the
+// stored type's flat keys, and no block object is left.
+func TestBuildPropertiesFromCTIS_PromotesTechnicalBlocks(t *testing.T) {
+	p := &AssetProcessor{logger: logger.NewNop(), propsValidator: validator.NewPropertiesValidator()}
+	notAfter := time.Date(2027, 1, 2, 0, 0, 0, 0, time.UTC)
+	cert := p.buildPropertiesFromCTIS(&ctis.Asset{
+		Type: ctis.AssetTypeCertificate, Value: "*.example.com",
+		Technical: &ctis.AssetTechnical{Certificate: &ctis.CertificateTechnical{
+			SubjectCN: "*.example.com", IssuerOrg: "Example CA", NotAfter: &notAfter,
+			Fingerprint: "ab:cd", SelfSigned: true,
+		}},
+	})
+	assert.Equal(t, "*.example.com", cert["subject_cn"])
+	assert.Equal(t, "Example CA", cert["issuer_org"])
+	assert.Equal(t, "2027-01-02T00:00:00Z", cert["not_after"])
+	assert.Equal(t, "ab:cd", cert["fingerprint_sha256"])
+	assert.Equal(t, true, cert["is_self_signed"])
+	assert.NotContains(t, cert, "certificate")
+
+	dom := p.buildPropertiesFromCTIS(&ctis.Asset{
+		Type: ctis.AssetTypeDomain, Value: "example.com",
+		Technical: &ctis.AssetTechnical{Domain: &ctis.DomainTechnical{
+			Registrar: "Example Registrar",
+			DNSRecords: []ctis.DNSRecord{
+				{Type: "CNAME", Name: "example.com", Value: "edge.example-cdn.net."},
+				{Type: "A", Name: "example.com", Value: "203.0.113.9"},
+			},
+		}},
+	})
+	assert.Equal(t, "Example Registrar", dom["registrar"])
+	assert.Equal(t, "CNAME, A", dom["dns_record_types"])
+	assert.Equal(t, "edge.example-cdn.net", dom["cname_target"])
+	assert.Equal(t, []string{"203.0.113.9"}, asset.IPAddresses(dom))
+	assert.NotContains(t, dom, "domain")
+
+	port := p.buildPropertiesFromCTIS(&ctis.Asset{
+		Type: ctis.AssetTypeOpenPort, Value: "198.51.100.7:22/tcp",
+		Technical: &ctis.AssetTechnical{Service: &ctis.ServiceTechnical{
+			Name: "ssh", Port: 22, Protocol: "tcp", Version: "9.6",
+		}},
+	})
+	assert.Equal(t, "ssh", port["service"])
+	assert.Equal(t, 22, port["port"])
+	assert.Equal(t, "9.6", port["version"])
+	assert.NotContains(t, port, "tls")
 }
 
 // A DNS name reported as ip_address (and an IP reported as a domain) is
@@ -358,8 +406,8 @@ func TestResolveCTISAssetType_NameWinsOverContradictingType(t *testing.T) {
 		value    string
 		want     asset.AssetType
 	}{
-		{"domain reported as ip_address", ctis.AssetTypeIPAddress, "vndirect.com.vn", asset.AssetTypeDomain},
-		{"subdomain host reported as ip_address", ctis.AssetTypeIPAddress, "api.vndirect.com.vn", asset.AssetTypeDomain},
+		{"domain reported as ip_address", ctis.AssetTypeIPAddress, "example.co.uk", asset.AssetTypeDomain},
+		{"subdomain host reported as ip_address", ctis.AssetTypeIPAddress, "api.example.co.uk", asset.AssetTypeDomain},
 		{"real ipv4 stays", ctis.AssetTypeIPAddress, "203.0.113.7", asset.AssetTypeIPAddress},
 		{"real ipv6 stays", ctis.AssetTypeIPAddress, "2001:db8::1", asset.AssetTypeIPAddress},
 		{"bracketed ipv6 stays", ctis.AssetTypeIPAddress, "[2001:db8::1]", asset.AssetTypeIPAddress},

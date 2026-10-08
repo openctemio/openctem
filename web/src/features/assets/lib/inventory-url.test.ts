@@ -8,6 +8,7 @@ import {
   serializeInventoryFilters,
   sortingToSort,
   sortToSorting,
+  togglePropertyFilter,
   type InventoryFilters,
 } from './inventory-url'
 
@@ -68,5 +69,32 @@ describe('inventory sort mapping', () => {
     expect(serializeInventoryFilters(f).get('attribution')).toBe('needs_review,candidate')
     expect(countActiveFilters(f)).toBe(2)
     expect(isInventoryFilterEmpty(f)).toBe(false)
+  })
+})
+
+describe('typed inventory filters', () => {
+  it('round-trips the sub-type and attribute filters with the API names', () => {
+    const f: InventoryFilters = {
+      types: ['identity'],
+      subType: 'iam_user',
+      propertiesFilter: { has_mfa: ['false'], provider: ['aws', 'gcp'] },
+    }
+    const qs = serializeInventoryFilters(f)
+    expect(qs.get('sub_type')).toBe('iam_user')
+    expect(qs.get('properties')).toBe('has_mfa:false,provider:aws,provider:gcp')
+    expect(parseInventoryFilters(qs)).toEqual(f)
+    expect(countActiveFilters(f)).toBe(5)
+    expect(isInventoryFilterEmpty({ subType: 'iam_user' })).toBe(false)
+  })
+
+  it('drops attribute filters on keys outside the schema', () => {
+    const f = parseInventoryFilters(new URLSearchParams('properties=os:linux,os_name:Ubuntu,bad'))
+    expect(f.propertiesFilter).toEqual({ os_name: ['Ubuntu'] })
+  })
+
+  it('toggles one attribute value and resets the page', () => {
+    const on = togglePropertyFilter({ page: 3 }, 'is_virtual', 'true')
+    expect(on).toEqual({ page: 1, propertiesFilter: { is_virtual: ['true'] } })
+    expect(togglePropertyFilter(on, 'is_virtual', 'true').propertiesFilter).toBeUndefined()
   })
 })

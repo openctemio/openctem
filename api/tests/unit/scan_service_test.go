@@ -226,9 +226,9 @@ func (m *mockTemplateRepo) GetByID(_ context.Context, id shared.ID) (*scanworkfl
 	return t, nil
 }
 
-func (m *mockTemplateRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*scanworkflow.Workflow, error) {
+func (m *mockTemplateRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*scanworkflow.Workflow, error) {
 	t, ok := m.templates[id.String()]
-	if !ok {
+	if !ok || (!t.TenantID.IsZero() && t.TenantID != tenantID) {
 		return nil, shared.ErrNotFound
 	}
 	return t, nil
@@ -254,8 +254,11 @@ func (m *mockTemplateRepo) GetWithSteps(_ context.Context, id shared.ID) (*scanw
 	}
 	return nil, shared.ErrNotFound
 }
-func (m *mockTemplateRepo) GetSystemTemplateByID(_ context.Context, _ shared.ID) (*scanworkflow.Workflow, error) {
-	return nil, nil
+func (m *mockTemplateRepo) GetSystemTemplateByID(_ context.Context, id shared.ID) (*scanworkflow.Workflow, error) {
+	if t, ok := m.templates[id.String()]; ok && t.IsSystemTemplate {
+		return t, nil
+	}
+	return nil, shared.ErrNotFound
 }
 func (m *mockTemplateRepo) ListWithSystemTemplates(_ context.Context, _ shared.ID, _ scanworkflow.Filter, _ pagination.Pagination) (pagination.Result[*scanworkflow.Workflow], error) {
 	return pagination.Result[*scanworkflow.Workflow]{}, nil
@@ -1038,6 +1041,90 @@ func TestScanService_CreateScan_WorkflowType_Success(t *testing.T) {
 	}
 	if result.ScanWorkflowID == nil || *result.ScanWorkflowID != scanWorkflowID {
 		t.Errorf("expected pipeline ID %s", scanWorkflowID)
+	}
+}
+
+// A starter (system) workflow belongs to the platform tenant and is usable,
+// read-only, by every tenant: a scan on it is created. Another tenant's
+// private workflow is "scan workflow not found" (never told apart), and a
+// disabled one is refused naming it.
+func TestScanService_CreateScan_WorkflowUsability(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID, otherTenant, platform := shared.NewID(), shared.NewID(), shared.NewID()
+	ag, _ := assetgroup.NewAssetGroupWithTenant(tenantID, "g", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
+	deps.assetGroupRepo.groups[ag.ID().String()] = ag
+
+	starter := &scanworkflow.Workflow{ID: shared.NewID(), TenantID: platform, IsActive: true, IsSystemTemplate: true, Name: "Starter recon"}
+	private := &scanworkflow.Workflow{ID: shared.NewID(), TenantID: otherTenant, IsActive: true, Name: "Their workflow"}
+	disabled := &scanworkflow.Workflow{ID: shared.NewID(), TenantID: tenantID, IsActive: false, Name: "Old recon"}
+	for _, w := range []*scanworkflow.Workflow{starter, private, disabled} {
+		deps.templateRepo.templates[w.ID.String()] = w
+	}
+	create := func(wf shared.ID) (*scan.Scan, error) {
+		return svc.CreateScan(context.Background(), scanservice.CreateScanInput{
+			TenantID: tenantID.String(), Name: "s-" + wf.String()[:8], AssetGroupID: ag.ID().String(),
+			ScanType: "workflow", ScanWorkflowID: wf.String(), ScheduleType: "manual",
+		})
+	}
+
+	sc, err := create(starter.ID)
+	if err != nil {
+		t.Fatalf("scan on a starter workflow: %v", err)
+	}
+	if sc.ScanWorkflowID == nil || *sc.ScanWorkflowID != starter.ID {
+		t.Fatalf("scan workflow = %v, want the starter %s", sc.ScanWorkflowID, starter.ID)
+	}
+
+	if _, err := create(private.ID); !errors.Is(err, scanworkflow.ErrScanWorkflowNotFound) {
+		t.Fatalf("another tenant's workflow: err = %v, want scan workflow not found", err)
+	}
+	if _, err := create(shared.NewID()); !errors.Is(err, scanworkflow.ErrScanWorkflowNotFound) {
+		t.Fatalf("missing workflow: err = %v, want scan workflow not found", err)
+	}
+	_, err = create(disabled.ID)
+	if !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), "Old recon") {
+		t.Fatalf("disabled workflow: err = %v, want a validation error naming it", err)
+	}
+}
+
+// A scan on a starter (system) workflow runs: the trigger (manual or
+// scheduled) loads the platform's template, queues its steps and pins the
+// run to a version of it.
+func TestScanService_TriggerScan_StarterWorkflow(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID, platform := shared.NewID(), shared.NewID()
+	ag, _ := assetgroup.NewAssetGroupWithTenant(tenantID, "g", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
+	deps.assetGroupRepo.groups[ag.ID().String()] = ag
+	starter := &scanworkflow.Workflow{ID: shared.NewID(), TenantID: platform, IsActive: true, IsSystemTemplate: true, Name: "Starter"}
+	deps.templateRepo.templates[starter.ID.String()] = starter
+	deps.stepRepo.steps[starter.ID.String()] = []*scanworkflow.Step{
+		{ID: shared.NewID(), ScanWorkflowID: starter.ID, StepKey: "scan-step", StepOrder: 1, Tool: "nuclei"},
+	}
+	deps.toolRepo.addTool("nuclei", true)
+	versions := &recordingVersions{}
+	svc.SetWorkflowVersions(versions)
+
+	sc, err := svc.CreateScan(context.Background(), scanservice.CreateScanInput{
+		TenantID: tenantID.String(), Name: "starter scan", AssetGroupID: ag.ID().String(),
+		Targets: []string{"example.com"}, CreatedBy: shared.NewID().String(),
+		ScanType: "workflow", ScanWorkflowID: starter.ID.String(), ScheduleType: "manual",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for _, trigger := range []scanworkflow.TriggerType{scanworkflow.TriggerTypeManual, scanworkflow.TriggerTypeSchedule} {
+		run, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+			TenantID: tenantID.String(), ScanID: sc.ID.String(), TriggerType: trigger,
+		})
+		if err != nil {
+			t.Fatalf("%s trigger of a starter-workflow scan: %v", trigger, err)
+		}
+		if run.TenantID != tenantID || run.ScanWorkflowID != starter.ID || run.ScanWorkflowVersion == 0 {
+			t.Fatalf("%s run = tenant %s workflow %s version %d", trigger, run.TenantID, run.ScanWorkflowID, run.ScanWorkflowVersion)
+		}
+		if versions.workflow != starter.ID || versions.tenant != tenantID {
+			t.Fatalf("pinned workflow %s under tenant %s", versions.workflow, versions.tenant)
+		}
 	}
 }
 

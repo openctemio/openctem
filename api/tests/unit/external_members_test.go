@@ -29,18 +29,18 @@ func (o extOwners) OwnerOfDomain(_ context.Context, d string) (shared.ID, bool, 
 func newExternalTenantService(t *testing.T) (*tenantapp.TenantService, *mockTenantRepo, *tenant.Tenant, shared.ID) {
 	t.Helper()
 	svc, repo := newTestTenantService()
-	host := seedTenant(repo, "PTI", "pti")
-	ipas := shared.NewID()
+	host := seedTenant(repo, "Home", "home")
+	partner := shared.NewID()
 	svc.SetAddressClassifier(tenantapp.NewAddressClassifier(
-		extOwners{"pti.com.vn": host.ID(), "ipas.com.vn": ipas},
+		extOwners{"example.com": host.ID(), "example.com.au": partner},
 		func(context.Context, shared.ID) (bool, error) { return true, nil }))
-	return svc, repo, host, ipas
+	return svc, repo, host, partner
 }
 
 func TestExternalInvitation_MoreThanViewerRefused(t *testing.T) {
 	svc, _, host, _ := newExternalTenantService(t)
 	_, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
-		Email: "nam@ipas.com.vn", Role: "member", RoleIDs: []string{memberRoleID},
+		Email: "nam@example.com.au", Role: "member", RoleIDs: []string{memberRoleID},
 	}, shared.NewID(), audit.AuditContext{})
 	if !errors.Is(err, tenantapp.ErrExternalViewerOnly) {
 		t.Fatalf("want ErrExternalViewerOnly, got %v", err)
@@ -76,7 +76,7 @@ func TestExternalInvitation_ExpiryAboveMaxRefused(t *testing.T) {
 func TestInternalInvitation_Unchanged(t *testing.T) {
 	svc, _, host, _ := newExternalTenantService(t)
 	inv, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
-		Email: "an@pti.com.vn", Role: "member", RoleIDs: []string{memberRoleID},
+		Email: "an@example.com", Role: "member", RoleIDs: []string{memberRoleID},
 	}, shared.NewID(), audit.AuditContext{})
 	if err != nil {
 		t.Fatal(err)
@@ -87,18 +87,18 @@ func TestInternalInvitation_Unchanged(t *testing.T) {
 }
 
 func TestExternalInvitation_AcceptedAsExternalViewer(t *testing.T) {
-	svc, repo, host, ipas := newExternalTenantService(t)
+	svc, repo, host, partner := newExternalTenantService(t)
 	inv, err := svc.CreateInvitation(context.Background(), host.ID().String(), tenantapp.CreateInvitationInput{
-		Email: "nam@ipas.com.vn", Role: "member", RoleIDs: []string{viewerRoleID},
+		Email: "nam@example.com.au", Role: "member", RoleIDs: []string{viewerRoleID},
 	}, shared.NewID(), audit.AuditContext{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := svc.AcceptInvitation(context.Background(), inv.Token(), shared.NewID(), "nam@ipas.com.vn", audit.AuditContext{})
+	m, err := svc.AcceptInvitation(context.Background(), inv.Token(), shared.NewID(), "nam@example.com.au", audit.AuditContext{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !m.IsExternal() || m.HomeTenantID() == nil || *m.HomeTenantID() != ipas || m.Role() != tenant.RoleViewer {
+	if !m.IsExternal() || m.HomeTenantID() == nil || *m.HomeTenantID() != partner || m.Role() != tenant.RoleViewer {
 		t.Fatalf("external=%v home=%v role=%s", m.IsExternal(), m.HomeTenantID(), m.Role())
 	}
 	if repo.acceptInvTxCalls != 1 {
@@ -112,7 +112,7 @@ func TestAddMember_ExternalRefused(t *testing.T) {
 	svc, _, host, _ := newExternalTenantService(t)
 	userRepo := newMockUserRepo()
 	svc.SetUserService(newTestUserService(userRepo))
-	u := createUserForTest(t, userRepo, "nam@ipas.com.vn", "Nam")
+	u := createUserForTest(t, userRepo, "nam@example.com.au", "Nam")
 	_, err := svc.AddMember(context.Background(), host.ID().String(),
 		tenantapp.AddMemberInput{UserID: u.ID(), Role: "member"}, shared.NewID(), audit.AuditContext{TenantID: host.ID().String()})
 	if !errors.Is(err, tenantapp.ErrExternalNeedsInvitation) {

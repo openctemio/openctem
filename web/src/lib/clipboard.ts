@@ -4,7 +4,7 @@
  * The modern `navigator.clipboard.writeText()` API is gated by the
  * Secure Context requirement — it's only available on HTTPS or
  * `localhost`. Self-hosted OpenCTEM deployments often run on plain HTTP
- * over a LAN IP (e.g. `http://192.168.8.204`) where `navigator.clipboard`
+ * over a LAN IP (e.g. `http://192.168.1.20`) where `navigator.clipboard`
  * is `undefined`. Calling `.writeText()` on undefined throws:
  *
  *     can't access property "writeText", navigator.clipboard is undefined

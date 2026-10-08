@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // Environment constants
@@ -365,15 +366,15 @@ const DefaultSensorKeyRenewGrace = 15 * time.Minute
 // DefaultSensorLatestVersion is the newest sensor release when this API was
 // built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
 // the platform is upgraded; set it to "none" to turn the comparison off.
-const DefaultSensorLatestVersion = "v0.6.4"
+const DefaultSensorLatestVersion = "v0.11.0"
 
 // DefaultSensorMinVersion is the oldest supported sensor release
 // (SENSOR_MIN_VERSION); empty means no minimum.
-const DefaultSensorMinVersion = ""
+const DefaultSensorMinVersion = "v0.9.0"
 
 // DefaultSensorSDKLatestVersion is the newest SDK release
 // (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.
-const DefaultSensorSDKLatestVersion = "v0.14.0"
+const DefaultSensorSDKLatestVersion = "v0.18.0"
 
 // DefaultSensorSDKMinVersion is the oldest supported SDK release
 // (SENSOR_SDK_MIN_VERSION); empty means no minimum.
@@ -506,8 +507,7 @@ const (
 	TenantCreationSelfService = "self_service"
 	// TenantCreationAdminOnly reserves organization creation for the platform
 	// administrator: the admin console, or bootstrap-admin -org-name at first
-	// install (on-prem / enterprise, Tenable Security Center style). The
-	// default.
+	// install (on-prem / enterprise installs). The default.
 	TenantCreationAdminOnly = "admin_only"
 )
 
@@ -1466,6 +1466,12 @@ func (c *Config) validateBasic() error {
 		}
 	}
 	if err := c.Scope.validate(); err != nil {
+		return err
+	}
+	// The SSRF guard ignores a refused private-egress setting; refusing to
+	// start makes the operator notice instead of debugging blocked calls.
+	if err := httpsec.ValidatePrivateEgress(c.App.Env,
+		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
 		return err
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {

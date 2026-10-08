@@ -22,7 +22,7 @@ func TestExternalAccess_Validate(t *testing.T) {
 	now := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
 	home := shared.NewID()
 	unmanaged := Classification{Kind: MemberKindExternal, Domain: "gmail.com", Personal: true}
-	managed := Classification{Kind: MemberKindExternal, HomeTenantID: &home, Domain: "ipas.com.vn"}
+	managed := Classification{Kind: MemberKindExternal, HomeTenantID: &home, Domain: "example.com.au"}
 	at := func(d time.Duration) *time.Time { v := now.Add(d); return &v }
 
 	cases := []struct {
@@ -56,11 +56,11 @@ func TestMembership_ClassifyExternal(t *testing.T) {
 	home := shared.NewID()
 	m := extMember(t, RoleViewer)
 	until := now.Add(24 * time.Hour)
-	if err := m.Classify(Classification{Kind: MemberKindExternal, HomeTenantID: &home, Domain: "IPAS.com.vn"},
+	if err := m.Classify(Classification{Kind: MemberKindExternal, HomeTenantID: &home, Domain: "EXAMPLE.com.au"},
 		ExternalAccess{ExpiresAt: &until, Reason: " project "}, now); err != nil {
 		t.Fatal(err)
 	}
-	if !m.IsExternal() || m.HomeTenantID() == nil || *m.HomeTenantID() != home || m.HomeDomain() != "ipas.com.vn" {
+	if !m.IsExternal() || m.HomeTenantID() == nil || *m.HomeTenantID() != home || m.HomeDomain() != "example.com.au" {
 		t.Fatalf("external fields not recorded: kind=%s home=%v domain=%q", m.Kind(), m.HomeTenantID(), m.HomeDomain())
 	}
 	if m.ExpiryReason() != "project" || m.ExpiresAt() == nil {

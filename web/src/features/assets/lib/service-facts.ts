@@ -12,20 +12,12 @@ import {
  * ports, domains, IPs, certificates) from `asset.metadata` (the API's
  * `properties`).
  *
- * Every reader accepts both shapes that exist in the database:
- *
- *  - **Flat schema keys** (api/configs/asset-types.yaml): `status_code`,
- *    `title`, `server`, `technologies`, `ip_addresses`, `port`, `not_after`,
- *    … Every write path folds the old names into them (the synonyms), so a
- *    reader names only the canonical key, through `prop()`, whose key type
- *    is the registry's `AssetPropertyKey`: a key outside the schema does not
- *    compile (docs/architecture/asset-inventory-v2.md, "Property names").
- *  - **CTIS technical blocks**, one object per block under a common key,
- *    built by ingest `mappers.go`: `service.{name,port,protocol,…,tls}`,
- *    `ip_address.{version,hostname,asn,asn_org,country,ports[]}`,
- *    `domain.{registrar,expires_at,nameservers,dns_records[]}` and
- *    `certificate.{subject_cn,sans,issuer_cn,issuer_org,not_after,…}`. Their
- *    field names are the CTIS ones.
+ * Every reader names a flat schema key (api/configs/asset-types.yaml)
+ * through `prop()`, whose key type is the registry's `AssetPropertyKey`: a
+ * key outside the schema does not compile (docs/architecture/
+ * asset-inventory-v2.md, "Property names"). Ingest, REST and import fold
+ * synonyms and promote the CTIS technical blocks to these keys before a row
+ * is stored, so there is one place to read each fact.
  *
  * A fact the asset does not carry is `null` / `undefined` / an empty list.
  * It is never shown as a default value (no "200", no "TCP", no "valid"):
@@ -53,15 +45,6 @@ function prop(asset: Pick<Asset, 'metadata'>, key: AssetPropertyKey): unknown {
 
 function isMap(v: unknown): v is Meta {
   return !!v && typeof v === 'object' && !Array.isArray(v)
-}
-
-/** A CTIS technical block (`service`, `ip_address`, …), or `{}`. */
-export function nested(
-  asset: Pick<Asset, 'metadata'>,
-  key: Extract<AssetPropertyKey, 'service' | 'ip_address' | 'domain' | 'certificate'>
-): Meta {
-  const v = prop(asset, key)
-  return isMap(v) ? v : {}
 }
 
 function str(v: unknown): string | undefined {
@@ -129,7 +112,7 @@ export function pageTitle(asset: Pick<Asset, 'metadata'>): string | undefined {
 
 /** Whether this asset is an HTTP(S) service (so `service.name` is the web server). */
 export function isHttpService(asset: Pick<Asset, 'metadata' | 'subType' | 'name'>): boolean {
-  const scheme = str(nested(asset, 'service').protocol)?.toLowerCase()
+  const scheme = (str(prop(asset, 'scheme')) ?? str(prop(asset, 'protocol')))?.toLowerCase()
   if (scheme === 'http' || scheme === 'https') return true
   if (asset.subType === 'http') return true
   return /^https?:\/\//i.test(asset.name ?? '')
@@ -137,8 +120,7 @@ export function isHttpService(asset: Pick<Asset, 'metadata' | 'subType' | 'name'
 
 /** The web server banner (httpx `webserver`), e.g. "nginx/1.25.3". */
 export function webServer(asset: Pick<Asset, 'metadata' | 'subType' | 'name'>): string | undefined {
-  const fromService = isHttpService(asset) ? str(nested(asset, 'service').name) : undefined
-  return str(prop(asset, 'server')) ?? fromService
+  return str(prop(asset, 'server'))
 }
 
 export function contentType(asset: Pick<Asset, 'metadata'>): string | undefined {
@@ -202,7 +184,7 @@ export function formatTechnology(t: Technology): string {
 // ---------------------------------------------------------------------------
 
 export function servicePort(asset: Pick<Asset, 'metadata'>): number | null {
-  return posNum(nested(asset, 'service').port) ?? posNum(prop(asset, 'port'))
+  return posNum(prop(asset, 'port'))
 }
 
 /**
@@ -211,27 +193,25 @@ export function servicePort(asset: Pick<Asset, 'metadata'>): number | null {
  * Lower case. Undefined when nothing recorded it (never assume TCP).
  */
 export function serviceProtocol(asset: Pick<Asset, 'metadata'>): string | undefined {
-  return (str(nested(asset, 'service').protocol) ?? str(prop(asset, 'protocol')))?.toLowerCase()
+  return str(prop(asset, 'protocol'))?.toLowerCase()
 }
 
 /** The transport (`tcp` / `udp`) when recorded. */
 export function serviceTransport(asset: Pick<Asset, 'metadata'>): string | undefined {
-  const t = str(nested(asset, 'service').transport)?.toLowerCase()
-  if (t) return t
   const flat = (str(prop(asset, 'transport')) ?? str(prop(asset, 'protocol')))?.toLowerCase()
   return flat === 'tcp' || flat === 'udp' ? flat : undefined
 }
 
 export function serviceVersion(asset: Pick<Asset, 'metadata'>): string | undefined {
-  return str(nested(asset, 'service').version) ?? str(prop(asset, 'version'))
+  return str(prop(asset, 'version'))
 }
 
 export function serviceProduct(asset: Pick<Asset, 'metadata'>): string | undefined {
-  return str(nested(asset, 'service').product) ?? str(prop(asset, 'product'))
+  return str(prop(asset, 'product'))
 }
 
 export function serviceBanner(asset: Pick<Asset, 'metadata'>): string | undefined {
-  return str(nested(asset, 'service').banner) ?? str(prop(asset, 'banner'))
+  return str(prop(asset, 'banner'))
 }
 
 /** The service name nmap/naabu recorded ("ssh", "http"), not the web server. */
@@ -240,7 +220,7 @@ export function serviceName(
 ): string | undefined {
   if (isHttpService(asset)) return undefined
   const flat = prop(asset, 'service')
-  return str(nested(asset, 'service').name) ?? (typeof flat === 'string' ? str(flat) : undefined)
+  return typeof flat === 'string' ? str(flat) : undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -254,9 +234,9 @@ export interface DnsRecord {
   ttl?: number
 }
 
-/** DNS records ingest stored under `domain.dns_records`. */
+/** The DNS records of a name (`dns_records`). */
 export function dnsRecords(asset: Pick<Asset, 'metadata'>): DnsRecord[] {
-  const raw = nested(asset, 'domain').dns_records ?? prop(asset, 'dns_records')
+  const raw = prop(asset, 'dns_records')
   if (!Array.isArray(raw)) return []
   const out: DnsRecord[] = []
   for (const r of raw) {
@@ -298,8 +278,7 @@ export function cnames(asset: Pick<Asset, 'metadata'>): string[] {
 
 /** "AS13335" style ASN and its organisation, when recorded. */
 export function asnInfo(asset: Pick<Asset, 'metadata'>): { asn?: string; org?: string } {
-  const ip = nested(asset, 'ip_address')
-  const rawAsn = ip.asn ?? prop(asset, 'asn')
+  const rawAsn = prop(asset, 'asn')
   let asn: string | undefined
   const n = posNum(rawAsn)
   if (n !== null && typeof rawAsn !== 'string') asn = `AS${n}`
@@ -307,7 +286,7 @@ export function asnInfo(asset: Pick<Asset, 'metadata'>): { asn?: string; org?: s
     const s = str(rawAsn)
     asn = s ? (/^\d+$/.test(s) ? `AS${s}` : s) : undefined
   }
-  const org = str(ip.asn_org) ?? str(prop(asset, 'asn_org'))
+  const org = str(prop(asset, 'asn_org'))
   return { asn, org }
 }
 
@@ -318,16 +297,15 @@ export interface OpenPort {
 }
 
 /**
- * Open ports on an IP: naabu/nmap write `ip_address.ports[]`. A port is a
- * service of its own (a `host:port` asset), never a property of the host, so
- * there is no flat key for it. `null` when no port scan recorded anything
- * (not "no open ports").
+ * The port summary of an IP address (`ports`, from naabu/nmap). Each port is
+ * also a `host:port` service asset of its own; a host has no port property.
+ * `null` when no port scan recorded anything (not "no open ports").
  */
 export function openPorts(asset: Pick<Asset, 'metadata'>): OpenPort[] | null {
-  const ip = nested(asset, 'ip_address')
-  if (Array.isArray(ip.ports)) {
+  const ports = prop(asset, 'ports')
+  if (Array.isArray(ports)) {
     const out: OpenPort[] = []
-    for (const p of ip.ports) {
+    for (const p of ports) {
       if (!isMap(p)) continue
       const port = posNum(p.port)
       if (port === null) continue
@@ -347,22 +325,21 @@ export function formatPort(p: OpenPort): string {
 // ---------------------------------------------------------------------------
 
 export function registrar(asset: Pick<Asset, 'metadata'>): string | undefined {
-  return str(nested(asset, 'domain').registrar) ?? str(prop(asset, 'registrar'))
+  return str(prop(asset, 'registrar'))
 }
 
 export function domainExpiry(asset: Pick<Asset, 'metadata'>): Date | null {
-  const raw = str(nested(asset, 'domain').expires_at) ?? str(prop(asset, 'expires_at'))
+  const raw = str(prop(asset, 'expires_at'))
   if (!raw) return null
   const d = new Date(raw)
   return Number.isNaN(d.getTime()) ? null : d
 }
 
 export function nameservers(asset: Pick<Asset, 'metadata'>): string[] {
-  const fromDomain = strList(nested(asset, 'domain').nameservers)
   const fromNs = dnsRecords(asset)
     .filter((r) => r.type === 'NS')
     .map((r) => r.value)
-  return uniq([...fromDomain, ...fromNs, ...strList(prop(asset, 'nameservers'))])
+  return uniq([...strList(prop(asset, 'nameservers')), ...fromNs])
 }
 
 // ---------------------------------------------------------------------------
@@ -422,56 +399,31 @@ function certFrom(
   return { notAfter, daysLeft, status, issuer, subject, sans }
 }
 
-/** The certificate recorded on the asset itself: its flat schema keys, or a CTIS block. */
+/** The certificate recorded on the asset itself (a certificate asset's keys). */
 export function recordedCertificate(
   asset: Pick<Asset, 'metadata'>,
   now: number = Date.now()
 ): TlsCertificate | null {
-  const c = nested(asset, 'certificate')
-  const svc = nested(asset, 'service')
-  const candidates: (TlsCertificate | null)[] = [
-    // A certificate asset's own keys (CT monitor, CTIS flat properties, the form).
-    certFrom(
-      prop(asset, 'not_after'),
-      str(prop(asset, 'issuer_org')) ?? str(prop(asset, 'issuer_cn')),
-      str(prop(asset, 'subject_cn')),
-      strList(prop(asset, 'sans')),
-      prop(asset, 'is_expired'),
-      now
-    ),
-    // The CTIS technical certificate block (ingest).
-    certFrom(
-      c.not_after,
-      str(c.issuer_org) ?? str(c.issuer_cn),
-      str(c.subject_cn),
-      strList(c.sans),
-      c.expired,
-      now
-    ),
-    // nmap-style service TLS fields (the CTIS technical service block).
-    certFrom(
-      svc.tls_cert_expiry,
-      str(svc.tls_cert_issuer),
-      str(svc.tls_cert_subject),
-      [],
-      undefined,
-      now
-    ),
-  ]
-  return candidates.find((x) => x !== null) ?? null
+  return certFrom(
+    prop(asset, 'not_after'),
+    str(prop(asset, 'issuer_org')) ?? str(prop(asset, 'issuer_cn')),
+    str(prop(asset, 'subject_cn')),
+    strList(prop(asset, 'sans')),
+    prop(asset, 'is_expired'),
+    now
+  )
 }
 
 export function tlsFacts(asset: Pick<Asset, 'metadata'>, now: number = Date.now()): TlsFacts {
   const cert = recordedCertificate(asset, now)
   if (cert) return { kind: 'cert', cert }
 
-  const svc = nested(asset, 'service')
-  const scheme = str(svc.protocol)?.toLowerCase()
+  const scheme = (str(prop(asset, 'scheme')) ?? str(prop(asset, 'protocol')))?.toLowerCase()
   const hasTls = prop(asset, 'has_tls')
 
   // The scheme the probe used, or the recorded `has_tls` flag. The asset's own
   // URL is not read: a typed-in "https://" is a claim, not an observation.
-  if (scheme === 'https' || svc.tls === true || hasTls === true) return { kind: 'tls' }
+  if (scheme === 'https' || hasTls === true) return { kind: 'tls' }
   if (scheme === 'http' || hasTls === false) return { kind: 'none' }
   return { kind: 'not_collected' }
 }

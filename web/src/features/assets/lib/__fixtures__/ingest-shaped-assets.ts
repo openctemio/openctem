@@ -4,18 +4,22 @@
  * Each `properties` map below is what the API returns after a sensor report
  * goes through `api/internal/app/ingest`:
  *
- *  - top-level keys are the CTIS `properties` the sensor sent (reserved
- *    discovery keys are stripped by `buildPropertiesFromCTIS`);
- *  - `service`, `ip_address`, `domain`, `certificate` are the nested maps
- *    `mappers.go` builds from CTIS `technical.*` (`buildServiceProperties`
- *    always writes `tls`, even when the sensor never measured it);
+ *  - flat schema keys only: the CTIS `properties` the sensor sent, with
+ *    synonyms folded (`web_server` → `server`, `ip` → `ip_addresses`) and
+ *    reserved discovery keys stripped (`buildPropertiesFromCTIS`);
+ *  - the CTIS `technical.*` blocks promoted to the stored type's keys
+ *    (`asset.PromoteTechnicalBlocks`): `technical.service.name` → `server`
+ *    on an HTTP service, `tls` → `has_tls`, `technical.domain.dns_records`
+ *    → `dns_records` plus `dns_record_types` / `cname_target` / A and AAAA
+ *    in `ip_addresses`, `technical.certificate.fingerprint` →
+ *    `fingerprint_sha256`, and so on;
  *  - http_service / open_port / discovered_url arrive as type `service` with
  *    sub_type `http` / `open_port` / `discovered_url` (`asset.TypeAliases`).
  *
  * Sources: the sensor's recon parsers (the sensor repository, `internal/executor/recon.go`:
  * httpx, naabu, dnsx, subfinder) and sdk-go's recon converter
  * (`pkg/ctis/recon_converter.go`), which also sends `web_server`, `ip`,
- * `cdn`, `content_length` and `response_time_ms`. All names and addresses
+ * `cdn`, `content_length` and `response_time_ms` (stored folded). All names and addresses
  * are documentation ranges (example.com, 192.0.2.0/24, 198.51.100.0/24,
  * 203.0.113.0/24, AS64496-AS64511).
  */
@@ -55,7 +59,9 @@ export const sensorHttpService = base({
     title: 'Example Shop | Home',
     content_type: 'text/html; charset=utf-8',
     technologies: ['Nginx:1.25.3', 'React', 'jQuery:3.3.1'],
-    service: { name: 'nginx/1.25.3', port: 443, protocol: 'https', tls: false },
+    server: 'nginx/1.25.3',
+    port: 443,
+    protocol: 'https',
   },
 })
 
@@ -70,7 +76,8 @@ export const sensorHttpServiceNoTech = base({
     title: '',
     content_type: 'text/html',
     technologies: null,
-    service: { name: '', port: 8080, protocol: 'http', tls: false },
+    port: 8080,
+    protocol: 'http',
   },
 })
 
@@ -89,9 +96,11 @@ export const sdkLiveHost = base({
     technologies: ['Cloudflare', 'HTTP/3'],
     cdn: 'cloudflare',
     tls_version: 'tls13',
-    ip: '203.0.113.24',
+    ip_addresses: ['203.0.113.24'],
     redirect_url: 'https://www.example.net/en/',
-    service: { name: 'cloudflare', port: 443, protocol: 'https', tls: true },
+    port: 443,
+    protocol: 'https',
+    has_tls: true,
   },
 })
 
@@ -111,53 +120,50 @@ export const sdkOpenPort = base({
   },
 })
 
-/** Sensor naabu → ip_address with `ip_address.ports[]`. */
+/** Sensor naabu → ip_address with its port summary `ports[]`. */
 export const sensorIpWithPorts = base({
   id: 'ip-1',
   name: '203.0.113.10',
   type: 'ip_address',
   metadata: {
-    ip_address: {
-      ports: [
-        { port: 443, protocol: 'tcp', state: 'open' },
-        { port: 80, protocol: 'tcp', state: 'open' },
-        { port: 8443, protocol: 'tcp', state: 'open' },
-        { port: 22, protocol: 'tcp', state: 'open' },
-      ],
-    },
+    ports: [
+      { port: 443, protocol: 'tcp', state: 'open' },
+      { port: 80, protocol: 'tcp', state: 'open' },
+      { port: 8443, protocol: 'tcp', state: 'open' },
+      { port: 22, protocol: 'tcp', state: 'open' },
+    ],
   },
 })
 
-/** A CTIS ip_address with ASN data (`ip_address.asn` is a number). */
+/** A CTIS ip_address with ASN data (`asn` is a number). */
 export const ctisIpWithAsn = base({
   id: 'ip-2',
   name: '192.0.2.40',
   type: 'ip_address',
   metadata: {
-    ip_address: {
-      version: 4,
-      hostname: 'api.example.org',
-      asn: 64502,
-      asn_org: 'Example Transit',
-      country: 'NL',
-      ports: [{ port: 8443, protocol: 'tcp', state: 'open', service: 'https' }],
-    },
+    version: 4,
+    hostname: 'api.example.org',
+    asn: 64502,
+    asn_org: 'Example Transit',
+    country: 'NL',
+    ports: [{ port: 8443, protocol: 'tcp', state: 'open', service: 'https' }],
   },
 })
 
-/** Sensor dnsx → domain with `domain.dns_records[]`. */
+/** Sensor dnsx → domain with `dns_records[]` and the summary keys. */
 export const sensorDnsDomain = base({
   id: 'dom-1',
   name: 'www.example.com',
   type: 'domain',
   metadata: {
-    domain: {
-      dns_records: [
-        { type: 'CNAME', name: 'www.example.com', value: 'www.pages.example-host.net', ttl: 0 },
-        { type: 'A', name: 'www.example.com', value: '203.0.113.24', ttl: 0 },
-        { type: 'A', name: 'www.example.com', value: '203.0.113.25', ttl: 0 },
-      ],
-    },
+    dns_records: [
+      { type: 'CNAME', name: 'www.example.com', value: 'www.pages.example-host.net', ttl: 0 },
+      { type: 'A', name: 'www.example.com', value: '203.0.113.24', ttl: 0 },
+      { type: 'A', name: 'www.example.com', value: '203.0.113.25', ttl: 0 },
+    ],
+    dns_record_types: 'CNAME, A',
+    cname_target: 'www.pages.example-host.net',
+    ip_addresses: ['203.0.113.24', '203.0.113.25'],
   },
 })
 
@@ -167,13 +173,12 @@ export const ctisRootDomain = base({
   name: 'example.com',
   type: 'domain',
   metadata: {
-    domain: {
-      registrar: 'Example Registrar, Inc.',
-      registered_at: '2001-05-14T00:00:00Z',
-      expires_at: '2027-05-14T00:00:00Z',
-      nameservers: ['ns1.example.com', 'ns2.example.com'],
-      dns_records: [{ type: 'NS', name: 'example.com', value: 'ns1.example.com', ttl: 3600 }],
-    },
+    registrar: 'Example Registrar, Inc.',
+    registered_at: '2001-05-14T00:00:00Z',
+    expires_at: '2027-05-14T00:00:00Z',
+    nameservers: ['ns1.example.com', 'ns2.example.com'],
+    dns_records: [{ type: 'NS', name: 'example.com', value: 'ns1.example.com', ttl: 3600 }],
+    dns_record_types: 'NS',
   },
 })
 
@@ -182,31 +187,29 @@ export const sensorSubdomain = base({
   id: 'dom-3',
   name: 'dev.example.com',
   type: 'subdomain',
-  metadata: { source: 'crtsh' },
+  metadata: { discovery_source: 'crtsh' },
 })
 
-/** CTIS certificate → `certificate.*` (CT monitor and scanners). */
+/** CTIS certificate (CT monitor and scanners), promoted to flat keys. */
 export function ctisCertificate(notAfter: string): Asset {
   return base({
     id: 'cert-1',
     name: '*.example.com',
     type: 'certificate',
     metadata: {
-      certificate: {
-        serial_number: '04:3a:9f:00:11',
-        subject_cn: '*.example.com',
-        sans: ['*.example.com', 'example.com'],
-        issuer_cn: 'R11',
-        issuer_org: "Let's Encrypt",
-        not_before: '2026-08-01T00:00:00Z',
-        not_after: notAfter,
-        signature_algorithm: 'SHA256-RSA',
-        key_algorithm: 'RSA',
-        key_size: 2048,
-        fingerprint: 'ab:cd:ef',
-        self_signed: false,
-        expired: false,
-      },
+      serial_number: '04:3a:9f:00:11',
+      subject_cn: '*.example.com',
+      sans: ['*.example.com', 'example.com'],
+      issuer_cn: 'R11',
+      issuer_org: "Let's Encrypt",
+      not_before: '2026-08-01T00:00:00Z',
+      not_after: notAfter,
+      signature_algorithm: 'SHA256-RSA',
+      key_algorithm: 'RSA',
+      key_size: 2048,
+      fingerprint_sha256: 'ab:cd:ef',
+      is_self_signed: false,
+      is_expired: false,
     },
   })
 }

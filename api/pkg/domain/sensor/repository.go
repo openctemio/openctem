@@ -57,6 +57,10 @@ type HeartbeatUpdate struct {
 	// stored protocol telemetry untouched. UserAgent is already sanitized.
 	Protocol  int
 	UserAgent string
+	// Binding (grpc | https | v2) and FallbackReason (sanitized) are stored
+	// with the protocol telemetry; "" binding stores NULL.
+	Binding        string
+	FallbackReason string
 
 	// UptimeSeconds is how long the sensor process has been running, as the
 	// heartbeat reported it (already clamped). 0 leaves the stored start time

@@ -103,7 +103,7 @@ type Repository interface {
 	FindByIP(ctx context.Context, tenantID shared.ID, ip string) (*Asset, error)
 
 	// FindByHostname finds an existing asset by hostname.
-	// Searches: name, properties->>'hostname', properties->'ip_address'->>'hostname'.
+	// Searches: name, properties->>'hostname'.
 	// Returns nil, nil if not found.
 	FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*Asset, error)
 

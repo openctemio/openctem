@@ -12,4 +12,4 @@
   `needs_review`/`candidate` records against the current scope targets and
   seeds, tenant by tenant, and confirms the covered ones; each run that
   confirms names is audited as `asset.attribution_auto_confirmed`. Live had
-  10 such names under `*.vndirect.com.vn`.
+  10 such names under `*.example.co.uk`.

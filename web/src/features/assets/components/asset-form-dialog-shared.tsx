@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { AssetGroupSelect } from '@/features/asset-groups'
-import type { FormFieldConfig } from '../types/page-config.types'
+import type { FormFieldConfig } from '../types/form-field.types'
 import type { Asset } from '../types'
 import { IMPACT_RATING_OPTIONS } from '../types'
 import { ASSET_CRITICALITY_LEVELS, criticalityOptions } from '@/lib/criticality'
