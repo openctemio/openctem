@@ -72,6 +72,9 @@ func (h *ScanWorkflowHandler) GetRunTaskLogs(w http.ResponseWriter, r *http.Requ
 		apierror.BadRequest("invalid task id").WriteJSON(w)
 		return
 	}
+	if !h.guardRun(w, r) {
+		return
+	}
 	resp := RunTaskLogsResponse{Lines: []RunTaskLogLine{}}
 	if h.taskLogs != nil {
 		page, err := h.taskLogs.ListForRunTask(r.Context(), tenantID, runID, taskID)

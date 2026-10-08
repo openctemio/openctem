@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
@@ -114,9 +115,13 @@ func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
 
 // newScanWorkflowHandler builds the scan workflow handler with the run page's task
 // logs (RFC-029 §4.4.1).
-func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
+func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, scope *datascope.Enforcer, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
 	h := handler.NewScanWorkflowHandler(svc, v, log)
 	h.SetTaskLogs(logs)
+	if scope != nil {
+		// Runs about a finding (retests) follow the finding's data scope.
+		h.SetFindingScope(scope)
+	}
 	return h
 }
 
@@ -388,7 +393,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CI:              handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:         ciAdmin,
 		CIRunner:        ciRunner,
-		ScanWorkflow:    newScanWorkflowHandler(svc.ScanRun, commandLogs, v, log),
+		ScanWorkflow:    newScanWorkflowHandler(svc.ScanRun, commandLogs, svc.DataScope, v, log),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),

@@ -79,6 +79,8 @@ func (p *V2JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byt
 		if err := p.reports.MarkFailed(ctx, rep.ID); err != nil {
 			return nil, fmt.Errorf("v2 processor: fail report of a dropped sensor: %w", err)
 		}
+		// A chained step waiting for this report plans on what it has.
+		p.service.commandIngestedNow(ctx, rep.TenantID, rep.CommandID)
 		return json.Marshal(dropped)
 	}
 
@@ -106,6 +108,9 @@ func (p *V2JobProcessor) failOnLastAttempt(ctx context.Context, job *ingestjob.J
 		return
 	}
 	metrics.IngestV2ReportsTotal.WithLabelValues(string(protov2.StateFailed), "none").Inc()
+	// The report will never commit: a chained step waiting for it plans now
+	// on what its predecessors produced (research/62 SG-10).
+	p.service.commandIngestedNow(ctx, rep.TenantID, rep.CommandID)
 }
 
 func (p *V2JobProcessor) provenance(rep *ingestreport.Report, seq int, job *ingestjob.Job) Provenance {
