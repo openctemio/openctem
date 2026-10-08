@@ -188,3 +188,13 @@ export function RoleChecklist({
     </div>
   )
 }
+
+/**
+ * The system viewer role: the least-privilege default a new person starts
+ * with (api RFC-058). The inviter can change it before sending.
+ */
+export function defaultViewerRoleId(
+  roles: Pick<RoleChecklistItem, 'id' | 'slug' | 'is_system'>[]
+): string | undefined {
+  return roles.find((r) => r.slug === 'viewer' && r.is_system)?.id
+}

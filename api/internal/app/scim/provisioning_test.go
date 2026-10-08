@@ -143,6 +143,13 @@ func TestProvision_NewUser_CreatesUserAndMembership(t *testing.T) {
 	if len(members.byUser) != 1 {
 		t.Errorf("membership count = %d, want 1", len(members.byUser))
 	}
+	// Least privilege (RFC-058): a provisioned person is a viewer until an
+	// identity-provider group maps them higher.
+	for _, m := range members.byUser {
+		if m.Role() != tenantdom.RoleViewer {
+			t.Errorf("provisioned role = %s, want viewer", m.Role())
+		}
+	}
 }
 
 func TestProvision_ExistingActive_Idempotent(t *testing.T) {
