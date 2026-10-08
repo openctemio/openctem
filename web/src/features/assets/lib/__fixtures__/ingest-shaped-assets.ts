@@ -83,7 +83,7 @@ export const sdkLiveHost = base({
     status_code: 301,
     content_length: 162,
     title: '301 Moved Permanently',
-    web_server: 'cloudflare',
+    server: 'cloudflare',
     content_type: 'text/html',
     response_time_ms: 87,
     technologies: ['Cloudflare', 'HTTP/3'],
