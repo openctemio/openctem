@@ -127,6 +127,7 @@ type Handlers struct {
 	CIRunner        *handler.CIRunnerHandler
 	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
 	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
+	ContentPack     *handler.ContentPackHandler     // nil if not initialized (no database)
 	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
@@ -873,6 +874,10 @@ func Register(
 	}
 
 	// Template Source routes (tenant from JWT token)
+	if h.ContentPack != nil {
+		registerContentPackRoutes(router, h.ContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+
 	if h.TemplateSource != nil {
 		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleTemplateSources))
 	}

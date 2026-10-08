@@ -980,6 +980,12 @@ type EncryptionConfig struct {
 	// must pin the new one; set it to rotate them independently.
 	// Env var: APP_TEMPLATE_SIGNING_KEY
 	TemplateSigningKey string
+
+	// ContentSigningKey is the 32-byte master secret each tenant's content
+	// pack signing key is derived from (Ed25519, RFC-061). Same formats as
+	// Key. Empty: derived from Key under its own label.
+	// Env var: APP_CONTENT_SIGNING_KEY
+	ContentSigningKey string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -1326,6 +1332,7 @@ func Load() (*Config, error) {
 			PreviousKeys:   getEnvSlice("APP_ENCRYPTION_KEY_PREVIOUS", nil),
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
+			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
 		},
 		Webhooks: WebhooksConfig{
 			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
@@ -1600,6 +1607,15 @@ func (c *Config) validateEncryption() error {
 		}
 	}
 
+	if k := c.Encryption.ContentSigningKey; k != "" {
+		if _, err := crypto.ParseKey(k, ""); err != nil {
+			return fmt.Errorf("APP_CONTENT_SIGNING_KEY is not a valid key (expected 32 raw, 64 hex or 44 base64 characters); generate one with `openssl rand -hex 32`")
+		}
+		if k == c.Encryption.Key || k == c.Encryption.TemplateSigningKey {
+			return fmt.Errorf("APP_CONTENT_SIGNING_KEY must differ from APP_ENCRYPTION_KEY and APP_TEMPLATE_SIGNING_KEY (leave it unset to derive it)")
+		}
+	}
+
 	// Encryption key is optional only in development. Any other APP_ENV
 	// (production, staging, preview, etc.) stores real tenant credentials
 	// and MUST have a key — otherwise integration tokens sit in plaintext.
@@ -1734,6 +1750,7 @@ func (c *Config) validatePlaceholders() error {
 	secrets := []struct{ name, value string }{
 		{"APP_ENCRYPTION_KEY", c.Encryption.Key},
 		{"APP_TEMPLATE_SIGNING_KEY", c.Encryption.TemplateSigningKey},
+		{"APP_CONTENT_SIGNING_KEY", c.Encryption.ContentSigningKey},
 		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
 		{"DB_PASSWORD", c.Database.Password},
 		{"REDIS_PASSWORD", c.Redis.Password},
