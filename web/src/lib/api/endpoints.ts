@@ -1433,6 +1433,9 @@ export const scanRunEndpoints = {
    */
   stages: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/stages`,
 
+  /** A run's timeline: every change of its tasks, oldest first (research/62 P0-4). */
+  events: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/events`,
+
   /**
    * One cursor page of a run's tasks (the run read embeds the first page and
    * its tasks_next_cursor).
