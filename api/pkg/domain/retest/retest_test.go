@@ -158,3 +158,19 @@ func TestEligibleStatusesMatchesEligibleStatus(t *testing.T) {
 		t.Errorf("EligibleStatuses has %d entries, the rule table %d", len(EligibleStatuses()), len(eligibleStatuses))
 	}
 }
+
+// Every move a retest makes is a move of the finding lifecycle (the settle
+// refuses any other, so a NextStatus that drifted would fail every retest).
+func TestNextStatusFollowsLifecycle(t *testing.T) {
+	outcomes := []Outcome{OutcomeConfirmedFixed, OutcomeNotReproduced, OutcomeStillVulnerable, OutcomeInconclusive}
+	for _, prior := range vulnerability.AllFindingStatuses() {
+		for _, o := range outcomes {
+			for _, auto := range []bool{false, true} {
+				next, moved := NextStatus(prior, o, auto)
+				if moved && !prior.CanPlatformTransitionTo(next) {
+					t.Errorf("NextStatus(%s, %s, %v) = %s: not a lifecycle move", prior, o, auto, next)
+				}
+			}
+		}
+	}
+}

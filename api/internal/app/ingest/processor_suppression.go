@@ -109,7 +109,7 @@ func (p *FindingProcessor) applySuppressions(
 			}
 			// resolvedBy nil = system disposition (no human actor); the rule
 			// was approved by a person (separation of duties).
-			if err := f.UpdateStatus(suppressionDisposition(rule.SuppressionType()), resolutionSuppressed, nil); err != nil {
+			if err := f.ApplyPlatformTransition(suppressionDisposition(rule.SuppressionType()), resolutionSuppressed); err != nil {
 				p.logger.Warn("failed to apply suppression disposition",
 					"error", err, "fingerprint", f.Fingerprint())
 				break

@@ -208,7 +208,7 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 		FROM findings f
 		JOIN m ON m.fingerprint = f.fingerprint AND m.asset_id = f.asset_id
 		WHERE f.tenant_id = $1
-			AND f.status IN ` + coverageOpenStatuses + `
+			AND f.status IN ` + vexFalsePositiveFromSQL + `
 			AND f.source NOT IN ` + coverageProtectedSources
 	query := `SELECT id::text FROM (` + match + `) x`
 	if !dryRun {
@@ -221,7 +221,7 @@ func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID sh
 			updated_at = NOW()
 		FROM (` + match + `) x
 		WHERE f.tenant_id = $1 AND f.id = x.id
-			AND f.status IN ` + coverageOpenStatuses + `
+			AND f.status IN ` + vexFalsePositiveFromSQL + `
 		RETURNING f.id::text`
 	}
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(fps), pq.Array(assets), pq.Array(reasons))

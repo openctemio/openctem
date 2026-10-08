@@ -133,8 +133,11 @@ func TestFindingStatusUpdate_ResolvedByIsSet(t *testing.T) {
 	})
 
 	t.Run("resolved_by is set when transitioning to resolved", func(t *testing.T) {
-		// Transition to resolved
-		err := finding.UpdateStatus(vulnerability.FindingStatusResolved, "Fixed in PR #123", &actorID)
+		// Transition to resolved (new -> confirmed -> resolved)
+		if err := finding.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil); err != nil {
+			t.Fatalf("Failed to confirm: %v", err)
+		}
+		err := finding.TransitionStatus(vulnerability.FindingStatusResolved, "Fixed in PR #123", &actorID)
 		if err != nil {
 			t.Fatalf("Failed to update status: %v", err)
 		}
@@ -168,7 +171,7 @@ func TestFindingStatusUpdate_ResolvedByIsSet(t *testing.T) {
 
 	t.Run("resolved_by is cleared when reopening", func(t *testing.T) {
 		// Reopen the finding
-		err := finding.UpdateStatus(vulnerability.FindingStatusConfirmed, "", nil)
+		err := finding.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil)
 		if err != nil {
 			t.Fatalf("Failed to reopen finding: %v", err)
 		}
@@ -206,7 +209,10 @@ func TestFindingStatusUpdate_AllClosedStatusesSetResolvedBy(t *testing.T) {
 				"Test finding",
 			)
 
-			err := finding.UpdateStatus(tc.status, "Closed", &actorID)
+			if err := finding.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil); err != nil {
+				t.Fatalf("Failed to confirm: %v", err)
+			}
+			err := finding.TransitionStatus(tc.status, "Closed", &actorID)
 			if err != nil {
 				t.Fatalf("Failed to update status to %s: %v", tc.name, err)
 			}
@@ -227,13 +233,17 @@ func TestFindingStatusUpdate_AllClosedStatusesSetResolvedBy(t *testing.T) {
 func TestFindingStatusUpdate_OpenStatusesDoNotSetResolvedBy(t *testing.T) {
 	actorID := shared.NewID()
 
+	// A person reopens a resolved finding to confirmed; the platform returns a
+	// suppressed (false positive or accepted) finding to new.
 	openStatuses := []struct {
-		status vulnerability.FindingStatus
-		name   string
+		closed   vulnerability.FindingStatus
+		status   vulnerability.FindingStatus
+		platform bool
+		name     string
 	}{
-		{vulnerability.FindingStatusNew, "new"},
-		{vulnerability.FindingStatusConfirmed, "confirmed"},
-		{vulnerability.FindingStatusInProgress, "in_progress"},
+		{vulnerability.FindingStatusResolved, vulnerability.FindingStatusConfirmed, false, "confirmed"},
+		{vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusNew, true, "new"},
+		{vulnerability.FindingStatusAccepted, vulnerability.FindingStatusNew, true, "new_from_accepted"},
 	}
 
 	for _, tc := range openStatuses {
@@ -247,10 +257,18 @@ func TestFindingStatusUpdate_OpenStatusesDoNotSetResolvedBy(t *testing.T) {
 				vulnerability.SeverityHigh,
 				"Test finding",
 			)
-			_ = finding.UpdateStatus(vulnerability.FindingStatusResolved, "Was resolved", &actorID)
+			_ = finding.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil)
+			if err := finding.TransitionStatus(tc.closed, "Was closed", &actorID); err != nil {
+				t.Fatalf("Failed to close as %s: %v", tc.closed, err)
+			}
 
 			// Now transition to open status
-			err := finding.UpdateStatus(tc.status, "", &actorID)
+			var err error
+			if tc.platform {
+				err = finding.ApplyPlatformTransition(tc.status, "")
+			} else {
+				err = finding.TransitionStatus(tc.status, "", &actorID)
+			}
 			if err != nil {
 				t.Fatalf("Failed to update status to %s: %v", tc.name, err)
 			}
@@ -313,7 +331,7 @@ func TestFindingStatusWorkflow(t *testing.T) {
 	}
 
 	// Step 2: new -> confirmed
-	_ = finding.UpdateStatus(vulnerability.FindingStatusConfirmed, "", nil)
+	_ = finding.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil)
 	if !finding.IsTriaged() {
 		t.Error("Confirmed finding should be triaged")
 	}
@@ -321,15 +339,16 @@ func TestFindingStatusWorkflow(t *testing.T) {
 		t.Error("Confirmed status should not set resolved_by")
 	}
 
-	// Step 3: confirmed -> in_progress
-	_ = finding.UpdateStatus(vulnerability.FindingStatusInProgress, "", nil)
+	// Step 3: confirmed -> in_progress -> fix_applied
+	_ = finding.TransitionStatus(vulnerability.FindingStatusInProgress, "", nil)
+	_ = finding.TransitionStatus(vulnerability.FindingStatusFixApplied, "", nil)
 	if finding.ResolvedBy() != nil {
 		t.Error("In progress status should not set resolved_by")
 	}
 
-	// Step 4: in_progress -> resolved
+	// Step 4: fix_applied -> resolved
 	resolvedAt := time.Now()
-	_ = finding.UpdateStatus(vulnerability.FindingStatusResolved, "Fixed in commit abc123", &actorID)
+	_ = finding.TransitionStatus(vulnerability.FindingStatusResolved, "Fixed in commit abc123", &actorID)
 
 	if finding.Status() != vulnerability.FindingStatusResolved {
 		t.Errorf("Expected status 'resolved', got '%s'", finding.Status())

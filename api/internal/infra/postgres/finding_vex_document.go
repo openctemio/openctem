@@ -114,7 +114,7 @@ func (r *FindingRepository) ApplyVEXDocument(ctx context.Context, tenantID share
 	rows, err := r.db.QueryContext(ctx, `
 		WITH t AS (
 			SELECT f.id,
-				($8 AND f.status IN `+coverageOpenStatuses+` AND f.source NOT IN `+coverageProtectedSources+`) AS closable
+				($8 AND f.status IN `+vexFalsePositiveFromSQL+` AND f.source NOT IN `+coverageProtectedSources+`) AS closable
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.id = ANY($2::uuid[])
 			FOR UPDATE
