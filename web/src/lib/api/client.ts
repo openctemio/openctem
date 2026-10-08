@@ -15,6 +15,7 @@ import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
 import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
 import { coalesceGet } from './request-dedupe'
+import { readCsrfCookie } from '@/lib/csrf-client'
 
 // ============================================
 // CONFIGURATION
@@ -28,21 +29,12 @@ function isServer(): boolean {
 }
 
 /**
- * Read the csrf_token cookie from the browser. The backend sets this
- * at login with HttpOnly=false expressly so client JS can read it;
- * the value is re-sent in the X-CSRF-Token header on mutations under
- * the double-submit-cookie pattern. See api/internal/infra/http/
- * middleware/csrf.go for the validator.
- *
- * Returns empty string on the server (cookies access goes through
- * next/headers there, not document.cookie) or when the cookie is
- * absent (pre-login, anonymous routes).
+ * The JS-readable csrf_token cookie (set on every page by src/proxy.ts and
+ * rotated by the API at login), re-sent in X-CSRF-Token on mutations under
+ * the double-submit-cookie pattern; see src/lib/server-auth-cookies.ts.
+ * Empty on the server or when the cookie is absent.
  */
-function readCSRFToken(): string {
-  if (isServer()) return ''
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)
-  return match ? decodeURIComponent(match[1]) : ''
-}
+const readCSRFToken = readCsrfCookie
 
 /**
  * CSRF-aware drop-in replacement for `fetch`, for the handful of call sites
@@ -650,6 +642,11 @@ export async function uploadFile<T = unknown>(
     // Add auth header
     if (accessToken) {
       xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`)
+    }
+    // XHR does not go through the fetch wrapper (src/lib/csrf-client.ts).
+    const csrfToken = readCSRFToken()
+    if (csrfToken) {
+      xhr.setRequestHeader('X-CSRF-Token', csrfToken)
     }
 
     // Progress handler

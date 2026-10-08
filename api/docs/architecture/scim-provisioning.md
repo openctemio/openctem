@@ -126,7 +126,6 @@ Code: `pkg/domain/scimgroup`, `internal/app/scim/groups.go`,
 Verified end-to-end against real Postgres
 (`tests/integration/scim_groups_test.go`).
 
-## Deferred (RFC-009)
+## Related
 
-- Admin **UI** to mint/revoke the token and show the SCIM base URL.
-- **SAML 2.0** SP login (Phase 9d–9f).
+- SAML 2.0 SP login: [saml-sso.md](saml-sso.md).

@@ -36,6 +36,7 @@ const ORG = {
   active_identity_providers: 0,
   verified_domains: 0,
   sso_enforced: false,
+  plan: 'free',
 }
 
 async function fillOrg(user: ReturnType<typeof userEvent.setup>) {
@@ -187,13 +188,13 @@ const ownerRow = {
 describe('OrganizationUsersSection', () => {
   it('offers "Create first owner" only while the organization has no owner', () => {
     vi.mocked(useOrganizationUsers).mockReturnValue(usersResult([]))
-    render(<OrganizationUsersSection tenantId="t1" canManage />)
+    render(<OrganizationUsersSection tenantId="t1" orgName="Acme" canManage />)
     expect(screen.getByRole('button', { name: /create first owner/i })).toBeInTheDocument()
   })
 
   it('explains that the owner adds users once an owner exists', () => {
     vi.mocked(useOrganizationUsers).mockReturnValue(usersResult([ownerRow]))
-    render(<OrganizationUsersSection tenantId="t1" canManage />)
+    render(<OrganizationUsersSection tenantId="t1" orgName="Acme" canManage />)
     expect(screen.queryByRole('button', { name: /create first owner/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /add user/i })).toBeNull()
     expect(screen.getByText(/owner and administrators invite/i)).toBeInTheDocument()
@@ -203,7 +204,7 @@ describe('OrganizationUsersSection', () => {
     vi.mocked(useOrganizationUsers).mockReturnValue(
       usersResult([{ ...ownerRow, status: 'suspended' }])
     )
-    render(<OrganizationUsersSection tenantId="t1" canManage />)
+    render(<OrganizationUsersSection tenantId="t1" orgName="Acme" canManage />)
     expect(screen.queryByRole('button', { name: /create first owner/i })).toBeNull()
     expect(screen.getByText(/every owner of this organization is suspended/i)).toBeInTheDocument()
   })
@@ -228,7 +229,7 @@ describe('OrganizationUsersSection', () => {
       isLoading: false,
       mutate: vi.fn(),
     } as unknown as ReturnType<typeof useOrganizationUsers>)
-    render(<OrganizationUsersSection tenantId="t1" canManage={false} />)
+    render(<OrganizationUsersSection tenantId="t1" orgName="Acme" canManage={false} />)
     expect(screen.getAllByText('New Person').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Pending setup').length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: /create first owner/i })).toBeNull()

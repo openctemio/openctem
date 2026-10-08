@@ -8,11 +8,16 @@
 
 - **9d (shipped)** — per-tenant config + SP metadata + admin CRUD + the shared
   federated-login seam.
-- **9e (next)** — SP-initiated login (`/login`) + Assertion Consumer Service
-  (`/acs`): build the IdP-side `ServiceProvider` from the stored certificate,
-  validate the assertion signature + conditions + `InResponseTo` (replay), then
-  issue a session via `SSOService.CompleteFederatedLogin`. This is the
-  replay-sensitive, security-critical step and needs a live IdP to validate.
+- **9e (shipped)** — SP-initiated login (`GET /api/v1/auth/saml/{org}/login`),
+  Assertion Consumer Service (`POST /api/v1/auth/saml/{org}/acs`) and SP
+  metadata (`GET /api/v1/auth/saml/{org}/metadata`): the IdP-side
+  `ServiceProvider` is built from the stored certificate, the assertion
+  signature, conditions and `InResponseTo` (replay) are validated, and a
+  session is issued via `SSOService.CompleteFederatedLogin`.
+
+Only a platform administrator configures an organization's SAML provider, in
+the admin console; each change needs an organization owner's approval under
+**Settings → SSO approvals**.
 
 ## Config (9d)
 
@@ -32,7 +37,7 @@ Admin API (platform admin console, RFC-022):
 validates the certificate (parseable PEM X.509) and the role. On an
 organization that has an owner, the PUT does **not** change the live config: it
 stores a pending change (202) that an owner approves or rejects (RFC-022
-revision 8; see `sso-authentication.md`). The owner sees the new signing
+revision 8; see `sso-authentication.md`). The organization owner sees the new signing
 certificate's SHA-256 to compare with their IdP. An organization without an
 owner yet gets it applied directly.
 
@@ -92,7 +97,7 @@ hand-rolled.
 ## Default role of just-in-time members
 
 An SSO provider (OIDC or SAML) and the `SSO_ENTRA_DEFAULT_ROLE` fallback may
-only provision **member** or **viewer** (owner decision B18). `admin` is
+only provision **member** or **viewer** (decision B18). `admin` is
 refused when the provider is saved, and a provider stored before this rule
 with `admin` provisions viewers: an IdP misconfiguration must not mint
 administrators. Admins are promoted explicitly.

@@ -15,7 +15,6 @@ export const FINDINGS_OPEN_STATUSES = [
   'confirmed',
   'in_progress',
   'fix_applied',
+  'validated_fixed', // validation no longer observes it; a person still closes it
   'not_observed', // stale, not fixed: still open
-  'remediation',
-  'retest',
 ] as const

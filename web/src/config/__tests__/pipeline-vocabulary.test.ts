@@ -30,7 +30,6 @@ const ALLOWED: { path: RegExp; why: string }[] = [
     why: 'asserts the CI pipeline readiness note',
   },
   { path: /^src\/app\/\(dashboard\)\/\(discovery\)\/ci-cd\//, why: 'CI pipelines page' },
-  { path: /^src\/app\/\(dashboard\)\/settings\/scanning\/ci\//, why: 'CI pipeline settings page' },
   { path: /^src\/lib\/api\/generated\//, why: 'generated from the API spec (CI routes)' },
   { path: /^src\/config\/api-route-permissions\.json$/, why: 'generated route map (CI routes)' },
   { path: /^src\/features\/sensors\//, why: 'runner-mode sensors run inside a CI pipeline' },

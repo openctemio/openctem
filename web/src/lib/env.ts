@@ -110,7 +110,6 @@ export const serverEnv = {
     // Secure cookies are ON by default; production MUST be served over HTTPS.
     // Disable explicitly (SECURE_COOKIES=false) only for local http development.
     secureCookies: getEnvVar('SECURE_COOKIES', 'true') !== 'false',
-    csrfSecret: getEnvVar('CSRF_SECRET', ''),
   },
 
   // Token management
@@ -143,16 +142,9 @@ export function validateEnv() {
     warnings.push('BACKEND_API_URL is not set (using default: http://localhost:8080)')
   }
 
-  // CSRF secret warning (recommended for production)
-  const csrfSecret = process.env.CSRF_SECRET
-  if (!csrfSecret) {
-    warnings.push('CSRF_SECRET is not set (recommended for security)')
-  } else if (csrfSecret.length < 32) {
-    warnings.push(
-      `CSRF_SECRET should be at least 32 characters (current: ${csrfSecret.length})\n` +
-        `   Generate with: openssl rand -base64 32`
-    )
-  }
+  // CSRF needs no secret: the API and the web use the double-submit cookie
+  // (a random csrf_token cookie echoed in X-CSRF-Token), so there is none to
+  // configure.
 
   // Log warnings
   if (warnings.length > 0) {

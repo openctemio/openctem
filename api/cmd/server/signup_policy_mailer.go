@@ -44,7 +44,7 @@ func (m signupPolicyMailer) NotifySignupPolicyChanged(_ context.Context, a signu
 	}
 	name := m.appName
 	if name == "" {
-		name = "OpenCTEM"
+		name = defaultAppName
 	}
 	who := strings.NewReplacer("\r", "", "\n", "").Replace(a.AdminEmail)
 	subject := fmt.Sprintf("[%s] Sign-up policy changed by %s", name, who)
