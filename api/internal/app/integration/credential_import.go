@@ -1298,7 +1298,19 @@ func (s *CredentialImportService) GetCredentialStats(ctx context.Context, tenant
 	// Counts by state and severity over the same (credential, in-scope)
 	// filter. CountByState/CountBySeverity count every exposure type of the
 	// tenant regardless of scope, which is neither this view nor the
-	// caller's data.
+	// caller's data. One grouped query when the repository has it, instead
+	// of one COUNT per state and per severity (research/81).
+	if grouped, ok := s.exposureRepo.(exposureGroupedCounter); ok {
+		stateMap, severityMap, err := grouped.CountByStateAndSeverity(ctx, filter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get credential counts: %w", err)
+		}
+		return map[string]any{
+			"total":       total,
+			"by_state":    stateMap,
+			"by_severity": severityMap,
+		}, nil
+	}
 	stateMap := make(map[string]int64)
 	for _, st := range exposure.AllStates() {
 		n, err := s.exposureRepo.Count(ctx, filter.WithStates(st))
