@@ -62,16 +62,20 @@ func (m *mockApprovalRepository) ListByFinding(_ context.Context, tenantID, find
 	return result, nil
 }
 
-func (m *mockApprovalRepository) ListPending(_ context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[*vulnerability.Approval], error) {
+func (m *mockApprovalRepository) List(_ context.Context, tenantID shared.ID, filter vulnerability.ApprovalFilter, page pagination.Pagination, scope *shared.DataScope) (vulnerability.ApprovalPage, error) {
+	counts := map[vulnerability.ApprovalStatus]int64{}
 	result := make([]*vulnerability.Approval, 0)
 	for _, a := range m.approvals {
-		if a.TenantID == tenantID && a.Status == vulnerability.ApprovalStatusPending {
+		if a.TenantID != tenantID {
+			continue
+		}
+		counts[a.Status]++
+		if filter.Status == "" || a.Status == filter.Status {
 			result = append(result, a)
 		}
 	}
 	total := int64(len(result))
 
-	// Apply basic pagination
 	start := (page.Page - 1) * page.PerPage
 	if start > int(total) {
 		start = int(total)
@@ -81,17 +85,9 @@ func (m *mockApprovalRepository) ListPending(_ context.Context, tenantID shared.
 		end = int(total)
 	}
 
-	totalPages := 1
-	if total > 0 {
-		totalPages = int((total + int64(page.PerPage) - 1) / int64(page.PerPage))
-	}
-
-	return pagination.Result[*vulnerability.Approval]{
-		Data:       result[start:end],
-		Total:      total,
-		Page:       page.Page,
-		PerPage:    page.PerPage,
-		TotalPages: totalPages,
+	return vulnerability.ApprovalPage{
+		Result:       pagination.NewResult(result[start:end], total, page),
+		StatusCounts: counts,
 	}, nil
 }
 
@@ -808,10 +804,10 @@ func TestFindingApprovalService_RejectApproval_InvalidIDs(t *testing.T) {
 }
 
 // =============================================================================
-// Tests: ListPendingApprovals
+// Tests: ListApprovals
 // =============================================================================
 
-func TestFindingApprovalService_ListPendingApprovals_Success(t *testing.T) {
+func TestFindingApprovalService_ListApprovals_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	findingID := shared.NewID()
 	requestedBy := shared.NewID()
@@ -846,7 +842,7 @@ func TestFindingApprovalService_ListPendingApprovals_Success(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	result, err := svc.ListPendingApprovals(context.Background(), tenantID.String(), 1, 10)
+	result, err := svc.ListApprovals(context.Background(), tenantID.String(), "pending", 1, 10)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), result.Total, "should only see approvals for the target tenant")
@@ -855,28 +851,73 @@ func TestFindingApprovalService_ListPendingApprovals_Success(t *testing.T) {
 	assert.Equal(t, 10, result.PerPage)
 }
 
-func TestFindingApprovalService_ListPendingApprovals_EmptyResult(t *testing.T) {
+func TestFindingApprovalService_ListApprovals_EmptyResult(t *testing.T) {
 	tenantID := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	result, err := svc.ListPendingApprovals(context.Background(), tenantID.String(), 1, 10)
+	result, err := svc.ListApprovals(context.Background(), tenantID.String(), "pending", 1, 10)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), result.Total)
 	assert.Empty(t, result.Data)
 }
 
-func TestFindingApprovalService_ListPendingApprovals_InvalidTenantID(t *testing.T) {
+func TestFindingApprovalService_ListApprovals_InvalidTenantID(t *testing.T) {
 	findingRepo := newMockFindingRepository()
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	_, err := svc.ListPendingApprovals(context.Background(), "not-a-uuid", 1, 10)
+	_, err := svc.ListApprovals(context.Background(), "not-a-uuid", "", 1, 10)
 
 	assert.Error(t, err)
+	assert.True(t, errors.Is(err, shared.ErrValidation))
+}
+
+func TestFindingApprovalService_ListApprovals_StatusFilterAndCounts(t *testing.T) {
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	requester := shared.NewID()
+	approver := shared.NewID()
+
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+
+	ids := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		a, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+			TenantID: tenantID.String(), FindingID: findingID.String(),
+			RequestedStatus: "false_positive", Justification: "j", RequestedBy: requester.String(),
+		})
+		require.NoError(t, err)
+		ids = append(ids, a.ID.String())
+	}
+	_, err := svc.RejectApproval(context.Background(), finding.RejectApprovalInput{
+		TenantID: tenantID.String(), ApprovalID: ids[0], RejectedBy: approver.String(), Reason: "no",
+	})
+	require.NoError(t, err)
+
+	rejected, err := svc.ListApprovals(context.Background(), tenantID.String(), "rejected", 1, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), rejected.Total)
+	require.Len(t, rejected.Data, 1)
+	assert.Equal(t, vulnerability.ApprovalStatusRejected, rejected.Data[0].Status)
+	assert.Equal(t, int64(2), rejected.StatusCounts[vulnerability.ApprovalStatusPending])
+	assert.Equal(t, int64(1), rejected.StatusCounts[vulnerability.ApprovalStatusRejected])
+
+	all, err := svc.ListApprovals(context.Background(), tenantID.String(), "", 1, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), all.Total, "no status filter lists every status")
+}
+
+func TestFindingApprovalService_ListApprovals_InvalidStatus(t *testing.T) {
+	svc := newApprovalTestService(newMockFindingRepository(), newMockApprovalRepository())
+	_, err := svc.ListApprovals(context.Background(), shared.NewID().String(), "done';--", 1, 10)
+	require.Error(t, err)
 	assert.True(t, errors.Is(err, shared.ErrValidation))
 }
 
@@ -924,8 +965,8 @@ func TestFindingApprovalService_ApprovalRepoNotConfigured(t *testing.T) {
 		assert.Contains(t, err.Error(), "approval workflow not configured")
 	})
 
-	t.Run("ListPendingApprovals", func(t *testing.T) {
-		_, err := svc.ListPendingApprovals(context.Background(), shared.NewID().String(), 1, 10)
+	t.Run("ListApprovals", func(t *testing.T) {
+		_, err := svc.ListApprovals(context.Background(), shared.NewID().String(), "", 1, 10)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "approval workflow not configured")
 	})
