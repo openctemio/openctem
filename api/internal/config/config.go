@@ -503,8 +503,7 @@ const (
 	TenantCreationSelfService = "self_service"
 	// TenantCreationAdminOnly reserves organization creation for the platform
 	// administrator: the admin console, or bootstrap-admin -org-name at first
-	// install (on-prem / enterprise, Tenable Security Center style). The
-	// default.
+	// install (on-prem / enterprise installs). The default.
 	TenantCreationAdminOnly = "admin_only"
 )
 
