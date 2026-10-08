@@ -535,7 +535,7 @@ type AuthConfig struct {
 	SessionDuration      time.Duration // Session lifetime (default: 30d)
 
 	// Password policy
-	PasswordMinLength      int  // Minimum password length (default: 8)
+	PasswordMinLength      int  // Minimum password length (default: 12)
 	PasswordRequireUpper   bool // Require uppercase letter
 	PasswordRequireLower   bool // Require lowercase letter
 	PasswordRequireNumber  bool // Require number
@@ -1115,7 +1115,7 @@ func Load() (*Config, error) {
 			AccessTokenDuration:       getEnvDuration("AUTH_ACCESS_TOKEN_DURATION", 15*time.Minute),
 			RefreshTokenDuration:      getEnvDuration("AUTH_REFRESH_TOKEN_DURATION", 7*24*time.Hour),
 			SessionDuration:           getEnvDuration("AUTH_SESSION_DURATION", 30*24*time.Hour),
-			PasswordMinLength:         getEnvInt("AUTH_PASSWORD_MIN_LENGTH", 8),
+			PasswordMinLength:         getEnvInt("AUTH_PASSWORD_MIN_LENGTH", 12),
 			PasswordRequireUpper:      getEnvBool("AUTH_PASSWORD_REQUIRE_UPPERCASE", true),
 			PasswordRequireLower:      getEnvBool("AUTH_PASSWORD_REQUIRE_LOWERCASE", true),
 			PasswordRequireNumber:     getEnvBool("AUTH_PASSWORD_REQUIRE_NUMBER", true),

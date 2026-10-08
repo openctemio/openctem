@@ -36,14 +36,10 @@ func NewComplianceHandler(svc *compliancesvc.ComplianceService, log *logger.Logg
 func (h *ComplianceHandler) ListFrameworks(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		perPage,
-	)
 
 	result, err := h.service.ListFrameworks(r.Context(), tenantID, page)
 	if err != nil {
@@ -84,14 +80,10 @@ func (h *ComplianceHandler) ListControls(w http.ResponseWriter, r *http.Request)
 	tenantID := middleware.MustGetTenantID(r.Context())
 	frameworkID := chi.URLParam(r, "id")
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 50, 1, MaxPerPage)
-	if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		perPage,
-	)
 
 	result, err := h.service.ListControls(r.Context(), tenantID, frameworkID, page)
 	if err != nil {
@@ -185,14 +177,10 @@ func (h *ComplianceHandler) ListAssessments(w http.ResponseWriter, r *http.Reque
 	tenantID := middleware.MustGetTenantID(r.Context())
 	frameworkID := r.URL.Query().Get("framework_id")
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 50, 1, MaxPerPage)
-	if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		perPage,
-	)
 
 	result, err := h.service.ListAssessments(r.Context(), tenantID, frameworkID, page)
 	if err != nil {

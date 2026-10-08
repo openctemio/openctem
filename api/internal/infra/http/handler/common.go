@@ -191,6 +191,17 @@ const MaxPerPage = 100
 // shared parser (pagination.FromRequest). A value that is not a positive whole
 // number is answered 400 and ok is false; per_page is capped at
 // pagination.MaxPerPage.
+// listPageMax is listPage with the list's own per_page cap
+// (pagination.FromRequestMax).
+func listPageMax(w http.ResponseWriter, r *http.Request, defaultPerPage, maxPerPage int) (pagination.Pagination, bool) {
+	p, err := pagination.FromRequestMax(r.URL.Query(), defaultPerPage, maxPerPage)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return pagination.Pagination{}, false
+	}
+	return p, true
+}
+
 func listPage(w http.ResponseWriter, r *http.Request, defaultPerPage int) (pagination.Pagination, bool) {
 	p, err := pagination.FromRequest(r.URL.Query(), defaultPerPage)
 	if err != nil {
