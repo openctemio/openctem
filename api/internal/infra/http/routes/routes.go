@@ -1082,6 +1082,24 @@ func (a tenantSSOEnforcedAdapter) IsSSOEnforced(ctx context.Context, tenantID st
 	return sec.SSOEnforced, nil
 }
 
+// HasSSOException reports whether the member has an unexpired SSO exception
+// (RFC-058), read fresh from the tenant settings.
+func (a tenantSSOEnforcedAdapter) HasSSOException(ctx context.Context, tenantID, userID string) (bool, error) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, err
+	}
+	t, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return false, err
+	}
+	return sec.HasSSOException(userID, time.Now().UTC()), nil
+}
+
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
 // This uses tenant ID from JWT claims instead of URL path.
 // Best practice: tenant-scoped access tokens eliminate IDOR by design.

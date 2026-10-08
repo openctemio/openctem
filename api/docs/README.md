@@ -13,7 +13,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Repositories and how the platform fits together](development/repositories.md)
 - [Architecture overview](architecture/overview.md)
 - [RFCs](rfcs/README.md): design documents and decisions
-- [User guide](user-guide/README.md): the product from a user's point of view
+- [User guide](https://docs.openctem.io/user-guide/): the product from a user's point of view
 - Web console: [`web/docs/`](../../web/docs/README.md)
 
 ## Development

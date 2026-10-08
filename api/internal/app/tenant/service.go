@@ -1107,6 +1107,9 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requirePersonalAllowed(ctx, parsedID, class); err != nil {
+		return nil, err
+	}
 	if class.Kind == tenantdom.MemberKindExternal {
 		if err := requireViewerOnly(input.RoleIDs); err != nil {
 			return nil, err
@@ -1644,6 +1647,10 @@ type UpdateSecuritySettingsInput struct {
 	// tenantdom.SecuritySettings (research/25 D3).
 	AllowSensorInteractsh      *bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates *bool `json:"allow_sensor_custom_templates"`
+	// PersonalAccounts and SSOExceptions: see tenantdom.SecuritySettings
+	// (RFC-058). The route already needs the owner with step-up.
+	PersonalAccounts *string                   `json:"personal_accounts"`
+	SSOExceptions    *[]tenantdom.SSOException `json:"sso_exceptions"`
 	// RequesterIP is the client IP of the tenant user saving the settings, as
 	// the API sees it (trusted-proxy aware). When set, an IP allowlist that
 	// would exclude it is refused (lockout guard). Empty for the platform
@@ -1712,6 +1719,15 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.AllowSensorCustomTemplates != nil {
 			security.AllowSensorCustomTemplates = *input.AllowSensorCustomTemplates
+		}
+		if input.PersonalAccounts != nil {
+			security.PersonalAccounts = tenantdom.PersonalAccountsPolicy(*input.PersonalAccounts)
+		}
+		if input.SSOExceptions != nil {
+			if err := s.validateSSOExceptions(ctx, t.ID(), *input.SSOExceptions); err != nil {
+				return err
+			}
+			security.SSOExceptions = *input.SSOExceptions
 		}
 
 		// Can't-enable guard: refuse to turn sso_enforced ON unless the tenant has a
