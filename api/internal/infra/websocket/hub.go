@@ -98,6 +98,10 @@ type ChannelAccessChecker interface {
 	// inside the user's Layer 2 data scope (admins and unrestricted members
 	// see every finding of their tenant).
 	CanSeeFinding(ctx context.Context, tenantID, userID, findingID string) (bool, error)
+	// CanSeeRun reports whether the scan run exists in the tenant and the
+	// user may read it: a run about a finding (retest, validation) also
+	// needs that finding in the user's data scope.
+	CanSeeRun(ctx context.Context, tenantID, userID, runID string) (bool, error)
 }
 
 // channelAccessTimeout bounds the permission lookup made on a subscribe.
@@ -158,6 +162,11 @@ func (h *Hub) defaultAuthorize(client *Client, channel string) bool {
 	case ChannelTypeScan:
 		return h.hasPermission(client, permission.ScansRead)
 
+	case ChannelTypeRun:
+		// One run's change notices: the run reads' permission, and the run
+		// must be the user's to read (GET /scan-runs/{id} would 404 otherwise).
+		return h.hasPermission(client, permission.ScansRead) && h.canSeeRun(client, id)
+
 	case ChannelTypeGroup:
 		// Scope-rule changes of one group: its members, or anyone allowed to
 		// read groups.
@@ -179,6 +188,20 @@ func (h *Hub) hasPermission(client *Client, perm permission.Permission) bool {
 	ok, err := h.access.HasPermission(ctx, client.TenantID, client.UserID, perm.String())
 	if err != nil {
 		h.logger.Warn("ws channel permission check failed", "user_id", client.UserID, "permission", perm.String(), "error", err)
+		return false
+	}
+	return ok
+}
+
+func (h *Hub) canSeeRun(client *Client, runID string) bool {
+	if h.access == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), channelAccessTimeout)
+	defer cancel()
+	ok, err := h.access.CanSeeRun(ctx, client.TenantID, client.UserID, runID)
+	if err != nil {
+		h.logger.Debug("ws run access check failed", "user_id", client.UserID, "run_id", runID, "error", err)
 		return false
 	}
 	return ok

@@ -15,7 +15,7 @@ const templates = {
   env: "export API_URL='https://x'\n",
   cli: './openctemio-sensor -daemon\n',
   image: 'ghcr.io/openctemio/sensor:v0.4.2',
-  api_url: 'https://192.168.8.204',
+  api_url: 'https://192.0.2.204',
   api_key_included: true,
   ca_certificate: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n',
   ca_fingerprint_sha256: 'AA:BB',

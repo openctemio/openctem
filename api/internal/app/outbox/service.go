@@ -472,7 +472,6 @@ func (s *Service) configureClientFromCredentials(
 				FromName:    getStringFromMap(metadata, "from_name"),
 				UseTLS:      getBoolFromMap(metadata, "use_tls"),
 				UseSTARTTLS: getBoolFromMap(metadata, "use_starttls"),
-				SkipVerify:  getBoolFromMap(metadata, "skip_verify"),
 				ReplyTo:     getStringFromMap(metadata, "reply_to"),
 			}
 

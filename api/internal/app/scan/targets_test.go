@@ -92,7 +92,7 @@ func testScan(scanner string, targets ...string) *scan.Scan {
 func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
 	svc := &Service{
 		assetGroupRepo: &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{
-			{ID: shared.NewID(), Name: "10.0.0.5"},
+			{ID: shared.NewID(), Name: "198.51.100.5"},
 			{ID: shared.NewID(), Name: "app.example.com"},
 		}},
 		logger: logger.NewNop(),
@@ -104,7 +104,7 @@ func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"app.example.com", "203.0.113.9", "10.0.0.5"} // deduped, direct first
+	want := []string{"app.example.com", "203.0.113.9", "198.51.100.5"} // deduped, direct first
 	if !reflect.DeepEqual(got.Targets, want) {
 		t.Fatalf("targets = %v, want %v", got.Targets, want)
 	}
