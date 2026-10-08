@@ -241,7 +241,7 @@ func (h *CompensatingControlHandler) List(w http.ResponseWriter, r *http.Request
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]CompensatingControlResponse, 0, page.PerPage)
+	items := make([]CompensatingControlResponse, 0, pagination.MaxPerPage)
 	for rows.Next() {
 		c, err := scanControl(rows)
 		if err != nil {

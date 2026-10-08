@@ -97,7 +97,7 @@ func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	items := make([]BusinessServiceResponse, 0, page.PerPage)
+	items := make([]BusinessServiceResponse, 0, pagination.MaxPerPage)
 	for rows.Next() {
 		bs, err := scanBusinessService(rows)
 		if err != nil {
