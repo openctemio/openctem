@@ -35,6 +35,7 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/evidence"
 	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -909,7 +910,11 @@ func (s *Service) finishRun(ctx context.Context, rt *retestdom.Retest, v retestd
 		return
 	}
 	succeeded := v.Outcome != retestdom.OutcomeInconclusive
-	if err := s.runs.FinishRetestRun(ctx, rt.TenantID, *rt.RunID, succeeded, evidence.RedactText(v.Reason), strings.ToUpper(string(v.Code))); err != nil {
+	// The reason can quote what a sensor reported; a platform sensor may have
+	// run the check, so its own addresses and paths are masked on the run
+	// (the run is shown on the Runs page, beside platform-run scans).
+	msg := sensordom.RedactPlatformText(evidence.RedactText(v.Reason))
+	if err := s.runs.FinishRetestRun(ctx, rt.TenantID, *rt.RunID, succeeded, msg, strings.ToUpper(string(v.Code))); err != nil {
 		s.logger.Warn("failed to settle the retest run", "retest_id", rt.ID.String(), "run_id", rt.RunID.String(), "error", err)
 	}
 }
