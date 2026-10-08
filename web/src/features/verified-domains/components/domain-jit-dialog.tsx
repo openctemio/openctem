@@ -24,7 +24,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
-import { useUpdateDomainJIT } from '../api/use-verified-domains'
+import { isPendingChange, useUpdateDomainJIT } from '../api/use-verified-domains'
 import type { DomainJITRole, VerifiedDomain } from '../types/verified-domain.types'
 
 const ROLE_LABEL: Record<DomainJITRole, string> = { viewer: 'Viewer', member: 'Member' }
@@ -65,12 +65,18 @@ export function DomainJITDialog({
   const save = async () => {
     if (!domain) return
     try {
-      await trigger({
+      const res = await trigger({
         id: domain.id,
         jit_enabled: enabled,
         jit_role: role === DEFAULT_ROLE ? '' : (role as DomainJITRole),
       })
-      toast.success(`${domain.domain}: provisioning updated`)
+      if (isPendingChange(res)) {
+        toast.info(
+          `${domain.domain}: admitting more people waits for an owner of the organization to approve it`
+        )
+      } else {
+        toast.success(`${domain.domain}: provisioning updated`)
+      }
       onSaved()
       onOpenChange(false)
     } catch (e) {
@@ -92,6 +98,7 @@ export function DomainJITDialog({
           <DialogDescription>
             Whether the organization&apos;s SSO lets people with an address on this domain join on
             their first sign-in, and with which role. Administrators are never added this way.
+            Admitting more people, or with a higher role, waits for an owner&apos;s approval.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">

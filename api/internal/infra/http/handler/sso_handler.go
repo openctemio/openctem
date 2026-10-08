@@ -262,6 +262,8 @@ func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
 		apierror.BadRequest("Failed to retrieve user information").WriteJSON(w)
 	case errors.Is(err, auth.ErrSSODomainNotAllowed):
 		apierror.Forbidden("Your email domain is not allowed for this organization").WriteJSON(w)
+	case errors.Is(err, auth.ErrSSOAwaitingApproval):
+		apierror.Forbidden("Your access to this organization is waiting for an administrator's approval.").WriteJSON(w)
 	case errors.Is(err, auth.ErrSSONotAMember):
 		// Not admitted by the organization's SSO (not a member and not eligible
 		// for just-in-time provisioning). Generic: says nothing about why.
