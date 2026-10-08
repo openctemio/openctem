@@ -103,6 +103,13 @@ type Run struct {
 	// domain error code of the refused trigger (e.g. ALL_TARGETS_EXCLUDED).
 	RefusalCode string
 
+	// ScanWorkflowVersion is the saved workflow version this run executes
+	// and SpecDigest its digest: the run reads its settings and steps from
+	// that version, so an edit while it runs changes the next run only. Zero
+	// for a run without a workflow and for runs from before versions.
+	ScanWorkflowVersion int
+	SpecDigest          string
+
 	// Scan Profile and Quality Gate
 	ScanProfileID     *shared.ID                     // Reference to the scan profile used
 	QualityGateResult *scanprofile.QualityGateResult // Quality gate evaluation result

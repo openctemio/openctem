@@ -1853,6 +1853,50 @@ func TestScanService_TriggerScan_Workflow_Success(t *testing.T) {
 	}
 }
 
+// recordingVersions records the spec a workflow run was pinned to.
+type recordingVersions struct {
+	tenant, workflow shared.ID
+	spec             scanworkflow.Spec
+}
+
+func (r *recordingVersions) PinVersion(_ context.Context, tenantID, workflowID shared.ID, spec scanworkflow.Spec) (int, string, error) {
+	r.tenant, r.workflow, r.spec = tenantID, workflowID, spec
+	return 4, "d1g3st", nil
+}
+
+func (r *recordingVersions) GetVersion(context.Context, shared.ID, shared.ID, int) (*scanworkflow.Spec, error) {
+	return &r.spec, nil
+}
+
+// research/62 P0-10: a workflow scan's run is pinned, under the scan's
+// tenant, to the workflow's spec as it starts.
+func TestScanService_TriggerScan_Workflow_PinsVersion(t *testing.T) {
+	svc, deps := newTestScanService()
+	tenantID := shared.NewID()
+	s := createTestScanInRepo(deps, tenantID, "Pinned Workflow Scan", scan.ScanTypeWorkflow)
+	scanWorkflowID := *s.ScanWorkflowID
+	deps.stepRepo.steps[scanWorkflowID.String()] = []*scanworkflow.Step{
+		{ID: shared.NewID(), ScanWorkflowID: scanWorkflowID, StepKey: "scan-step", StepOrder: 1, Tool: "nuclei"},
+	}
+	deps.toolRepo.addTool("nuclei", true)
+	versions := &recordingVersions{}
+	svc.SetWorkflowVersions(versions)
+
+	run, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{TenantID: tenantID.String(), ScanID: s.ID.String()})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if run.ScanWorkflowVersion != 4 || run.SpecDigest != "d1g3st" {
+		t.Fatalf("run pinned to %d %q, want 4 d1g3st", run.ScanWorkflowVersion, run.SpecDigest)
+	}
+	if versions.tenant != tenantID || versions.workflow != scanWorkflowID {
+		t.Fatalf("pinned under tenant %s workflow %s", versions.tenant, versions.workflow)
+	}
+	if len(versions.spec.Steps) != 1 || versions.spec.Steps[0].Tool != "nuclei" {
+		t.Fatalf("pinned spec steps = %+v", versions.spec.Steps)
+	}
+}
+
 // =============================================================================
 // Tests: GetScanStatus (via GetScan status field)
 // =============================================================================

@@ -39,6 +39,26 @@ const (
 // expired.
 const SuspendedReasonExpired = "expired"
 
+// SuspendedReasonTrustRevoked marks an external membership suspended because
+// the trust between the host and the member's home organization ended.
+const SuspendedReasonTrustRevoked = "trust_revoked"
+
+// SuspendExternal suspends an active external membership for a system reason
+// (no human suspender).
+func (m *Membership) SuspendExternal(reason string) error {
+	if !m.IsExternal() {
+		return fmt.Errorf("%w: membership is not external", shared.ErrValidation)
+	}
+	if !m.IsActive() {
+		return fmt.Errorf("%w: membership is not active", shared.ErrValidation)
+	}
+	if err := m.Suspend(shared.ID{}); err != nil {
+		return err
+	}
+	m.suspendedReason = reason
+	return nil
+}
+
 // Classification is how an address relates to an organization, decided from
 // the platform-wide verified SSO domains.
 type Classification struct {
