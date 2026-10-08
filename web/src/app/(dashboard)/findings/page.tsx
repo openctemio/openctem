@@ -1963,13 +1963,18 @@ function FindingsContent() {
             </Link>
           </Button>
           {canImport && (
-            <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Import results"
+              onClick={() => setImportDialogOpen(true)}
+            >
               <FileUp className="h-4 w-4 sm:me-2" />
               <span className="hidden sm:inline">Import results</span>
             </Button>
           )}
           {hasPermission('findings:write') && (
-            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+            <Button size="sm" aria-label="Add finding" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 sm:me-2" />
               <span className="hidden sm:inline">Add finding</span>
             </Button>
