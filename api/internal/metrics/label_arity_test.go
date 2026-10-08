@@ -19,7 +19,7 @@ func TestEveryWithLabelValuesCallMatchesTheDeclaredLabels(t *testing.T) {
 	declared := map[string]int{}
 	def := regexp.MustCompile(`(?s)\n\t(\w+) = promauto\.New\w+\((.*?)\n\t\)`)
 	labels := regexp.MustCompile(`\[\]string\{([^}]*)\}`)
-	for _, f := range []string{"metrics.go", "security_defenses.go"} {
+	for _, f := range []string{"metrics.go", "security_defenses.go", "operations.go"} {
 		raw, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)

@@ -19,7 +19,6 @@ type CreateTemplateInput struct {
 	TenantID    string                 `json:"tenant_id" validate:"required,uuid"`
 	Name        string                 `json:"name" validate:"required,min=1,max=255"`
 	Description string                 `json:"description" validate:"max=1000"`
-	Triggers    []scanworkflow.Trigger `json:"triggers"`
 	Settings    *scanworkflow.Settings `json:"settings"`
 	Tags        []string               `json:"tags" validate:"max=10,dive,max=50"`
 	CreatedBy   string                 `json:"created_by" validate:"omitempty,uuid"`
@@ -46,10 +45,6 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 	t, err := scanworkflow.NewWorkflow(tenantID, input.Name, input.Description)
 	if err != nil {
 		return nil, err
-	}
-
-	if len(input.Triggers) > 0 {
-		t.Triggers = input.Triggers
 	}
 
 	if input.Settings != nil {
@@ -233,7 +228,6 @@ type UpdateTemplateInput struct {
 	TemplateID      string                   `json:"template_id" validate:"required,uuid"`
 	Name            string                   `json:"name" validate:"omitempty,min=1,max=255"`
 	Description     string                   `json:"description" validate:"max=1000"`
-	Triggers        []scanworkflow.Trigger   `json:"triggers"`
 	Settings        *scanworkflow.Settings   `json:"settings"`
 	Tags            []string                 `json:"tags" validate:"max=10,dive,max=50"`
 	IsActive        *bool                    `json:"is_active"`
@@ -264,10 +258,6 @@ func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput)
 
 	if input.Description != "" {
 		t.Description = input.Description
-	}
-
-	if len(input.Triggers) > 0 {
-		t.Triggers = input.Triggers
 	}
 
 	if input.Settings != nil {
@@ -428,7 +418,6 @@ func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (
 	}
 
 	// Copy triggers and settings
-	newTemplate.Triggers = original.Triggers
 	newTemplate.Settings = original.Settings
 	newTemplate.Tags = original.Tags
 	newTemplate.Deactivate() // Start deactivated

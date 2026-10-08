@@ -244,15 +244,11 @@ func (h *AITriageHandler) ListTriageHistory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Parse pagination
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if offset < 0 {
-		offset = 0
-	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	results, total, err := h.triageService.ListTriageHistory(r.Context(), tenantID, findingID, limit, offset)
 	if err != nil {
@@ -266,15 +262,15 @@ func (h *AITriageHandler) ListTriageHistory(w http.ResponseWriter, r *http.Reque
 	}
 
 	response := struct {
-		Data   []TriageResultResponse `json:"data"`
-		Total  int                    `json:"total"`
-		Limit  int                    `json:"limit"`
-		Offset int                    `json:"offset"`
+		Data    []TriageResultResponse `json:"data"`
+		Total   int                    `json:"total"`
+		Page    int                    `json:"page"`
+		PerPage int                    `json:"per_page"`
 	}{
-		Data:   data,
-		Total:  total,
-		Limit:  limit,
-		Offset: offset,
+		Data:    data,
+		Total:   total,
+		Page:    paging.Page,
+		PerPage: paging.PerPage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

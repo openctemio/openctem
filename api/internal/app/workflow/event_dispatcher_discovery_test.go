@@ -198,7 +198,9 @@ func TestDispatchScanCompleted_StatusFilter(t *testing.T) {
 	plain := newWorkflow(tenant, workflowdom.TriggerTypeScanCompleted, nil)
 	onFailure := newWorkflow(tenant, workflowdom.TriggerTypeScanCompleted, map[string]any{"status_filter": []any{"failed", "partial"}})
 	onAny := newWorkflow(tenant, workflowdom.TriggerTypeScanCompleted, map[string]any{"status_filter": []any{"completed", "partial", "failed"}})
-	repo := &fakeWorkflowRepo{byTenant: map[shared.ID][]*workflowdom.Workflow{tenant: {plain, onFailure, onAny}}}
+	// research/62 P0-11: a run that times out or is canceled ended too.
+	onEnded := newWorkflow(tenant, workflowdom.TriggerTypeScanCompleted, map[string]any{"status_filter": []any{"timeout", "canceled"}})
+	repo := &fakeWorkflowRepo{byTenant: map[shared.ID][]*workflowdom.Workflow{tenant: {plain, onFailure, onAny, onEnded}}}
 
 	cases := []struct {
 		status scanrun.RunStatus
@@ -207,7 +209,9 @@ func TestDispatchScanCompleted_StatusFilter(t *testing.T) {
 		{scanrun.RunStatusCompleted, []*workflowdom.Workflow{plain, onAny}},
 		{scanrun.RunStatusPartial, []*workflowdom.Workflow{onFailure, onAny}},
 		{scanrun.RunStatusFailed, []*workflowdom.Workflow{onFailure, onAny}},
-		{scanrun.RunStatusCanceled, nil},
+		{scanrun.RunStatusCanceled, []*workflowdom.Workflow{onEnded}},
+		{scanrun.RunStatusTimeout, []*workflowdom.Workflow{onEnded}},
+		{scanrun.RunStatusBlocked, nil},
 	}
 	for _, tc := range cases {
 		rec := &triggerRecorder{}

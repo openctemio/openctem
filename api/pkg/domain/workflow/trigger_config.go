@@ -14,7 +14,7 @@ const ErrCodeInvalidTriggerConfig = "INVALID_TRIGGER_CONFIG"
 // ScanOutcomes are the scan run outcomes the scan_completed trigger can
 // filter on (trigger_config.status_filter). Without a filter it fires on
 // completed runs only.
-var ScanOutcomes = []string{"completed", "partial", "failed"}
+var ScanOutcomes = []string{"completed", "partial", "failed", "timeout", "canceled"}
 
 // ValidateTriggerConfig refuses trigger options that would make the trigger
 // silently never fire: a scan_completed status_filter that is not a list of

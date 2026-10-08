@@ -62,8 +62,8 @@ type AssignmentRuleResponse struct {
 type AssignmentRuleListResponse struct {
 	Rules      []AssignmentRuleResponse `json:"rules"`
 	TotalCount int64                    `json:"total_count"`
-	Limit      int                      `json:"limit"`
-	Offset     int                      `json:"offset"`
+	Page       int                      `json:"page"`
+	PerPage    int                      `json:"per_page"`
 }
 
 func toAssignmentRuleResponse(r *accesscontrol.AssignmentRule) AssignmentRuleResponse {
@@ -158,20 +158,11 @@ func (h *AssignmentRuleHandler) ListRules(w http.ResponseWriter, r *http.Request
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
 
-	limit := 50
-	offset := 0
-
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-
-	if o := r.URL.Query().Get("offset"); o != "" {
-		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	input := assignment.ListRulesInput{
 		TenantID:  tenantID,
@@ -211,8 +202,8 @@ func (h *AssignmentRuleHandler) ListRules(w http.ResponseWriter, r *http.Request
 	resp := AssignmentRuleListResponse{
 		Rules:      rules,
 		TotalCount: output.TotalCount,
-		Limit:      limit,
-		Offset:     offset,
+		Page:       paging.Page,
+		PerPage:    paging.PerPage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
