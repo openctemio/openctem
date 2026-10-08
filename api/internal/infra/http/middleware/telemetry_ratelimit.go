@@ -119,6 +119,16 @@ func (rl *TelemetryRateLimiter) bucket(tenantID string) *rate.Limiter {
 	return b.limiter
 }
 
+// Keys is the number of keys the limiter currently holds.
+func (rl *TelemetryRateLimiter) Keys() int {
+	if rl == nil {
+		return 0
+	}
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	return len(rl.tenants)
+}
+
 // Allow reports whether key may make one more request now, consuming a token.
 // A nil or disabled (rate 0) limiter allows everything.
 func (rl *TelemetryRateLimiter) Allow(key string) bool {

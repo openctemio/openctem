@@ -45,7 +45,7 @@ func registerSensorPairingRoutes(router Router, h *handler.SensorPairingHandler,
 		pairingLimit(perIP, clientIP),
 		pairingLimit(global, func(*http.Request) string { return "global" }),
 	}
-	perPairing := []Middleware{pairingLimit(perRequest, handler.PairingKey)}
+	perPairing := perPairingChain(perRequest)
 
 	// Sensor plane. V2Observe labels the metrics; the handler authenticates
 	// every request by its signature (no sensor-key authenticator: the key
@@ -66,6 +66,22 @@ func registerSensorPairingRoutes(router Router, h *handler.SensorPairingHandler,
 		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.SensorsApprove), userLimit)
 		r.POST("/{id}/reject", h.Deny, middleware.Require(permission.SensorsPair), userLimit)
 	}, tenantMiddlewares...)
+}
+
+// perPairingChain guards the routes of one pairing: a path id that is not
+// a pairing id is the pairing-not-found answer every mismatch gets, before
+// the per-pairing limiter can store it as a key.
+func perPairingChain(rl *middleware.TelemetryRateLimiter) []Middleware {
+	requireID := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if handler.PairingKey(r) == "" {
+				protov2.NewProblem(protov2.ProblemPairingNotFound).Write(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	return []Middleware{requireID, pairingLimit(rl, handler.PairingKey)}
 }
 
 // pairingLimit refuses a request over the key's budget with the v2
