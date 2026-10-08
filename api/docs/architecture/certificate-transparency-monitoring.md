@@ -126,7 +126,7 @@ sources of P5.
 Source tag on everything emitted: `cert_transparency`
 (`internal/app/certmonitor/service.go`, `Source`).
 
-It complements the agent-side subfinder recon (which enumerates subdomains
+It complements the sensor-side subfinder recon (which enumerates subdomains
 on demand during a scan job): CT monitoring runs continuously server-side and,
 crucially, surfaces cert-expiry exposures and certs issued for domains the tenant
 never scanned.

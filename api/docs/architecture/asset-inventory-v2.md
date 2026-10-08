@@ -299,7 +299,7 @@ It runs at:
 - scan trigger;
 - RFC-030 claim;
 - every processing hop;
-- `POST /scan-workflows/runs` with targets;
+- the `trigger_pipeline` automation action with targets;
 - the scan-coverage dispatcher;
 - quick scans;
 - policy-triggered scans;

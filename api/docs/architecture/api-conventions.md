@@ -183,7 +183,7 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
 - JSON field names are snake_case. Timestamps are RFC 3339 UTC. Identifiers
   are lowercase UUID strings.
 - **User and admin planes** return the envelope from `pkg/apierror`:
-  `{ "error": "...", "code": "UPPER_SNAKE", "message": "...", "details": ..., "request_id": "..." }`.
+  `{ "code": "UPPER_SNAKE", "message": "...", "details": ... }` (`details` optional).
   - `code` is the machine-readable contract.
   - Add new codes to `pkg/apierror`. Do not invent them in handlers.
 - **The sensor v2 plane** returns RFC 9457 `application/problem+json`, with

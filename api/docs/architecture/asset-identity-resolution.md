@@ -211,7 +211,7 @@ A merge moves every row that references the merged assets to the kept asset, the
 
 `TestAssetMergeCoversEveryAssetReference` fails when a table in the schema references assets and the merge does not handle it, or when the merge names a table that no longer exists. Before this list existed, the merge skipped two tables that had been dropped (the error was swallowed), rows in 17 tables were deleted by `ON DELETE CASCADE` or orphaned by `SET NULL`, and two tables kept ids of deleted assets.
 
-## Agent Integration
+## Sensor integration
 
 All 5 recon parsers normalize names before sending to API (defense-in-depth):
 - subfinder → subdomain lowercase
@@ -220,9 +220,9 @@ All 5 recon parsers normalize names before sending to API (defense-in-depth):
 - httpx → URL lowercase
 - katana → URL lowercase
 
-**Key file**: `agent/internal/executor/recon.go`
+**Key file** (sensor repository): `internal/executor/recon.go`
 
-Shared normalization library: `sdk-go/pkg/ctis/normalize.go`
+Shared normalization: the `ctis` module (sdk-go imports it)
 
 ## Database
 

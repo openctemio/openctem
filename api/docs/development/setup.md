@@ -154,44 +154,20 @@ make proto            # Generate protobuf (if using gRPC)
 
 ---
 
-## Monorepo Structure
+## Monorepo and Go workspaces
 
-This project uses a Go workspace for local development with shared SDK:
+`api/` is one Go module (`github.com/openctemio/openctem/api`) and does not
+depend on sdk-go; the monorepo has no `go.work`. A `go.work` in a parent
+directory (for example a checkout that also holds `sdk-go` or `sensor`) would
+still be picked up, so run Go commands from `api/` with `GOWORK=off`, as CI
+and the root `Makefile` do:
 
-```
-openctemio/
-├── go.work          # Go workspace file
-├── api/             # API service (this repo)
-├── sdk/             # Shared SDK module
-└── agent/           # Agent service
-```
-
-### Local Development
-
-`go.work` automatically resolves SDK from local filesystem:
-
-```go
-// go.work
-go 1.25.0
-
-use (
-  ./sdk
-  ./api
-  ./agent
-)
+```bash
+GOWORK=off go build ./...
+GOWORK=off go test ./...
 ```
 
-### Docker Development
-
-Docker uses `go.work.docker` with adjusted paths:
-
-```go
-// api/go.work.docker
-use (
-  .       // API at /app
-  ./sdk   // SDK at /app/sdk
-)
-```
+The development container builds without a workspace too.
 
 ---
 

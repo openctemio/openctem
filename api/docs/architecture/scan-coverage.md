@@ -8,7 +8,7 @@
 > (`integration.TenableConnectorEnabled`, web `TENABLE_CONNECTOR_ENABLED`).
 > Rebuild: RFC-047 (two-way Tenable.sc connector in the sensor). Design in
 > [RFC-007](../rfcs/RFC-007-license-aware-scan-coverage.md). Complements
-> [Scan Orchestration](scan-orchestration.md) (agent-run scanners); this doc
+> [Scan Orchestration](scan-orchestration.md) (sensor-run scanners); this doc
 > covers **external** Tenable engines.
 
 > **Superseded design (2026-10-04).** Coverage now runs on the Tenable.sc
@@ -74,7 +74,7 @@ scoped to **(this tool) × (these asset IDs) × (this scan)**
 (`internal/app/ingest/service.go`). So:
 
 - a 500-IP batch cannot resolve the other 2500 assets' findings;
-- a Tenable scan cannot resolve agent-scanner (nuclei/trivy) findings.
+- a Tenable scan cannot resolve sensor-scanner (nuclei/trivy) findings.
 
 The requirement on the converter is therefore narrow: emit **one report per
 batch** with `tool.name="tenable"`, a unique `metadata.id` (the scan session),
@@ -139,29 +139,29 @@ sharing everything above the execution boundary — scheduler, parser, ingest,
 mappings, isolation. Only *where the Tenable REST calls run* differs:
 
 - **`direct`** — the backend calls Tenable REST itself (cloud, or reachable `.sc`).
-  api-side `DirectRunner` + per-tenant resolver. **No agent/sdk-go work.**
-- **`agent`** — a purpose-built agent on the customer network calls the local
-  appliance and pushes CTIS back (on-prem `.sc` the api can't reach). Adds an agent
+  api-side `DirectRunner` + per-tenant resolver. **No sensor/sdk-go work.**
+- **`sensor`** — a purpose-built sensor on the customer network calls the local
+  appliance and pushes CTIS back (on-prem `.sc` the api can't reach). Adds a sensor
   `tenable` tool + a shared `TenableClient`/parser; api-side `AgentRunner` dispatches
-  the job carrying the coverage `session_id`. Credentials can stay **agent-local**
+  the job carrying the coverage `session_id`. Credentials can stay **sensor-local**
   (api never holds on-prem creds).
 
 The two modes share the L1 `TenableClient` (REST, injectable HTTP) and the L2
 `.nessus → CTIS` parser; only the thin `ScanEngineRunner` strategy differs. The
-parser is promoted to the shared `ctis` module so api and agent use one copy.
+parser is promoted to the shared `ctis` module so api and sensor use one copy.
 Full design + code-ownership + tenant-isolation in
 [RFC-007 §3.9](../rfcs/RFC-007-license-aware-scan-coverage.md).
 
 Today (Phase 1): on-prem unreachable from the api is already covered by an external
-cron pushing `.nessus` to `POST /findings/import` — no agent needed yet.
+cron pushing `.nessus` to `POST /findings/import` — no sensor needed yet.
 
 ### Configuring a Tenable integration (shipped)
 
-A `provider=tenable` integration carries `config.execution_mode` (`agent` default |
+A `provider=tenable` integration carries `config.execution_mode` (`sensor` default |
 `direct`) and `config.engine` (`nessus_pro` default | `tenable_sc`). Creation is
 validated server-side (`internal/app/scancoverage/tenable_config.go`):
 
-- **agent mode MUST NOT store credentials in the control plane** (RFC-007 §8 R3/R4)
+- **sensor mode MUST NOT store credentials in the control plane** (RFC-007 §8 R3/R4)
   — they belong on the runner; supplying credentials is rejected.
 - **direct mode requires credentials + base_url** (the api calls Tenable).
 - unknown `execution_mode`/`engine` values are rejected; config is normalized so the
@@ -214,7 +214,7 @@ a scan zone covering them, as for any other scan.
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | `.nessus → CTIS` findings adapter + batch-scoped safety + manual ingest endpoint | **Done** — now the ctis importer + `POST /findings/import` |
-| 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + runner executor | **Done (mock-first)** — sdk-go tenable client/parser, agent `TenableExecutor`; live-appliance REST verification pending |
+| 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + runner executor | **Done (mock-first)** — sdk-go tenable client/parser, sensor `TenableExecutor`; live-appliance REST verification pending |
 | 3 | Coverage scheduler (rotation cursor, dispatch, license headroom) | **Done (unlimited engine)** — planner + dispatcher + scheduler + live controller + `scan_coverage_state` |
 | 3.5 | `.sc` active-IP accounting + reclaim gated on ingest ACK | Planned |
 | 4 | Observability (freshness, coverage %) | **Done (API)** — `GET /api/v1/scans/coverage`; UI pending |
