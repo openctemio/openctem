@@ -1073,7 +1073,7 @@ What this amendment changes:
    architecture page. Fields with no key on the type are dropped: they are
    relationships (a service's certificate, a host's ports) or unread
    (`extra_info`). A service's `tls: false` is no longer recorded: a report
-   that never measured TLS sends the same value. Migration `001334`
+   that never measured TLS sends the same value. Migration `001337`
    promotes stored blocks; the web reads flat keys only.
 
 **Threat model.** No new input or endpoint. The fold runs inside each
