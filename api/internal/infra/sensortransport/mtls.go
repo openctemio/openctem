@@ -212,6 +212,15 @@ func (s *Server) mtlsHandler(res *certResolver) http.Handler {
 		if !ok {
 			return
 		}
+		sensorID := ""
+		if id.Sensor != nil {
+			sensorID = id.Sensor.ID.String()
+		}
+		releaseSensor, ok := s.admitSensorUnary(w, r, sensorID)
+		defer releaseSensor()
+		if !ok {
+			return
+		}
 		if !isStream(r) {
 			// The listener has no ReadTimeout (it would cut the control
 			// stream); a unary call must deliver its message in time.
