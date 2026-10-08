@@ -144,16 +144,11 @@ const workflow: ScanWorkflow = {
   version: 1,
   is_active: true,
   is_system_template: false,
-  triggers: [],
   tags: [],
   settings: {
     max_parallel_steps: 3,
     fail_fast: true,
-    retry_failed_steps: 0,
     timeout_seconds: 1800,
-    notify_on_complete: false,
-    notify_on_failure: false,
-    notification_channels: [],
     sensor_preference: 'auto',
   },
   steps: [
@@ -179,6 +174,14 @@ const workflow: ScanWorkflow = {
 }
 
 describe('ScanWorkflowForm: edit', () => {
+  it('shows only settings that take effect: no triggers, no notify switch', async () => {
+    render(<ScanWorkflowForm workflow={workflow} onSubmit={vi.fn()} onCancel={vi.fn()} />)
+    expect(screen.queryByRole('tab', { name: /triggers/i })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: /settings/i }))
+    expect(screen.queryByText(/notify on failure/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/max parallel steps/i)).toHaveValue(3)
+  })
+
   it('a save that changed no step sends no steps', async () => {
     const onSubmit = vi.fn()
     render(<ScanWorkflowForm workflow={workflow} onSubmit={onSubmit} onCancel={vi.fn()} />)

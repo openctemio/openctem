@@ -212,7 +212,6 @@ func newMembershipTestUser(t *testing.T) *user.User {
 		time.Now().UTC(), time.Now().UTC(),
 		user.AuthProviderLocal, &hash, true,
 		nil, nil, nil, nil, 0, nil,
-		nil, nil, // federated issuer/subject
 	)
 }
 

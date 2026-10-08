@@ -723,7 +723,9 @@ export function ScanWorkflowForm({
                 value={timeoutSeconds}
                 onChange={(e) => setTimeoutSeconds(parseInt(e.target.value) || 3600)}
               />
-              <p className="text-xs text-muted-foreground">Max time for entire workflow</p>
+              <p className="text-xs text-muted-foreground">
+                Max time for a run of this workflow; a scan&apos;s own timeout wins
+              </p>
             </div>
 
             <div className="space-y-2">

@@ -10,6 +10,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -774,6 +775,7 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 		wf = fresh
 	}
 	status := string(run.Status)
+	metrics.AutomationRunsTotal.WithLabelValues(status).Inc()
 	wf.RecordRun(run.ID, status)
 	paused := run.Status == workflowdom.RunStatusFailed && e.keepsFailing(ctx, wf)
 	if paused {
@@ -784,6 +786,7 @@ func (e *WorkflowExecutor) finalizeRun(ctx context.Context, execCtx *ExecutionCo
 		paused = false
 	}
 	if paused {
+		metrics.AutomationsAutoPausedTotal.Inc()
 		e.logger.Warn("automation paused: its latest runs all failed",
 			"workflow_id", wf.ID, "workflow_name", wf.Name, "failed_runs", maxConsecutiveFailures)
 		if e.auditService != nil {
@@ -850,6 +853,7 @@ func (e *WorkflowExecutor) ExecuteAsyncWithTenant(runID shared.ID, tenantID shar
 		// SEC-WF12: Panic recovery - ensure resources are always released
 		defer func() {
 			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_run")
 				e.logger.Error("panic recovered in workflow execution",
 					"run_id", runID,
 					"tenant_id", tenantKey,

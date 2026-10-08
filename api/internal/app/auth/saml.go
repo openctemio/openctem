@@ -17,6 +17,7 @@ import (
 	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -125,13 +126,15 @@ func (s *SAMLService) DeleteConfig(ctx context.Context, tenantID shared.ID) erro
 
 // Metadata returns the SP metadata XML for a tenant (org slug), which the admin
 // registers with their IdP. baseURL is the deployment origin (scheme://host).
-func (s *SAMLService) Metadata(ctx context.Context, orgSlug, baseURL string) (string, error) {
-	t, err := s.tenantRepo.GetBySlug(ctx, orgSlug)
-	if err != nil {
+//
+// The metadata is built from the slug and the deployment URL only, so it is
+// served for any well-formed slug, known or not: answering 404 for an unknown
+// organization would tell an unauthenticated caller which organizations exist.
+func (s *SAMLService) Metadata(_ context.Context, orgSlug, baseURL string) (string, error) {
+	if !tenantdom.IsValidSlug(orgSlug) {
 		return "", ErrSAMLTenantNotFound
 	}
 	sp := s.baseServiceProvider(orgSlug, baseURL)
-	_ = t
 	md := sp.Metadata()
 	out, err := xml.MarshalIndent(md, "", "  ")
 	if err != nil {
@@ -242,7 +245,26 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 			return nil, ErrSAMLResponseInvalid
 		}
 	}
-	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(), authAt)
+	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(), authAt,
+		samlIdentityKey(assertion, tenantAndCfg.tenant.ID()))
+}
+
+// samlIdentityKey is the assertion's identity: the IdP entity id plus a
+// persistent NameID, scoped to the organization whose IdP certificate signed
+// the assertion (another organization can configure the same entity id, so
+// the pair means nothing outside it). Other NameID formats are not stable
+// (transient changes every login; emailAddress is the mutable email itself),
+// so they key nothing and the email finds the account as before.
+func samlIdentityKey(a *saml.Assertion, tenantID shared.ID) useridentity.Key {
+	if a == nil || a.Issuer.Value == "" || a.Subject == nil || a.Subject.NameID == nil {
+		return useridentity.Key{}
+	}
+	nid := a.Subject.NameID
+	if nid.Format != string(saml.PersistentNameIDFormat) || strings.TrimSpace(nid.Value) == "" {
+		return useridentity.Key{}
+	}
+	scope := tenantID
+	return useridentity.Key{Issuer: a.Issuer.Value, Subject: nid.Value, ScopeTenantID: &scope}
 }
 
 // assertionAuthnInstant is the latest AuthnInstant of the (signature- and
