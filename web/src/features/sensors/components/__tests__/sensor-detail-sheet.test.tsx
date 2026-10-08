@@ -469,6 +469,30 @@ describe('SensorDetailSheet', () => {
     expect(screen.getAllByText('v1 · deprecated').length).toBeGreaterThanOrEqual(1)
   })
 
+  it('shows the transport of the last heartbeat and why it is not gRPC', () => {
+    open({
+      sensor: {
+        ...sensor,
+        protocol: {
+          version: 3,
+          user_agent: 'openctem-sdk-go/0.30.0',
+          seen_at: '',
+          deprecated: false,
+          binding: 'https',
+          fallback_reason: 'http2_refused',
+        },
+      },
+    })
+    expect(screen.getByTestId('sensor-transport')).toHaveTextContent(
+      'Transport: HTTPS (fallback) (http2_refused)'
+    )
+  })
+
+  it('shows no transport line before the platform recorded one', () => {
+    open()
+    expect(screen.queryByTestId('sensor-transport')).not.toBeInTheDocument()
+  })
+
   it('opens as a bottom sheet on a phone', () => {
     phone.value = true
     open()

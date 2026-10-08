@@ -175,3 +175,52 @@ func capFindingText(c *textCapper, f *ctis.Finding) {
 		m.Query = c.str(m.Query, MaxMisconfigTextLen)
 	}
 }
+
+// certificateTextKeys are a certificate asset's flat text keys and their caps.
+// The technical block is capped before promotion (capCertificateText); a
+// report may also send the same facts as free-form properties, which win
+// over the block and are capped here, so a stored certificate is bounded
+// whichever way a scanner wrote it.
+var certificateTextKeys = map[string]int{
+	"subject_cn":          MaxCertNameLen,
+	"issuer_cn":           MaxCertNameLen,
+	"issuer_org":          MaxCertNameLen,
+	"serial_number":       MaxCertSerialLen,
+	"fingerprint_sha256":  MaxCertFingerprint,
+	"signature_algorithm": MaxCertAlgorithmLen,
+	"key_algorithm":       MaxCertAlgorithmLen,
+}
+
+// capCertificateProperties bounds a certificate asset's flat properties
+// (research/22 E5): names stripped of control characters and capped, SANs
+// capped in number and length. It returns how many values it changed.
+func capCertificateProperties(props map[string]any) int {
+	c := &textCapper{}
+	for key, maxRunes := range certificateTextKeys {
+		if s, ok := props[key].(string); ok {
+			props[key] = c.str(stripControl(c, s), maxRunes)
+		}
+	}
+	var sans []string
+	switch v := props["sans"].(type) {
+	case []any:
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				sans = append(sans, stripControl(c, s))
+			}
+		}
+	case []string:
+		for _, s := range v {
+			sans = append(sans, stripControl(c, s))
+		}
+	default:
+		return c.changed
+	}
+	capped := c.list(sans, MaxCertSANs, MaxCertSANLen)
+	out := make([]any, len(capped))
+	for i, s := range capped {
+		out[i] = s
+	}
+	props["sans"] = out
+	return c.changed
+}
