@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -1204,7 +1205,7 @@ func (s *SSOService) exchangeCode(ctx context.Context, clientID, clientSecret, c
 	defer resp.Body.Close()
 
 	// SECURITY: Limit response body to 1MB
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := httpsec.ReadLimited(resp.Body, 1<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -1266,13 +1267,18 @@ func (s *SSOService) getUserInfo(ctx context.Context, provider identityproviderd
 		return nil, fmt.Errorf("user info failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
+	userInfo, err := httpsec.ReadLimited(resp.Body, 1<<20)
+	if err != nil {
+		return nil, fmt.Errorf("user info: %w", err)
+	}
+	body := bytes.NewReader(userInfo)
 	switch provider {
 	case identityproviderdom.ProviderEntraID:
-		return s.parseEntraIDUserInfo(resp.Body)
+		return s.parseEntraIDUserInfo(body)
 	case identityproviderdom.ProviderOkta:
-		return s.parseOktaUserInfo(resp.Body)
+		return s.parseOktaUserInfo(body)
 	case identityproviderdom.ProviderGoogleWorkspace:
-		return s.parseGoogleUserInfo(resp.Body)
+		return s.parseGoogleUserInfo(body)
 	default:
 		return nil, ErrSSOProviderUnsupported
 	}
