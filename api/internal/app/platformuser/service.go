@@ -1,5 +1,5 @@
 // Package platformuser holds the platform admin console's support actions on
-// one account (Console > Users, RFC-022 revision 14): revoke its sessions,
+// one account (Console > Users, RFC-022): revoke its sessions,
 // unlock it, send a password reset, resend email verification.
 //
 // They act on the account only, never on what an organization holds, and
