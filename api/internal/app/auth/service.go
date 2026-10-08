@@ -86,6 +86,10 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
+	// freePlan assigns the Free plan to self-service organizations. Nil: no
+	// plans (organizations unlimited).
+	freePlan FreePlan
+
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -848,7 +852,8 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 		// Fail closed: an unreadable security section never admits a session.
 		return fmt.Errorf("failed to read SSO enforcement policy: %w", err)
 	}
-	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) {
+	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) &&
+		!s.ssoExceptionAllows(ctx, sess, sec) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
@@ -1071,6 +1076,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// Per-tenant 2FA requirement: a password session whose user has not
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 
@@ -1321,6 +1329,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	// Per-tenant 2FA requirement: a password session whose user has not
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 
@@ -1661,6 +1672,17 @@ type CreateFirstTeamResult struct {
 	Tenant       TenantMembershipInfo `json:"tenant"`
 }
 
+// FreePlan is the slice of the entitlement service self-service creation uses.
+// create-first-team only assigns the plan: it serves people with no
+// organization, who own no Free one; POST /tenants checks the per-person cap.
+type FreePlan interface {
+	CheckFreeTeam(ctx context.Context, userID shared.ID) error
+	AssignFree(ctx context.Context, tenantID shared.ID) error
+}
+
+// SetFreePlan wires the Free plan for self-service organizations.
+func (s *AuthService) SetFreePlan(p FreePlan) { s.freePlan = p }
+
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
@@ -1757,6 +1779,13 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 	if err := s.tenantRepo.CreateWithOwner(ctx, newTenant, membership); err != nil {
 		return nil, fmt.Errorf("failed to create team: %w", err)
+	}
+
+	// A self-service organization starts on the Free plan.
+	if s.freePlan != nil {
+		if err := s.freePlan.AssignFree(ctx, newTenant.ID()); err != nil {
+			s.logger.Error("assign the Free plan to a new organization", "tenant_id", newTenant.ID().String(), "error", err)
+		}
 	}
 
 	s.logger.Info("first team created",

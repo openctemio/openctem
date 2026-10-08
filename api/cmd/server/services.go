@@ -53,6 +53,7 @@ import (
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
+	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
@@ -794,6 +795,8 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// Plans and limits.
+	Entitlement *entitlementapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -880,6 +883,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
+
+	// Plans and limits (docs/architecture/plans-and-limits.md), with or
+	// without local auth.
+	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
 
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)
@@ -1893,6 +1900,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithToolRepo(repos.Tool),
 		// A draft check warns about steps no online sensor can run now.
 		scanrun.WithRunnableTools(s.Tool),
+		// The builder saves drafts; a publish makes them the steps runs use.
+		scanrun.WithDraftStore(repos.ScanWorkflow),
 		scanrun.WithQualityGate(repos.ScanProfile, repos.Finding),
 		scanrun.WithScanDeactivator(s.Scan),     // Cascade pause scans when scan workflow is deactivated
 		scanrun.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
@@ -2280,6 +2289,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	// Plans and limits: self-service organizations are Free.
+	s.Auth.SetFreePlan(s.Entitlement)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2354,6 +2365,13 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		}
 	}
 	s.SSO.SetDomainVerifier(s.DomainVerify)
+	// Email-first sign-in asks which organization holds an email's SSO
+	// domain (domainverify.Service.OwnerOfDomain).
+	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
+		s.SSO.SetDomainOwnerLookup(owners)
+	} else {
+		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
+	}
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
 	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)
@@ -2364,6 +2382,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		return domainverify.OwnsAnySSODomain(ctx, repos.VerifiedDomain, tenantID)
 	})
 	s.Tenant.SetAddressClassifier(s.AddressClassifier)
+	// A domain the home organization stops holding suspends the members it
+	// managed elsewhere; proving it again restores them (RFC-058).
+	s.DomainVerify.SetClaimListener(s.Tenant)
 	s.Auth.SetInviteeClassifier(s.Tenant)
 
 	// Trusted organizations (RFC-058): home-realm sign-in for external
