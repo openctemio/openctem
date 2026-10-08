@@ -45,6 +45,18 @@ func FromRequestMax(q url.Values, defaultPerPage, maxPerPage int) (Pagination, e
 	return p, nil
 }
 
+// LimitFromRequest reads `limit` for a top-N list (one that has no pages:
+// the latest N rows). A missing value is defaultLimit (0 lets the store
+// choose its default); a value that is not a positive whole number is
+// ErrInvalid; a value above maxLimit is lowered to it.
+func LimitFromRequest(q url.Values, defaultLimit, maxLimit int) (int, error) {
+	n, err := positiveInt(q.Get("limit"), defaultLimit, "limit")
+	if err != nil {
+		return 0, err
+	}
+	return min(n, maxLimit), nil
+}
+
 func positiveInt(raw string, fallback int, name string) (int, error) {
 	if raw == "" {
 		return fallback, nil

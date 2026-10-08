@@ -34,6 +34,9 @@ type SensorService struct {
 	repo         sensordom.Repository
 	auditService *auditapp.AuditService
 	logger       *logger.Logger
+	// statusChanged is told when a sensor's status or keys change
+	// (SetStatusNotifier); nil: nobody.
+	statusChanged func(tenantID, sensorID string)
 	// pepper is the server-side secret mixed into the API-key hash via
 	// HMAC-SHA256. Optional — when empty the hash falls back to plain
 	// SHA-256 for backward compatibility with rows written before the
@@ -1102,6 +1105,7 @@ func (s *SensorService) DeleteSensor(ctx context.Context, tenantID, sensorID str
 	if err := s.repo.Delete(ctx, aid); err != nil {
 		return err
 	}
+	s.notifyStatus(a)
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
@@ -1692,6 +1696,7 @@ func (s *SensorService) ActivateSensor(ctx context.Context, tenantID, sensorID s
 	if err := s.repo.Update(ctx, a); err != nil {
 		return nil, err
 	}
+	s.notifyStatus(a)
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
@@ -1717,6 +1722,7 @@ func (s *SensorService) DisableSensor(ctx context.Context, tenantID, sensorID, r
 	if err := s.repo.Update(ctx, a); err != nil {
 		return nil, err
 	}
+	s.notifyStatus(a)
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
@@ -1806,6 +1812,7 @@ func (s *SensorService) RevokeSensor(ctx context.Context, tenantID, sensorID, re
 			s.logger.Warn("failed to revoke signing keys of a revoked sensor", "sensor_id", a.ID.String(), "error", err)
 		}
 	}
+	s.notifyStatus(a)
 
 	s.logger.Info("sensor revoked", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))
 	return a, nil

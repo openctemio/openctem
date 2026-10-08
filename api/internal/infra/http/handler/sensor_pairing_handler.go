@@ -243,6 +243,9 @@ func (h *SensorPairingHandler) actor(r *http.Request) (sensorpairing.Actor, bool
 }
 
 func (h *SensorPairingHandler) writeUserError(w http.ResponseWriter, err error) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, sensorpairing.ErrNotFound):
 		apierror.NotFound("Pairing request").WriteJSON(w)

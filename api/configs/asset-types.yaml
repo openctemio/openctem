@@ -225,6 +225,10 @@ properties:
   ip_addresses: { label: IP addresses, label_vi: Địa chỉ IP, format: ip, synonyms: [ip, ips, ip_address, resolved_ip, resolved_ips, addresses] }
   private_ip: { label: Private IP, label_vi: IP nội bộ, format: ip }
   public_ip: { label: Public IP, label_vi: IP công khai, format: ip }
+  vendor: { label: Vendor, label_vi: Nhà sản xuất }
+  model: { label: Model, label_vi: Mẫu thiết bị }
+  firmware_version: { label: Firmware version, label_vi: Phiên bản firmware }
+  management_ip: { label: Management IP, label_vi: IP quản trị, format: ip }
   gateway: { label: Gateway, label_vi: "Cổng mạng (gateway)", format: ip }
   discovery_source: { label: Discovery source, label_vi: Nguồn phát hiện }
   discovery_tool: { label: Discovery tool, label_vi: Công cụ phát hiện }
@@ -271,7 +275,7 @@ properties:
   key_algorithm: { label: Key algorithm, label_vi: Thuật toán khóa }
   key_size: { label: Key size, label_vi: Độ dài khóa }
   fingerprint_sha256: { label: SHA-256 fingerprint, label_vi: Dấu vân tay SHA-256, format: code }
-  is_self_signed: { label: Self-signed, label_vi: Tự ký }
+  is_self_signed: { label: Self-signed, label_vi: Tự ký, synonyms: [self_signed] }
   is_expired: { label: Expired, label_vi: Đã hết hạn }
   port: { label: Port, label_vi: Cổng, classes: [service, data_store, application, web_endpoint] }
   protocol: { label: Protocol, label_vi: Giao thức }
@@ -280,9 +284,9 @@ properties:
   banner: { label: Banner, label_vi: Banner, format: code, classes: [service] }
   cpe: { label: CPE, label_vi: CPE, format: code }
   state: { label: State, label_vi: Trạng thái }
-  tls_enabled: { label: TLS enabled, label_vi: Bật TLS }
+  has_tls: { label: TLS, label_vi: TLS, synonyms: [tls_enabled] }
   tls_version: { label: TLS version, label_vi: Phiên bản TLS }
-  auth_required: { label: Authentication required, label_vi: Yêu cầu xác thực }
+  is_auth_required: { label: Authentication required, label_vi: Yêu cầu xác thực, synonyms: [auth_required] }
   response_time_ms: { label: "Response time (ms)", label_vi: "Thời gian phản hồi (ms)", classes: [service, web_endpoint, application] }
   url: { label: URL, label_vi: URL, format: url }
   host: { label: Host, label_vi: Máy chủ }
@@ -291,11 +295,12 @@ properties:
   title: { label: Title, label_vi: Tiêu đề }
   content_length: { label: Content length, label_vi: Độ dài nội dung, classes: [service, web_endpoint, application] }
   content_type: { label: Content type, label_vi: Kiểu nội dung, classes: [service, web_endpoint, application] }
-  server: { label: Server, label_vi: Máy chủ web }
+  server: { label: Server, label_vi: Máy chủ web, synonyms: [web_server] }
   technologies: { label: Technologies, label_vi: Công nghệ, synonyms: [technology] }
   cdn: { label: CDN, label_vi: CDN }
   waf: { label: WAF, label_vi: WAF }
   redirect_url: { label: Redirects to, label_vi: Chuyển hướng tới, format: url }
+  chain_status_codes: { label: Redirect chain, label_vi: Chuỗi chuyển hướng }
   method: { label: Method, label_vi: Phương thức }
   source: { label: Source, label_vi: Nguồn }
   depth: { label: Crawl depth, label_vi: Độ sâu thu thập }
@@ -310,8 +315,8 @@ properties:
   base_url: { label: Base URL, label_vi: URL gốc, format: url }
   api_type: { label: API type, label_vi: Loại API }
   documentation_url: { label: Documentation, label_vi: Tài liệu, format: url }
-  rate_limiting: { label: Rate limiting, label_vi: Giới hạn tần suất }
-  cors_enabled: { label: CORS enabled, label_vi: Bật CORS }
+  has_rate_limiting: { label: Rate limiting, label_vi: Giới hạn tần suất, synonyms: [rate_limiting] }
+  has_cors: { label: CORS, label_vi: CORS, synonyms: [cors_enabled] }
   endpoints_count: { label: Endpoints, label_vi: Số endpoint }
   platform: { label: Platform, label_vi: Nền tảng }
   package_name: { label: Package name, label_vi: Tên gói, format: code }
@@ -319,10 +324,10 @@ properties:
   min_sdk_version: { label: Minimum SDK, label_vi: SDK tối thiểu }
   target_sdk_version: { label: Target SDK, label_vi: SDK mục tiêu }
   permissions: { label: Permissions, label_vi: Quyền }
-  uses_ssl_pinning: { label: SSL pinning, label_vi: Ghim SSL }
+  has_ssl_pinning: { label: SSL pinning, label_vi: Ghim SSL, synonyms: [uses_ssl_pinning] }
   fqdn: { label: FQDN, label_vi: FQDN }
   os_family: { label: OS family, label_vi: Họ hệ điều hành }
-  os_name: { label: Operating system, label_vi: Hệ điều hành }
+  os_name: { label: Operating system, label_vi: Hệ điều hành, synonyms: [os] }
   os_version: { label: OS version, label_vi: Phiên bản hệ điều hành }
   kernel_version: { label: Kernel version, label_vi: Phiên bản kernel }
   architecture: { label: Architecture, label_vi: Kiến trúc }
@@ -340,7 +345,7 @@ properties:
   image_id: { label: Image ID, label_vi: ID image, format: code }
   device_type: { label: Device type, label_vi: Loại thiết bị }
   user: { label: User, label_vi: Người dùng }
-  edr_installed: { label: EDR installed, label_vi: Đã cài EDR }
+  has_edr: { label: EDR installed, label_vi: Đã cài EDR, synonyms: [edr_installed] }
   function_name: { label: Function name, label_vi: Tên hàm }
   runtime: { label: Runtime, label_vi: Môi trường chạy }
   handler: { label: Handler, label_vi: Handler, format: code }
@@ -348,11 +353,11 @@ properties:
   timeout_seconds: { label: "Timeout (s)", label_vi: "Thời gian chờ (giây)" }
   arn: { label: ARN, label_vi: ARN, format: code }
   role: { label: Role, label_vi: Vai trò }
-  last_modified: { label: Last modified, label_vi: Sửa đổi lần cuối }
+  last_modified_at: { label: Last modified, label_vi: Sửa đổi lần cuối, synonyms: [last_modified] }
   account_id: { label: Account ID, label_vi: ID tài khoản, format: code }
   account_name: { label: Account name, label_vi: Tên tài khoản }
   organization_id: { label: Organization ID, label_vi: ID tổ chức, format: code }
-  mfa_enabled: { label: MFA enabled, label_vi: Bật MFA }
+  has_mfa: { label: MFA, label_vi: MFA, synonyms: [mfa_enabled] }
   container_id: { label: Container ID, label_vi: ID container, format: code }
   image: { label: Image, label_vi: Image }
   created_at: { label: Created, label_vi: Ngày tạo }
@@ -361,64 +366,62 @@ properties:
   namespace: { label: Namespace, label_vi: Namespace }
   workload_kind: { label: Workload kind, label_vi: Loại workload }
   node_count: { label: Nodes, label_vi: Số node }
-  rbac_enabled: { label: RBAC enabled, label_vi: Bật RBAC }
+  has_rbac: { label: RBAC, label_vi: RBAC, synonyms: [rbac_enabled] }
   namespace_count: { label: Namespaces, label_vi: Số namespace }
   api_server_url: { label: API server, label_vi: Máy chủ API, format: url }
   network_plugin: { label: Network plugin, label_vi: Plugin mạng }
-  pod_security_enabled: { label: Pod security enabled, label_vi: Bật bảo mật pod }
-  network_policies: { label: Network policies, label_vi: Chính sách mạng }
+  has_pod_security: { label: Pod security, label_vi: Bảo mật pod, synonyms: [pod_security_enabled] }
+  has_network_policies: { label: Network policies, label_vi: Chính sách mạng, synonyms: [network_policies] }
   pod_count: { label: Pods, label_vi: Số pod }
   service_count: { label: Services, label_vi: Số dịch vụ }
   namespace_labels: { label: Namespace labels, label_vi: Nhãn namespace }
   registry_url: { label: Registry URL, label_vi: URL registry, format: url }
   repository_count: { label: Repositories, label_vi: Số kho }
   image_count: { label: Images, label_vi: Số image }
-  scan_on_push: { label: Scan on push, label_vi: Quét khi đẩy }
-  encryption_enabled: { label: Encryption enabled, label_vi: Bật mã hóa }
-  immutable_tags: { label: Immutable tags, label_vi: Tag bất biến }
+  has_scan_on_push: { label: Scan on push, label_vi: Quét khi đẩy, synonyms: [scan_on_push] }
+  is_encrypted: { label: Encrypted, label_vi: Đã mã hóa, synonyms: [encrypted, encryption_enabled, encryption] }
+  has_immutable_tags: { label: Immutable tags, label_vi: Tag bất biến, synonyms: [immutable_tags] }
   visibility: { label: Visibility, label_vi: Chế độ hiển thị }
   language: { label: Language, label_vi: Ngôn ngữ }
   default_branch: { label: Default branch, label_vi: Nhánh mặc định }
   canonical_url: { label: Repository URL, label_vi: URL kho mã, format: url }
   last_commit_at: { label: Last commit, label_vi: Commit gần nhất }
-  archived: { label: Archived, label_vi: Đã lưu trữ }
+  is_archived: { label: Archived, label_vi: Đã lưu trữ, synonyms: [archived] }
   principal_id: { label: Principal ID, label_vi: ID principal, format: code }
   email: { label: Email, label_vi: Email }
-  privileged: { label: Privileged, label_vi: Đặc quyền }
-  last_used: { label: Last used, label_vi: Dùng lần cuối }
+  is_privileged: { label: Privileged, label_vi: Đặc quyền, synonyms: [privileged] }
+  last_used_at: { label: Last used, label_vi: Dùng lần cuối, synonyms: [last_used] }
   user_id: { label: User ID, label_vi: ID người dùng, format: code }
   username: { label: Username, label_vi: Tên đăng nhập }
-  last_login: { label: Last sign-in, label_vi: Đăng nhập lần cuối }
+  last_login_at: { label: Last sign-in, label_vi: Đăng nhập lần cuối, synonyms: [last_login] }
   groups: { label: Groups, label_vi: Nhóm }
   policies: { label: Policies, label_vi: Chính sách }
   role_id: { label: Role ID, label_vi: ID vai trò, format: code }
   role_name: { label: Role name, label_vi: Tên vai trò }
-  max_session_duration: { label: "Max session duration (s)", label_vi: "Thời lượng phiên tối đa (giây)" }
+  max_session_duration_seconds: { label: "Max session duration (s)", label_vi: "Thời lượng phiên tối đa (giây)", synonyms: [max_session_duration] }
   trust_policy: { label: Trust policy, label_vi: Chính sách tin cậy }
   display_name: { label: Display name, label_vi: Tên hiển thị }
   roles: { label: Roles, label_vi: Vai trò }
   engine: { label: Engine, label_vi: Engine }
   endpoint: { label: Endpoint, label_vi: Endpoint }
-  encrypted: { label: Encrypted, label_vi: Đã mã hóa }
-  ssl_enforced: { label: SSL enforced, label_vi: Bắt buộc SSL }
-  publicly_accessible: { label: Publicly accessible, label_vi: Truy cập công khai }
+  is_ssl_enforced: { label: SSL enforced, label_vi: Bắt buộc SSL, synonyms: [ssl_enforced] }
   backup_retention_days: { label: "Backup retention (days)", label_vi: "Lưu bản sao lưu (ngày)" }
   bucket_name: { label: Bucket, label_vi: Bucket }
-  versioning_enabled: { label: Versioning enabled, label_vi: Bật lập phiên bản }
+  has_versioning: { label: Versioning, label_vi: Lập phiên bản, synonyms: [versioning_enabled] }
   encryption_type: { label: Encryption type, label_vi: Kiểu mã hóa }
   public_access: { label: Public access, label_vi: Truy cập công khai }
-  logging_enabled: { label: Logging enabled, label_vi: Bật ghi log }
+  has_logging: { label: Logging, label_vi: Ghi log, synonyms: [logging_enabled] }
   cidr: { label: CIDR, label_vi: CIDR }
   dns_servers: { label: DNS servers, label_vi: Máy chủ DNS, format: ip }
-  dhcp_enabled: { label: DHCP enabled, label_vi: Bật DHCP }
+  has_dhcp: { label: DHCP, label_vi: DHCP, synonyms: [dhcp_enabled] }
   vlan_id: { label: VLAN ID, label_vi: ID VLAN }
   cidr_block: { label: CIDR block, label_vi: Dải CIDR }
   secondary_cidrs: { label: Secondary CIDRs, label_vi: Dải CIDR phụ }
   is_default: { label: Default, label_vi: Mặc định }
-  flow_logs_enabled: { label: Flow logs enabled, label_vi: Bật flow log }
+  has_flow_logs: { label: Flow logs, label_vi: Flow log, synonyms: [flow_logs_enabled] }
   subnet_id: { label: Subnet ID, label_vi: ID subnet, format: code }
   availability_zone: { label: Availability zone, label_vi: Vùng khả dụng }
-  is_public: { label: Public, label_vi: Công khai }
+  is_public: { label: Public, label_vi: Công khai, synonyms: [publicly_accessible, is_publicly_accessible] }
   firewall_id: { label: Firewall ID, label_vi: ID tường lửa, format: code }
   direction: { label: Direction, label_vi: Chiều }
   rules: { label: Rules, label_vi: Quy tắc }
@@ -606,9 +609,9 @@ types:
       - { name: banner, type: string }
       - { name: cpe, type: string }
       - { name: state, type: enum, values: [open, filtered, closed], facet: true }
-      - { name: tls_enabled, type: bool, facet: true }
+      - { name: has_tls, type: bool, facet: true }
       - { name: tls_version, type: string, facet: true }
-      - { name: auth_required, type: bool, facet: true }
+      - { name: is_auth_required, type: bool, facet: true }
       - { name: response_time_ms, type: int }
     columns: [name, port, protocol, product, findings.open, last_seen]
     card: service
@@ -640,6 +643,7 @@ types:
       - { name: tls_version, type: string, facet: true }
       - { name: response_time_ms, type: int }
       - { name: redirect_url, type: string }
+      - { name: chain_status_codes, type: list }
     columns: [name, status_code, title, server, findings.open, last_seen]
     card: service
     scannable_by: [url, service, port]
@@ -761,8 +765,8 @@ types:
       - { name: version, type: string }
       - { name: authentication, type: enum, values: [none, api_key, oauth2, jwt, basic], facet: true }
       - { name: documentation_url, type: string }
-      - { name: rate_limiting, type: bool, facet: true }
-      - { name: cors_enabled, type: bool, facet: true }
+      - { name: has_rate_limiting, type: bool, facet: true }
+      - { name: has_cors, type: bool, facet: true }
       - { name: endpoints_count, type: int }
     columns: [name, api_type, authentication, findings.open, last_seen, owner]
     card: application
@@ -786,7 +790,7 @@ types:
       - { name: min_sdk_version, type: string }
       - { name: target_sdk_version, type: string }
       - { name: permissions, type: list }
-      - { name: uses_ssl_pinning, type: bool, facet: true }
+      - { name: has_ssl_pinning, type: bool, facet: true }
     columns: [name, platform, version, findings.open, last_seen, owner]
     card: application
     scannable_by: [mobile]
@@ -873,7 +877,7 @@ types:
       - { name: os_version, type: string }
       - { name: device_type, type: enum, values: [laptop, workstation, mobile, kiosk, other], facet: true, group: true }
       - { name: user, type: string }
-      - { name: edr_installed, type: bool, facet: true }
+      - { name: has_edr, type: bool, facet: true }
     columns: [name, device_type, os_family, findings.open, last_seen, owner]
     card: host
     scannable_by: [host, ip]
@@ -897,7 +901,7 @@ types:
       - { name: region, type: string, facet: true, group: true }
       - { name: arn, type: string }
       - { name: role, type: string }
-      - { name: last_modified, type: time }
+      - { name: last_modified_at, type: time }
     columns: [name, provider, runtime, region, findings.open, last_seen]
     card: function
     scannable_by: [serverless]
@@ -923,7 +927,7 @@ types:
       - { name: account_name, type: string }
       - { name: region, type: string, facet: true }
       - { name: organization_id, type: string, group: true }
-      - { name: mfa_enabled, type: bool, facet: true }
+      - { name: has_mfa, type: bool, facet: true }
     columns: [name, provider, account_id, findings.open, last_seen, owner]
     card: cloud_account
     scannable_by: [cloud_account]
@@ -979,7 +983,7 @@ types:
       - { name: namespace, type: string, group: true }
       - { name: workload_kind, type: string, facet: true, group: true }
       - { name: node_count, type: int }
-      - { name: rbac_enabled, type: bool, facet: true }
+      - { name: has_rbac, type: bool, facet: true }
     columns: [name, sub_type, provider, version, findings.open, last_seen]
     card: cluster
     scannable_by: [kubernetes]
@@ -1002,9 +1006,9 @@ types:
       - { name: namespace_count, type: int }
       - { name: api_server_url, type: string }
       - { name: network_plugin, type: string, facet: true }
-      - { name: rbac_enabled, type: bool, facet: true }
-      - { name: pod_security_enabled, type: bool, facet: true }
-      - { name: network_policies, type: bool, facet: true }
+      - { name: has_rbac, type: bool, facet: true }
+      - { name: has_pod_security, type: bool, facet: true }
+      - { name: has_network_policies, type: bool, facet: true }
     columns: [name, provider, version, node_count, findings.open, last_seen]
     card: cluster
     sections: [overview, attributes, findings, relationships, owners, sources, history]
@@ -1040,9 +1044,9 @@ types:
       - { name: registry_url, type: string }
       - { name: repository_count, type: int }
       - { name: image_count, type: int }
-      - { name: scan_on_push, type: bool, facet: true }
-      - { name: encryption_enabled, type: bool, facet: true }
-      - { name: immutable_tags, type: bool, facet: true }
+      - { name: has_scan_on_push, type: bool, facet: true }
+      - { name: is_encrypted, type: bool, facet: true }
+      - { name: has_immutable_tags, type: bool, facet: true }
     columns: [name, provider, image_count, findings.open, last_seen, owner]
     card: artifact_registry
     scannable_by: [container]
@@ -1072,7 +1076,7 @@ types:
       - { name: default_branch, type: string }
       - { name: canonical_url, type: string }
       - { name: last_commit_at, type: time }
-      - { name: archived, type: bool, facet: true }
+      - { name: is_archived, type: bool, facet: true }
     columns: [name, provider, visibility, language, findings.open, last_seen, owner]
     card: repository
     scannable_by: [repository, file]
@@ -1094,10 +1098,10 @@ types:
       - { name: principal_id, type: string }
       - { name: arn, type: string }
       - { name: email, type: string }
-      - { name: mfa_enabled, type: bool, facet: true }
-      - { name: privileged, type: bool, facet: true }
-      - { name: last_used, type: time }
-    columns: [name, sub_type, provider, mfa_enabled, findings.open, last_seen]
+      - { name: has_mfa, type: bool, facet: true }
+      - { name: is_privileged, type: bool, facet: true }
+      - { name: last_used_at, type: time }
+    columns: [name, sub_type, provider, has_mfa, findings.open, last_seen]
     card: identity
     scannable_by: []
     sections: [overview, attributes, findings, relationships, owners, sources, history]
@@ -1116,11 +1120,11 @@ types:
       - { name: username, type: string }
       - { name: arn, type: string }
       - { name: email, type: string }
-      - { name: last_login, type: time }
-      - { name: mfa_enabled, type: bool, facet: true }
+      - { name: last_login_at, type: time }
+      - { name: has_mfa, type: bool, facet: true }
       - { name: groups, type: list }
       - { name: policies, type: list }
-    columns: [name, provider, email, mfa_enabled, findings.open, last_seen]
+    columns: [name, provider, email, has_mfa, findings.open, last_seen]
     card: identity
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
@@ -1137,11 +1141,11 @@ types:
       - { name: role_id, type: string }
       - { name: role_name, type: string }
       - { name: arn, type: string }
-      - { name: max_session_duration, type: int }
+      - { name: max_session_duration_seconds, type: int }
       - { name: trust_policy, type: object }
       - { name: policies, type: list }
-      - { name: last_used, type: time }
-    columns: [name, provider, last_used, findings.open, last_seen]
+      - { name: last_used_at, type: time }
+    columns: [name, provider, last_used_at, findings.open, last_seen]
     card: identity
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
@@ -1207,11 +1211,11 @@ types:
       - { name: provider, type: string, facet: true, group: true }
       - { name: endpoint, type: string }
       - { name: port, type: int, facet: true }
-      - { name: encrypted, type: bool, facet: true }
-      - { name: ssl_enforced, type: bool, facet: true }
-      - { name: publicly_accessible, type: bool, facet: true }
+      - { name: is_encrypted, type: bool, facet: true }
+      - { name: is_ssl_enforced, type: bool, facet: true }
+      - { name: is_public, type: bool, facet: true }
       - { name: backup_retention_days, type: int }
-    columns: [name, engine, provider, publicly_accessible, findings.open, last_seen, owner]
+    columns: [name, engine, provider, is_public, findings.open, last_seen, owner]
     card: data_store
     scannable_by: [database]
     sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
@@ -1227,8 +1231,8 @@ types:
     attributes:
       - { name: engine, type: string, facet: true, group: true }
       - { name: provider, type: string, facet: true, group: true }
-      - { name: encrypted, type: bool, facet: true }
-      - { name: publicly_accessible, type: bool, facet: true }
+      - { name: is_encrypted, type: bool, facet: true }
+      - { name: is_public, type: bool, facet: true }
     columns: [name, engine, provider, findings.open, last_seen, owner]
     card: data_store
     sections: [overview, attributes, findings, relationships, owners, exposure, sources, history]
@@ -1249,11 +1253,11 @@ types:
       - { name: bucket_name, type: string }
       - { name: region, type: string, facet: true, group: true }
       - { name: arn, type: string }
-      - { name: versioning_enabled, type: bool, facet: true }
-      - { name: encryption_enabled, type: bool, facet: true }
+      - { name: has_versioning, type: bool, facet: true }
+      - { name: is_encrypted, type: bool, facet: true }
       - { name: encryption_type, type: string, facet: true }
       - { name: public_access, type: enum, values: [public, private, restricted], facet: true }
-      - { name: logging_enabled, type: bool, facet: true }
+      - { name: has_logging, type: bool, facet: true }
     columns: [name, provider, region, public_access, findings.open, last_seen, owner]
     card: data_store
     scannable_by: [storage]
@@ -1271,8 +1275,8 @@ types:
       - { name: bucket_name, type: string }
       - { name: region, type: string, facet: true, group: true }
       - { name: arn, type: string }
-      - { name: versioning_enabled, type: bool, facet: true }
-      - { name: encryption_enabled, type: bool, facet: true }
+      - { name: has_versioning, type: bool, facet: true }
+      - { name: is_encrypted, type: bool, facet: true }
       - { name: public_access, type: enum, values: [public, private, restricted], facet: true }
     columns: [name, region, public_access, findings.open, last_seen, owner]
     card: data_store
@@ -1300,10 +1304,15 @@ types:
       - { name: cidr, type: string }
       - { name: gateway, type: string }
       - { name: dns_servers, type: list }
-      - { name: dhcp_enabled, type: bool, facet: true }
+      - { name: has_dhcp, type: bool, facet: true }
       - { name: vlan_id, type: int, facet: true }
       - { name: zone, type: string, facet: true, group: true }
-    columns: [name, sub_type, cidr, findings.open, last_seen, owner]
+      - { name: vendor, type: string, facet: true, group: true }
+      - { name: model, type: string, facet: true }
+      - { name: firmware_version, type: string }
+      - { name: management_ip, type: string }
+      - { name: serial_number, type: string }
+    columns: [name, sub_type, cidr, vendor, findings.open, last_seen, owner]
     card: network
     scannable_by: [network]
     sections: [overview, attributes, findings, relationships, owners, sources, history]
@@ -1323,7 +1332,7 @@ types:
       - { name: secondary_cidrs, type: list }
       - { name: region, type: string, facet: true, group: true }
       - { name: is_default, type: bool, facet: true }
-      - { name: flow_logs_enabled, type: bool, facet: true }
+      - { name: has_flow_logs, type: bool, facet: true }
     columns: [name, provider, cidr_block, region, findings.open, last_seen]
     card: network
     sections: [overview, attributes, findings, relationships, owners, sources, history]

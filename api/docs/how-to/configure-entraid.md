@@ -220,7 +220,7 @@ Auto-provisioning decision (`jitProvisioningAllowed`), all branches fail-closed:
 
 If JIT isn't permitted, the login is refused with "not a member of this
 organization" — the user must be **invited** first (Settings → Team →
-Invitations). Also: with `AUTH_ALLOW_REGISTRATION=false`, a federated login can
+Invitations). Also: with the sign-up policy at `admin_only`, a federated login can
 only bind to an existing/pre-invited account — it will never create a brand-new
 user.
 
@@ -383,7 +383,6 @@ services:
       SSO_ENTRA_ALLOWED_TENANTS: "acme"        # P0 opt-in: tenant slug(s) allowed to use this fallback
 
       # In production, disable open registration — add users via invitations
-      AUTH_ALLOW_REGISTRATION: "false"
 ```
 
 For per-tenant setup (recommended), leave the `SSO_ENTRA_*` block out and have

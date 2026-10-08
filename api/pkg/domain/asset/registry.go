@@ -148,6 +148,9 @@ type PropertyDefinition struct {
 	Format   PropertyFormat `json:"format,omitempty"`
 	Synonyms []string       `json:"synonyms,omitempty"`
 	Classes  []Class        `json:"classes,omitempty"`
+	// List: the key holds an array on every type; synonyms merge into it.
+	// Otherwise the key holds one value and a synonym's value moves to it.
+	List bool `json:"list,omitempty"`
 }
 
 // Registry is the whole registry, as served by GET /api/v1/asset-types.

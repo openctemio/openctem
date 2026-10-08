@@ -47,7 +47,7 @@ describe('HTTP facts', () => {
   it('reads the status ingest stores, and never defaults one', () => {
     expect(httpStatusCode(sensorHttpService)).toBe(200)
     expect(httpStatusCode(sdkLiveHost)).toBe(301)
-    expect(httpStatusCode(withMeta({ http_status: '404' }))).toBe(404)
+    expect(httpStatusCode(withMeta({ status_code: '404' }))).toBe(404)
     expect(httpStatusCode(bareService)).toBeNull()
     // httpx never reports 0; a 0 is "not recorded".
     expect(httpStatusCode(withMeta({ status_code: 0 }))).toBeNull()
@@ -64,7 +64,8 @@ describe('HTTP facts', () => {
   it('reads title and web server from both producers', () => {
     expect(pageTitle(sensorHttpService)).toBe('Example Shop | Home')
     expect(pageTitle(sensorHttpServiceNoTech)).toBeUndefined()
-    // The sensor puts the web server in service.name; sdk-go also sends web_server.
+    // The sensor puts the web server in service.name; sdk-go sends web_server,
+    // which every write path folds into `server`.
     expect(webServer(sensorHttpService)).toBe('nginx/1.25.3')
     expect(webServer(sdkLiveHost)).toBe('cloudflare')
     expect(webServer(withMeta({ server: 'Apache' }))).toBe('Apache')
@@ -84,16 +85,18 @@ describe('technologies', () => {
     expect(parseTechnology('Foo:Bar')).toEqual({ name: 'Foo:Bar' })
   })
 
-  it('reads the ingest key `technologies`, not the legacy singular', () => {
+  it('reads the schema key `technologies` (writes fold the singular into it)', () => {
     expect(technologies(sensorHttpService)).toEqual([
       { name: 'Nginx', version: '1.25.3' },
       { name: 'React' },
       { name: 'jQuery', version: '3.3.1' },
     ])
-    expect(technologies(withMeta({ technology: 'React, Node.js' }))).toEqual([
+    expect(technologies(withMeta({ technologies: ['React', 'Node.js'] }))).toEqual([
       { name: 'React' },
       { name: 'Node.js' },
     ])
+    // A synonym is folded on write, never read.
+    expect(technologies(withMeta({ technology: 'React' }))).toBeNull()
   })
 
   it('tells "probed, none found" from "never fingerprinted"', () => {
@@ -144,9 +147,9 @@ describe('network facts', () => {
     expect(dnsRecordTypes(sensorDnsDomain)).toEqual(['CNAME', 'A'])
   })
 
-  it('reads ASN from ip_address (number) and the form (string)', () => {
+  it('reads ASN from ip_address (number) and the flat keys (string)', () => {
     expect(asnInfo(ctisIpWithAsn)).toEqual({ asn: 'AS64502', org: 'Example Transit' })
-    expect(asnInfo(withMeta({ asn: 'AS64500', asn_organization: 'Example' }))).toEqual({
+    expect(asnInfo(withMeta({ asn: 'AS64500', asn_org: 'Example' }))).toEqual({
       asn: 'AS64500',
       org: 'Example',
     })
@@ -155,10 +158,8 @@ describe('network facts', () => {
 
   it('reads open ports, and tells "none open" from "not scanned"', () => {
     expect(openPorts(sensorIpWithPorts)?.map((p) => p.port)).toEqual([22, 80, 443, 8443])
-    expect(openPorts(withMeta({ open_ports: ['443/tcp', '53/udp'] }))).toEqual([
-      { port: 53, protocol: 'udp' },
-      { port: 443, protocol: 'tcp' },
-    ])
+    // A port is a service of its own, never a host property.
+    expect(openPorts(withMeta({ open_ports: ['443/tcp'] }))).toBeNull()
     expect(openPorts(withMeta({ ip_address: { ports: [] } }))).toEqual([])
     expect(openPorts(bareService)).toBeNull()
   })
