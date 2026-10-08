@@ -843,6 +843,27 @@ type SensorConfig struct {
 	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
 	CertMonitorCertSpotterURL string
 
+	// InvitationPurgeInterval is how often expired, unaccepted invitations
+	// (an email address and a token hash) are deleted. They can no longer be
+	// accepted or resent. INVITATION_PURGE_INTERVAL, default 1h.
+	InvitationPurgeInterval time.Duration
+
+	// AdminSessionPurgeInterval is how often platform-admin console sessions
+	// past their absolute expiry are deleted. ADMIN_SESSION_PURGE_INTERVAL,
+	// default 1h.
+	AdminSessionPurgeInterval time.Duration
+
+	// QuarantinePurgeInterval is how often reviewed (accepted or rejected)
+	// quarantined sensor results older than QuarantineRetention are deleted;
+	// pending items are never purged. SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL,
+	// default 24h.
+	QuarantinePurgeInterval time.Duration
+
+	// QuarantineRetention is how long a reviewed quarantined sensor result is
+	// kept after review. SENSOR_RESULT_QUARANTINE_RETENTION, default 720h
+	// (30 days); zero or negative means the default.
+	QuarantineRetention time.Duration
+
 	// LoadBalancing holds configuration for sensor load balancing weights.
 	LoadBalancing LoadBalancingConfig
 }
@@ -1259,6 +1280,10 @@ func Load() (*Config, error) {
 			EASMDNSInterval:             getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
 			EASMDNSMaxNamesPerRun:       getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
 			CertMonitorCertSpotterURL:   getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
+			InvitationPurgeInterval:     getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
+			AdminSessionPurgeInterval:   getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
+			QuarantinePurgeInterval:     getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
+			QuarantineRetention:         getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
