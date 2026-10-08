@@ -385,7 +385,7 @@ func (s *Service) GetOverviewStats(ctx context.Context, tenantID string) (*Overv
 	// Get scan run stats
 	pipelineStats, err := s.getScanRunStats(ctx, tid)
 	if err != nil {
-		s.logger.Warn("failed to get pipeline stats", "error", err)
+		s.logger.Warn("failed to get scan run stats", "error", err)
 	} else {
 		stats.ScanRuns = pipelineStats
 	}
