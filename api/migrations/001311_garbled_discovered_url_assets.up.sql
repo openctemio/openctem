@@ -86,7 +86,7 @@ BEGIN
             v_tail := substr(v_hostpath, length(v_host) + 1);
         END IF;
         IF v_host IS NULL OR v_host = '' OR v_host = '[]' THEN
-            RAISE NOTICE '001307: % (%): no host in the stored name, left as it is', r.id, r.name;
+            RAISE NOTICE 'garbled discovered URL: % (%): no host in the stored name, left as it is', r.id, r.name;
             v_skipped := v_skipped + 1;
             CONTINUE;
         END IF;
@@ -126,7 +126,7 @@ BEGIN
          ORDER BY (o.deleted_at IS NULL) DESC, (o.name = v_origin) DESC, (o.sub_type = 'http') DESC, o.created_at
          LIMIT 1;
         IF v_origin_id IS NOT NULL AND v_origin_del IS NOT NULL THEN
-            RAISE NOTICE '001307: % (%): origin % is a deleted asset, left as it is', r.id, r.name, v_origin;
+            RAISE NOTICE 'garbled discovered URL: % (%): origin % is a deleted asset, left as it is', r.id, r.name, v_origin;
             v_skipped := v_skipped + 1;
             CONTINUE;
         END IF;
@@ -163,8 +163,8 @@ BEGIN
            AND (keep_asset_id = r.id OR r.id = ANY (merge_asset_ids));
         DELETE FROM assets WHERE tenant_id = r.tenant_id AND id = r.id;
 
-        RAISE NOTICE '001307: % (%) -> GET % under %', r.id, r.name, v_template, v_origin;
+        RAISE NOTICE 'garbled discovered URL: % (%) -> GET % under %', r.id, r.name, v_template, v_origin;
         v_converted := v_converted + 1;
     END LOOP;
-    RAISE NOTICE '001307: % discovered-URL assets converted to web endpoints, % left as they are', v_converted, v_skipped;
+    RAISE NOTICE 'garbled discovered URL: % discovered-URL assets converted to web endpoints, % left as they are', v_converted, v_skipped;
 END $$;
