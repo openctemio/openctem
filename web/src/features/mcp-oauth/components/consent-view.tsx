@@ -151,7 +151,7 @@ export function ConsentView({ requestId }: ConsentViewProps) {
           {verified ? (
             <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden />
           ) : (
-            <ShieldQuestion className="h-4 w-4 text-amber-600" aria-hidden />
+            <ShieldQuestion className="h-4 w-4 text-warning" aria-hidden />
           )}
           <span>{clientKindLabel(request)}</span>
           {!verified && <Badge variant="outline">Unverified</Badge>}
@@ -196,7 +196,7 @@ export function ConsentView({ requestId }: ConsentViewProps) {
             {request.scopes.map((s) => (
               <li key={s.scope} className="flex items-start gap-2 text-sm">
                 {s.granted ? (
-                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />
                 ) : (
                   <X className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 )}
