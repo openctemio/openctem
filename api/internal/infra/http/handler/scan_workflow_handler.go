@@ -47,7 +47,7 @@ func NewScanWorkflowHandler(service *scanrun.Service, v *validator.Validator, lo
 	return &ScanWorkflowHandler{
 		service:   service,
 		validator: v,
-		logger:    log.With("handler", "pipeline"),
+		logger:    log.With("handler", "scan_workflow"),
 	}
 }
 
@@ -649,6 +649,10 @@ type ScanWorkflowGraphIssueResponse struct {
 	To      string `json:"to,omitempty"`
 	// Adapter is the capability that would connect an incompatible edge.
 	Adapter string `json:"adapter,omitempty"`
+	// Field is the step field the issue is about (tool, capabilities, config, step_key).
+	Field string `json:"field,omitempty"`
+	// Fix says how to resolve the issue.
+	Fix string `json:"fix,omitempty"`
 }
 
 // ScanWorkflowGraphValidationResponse is the outcome of a graph check. Errors
@@ -661,7 +665,7 @@ type ScanWorkflowGraphValidationResponse struct {
 
 // ValidateScanWorkflow handles POST /api/v1/scan-workflows/verify
 // @Summary      Validate a scan workflow graph
-// @Description  Checks a draft scan workflow's steps as a save would (step keys, tools, settings, then the graph against the capability contracts: typed connections, cycles, missing steps, intrusive steps fed derived targets, size). Stores nothing.
+// @Description  Checks a draft scan workflow's steps as a save would (step keys, tools, settings, then the graph against the capability contracts: typed connections, cycles, missing steps, intrusive steps fed derived targets, size) and reports every issue, anchored to its step and field. errors block a save; warnings (no online sensor offers a tool now) do not. A draft with issues is still a 200. Stores nothing.
 // @Tags         Scan workflows
 // @Accept       json
 // @Produce      json
@@ -685,7 +689,7 @@ func (h *ScanWorkflowHandler) ValidateScanWorkflow(w http.ResponseWriter, r *htt
 	for _, st := range req.Steps {
 		inputs = append(inputs, toAddStepInput(tenantID, "", st))
 	}
-	rep, err := h.service.ValidateGraph(r.Context(), scanrun.ValidateGraphInput{TenantID: tenantID, Steps: inputs})
+	rep, err := h.service.CheckSteps(r.Context(), scanrun.ValidateGraphInput{TenantID: tenantID, Steps: inputs})
 	if err != nil {
 		h.handleStepError(w, err)
 		return
@@ -709,6 +713,7 @@ func toGraphIssueResponse(is stage.GraphIssue) ScanWorkflowGraphIssueResponse {
 	return ScanWorkflowGraphIssueResponse{
 		Code: is.Code, Message: is.Message, Node: is.Node,
 		From: is.From, To: is.To, Adapter: string(is.Adapter),
+		Field: is.Field, Fix: is.Fix,
 	}
 }
 
@@ -1514,9 +1519,9 @@ func (h *ScanWorkflowHandler) handleServiceError(w http.ResponseWriter, err erro
 	case errors.Is(err, scanworkflow.ErrScanWorkflowRetired):
 		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRetired.Code), scanworkflow.ErrScanWorkflowRetired.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
-		apierror.NotFound("Pipeline").WriteJSON(w)
+		apierror.NotFound("Scan workflow").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
-		apierror.Conflict("Pipeline already exists").WriteJSON(w)
+		apierror.Conflict("A scan workflow with this name already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
@@ -1540,7 +1545,7 @@ func (h *ScanWorkflowHandler) handleStepError(w http.ResponseWriter, err error) 
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Step").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
-		apierror.Conflict("Step with this key already exists in the pipeline").WriteJSON(w)
+		apierror.Conflict("Another step of this scan workflow already uses this key").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
