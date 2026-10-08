@@ -21,7 +21,7 @@ import { isRequestId } from '../api/consent'
 
 /**
  * Confirms a change an AI application asked to make (RFC-062 §10). The
- * page is OpenCTEM's, outside the application: the agent cannot answer it.
+ * page is OpenCTEM's, outside the application: the AI application cannot answer it.
  * It shows the exact action as the server describes it; approving lets the
  * application run it once within five minutes.
  */
