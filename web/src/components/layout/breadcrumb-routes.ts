@@ -30,6 +30,7 @@ export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/admin/scanning',
   '/admin/security',
   '/admin/system',
+  '/assets/repositories',
   '/auth',
   '/auth/callback',
   '/auth/sso',

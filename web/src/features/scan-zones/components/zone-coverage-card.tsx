@@ -120,7 +120,7 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
             </h3>
             {canReadAssets && (
               <Button asChild variant="link" size="sm" className="h-auto p-0">
-                <Link href="/assets/ip-addresses">
+                <Link href="/assets?types=ip_address">
                   Asset inventory
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </Link>

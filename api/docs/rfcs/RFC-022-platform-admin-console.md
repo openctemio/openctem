@@ -501,7 +501,18 @@ add:
 
 Details: `docs/architecture/plans-and-limits.md`.
 
-## Revision 12: console layout, overview and search
+## Revision 12: idle Free workspaces
+
+A Free organization nobody signs in to is reminded at 60 days, read-only at
+90 (changes refused, reads and exports kept), warned again at 113 and due for
+deletion at 120; a sign-in by any member undoes it at once. The platform
+administrators are alerted at deletion_due and delete from the console;
+nothing is deleted automatically. Organizations > an organization shows the
+stage and lets an ops_admin+ exempt it with a reason (audited).
+
+Details: `docs/architecture/idle-workspaces.md`.
+
+## Revision 13: console layout, overview and search
 
 The console is organized by what an operator does, and opens on what needs
 them:

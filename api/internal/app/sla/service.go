@@ -15,6 +15,7 @@ package sla
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -175,6 +176,46 @@ func (s *Service) GetTenantDefaultPolicy(ctx context.Context, tenantID string) (
 	}
 
 	return s.repo.GetTenantDefault(ctx, parsedID)
+}
+
+// EffectivePolicy is the SLA policy that governs a tenant or an asset, and
+// whether it is the platform default (the tenant has configured none).
+type EffectivePolicy struct {
+	Policy          *sladom.Policy
+	PlatformDefault bool
+}
+
+// GetEffectiveTenantPolicy returns the tenant's default SLA policy, or the
+// platform default windows when the tenant has configured none. It is the
+// one source the console reads to state remediation windows.
+func (s *Service) GetEffectiveTenantPolicy(ctx context.Context, tenantID string) (*EffectivePolicy, error) {
+	p, err := s.GetTenantDefaultPolicy(ctx, tenantID)
+	return effectivePolicy(tenantID, p, err)
+}
+
+// GetEffectiveAssetPolicy returns the asset's override, else the tenant
+// default, else the platform default windows.
+func (s *Service) GetEffectiveAssetPolicy(ctx context.Context, tenantID, assetID string) (*EffectivePolicy, error) {
+	p, err := s.GetAssetSLAPolicy(ctx, tenantID, assetID)
+	return effectivePolicy(tenantID, p, err)
+}
+
+func effectivePolicy(tenantID string, p *sladom.Policy, err error) (*EffectivePolicy, error) {
+	if err == nil {
+		return &EffectivePolicy{Policy: p}, nil
+	}
+	if !errors.Is(err, sladom.ErrNotFound) && !errors.Is(err, shared.ErrNotFound) {
+		return nil, err
+	}
+	parsedID, perr := shared.IDFromString(tenantID)
+	if perr != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	def, derr := sladom.NewPolicy(parsedID, "Platform defaults")
+	if derr != nil {
+		return nil, derr
+	}
+	return &EffectivePolicy{Policy: def, PlatformDefault: true}, nil
 }
 
 // UpdatePolicyInput represents the input for updating an SLA policy.
