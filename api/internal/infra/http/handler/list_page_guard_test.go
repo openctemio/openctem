@@ -16,7 +16,8 @@ func TestListHandlersUseTheSharedPageParser(t *testing.T) {
 	for _, file := range []string{"scan_handler.go", "scan_workflow_handler.go",
 		"credential_import_handler.go", "finding_activity_handler.go", "outbox_handler.go",
 		"secretstore_handler.go", "template_source_handler.go",
-		"group_handler.go", "assignment_rule_handler.go", "scope_rule_handler.go", "ai_triage_handler.go"} {
+		"group_handler.go", "assignment_rule_handler.go", "scope_rule_handler.go", "ai_triage_handler.go",
+		"asset_service_handler.go", "asset_state_history_handler.go"} {
 		src, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)

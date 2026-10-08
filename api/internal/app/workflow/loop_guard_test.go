@@ -42,7 +42,7 @@ func TestLoopBlocked(t *testing.T) {
 // The cause survives a JSON round trip (trigger data and scan run contexts
 // are stored as JSONB), and a run's steps cause events one level deeper.
 func TestAutomationCause_RoundTripAndDepth(t *testing.T) {
-	c := AutomationCause{RunID: shared.NewID(), WorkflowID: shared.NewID(), ChainDepth: 2}
+	c := AutomationCause{RunID: shared.NewID(), WorkflowID: shared.NewID(), NodeKey: "scan-1", ChainDepth: 2}
 	raw, _ := json.Marshal(withCause(map[string]any{"x": 1}, &c))
 	var back map[string]any
 	_ = json.Unmarshal(raw, &back)
@@ -51,11 +51,11 @@ func TestAutomationCause_RoundTripAndDepth(t *testing.T) {
 		t.Fatalf("round trip = %+v %v, want %+v", got, ok, c)
 	}
 	run, _ := workflowdom.NewRun(shared.NewID(), shared.NewID(), workflowdom.TriggerTypeFindingStatusChanged, back)
-	if s := stepCause(run); s.ChainDepth != 3 || s.WorkflowID != run.WorkflowID || s.RunID != run.ID {
+	if s := stepCause(run, "notify"); s.ChainDepth != 3 || s.WorkflowID != run.WorkflowID || s.RunID != run.ID || s.NodeKey != "notify" {
 		t.Fatalf("step cause = %+v, want depth 3 from this run", s)
 	}
 	plain, _ := workflowdom.NewRun(shared.NewID(), shared.NewID(), workflowdom.TriggerTypeManual, nil)
-	if stepCause(plain).ChainDepth != 1 {
+	if stepCause(plain, "a").ChainDepth != 1 {
 		t.Fatal("a run no automation caused is depth 0; its steps cause depth 1")
 	}
 }
@@ -80,7 +80,7 @@ func TestLoopGuard_PingPongStopsAtChainDepth(t *testing.T) {
 			t.Fatal("no loop guard: runs keep starting")
 		}
 		run, _ := workflowdom.NewRun(in.WorkflowID, in.TenantID, in.TriggerType, in.TriggerData)
-		cause := stepCause(run)
+		cause := stepCause(run, "set-status")
 		return d.DispatchFindingEvent(ctx, FindingEvent{TenantID: tenant, Finding: f,
 			EventType: workflowdom.TriggerTypeFindingStatusChanged, Cause: &cause})
 	}
