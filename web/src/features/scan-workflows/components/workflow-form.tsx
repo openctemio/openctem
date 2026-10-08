@@ -23,7 +23,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -39,7 +38,6 @@ import {
   GripVertical,
   Clock,
   Settings,
-  Zap,
   Tag,
   Play,
   ChevronRight,
@@ -50,13 +48,10 @@ import {
 import {
   type ScanWorkflow,
   type CreateScanWorkflowRequest,
-  type ScanWorkflowTrigger,
-  SCAN_RUN_TRIGGERS,
-  SCAN_RUN_TRIGGER_LABELS,
+  type UpdateScanWorkflowRequest,
   SCAN_WORKFLOW_SENSOR_PREFERENCES,
   SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
   SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS,
-  type ScanWorkflowTriggerType,
   type ScanWorkflowSensorPreference,
   type UIPosition,
   DEFAULT_SCAN_WORKFLOW_SETTINGS,
@@ -82,23 +77,18 @@ interface StepFormData {
   config?: Record<string, unknown>
 }
 
-interface TriggerFormData {
-  type: ScanWorkflowTriggerType
-  schedule?: string
-}
-
 interface WorkflowFormProps {
   workflow?: ScanWorkflow | null
-  onSubmit: (data: CreateScanWorkflowRequest) => Promise<void>
+  /** A new workflow gets its steps; an edit never sends steps (see wizardSteps). */
+  onSubmit: (data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest) => Promise<void>
   onCancel: () => void
   isSubmitting?: boolean
 }
 
-type WizardStep = 'basics' | 'triggers' | 'steps' | 'settings'
+type WizardStep = 'basics' | 'steps' | 'settings'
 
 const WIZARD_STEPS: { id: WizardStep; label: string; icon: React.ReactNode }[] = [
   { id: 'basics', label: 'Basics', icon: <Info className="h-4 w-4" /> },
-  { id: 'triggers', label: 'Triggers', icon: <Zap className="h-4 w-4" /> },
   { id: 'steps', label: 'Steps', icon: <Play className="h-4 w-4" /> },
   { id: 'settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
 ]
@@ -284,11 +274,6 @@ export function ScanWorkflowForm({
   const [description, setDescription] = useState(workflow?.description || '')
   const [tagInput, setTagInput] = useState('')
   const [tags, setTags] = useState<string[]>(workflow?.tags || [])
-  const [triggers, setTriggers] = useState<TriggerFormData[]>(
-    workflow?.triggers?.length
-      ? workflow.triggers.map((t) => ({ type: t.type, schedule: t.schedule }))
-      : [{ type: 'manual' as ScanWorkflowTriggerType }]
-  )
   const [steps, setSteps] = useState<StepFormData[]>(
     workflow?.steps?.length
       ? workflow.steps.map((s) => ({
@@ -349,9 +334,6 @@ export function ScanWorkflowForm({
   const [sensorPreference, setSensorPreference] = useState<ScanWorkflowSensorPreference>(
     workflow?.settings?.sensor_preference || 'auto'
   )
-  const [notifyOnFailure, setNotifyOnFailure] = useState(
-    workflow?.settings?.notify_on_failure ?? true
-  )
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   // Sync form state when workflow prop changes (e.g., after fetching full workflow with steps)
@@ -360,11 +342,6 @@ export function ScanWorkflowForm({
       setName(workflow.name || '')
       setDescription(workflow.description || '')
       setTags(workflow.tags || [])
-      setTriggers(
-        workflow.triggers?.length
-          ? workflow.triggers.map((t) => ({ type: t.type, schedule: t.schedule }))
-          : [{ type: 'manual' as ScanWorkflowTriggerType }]
-      )
       const newSteps = workflow.steps?.length
         ? workflow.steps.map((s) => ({
             id: s.id || generateId(),
@@ -392,14 +369,17 @@ export function ScanWorkflowForm({
       setTimeoutSeconds(workflow.settings?.timeout_seconds || 3600)
       setMaxParallelSteps(workflow.settings?.max_parallel_steps || 3)
       setSensorPreference(workflow.settings?.sensor_preference || 'auto')
-      setNotifyOnFailure(workflow.settings?.notify_on_failure ?? true)
     }
   }, [workflow])
 
   const isEditing = !!workflow
-  const currentStepIndex = WIZARD_STEPS.findIndex((s) => s.id === currentStep)
+  // An existing workflow's steps are edited in the visual builder only: this
+  // form shows a few fields of each step, and saving its copy replaced the
+  // others (prefer_tools, conditions, config...).
+  const wizardSteps = isEditing ? WIZARD_STEPS.filter((s) => s.id !== 'steps') : WIZARD_STEPS
+  const currentStepIndex = wizardSteps.findIndex((s) => s.id === currentStep)
   const isFirstStep = currentStepIndex === 0
-  const isLastStep = currentStepIndex === WIZARD_STEPS.length - 1
+  const isLastStep = currentStepIndex === wizardSteps.length - 1
 
   const validateStep = (step: WizardStep): boolean => {
     const newErrors: Record<string, string> = {}
@@ -435,13 +415,13 @@ export function ScanWorkflowForm({
   const handleNext = () => {
     if (!validateStep(currentStep)) return
     if (!isLastStep) {
-      setCurrentStep(WIZARD_STEPS[currentStepIndex + 1].id)
+      setCurrentStep(wizardSteps[currentStepIndex + 1].id)
     }
   }
 
   const handleBack = () => {
     if (!isFirstStep) {
-      setCurrentStep(WIZARD_STEPS[currentStepIndex - 1].id)
+      setCurrentStep(wizardSteps[currentStepIndex - 1].id)
     }
   }
 
@@ -449,17 +429,34 @@ export function ScanWorkflowForm({
     e.preventDefault()
 
     // Validate all steps
-    for (const step of WIZARD_STEPS) {
+    for (const step of wizardSteps) {
       if (!validateStep(step.id)) {
         setCurrentStep(step.id)
         return
       }
     }
 
-    const data: CreateScanWorkflowRequest = {
+    const base = {
       name,
       description: description || undefined,
-      triggers: triggers as ScanWorkflowTrigger[],
+      tags,
+      // settings is full-replaced by the backend; the wizard edits 3 of the
+      // keys, so spread the loaded settings (or defaults) first to keep fail_fast.
+      settings: {
+        ...(workflow?.settings ?? DEFAULT_SCAN_WORKFLOW_SETTINGS),
+        timeout_seconds: timeoutSeconds,
+        max_parallel_steps: maxParallelSteps,
+        sensor_preference: sensorPreference,
+      },
+    }
+    if (isEditing) {
+      const update: UpdateScanWorkflowRequest = base
+      await onSubmit(update)
+      return
+    }
+
+    const data: CreateScanWorkflowRequest = {
+      ...base,
       steps: steps.map((s, idx) => ({
         step_key: s.step_key,
         name: s.name,
@@ -475,17 +472,6 @@ export function ScanWorkflowForm({
         ...(s.ui_position ? { ui_position: s.ui_position } : {}),
         ...(s.config ? { config: s.config } : {}),
       })),
-      tags,
-      // settings is full-replaced by the backend; the wizard only edits 4 of the
-      // keys, so spread the loaded settings (or defaults) first to avoid zeroing
-      // fail_fast / retry_failed_steps / notify_on_complete / notification_channels.
-      settings: {
-        ...(workflow?.settings ?? DEFAULT_SCAN_WORKFLOW_SETTINGS),
-        timeout_seconds: timeoutSeconds,
-        max_parallel_steps: maxParallelSteps,
-        sensor_preference: sensorPreference,
-        notify_on_failure: notifyOnFailure,
-      },
     }
 
     await onSubmit(data)
@@ -531,23 +517,6 @@ export function ScanWorkflowForm({
     setSteps(updated)
   }
 
-  // Trigger handlers
-  const addTrigger = () => {
-    setTriggers([...triggers, { type: 'manual' }])
-  }
-
-  const removeTrigger = (index: number) => {
-    if (triggers.length > 1) {
-      setTriggers(triggers.filter((_, i) => i !== index))
-    }
-  }
-
-  const updateTrigger = (index: number, field: keyof TriggerFormData, value: unknown) => {
-    const updated = [...triggers]
-    updated[index] = { ...updated[index], [field]: value }
-    setTriggers(updated)
-  }
-
   return (
     <form onSubmit={handleSubmit} className="flex flex-col">
       {/* Tabs Navigation */}
@@ -557,7 +526,7 @@ export function ScanWorkflowForm({
         className="flex flex-col"
       >
         <TabsList className="mb-4">
-          {WIZARD_STEPS.map((step) => (
+          {wizardSteps.map((step) => (
             <TabsTrigger
               key={step.id}
               value={step.id}
@@ -634,72 +603,6 @@ export function ScanWorkflowForm({
           </div>
         </TabsContent>
 
-        {/* Step 2: Triggers */}
-        <TabsContent value="triggers" className="space-y-4 mt-0">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-medium">Workflow Triggers</h3>
-              <p className="text-xs text-muted-foreground">Define how this workflow starts</p>
-            </div>
-            <Button type="button" variant="outline" size="sm" onClick={addTrigger}>
-              <Plus className="me-2 h-3 w-3" />
-              Add
-            </Button>
-          </div>
-
-          <div className="space-y-3">
-            {triggers.map((trigger, index) => (
-              <div key={index} className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
-                <div className="flex-1 space-y-3">
-                  <Select
-                    value={trigger.type}
-                    onValueChange={(v) =>
-                      updateTrigger(index, 'type', v as ScanWorkflowTriggerType)
-                    }
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Select trigger" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SCAN_RUN_TRIGGERS.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {SCAN_RUN_TRIGGER_LABELS[type]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  {trigger.type === 'schedule' && (
-                    <div className="space-y-1">
-                      <Input
-                        placeholder="0 0 * * * (cron expression)"
-                        value={trigger.schedule || ''}
-                        onChange={(e) => updateTrigger(index, 'schedule', e.target.value)}
-                        className="h-9 font-mono text-sm"
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        Format: minute hour day month weekday
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {triggers.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeTrigger(index)}
-                    className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </TabsContent>
-
         {/* Step 3: Workflow Steps */}
         <TabsContent value="steps" className="space-y-4 mt-0">
           <div className="flex items-center justify-between">
@@ -757,7 +660,9 @@ export function ScanWorkflowForm({
                 value={timeoutSeconds}
                 onChange={(e) => setTimeoutSeconds(parseInt(e.target.value) || 3600)}
               />
-              <p className="text-xs text-muted-foreground">Max time for entire workflow</p>
+              <p className="text-xs text-muted-foreground">
+                Max time for a run of this workflow; a scan&apos;s own timeout wins
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -798,18 +703,6 @@ export function ScanWorkflowForm({
             <p className="text-xs text-muted-foreground">
               {SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS[sensorPreference]}
             </p>
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border p-4">
-            <div className="space-y-0.5">
-              <Label className="text-sm">Notify on Failure</Label>
-              <p className="text-xs text-muted-foreground">Send alerts when workflow fails</p>
-            </div>
-            <Switch
-              aria-label="Notify on Failure"
-              checked={notifyOnFailure}
-              onCheckedChange={setNotifyOnFailure}
-            />
           </div>
         </TabsContent>
       </Tabs>

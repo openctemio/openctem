@@ -399,7 +399,6 @@ export type {
   // Workflow types
   ScanWorkflow,
   ScanWorkflowStep,
-  ScanWorkflowTrigger,
   ScanWorkflowSettings,
   ScanWorkflowListFilters,
   ScanWorkflowListResponse,

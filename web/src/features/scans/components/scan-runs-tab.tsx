@@ -34,7 +34,14 @@ import { Can, Permission } from '@/lib/permissions'
 import { useScanRuns, useScanManagementStats } from '@/lib/api/scan-workflow-hooks'
 import type { ScanRun, ScanRunListFilters } from '@/lib/api/scan-workflow-types'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
-import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
+import {
+  RUN_KIND_FILTERS,
+  elapsedMs,
+  runKindLabel,
+  runSubjectFindingId,
+  runTaskProgress,
+} from '@/features/scans/lib/run-display'
+import { replaceUrlSearch } from '@/hooks/use-url-param'
 import {
   DEFAULT_RUN_SORT,
   DEFAULT_SCAN_PAGE_SIZE,
@@ -67,6 +74,7 @@ export const RUN_STATUS_FILTERS = [
 ] as const
 
 type RunStatusFilterValue = (typeof RUN_STATUS_FILTERS)[number]['value']
+type RunKindFilterValue = (typeof RUN_KIND_FILTERS)[number]['value']
 
 export const RUNS_PAGE_SIZE = DEFAULT_SCAN_PAGE_SIZE
 
@@ -93,14 +101,29 @@ function ScanRunsTable() {
     defaultPageSize: RUNS_PAGE_SIZE,
     sortFields: RUN_SORT_FIELDS,
     defaultSort: DEFAULT_RUN_SORT,
-    filters: { status: 'all', scan_id: '' },
+    filters: { status: 'all', scan_id: '', kind: 'all' },
   })
   const statusFilter = (
     RUN_STATUS_FILTERS.some((f) => f.value === list.filters.status) ? list.filters.status : 'all'
   ) as RunStatusFilterValue
+  const kindFilter = (
+    RUN_KIND_FILTERS.some((f) => f.value === list.filters.kind) ? list.filters.kind : 'all'
+  ) as RunKindFilterValue
   const scanFilter = list.filters.scan_id
   const { pagination, sorting, perPage } = list
-  const [openRunId, setOpenRunId] = useState<string | null>(null)
+  // A link to one run (a retest's "View run") opens it: /scans/runs?run=<id>.
+  // Opening a row does not touch the list's URL; closing drops ?run.
+  const [openRunId, setOpenRunId] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('run')
+  )
+  const closeRun = () => {
+    setOpenRunId(null)
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('run')) {
+      params.delete('run')
+      replaceUrlSearch(params)
+    }
+  }
   const [exporting, setExporting] = useState(false)
 
   const swrConfig = useMemo(
@@ -113,6 +136,7 @@ function ScanRunsTable() {
   const filters: ScanRunListFilters = {
     status: statusFilter === 'all' ? undefined : statusFilter,
     scan_id: scanFilter || undefined,
+    kind: kindFilter === 'all' ? undefined : kindFilter,
     sort: list.sort,
     page: list.page,
     per_page: perPage,
@@ -135,6 +159,23 @@ function ScanRunsTable() {
         enableSorting: false,
         cell: ({ row }) => {
           const run = row.original
+          const findingId = runSubjectFindingId(run)
+          if (run.kind && run.kind !== 'scan' && run.kind !== 'quick') {
+            return (
+              <div className="space-y-0.5">
+                <span className="font-medium">{runKindLabel(run.kind)}</span>
+                {findingId && (
+                  <Link
+                    href={`/findings/${encodeURIComponent(findingId)}`}
+                    className="block text-xs text-muted-foreground hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Open finding
+                  </Link>
+                )}
+              </div>
+            )
+          }
           if (!run.scan_id) {
             return <span className="text-muted-foreground">Scan run</span>
           }
@@ -326,6 +367,18 @@ function ScanRunsTable() {
           ))}
         </SelectContent>
       </Select>
+      <Select value={kindFilter} onValueChange={(v) => setFilter('kind', v)}>
+        <SelectTrigger className="h-9 w-auto min-w-32" aria-label="Filter runs by kind">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {RUN_KIND_FILTERS.map((f) => (
+            <SelectItem key={f.value} value={f.value}>
+              {f.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       {scanFilter && (
         <Button
           variant="secondary"
@@ -341,7 +394,7 @@ function ScanRunsTable() {
     </div>
   )
 
-  const filtered = statusFilter !== 'all'
+  const filtered = statusFilter !== 'all' || kindFilter !== 'all'
 
   // Exports the list as filtered and sorted, through the same endpoint.
   const exportRuns = async () => {
@@ -354,6 +407,7 @@ function ScanRunsTable() {
       } = await fetchRunsForExport({
         status: filters.status,
         scan_id: filters.scan_id,
+        kind: filters.kind,
         sort: filters.sort,
       })
       if (exportToCsv(all, RUN_EXPORT_FIELDS, 'scan-runs') && capped) {
@@ -419,17 +473,17 @@ function ScanRunsTable() {
             sorting={sorting}
             onSortingChange={list.setSorting}
             paginationNoun="runs"
-            emptyMessage={filtered ? 'No runs with this status' : 'No scan runs yet'}
+            emptyMessage={filtered ? 'No runs match these filters' : 'No scan runs yet'}
             emptyDescription={
               filtered
-                ? 'Try another status.'
+                ? 'Try another status or kind.'
                 : 'Runs appear here once a scan configuration or quick scan starts.'
             }
           />
         )}
       </div>
 
-      <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
+      <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && closeRun()} />
     </>
   )
 }

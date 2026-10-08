@@ -232,6 +232,50 @@ describe('ScanRunsTab', () => {
     expect(exportToCsvMock).toHaveBeenCalled()
   })
 
+  it('filters by kind through the URL and the API', () => {
+    urlState.kind = 'retest'
+    render(<ScanRunsTab />)
+    expect(workflowRunsCalls.at(-1)).toMatchObject({ kind: 'retest', page: 1 })
+  })
+
+  it('ignores an unknown kind in a link', () => {
+    urlState.kind = 'system'
+    render(<ScanRunsTab />)
+    expect(workflowRunsCalls.at(-1)?.kind).toBeUndefined()
+  })
+
+  it('names a retest run and links its finding', () => {
+    runsResponse = {
+      data: [
+        run({
+          id: 'rt1',
+          kind: 'retest',
+          scan_id: undefined,
+          scan_workflow_id: undefined,
+          subject: { finding_id: 'f-9', retest_id: 'x' },
+          error_message: undefined,
+        }),
+      ],
+      total: 1,
+      page: 1,
+      per_page: 25,
+      total_pages: 1,
+    }
+    render(<ScanRunsTab />)
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('Retest')).toBeInTheDocument()
+    expect(within(table).getByRole('link', { name: 'Open finding' })).toHaveAttribute(
+      'href',
+      '/findings/f-9'
+    )
+  })
+
+  it('opens the run a link names and drops it from the URL on close', () => {
+    window.history.replaceState(null, '', '/scans/runs?run=rt7')
+    render(<ScanRunsTab />)
+    expect(screen.getByTestId('run-sheet')).toHaveTextContent('rt7')
+  })
+
   it('explains the missing permission instead of showing an empty table', () => {
     canReadScanRuns = false
     render(<ScanRunsTab />)
