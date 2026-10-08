@@ -171,7 +171,7 @@ api↔ui seam itself. Keep the other four repos separate.
 
 ## Decision
 
-- [x] Consolidate **api + ui**, history-preserving: approved, shipped as `openctemio/openctem` (owner decisions D1–D10, 2026-10-02).
+- [x] Consolidate **api + ui**, history-preserving: approved, shipped as `openctemio/openctem` (decisions D1–D10, 2026-10-02).
 - [x] Keep separate: sensor (formerly agent), sdk-go, ctis, helm-charts (and docs).
 - [x] Contract codegen: API wire types generated from the spec; permission constants still to do.
 
