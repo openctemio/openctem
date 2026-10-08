@@ -72,7 +72,7 @@ const APPROVAL_BADGE_STYLES: Record<ApprovalStatus, string> = {
   approved: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
   rejected: 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30',
   canceled: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30',
-  expired: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30',
+  expired: 'bg-muted text-muted-foreground border-border',
 }
 
 const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
