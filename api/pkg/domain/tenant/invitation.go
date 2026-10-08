@@ -26,7 +26,17 @@ type Invitation struct {
 	expiresAt  time.Time
 	acceptedAt *time.Time
 	createdAt  time.Time
+
+	// access is what an external invitee gets (expiry and its reason); it
+	// becomes the membership's on acceptance.
+	access ExternalAccess
 }
+
+// Access returns the access the inviter set for an external invitee.
+func (i *Invitation) Access() ExternalAccess { return i.access }
+
+// SetAccess records the access for an external invitee.
+func (i *Invitation) SetAccess(a ExternalAccess) { i.access = a }
 
 // NewInvitation creates a new Invitation.
 // invitedBy is the local user ID (from users table) of the person sending the invitation.
@@ -209,4 +219,11 @@ func generateToken() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
+// LimitRoles replaces the role set granted on acceptance (an external
+// invitee joins as a viewer whatever the invitation said).
+func (i *Invitation) LimitRoles(roleIDs []string, role Role) {
+	i.roleIDs = append([]string(nil), roleIDs...)
+	i.role = role
 }
