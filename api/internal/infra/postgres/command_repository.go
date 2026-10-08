@@ -58,9 +58,9 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 			is_platform_job, platform_sensor_id,
 			auth_token_hash, auth_token_prefix, auth_token_expires_at,
 			queue_priority, queued_at, dispatch_attempts, scan_zone_id, freeze_override,
-			host_keys
+			host_keys, dispatch_gate
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -92,6 +92,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 		nullIDString(cmd.ScanZoneID),
 		cmd.FreezeOverride,
 		hostKeysArg(cmd.HostKeys),
+		dispatchGateArg(cmd.DispatchGate),
 	)
 
 	if err != nil {
@@ -713,7 +714,7 @@ func (r *CommandRepository) selectQuery() string {
 		       is_platform_job, platform_sensor_id,
 		       auth_token_hash, auth_token_prefix, auth_token_expires_at,
 		       queue_priority, queued_at, dispatch_attempts, scan_zone_id,
-		       lease_epoch, lease_expires_at
+		       lease_epoch, lease_expires_at, dispatch_gate
 		FROM commands
 	`
 }
@@ -792,6 +793,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		dispatchAttempts   int
 		scanZoneID         sql.NullString
 		leaseExpiresAt     sql.NullTime
+		dispatchGate       []byte
 	)
 
 	var errorMessage sql.NullString
@@ -825,6 +827,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		&scanZoneID,
 		&cmd.LeaseEpoch,
 		&leaseExpiresAt,
+		&dispatchGate,
 	)
 
 	if err != nil {
@@ -912,6 +915,7 @@ func (r *CommandRepository) scanCommand(row *sql.Row) (*command.Command, error) 
 		zid, _ := shared.IDFromString(scanZoneID.String)
 		cmd.ScanZoneID = &zid
 	}
+	cmd.DispatchGate = decodeDispatchGate(dispatchGate)
 
 	return cmd, nil
 }
@@ -945,6 +949,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		dispatchAttempts   int
 		scanZoneID         sql.NullString
 		leaseExpiresAt     sql.NullTime
+		dispatchGate       []byte
 	)
 
 	var errorMessage sql.NullString
@@ -978,6 +983,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		&scanZoneID,
 		&cmd.LeaseEpoch,
 		&leaseExpiresAt,
+		&dispatchGate,
 	)
 
 	if err != nil {
@@ -1062,6 +1068,7 @@ func (r *CommandRepository) scanCommandFromRows(rows *sql.Rows) (*command.Comman
 		zid, _ := shared.IDFromString(scanZoneID.String)
 		cmd.ScanZoneID = &zid
 	}
+	cmd.DispatchGate = decodeDispatchGate(dispatchGate)
 
 	return cmd, nil
 }
