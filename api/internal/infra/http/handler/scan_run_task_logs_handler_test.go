@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -28,6 +29,16 @@ func (f *fakeTaskLogs) ListForRunTask(_ context.Context, tenantID, runID, comman
 	return f.page, nil
 }
 
+// fakeRuns knows one run per tenant (a scan run: no extra access check).
+type fakeRuns struct{ tenant, run shared.ID }
+
+func (f fakeRuns) GetRun(_ context.Context, tenantID, runID string) (*scanrundom.Run, error) {
+	if tenantID != f.tenant.String() || runID != f.run.String() {
+		return nil, shared.ErrNotFound
+	}
+	return &scanrundom.Run{ID: f.run, TenantID: f.tenant, Kind: scanrundom.RunKindScan}, nil
+}
+
 func taskLogsRequest(tenant shared.ID, run, task string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scan-runs/"+run+"/tasks/"+task+"/logs", nil)
 	rc := chi.NewRouteContext()
@@ -42,6 +53,7 @@ func TestGetRunTaskLogs(t *testing.T) {
 		page: commandlog.Page{Truncated: true, Lines: []commandlog.Line{{TS: time.Unix(10, 0).UTC(), Level: "warn", Msg: "<b>x</b>", Source: "nuclei"}}}}
 	h := NewScanWorkflowHandler(nil, nil, logger.NewNop())
 	h.SetTaskLogs(f)
+	h.SetRunReader(fakeRuns{tenant: f.tenant, run: f.run})
 
 	w := httptest.NewRecorder()
 	h.GetRunTaskLogs(w, taskLogsRequest(f.tenant, f.run.String(), f.task.String()))
