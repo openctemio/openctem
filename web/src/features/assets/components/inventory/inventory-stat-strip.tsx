@@ -14,8 +14,8 @@
  * and faking one from the current page would misrepresent the tenant total. The
  * "Stale >30d" view still covers that filter.
  *
- * Typed mode (research/77): the counts are the type's, the first metric is
- * named after it ("Hosts") and keeps the type when clicked, and each of the
+ * Typed mode (research/77): the counts are the type's (or the lens's), the
+ * first metric is named after it ("Hosts") and keeps it when clicked, and each of the
  * type's yes/no attributes adds a metric ("Virtual machine", "MFA") counting
  * the assets where it is true, a click filtering to them.
  */
@@ -23,6 +23,7 @@
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import type { AssetStatsData } from '../../hooks/use-assets'
 import {
+  HIGH_RISK_SCORE,
   isInventoryFilterEmpty,
   togglePropertyFilter,
   type InventoryFilters,
@@ -44,7 +45,7 @@ interface StatStripProps {
   isLoading?: boolean
   onChange: (next: InventoryFilters) => void
   className?: string
-  /** Typed mode: the type's plural ("Hosts"). */
+  /** Typed or lens mode: the type's plural ("Hosts") or the lens's label. */
   typeLabel?: string
   /** Typed mode: the type's yes/no attributes to count. */
   boolFacets?: { key: string; label: string }[]
@@ -66,12 +67,12 @@ export function InventoryStatStrip({
       label: typeLabel ?? 'All assets',
       value: stats.total,
       active: isInventoryFilterEmpty(
-        typed ? { ...filters, types: undefined, subType: undefined } : filters
+        typed ? { ...filters, types: undefined, subType: undefined, lens: undefined } : filters
       ),
-      // Clears every filter (keeps sort + page size, and the type when typed).
+      // Clears every filter (keeps sort + page size, and the type or lens when typed).
       toggle: (f) =>
         typed
-          ? { types: f.types, subType: f.subType, sort: f.sort, pageSize: f.pageSize }
+          ? { types: f.types, subType: f.subType, lens: f.lens, sort: f.sort, pageSize: f.pageSize }
           : { sort: f.sort, pageSize: f.pageSize },
     },
     {
@@ -106,6 +107,16 @@ export function InventoryStatStrip({
         f.hasOwner === false
           ? { ...f, hasOwner: undefined, page: 1 }
           : { ...f, hasOwner: false, page: 1 },
+    },
+    {
+      id: 'high-risk',
+      label: 'High risk',
+      value: stats.highRiskCount,
+      active: filters.minRiskScore === HIGH_RISK_SCORE,
+      toggle: (f) =>
+        f.minRiskScore === HIGH_RISK_SCORE
+          ? { ...f, minRiskScore: undefined, page: 1 }
+          : { ...f, minRiskScore: HIGH_RISK_SCORE, page: 1 },
     },
     {
       id: 'with-findings',

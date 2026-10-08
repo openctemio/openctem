@@ -169,6 +169,17 @@ describe('/account pages are ungated', () => {
   }
 })
 
+// CI trust, gate policy and break-glass live on the CI/CD integration page
+// (/ci-cd, Trust and gate tab). The old settings copy is gone, with no
+// redirect, and must not come back beside it.
+describe('CI/CD settings have one home', () => {
+  it('has no /settings/scanning/ci page, nav item or route guard', () => {
+    expect(findPageFile('/settings/scanning/ci')).toBeNull()
+    expect(settingsNavItems.some((i) => i.url === '/settings/scanning/ci')).toBe(false)
+    expect(matchRoutePermission('/settings/scanning/ci')).toBeUndefined()
+  })
+})
+
 describe('settings shell', () => {
   it('owns /settings, /account and every item url (with sub-pages)', () => {
     for (const p of [

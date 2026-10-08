@@ -1,14 +1,15 @@
 package command
 
 // The claim-time scope re-check (docs/architecture/active-probe-gate.md,
-// "Re-check at claim"): a scan job can wait in the queue while its scope
+// "Re-check at claim"): a probing job (scan, validate, retest, connector
+// scan) can wait in the queue while its scope
 // changes (an exclusion added, a scope entry removed or its tier lowered, an
 // asset's ownership rejected, a scan zone deleted or shrunk, the actor's act
-// scope revoked). Before a sensor gets a scan command, its targets pass the
+// scope revoked). Before a sensor gets such a command, its targets pass the
 // dispatch gate again with the inputs recorded when it was created
 // (commanddom.DispatchGate). Targets the gate now refuses are taken out of
-// the job; a job left with none is failed with SCOPE_CHANGED, and its step
-// hears about it. A gate that cannot decide withholds the job (fail closed):
+// the job; a job left with none is failed with SCOPE_CHANGED, and what
+// waits on it (step, validation run, retest) hears about it. A gate that cannot decide withholds the job (fail closed):
 // it stays pending for a later claim, and the command TTL is the backstop.
 //
 // One enforcement point: Poll, Claim and Acknowledge (claim by id) all call
@@ -22,7 +23,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -40,10 +40,11 @@ type ScopeGate interface {
 	ResolveDispatchTargets(ctx context.Context, in scanapp.DispatchTargetsInput) (*scanapp.DispatchTargets, error)
 }
 
-// StepFailer is told when the re-check failed a step's command
-// (scanrun.Service.OnStepFailed).
-type StepFailer interface {
-	OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error
+// FailureObserver is told about a command the re-check failed, to settle
+// what waits on it as a sensor's failure would: the scan step, the
+// validation run, the retest (the command handler, OnCommandFailed).
+type FailureObserver interface {
+	OnCommandFailed(ctx context.Context, cmd *commanddom.Command, message, code string)
 }
 
 // ScopeRecheckStore writes the re-check's outcome (the command repository).
@@ -54,22 +55,20 @@ type ScopeRecheckStore interface {
 }
 
 // WithScopeRecheck makes Poll, Claim and Acknowledge re-check the targets of
-// every scan command with g before a sensor gets it. Without it no command
+// every command that records a dispatch gate (and every scan command) with
+// g before a sensor gets it. Without it no command
 // is re-checked.
 func WithScopeRecheck(g ScopeGate) Option {
 	return func(s *Service) { s.scopeGate = g }
 }
 
-// SetStepFailer wires the step a re-check fails (the scan run service is
-// built after the command service).
-func (s *Service) SetStepFailer(f StepFailer) { s.stepFailer = f }
+// SetFailureObserver wires who hears about a command the re-check failed
+// (the command handler is built after the command service).
+func (s *Service) SetFailureObserver(o FailureObserver) { s.failures = o }
 
 // maxRecheckTargets bounds one gate call (the gate's per-run limit); a
 // larger batch of commands is split.
 const maxRecheckTargets = 10000
-
-// stepFailTimeout bounds the step failure report of a re-check.
-const stepFailTimeout = 30 * time.Second
 
 // ErrScopeChanged: every target of the command was refused when it was
 // claimed. It reads as "claimed" (command-claimed), so the sensor drops it;
@@ -203,7 +202,8 @@ func (s *Service) recheckBatch(ctx context.Context, tenantID shared.ID, sensorID
 	g := jobs[0].gate
 	tier := scopedom.Tier(g.Tier)
 	in := scanapp.DispatchTargetsInput{
-		TenantID: tenantID, SensorID: sensorID, AllowNonNetworkTargets: true, Path: "claim_recheck",
+		TenantID: tenantID, SensorID: sensorID, Path: "claim_recheck",
+		AllowNonNetworkTargets: !g.Validated, SkipZoneRouting: g.NoZoneRouting,
 		Tier: &tier, PassiveOnly: g.Passive, ActScope: g.ActScope,
 	}
 	if g.ActScope && g.Actor != "" {
@@ -327,7 +327,7 @@ func (s *Service) settle(ctx context.Context, j recheckJob, v targetVerdict,
 		outcomes[j.cmd.ID] = recheckFailed
 		log.Warn("SECURITY: scan job failed at claim: its scope changed and no target may be scanned",
 			"refused", len(refused), "codes", refusalCodes(refused))
-		s.reportScopeChanged(j.cmd, msg)
+		s.reportScopeChanged(ctx, j.cmd, msg)
 		return
 	}
 	payload, err := narrowPayload(j.cmd.Payload, kept)
@@ -353,25 +353,15 @@ func (s *Service) settle(ctx context.Context, j recheckJob, v targetVerdict,
 		"refused", len(refused), "kept", len(kept), "codes", refusalCodes(refused))
 }
 
-// reportScopeChanged fails the step of a command the re-check failed, in the
-// background (the claim does not wait for the run to settle).
-func (s *Service) reportScopeChanged(cmd *commanddom.Command, msg string) {
-	if s.stepFailer == nil {
+// reportScopeChanged hands a command the re-check failed to the failure
+// observer, which settles its step, validation run or retest.
+func (s *Service) reportScopeChanged(ctx context.Context, cmd *commanddom.Command, msg string) {
+	if s.failures == nil {
 		return
 	}
-	var p scanrundom.StepCommandPayload
-	if json.Unmarshal(cmd.Payload, &p) != nil || !p.IsRoutable() {
-		return
-	}
-	f := s.stepFailer
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), stepFailTimeout)
-		defer cancel()
-		if err := f.OnStepFailed(ctx, p.ScanRunID, p.StepKey, msg, FailureScopeChanged); err != nil {
-			s.logger.Error("failed to fail the step of a job whose scope changed",
-				"command_id", cmd.ID.String(), "scan_run_id", p.ScanRunID, "error", err)
-		}
-	}()
+	failed := *cmd
+	failed.Fail(msg)
+	s.failures.OnCommandFailed(context.WithoutCancel(ctx), &failed, msg, FailureScopeChanged)
 }
 
 // maxListedRefused bounds the targets a SCOPE_CHANGED message names.
@@ -425,6 +415,10 @@ func payloadTargets(payload json.RawMessage) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(v any) {
+		if obj, ok := v.(map[string]any); ok {
+			// A validate command names its probe target as an object.
+			v = obj["address"]
+		}
 		str, ok := v.(string)
 		if !ok {
 			return

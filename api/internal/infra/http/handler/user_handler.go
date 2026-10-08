@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -116,14 +118,21 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := toUserResponse(localUser)
-	if h.platformAdmin != nil {
-		response.IsPlatformAdmin = h.platformAdmin.IsPlatformAdmin(r.Context(), localUser.ID())
-	}
+	response := h.MeResponse(r.Context(), localUser)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// MeResponse is the caller's own profile as GET /users/me returns it; the
+// session bootstrap embeds the same value.
+func (h *UserHandler) MeResponse(ctx context.Context, u *user.User) UserResponse {
+	response := toUserResponse(u)
+	if h.platformAdmin != nil {
+		response.IsPlatformAdmin = h.platformAdmin.IsPlatformAdmin(ctx, u.ID())
+	}
+	return response
 }
 
 // UpdateMe updates the current authenticated user's profile.
@@ -348,14 +357,26 @@ func (h *UserHandler) GetMyTenants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenants, err := h.tenantService.ListUserTenants(r.Context(), localUser.ID())
+	response, err := h.MyTenantsResponse(r.Context(), localUser.ID())
 	if err != nil {
 		h.logger.Error("failed to list user tenants", "error", err, "user_id", localUser.ID().String())
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
 
-	// Convert to response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// MyTenantsResponse lists the caller's own memberships as GET
+// /users/me/tenants returns them; the session bootstrap embeds the same list.
+func (h *UserHandler) MyTenantsResponse(ctx context.Context, userID shared.ID) ([]TenantMembershipResponse, error) {
+	tenants, err := h.tenantService.ListUserTenants(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
 	response := make([]TenantMembershipResponse, len(tenants))
 	for i, t := range tenants {
 		response[i] = TenantMembershipResponse{
@@ -373,8 +394,5 @@ func (h *UserHandler) GetMyTenants(w http.ResponseWriter, r *http.Request) {
 			BlockedReason:   t.BlockedReason(),
 		}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	return response, nil
 }
