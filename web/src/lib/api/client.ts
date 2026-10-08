@@ -14,6 +14,7 @@ import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
 import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
 import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
+import { coalesceGet } from './request-dedupe'
 
 // ============================================
 // CONFIGURATION
@@ -535,10 +536,15 @@ function isApiResponse<T>(data: unknown): data is ApiResponse<T> {
  * GET request
  */
 export async function get<T = unknown>(endpoint: string, options?: ApiRequestOptions): Promise<T> {
-  return apiClient<T>(endpoint, {
-    ...options,
-    method: 'GET',
-  })
+  const run = () =>
+    apiClient<T>(endpoint, {
+      ...options,
+      method: 'GET',
+    })
+  // Only a plain GET (no per-call headers, signal or other options) depends on
+  // the URL alone, so only that one may share an identical request in flight.
+  if (options && Object.keys(options).length > 0) return run()
+  return coalesceGet<T>(endpoint, run)
 }
 
 /**
@@ -734,7 +740,7 @@ export function isAuthenticated(): boolean {
  * ```
  */
 export async function fetcher<T = unknown>(url: string): Promise<T> {
-  return apiClient<T>(url, { method: 'GET' })
+  return get<T>(url)
 }
 
 /**
