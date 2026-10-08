@@ -48,15 +48,15 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 		),
 		finding_metrics AS (
 			SELECT tenant_id,
-				COUNT(*) FILTER(WHERE status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS open_count,
+				COUNT(*) FILTER(WHERE status NOT IN ('resolved','false_positive','accepted','duplicate')) AS open_count,
 				COUNT(*) FILTER(WHERE resolved_at >= CURRENT_DATE AND resolved_at < CURRENT_DATE + 1) AS closed_today,
-				COUNT(*) FILTER(WHERE priority_class = 'P0' AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS p0,
-				COUNT(*) FILTER(WHERE priority_class = 'P1' AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS p1,
-				COUNT(*) FILTER(WHERE priority_class = 'P2' AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS p2,
-				COUNT(*) FILTER(WHERE priority_class = 'P3' AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS p3,
-				CASE WHEN COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) = 0 THEN 100
-					ELSE COUNT(*) FILTER(WHERE sla_status NOT IN ('exceeded','overdue') AND sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk'))
-						* 100.0 / NULLIF(COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')), 0)
+				COUNT(*) FILTER(WHERE priority_class = 'P0' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p0,
+				COUNT(*) FILTER(WHERE priority_class = 'P1' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p1,
+				COUNT(*) FILTER(WHERE priority_class = 'P2' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p2,
+				COUNT(*) FILTER(WHERE priority_class = 'P3' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p3,
+				CASE WHEN COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate')) = 0 THEN 100
+					ELSE COUNT(*) FILTER(WHERE sla_status NOT IN ('exceeded','overdue') AND sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate'))
+						* 100.0 / NULLIF(COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate')), 0)
 				END AS sla_pct
 			FROM findings WHERE NOT branch_only GROUP BY tenant_id
 		),

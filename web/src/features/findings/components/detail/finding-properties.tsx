@@ -9,6 +9,7 @@
  * where (asset, source), then when (first / last seen), then trivia.
  */
 
+import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import Link from 'next/link'
 import { useId, useState } from 'react'
 import { ArrowUpRight, ChevronRight, ExternalLink } from 'lucide-react'
@@ -28,14 +29,7 @@ import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
 
-const CLOSED = new Set([
-  'resolved',
-  'verified',
-  'false_positive',
-  'accepted',
-  'accepted_risk',
-  'duplicate',
-])
+const CLOSED = new Set<string>(findingStatusesInCategory('closed'))
 
 function formatDate(iso?: string): string {
   if (!iso) return ''

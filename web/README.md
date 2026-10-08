@@ -11,16 +11,16 @@ talks to is [`../api/`](../api/). User documentation is at
 
 ## Tech stack
 
-| Category  | Technology                                                     |
-| --------- | -------------------------------------------------------------- |
-| Framework | Next.js 16 (App Router, Turbopack)                             |
-| UI        | React 19, TypeScript 5 (strict), shadcn/ui, Tailwind CSS 4     |
-| State     | Zustand (auth), React Context (theme, direction, layout)       |
-| Data      | SWR (client fetching), Server Components                       |
-| Forms     | React Hook Form + Zod                                          |
+| Category  | Technology                                                                                          |
+| --------- | --------------------------------------------------------------------------------------------------- |
+| Framework | Next.js 16 (App Router, Turbopack)                                                                  |
+| UI        | React 19, TypeScript 5 (strict), shadcn/ui, Tailwind CSS 4                                          |
+| State     | Zustand (auth), React Context (theme, direction, layout)                                            |
+| Data      | SWR (client fetching), Server Components                                                            |
+| Forms     | React Hook Form + Zod                                                                               |
 | Auth      | Local accounts (JWT), OAuth (Google, GitHub, Microsoft), OIDC/Entra ID and SAML SSO through the API |
-| i18n      | English and Vietnamese (`supportedLocales` in `src/lib/i18n.ts`) |
-| Testing   | Vitest, React Testing Library, Playwright                      |
+| i18n      | English and Vietnamese (`supportedLocales` in `src/lib/i18n.ts`)                                    |
+| Testing   | Vitest, React Testing Library, Playwright                                                           |
 
 ## Project structure
 
@@ -80,8 +80,8 @@ NEXT_PUBLIC_APP_NAME=OpenCTEM
 TRUST_PROXY_HEADERS=false
 ```
 
-[`.env.example`](.env.example) is the authoritative list (`CSRF_SECRET`,
-`SECURE_COOKIES`, cookie names, Sentry, sidebar badges, ...). Variable details:
+[`.env.example`](.env.example) is the authoritative list
+(`SECURE_COOKIES`, cookie names, Sentry, sidebar badges, ...). Variable details:
 [docs/ops/ENVIRONMENT_VARIABLES.md](docs/ops/ENVIRONMENT_VARIABLES.md).
 
 ## Commands

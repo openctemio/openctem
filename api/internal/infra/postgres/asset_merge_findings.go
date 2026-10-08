@@ -231,18 +231,16 @@ func mergedFindingFingerprint(f mergeFinding, keepID string) (string, []byte) {
 // was fixed never closes a survivor that is still open.
 func findingStatusRank(status string) int {
 	switch vulnerability.FindingStatus(status) {
-	case vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusAccepted,
-		vulnerability.FindingStatusAcceptedRisk:
+	case vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusAccepted:
 		return 5
 	case vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied,
-		vulnerability.FindingStatusValidatedFixed, vulnerability.FindingStatusRemediation,
-		vulnerability.FindingStatusRetest:
+		vulnerability.FindingStatusValidatedFixed:
 		return 4
 	case vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusInReview:
 		return 3
 	case vulnerability.FindingStatusNew, vulnerability.FindingStatusDraft:
 		return 2
-	case vulnerability.FindingStatusResolved, vulnerability.FindingStatusVerified:
+	case vulnerability.FindingStatusResolved:
 		return 1
 	default:
 		return 0
