@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { reportRouteError } from '@/lib/error-reporting'
 
 interface ErrorProps {
   error: Error & { digest?: string }
@@ -10,8 +11,8 @@ interface ErrorProps {
 
 export default function GlobalError({ error, reset }: ErrorProps) {
   useEffect(() => {
-    // Log error to monitoring service (e.g., Sentry)
     console.error('Global error:', error)
+    reportRouteError(error, '/')
   }, [error])
 
   return (

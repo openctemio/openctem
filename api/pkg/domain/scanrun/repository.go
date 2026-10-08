@@ -185,6 +185,21 @@ type StepRunRepository interface {
 	GetStatsByTenant(ctx context.Context, tenantID shared.ID) (RunStats, error)
 }
 
+// ReapedRun is a run the timeout controller ended (timed out, partial at
+// its deadline, or failed because no sensor picked it up).
+type ReapedRun struct {
+	TenantID shared.ID
+	RunID    shared.ID
+}
+
+// ReapedRunReporter is the timeout controller's view of a repository that
+// reports which runs each reaping pass ended, so they fire the run-finished
+// event like a run that settled on its own (research/62 P0-11).
+type ReapedRunReporter interface {
+	MarkTimedOutRunsReporting(ctx context.Context) ([]ReapedRun, error)
+	AbortUnclaimedRunsReporting(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) ([]ReapedRun, error)
+}
+
 // UnclaimedRunAborter ends runs whose work no sensor ever picked up (D8).
 // Optional extension of RunRepository, asserted by the timeout controller.
 type UnclaimedRunAborter interface {

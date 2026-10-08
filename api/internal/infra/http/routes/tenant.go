@@ -270,6 +270,8 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 			r.GET("/access-report", tenantH.GetMemberAccessReport, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
 			r.POST("/offboard", tenantH.OffboardMember, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite), requireStepUp())
 			r.POST("/erase", tenantH.EraseMemberPersonalData, middleware.RequireOwner(), requireStepUp())
+			// External members (RFC-058): when the access ends.
+			r.PATCH("/access", tenantH.UpdateMemberAccess, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
 		}
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

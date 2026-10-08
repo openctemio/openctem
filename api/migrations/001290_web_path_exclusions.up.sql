@@ -29,6 +29,17 @@ ALTER TABLE scope_exclusions
     ADD COLUMN IF NOT EXISTS testing_changed_by character varying(200),
     ADD COLUMN IF NOT EXISTS testing_changed_at timestamp with time zone;
 
+-- The duplicates are deleted in their own statement before the rewrite: a
+-- data-modifying CTE runs with the main statement in no fixed order, and the
+-- unique check on (tenant_id, exclusion_type, pattern) is immediate, so a
+-- kept row rewritten to the pattern a duplicate still held ("/api/*" next to
+-- "*/api") failed the whole migration.
+-- One DO block, so the temp table lives exactly as long as this step
+-- whatever runs the file (golang-migrate sends it as one transaction, psql
+-- autocommits each statement).
+DO $$
+BEGIN
+CREATE TEMP TABLE path_exclusion_rules ON COMMIT DROP AS
 WITH conv AS (
     SELECT id, tenant_id, status, approved_at, created_at,
            CASE WHEN pattern ~* '^https?://[^/]+' THEN lower(substring(pattern FROM '^(https?://[^/?#]+)')) ELSE '*' END AS host,
@@ -48,15 +59,18 @@ WITH conv AS (
                PARTITION BY tenant_id, host, CASE WHEN left(prefix, 1) = '/' THEN prefix ELSE '/' || prefix END
                ORDER BY (status = 'active') DESC, (approved_at IS NOT NULL) DESC, created_at, id) AS rn
       FROM conv
-), dropped AS (
-    -- Two legacy patterns that read as the same rule ("/api/*" and "/api"):
-    -- the same protection, one row kept (the one in effect first).
-    DELETE FROM scope_exclusions s USING norm n WHERE s.id = n.id AND n.rn > 1 RETURNING s.id
 )
+SELECT id, host, prefix, rn FROM norm;
+
+-- Two legacy patterns that read as the same rule ("/api/*" and "/api"): the
+-- same protection, one row kept (the one in effect first).
+DELETE FROM scope_exclusions s USING path_exclusion_rules n WHERE s.id = n.id AND n.rn > 1;
+
 UPDATE scope_exclusions s
    SET pattern = left(n.host || n.prefix, 500), path_prefix = n.prefix
-  FROM norm n
+  FROM path_exclusion_rules n
  WHERE s.id = n.id AND n.rn = 1;
+END $$;
 
 ALTER TABLE scope_exclusions
     ADD CONSTRAINT chk_scope_exclusion_testing CHECK (testing IN ('blocked', 'read_only', 'allowed')),

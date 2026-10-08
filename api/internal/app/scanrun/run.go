@@ -1568,6 +1568,11 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	s.recordScanRun(ctx, run, string(scanrun.RunStatusCanceled))
 
 	closure := s.closeCanceledRun(ctx, run)
+	// A canceled run finished too: automations listening for finished runs
+	// hear about it (research/62 P0-11).
+	if s.runCompleted != nil {
+		s.runCompleted(ctx, run)
+	}
 
 	event := NewSuccessEvent(audit.ActionScanRunCanceled, audit.ResourceTypeScanRun, runID).
 		WithMessage("Pipeline run canceled").
@@ -1702,5 +1707,22 @@ func (s *Service) failQueuedStep(ctx context.Context, stepRun *scanrun.StepRun, 
 	stepRun.Fail("Failed to queue: "+err.Error(), code)
 	if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
 		s.logger.Error("failed to update failed step run", "step_key", stepKey, "error", uerr)
+	}
+}
+
+// NotifyRunsReaped hands the runs the timeout controller ended (timed out,
+// partial at the deadline, failed for lack of a sensor) to the run-finished
+// callback, like a run that settled on its own. Each run is read in its own
+// tenant.
+func (s *Service) NotifyRunsReaped(ctx context.Context, reaped []scanrun.ReapedRun) {
+	if s.runCompleted == nil {
+		return
+	}
+	for _, r := range reaped {
+		run, err := s.runRepo.GetByTenantAndID(ctx, r.TenantID, r.RunID)
+		if err != nil || run == nil || run.TenantID != r.TenantID || !run.IsComplete() {
+			continue
+		}
+		s.runCompleted(ctx, run)
 	}
 }

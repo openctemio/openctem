@@ -8,7 +8,6 @@
  * lists each mode only for the permission that reads it.
  */
 
-import { useState } from 'react'
 import { Search } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Input } from '@/components/ui/input'
@@ -24,6 +23,7 @@ import {
 } from '@/features/shared'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { cn } from '@/lib/utils'
 import { useFleet } from '@/features/ci-runners/api/use-ci'
 import {
@@ -148,7 +148,7 @@ export function FleetAllView({ toolbarStart, onOpenDaemon, onOpenRunner }: Fleet
   const [q, setQ] = useUrlFilter('q', '')
   const [attentionParam, setAttention] = useUrlFilter('attention', '')
   const [inactiveParam, setInactive] = useUrlFilter('inactive', '')
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
+  const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
   const attention = attentionParam === '1'
   const includeInactive = inactiveParam === '1'
   const { data, error, isLoading, mutate } = useFleet({
@@ -159,7 +159,7 @@ export function FleetAllView({ toolbarStart, onOpenDaemon, onOpenRunner }: Fleet
     page: pagination.pageIndex + 1,
     perPage: pagination.pageSize,
   })
-  const resetPage = () => setPagination((p) => ({ ...p, pageIndex: 0 }))
+  const resetPage = () => setPage(1)
 
   return (
     <div className="mt-5 space-y-5">

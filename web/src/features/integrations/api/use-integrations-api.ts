@@ -446,8 +446,11 @@ export function useNotificationEventsApi(
   let url = integrationId ? `${BASE_URL}/${integrationId}/notification-events` : null
   if (url) {
     const params = new URLSearchParams()
-    if (options?.limit) params.set('limit', options.limit.toString())
-    if (options?.offset) params.set('offset', options.offset.toString())
+    // page / per_page (one list convention); callers keep an offset window.
+    if (options?.limit) {
+      params.set('per_page', options.limit.toString())
+      if (options.offset) params.set('page', String(Math.floor(options.offset / options.limit) + 1))
+    }
     const queryString = params.toString()
     if (queryString) url += `?${queryString}`
   }

@@ -43,8 +43,46 @@ describe('list URL parameters', () => {
     expect(hits).toEqual([])
   })
 
+  // A route's main list keeps its page in the URL, not in component state.
+  // Lists embedded in a detail view keep local state (one URL, one list):
+  const EMBEDDED_LISTS = new Set([
+    // the selected channel's delivery history, beside the channel list
+    'src/app/(dashboard)/settings/integrations/notifications/history/page.tsx',
+    // a repository's branches and findings, inside the repository page
+    'src/app/(dashboard)/(discovery)/assets/repositories/[id]/page.tsx',
+  ])
+  const LOCAL_PAGING = /const \[(page|currentPage), set\w+\] = useState|useState\(\{ pageIndex/
+
+  it('route pages keep their list page in the URL', () => {
+    const hits = files
+      .map(rel)
+      .filter((f) => f.startsWith('src/app/') && f.endsWith('/page.tsx'))
+      .filter((f) => !EMBEDDED_LISTS.has(f))
+      .filter((f) => LOCAL_PAGING.test(readFileSync(join(ROOT, f), 'utf8')))
+    expect(hits).toEqual([])
+  })
+
   it('page and per_page go through useListParams', () => {
     const hits = files.filter((abs) => RAW_PAGING.test(readFileSync(abs, 'utf8'))).map(rel)
+    expect(hits).toEqual([])
+  })
+
+  // Feature views that are a route's main list (a tab, a view or a mode of
+  // the page) keep their page in the URL too.
+  const ROUTE_LIST_VIEWS = [
+    'src/features/ci-runners/components/ci-pipelines-panel.tsx',
+    'src/features/ci-runners/components/ci-coverage-view.tsx',
+    'src/features/ci-runners/components/ci-runs-view.tsx',
+    'src/features/sensors/components/fleet-all-view.tsx',
+    'src/features/attack-surface/components/easm-review-queue.tsx',
+  ]
+
+  it('route list views page through useListParams', () => {
+    const local = /const \[(page|currentPage), set\w+\] = useState|useState\(\{ pageIndex/
+    const hits = ROUTE_LIST_VIEWS.filter((f) => {
+      const src = readFileSync(join(ROOT, f), 'utf8')
+      return local.test(src) || !src.includes('useListParams(')
+    })
     expect(hits).toEqual([])
   })
 })

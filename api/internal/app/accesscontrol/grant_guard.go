@@ -120,6 +120,42 @@ func (a grantActor) mayCarry(perms []string, fullData bool) error {
 	return nil
 }
 
+// ErrExternalRoleCeiling refuses a role an external member may not hold.
+var ErrExternalRoleCeiling = fmt.Errorf("%w: someone outside your organization can be a viewer or a member, never an administrator or owner, and cannot get full data access", ErrGrantForbidden)
+
+// capExternalTarget enforces the external-member role ceiling (RFC-058): a
+// member whose email domain the organization does not own may not hold the
+// owner or admin role, nor a role with full data access. It applies to every
+// actor, system paths included; the owner role is also refused by a
+// database trigger. No-op when no membership reader is wired.
+func (s *RoleService) capExternalTarget(ctx context.Context, tid, uid roledom.ID, r *roledom.Role) error {
+	if s.membershipReader == nil || r == nil {
+		return nil
+	}
+	if r.ID() != roledom.OwnerRoleID && r.ID() != roledom.AdminRoleID && !r.HasFullDataAccess() {
+		return nil
+	}
+	t, err := shared.IDFromString(tid.String())
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	u, err := shared.IDFromString(uid.String())
+	if err != nil {
+		return fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+	}
+	m, err := s.membershipReader.GetMembership(ctx, u, t)
+	if err != nil {
+		if shared.IsNotFound(err) {
+			return nil // not a member: ensureTenantMember refuses it
+		}
+		return fmt.Errorf("load membership: %w", err)
+	}
+	if m != nil && m.IsExternal() {
+		return ErrExternalRoleCeiling
+	}
+	return nil
+}
+
 // ErrAdminPromotionOwnerOnly is returned when someone other than an owner tries
 // to make a user an administrator.
 var ErrAdminPromotionOwnerOnly = fmt.Errorf("%w: only the organization owner can make someone an administrator", ErrGrantForbidden)
