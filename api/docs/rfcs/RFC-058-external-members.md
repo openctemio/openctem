@@ -109,7 +109,7 @@ Not yet: a second factor (TOTP) for social-login accounts, with the challenge at
 
 ## 9. Several domains and lapsed domains (part 5, implemented)
 
-An organization may verify several SSO domains (one claim per domain, platform-wide; RFC-022). Each domain carries its own just-in-time provisioning (migration 001326).
+An organization may verify several SSO domains (one claim per domain, platform-wide; RFC-022). Each domain carries its own just-in-time provisioning (migration 001330).
 
 | Rule | Where |
 |---|---|
