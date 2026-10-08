@@ -30,7 +30,7 @@ Accounts are global and memberships are per organization, so one person can belo
 |---|---|
 | An invitee is classified when the invitation is created and again when it is accepted (the domain may have been claimed or released in between). | `tenant.AddressClassifier`, `TenantService.ClassifyAcceptedInvitation` |
 | An external invitee joins as a **viewer** and has **no data scope** until a host administrator adds them to a team. An invitation offering more than viewer is refused; an acceptance re-classified as external grants viewer only. | `CreateInvitation`, `ApplyInviteeClassification` |
-| An external member can **never be an owner**: a CHECK on `tenant_members` plus triggers on `user_roles` and on `tenant_members.kind`. The role grant guard also refuses them the admin role and any full-data-access role, on every path (role assignment, role set, bulk assign, invitation acceptance, membership role change). | migration 001310, `RoleService.capExternalTarget`, `UpdateMemberRole` |
+| An external member can **never be an owner**: a CHECK on `tenant_members` plus triggers on `user_roles` and on `tenant_members.kind`. The role grant guard also refuses them the admin role and any full-data-access role, on every path (role assignment, role set, bulk assign, invitation acceptance, membership role change). | migration 001316, `RoleService.capExternalTarget`, `UpdateMemberRole` |
 | An **unmanaged** external member must have an access end date: 90 days by default, 365 at most. A managed external member may have one (optional). | `tenant.ExternalAccess.Validate`, `SettleExternalAccess` |
 | An expired membership is **suspended within a minute** (`suspended_reason = expired`) in its own organization only. Access is cut, the organization's own IdP sessions end, administrators are told, and an audit row is written. | `MemberAccessExpiryController`, `TenantService.ExpireMemberships` |
 | An expired member comes back only with a new end date. `PATCH /api/v1/organization/members/{member_id}/access` takes `expires_at` and `reason`, needs owner/admin plus `members:write`, re-enables an expired membership and is audited as `member.access_changed`. A plain reactivation is refused. | `ExtendMemberAccess`, `ReactivateMember` |
@@ -39,7 +39,7 @@ Accounts are global and memberships are per organization, so one person can belo
 
 Classification fails closed: a lookup error refuses the invitation or the acceptance; it never guesses internal.
 
-## 4. Data (migration 001310, expand-only)
+## 4. Data (migration 001316, expand-only)
 
 - `tenant_members`:
   - new columns `kind` (default `internal`), `home_tenant_id` (FK, `ON DELETE SET NULL`), `home_domain`, `expires_at`, `expiry_reason`, `suspended_reason`;
@@ -67,7 +67,7 @@ Every existing membership stays `internal`, so nothing changes for existing memb
 
 | Rule | Where |
 |---|---|
-| **Two-sided.** A host owner asks to trust the organization that holds a domain verified for SSO (`POST /api/v1/organization/trusts {home_domain, ...}`). That organization's owner accepts (`POST .../{trust_id}/approve {attest_idp_mfa}`). Either owner ends it (`DELETE .../{trust_id}`). All three need owner plus step-up. Only the host changes the settings (`PATCH .../{trust_id}`). A third organization neither sees nor acts on a trust (404). | `orgtrust.Service`, `tenant_trusts` (migration 001315) |
+| **Two-sided.** A host owner asks to trust the organization that holds a domain verified for SSO (`POST /api/v1/organization/trusts {home_domain, ...}`). That organization's owner accepts (`POST .../{trust_id}/approve {attest_idp_mfa}`). Either owner ends it (`DELETE .../{trust_id}`). All three need owner plus step-up. Only the host changes the settings (`PATCH .../{trust_id}`). A third organization neither sees nor acts on a trust (404). | `orgtrust.Service`, `tenant_trusts` (migration 001318) |
 | **A requested trust grants nothing.** A trust never admits anyone by itself: the person still needs an invitation to the host. | `orgtrust.Trust.IsActive` |
 | **Home-realm sign-in.** A session counts as an SSO sign-in of the host for an external member when all of these hold: the session was issued by the member's home organization's identity provider; the trust is active and accepts home sign-in; the home still holds the member's email domain; and, if the trust requires it, the provider proved a second factor. This applies at token exchange and refresh. The token's `auth_method` is then `sso`, so the per-request SSO gate agrees. | `AuthService.assuranceAt`, `authMethodAt` |
 | **Never weaker than the host.** These never count: a password session, social login, a third organization's identity provider, or a trust that is not accepted. When the host requires 2FA, the home sign-in passes only with MFA evidence on the session or the home owner's attestation that its IdP enforces MFA. | `enforceSSOPolicy`, `enforceMFAPolicy` |

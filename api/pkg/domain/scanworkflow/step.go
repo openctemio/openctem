@@ -2,6 +2,7 @@ package scanworkflow
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -239,9 +240,22 @@ func (s *Step) SetRetry(maxRetries, delaySeconds int) {
 	s.RetryDelaySeconds = delaySeconds
 }
 
-// SetUIPosition sets the visual position for the workflow builder.
-func (s *Step) SetUIPosition(x, y float64) {
-	s.UIPosition = UIPosition{X: x, Y: y}
+// MaxUIPosition bounds a builder coordinate (either sign).
+const MaxUIPosition = 1_000_000
+
+// SetUIPosition sets the step's place on the builder canvas. The canvas
+// works in fractional and negative coordinates; the stored layout keeps
+// whole numbers, so the position is rounded. A coordinate that is not a
+// finite number within MaxUIPosition is refused (it would fail the
+// integer column with a server error).
+func (s *Step) SetUIPosition(x, y float64) error {
+	for _, v := range []float64{x, y} {
+		if math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v) > MaxUIPosition {
+			return fmt.Errorf("%w: a step position must be a number between -%d and %d", shared.ErrValidation, MaxUIPosition, MaxUIPosition)
+		}
+	}
+	s.UIPosition = UIPosition{X: math.Round(x), Y: math.Round(y)}
+	return nil
 }
 
 // HasDependencies checks if the step has dependencies.

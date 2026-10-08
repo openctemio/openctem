@@ -58,6 +58,10 @@ func TestRetestRuns_NeedFindingsRead(t *testing.T) {
 	exec(`INSERT INTO scan_runs (id, tenant_id, kind, subject, trigger_type, status)
 	      VALUES ($1, $2, 'retest', jsonb_build_object('finding_id', $3::text), 'manual', 'running')`,
 		retestRun, tenant, shared.NewID().String())
+	validationRun := shared.NewID().String()
+	exec(`INSERT INTO scan_runs (id, tenant_id, kind, subject, trigger_type, status)
+	      VALUES ($1, $2, 'validation', jsonb_build_object('finding_id', $3::text), 'manual', 'running')`,
+		validationRun, tenant, shared.NewID().String())
 
 	db := &postgres.DB{DB: sqldb}
 	svc := scanrun.NewService(postgres.NewScanWorkflowRepository(db), postgres.NewScanWorkflowStepRepository(db),
@@ -110,6 +114,9 @@ func TestRetestRuns_NeedFindingsRead(t *testing.T) {
 			t.Errorf("retest run%s without findings:read: %d %s, want 404", p, code, body)
 		}
 	}
+	if code, body := serve(scansOnly, "/api/v1/scan-runs/"+validationRun); code != http.StatusNotFound {
+		t.Errorf("validation run without findings:read: %d %s, want 404", code, body)
+	}
 	if code, body := serve(withFindings, "/api/v1/scan-runs/"+retestRun); code != http.StatusOK {
 		t.Fatalf("retest run with findings:read: %d %s, want 200", code, body)
 	}
@@ -117,7 +124,7 @@ func TestRetestRuns_NeedFindingsRead(t *testing.T) {
 		t.Fatalf("a scan run needs only scans:read: %d", code)
 	}
 
-	if got := listIDs(scansOnly); got[retestRun] || !got[scanRun] {
+	if got := listIDs(scansOnly); got[retestRun] || got[validationRun] || !got[scanRun] {
 		t.Errorf("list without findings:read = %v, want the scan run only", got)
 	}
 	if got := listIDs(withFindings); !got[retestRun] || !got[scanRun] {
