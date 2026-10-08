@@ -24,9 +24,22 @@ const consent = {
   redirect_host: '127.0.0.1',
   redirect_uri: 'http://127.0.0.1:33418/callback',
   loopback_only: true,
+  verified: true,
   scopes: [
-    { scope: 'mcp:findings.read', title: 'Read findings', write: false, granted: true },
-    { scope: 'mcp:pentest.read', title: 'Read pentest campaigns', write: false, granted: false },
+    {
+      scope: 'mcp:findings.read',
+      title: 'Read findings',
+      write: false,
+      granted: true,
+      not_allowed: false,
+    },
+    {
+      scope: 'mcp:pentest.read',
+      title: 'Read pentest campaigns',
+      write: false,
+      granted: false,
+      not_allowed: false,
+    },
   ],
   expires_at: new Date(Date.now() + 600000).toISOString(),
 }
@@ -105,12 +118,30 @@ describe('ConsentView', () => {
     fetchFn.mockImplementationOnce(
       async () =>
         new Response(
-          JSON.stringify({ ...consent, client_kind: 'dynamic', client_host: undefined }),
+          JSON.stringify({
+            ...consent,
+            client_kind: 'dynamic',
+            client_host: undefined,
+            verified: false,
+          }),
           { status: 200 }
         )
     )
     render(<ConsentView requestId={REQUEST_ID} />)
     expect(await screen.findByText('Unverified application')).toBeInTheDocument()
+  })
+
+  it('explains and refuses an application the organization blocks', async () => {
+    fetchFn.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({ ...consent, verified: false, blocked: 'client_not_allowed' }),
+          { status: 200 }
+        )
+    )
+    render(<ConsentView requestId={REQUEST_ID} />)
+    expect(await screen.findByText('This application cannot be connected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled()
   })
 
   it('cannot allow when nothing would be granted', async () => {

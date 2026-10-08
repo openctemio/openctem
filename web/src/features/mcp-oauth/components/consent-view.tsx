@@ -34,6 +34,7 @@ import { useTenant } from '@/context/tenant-provider'
 
 import {
   approveConsent,
+  blockedMessage,
   clientKindLabel,
   ConsentError,
   type ConsentRequest,
@@ -139,7 +140,8 @@ export function ConsentView({ requestId }: ConsentViewProps) {
     return <Unavailable message={error ?? 'This request is no longer available.'} />
   }
 
-  const verified = request.client_kind !== 'dynamic'
+  const verified = request.verified
+  const blocked = request.blocked
 
   return (
     <Card>
@@ -202,6 +204,11 @@ export function ConsentView({ requestId }: ConsentViewProps) {
                 )}
                 <span className={s.granted ? undefined : 'text-muted-foreground line-through'}>
                   {s.title}
+                  {s.not_allowed && (
+                    <span className="ml-2 text-xs no-underline">
+                      (not allowed by your organization)
+                    </span>
+                  )}
                   {s.write && s.granted && (
                     <Badge variant="destructive" className="ml-2">
                       Changes data
@@ -240,7 +247,14 @@ export function ConsentView({ requestId }: ConsentViewProps) {
             </AlertDescription>
           </Alert>
         )}
-        {!verified && (
+        {blocked && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>This application cannot be connected</AlertTitle>
+            <AlertDescription>{blockedMessage(blocked)}</AlertDescription>
+          </Alert>
+        )}
+        {!verified && !blocked && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Unverified application</AlertTitle>
@@ -285,7 +299,7 @@ export function ConsentView({ requestId }: ConsentViewProps) {
         </Button>
         <Button
           onClick={() => void decide('approve')}
-          disabled={deciding !== null || isSwitching || grantable.length === 0}
+          disabled={deciding !== null || isSwitching || grantable.length === 0 || !!blocked}
           className="w-full sm:w-auto"
         >
           {deciding === 'approve' && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
