@@ -256,6 +256,7 @@ dispatch did not route over zones:
 | Validate and retest commands (`validation.CommandDispatcher`, `CheckTarget`) | the full gate at t1, no act scope (`ProbeDispatchGate`); the zone routing that stamped `scan_zone_id` |
 | `connector_scan` (`tenablesc.NewScanCommand`: scan runs and coverage batches) | the full gate at t1 outside every zone (`no_zone_routing`); a scan run adds the act scope of who triggered it, else the scan owner (`connectorDispatchGate`) |
 | A scan command without a record (queued before the upgrade) | the baseline: passive, no tier, no act scope (exclusions, rejected names, the private-address and zone rules) |
+| A validate, retest or `connector_scan` command without a record (queued before the upgrade) | its type's strict defaults (`StrictDispatchGateFor`): the full gate at t1, no act scope, zone routing as for its type (none for a connector scan); one whose targets cannot be read from its payload is refused with `GATE_RECORD_MISSING` (settled like `SCOPE_CHANGED`) and has to be created again |
 
 Other commands without a record (health checks, config updates, content
 refreshes, connector syncs) are not re-checked. A validate command names its
