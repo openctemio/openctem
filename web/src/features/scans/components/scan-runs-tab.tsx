@@ -34,7 +34,7 @@ import { Can, Permission } from '@/lib/permissions'
 import { useScanRuns, useScanManagementStats } from '@/lib/api/scan-workflow-hooks'
 import type { ScanRun, ScanRunListFilters } from '@/lib/api/scan-workflow-types'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
-import { elapsedMs, runTaskProgress } from '@/features/scans/lib/run-display'
+import { elapsedMs, runTaskProgress, runTriggeredByLabel } from '@/features/scans/lib/run-display'
 import {
   DEFAULT_RUN_SORT,
   DEFAULT_SCAN_PAGE_SIZE,
@@ -256,7 +256,7 @@ function ScanRunsTable() {
         enableSorting: false,
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {row.original.triggered_by_name || row.original.trigger_type}
+            {runTriggeredByLabel(row.original) ?? row.original.trigger_type}
           </span>
         ),
       },
