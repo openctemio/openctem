@@ -26,7 +26,7 @@ type CreateTemplateInput struct {
 
 // CreateTemplate creates a new scan workflow.
 func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput) (*scanworkflow.Workflow, error) {
-	s.logger.Info("creating pipeline template", "name", input.Name)
+	s.logger.Info("creating scan workflow", "name", sanitizeLogValue(input.Name))
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -70,7 +70,7 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 	s.logAudit(ctx, AuditContext{TenantID: input.TenantID, ActorID: input.CreatedBy},
 		NewSuccessEvent(audit.ActionScanWorkflowCreated, audit.ResourceTypeScanWorkflow, t.ID.String()).
 			WithResourceName(t.Name).
-			WithMessage(fmt.Sprintf("Pipeline template '%s' created", t.Name)))
+			WithMessage(fmt.Sprintf("Scan workflow '%s' created", t.Name)))
 
 	return t, nil
 }
@@ -143,7 +143,7 @@ func (s *Service) CloneSystemTemplate(ctx context.Context, input CloneSystemTemp
 	s.logAudit(ctx, AuditContext{TenantID: input.TenantID, ActorID: input.CreatedBy},
 		NewSuccessEvent(audit.ActionScanWorkflowCreated, audit.ResourceTypeScanWorkflow, clone.ID.String()).
 			WithResourceName(clone.Name).
-			WithMessage(fmt.Sprintf("Pipeline template '%s' cloned from system template '%s'", clone.Name, systemTemplate.Name)).
+			WithMessage(fmt.Sprintf("Scan workflow '%s' cloned from system scan workflow '%s'", clone.Name, systemTemplate.Name)).
 			WithMetadata("source_template_id", systemTemplate.ID.String()).
 			WithMetadata("source_template_name", systemTemplate.Name))
 
@@ -288,7 +288,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput)
 				return nil, fmt.Errorf("failed to get template steps for validation: %w", err)
 			}
 			if err := s.ValidateToolReferences(ctx, templateWithSteps, tenantID); err != nil {
-				return nil, fmt.Errorf("cannot activate pipeline: %w", err)
+				return nil, fmt.Errorf("cannot activate scan workflow: %w", err)
 			}
 			t.Activate()
 			activationChange = activationChangeActivated
@@ -316,12 +316,12 @@ func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput)
 		s.logAudit(ctx, AuditContext{TenantID: input.TenantID},
 			NewSuccessEvent(action, audit.ResourceTypeScanWorkflow, t.ID.String()).
 				WithResourceName(t.Name).
-				WithMessage(fmt.Sprintf("Pipeline template '%s' %s", t.Name, activationChange)))
+				WithMessage(fmt.Sprintf("Scan workflow '%s' %s", t.Name, activationChange)))
 	} else {
 		s.logAudit(ctx, AuditContext{TenantID: input.TenantID},
 			NewSuccessEvent(audit.ActionScanWorkflowUpdated, audit.ResourceTypeScanWorkflow, t.ID.String()).
 				WithResourceName(t.Name).
-				WithMessage(fmt.Sprintf("Pipeline template '%s' updated", t.Name)))
+				WithMessage(fmt.Sprintf("Scan workflow '%s' updated", t.Name)))
 	}
 
 	return t, nil
@@ -391,7 +391,7 @@ type CloneTemplateInput struct {
 // CloneTemplate creates a copy of an existing template with all its steps.
 // This supports cloning both tenant templates AND system templates.
 func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (*scanworkflow.Workflow, error) {
-	s.logger.Info("cloning pipeline template", "template_id", input.TemplateID, "new_name", input.NewName)
+	s.logger.Info("cloning scan workflow", "template_id", sanitizeLogValue(input.TemplateID), "new_name", sanitizeLogValue(input.NewName))
 
 	// Get the original template with steps
 	original, err := s.GetTemplateWithSteps(ctx, input.TemplateID)
@@ -467,7 +467,7 @@ func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (
 	s.logAudit(ctx, AuditContext{TenantID: input.TenantID, ActorID: input.ClonedBy},
 		NewSuccessEvent(audit.ActionScanWorkflowCreated, audit.ResourceTypeScanWorkflow, newTemplate.ID.String()).
 			WithResourceName(newTemplate.Name).
-			WithMessage(fmt.Sprintf("Pipeline template '%s' cloned from '%s'", newTemplate.Name, original.Name)).
+			WithMessage(fmt.Sprintf("Scan workflow '%s' cloned from '%s'", newTemplate.Name, original.Name)).
 			WithMetadata("source_template_id", input.TemplateID))
 
 	return newTemplate, nil

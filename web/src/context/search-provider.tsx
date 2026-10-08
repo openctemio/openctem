@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ComponentType } from 'react'
 import dynamic from 'next/dynamic'
 
 // The command palette (cmdk, the full nav and settings lists) loads the first
@@ -19,9 +19,15 @@ const SearchContext = createContext<SearchContextType | null>(null)
 
 type SearchProviderProps = {
   children: React.ReactNode
+  /**
+   * The palette to open; the tenant app's by default. The admin console
+   * passes its own (console pages, organizations), so both shells share one
+   * shortcut and one search button.
+   */
+  menu?: ComponentType
 }
 
-export function SearchProvider({ children }: SearchProviderProps) {
+export function SearchProvider({ children, menu: Menu = CommandMenu }: SearchProviderProps) {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -45,7 +51,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
   return (
     <SearchContext.Provider value={value}>
       {children}
-      {opened && <CommandMenu />}
+      {opened && <Menu />}
     </SearchContext.Provider>
   )
 }

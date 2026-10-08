@@ -523,7 +523,7 @@ func (s *OAuthService) exchangeCode(ctx context.Context, provider OAuthProvider,
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange failed: %s", string(body))
+		return nil, fmt.Errorf("token exchange failed: %w", httpsec.NewUpstreamStatusError(ctx, "oauth provider", resp.StatusCode, body))
 	}
 
 	var tokens oauthTokens
@@ -583,7 +583,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, accessToken string
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("failed to get user info: %s", string(body))
+		return nil, fmt.Errorf("failed to get user info: %w", httpsec.NewUpstreamStatusError(ctx, "oauth provider", resp.StatusCode, body))
 	}
 
 	var data struct {
@@ -632,7 +632,7 @@ func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("failed to get user info: %s", string(body))
+		return nil, fmt.Errorf("failed to get user info: %w", httpsec.NewUpstreamStatusError(ctx, "oauth provider", resp.StatusCode, body))
 	}
 
 	var userData struct {

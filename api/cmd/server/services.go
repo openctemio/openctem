@@ -1368,6 +1368,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
 	// progress) is computed from live finding data instead of staying at zero.
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
+	s.RemediationCampaign.SetFindingLister(repos.Finding)
 	// A restricted reader sees progress over their own findings (L-18).
 	s.RemediationCampaign.SetDataScope(s.DataScope)
 	// Creates, edits, status changes and deletes go to audit_logs.
@@ -1617,7 +1618,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// RFC-052 §5: each sensor's grant, before every other gate.
 		command.WithGrants(repos.SensorGrant, s.Sensor),
 		// RFC-055 §6.3: the tier is assigned from the tool contract.
-		command.WithToolContracts(repos.Sensor)}
+		command.WithToolContracts(repos.Sensor),
+		// A scan job's targets pass the dispatch gate again when a sensor
+		// claims it: scope can change while it waits in the queue. Until
+		// the scan service exists the gate refuses (fail closed).
+		command.WithScopeRecheck(probeGate)}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
@@ -1812,7 +1817,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 		scan.WithAuditService(scanAuditAdapter),
 		scan.WithProfileRepo(repos.ScanProfile),
-		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
+		// Enforce scope EXCLUSIONS on every dispatch path; unwired or failing, nothing is dispatched (fail closed).
 		scan.WithScopeExclusionFilter(s.Scope),
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.

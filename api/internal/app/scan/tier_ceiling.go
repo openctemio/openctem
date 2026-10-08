@@ -16,6 +16,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -25,6 +28,32 @@ import (
 // stages; an unknown tool is t1).
 func ProbeTier(tool string) scopedom.Tier {
 	return scopedom.Tier(stage.ProbeTier(tool))
+}
+
+// scanDispatchGate is the gate record of a single-scanner run's commands, for
+// the claim-time re-check: the scanner's tier, the run actor's act scope (the
+// person who triggered it, else the scan's owner), and the loose ownership
+// rule of a passive or takeover-only probe. It never asks more than the
+// trigger checked (resolveScanTargets).
+func scanDispatchGate(sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
+	tier := ProbeTier(sc.ScannerName)
+	g := &command.DispatchGate{
+		Tier:     int(tier),
+		Passive:  tier <= scopedom.TierPassive || IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig),
+		ActScope: true,
+	}
+	recorded, _ := run.Context[RunContextKeyActor].(string)
+	actor := userIDPtr(recorded)
+	if actor == nil {
+		actor = userIDPtr(run.TriggeredBy)
+	}
+	if actor == nil {
+		actor = sc.CreatedBy
+	}
+	if actor != nil && !actor.IsZero() {
+		g.Actor = actor.String()
+	}
+	return g
 }
 
 // tierExceeded asks the ownership gate which targets exceed their ceiling
@@ -58,36 +87,6 @@ func (s *Service) refuseTierExceeded(ctx context.Context, tenantID shared.ID, sc
 		refusals = append(refusals, scopedom.NewTierRefusal(t, rule, tier, 0))
 	}
 	return refusalError(refusals)
-}
-
-// dropTierExceeded leaves out of a run the targets covered only below the
-// scanner's tier, counting them and naming why in a warning.
-func (s *Service) dropTierExceeded(ctx context.Context, tenantID shared.ID, scanner string, r *resolvedTargets) error {
-	if scanner == "" || len(r.Targets) == 0 {
-		return nil
-	}
-	tier := ProbeTier(scanner)
-	over, err := s.tierExceeded(ctx, tenantID, r.Targets, tier)
-	if err != nil {
-		return fmt.Errorf("tier check failed, scan not dispatched: %w", err)
-	}
-	if len(over) == 0 {
-		return nil
-	}
-	kept := r.Targets[:0:0]
-	for _, t := range r.Targets {
-		if _, no := over[t]; no {
-			delete(r.TargetTypes, t)
-			continue
-		}
-		kept = append(kept, t)
-	}
-	r.TierExceeded = len(r.Targets) - len(kept)
-	r.Targets = kept
-	r.Warnings = append(r.Warnings, fmt.Sprintf(
-		"%d target(s) were skipped: %s runs %s probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Targets)",
-		r.TierExceeded, scanner, tier))
-	return nil
 }
 
 // stepScopeFilter leaves out of one workflow step the targets its tool may

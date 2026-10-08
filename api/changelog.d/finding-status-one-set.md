@@ -5,5 +5,5 @@
 - Pentest campaign stats are keyed `in_progress_count`, `fix_applied_count`, `resolved_count`, `false_positive_count`, `accepted_count` (were `remediation_count`, `retest_count`, `verified_count`, `false_positives`, `accepted_risks`).
 - Finding stats `by_status` gains `fix_applied`, `validated_fixed` and `not_observed`; `open_count` is new + confirmed + in_progress (+ draft, in_review).
 - The web console has one status registry (labels in English and Vietnamese, category, color); the findings filter groups statuses by category, each status once.
-- Migration `001349` maps stored alias values (and `open`) in findings, pentest findings, approvals and retests, and adds a CHECK on the canonical set to `findings.status` and `pentest_findings.status`. It is idempotent.
+- Migration `001377` maps stored alias values (and `open`) in findings, pentest findings, approvals and retests, and adds a CHECK on the canonical set to `findings.status` and `pentest_findings.status`. It is idempotent.
 - **Upgrade note:** API clients that send `remediation`, `retest`, `verified`, `accepted_risk` or `open` as a finding status must send the canonical status.
