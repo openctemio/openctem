@@ -34,6 +34,11 @@ ALTER TABLE scope_exclusions
 -- unique check on (tenant_id, exclusion_type, pattern) is immediate, so a
 -- kept row rewritten to the pattern a duplicate still held ("/api/*" next to
 -- "*/api") failed the whole migration.
+-- One DO block, so the temp table lives exactly as long as this step
+-- whatever runs the file (golang-migrate sends it as one transaction, psql
+-- autocommits each statement).
+DO $$
+BEGIN
 CREATE TEMP TABLE path_exclusion_rules ON COMMIT DROP AS
 WITH conv AS (
     SELECT id, tenant_id, status, approved_at, created_at,
@@ -65,6 +70,7 @@ UPDATE scope_exclusions s
    SET pattern = left(n.host || n.prefix, 500), path_prefix = n.prefix
   FROM path_exclusion_rules n
  WHERE s.id = n.id AND n.rn = 1;
+END $$;
 
 ALTER TABLE scope_exclusions
     ADD CONSTRAINT chk_scope_exclusion_testing CHECK (testing IN ('blocked', 'read_only', 'allowed')),
