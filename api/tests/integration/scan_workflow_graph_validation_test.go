@@ -214,3 +214,40 @@ func TestPipelineSave_ToolSelectionAndSettings(t *testing.T) {
 		}
 	}
 }
+
+// A draft whose steps have problems is still checked whole: 200 with every
+// issue anchored to its step, never a 400 at the first problem (the builder
+// checks the draft while the user edits it).
+func TestPipelineValidate_StepProblemsAreIssuesNotErrors(t *testing.T) {
+	p := newScanWorkflowSaveHarness(t, "pipeline-graph-issues")
+	rec := p.do(p.tenant, http.MethodPost, "", map[string]any{
+		"steps": []map[string]any{
+			{"step_key": "ports", "name": "Ports", "capabilities": []string{"scan.ports"}, "config": map[string]any{"top_n": "lots"}},
+			{"step_key": "both", "name": "Both", "tool": "naabu", "prefer_tools": []string{"naabu"}, "capabilities": []string{"scan.ports"}},
+			{"step_key": "http", "name": "HTTP", "capabilities": []string{"probe.http"}, "depends_on": []string{"ports"}},
+		},
+	}, p.h.ValidateScanWorkflow)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Valid  bool               `json:"valid"`
+		Errors []stage.GraphIssue `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	nodes := map[string]bool{}
+	for _, e := range out.Errors {
+		nodes[e.Node] = true
+		if e.Message == "" {
+			t.Errorf("issue without a message: %+v", e)
+		}
+	}
+	if out.Valid || !nodes["ports"] || !nodes["both"] || nodes["http"] {
+		t.Fatalf("issues: %+v", out.Errors)
+	}
+	if n := p.count(`SELECT count(*) FROM scan_workflows WHERE tenant_id=$1`, p.tenant.String()); n != 0 {
+		t.Fatal("validate stored a workflow")
+	}
+}
