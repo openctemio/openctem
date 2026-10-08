@@ -1,10 +1,8 @@
-# Operations & Deployment
+# Operations (developer notes)
 
-Guides for deploying, configuring, and monitoring the application.
+Installing and operating OpenCTEM is documented for operators at
+[docs.openctem.io/install](https://docs.openctem.io/install/). These pages cover
+what a developer of the web console needs:
 
-## Content
-
-- **[Deployment Guide](./DEPLOYMENT.md)**: Strategies for Vercel, Docker, and Traditional Servers.
-- **[Environment Variables](./ENVIRONMENT_VARIABLES.md)**: Configuration guide and security best practices.
-- **[Docker & Sentry](./DOCKER_SENTRY_SETUP.md)**: Container setup and error tracking.
-- **[Production Checklist](./PRODUCTION_CHECKLIST.md)**: Verification steps before going live.
+- **[Environment variables](./ENVIRONMENT_VARIABLES.md)**: every variable the console reads, public vs server-only.
+- **[Docker and Sentry](./DOCKER_SENTRY_SETUP.md)**: the Docker files, running the console in Docker, and enabling Sentry.

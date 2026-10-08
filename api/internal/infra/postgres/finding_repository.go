@@ -2750,7 +2750,7 @@ func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID,
 		SELECT
 			COALESCE(SUM(CASE WHEN created_at >= NOW() - ($2::int || ' days')::interval THEN 1 ELSE 0 END), 0) AS new_count,
 			COALESCE(SUM(CASE WHEN resolved_at >= NOW() - ($2::int || ' days')::interval
-				AND status IN ('resolved','verified') THEN 1 ELSE 0 END), 0) AS resolved_count
+				AND status = 'resolved' THEN 1 ELSE 0 END), 0) AS resolved_count
 		FROM findings
 		WHERE tenant_id = $1 AND ` + inScope
 	if err = r.db.QueryRowContext(ctx, query, args...).Scan(&newCount, &resolvedCount); err != nil {
@@ -2899,6 +2899,9 @@ func (r *FindingRepository) GetStats(ctx context.Context, tenantID shared.ID, da
 // risk posture. Callers append the WHERE clause. A var because the lens
 // predicates come from vulnerability.FindingLensSQL, the same ones the
 // "state" filter compiles to.
+// openLens is the Open state lens predicate over findings.status.
+var openLens = vulnerability.FindingLensSQL(vulnerability.FindingLensOpen)
+
 var findingStatsSelect = `
 		SELECT
 			COUNT(*) as total,
@@ -2916,10 +2919,9 @@ var findingStatsSelect = `
 			COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0) as status_duplicate,
 			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
 			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
-			COALESCE(SUM(CASE WHEN status = 'remediation' THEN 1 ELSE 0 END), 0) as status_remediation,
-			COALESCE(SUM(CASE WHEN status = 'retest' THEN 1 ELSE 0 END), 0) as status_retest,
-			COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0) as status_verified,
-			COALESCE(SUM(CASE WHEN status = 'accepted_risk' THEN 1 ELSE 0 END), 0) as status_accepted_risk,
+			COALESCE(SUM(CASE WHEN status = 'fix_applied' THEN 1 ELSE 0 END), 0) as status_fix_applied,
+			COALESCE(SUM(CASE WHEN status = 'validated_fixed' THEN 1 ELSE 0 END), 0) as status_validated_fixed,
+			COALESCE(SUM(CASE WHEN status = 'not_observed' THEN 1 ELSE 0 END), 0) as status_not_observed,
 			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
 			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
 			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
@@ -2929,10 +2931,18 @@ var findingStatsSelect = `
 			COALESCE(SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END), 0) as source_manual,
 			COALESCE(SUM(CASE WHEN source = 'pentest' THEN 1 ELSE 0 END), 0) as source_pentest,
 			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
-			-- Risk posture, open findings only (status not in a closed category).
-			COALESCE(SUM(CASE WHEN is_in_kev AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as kev_open,
-			COALESCE(SUM(CASE WHEN epss_score >= 0.1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as epss_high_open,
-			COALESCE(SUM(CASE WHEN sla_status IN ('exceeded','overdue') AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk') THEN 1 ELSE 0 END), 0) as sla_breached,
+			-- Risk posture over the Open lens: the same predicate as the
+			-- "Open" state tab, so a card and the tab never disagree.
+			COUNT(*) FILTER (WHERE is_in_kev AND ` + openLens + `) as kev_open,
+			COUNT(*) FILTER (WHERE epss_score >= 0.1 AND ` + openLens + `) as epss_high_open,
+			COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND ` + openLens + `) as sla_breached,
+			COUNT(*) FILTER (WHERE severity = 'critical' AND ` + openLens + `) as open_critical,
+			COUNT(*) FILTER (WHERE severity = 'high' AND ` + openLens + `) as open_high,
+			COUNT(*) FILTER (WHERE severity = 'medium' AND ` + openLens + `) as open_medium,
+			COUNT(*) FILTER (WHERE severity = 'low' AND ` + openLens + `) as open_low,
+			COUNT(*) FILTER (WHERE severity IN ('info', 'none') AND ` + openLens + `) as open_info,
+			-- Fixes claimed by an owner, waiting for a verifier.
+			COUNT(*) FILTER (WHERE status = 'fix_applied') as awaiting_verification,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensOpen) + `) as state_open,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensFixed) + `) as state_fixed,
 			COUNT(*) FILTER (WHERE ` + vulnerability.FindingLensSQL(vulnerability.FindingLensDispositioned) + `) as state_dispositioned
@@ -2946,13 +2956,15 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	var (
 		total, critical, high, medium, low, info                     int64
 		statusNew, statusConfirmed, statusInProgress, statusResolved int64
+		statusDraft, statusInReview, statusFixApplied                int64
+		statusValidatedFixed, statusNotObserved                      int64
 		statusFalsePositive, statusAccepted, statusDuplicate         int64
-		statusDraft, statusInReview, statusRemediation               int64
-		statusRetest, statusVerified, statusAcceptedRisk             int64
 		sourceSast, sourceDast, sourceSca, sourceSecret              int64
 		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
 		sourceExternal                                               int64
 		kevOpen, epssHighOpen, slaBreached                           int64
+		openCritical, openHigh, openMedium, openLow, openInfo        int64
+		awaitingVerification                                         int64
 		stateOpen, stateFixed, stateDispositioned                    int64
 	)
 
@@ -2961,12 +2973,14 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 		&critical, &high, &medium, &low, &info,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
 		&statusFalsePositive, &statusAccepted, &statusDuplicate,
-		&statusDraft, &statusInReview, &statusRemediation,
-		&statusRetest, &statusVerified, &statusAcceptedRisk,
+		&statusDraft, &statusInReview,
+		&statusFixApplied, &statusValidatedFixed, &statusNotObserved,
 		&sourceSast, &sourceDast, &sourceSca, &sourceSecret,
 		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
 		&sourceExternal,
 		&kevOpen, &epssHighOpen, &slaBreached,
+		&openCritical, &openHigh, &openMedium, &openLow, &openInfo,
+		&awaitingVerification,
 		&stateOpen, &stateFixed, &stateDispositioned,
 	)
 	if err != nil {
@@ -2982,7 +2996,7 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.BySeverity[vulnerability.SeverityLow] = low
 	stats.BySeverity[vulnerability.SeverityInfo] = info // info + none (CVSS 0.0)
 
-	// By status (7 statuses: new, confirmed, in_progress, resolved, false_positive, accepted, duplicate)
+	// By status: every status of the lifecycle
 	stats.ByStatus[vulnerability.FindingStatusNew] = statusNew
 	stats.ByStatus[vulnerability.FindingStatusConfirmed] = statusConfirmed
 	stats.ByStatus[vulnerability.FindingStatusInProgress] = statusInProgress
@@ -2992,10 +3006,9 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.ByStatus[vulnerability.FindingStatusDuplicate] = statusDuplicate
 	stats.ByStatus[vulnerability.FindingStatusDraft] = statusDraft
 	stats.ByStatus[vulnerability.FindingStatusInReview] = statusInReview
-	stats.ByStatus[vulnerability.FindingStatusRemediation] = statusRemediation
-	stats.ByStatus[vulnerability.FindingStatusRetest] = statusRetest
-	stats.ByStatus[vulnerability.FindingStatusVerified] = statusVerified
-	stats.ByStatus[vulnerability.FindingStatusAcceptedRisk] = statusAcceptedRisk
+	stats.ByStatus[vulnerability.FindingStatusFixApplied] = statusFixApplied
+	stats.ByStatus[vulnerability.FindingStatusValidatedFixed] = statusValidatedFixed
+	stats.ByStatus[vulnerability.FindingStatusNotObserved] = statusNotObserved
 
 	// By source
 	stats.BySource[vulnerability.FindingSourceSAST] = sourceSast
@@ -3009,13 +3022,19 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.BySource[vulnerability.FindingSourceExternal] = sourceExternal
 
 	// Calculate open and resolved counts
-	// Open = new + confirmed + in_progress + pentest active (draft, in_review, remediation, retest)
-	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview + statusRemediation + statusRetest
-	stats.ResolvedCount = statusResolved + statusVerified
+	// Open = new + confirmed + in_progress + pentest pre-publication (draft, in_review)
+	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview
+	stats.ResolvedCount = statusResolved
 
 	stats.KevOpen = kevOpen
 	stats.EpssHighOpen = epssHighOpen
 	stats.SLABreached = slaBreached
+	stats.OpenBySeverity[vulnerability.SeverityCritical] = openCritical
+	stats.OpenBySeverity[vulnerability.SeverityHigh] = openHigh
+	stats.OpenBySeverity[vulnerability.SeverityMedium] = openMedium
+	stats.OpenBySeverity[vulnerability.SeverityLow] = openLow
+	stats.OpenBySeverity[vulnerability.SeverityInfo] = openInfo
+	stats.AwaitingVerification = awaitingVerification
 
 	stats.ByState[vulnerability.FindingLensOpen] = stateOpen
 	stats.ByState[vulnerability.FindingLensFixed] = stateFixed
@@ -3304,6 +3323,16 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 				WHERE fga.tenant_id = $%[2]d AND gm.user_id = $%[1]d AND g.is_active = true
 			)
 		)`, uIdx, tIdx))
+	}
+
+	// A solution family: the findings sharing one remediation key, pentest
+	// findings excluded (the same set FindingRemediationKeyRepository counts).
+	if filter.RemediationKey != nil {
+		conditions = append(conditions, fmt.Sprintf(
+			`source <> 'pentest' AND EXISTS (SELECT 1 FROM finding_remediation_keys frk WHERE frk.finding_id = findings.id AND frk.tenant_id = findings.tenant_id AND frk.remediation_key = $%d)`,
+			argIndex))
+		args = append(args, *filter.RemediationKey)
+		argIndex++
 	}
 
 	// Layer 2: Data Scope - only findings on the user's in-scope assets. Fail

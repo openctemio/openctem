@@ -1,208 +1,114 @@
-# OpenCTEM UI
+# OpenCTEM Web Console
 
-[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js)](https://nextjs.org)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)](https://www.typescriptlang.org)
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
-
-Frontend dashboard for the OpenCTEM Continuous Threat Exposure Management platform. Implements the complete Gartner 5-stage CTEM framework: Scoping, Discovery, Prioritization, Validation, and Mobilization.
-
-## Features
-
-### CTEM 5-Stage Process
-
-- **Scoping** - Attack surface definition, asset groups, scope targets/exclusions
-- **Discovery** - 24 asset type pages, automated discovery via sensors, SCM sync
-- **Prioritization** - Risk scoring (0-100), AI-powered triage, finding severity classification
-- **Validation** - Pentest campaigns, attack simulation, control testing
-- **Mobilization** - Remediation workflows, compliance tracking, SLA enforcement
-
-### Asset Management (24 asset type pages)
-
-- External: Domains, Certificates, IP Addresses
-- Applications: Websites, APIs, Mobile Apps, Services
-- Cloud: Cloud Accounts, Compute, Storage, Serverless
-- Infrastructure: Hosts, Containers, Databases, Networks, Kubernetes, VPCs
-- Identity: IAM Users, IAM Roles, Service Accounts
-- Code: Repositories
-- Recon: HTTP Services, Open Ports, Discovered URLs
-
-### Key Capabilities
-
-- **Server-side pagination** with URL state persistence
-- **Real-time findings** per asset (integrated with findings API)
-- **Asset relationships** with graph visualization
-- **Asset groups** with environment/criticality classification
-- **Config builder system** for rapid asset type page creation
-- **Multi-tenant** with team switching
-- **i18n** support (English, Vietnamese, Arabic with RTL)
-- **RBAC** with ~170 granular permissions (ui constants; ~164 backend)
-
-## Tech Stack
-
-| Category  | Technology                                                     |
-| --------- | -------------------------------------------------------------- |
-| Framework | Next.js 16 (App Router, Turbopack; React Compiler NOT enabled) |
-| UI        | React 19, TypeScript 5 (strict), shadcn/ui, Tailwind CSS 4     |
-| State     | Zustand (auth), React Context (theme, direction, layout)       |
-| Data      | SWR (client fetching), Server Components (SSR)                 |
-| Forms     | React Hook Form + Zod validation                               |
-| Auth      | Local JWT, OAuth2 (Google, GitHub, Microsoft), SAML SSO       |
-| Testing   | Vitest, React Testing Library, Playwright                      |
-
-## Project Structure
-
-```
-web/src/
-├── app/                          # Next.js App Router
-│   ├── (auth)/                   # Login, register, forgot password
-│   └── (dashboard)/              # Protected dashboard (144 of 154 page.tsx)
-│       ├── (discovery)/          # Assets (24 types), scans, components
-│       ├── (scoping)/            # Asset groups, scope config, attack surface
-│       ├── (mobilization)/       # Remediation, workflows
-│       ├── findings/             # Vulnerability findings
-│       ├── settings/             # Tenant, users, roles, integrations
-│       └── ...
-├── features/                     # Business modules (40+)
-│   ├── assets/                   # Asset management
-│   │   ├── components/           # AssetPage, AssetDetailSheet, etc.
-│   │   ├── hooks/                # useAssets, useAssetCRUD, useAssetOwners
-│   │   ├── types/                # 34 asset types, page config
-│   │   └── lib/                  # Config builder, category templates
-│   ├── findings/                 # Findings & vulnerabilities
-│   ├── scans/                    # Scan management
-│   ├── access-control/           # Roles, permissions, groups
-│   ├── pentest/                  # Pentest campaigns
-│   ├── compliance/               # Compliance frameworks
-│   ├── integrations/             # ITSM, SCM, notifications
-│   └── ...                       # 30+ more modules
-├── components/                   # Shared components
-│   ├── ui/                       # shadcn/ui (50+ components)
-│   └── layout/                   # Sidebar, header, footer
-├── context/                      # Theme, direction, layout providers
-├── stores/                       # Zustand (auth store)
-├── lib/                          # API client, utilities, permissions
-└── hooks/                        # Global hooks
-```
-
-## Quick Start
+The web console of OpenCTEM, the open-source Continuous Threat Exposure
+Management (CTEM) platform. It covers the five CTEM stages: Scoping, Discovery,
+Prioritization, Validation and Mobilization.
 
 This is `web/` in the [`openctemio/openctem`](https://github.com/openctemio/openctem)
 monorepo (formerly the `openctemio/ui` repository, now archived); the Go API it
-talks to is [`../api/`](../api/). From the repository root, `make setup`
-installs both components and enables the git hooks, and `make dev-web` runs
-this app. The commands below run in `web/`.
+talks to is [`../api/`](../api/). User documentation is at
+[docs.openctem.io](https://docs.openctem.io).
 
-### Prerequisites
+## Tech stack
 
-- Node.js 26 (the Docker image builds on `node:26-alpine`)
-- npm
+| Category  | Technology                                                                                          |
+| --------- | --------------------------------------------------------------------------------------------------- |
+| Framework | Next.js 16 (App Router, Turbopack)                                                                  |
+| UI        | React 19, TypeScript 5 (strict), shadcn/ui, Tailwind CSS 4                                          |
+| State     | Zustand (auth), React Context (theme, direction, layout)                                            |
+| Data      | SWR (client fetching), Server Components                                                            |
+| Forms     | React Hook Form + Zod                                                                               |
+| Auth      | Local accounts (JWT), OAuth (Google, GitHub, Microsoft), OIDC/Entra ID and SAML SSO through the API |
+| i18n      | English and Vietnamese (`supportedLocales` in `src/lib/i18n.ts`)                                    |
+| Testing   | Vitest, React Testing Library, Playwright                                                           |
 
-### Development
+## Project structure
 
-```bash
-# Install dependencies
-npm install
-
-# Copy environment
-cp .env.example .env.local
-
-# Start dev server (Turbopack)
-npm run dev
+```
+web/src/
+├── app/                    # Next.js App Router
+│   ├── (auth)/             # Login, register, password reset
+│   ├── (dashboard)/        # Signed-in console, grouped by CTEM stage:
+│   │   ├── (scoping)/ (discovery)/ (prioritization)/ (validation)/ (mobilization)/
+│   │   └── findings/ insights/ reports/ settings/ ...
+│   ├── (admin-console)/    # Platform admin console
+│   └── api/                # Same-origin API proxy (/api/v1/*) and route handlers
+├── features/               # Feature modules (components, hooks, api, types per feature)
+├── components/             # Shared components (ui/ = shadcn/ui, layout/)
+├── context/                # Theme, direction, layout, permission providers
+├── stores/                 # Zustand stores (auth)
+├── lib/                    # API client, permissions, utilities
+└── hooks/                  # Global hooks
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Asset type pages (`src/app/(dashboard)/(discovery)/assets/<type>/`) are a
+`page.tsx` that renders the shared `AssetPage` with a per-type `AssetPageConfig`
+(`config.tsx` next to it; type in `src/features/assets/types/page-config.types.ts`).
 
-### Environment Variables
+## Quick start
+
+From the repository root, `make setup` installs both components, generates the
+API contract types and enables the git hooks; `make dev-web` runs this app. The
+commands below run in `web/`.
+
+Prerequisites: Node.js 26 (the Docker image builds on `node:26-alpine`) and npm.
+
+```bash
+npm ci
+cp .env.example .env.local
+npm run dev          # http://localhost:3000
+```
+
+The generated contract file (`src/lib/api/generated/api.types.ts`) is not
+committed; `npm run dev`, `build`, `lint`, `type-check` and `test` check for it
+first (`scripts/ensure-generated.mjs`). Generate it with `make generate` at the
+repository root.
+
+### Environment variables
 
 ```env
 # Backend API (required, server-side only; the browser uses the relative
-# /api/v1/* proxy, so there is no NEXT_PUBLIC_ API URL in production)
+# /api/v1/* proxy, so there is no NEXT_PUBLIC_ API URL)
 BACKEND_API_URL=http://localhost:8080
 
-# App identity
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_APP_NAME=OpenCTEM
 
 # Forward X-Real-IP / X-Forwarded-For to the API (organization IP allowlists).
-# Only set true when a reverse proxy in front of the UI overwrites these
+# Only set true when a reverse proxy in front of the console overwrites these
 # headers; otherwise they are browser-supplied and never forwarded.
 TRUST_PROXY_HEADERS=false
 ```
 
-See [`.env.example`](.env.example) for the full, authoritative list of variables the
-app actually reads (`CSRF_SECRET`, `SECURE_COOKIES`, cookie names, sidebar-badge
-flag, etc.).
-
-### Production
-
-```bash
-# Build
-npm run build
-
-# Start
-npm start
-
-# Or with Docker
-docker compose -f docker-compose.prod.yml up -d
-```
+[`.env.example`](.env.example) is the authoritative list
+(`SECURE_COOKIES`, cookie names, Sentry, sidebar badges, ...). Variable details:
+[docs/ops/ENVIRONMENT_VARIABLES.md](docs/ops/ENVIRONMENT_VARIABLES.md).
 
 ## Commands
 
 ```bash
-npm run dev          # Dev server (Turbopack, port 3000)
-npm run build        # Production build
-npm run lint         # ESLint
-npm run lint:fix     # ESLint auto-fix
-npm run type-check   # TypeScript check
-npm run validate     # type-check + lint
-npm test             # Vitest
-npm run test:coverage # Coverage report
+npm run dev            # Dev server (Turbopack, port 3000)
+npm run build          # Production build
+npm start              # Serve the production build
+npm run lint           # ESLint (lint:fix to fix)
+npm run type-check     # TypeScript
+npm run format         # Prettier (format:check to check)
+npm run validate       # type-check + lint + format:check
+npm test               # Vitest (test:coverage, test:watch, test:ui)
+npm run e2e            # Playwright (see e2e/README.md)
 ```
 
-## Architecture Highlights
+## Deployment
 
-### Asset Page Config Builder
+The console ships as `ghcr.io/openctemio/openctem-web` and inside the all-in-one
+image `ghcr.io/openctemio/openctem`. Install and operate it with the guides at
+[docs.openctem.io/install](https://docs.openctem.io/install/).
 
-New asset type pages require only ~30 lines using the config builder:
+## Further reading
 
-```tsx
-// lib/category-templates.tsx
-export const newTypeConfig = buildAssetPageConfig({
-  type: 'new_type',
-  label: 'New Type',
-  labelPlural: 'New Types',
-  description: '...',
-  icon: SomeIcon,
-  iconColor: 'text-blue-500',
-  gradientFrom: 'from-blue-500/20',
-  gradientVia: 'via-blue-500/10',
-  columns: [metadataTextColumn('field', 'Header')],
-  formFields: [commonFormFields.provider([...])],
-})
-
-// pages/new-type/page.tsx (8 lines)
-export default function Page() {
-  return <AssetPage config={newTypeConfig} />
-}
-```
-
-### Performance Optimizations
-
-- SWR with stable string keys (prevents cache bloat)
-- Server-side pagination + search (debounced 300ms)
-- URL state persistence (filters survive page refresh)
-- Lazy data loading (dialogs fetch only when open)
-- Blob URL cleanup (prevents memory leaks)
-- Permission-gated rendering (skip unauthorized data fetches)
-
-### Security
-
-- Permission-gated UI (AssetsRead/Write/Delete)
-- CSV export with formula injection prevention
-- CSRF double-submit cookie pattern
-- Secure cookies (HttpOnly, Secure, SameSite)
-- Input validation via Zod schemas
-- OAuth redirect URI validation
+- [Developer documentation index](docs/README.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security architecture](docs/security-architecture.md)
 
 ## License
 

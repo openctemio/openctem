@@ -23,11 +23,11 @@ import (
 func (h *gsHarness) seedLensFindings(t *testing.T) map[string]string {
 	t.Helper()
 	ids := map[string]string{}
-	for _, st := range []string{"new", "fix_applied", "not_observed", "resolved", "verified", "false_positive", "accepted", "duplicate"} {
+	for _, st := range []string{"new", "fix_applied", "not_observed", "resolved", "false_positive", "accepted", "duplicate"} {
 		id := shared.NewID()
 		resolvedAt := "NULL"
 		switch st {
-		case "resolved", "verified", "false_positive", "accepted", "duplicate":
+		case "resolved", "false_positive", "accepted", "duplicate":
 			resolvedAt = "now() - interval '3 days'"
 		}
 		h.exec(fmt.Sprintf(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, finding_type, resolved_at)
@@ -70,8 +70,8 @@ func TestFindingsStateLens_CountContract(t *testing.T) {
 			"memberA": sorted(fa, ids["new"], ids["fix_applied"], ids["not_observed"]),
 		},
 		"fixed": {
-			"owner":   sorted(fb2, ids["resolved"], ids["verified"]),
-			"memberA": sorted(ids["resolved"], ids["verified"]),
+			"owner":   sorted(fb2, ids["resolved"]),
+			"memberA": sorted(ids["resolved"]),
 		},
 		"dispositioned": {
 			"owner":   sorted(ids["false_positive"], ids["accepted"], ids["duplicate"]),
@@ -146,7 +146,7 @@ func TestFindingsStateLens_ResolvedAtWindow(t *testing.T) {
 	ids := h.seedLensFindings(t)
 	admin := flCaller{"owner", h.owner, true}
 	got, total, _ := h.listIDs(t, admin, "state=fixed&resolved_at_gte=-P30D")
-	if want := sorted(ids["resolved"], ids["verified"]); strings.Join(got, ",") != strings.Join(want, ",") || total != 2 {
+	if want := sorted(ids["resolved"]); strings.Join(got, ",") != strings.Join(want, ",") || total != 1 {
 		t.Errorf("fixed in the last 30 days = %v (total %d), want %v (FB2 was fixed 40 days ago)", got, total, want)
 	}
 	if got, _, _ := h.listIDs(t, admin, "state=fixed&resolved_at_lt=-P30D"); len(got) != 1 || got[0] != h.findingB2.String() {

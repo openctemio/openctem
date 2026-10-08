@@ -1,5 +1,6 @@
 'use client'
 
+import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import { useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -21,14 +22,7 @@ import { formatRelative } from '@/lib/format-date'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding, FindingApiFilters } from '@/features/findings/api/finding-api.types'
 
-const OPEN_EXCLUDE = [
-  'resolved',
-  'false_positive',
-  'accepted',
-  'duplicate',
-  'verified',
-  'accepted_risk',
-]
+const OPEN_EXCLUDE = findingStatusesInCategory('closed')
 
 /** The queue shows the top of the list; "View all" opens Findings filtered to me. */
 const QUEUE_SIZE = 15

@@ -393,6 +393,11 @@ which is the takeover revision 5 set out to prevent. Owner decision
     severity with `owner_recovery: true`, by actor `platform-admin:<email>`.
 - The suspended owners are left as they are. The new owner (or an
   administrator they appoint) decides whether to reactivate or remove them.
+- **Reason and step-up** (revision 14). The request also needs a `reason`
+  (10 to 500 characters, kept in the admin audit row) and a fresh console
+  authenticator code (`totp_code`). Organizations > an organization >
+  Members offers "Recover ownership" to a super admin when every owner is
+  suspended.
 
 Still not provided: ownership transfer, or recovery for an organization whose
 owner is active but unreachable. Those need the owner's own action.
@@ -511,6 +516,79 @@ nothing is deleted automatically. Organizations > an organization shows the
 stage and lets an ops_admin+ exempt it with a reason (audited).
 
 Details: `docs/architecture/idle-workspaces.md`.
+
+## Revision 13: console layout, overview and search
+
+The console is organized by what an operator does, and opens on what needs
+them:
+
+- **Navigation.** Overview · Customers (Organizations) · Scanning (Target
+  mappings) · Security (Admin activity, Administrators) · System (Sign-up,
+  Admin sign-in, Plans). Later sections (Users, Requests, Plans & usage, Operations)
+  are added together with their pages, never ahead of them. Pages that moved
+  (`/admin/system-logs` to `/admin/security/activity`, `/admin/administrators`
+  to `/admin/security/administrators`) have no redirect.
+- **Overview = attention queue.** `GET /api/v1/admin/overview` (any admin
+  role) returns counts: organizations and those without an active owner (with
+  the names of the newest five), emergency-access sign-ins in the last 7 days,
+  refused or failed administrator actions in the last 24 hours, overdue
+  break-glass tests, the applied database schema against the one the API
+  ships (and the dirty flag), platform sensors online and offline, pending
+  sensor jobs and the oldest one's age, scan runs past their deadline, and
+  failed and dead notifications. The web turns them into a list, most severe
+  first, each with its one-click action when a console page handles it (a
+  link is offered only to a role that can act on it). The response carries no
+  tenant content and no administrator email; the roster stays super-admin
+  only. It refreshes every minute.
+- **Search.** Ctrl/Cmd+K opens the console's command palette: the pages the
+  role can open, and organizations by name or slug, searched on the server.
+- **Admin activity** filters by result (`?outcome=failure`), so the overview
+  links straight to refused actions or to break-glass sign-ins.
+
+## Revision 14: organization 360
+
+Organizations > an organization opens on a summary: owners and active
+members, the plan with an over-limit badge and the limits that are over,
+sign-in (SSO posture and verified domains), identifiers, and the latest
+administrator actions on it. Each card leads to its tab. The tab is in the
+URL (`?tab=overview|users|plan|sso|activity|audit-chain`), so a support link
+can point at one. Activity lists every admin audit row about the
+organization (`GET /admin/audit-logs?resource_id=<id>`).
+
+The organization list shows each organization's plan and filters by owner
+(`owner=none` lists those with no active owner, which the overview links
+to) and by plan. Owner recovery gained a reason and step-up (revision 7).
+Nothing from inside an organization (findings, assets) is shown: the console
+never reads it.
+
+## Revision 15: Users (cross-organization account support)
+
+Customers > Users finds an account in any organization and helps it sign in
+again, without touching what an organization holds:
+
+- `GET /api/v1/admin/platform-users?q=` (any admin): accounts whose email or
+  name contains `q` (3 characters at least; the directory is looked up, not
+  browsed), or whose id is `q`. Each shows its sign-in state: provider,
+  verified email, lockout, failed sign-ins, MFA, last sign-in, how many
+  organizations it is in, and whether it is a platform administrator or
+  erased.
+- `GET /api/v1/admin/platform-users/{user_id}` (any admin, **audited** as
+  `platform_user.view`): the account, its organizations (name, role,
+  membership status), its federated identities (issuer, subject) and its
+  active sessions (IP, method, started, last seen).
+- Support actions, **ops_admin+**, a `reason` of 10 to 500 characters
+  (kept in the admin audit row), 20 per minute per administrator, audited as
+  `platform_user.<action>` with the account as resource:
+  `revoke-sessions` (every session, every organization), `unlock` (clears
+  the failed-sign-in lockout), `password-reset` (the forgot-password link,
+  emailed to the account; accounts with a password only), and
+  `verification-emails` (a new link; the old one stops working). Links go to
+  the account's own mailbox and are never returned; without SMTP the email
+  actions answer 409 `EMAIL_UNAVAILABLE`.
+- Refused with 409 for a platform administrator's account (managed in
+  Security > Administrators, so an operations administrator cannot sign a
+  super admin out) and for an erased account.
+- Ctrl/Cmd+K also finds accounts.
 
 ## Later phases
 

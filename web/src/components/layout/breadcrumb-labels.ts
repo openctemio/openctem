@@ -79,3 +79,27 @@ export function breadcrumbLabel(path: string, segment: string): string {
   if (fromSidebar && !GENERIC_TITLES.has(fromSidebar)) return fromSidebar
   return FALLBACK_LABELS[segment] ?? humanize(segment)
 }
+
+/**
+ * What a record id under each parent segment is ("/scans/<id>" is a scan):
+ * the crumb for an id until its page names the record. Never the id itself.
+ */
+const RECORD_LABELS: Record<string, string> = {
+  assets: 'Asset',
+  campaigns: 'Campaign',
+  cycles: 'Cycle',
+  findings: 'Finding',
+  groups: 'Asset group',
+  organizations: 'Organization',
+  remediation: 'Campaign',
+  repositories: 'Repository',
+  runs: 'Run',
+  scans: 'Scan',
+  templates: 'Template',
+  workflows: 'Workflow',
+}
+
+/** Label for an id segment whose parent segment is `parent`. */
+export function recordLabel(parent: string | undefined): string {
+  return (parent && RECORD_LABELS[parent]) || 'Details'
+}

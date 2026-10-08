@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import useSWR from 'swr'
+import useSWR, { mutate as globalMutate } from 'swr'
 import { get, post } from '@/lib/api/client'
+import { useBootstrapPending } from '@/context/bootstrap-provider'
 import type { EASMDecisionResult, EASMReviewPage } from '@/lib/api/generated'
 import { usePermissions, Permission } from '@/lib/permissions'
 import type { AttributionDecision, AttributionState } from '@/features/assets/lib/attribution'
@@ -54,11 +55,17 @@ export function useDecideReviewBatch() {
   const decide = async (assetIds: string[], state: AttributionDecision, note?: string) => {
     setSaving(true)
     try {
-      return await post<EASMDecisionResult>('/api/v1/easm/candidates/decisions', {
+      const result = await post<EASMDecisionResult>('/api/v1/easm/candidates/decisions', {
         asset_ids: assetIds.slice(0, MAX_DECISION_BATCH),
         state,
         ...(note ? { note } : {}),
       })
+      // Every queue page and the sidebar count (cached, not refetched on
+      // mount) change with a decision.
+      void globalMutate(
+        (key) => typeof key === 'string' && key.startsWith('/api/v1/easm/candidates?')
+      )
+      return result
     } finally {
       setSaving(false)
     }
@@ -75,9 +82,18 @@ export const REVIEW_QUEUE_STATES: AttributionState[] = ['needs_review', 'candida
  * badge, the tab count and the queue always agree. Cached for a minute.
  */
 export function useEASMReviewCount(enabled = true) {
-  const key = enabled ? reviewQueueURL({ states: REVIEW_QUEUE_STATES, page: 1, perPage: 1 }) : null
+  // The session bootstrap carries this count and seeds the key
+  // (context/bootstrap-session.ts EASM_REVIEW_COUNT_URL): wait for it, and do
+  // not fetch a seeded or cached count again on mount. A review decision
+  // revalidates it (useEASMDecide).
+  const bootstrapPending = useBootstrapPending()
+  const key =
+    enabled && !bootstrapPending
+      ? reviewQueueURL({ states: REVIEW_QUEUE_STATES, page: 1, perPage: 1 })
+      : null
   const { data } = useSWR<EASMReviewPage>(key, get, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 60000,
   })
   return data?.total

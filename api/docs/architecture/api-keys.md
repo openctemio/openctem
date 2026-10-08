@@ -28,7 +28,7 @@ are separate credentials and are not covered here.
 Who sees which keys: owners and administrators list every key of the
 organization; anyone else (`integrations:api_keys:read` without the admin
 bypass) lists only the keys whose `user_id` is their own, and another user's
-key reads as 404 (owner decision 2026-10-02). Minting, revoking and deleting
+key reads as 404. Minting, revoking and deleting
 need `integrations:api_keys:write` / `:delete`, which only owners and
 administrators hold by default.
 
@@ -121,7 +121,7 @@ a permission gate is reachable by a key.
 Keys are read-only on the REST API. Scopes can include write permissions
 (`assets:write`, `findings:status`, …), but every key minted so far was minted
 for the read-only MCP server, so honouring those scopes now would silently give
-existing keys write access. Allowing writes needs an owner decision: either a
+existing keys write access. Allowing writes needs a design decision: either a
 per-key "allow writes" flag set at mint time, or honouring write scopes only
 for keys minted after the change. The denylist and the CSRF reasoning above
 already hold for writes; the read-only check in `OrJWT` is the one switch.

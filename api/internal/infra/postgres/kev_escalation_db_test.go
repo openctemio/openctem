@@ -17,7 +17,7 @@ import (
 //   - a non-critical KEV finding is escalated to critical AND flagged is_in_kev.
 //   - an ALREADY-critical KEV finding with is_in_kev=false is STILL flagged
 //     (proves the flag is not severity-gated — the historical bug).
-//   - a terminal-status (accepted_risk) KEV finding is left untouched.
+//   - a terminal-status (accepted) KEV finding is left untouched.
 //   - the tenant appears in the returned touched-tenant set.
 //
 // Skipped unless DATABASE_URL is set.
@@ -48,7 +48,7 @@ func TestEscalateKEVFindings_FlagsAndEscalates(t *testing.T) {
 
 	nonCritical := seedKEVTestFinding(ctx, t, db, tenantID, assetID, "high", "new", kevCVE, false)
 	alreadyCritical := seedKEVTestFinding(ctx, t, db, tenantID, assetID, "critical", "confirmed", kevCVE, false)
-	terminal := seedKEVTestFinding(ctx, t, db, tenantID, assetID, "high", "accepted_risk", kevCVE, false)
+	terminal := seedKEVTestFinding(ctx, t, db, tenantID, assetID, "high", "accepted", kevCVE, false)
 
 	esc := NewKEVEscalator(&DB{DB: db})
 	res, err := esc.EscalateKEVFindings(ctx)
