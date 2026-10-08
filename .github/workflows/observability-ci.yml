@@ -1,0 +1,42 @@
+name: Observability CI
+
+# Validates the operator monitoring stack (deploy/observability, see
+# api/docs/operations/monitoring.md) with its pinned images: the rendered
+# Prometheus and Alertmanager configurations, the alert rules and their unit
+# tests (promtool), the receivers and message templates (amtool), and that no
+# secret is ever written into a rendered configuration.
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'deploy/observability/**'
+      - '.github/workflows/observability-ci.yml'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'deploy/observability/**'
+      - '.github/workflows/observability-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  config:
+    name: Monitoring config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Shell scripts
+        run: shellcheck deploy/observability/*/entrypoint.sh deploy/observability/test/check-config.sh
+      - name: Prometheus, rules, Alertmanager
+        run: deploy/observability/test/check-config.sh
+      - name: Compose file
+        run: docker compose -f deploy/observability/docker-compose.yml --profile observability --profile grafana config --quiet

@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 
 	"github.com/go-chi/chi/v5"
@@ -38,6 +39,8 @@ type ScanWorkflowHandler struct {
 	findingScope runFindingScope
 	// runLookup reads a run for the access check (the service when unset).
 	runLookup runReader
+	// users names the people who started runs (nil: no names).
+	users user.Repository
 	// runEvents reads the run timeline (nil: an empty timeline).
 	runEvents command.EventReader
 }
@@ -183,11 +186,13 @@ type RunResponse struct {
 	ScanID         *string `json:"scan_id,omitempty"`
 	// ScanName names the run's scan (list rows only; empty when the scan was
 	// deleted).
-	ScanName          string                         `json:"scan_name,omitempty"`
-	ScanProfileID     *string                        `json:"scan_profile_id,omitempty"`
-	TriggerType       string                         `json:"trigger_type"`
-	TriggeredBy       string                         `json:"triggered_by,omitempty"`
-	TriggeredByName   string                         `json:"triggered_by_name,omitempty"` // display name, when triggered_by is a user id
+	ScanName        string  `json:"scan_name,omitempty"`
+	ScanProfileID   *string `json:"scan_profile_id,omitempty"`
+	TriggerType     string  `json:"trigger_type"`
+	TriggeredBy     string  `json:"triggered_by,omitempty"`
+	TriggeredByName string  `json:"triggered_by_name,omitempty"` // display name, when triggered_by is a user id
+	// Trigger is who or what started the run, in one shape for every kind.
+	Trigger           *RunTrigger                    `json:"trigger,omitempty"`
 	Status            string                         `json:"status"`
 	StartedAt         *string                        `json:"started_at,omitempty"`
 	CompletedAt       *string                        `json:"completed_at,omitempty"`
@@ -991,7 +996,7 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := toRunResponse(run)
+	resp := withRunTriggerLabel(toRunResponse(run), runTriggerNames(r.Context(), h.users, h.logger, run))
 	tasks, err := h.service.GetRunTasks(r.Context(), run)
 	if err != nil {
 		h.logger.Error("failed to read run tasks", "run_id", run.ID.String(), "error", err)
@@ -1030,7 +1035,7 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		PerPage:        page.PerPage,
 	}
 	if tid, perr := shared.IDFromString(tenantID); perr == nil && h.listHidesFindingRuns(r.Context(), tid) {
-		input.ExcludeKinds = []string{string(scanrundom.RunKindRetest)}
+		input.ExcludeKinds = []string{string(scanrundom.RunKindRetest), string(scanrundom.RunKindValidation)}
 	}
 
 	result, err := h.service.ListRuns(r.Context(), input)
@@ -1051,9 +1056,10 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to read the runs' scans").WriteJSON(w)
 		return
 	}
+	names := runTriggerNames(r.Context(), h.users, h.logger, result.Data...)
 	items := make([]*RunResponse, len(result.Data))
 	for i, run := range result.Data {
-		items[i] = toRunResponse(run)
+		items[i] = withRunTriggerLabel(toRunResponse(run), names)
 		if sum, ok := summaries[run.ID]; ok {
 			items[i].TaskSummary = toRunTaskSummaryResponse(sum)
 		}
@@ -1260,6 +1266,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		ErrorMessage:   r.ErrorMessage,
 		RefusalCode:    r.RefusalCode,
 		Kind:           string(r.KindOrDefault()),
+		Trigger:        ptrRunTrigger(runTrigger(r)),
 		Subject:        r.Subject,
 		CreatedAt:      r.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
@@ -1561,3 +1568,8 @@ func stepErrorClass(code string) string {
 	}
 	return string(scanrundom.ClassOf(code))
 }
+
+// SetUserNames lets run responses name the people who started them.
+func (h *ScanWorkflowHandler) SetUserNames(users user.Repository) { h.users = users }
+
+func ptrRunTrigger(t RunTrigger) *RunTrigger { return &t }

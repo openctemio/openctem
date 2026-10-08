@@ -303,13 +303,19 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewOneOffScanArchiveController(svc.Scan, 0, 0))
 
 	// Scan timeout controller: enforces per-scan timeout_seconds on running scan_runs
-	w.ControllerManager.Register(controller.NewScanTimeoutController(
+	scanTimeout := controller.NewScanTimeoutController(
 		repos.ScanRun,
 		&controller.ScanTimeoutControllerConfig{
 			Interval: 60 * time.Second,
 			Logger:   log.With("controller", "scan-timeout"),
 		},
-	))
+	)
+	// A run the reaper ends fires the run-finished event (automations) like
+	// any other (research/62 P0-11).
+	if svc.ScanRun != nil {
+		scanTimeout.SetReapedRunListener(svc.ScanRun.NotifyRunsReaped)
+	}
+	w.ControllerManager.Register(scanTimeout)
 
 	// Stalled run repair (research/62 SG-10): a run whose chained step waits
 	// for a report that failed or expired, or whose plan was saved without
@@ -414,6 +420,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger:    log.With("controller", "domain-reverify"),
 			},
 		))
+	}
+
+	// External members' access end dates (RFC-058): an expired membership is
+	// suspended within a minute.
+	if svc.Tenant != nil {
+		w.ControllerManager.Register(controller.NewMemberAccessExpiryController(svc.Tenant, time.Minute, 200,
+			log.With("controller", "member-access-expiry")))
 	}
 
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(

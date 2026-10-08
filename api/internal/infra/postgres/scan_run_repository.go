@@ -604,6 +604,13 @@ const MaxUnfinishedTargets = 10000
 //
 // Returns the number of runs settled.
 func (r *ScanRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error) {
+	reaped, err := r.MarkTimedOutRunsReporting(ctx)
+	return int64(len(reaped)), err
+}
+
+// MarkTimedOutRunsReporting is MarkTimedOutRuns, reporting the runs it
+// ended (scanrun.ReapedRunReporter).
+func (r *ScanRunRepository) MarkTimedOutRunsReporting(ctx context.Context) ([]scanrun.ReapedRun, error) {
 	// The timeout message says only what is actually known: nothing reported
 	// back. An earlier wording ('scan exceeded configured timeout') asserted a
 	// cause, and was shown to users whose scanner had in fact failed
@@ -689,22 +696,41 @@ func (r *ScanRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error)
 			(SELECT COUNT(*) FROM settled),
 			(SELECT COUNT(*) FROM closed_commands),
 			(SELECT COUNT(*) FROM closed_steps),
-			COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM settled WHERE scan_id IS NOT NULL), '{}')
+			COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM settled WHERE scan_id IS NOT NULL), '{}'),
+			COALESCE((SELECT array_agg(tenant_id::text || ':' || id::text) FROM settled), '{}')
 	`
 
 	var (
 		runs, commands, steps int64
-		scanIDs               []string
+		scanIDs, reapedKeys   []string
 	)
-	if err := r.db.QueryRowContext(ctx, query, MaxUnfinishedTargets).Scan(&runs, &commands, &steps, pq.Array(&scanIDs)); err != nil {
-		return 0, fmt.Errorf("failed to mark timed out runs: %w", err)
+	if err := r.db.QueryRowContext(ctx, query, MaxUnfinishedTargets).Scan(&runs, &commands, &steps, pq.Array(&scanIDs), pq.Array(&reapedKeys)); err != nil {
+		return nil, fmt.Errorf("failed to mark timed out runs: %w", err)
 	}
+	reaped := parseReapedRuns(reapedKeys)
 	// The scans' summaries are recomputed after the statement: a summary
 	// computed inside it would still see the runs as open (one snapshot).
 	if err := refreshScanRunSummariesByID(ctx, r.db, scanIDs); err != nil {
-		return runs, fmt.Errorf("runs timed out, scan summaries not refreshed: %w", err)
+		return reaped, fmt.Errorf("runs timed out, scan summaries not refreshed: %w", err)
 	}
-	return runs, nil
+	return reaped, nil
+}
+
+// parseReapedRuns reads "tenant:run" keys.
+func parseReapedRuns(keys []string) []scanrun.ReapedRun {
+	out := make([]scanrun.ReapedRun, 0, len(keys))
+	for _, k := range keys {
+		tenant, run, ok := strings.Cut(k, ":")
+		if !ok {
+			continue
+		}
+		tid, terr := shared.IDFromString(tenant)
+		rid, rerr := shared.IDFromString(run)
+		if terr == nil && rerr == nil {
+			out = append(out, scanrun.ReapedRun{TenantID: tid, RunID: rid})
+		}
+	}
+	return out
 }
 
 // GetUnfinishedTargets returns the targets runID recorded as unfinished at its
@@ -841,6 +867,13 @@ func (r *ScanRunRepository) CloseCanceledRun(ctx context.Context, tenantID, runI
 // its commands are failed so no sensor picks them up late, and the scan
 // summary is recomputed from its runs.
 func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error) {
+	reaped, err := r.AbortUnclaimedRunsReporting(ctx, scheduledAfter, interactiveAfter)
+	return int64(len(reaped)), err
+}
+
+// AbortUnclaimedRunsReporting is AbortUnclaimedRuns, reporting the runs it
+// ended (scanrun.ReapedRunReporter).
+func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) ([]scanrun.ReapedRun, error) {
 	const query = `
 		WITH candidates AS (
 			SELECT pr.id,
@@ -891,21 +924,23 @@ func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAft
 		)
 		SELECT (SELECT COUNT(*) FROM unclaimed), (SELECT COUNT(*) FROM closed_commands),
 		       (SELECT COUNT(*) FROM closed_steps),
-		       COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM unclaimed WHERE scan_id IS NOT NULL), '{}')
+		       COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM unclaimed WHERE scan_id IS NOT NULL), '{}'),
+		       COALESCE((SELECT array_agg(tenant_id::text || ':' || id::text) FROM unclaimed), '{}')
 	`
 	var (
 		runs, commands, steps int64
-		scanIDs               []string
+		scanIDs, reapedKeys   []string
 	)
 	if err := r.db.QueryRowContext(ctx, query,
 		int64(scheduledAfter.Seconds()), int64(interactiveAfter.Seconds()), AbsoluteRunTimeoutSeconds,
-	).Scan(&runs, &commands, &steps, pq.Array(&scanIDs)); err != nil {
-		return 0, fmt.Errorf("failed to abort unclaimed runs: %w", err)
+	).Scan(&runs, &commands, &steps, pq.Array(&scanIDs), pq.Array(&reapedKeys)); err != nil {
+		return nil, fmt.Errorf("failed to abort unclaimed runs: %w", err)
 	}
+	reaped := parseReapedRuns(reapedKeys)
 	if err := refreshScanRunSummariesByID(ctx, r.db, scanIDs); err != nil {
-		return runs, fmt.Errorf("unclaimed runs aborted, scan summaries not refreshed: %w", err)
+		return reaped, fmt.Errorf("unclaimed runs aborted, scan summaries not refreshed: %w", err)
 	}
-	return runs, nil
+	return reaped, nil
 }
 
 // ListPendingRetries atomically claims failed scan_runs eligible for automatic retry.

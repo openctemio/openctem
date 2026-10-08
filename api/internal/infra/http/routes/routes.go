@@ -18,6 +18,7 @@ import (
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
@@ -33,6 +34,7 @@ type Router = infrahttp.Router
 // Handlers holds all HTTP handlers for route registration.
 type Handlers struct {
 	Health           *handler.HealthHandler
+	ClientErrors     *handler.ClientErrorHandler
 	Auth             *handler.AuthHandler             // OIDC auth info handler
 	LocalAuth        *handler.LocalAuthHandler        // Local auth handler (nil if OIDC-only)
 	OAuth            *handler.OAuthHandler            // OAuth handler for social login (nil if not configured)
@@ -208,10 +210,14 @@ type Handlers struct {
 	Bootstrap *handler.BootstrapHandler // nil if not initialized (no database)
 
 	// Admin Auth handler (API key authentication for Admin UI)
-	AdminAuth           *handler.AdminAuthHandler
-	AdminOrganization   *handler.AdminOrganizationHandler
-	AdminConsole        *handler.AdminConsoleHandler
-	AdminAuditChain     *handler.AdminAuditChainHandler
+	AdminAuth         *handler.AdminAuthHandler
+	AdminOrganization *handler.AdminOrganizationHandler
+	AdminConsole      *handler.AdminConsoleHandler
+	AdminAuditChain   *handler.AdminAuditChainHandler
+	// AdminSignup: Console > System > Sign-up (the sign-up policy).
+	AdminSignup *handler.AdminSignupHandler
+	// SignupPolicy answers the sign-up policy to the public auth endpoints.
+	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
 
 	// Admin Audit middleware (audit logging for admin operations)
@@ -334,6 +340,7 @@ func Register(
 	// Health routes: /health and /ready are public; /metrics is gated by a
 	// bearer token unless METRICS_PUBLIC=true (see MetricsConfig).
 	registerHealthRoutes(router, h.Health, middleware.MetricsAuth(cfg.Metrics.Public, cfg.Metrics.Token, log))
+	registerClientErrorRoute(router, h.ClientErrors, log)
 
 	// API Documentation routes (public)
 	if h.Docs != nil {

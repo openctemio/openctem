@@ -761,6 +761,8 @@ Authorization is enforced at the **route layer** in
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |
 | `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** (audited high) |
 | `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
+| `GET /api/v1/admin/settings/signup` | any admin |
+| `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
 | `GET /api/v1/admin/users/{id}` | **super_admin** |
 | `PATCH /api/v1/admin/users/{id}` | **super_admin** (audited) |
@@ -1205,6 +1207,30 @@ disables and asks administrators to finish. A re-invite, admin add, SCIM
 provisioning or SSO JIT re-activates a tombstone from zero (only the new
 role). Tombstones yield no token, no tenant-switcher entry, are left out of
 the default member list (`?status=offboarded|all` shows them) and out of SCIM.
+
+### External members (RFC-058)
+
+A member whose email domain the organization does not hold is **external**.
+The domain may belong to another organization (their home organization), be
+a personal address, or be a work domain nobody has verified.
+
+- They join only by accepting an invitation addressed to them. Adding an
+  existing account or creating an account for them is refused
+  (`ErrExternalNeedsInvitation`).
+- They join as a **viewer** with no data scope until added to a team.
+  An invitation offering more is refused.
+- They never hold the owner role (DB CHECK and triggers on `tenant_members`
+  and `user_roles`). They are never granted the admin role or a role with full
+  data access (`RoleService.capExternalTarget`, every grant path, system paths
+  included; `ErrExternalRoleCeiling`, 403).
+- Without a home organization, their access must end:
+  - 90 days by default, 365 at most;
+  - `MemberAccessExpiryController` suspends the membership within a minute
+    (`suspended_reason = expired`), in that organization only;
+  - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
+    `members:write`) sets a new end date and re-enables them;
+  - a plain reactivation is refused.
+- The host sees the home organization's name only.
 
 ### Coverage
 

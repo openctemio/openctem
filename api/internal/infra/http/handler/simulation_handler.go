@@ -34,13 +34,10 @@ func NewSimulationHandler(svc *compliance.SimulationService, log *logger.Logger)
 func (h *SimulationHandler) ListSimulations(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 	filter := simulation.SimulationFilter{}
 
 	if t := r.URL.Query().Get("type"); t != "" {
@@ -231,13 +228,10 @@ func (h *SimulationHandler) ListSimulationRuns(w http.ResponseWriter, r *http.Re
 func (h *SimulationHandler) ListControlTests(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 	filter := simulation.ControlTestFilter{}
 
 	if f := r.URL.Query().Get("framework"); f != "" {
