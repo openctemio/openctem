@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -490,6 +491,8 @@ func (s *Service) RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, 
 			"retried_at":    time.Now().Unix(),
 		},
 		RetryAttempt: retryAttempt,
+		// A retry is started by the platform, not by a person.
+		TriggerType: scanworkflow.TriggerTypeSystem,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to trigger retry: %w", err)
