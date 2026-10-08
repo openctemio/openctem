@@ -85,13 +85,13 @@ func (r *FindingRepository) PromoteBranchOnlyByFingerprints(ctx context.Context,
 // a fresh finding. keep_when_inactive is not consulted: it keeps findings
 // of a branch that counts, and a branch-only finding counts nowhere.
 func (r *FindingRepository) expireBranchOnlyFindings(ctx context.Context, tenantID shared.ID, defaultExpiryDays int) (int64, error) {
-	const query = `
+	query := `
 		WITH cand AS (
 			SELECT f.id, f.status
 			FROM findings f
 			WHERE f.tenant_id = $1
 			  AND f.branch_only
-			  AND f.status IN ('new', 'open', 'confirmed')
+			  AND f.status IN ` + branchOnlyExpiryFromSQL + `
 			  AND f.last_seen_at < NOW() - make_interval(days => $2)
 			  AND NOT EXISTS (
 				SELECT 1 FROM finding_branch_occurrences o

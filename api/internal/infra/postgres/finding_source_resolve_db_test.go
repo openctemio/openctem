@@ -28,12 +28,12 @@ func TestResolveSourceMitigated_DB(t *testing.T) {
 	now := time.Now().UTC()
 	before := now.Add(-48 * time.Hour)
 
-	open, openFP := insert(f.tenant, f.host, "tenable_sc", "open", "va", before)
+	open, openFP := insert(f.tenant, f.host, "tenable_sc", "new", "va", before)
 	accepted, accFP := insert(f.tenant, f.host, "tenable_sc", "accepted", "va", before)
 	fp1, fpFP := insert(f.tenant, f.host, "tenable_sc", "false_positive", "va", before)
-	otherTool, otherToolFP := insert(f.tenant, f.host, "nuclei", "open", "dast", before)
+	otherTool, otherToolFP := insert(f.tenant, f.host, "nuclei", "new", "dast", before)
 	seenAfter, seenAfterFP := insert(f.tenant, f.host, "tenable_sc", "confirmed", "va", now)
-	manual, manualFP := insert(f.tenant, f.host, "tenable_sc", "open", "manual", before)
+	manual, manualFP := insert(f.tenant, f.host, "tenable_sc", "new", "manual", before)
 
 	// Another tenant's finding under the same key must never be touched.
 	otherTenant := shared.NewID()
@@ -41,7 +41,7 @@ func TestResolveSourceMitigated_DB(t *testing.T) {
 	t.Cleanup(func() { _, _ = f.db.ExecContext(ctx, "DELETE FROM tenants WHERE id = $1", otherTenant.String()) })
 	otherAsset := shared.NewID()
 	f.exec(t, `INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, 'h-o', 'host')`, otherAsset, otherTenant)
-	foreign, _ := insert(otherTenant, otherAsset, "tenable_sc", "open", "va", before)
+	foreign, _ := insert(otherTenant, otherAsset, "tenable_sc", "new", "va", before)
 
 	mitigatedAt := now.Add(-time.Hour)
 	items := []vulnerability.SourceMitigation{
@@ -64,7 +64,7 @@ func TestResolveSourceMitigated_DB(t *testing.T) {
 	if len(ids) != 1 || ids[0] != open {
 		t.Fatalf("dry run matched %v, want only %s", ids, open)
 	}
-	if got := f.status(t, open); got != "open" {
+	if got := f.status(t, open); got != "new" {
 		t.Fatalf("dry run changed the status to %q", got)
 	}
 
@@ -86,7 +86,7 @@ func TestResolveSourceMitigated_DB(t *testing.T) {
 		t.Fatalf("resolution_method %q, want source_mitigated", method)
 	}
 	for id, want := range map[shared.ID]string{
-		accepted: "accepted", fp1: "false_positive", otherTool: "open", seenAfter: "confirmed", manual: "open",
+		accepted: "accepted", fp1: "false_positive", otherTool: "new", seenAfter: "confirmed", manual: "new",
 	} {
 		if got := f.status(t, id); got != want {
 			t.Errorf("finding %s is %q, want %q (must not be resolved)", id, got, want)
@@ -96,7 +96,7 @@ func TestResolveSourceMitigated_DB(t *testing.T) {
 	if err := f.db.QueryRowContext(ctx, `SELECT status FROM findings WHERE id = $1`, foreign.String()).Scan(&foreignStatus); err != nil {
 		t.Fatal(err)
 	}
-	if foreignStatus != "open" {
+	if foreignStatus != "new" {
 		t.Fatalf("another tenant's finding is %q, want open", foreignStatus)
 	}
 

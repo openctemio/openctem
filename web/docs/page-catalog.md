@@ -60,9 +60,10 @@ That is now wrong. Each is sidebar-linked and backed by a real, domain-scoped ho
 
 ## 2. Reachable, intentionally NOT in the sidebar (not orphaned)
 
-- **Asset types (~30)** `/assets/<type>` (hosts, domains, certificates, containers,
-  cloud-accounts, iam-users, repositories, …) plus `/assets/all` and
-  `/assets/duplicates` → reached from the **/assets** hub cards + `?type=` filter.
+- **Asset types** are filters of the one inventory, never pages: `/assets?types=host`,
+  `/assets?types=identity&sub_type=iam_user` (registry-driven typed mode, research/77).
+  `/assets/duplicates` and every asset at `/assets/{id}` (a repository opens its workspace there) →
+  reached from the **/assets** hub and its rows.
 - **Exposures / Components sub-views** `/exposures/{vulnerabilities,misconfigurations,secrets,code}`
   (the Exposures section tabs, `EXPOSURES_SECTION_TABS`) and `/components/{all,vulnerable,ecosystems,licenses,sbom-export}`
   → reached from the parent page's tabs/cards.
