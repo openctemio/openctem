@@ -1593,6 +1593,28 @@ viewer (1) ┴─ Can only view resources
 
 6. **Invitation Security**: Invitations are validated against the accepting user's email address.
 
+7. **CSRF**: a write authenticated by a cookie needs the double-submit pair
+   (`csrf_token` cookie + `X-CSRF-Token` header; `admin_csrf` for the
+   console): `UnifiedAuth` and `CSRFOptional` for the session, `CheckDoubleSubmit`
+   for routes that read the refresh-token cookie. A write authenticated by a
+   header (Bearer JWT, `oct_` key) needs none: a page on another site cannot
+   set that header. The routes that run before a session exists and set
+   session cookies (`/auth/register`, `/login`, `/mfa/*`, `/token`,
+   `/refresh`, `/verify-email`, `/forgot-password`, `/reset-password`,
+   `/create-first-team`, `/discover`, the OAuth and SSO callbacks, and the
+   console's `/admin/auth/session`, `/mfa`, `/logout`, `/idp/start`,
+   `/idp/callback`) refuse a write a browser sent for another site
+   (`RejectCrossSiteBrowser`: an `Origin` that is neither the request's host
+   nor in `CORS_ALLOWED_ORIGINS`, `Origin: null`, or no `Origin` with
+   `Sec-Fetch-Site` other than `same-origin`/`none`), so a page on another
+   site cannot sign a visitor into the attacker's account (login CSRF) when
+   the API is reachable from browsers directly. Calls without either header
+   (the web console's server, scripts) are not affected. Browsers normally
+   reach these routes through the web console, which checks the
+   same-origin rule and the double-submit pair on every write itself
+   (`web/SECURITY.md`, section 6). The IdP's own cross-site posts (SAML ACS,
+   back-channel logout) are authenticated by their signed payload instead.
+
 ## API Routes Summary
 
 ```
