@@ -39,7 +39,7 @@ func NewFindingRetestRepository(db *DB) *FindingRetestRepository {
 
 const findingRetestColumns = `id, tenant_id, finding_id, asset_id, trigger, requested_by, status, outcome, reason,
 	reason_code, sensor_id, prior_status, result_status, template_id, target, check_command_id, reach_command_id,
-	deadline_at, created_at, completed_at`
+	deadline_at, created_at, completed_at, run_id`
 
 // Create inserts a pending retest. A second pending retest of the same finding
 // violates ux_finding_retests_one_pending and returns retest.ErrInFlight.
@@ -68,6 +68,19 @@ func (r *FindingRetestRepository) SetCommands(ctx context.Context, tenantID, id 
 		tenantID.String(), id.String(), nullIDPtr(check), nullIDPtr(reach))
 	if err != nil {
 		return fmt.Errorf("set retest commands: %w", err)
+	}
+	return nil
+}
+
+// SetRun records the scan run that holds a pending retest's commands. The
+// run must belong to the same tenant (composite foreign key).
+func (r *FindingRetestRepository) SetRun(ctx context.Context, tenantID, id, runID shared.ID) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE finding_retests SET run_id = $3
+		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'`,
+		tenantID.String(), id.String(), runID.String())
+	if err != nil {
+		return fmt.Errorf("set retest run: %w", err)
 	}
 	return nil
 }
@@ -476,9 +489,10 @@ func scanRetest(s retestScanner) (*retest.Retest, error) {
 		target                                 string
 		deadline, created                      time.Time
 		completed                              sql.NullTime
+		runID                                  sql.NullString
 	)
 	if err := s.Scan(&id, &tenantID, &findingID, &assetID, &trigger, &requestedBy, &status, &outcome, &reason,
-		&reasonCode, &sensorID, &priorStatus, &resultStatus, &template, &target, &checkCmd, &reachCmd, &deadline, &created, &completed); err != nil {
+		&reasonCode, &sensorID, &priorStatus, &resultStatus, &template, &target, &checkCmd, &reachCmd, &deadline, &created, &completed, &runID); err != nil {
 		return nil, err
 	}
 	rt := &retest.Retest{
@@ -494,6 +508,7 @@ func scanRetest(s retestScanner) (*retest.Retest, error) {
 		Target:       target,
 		DeadlineAt:   deadline,
 		CreatedAt:    created,
+		RunID:        optionalID(runID),
 	}
 	var err error
 	if rt.ID, err = shared.IDFromString(id); err != nil {
