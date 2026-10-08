@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   UserCog,
   UserPlus,
+  UserSearch,
   Waypoints,
   type LucideIcon,
 } from 'lucide-react'
@@ -59,6 +60,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/organizations',
         icon: Building2,
         keywords: ['tenants', 'teams', 'customers'],
+      },
+      {
+        title: 'Users',
+        i18nKey: 'admin.nav.users',
+        url: '/admin/users',
+        icon: UserSearch,
+        keywords: ['accounts', 'people', 'locked', 'sessions', 'support'],
       },
     ],
   },
