@@ -1,0 +1,5 @@
+### Security: sensor and CI result bodies are counted before they are decoded
+
+- A protocol v2 or v3 result segment, or a CI run upload, was decoded in full before its item limits were checked. Decoding allocates far more than the bytes on the wire: an empty object in the findings array becomes an 840-byte struct. A single request from any sensor could therefore allocate gigabytes; a 1.2 MB body allocated 1.75 GB. That is enough to run an API replica out of memory, and every organization on that replica with it.
+- The I-JSON pre-pass now counts while it streams. It refuses a segment whose `findings` or `assets` exceed the per-segment limits, whose other arrays exceed 100,000 elements, or whose document holds more objects and values than its item limits allow. The refusal is `413 report-too-large`, so current sensors split the report into smaller segments and retry.
+- CI uploads (`POST /api/v1/ci/runs/{id}/results`) pass the same bounded pre-pass first. They now refuse duplicate member names, as sensor reports already did.
