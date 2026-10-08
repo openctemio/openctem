@@ -117,6 +117,11 @@ func (s *SensorService) RecordSignedUse(id SensorIdentity, clientIP string) {
 // KeyBound reports whether the identity authenticated with a signature.
 func (id SensorIdentity) KeyBound() bool { return id.signingKeyID != nil }
 
+// KeyThumbprint is the thumbprint of the signing key the identity
+// authenticated with ("" for a bearer key). Protocol v3 resolves it again to
+// re-check a long-lived connection (docs/rfcs/RFC-059-sensor-transport-v3.md).
+func (id SensorIdentity) KeyThumbprint() string { return id.keyThumbprint }
+
 // localNonces is the per-replica nonce store, created on first use.
 func (s *SensorService) localNonces() *memoryNonceStore {
 	s.nonceOnce.Do(func() { s.memNonces = newMemoryNonceStore(100_000) })
