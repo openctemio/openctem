@@ -1215,12 +1215,21 @@ export interface ApiApproval {
   rejected_by?: string
   rejected_at?: string
   rejection_reason?: string
-  status: 'pending' | 'approved' | 'rejected' | 'canceled'
+  status: ApprovalStatus
   expires_at?: string
   created_at: string
 }
 
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled'
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'canceled' | 'expired'
+
+/** Every approval status, in tab order. */
+export const APPROVAL_STATUSES: readonly ApprovalStatus[] = [
+  'pending',
+  'approved',
+  'rejected',
+  'canceled',
+  'expired',
+]
 
 export const APPROVAL_STATUS_CONFIG: Record<
   ApprovalStatus,
@@ -1230,4 +1239,5 @@ export const APPROVAL_STATUS_CONFIG: Record<
   approved: { label: 'Approved', variant: 'success' },
   rejected: { label: 'Rejected', variant: 'destructive' },
   canceled: { label: 'Canceled', variant: 'secondary' },
+  expired: { label: 'Expired', variant: 'secondary' },
 }
