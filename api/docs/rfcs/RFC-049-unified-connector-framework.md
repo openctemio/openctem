@@ -514,8 +514,13 @@ Redis, the sensor gateway, other tenants' services on the same VPC).
 
 Replacement:
 
-- The global switch stays only for single-tenant on-prem installs and logs a
-  startup warning when more than one tenant exists.
+- Done: `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` (every private range) is honored
+  only with `APP_ENV=development`; in any other environment the API refuses
+  to start. An on-prem install names the ranges it needs in
+  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` (each inside 10/8, 172.16/12,
+  192.168/16 or fc00::/7; hard-blocked addresses stay blocked), logged at
+  start-up. That list is still process-wide, so a multi-tenant deployment
+  leaves it empty until the per-tenant allowlist below exists.
 - A **platform admin** (not a tenant admin) may grant a tenant an egress
   allowlist entry: `(tenant_id, connector id or *, CIDR or host, port set,
   reason, expires_at, granted_by)`. The guard admits a private answer only if
@@ -573,8 +578,8 @@ the audit log.
 
 ### 10.3 Rate limits and quotas
 
-- Upstream courtesy: descriptor rate (token bucket per instance), honoured
-  by both hosts; `Retry-After` honoured, capped at 60 s.
+- Upstream courtesy: descriptor rate (token bucket per instance), honored
+  by both hosts; `Retry-After` honored, capped at 60 s.
 - Platform fairness: per-tenant quotas on platform workers (concurrent pulls,
   pushes per minute, test calls per minute) so one tenant's connector cannot
   starve the outbox or the controller. Replaces today's in-memory,
