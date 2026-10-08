@@ -53,11 +53,17 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
-	repo := postgres.NewMCPOAuthRepository(deps.DB)
+	repo := repos.MCPOAuth
+	if repo == nil {
+		repo = postgres.NewMCPOAuthRepository(deps.DB)
+	}
 	s, err := mcpoauthapp.NewService(mcpoauthapp.Config{
 		Repository:  repo,
 		Connections: repo,
-		Endpoints:   d.Endpoints,
+		Clients:     repo,
+		// Deprecated by MCP; off unless the operator turns it on.
+		DynamicRegistration: cfg.MCP.DynamicRegistration,
+		Endpoints:           d.Endpoints,
 		// Codes and tokens are stored as HMAC-SHA256 with the application
 		// key; tokens hashed under a previous key keep working during a
 		// rotation.

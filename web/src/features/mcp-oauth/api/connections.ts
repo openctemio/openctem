@@ -6,7 +6,7 @@
 'use client'
 
 import useSWR, { mutate as globalMutate } from 'swr'
-import { get, put, del } from '@/lib/api/client'
+import { get, post, put, del } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 
 export interface McpConnection {
@@ -112,4 +112,38 @@ export function scopeLabel(scope: string): string {
     default:
       return scope
   }
+}
+
+export interface McpOrgClient {
+  id: string
+  client_id: string
+  name: string
+  redirect_uris: string[]
+  created_at: string
+}
+
+export const ORG_CLIENTS_URL = '/api/v1/mcp-access/clients'
+
+/** Applications the organization registered in advance. */
+export function useOrgClients(enabled: boolean) {
+  const { currentTenant } = useTenant()
+  return useSWR<{ data: McpOrgClient[] }>(
+    currentTenant && enabled ? ORG_CLIENTS_URL : null,
+    (url: string) => get<{ data: McpOrgClient[] }>(url)
+  )
+}
+
+export async function createOrgClient(name: string, redirectUris: string[]): Promise<McpOrgClient> {
+  const created = await post<McpOrgClient>(ORG_CLIENTS_URL, { name, redirect_uris: redirectUris })
+  await globalMutate(ORG_CLIENTS_URL)
+  return created
+}
+
+export async function deleteOrgClient(id: string): Promise<void> {
+  await del<void>(`${ORG_CLIENTS_URL}/${encodeURIComponent(id)}`)
+  await Promise.all([
+    globalMutate(ORG_CLIENTS_URL),
+    globalMutate(ORG_CONNECTIONS_URL),
+    globalMutate(MY_CONNECTIONS_URL),
+  ])
 }

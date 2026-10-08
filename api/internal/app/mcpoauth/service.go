@@ -55,6 +55,8 @@ type Service struct {
 	permissions  HolderPermissions
 	policies     PolicyReader
 	connections  mcpoauth.ConnectionRepository
+	clients      mcpoauth.ClientRepository
+	dcrEnabled   bool
 	trustedHosts []string
 	audit        AuditLogger
 	log          *logger.Logger
@@ -72,6 +74,11 @@ type Config struct {
 	Permissions HolderPermissions
 	// Connections lists and manages connections (RFC-062 §12); optional.
 	Connections mcpoauth.ConnectionRepository
+	// Clients manages registered clients and the purge (RFC-062 §5).
+	Clients mcpoauth.ClientRepository
+	// DynamicRegistration turns POST /oauth/register on
+	// (MCP_OAUTH_DCR_ENABLED). Deprecated by MCP; off by default.
+	DynamicRegistration bool
 	// Policies reads the organization MCP policy (RFC-062 §8); nil applies
 	// the defaults.
 	Policies PolicyReader
@@ -93,6 +100,7 @@ func NewService(c Config) (*Service, error) {
 		repo: c.Repository, endpoints: c.Endpoints, pepper: c.Pepper, oldPeppers: c.OldPeppers,
 		fetcher: c.Fetcher, members: c.Members, permissions: c.Permissions, audit: c.Audit,
 		policies: c.Policies, trustedHosts: NormalizeTrustedHosts(c.TrustedClientHosts), connections: c.Connections,
+		clients: c.Clients, dcrEnabled: c.DynamicRegistration,
 		log: c.Logger.With("service", "mcp-oauth"), now: time.Now,
 	}, nil
 }

@@ -97,9 +97,22 @@ Checked in this order (`mcpoauth.Service.StartAuthorization`):
   on loopback) and be a public client (no secret, `token_endpoint_auth_method`
   absent or `none`). The name is cleaned of control and bidirectional
   characters. The stored copy is in `mcp_oauth_clients`.
-- Any other `client_id` must exist in `mcp_oauth_clients` (organization
-  clients and dynamic registration: next PRs). A client with `blocked_at` set
-  is refused everywhere, including its existing grants.
+- **Organization clients** (`octc_…`): an owner or administrator registers
+  them under Settings, AI access (MCP): a name and exact redirect URIs
+  (`https`, or loopback `http` any port). `GET/POST /api/v1/mcp-access/clients`,
+  `DELETE /api/v1/mcp-access/clients/{id}` (`settings:read`; changes
+  `settings:write` and a recent sign-in), audited `mcp_client.registered` /
+  `mcp_client.deleted`. Verified in their organization, never usable in
+  another. Deleting one ends its connections.
+- **Dynamic registration** (`octd_…`, RFC 7591, `POST /oauth/register`) only
+  when the operator sets `MCP_OAUTH_DCR_ENABLED=true` (otherwise 404 and no
+  `registration_endpoint` in the metadata). Public clients only
+  (`token_endpoint_auth_method` none), grants `authorization_code` and
+  `refresh_token`, response type `code`, `application_type` native or web,
+  redirect URIs as above; 3 registrations a minute per address. Always
+  unverified: only organizations with `any_client` can use them.
+- A client with `blocked_at` set is refused everywhere, including its
+  existing grants.
 
 ### Consent
 
@@ -207,7 +220,15 @@ connection, or another organization's, answers 404. A blocked client cannot
 be authorized and its tokens stop working everywhere until it is unblocked.
 API keys are refused on all of `/api/v1/mcp-access`.
 
+## Purge
+
+The `mcp-oauth-purge` controller (hourly, one replica) deletes
+authorization requests a day after they ended, expired tokens (a rotated
+refresh token stays until it expires, so reuse is still caught), grants 30
+days after they were revoked or expired, dynamic clients unused for 30 days
+and metadata-document clients without connections not fetched for 90 days.
+Blocked clients are kept.
+
 ## Planned
 
-Organization-registered clients and optional dynamic registration, DPoP,
-write-tool confirmation: see RFC-062 §14.
+DPoP and write-tool confirmation: see RFC-062 §14.

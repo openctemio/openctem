@@ -189,6 +189,8 @@ type Repositories struct {
 
 	// API Keys & Webhooks
 	APIKey *postgres.APIKeyRepository
+	// MCPOAuth is the OAuth state of the MCP endpoint (RFC-062).
+	MCPOAuth *postgres.MCPOAuthRepository
 
 	// Licensing (modules from database)
 	Module       *postgres.ModuleRepository
@@ -437,7 +439,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		TargetMapping: postgres.NewTargetMappingRepository(db),
 
 		// API Keys & Webhooks
-		APIKey: postgres.NewAPIKeyRepository(db),
+		APIKey:   postgres.NewAPIKeyRepository(db),
+		MCPOAuth: postgres.NewMCPOAuthRepository(db),
 
 		// Licensing (modules from database)
 		Module:       postgres.NewModuleRepository(db),

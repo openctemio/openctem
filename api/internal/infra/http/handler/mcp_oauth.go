@@ -36,6 +36,7 @@ const (
 	mcpAuthorizePath = "/oauth/authorize"
 	mcpTokenPath     = "/oauth/token"
 	mcpRevokePath    = "/oauth/revoke"
+	mcpRegisterPath  = "/oauth/register"
 	// mcpConsentPage is the web page that asks the person.
 	mcpConsentPage = "/oauth/consent"
 	// maxOAuthFormBytes bounds a token or revocation request body.
@@ -57,6 +58,7 @@ type authorizationServerMetadata struct {
 	ScopesSupported                            []string `json:"scopes_supported"`
 	ClientIDMetadataDocumentSupported          bool     `json:"client_id_metadata_document_supported"`
 	AuthorizationResponseIssParameterSupported bool     `json:"authorization_response_iss_parameter_supported"`
+	RegistrationEndpoint                       string   `json:"registration_endpoint,omitempty"`
 }
 
 // ServerMetadata serves GET /.well-known/oauth-authorization-server.
@@ -67,7 +69,12 @@ func (h *MCPOAuthHandler) ServerMetadata(w http.ResponseWriter, _ *http.Request)
 	for i, s := range scopes {
 		names[i] = string(s)
 	}
+	registration := ""
+	if h.svc.DynamicRegistrationEnabled() {
+		registration = e.Issuer + mcpRegisterPath
+	}
 	writePublicMetadata(w, authorizationServerMetadata{
+		RegistrationEndpoint:                       registration,
 		Issuer:                                     e.Issuer,
 		AuthorizationEndpoint:                      e.Issuer + mcpAuthorizePath,
 		TokenEndpoint:                              e.Issuer + mcpTokenPath,
