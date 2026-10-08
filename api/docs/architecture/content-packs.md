@@ -48,6 +48,9 @@ Code: `pkg/domain/contentpack` (archive, signing) and `internal/app/contentpack`
 - It never writes an extracted file to disk and never executes anything.
 - Every input is bounded by the limits above. At most 2 ingests run at once, and each must finish within 60 s; lint stops when that time runs out.
 - Tenant content can reach code only through the parsers. The sensor-side sandbox (RFC-060) is where content is used.
+- Fuzz tests (`FuzzCanonicalize`, `FuzzLint`) run the archive and template parsers on arbitrary input.
+
+Ingest stays in the API process, owner decision 2026-10-08. A separate process would buy little when the input is only parsed by memory-safe Go code that runs no external program. If a linter ever needs an external tool, ingest moves to an isolated process (no network, no credentials, its own rlimits) first.
 
 Reading an archive back re-checks it against its digest. Tampered storage returns 500 and is never served.
 
