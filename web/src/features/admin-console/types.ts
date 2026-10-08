@@ -91,6 +91,8 @@ export interface AdminOrganization {
   active_identity_providers: number
   verified_domains: number
   sso_enforced: boolean
+  /** free | pro | enterprise (enterprise when created before plans). */
+  plan: string
 }
 
 export interface AdminOrganizationList {
@@ -145,6 +147,14 @@ export interface AdminOrganizationUserList {
 export interface AdminCreateOrganizationUserInput {
   email: string
   name: string
+}
+
+/** Owner recovery: a new owner when every owner is suspended (super admin). */
+export interface AdminOwnerRecoveryInput {
+  email: string
+  name: string
+  reason: string
+  totp_code?: string
 }
 
 /** Same shape as the tenant-side create-user response. */

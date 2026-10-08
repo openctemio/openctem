@@ -496,7 +496,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// Admin Auth (API Key authentication for Admin UI)
 		AdminAuth:         handler.NewAdminAuthHandler(log),
-		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
+		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning).WithStepUp(adminConsoleSvc),
 		AdminOverview: handler.NewAdminOverviewHandler(
 			func(ctx context.Context, now time.Time) (postgres.AdminOverviewCounts, error) {
 				return postgres.ReadAdminOverview(ctx, deps.DB.DB, now)

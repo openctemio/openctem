@@ -21,7 +21,7 @@ lifecycle.
 | `draft`, `in_review` | open, hidden | Pentest finding before publication; left out of dashboards and the Open lens |
 
 The list is `vulnerability.AllFindingStatuses()`; the database CHECK
-`chk_findings_status` (migration `001377`) and the web registry
+`chk_findings_status` (migration `001378`) and the web registry
 (`web/src/features/findings/types/finding.types.ts`, labels in en and vi) hold
 exactly the same values, and tests on each side pin them.
 
@@ -82,7 +82,7 @@ state of the two), which is an identity merge, not a lifecycle move.
 
 ## Upgrade
 
-Migration `001377` maps stored values of the retired pentest statuses
+Migration `001378` maps stored values of the retired pentest statuses
 (`remediation` -> `in_progress`, `retest` -> `fix_applied`, `verified` ->
 `resolved` with `resolution_method = retest_verified`, `accepted_risk` ->
 `accepted`) and `open` -> `new`, in `findings`, `pentest_findings`, approvals

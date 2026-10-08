@@ -1,10 +1,10 @@
 package integration
 
-// Migration 001377: one finding status set. Rows in a retired pentest alias
+// Migration 001378: one finding status set. Rows in a retired pentest alias
 // (or the never-valid "open") map to the canonical status, a verified finding
 // keeps that it was verified by a retest as its resolution method, the CHECK
 // then refuses the aliases, and running the migration again changes nothing.
-// Runs on a private database: everything up, 001377 down, seed, 001377 up.
+// Runs on a private database: everything up, 001378 down, seed, 001378 up.
 
 import (
 	"testing"
@@ -12,10 +12,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/testdb"
 )
 
-func TestMigration001377FoldsStatusAliases(t *testing.T) {
+func TestMigration001378FoldsStatusAliases(t *testing.T) {
 	const dir = "../../migrations"
-	db := testdb.PrivateDatabase(t, "mig1377", dir)
-	testdb.Migrate(t, db, dir, 1377, 1377, true)
+	db := testdb.PrivateDatabase(t, "mig1378", dir)
+	testdb.Migrate(t, db, dir, 1378, 1378, true)
 
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -24,7 +24,7 @@ func TestMigration001377FoldsStatusAliases(t *testing.T) {
 		}
 	}
 	const tenant = "11111111-1111-4111-8111-111111111111"
-	exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'm', 'mig-1377')`, tenant)
+	exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'm', 'mig-1378')`, tenant)
 	exec(`INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ('22222222-2222-4222-8222-222222222222', $1, 'h', 'host')`, tenant)
 	exec(`INSERT INTO findings (tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
 		SELECT $1, '22222222-2222-4222-8222-222222222222', 'pentest', 'manual', 'm', 'high', 'fp-' || s, s
@@ -64,11 +64,11 @@ func TestMigration001377FoldsStatusAliases(t *testing.T) {
 		}
 	}
 
-	testdb.Migrate(t, db, dir, 1377, 1377, false)
+	testdb.Migrate(t, db, dir, 1378, 1378, false)
 	check("up")
 	// Down then up again changes nothing.
-	testdb.Migrate(t, db, dir, 1377, 1377, true)
-	testdb.Migrate(t, db, dir, 1377, 1377, false)
+	testdb.Migrate(t, db, dir, 1378, 1378, true)
+	testdb.Migrate(t, db, dir, 1378, 1378, false)
 	check("down-up")
 
 	for _, alias := range []string{"verified", "accepted_risk", "remediation", "retest", "open"} {
