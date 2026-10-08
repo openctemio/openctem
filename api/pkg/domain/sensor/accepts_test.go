@@ -177,15 +177,15 @@ func TestRefusalOf(t *testing.T) {
 // (research/63 PR0): host:port:proto, host:port/proto, [v6]:port/proto.
 func TestPrivateTarget_ServiceNames(t *testing.T) {
 	for target, want := range map[string]bool{
-		"10.0.0.5:22:tcp":         true,
-		"10.0.0.5:22/tcp":         true,
-		"[fd00::5]:443/tcp":       true,
-		"fd00::5:443:tcp":         true,
-		"192.168.1.9:3389:tcp":    true,
-		"8.8.8.8:53:udp":          false,
-		"198.51.100.7:443/tcp":    false,
-		"db.internal:5432:tcp":    true,
-		"vndirect.com.vn:443:tcp": false,
+		"10.0.0.5:22:tcp":       true,
+		"10.0.0.5:22/tcp":       true,
+		"[fd00::5]:443/tcp":     true,
+		"fd00::5:443:tcp":       true,
+		"192.168.1.9:3389:tcp":  true,
+		"8.8.8.8:53:udp":        false,
+		"198.51.100.7:443/tcp":  false,
+		"db.internal:5432:tcp":  true,
+		"example.co.uk:443:tcp": false,
 	} {
 		if got := isPrivateTarget(target); got != want {
 			t.Errorf("isPrivateTarget(%q) = %v, want %v", target, got, want)

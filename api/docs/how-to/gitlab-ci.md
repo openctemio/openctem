@@ -134,8 +134,9 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 - Enter your GitLab URL as the **Issuer** in step 1 (for example
   `https://gitlab.example.com`). It must match the `iss` claim exactly.
 - OpenCTEM fetches your GitLab's signing keys over HTTPS through its
-  outbound-request guard. A GitLab on a private address needs
-  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` on the OpenCTEM API.
+  outbound-request guard. A GitLab on a private address needs its subnet in
+  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the OpenCTEM API (for example
+  `10.20.0.0/16`).
 - The certificate must be trusted by the API (a public CA, or your CA added to
   the API container).
 - A custom audience in the trust configuration replaces

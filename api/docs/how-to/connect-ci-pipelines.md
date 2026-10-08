@@ -18,7 +18,7 @@ You need `scans:ci:write` (owners and administrators).
   every customer of a provider. For a self-managed GitLab or a Jenkins
   controller, enter its issuer URL. The platform fetches the issuer's keys
   over HTTPS through the outbound-request guard; an issuer on a private
-  address needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` on the API.
+  address needs its subnet in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API.
 - **Check a sample token** (in the dialog): paste a token from a job of that
   pipeline. The platform verifies its signature against the issuer's keys and
   shows its claims, the repository, ref, commit and run it reads from them,

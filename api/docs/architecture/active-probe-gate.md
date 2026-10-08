@@ -11,8 +11,8 @@ A domain scope target or exclusion `x` covers exactly `x`; `*.x` (and `**.x`)
 covers `x` **and** every name below it (RFC-054 §4.1, decision S1). For
 the subdomains without the apex, add the wildcard plus an exclusion of exactly
 `x`. Verified domains (proof) and the ownership gate use the same "this domain
-and everything under it" meaning, so `example.com` is in scope under
-`*.example.com`. Matching is case-insensitive, ignores one trailing dot and
+and everything under it" meaning, so `example.co.uk` is in scope under
+`*.example.co.uk`. Matching is case-insensitive, ignores one trailing dot and
 compares IDNA ASCII forms (`pkg/domain/scope.matchDomain`).
 
 The sensor-local policy still reads `*.x` as names below `x` (the stricter
@@ -42,7 +42,7 @@ controller then marks it `expired`.
   notifies all active owners and administrators in-app, and is audited.
 - Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one
   click.
-- **One authority: scope entries** (RFC-054; migration
+- **One authority: scope entries** (research/53 SC1, SC2; migration
   `001262`). Root-domain seeds were folded into permanent `*.<domain>`
   entries and `/api/v1/easm/seeds` is gone; a verified domain, of any
   purpose, is proof only (§8.1 of RFC-054). `scopeauth.Load` reads the
@@ -102,7 +102,7 @@ For each target, in order:
      target that names an asset as typed, lower-cased, or by the host of a
      URL or `host:port`) has an attribution record other than `confirmed`
      (`needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`).
-     **Takeover exception** (`internal/app/easm/takeover_gate.go`):
+     **Takeover exception** (research/22 E13, `internal/app/easm/takeover_gate.go`):
      a `dependency` asset is admitted to a scan that runs only the nuclei
      `takeover` templates (scanner nuclei, `tags` exactly `takeover`, no
      other template selection; `scan.IsTakeoverOnlyProbe`) while the DNS
@@ -157,7 +157,7 @@ any lookup error returns an error, and the caller dispatches nothing.
 |---|---|
 | Scan create, clone, import (`CreateScan`), quick scan, `POST /commands` | the request is refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, the targets named with the generic reason) and audited (`scan.target_refused`) |
 | Scan run: manual trigger, schedule, retry controller, workflow trigger | the target (direct or group member) is skipped with a run warning; a run left with nothing is refused (`ALL_TARGETS_UNCONFIRMED`) |
-| The `trigger_pipeline` automation action, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
+| `POST /scan-workflows/runs`, `trigger_pipeline`, coverage dispatcher, every validate command (re-checks, proof-of-fix, retests, attack-simulation safe-checks), connector scans | `ResolveDispatchTargets` refuses the target |
 
 `GET /api/v1/assets/{id}/attribution` answers `active_checks_allowed` with the
 same gate and names the reason in `active_checks_blocked_by`.
@@ -175,7 +175,7 @@ targets say so in their warnings; `GET /assets/{id}/attribution` answers
 | Path | Where | Notes |
 |---|---|---|
 | Scan trigger | `scan/trigger.go`, `scan/targets.go` | Same checks inline (`resolveScanTargets` + zone planning). Folding it into the gate is RFC-042 S5 (`scope.Gate`). |
-| `trigger_pipeline` automation action (a run with direct targets) | `scanrun/run_targets.go` | Typed targets; no assets. |
+| `POST /scan-workflows/runs` | `pipeline/run_targets.go` | Typed targets; no assets. |
 | Coverage dispatcher | `scancoverage/scheduler.go` `gateBatch` | Each candidate passes its asset id, so unconfirmed assets are skipped. |
 | Every `validate` command | `validation/dispatcher.go` `CommandDispatcher.Dispatch` | Finding re-check (`POST /findings/{id}/validate`, proof-of-fix fallback, Jira "Done"), continuous retest (both checks), attack-simulation safe-check. |
 | `POST /commands` | `scan/command_gate.go` | Member-created scan commands (RFC-040 group A). |
@@ -194,12 +194,12 @@ A refusal wraps `validation.ErrTargetRefused` (an `ErrValidation`, HTTP 400
 with the reason). It never wraps `retest.ErrNotEligible`. Proof-of-fix falls
 back to a plain validation re-check only when a finding has no deterministic
 retest. A refused retest therefore stops and is reported; it does not fall
-back to another probe of the same target. The
+back to another probe of the same target (finding L-08 of research/15). The
 auto-retest scheduler logs the refusal and moves on.
 
 ## Act scope: who may scan what
 
-Scan targets are limited to what the actor may
+Owner decision D9 (research/15 L-06) limits scan targets to what the actor may
 act on. The rule lives in `internal/app/actscope` and uses one helper,
 `datascope.Enforcer.CanActOnAssets`. That helper resolves through
 `ResolveFor`, so an administrator and any holder of a `has_full_data_access`
@@ -220,7 +220,7 @@ system, which is unrestricted.
 | Scan create, quick scan | refused as a whole (`TARGET_OUT_OF_SCOPE`, 400, with each target and its reason) |
 | Scan update | refused when the editor may not scan every direct target of the scan |
 | Scan run (manual, scheduled, workflow) | out-of-scope direct targets and group members are skipped, with a run warning; a run left with nothing is refused |
-| The `trigger_pipeline` automation action | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
+| `POST /scan-workflows/runs`, `trigger_pipeline` | `ResolveDispatchTargets` with `ActScope: true`; `triggered_by` is the fallback actor; any refused target fails the run |
 | `POST /commands` | refused as a whole |
 
 Every lookup error refuses (fail closed). A dispatch that asks for the check
