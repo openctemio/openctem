@@ -219,8 +219,11 @@ type Handlers struct {
 	AdminAuth         *handler.AdminAuthHandler
 	AdminOrganization *handler.AdminOrganizationHandler
 	AdminOverview     *handler.AdminOverviewHandler
-	AdminConsole      *handler.AdminConsoleHandler
-	AdminAuditChain   *handler.AdminAuditChainHandler
+	AdminPlatformUser *handler.AdminPlatformUserHandler
+	// AdminSupportRateLimiter caps console support actions per administrator.
+	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
+	AdminConsole            *handler.AdminConsoleHandler
+	AdminAuditChain         *handler.AdminAuditChainHandler
 	// AccessRequest: the request-access queue (public form + console).
 	AccessRequest *handler.AccessRequestHandler
 	// Plan: plans and limits (console plan defaults, organization plans and
