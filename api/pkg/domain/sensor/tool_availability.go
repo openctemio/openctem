@@ -216,7 +216,7 @@ func ComputeToolAvailability(catalog []CatalogTool, sensors []SensorInventory, z
 			c := inv.contract(rt.Name)
 			ts := ToolSensor{SensorID: a.ID, Name: a.Name, State: state, Online: online,
 				ZoneIDs: inv.ZoneIDs, Version: NormalizeVersion(rt.Version), Content: rt.Content,
-				Trust: ToolTrust(c), Tier: CommandTierFor(scanJobType, Job{Type: scanJobType, Tool: CanonicalTool(rt.Name)}, c)}
+				Trust: ToolTrust(rt.Name, c), Tier: CommandTierFor(scanJobType, Job{Type: scanJobType, Tool: CanonicalTool(rt.Name)}, c)}
 			ts.Excluded, ts.ExcludedDetail = toolExclusion(inv, rt.Name, zoneID)
 			t.Sensors = append(t.Sensors, ts)
 			if a.Reported.ReportedAt != nil && (t.LastReportedAt == nil || a.Reported.ReportedAt.After(*t.LastReportedAt)) {
