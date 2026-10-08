@@ -1,7 +1,7 @@
 # RFC-049 — Unified connector framework (platform-direct and sensor-relayed)
 
-> Status: **Proposed** (2026-10-04).
-> Owner decision (2026-10-04, final): OpenCTEM talks to external systems
+> Status: **Proposed** (2026-10-04). Only the P0 security fixes (#1068, #1069) are implemented.
+> Decision (2026-10-04, final): OpenCTEM talks to external systems
 > through **one connector framework**. Each connector runs either **directly
 > from the platform** (reachable systems, cloud SaaS) or **via a sensor**
 > (on-prem, internal network), chosen **per tenant per connector**, with one
@@ -19,7 +19,7 @@
 > [RFC-006](RFC-006-ticketing-provider-and-mapping.md) (ticketing provider
 > abstraction), [RFC-041](RFC-041-api-path-design.md) (the `/hooks` inbound
 > plane).
-> Security fixes found during this research: #1068 (secrets in notifier
+> Security fixes found during this review: #1068 (secrets in notifier
 > errors), #1069 (SMTP DNS rebinding and session deadline).
 
 ## 1. Answer in short
@@ -57,47 +57,28 @@
 
 ## 2. Inventory: platform-direct integrations today
 
-Evidence is `develop` at 6d8051eca (2026-10-04). Paths are under `api/`
-unless they start with `web/`. "Safe" = `httpsec.SafeHTTPClient` (resolve
-once, vet every answer, dial the vetted IP; Go's default redirect policy, each
-hop re-vetted by the dialer; no body cap; no retries).
+The API process makes these outbound connections itself. Every
+tenant-configurable HTTP client goes through the SSRF guard in
+`pkg/httpsec` (resolve once, vet every answer, dial the vetted address);
+private ranges are refused unless the operator allows them. Credentials are
+encrypted with `APP_ENCRYPTION_KEY` (AES-256-GCM, with key rotation).
 
-### 2.1 Shared pieces
-
-| Piece | Where | Notes |
-|---|---|---|
-| SSRF guard | `pkg/httpsec/ssrf.go` (`SafeHTTPClient` :284, dialer :328-349, `ValidateURL` :229, `ResolveSafeHost` :150) | Hard block: loopback, link-local/IMDS, CGNAT, multicast, reserved. Private (RFC1918/ULA) blocked unless the **process-wide** `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` (:81). |
-| Credential encryption | `pkg/crypto/cipher.go:63-160` (AES-256-GCM), `keyring.go:70-80` (rotation); key `APP_ENCRYPTION_KEY` + `APP_ENCRYPTION_KEY_PREVIOUS` (`internal/config/config.go:1176-1179`), required unless `APP_ENV=development` (:1431) | Without a key a `NoOpEncryptor` stores plaintext (`internal/app/integration/service.go:97`). A failed decrypt returns the ciphertext as the credential (`service.go:964-977`, `infra/jira/resolver.go:210-216`, `app/ticketing/github_ticket.go:267-273`). |
-| Integration row | `migrations/000019_integrations.up.sql:7-34`; `pkg/domain/integration/entity.go` | `credentials_encrypted TEXT`, `base_url`, `config`/`metadata` JSONB, `status`, `status_message`, `sync_error`, sync timestamps. Responses redact `config`/`metadata` by key name (`infra/http/handler/integration_handler.go:180-251`) but return `status_message`/`sync_error` raw (:291, :297). |
-| Lint | `scripts/security-lint.sh` Rule 1 greps only `&http.Client{` | Blind to raw TCP dials (`pkg/email`, `notifier/email.go`, `pkg/dnsprobe`), go-git's ssh transport, SDK default transports. |
-| Audit | `pkg/domain/audit/value_objects.go` | **No `integration.*` actions exist.** Create, update, delete, test, credential change are unaudited. |
-
-### 2.2 Per integration
-
-| Integration | Client & limits | Credentials | Tenant resolution | Test / status | Gate & UI |
-|---|---|---|---|---|---|
-| Slack, Teams (`infra/notifier/slack.go:23`, `teams.go:23`) | Safe 30 s; body cap 1 MiB; no retry in-call (outbox retries) | Webhook URL encrypted (`service.go:1860`); channel in metadata | Outbox: `ListIntegrationsWithNotification(ctx, tenantID)` (`app/outbox/service.go:306`); test: `GetByID` + in-code tenant compare (`service.go:2150-2158`) | `POST /{id}/test-notification`, 30 s in-memory rate limit (`service.go:160`); result → `status_message` | `ModuleIntegrations` + `integrations:manage` (`routes/misc.go:200-246`); `web/.../settings/integrations/notifications` |
-| Telegram (`notifier/telegram.go:25`) | Safe 30 s; fixed `api.telegram.org` | Bot token encrypted (`service.go:1380`); **token is in the URL path** (:90) | as above | as above | as above |
-| Generic webhook (`notifier/webhook.go:26`) | `ValidateURL` + Safe 30 s | URL encrypted | as above | as above | as above |
-| Splunk HEC (`notifier/splunk.go:39`) | `ValidateURL` + Safe 30 s; token in `Authorization` | HEC token encrypted; `hec_url` in metadata | as above | as above | `web/.../settings/integrations/siem` |
-| Email notifications (`notifier/email.go:144`) | `ResolveSafeHost` + pinned-IP dial; TLS 1.2 floor; STARTTLS fails closed | user/password encrypted; host, port, from, to and **`skip_verify`** in metadata (`service.go:1210-1258`) | as above | as above | notifications page |
-| Transactional mail, system + per-tenant (`pkg/email/email.go:204`; `app/auth/tenant_smtp_resolver.go`) | Was `ValidateHost` then dial the hostname (fixed by #1069) | System: `SMTP_*` env. Tenant: the resolver reads `smtp_host/smtp_from/smtp_user/smtp_password/smtp_tls` **from metadata** (:63-104) | `ListByCategory(ctx, tenantID, notification)` | none | none |
-| Jira (`infra/jira/client.go:36`) | https only, `ValidateURL` + Safe 30 s, body cap 10 MiB, error bodies embedded (:126, :204, :263, :294) | JSON `{email, api_token}` encrypted (`jira/resolver.go:204-257`) | `ListByProvider(ctx, tenantID, jira)` (`resolver.go:107`) | `resolver.go:162` | `ModuleIntegrations`; ticket create/link sit in the finding routes with no module gate (`routes/exposure.go:319`); inbound `POST /api/v1/webhooks/incoming/jira` (`misc.go:465`); `web/.../settings/integrations/ticketing` |
-| GitHub Issues (`app/ticketing/github_ticket.go:113`) | Safe | SCM token | `ListByProvider(ctx, tenantID, github)` (:254) | — | finding routes |
-| GitHub, GitLab, Bitbucket, Azure DevOps (`infra/scm/*.go`) | `ValidateURL` + Safe 30 s; error bodies (1 MiB cap) embedded (`github.go:232-252`); success bodies decoded uncapped (`gitlab.go:169`) | token encrypted; `base_url` column | `GetByTenantAndID` (`service.go:645`); some paths `GetByID` + compare (:848) | `/{id}/test`, `/{id}/sync`, `/test-credentials` (arbitrary `base_url`, upstream error returned, `service.go:757-835`); inbound GitHub push/issues webhook (`handler/github_webhook_handler.go`) | `ModuleIntegrations`; `web/.../settings/integrations/scm` |
-| DefectDojo (`infra/importer/defectdojo/client.go:41`) | Safe 30 s + `CheckRedirect` re-validating; every request incl. absolute `next` links re-validated (:156); error body capped 512 B | token encrypted; **decrypt failure fails the call** (`app/defectdojo/sync.go:159`) | `ListByProvider(ctx, tenantID, defectdojo)` (:140) | `POST /integrations/defectdojo/sync` | `web/.../settings/integrations/scanners` |
-| AI-triage LLM (`infra/llm/{openai,gemini,claude}.go`) | Safe; fixed hosts; 3 retries; `AI_RATE_LIMIT_RPM`; **response read uncapped** (`openai.go:187`, `gemini.go:192`, `claude.go:165`) | platform env keys or tenant BYOK `ai.api_key` (`enc:v1:`), redacted in settings (`pkg/domain/tenant/settings_redact.go`) | tenant settings | — | no module gate (`routes.go:514`); audit `ai_triage.*` |
-| Threat intel (`app/threat/intel_service.go`) | Safe 5 min; EPSS, CISA KEV (+ GitHub mirror); 256 MiB compressed / 1 GiB decompressed caps | none | platform-global | — | admin routes. No NVD client exists. |
-| CTEM-ID feed (`app/ctemid/service.go`) | Safe 2 min; 64 MiB cap | none | global | — | — |
-| Cert monitor (`app/certmonitor/`) | Safe with header timeout; backoff + jitter, `Retry-After` ≤ 60 s | none | per-tenant cursor | — | — |
-| Social OAuth, tenant OIDC SSO, admin IdP, Keycloak (`app/auth/oauth.go:132`, `sso.go:144`, `pkg/oidc`, `pkg/keycloak`) | Safe; admin IdP also `ValidateURL` on every URL; Okta org must be `*.okta.com` | client secrets encrypted | tenant IdP record / env | — | auth plane |
-| SAML (`app/auth/saml.go`) | no outbound fetch | — | — | — | — |
-| Tenant S3 storage (`infra/storage/tenant.go`) | `ValidateURL` + Safe 5 min (operator S3 uses the SDK default transport, env-configured) | keys encrypted in settings | tenant settings | — | `RequireAdmin` |
-| Template sources (`infra/fetchers/{http,git,s3}_fetcher.go`) | HTTP: pinned dial + `CheckRedirect` (3 hops) but **no body cap** (:221); git https/http: Safe; **git ssh: go-git's own dialer** (validate-then-redial, documented :406-412) | secret store (separate encryptor, audited) | `DecryptCredentialData(ctx, tenantID, credID)` | — | `ModuleTemplateSources` |
-| Workflow `http_request` action (`app/workflow/handlers.go:298-469`) | Own guard: resolve, dial a safe IP, 3 redirects re-validated, 1 MiB cap, ≤ 30 s; logs the full blocked URL (:311) | per-action headers | workflow tenant | — | `ModuleWorkflows` |
-| DNS (EASM, domain verify) (`pkg/dnsprobe`) | UDP/TCP 53, rate-limited, authoritative servers vetted with `IsIPBlocked` | — | — | — | — |
-| Outbound tenant webhooks (`app/integration/webhook.go`) | **No delivery code**: CRUD only, nothing ever writes `webhook_deliveries` | — | — | — | no module gate |
-| SIEM inbound (`docs/architecture/siem-ingest.md`) | Not a connector: the SIEM posts to `POST /api/v1/telemetry-events` as a collector sensor; tenant from the sensor key | sensor key | sensor identity | — | — |
+| Integration | Direction | Credentials | Tenant resolution |
+|---|---|---|---|
+| Slack, Microsoft Teams, Telegram, generic webhook | outbound notifications (outbox) | webhook URL or bot token, encrypted | per tenant |
+| Splunk HEC | outbound events | HEC token, encrypted | per tenant |
+| Email notifications and transactional mail | outbound SMTP | user/password, encrypted; system SMTP from `SMTP_*` | per tenant, else system |
+| Jira | outbound tickets, inbound webhook | email + API token, encrypted | per tenant |
+| GitHub Issues | outbound tickets | SCM token | per tenant |
+| GitHub, GitLab, Bitbucket, Azure DevOps | repository sync, inbound GitHub webhook | token, encrypted | per tenant |
+| DefectDojo | finding import | API token, encrypted | per tenant |
+| AI triage (OpenAI, Gemini, Claude) | outbound LLM calls | platform key or tenant key, encrypted and redacted | tenant settings |
+| Threat intelligence (EPSS, CISA KEV), CTEM-ID feed, certificate transparency | outbound feeds | none | platform-wide |
+| Social OAuth, organization SSO (OIDC, SAML), admin IdP | sign-in | client secrets, encrypted | IdP record or environment |
+| Tenant S3 storage | object storage | keys, encrypted | tenant settings |
+| Template sources (HTTP, git, S3) | content fetch | secret store | per tenant |
+| Automation `http_request` action | outbound HTTP | per-action headers | automation tenant |
+| DNS (EASM, domain verification) | DNS queries | none | per tenant |
 
 ### 2.3 What is common, what is not
 
@@ -128,31 +109,33 @@ keys, platform owns intent, declarative commands, results through ingest.
 What it lacks for reuse is a contract other connectors can implement and a
 host the platform can run the same code in.
 
-## 4. Security review of the direct connections
+## 4. Security requirements for the direct connections
 
-Every finding was checked against the code. Severity is for a multi-tenant
-deployment.
+Every outbound connection was reviewed against the code for a multi-tenant
+deployment. Two defects were fixed at once (F-1, F-3); the remaining items are
+requirements the connector host enforces, each referenced by its id in the
+sections below.
 
-| # | Finding | Severity | Status |
-|---|---|---|---|
-| F-1 | **Credentials in error text.** Go's `*url.Error` prints the request URL. The Telegram bot token is in the path; Slack, Teams and generic webhook URLs are the credential. A DNS failure, timeout or SSRF refusal put them in `status_message` (returned to `integrations:read`), outbox `last_error`, `notification_events` and logs. `httpsec.ValidateURL` also echoed the raw URL from `url.Parse` errors. | High | **Fixed: #1068** |
-| F-2 | **Response echo.** Notifiers copied up to 1 MiB of a non-2xx body into `status_message`. With private ranges allowed this is a read channel into internal HTTP services. Jira (10 MiB, `jira/client.go:126`), SCM `test-credentials` (`github.go:252` → `service.go:803`) and SSO/OAuth error bodies still embed upstream bodies. | Medium | Notifiers fixed in #1068; the rest move to the host redactor (§5.6, phase 1) |
-| F-3 | **SMTP DNS rebinding.** `pkg/email` (transactional mail, per-tenant host via `IntegrationSMTPResolver`) validated the host and then dialed the hostname, resolving it again. It also had no session deadline, so a silent relay held the goroutine forever. | High | **Fixed: #1069** |
-| F-4 | **Process-wide private-range switch.** `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` opens RFC1918/ULA for every tenant and every tenant-supplied URL (webhooks, SMTP, Jira, SCM, LLM, template git, S3). One tenant admin can then reach the platform's own network. | High (when set) | Design §9.2 |
-| F-5 | **Tenant can disable SMTP certificate verification.** `skip_verify` is accepted from the tenant's credential JSON and metadata (`service.go:1158`) and reaches `InsecureSkipVerify` (`pkg/email/email.go:384`), whose comment calls it an operator escape hatch. A network attacker between the platform and the relay then reads the SMTP password. | Medium | Phase 0 follow-up: drop the tenant knob; per-instance CA bundle instead (§8.3) |
-| F-6 | **Outbox records failed deliveries as delivered.** Every notifier returns `(SendResult{Success:false}, nil)` on failure; `outbox/service.go:425-433` checks only `err` and marks success, so nothing is retried or dead-lettered. Correctness, not security, but it hides F-1-type failures. | High (reliability) | Phase 0 follow-up PR |
-| F-7 | **Per-tenant transactional SMTP is silently inert, and its keys invite plaintext secrets.** The resolver reads `smtp_from`, `smtp_user`, `smtp_password`, `smtp_tls` from metadata; the writer stores `from_email`, `use_tls`, and puts the password in the encrypted column. `From` is always empty, so the resolver always falls back to system SMTP. The only way to make it work is to write `smtp_password` into plaintext metadata through the metadata merge (`service.go:1882-1892`). | Medium | Phase 0 follow-up: resolver reads the stored keys and the encrypted credential |
-| F-8 | **Decrypt failure falls back to plaintext.** After a key mismatch the ciphertext is sent upstream as the credential (`service.go:964-977` and two copies). No secret leaks (it is ciphertext), but it masks key problems and keeps unencrypted legacy rows working silently. | Low | Host fails closed in production with `class=invalid_config` (phase 1) |
-| F-9 | **Inbound webhooks.** GitHub has no replay protection (no delivery-id cache). The Jira route accepts a platform-wide `JIRA_WEBHOOK_SECRET` for any `?tenant=` and requires an `X-OpenCTEM-Timestamp` header Jira does not send. Routing by `?tenant=` instead of by instance. | Medium | Design §10.5 |
-| F-10 | **DefectDojo token follows `next` to any public host** (`defectdojo/client.go:146-168`): a compromised DefectDojo can harvest its own token elsewhere. | Low | Host: same-origin check for pagination links |
-| F-11 | **git over ssh** re-resolves after validation (self-documented, `git_fetcher.go:406-412`). | Low | Install a guarded ssh dialer |
-| F-12 | **Unbounded reads**: LLM responses, HTTP template fetcher, SCM success bodies. | Low | Descriptor `max_response_bytes`, enforced by the host |
-| F-13 | **Tenant check in code, not in the query**: `GetByID` + compare in test/notification/SCM-list/enable paths (`service.go:422`, :848, :1545, :2150 …). Correct today, fragile. | Low (defence in depth) | Host loads instances only via `GetByTenantAndID` |
-| F-14 | **No audit** for integration create/update/delete/test/credential changes. | Medium | §10.2 |
-| F-15 | Ticket create, AI triage, outbound webhooks and storage config have no module gate. The gate is a feature flag, not a boundary. | Low | Phase 4 |
-| F-16 | Test rate limit is an in-memory, per-replica, never-pruned map (`service.go:160`). | Low | Redis limiter (§10.3) |
-| F-17 | The workflow action logs the full blocked URL (`workflow/handlers.go:311`). | Low | Log scheme+host |
-| F-18 | Outbound tenant webhooks have CRUD and no delivery code (`app/integration/webhook.go`): a silently inert feature. | Info | Either build on the framework (`push`) or hide (owner rule: hide half-built) |
+| # | Requirement | Where |
+|---|---|---|
+| F-1 | Credentials never appear in error text, status messages, outbox errors or logs (URL-bearing errors are redacted). | **Fixed: #1068** |
+| F-2 | Upstream response bodies are never echoed back to the tenant. | Notifiers fixed in #1068; the rest move to the host redactor (§5.6, phase 1) |
+| F-3 | SMTP dials the validated address (no second resolution) and every session has a deadline. | **Fixed: #1069** |
+| F-4 | Private-range egress is granted per tenant, not process-wide. | Design §9.2 |
+| F-5 | TLS verification cannot be disabled by a tenant; a per-instance CA bundle replaces it. | Phase 0 follow-up (§8.3) |
+| F-6 | A failed delivery is recorded as failed and retried or dead-lettered. | Phase 0 follow-up PR |
+| F-7 | Per-tenant transactional SMTP reads the keys the writer stores and the encrypted credential; secrets never go into metadata. | Phase 0 follow-up |
+| F-8 | A credential decrypt failure fails closed in production. | Host, `class=invalid_config` (phase 1) |
+| F-9 | Inbound webhooks are routed by instance, carry a per-instance secret and have replay protection. | Design §10.5 |
+| F-10 | Pagination links are followed only on the same origin. | Host |
+| F-11 | git over ssh dials through the guarded dialer. | Host |
+| F-12 | Every response read is bounded. | Descriptor `max_response_bytes`, enforced by the host |
+| F-13 | Instances are loaded only by tenant and id in the query. | Host loads instances only via `GetByTenantAndID` |
+| F-14 | Integration create, update, delete, test and credential changes are audited. | §10.2 |
+| F-15 | Every integration surface sits behind its module gate (a feature flag, not a boundary). | Phase 4 |
+| F-16 | The test rate limit is shared across replicas. | Redis limiter (§10.3) |
+| F-17 | Blocked URLs are logged as scheme and host only. | Host |
+| F-18 | No integration surface is exposed without a working delivery path (outbound tenant webhooks). | Build on the framework (`push`) or hide (half-built features are hidden) |
 
 Not vulnerable (checked): cross-tenant credential resolution (every resolver
 filters by the principal's tenant); notifier `AllowLoopback` is only set by
@@ -408,7 +391,7 @@ upstream (`Idempotency-Key`, Jira issue property, Slack `client_msg_id`).
 | Jira | yes (Cloud) | yes (Data Center) | Inbound webhooks are platform-only; sensor mode polls. |
 | GitHub / GitLab / Bitbucket / Azure DevOps | yes (SaaS) | yes (GHE, self-managed) | Inbound push webhook platform-only. |
 | DefectDojo | yes | yes | |
-| Tenable.sc | no | **yes** | Owner D-14: sensor only. |
+| Tenable.sc | no | **yes** | Decision D-14: sensor only. |
 | Threat-intel feeds (KEV, EPSS, NVD, crt.sh) | yes | no | Platform-global data, not a tenant connector. Same host runtime (guarded client, limits, metrics), no instance row. |
 | AI-triage LLM | yes | later (§15 Q6) | A self-hosted LLM behind a sensor is plausible; latency and data-handling need their own decision. |
 | OIDC / SAML / Entra IdP, SCIM | yes | **never** | Login cannot depend on a sensor being up; the auth plane stays outside the framework (it already uses `SafeHTTPClient` + `tid` pinning). |
@@ -636,7 +619,7 @@ Today the settings area has one page per category
 (`web/src/app/(dashboard)/settings/integrations/{notifications,scm,ticketing,siem,scanners}`),
 each with its own add/edit dialogs, its own status rendering and its own
 secret fields (the email dialog alone builds credentials JSON by hand). The
-owner rule "sync everywhere, extract shared" applies: the framework ships the
+rule "sync everywhere, extract shared" applies: the framework ships the
 shared parts and every page uses them.
 
 **One list.** `Settings → Integrations` lists every instance of the tenant,
@@ -718,7 +701,7 @@ directly.
 
 | Alternative | Why not |
 |---|---|
-| Keep the API clients and add a separate sensor implementation per connector. | Two implementations drift (the Jira mapping alone has three formats); every fix twice; exactly what the owner asked to end. |
+| Keep the API clients and add a separate sensor implementation per connector. | Two implementations drift (the Jira mapping alone has three formats); every fix twice; exactly what this framework exists to end. |
 | Put the connectors in sdk-go. | The API deliberately does not import sdk-go (RFC-002); sdk-go's scope is the sensor runtime and safety; connectors would pull sensor concerns into the API build. |
 | Put the connectors in the api module and let the sensor import it. | The sensor would import the whole API module (DB, HTTP stack, migrations). |
 | One generic `connector` command type with an `operation` field. | The sensor-local policy allows by command type; RFC-047 §5.3 rejected it for the same reason. |
@@ -726,13 +709,13 @@ directly.
 | Sensor opens an inbound tunnel so the platform can call internal systems directly. | Inverts the trust model (RFC-040), adds an inbound attack surface into customer networks, and makes the platform the dialer again. |
 | Keep the global allow-private switch. | Opens the platform's network to every tenant (F-4). |
 
-## 15. Owner decisions
+## 15. Open decisions
 
 **Q1. Where does the shared connector code live?**
 (a) a new leaf module/repo `openctemio/connectors` (stdlib + `x/time` only), imported by api and sensor, released with the train;
 (b) sdk-go `pkg/connectors` (reverses RFC-002 for the API);
 (c) a nested module in the monorepo (`connectors/`), tagged `connectors/vX`.
-**Recommend (a)**: same pattern as `ctis`, no dependency inversion, its own CI with the conformance suite. (c) is acceptable if the owner prefers fewer repositories.
+**Recommend (a)**: same pattern as `ctis`, no dependency inversion, its own CI with the conformance suite. (c) is acceptable if fewer repositories are preferred.
 
 **Q2. May a tenant run a connector platform-direct against a private address?**
 (a) never: private targets require sensor mode;
@@ -762,7 +745,7 @@ directly.
 **Recommend (a)** until there is a customer request; it needs its own data-handling review.
 
 **Q7. Outbound tenant webhooks (CRUD exists, no delivery: F-18).**
-(a) hide them now (owner rule "hide half-built") and rebuild as a `push` connector in P3;
+(a) hide them now (half-built features are hidden) and rebuild as a `push` connector in P3;
 (b) leave as is.
 **Recommend (a).**
 
