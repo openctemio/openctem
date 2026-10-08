@@ -557,7 +557,7 @@ func (r *MemberLifecycleRepository) ErasePersonalData(ctx context.Context, tenan
 	if _, err = tx.ExecContext(ctx, `
 		UPDATE users
 		SET name = $2, email = $3, avatar_url = NULL, phone = NULL, preferences = '{}'::jsonb,
-		    password_hash = NULL, keycloak_id = NULL, federated_issuer = NULL, federated_subject = NULL,
+		    password_hash = NULL, keycloak_id = NULL,
 		    email_verification_token = NULL, email_verification_expires_at = NULL,
 		    password_reset_token = NULL, password_reset_expires_at = NULL,
 		    status = 'inactive', erased_at = NOW(), updated_at = NOW()
@@ -567,6 +567,11 @@ func (r *MemberLifecycleRepository) ErasePersonalData(ctx context.Context, tenan
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM user_mfa WHERE user_id = $1`, userID.String()); err != nil {
 		return fmt.Errorf("remove second factor: %w", err)
+	}
+	// The IdP's ids for the person: personal data, and a later sign-in must
+	// not find the anonymised account.
+	if _, err = tx.ExecContext(ctx, `DELETE FROM user_identities WHERE user_id = $1`, userID.String()); err != nil {
+		return fmt.Errorf("remove federated identities: %w", err)
 	}
 	if _, err = tx.ExecContext(ctx, `
 		UPDATE sessions SET status = 'revoked', updated_at = NOW()

@@ -69,6 +69,14 @@ func (r *cbUserRepo) Create(_ context.Context, u *userdom.User) error {
 	return nil
 }
 func (r *cbUserRepo) Update(_ context.Context, _ *userdom.User) error { return nil }
+func (r *cbUserRepo) GetByID(_ context.Context, id shared.ID) (*userdom.User, error) {
+	for _, u := range r.byEmail {
+		if u.ID() == id {
+			return u, nil
+		}
+	}
+	return nil, shared.ErrNotFound
+}
 
 // cbSessionRepo records the sessions the callback creates (when created is
 // non-nil) so a test can inspect how they were stamped.
@@ -218,6 +226,7 @@ func runOktaCallbackWith(t *testing.T, email string, verified map[string]bool, a
 	svc.httpClient = idpSrv.Client() // trust the mock's TLS cert (SafeHTTPClient refuses loopback)
 	svc.oidcVerifier = newOIDCVerifier(idpSrv.Client(), logger.NewNop())
 	svc.SetTenantMemberRepo(members)
+	svc.SetIdentityRepo(newMemIdentities())
 	svc.SetDomainVerifier(&fakeDomainVerifier{verified: verified})
 
 	auth, err := svc.GenerateAuthorizeURL(context.Background(), SSOAuthorizeInput{
