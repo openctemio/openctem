@@ -78,8 +78,8 @@ type Validator struct {
 
 // NewValidator creates a new Keycloak token validator. The realm URL is
 // operator configuration; the safe dialer still refuses loopback, link-local
-// and metadata addresses (and private ranges unless
-// OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1) at dial time.
+// and metadata addresses (and private ranges the operator has not opened, see
+// httpsec.EnvAllowPrivateCIDRs) at dial time.
 func NewValidator(ctx context.Context, cfg ValidatorConfig) (*Validator, error) {
 	timeout := cfg.HTTPTimeout
 	if timeout == 0 {
