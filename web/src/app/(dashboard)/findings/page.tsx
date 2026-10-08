@@ -13,6 +13,7 @@ import {
   parseFindingLens,
   type FindingLens,
 } from '@/features/findings/lib/state-lens'
+import { findingsOverview } from '@/features/findings/lib/findings-overview'
 import {
   useUrlParams,
   useUrlParam,
@@ -62,7 +63,6 @@ import {
   ACTIONABLE_SEVERITIES,
   SEVERITY_LEVELS,
   highestSeverity,
-  severityCounts,
   type SeverityLevel,
 } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
@@ -774,20 +774,12 @@ function FindingsContent() {
     rawLens,
   ])
 
-  // The metric strip counts what the table shows (RFC-048: stats take the
-  // list's filter), except severity and status, which are the dimensions the
-  // strip itself breaks down.
-  const statsFilters = useMemo(() => {
-    const {
-      page: _page,
-      per_page: _perPage,
-      sort: _sort,
-      severities: _sev,
-      statuses: _st,
-      exclude_statuses: _ex,
-      ...rest
-    } = apiFilters
-    return rest
+  // The state tab counts follow the filter (RFC-048: stats take the list's
+  // filter): the same filter under every lens at once (by_state), so a tab's
+  // count is the total its list shows.
+  const lensStatsFilters = useMemo(() => {
+    const { page: _page, per_page: _perPage, sort: _sort, state: _state, ...rest } = apiFilters
+    return { ...rest, state: 'all' as const }
   }, [apiFilters])
 
   // Any filter change resets to the first page — otherwise a user on page 8 of
@@ -826,43 +818,45 @@ function FindingsContent() {
     setPage(1)
   }, [filterKey, setPage])
 
-  // Fetch finding stats. Pass `assetId` so the severity cards reflect
-  // the filtered table when the user navigates here from an asset
-  // detail sheet ("View All Findings"). Without this, the cards
-  // showed global tenant counts (e.g. "9 Critical") while the table
-  // showed only the asset-scoped row count (e.g. "1 result"), which
-  // looks like a bug.
+  // The overview strip is page-level: every finding the caller may see (their
+  // data scope applies server-side), whatever the state tab, search or
+  // filters. Filter-aware numbers live in the tab counts and the result bar.
+  // With no filter set, the overview and tab-count requests are the same URL,
+  // so the page loads ONE stats response; neither key holds the state tab, so
+  // switching tabs sends no stats request (research/81).
+  const overviewStatsFilters = useMemo(
+    () => ({ state: 'all' as const, exclude_statuses: HIDDEN_STATUSES }),
+    [HIDDEN_STATUSES]
+  )
   const {
     data: findingStats,
     isLoading: statsLoading,
-    mutate: mutateStats,
-  } = useFindingStatsApi(statsFilters)
-  // The lens counts: the same filter under every lens at once (by_state).
-  const lensStatsFilters = useMemo(
-    () => ({ ...statsFilters, state: 'all' as const }),
-    [statsFilters]
+    mutate: mutateOverviewStats,
+  } = useFindingStatsApi(overviewStatsFilters)
+  const { data: lensStats, mutate: mutateLensStats } = useFindingStatsApi(lensStatsFilters)
+  const mutateStats = useCallback(
+    () => Promise.all([mutateOverviewStats(), mutateLensStats()]),
+    [mutateOverviewStats, mutateLensStats]
   )
-  const { data: lensStats } = useFindingStatsApi(lensStatsFilters)
 
-  // Fetch findings from API (filtered by severity tab)
+  // The flat list. The grouped and verification views render their own rows,
+  // so the flat page is not fetched while one of them is shown.
   const {
     data: findingsResponse,
     error,
     isLoading: findingsLoading,
     mutate: mutateFindingsList,
-  } = useFindingsApi(apiFilters, { keepPreviousData: true })
+  } = useFindingsApi(apiFilters, { keepPreviousData: true, enabled: !groupBy && !verifyView })
   // Every refresh after a change also reloads the grouped view's groups and rows.
   const mutateFindings = useCallback(() => {
     setGroupsReloadKey((k) => k + 1)
     return mutateFindingsList()
   }, [mutateFindingsList])
 
-  // Headline numbers all come from /findings/stats — no per-number list
-  // requests (those pushed a single page load past the per-user read limit).
-  // '—' until the api exposes the field (older api).
-  const overdueCount: number | string = findingStats ? (findingStats.sla_breached ?? '—') : 0
-  const kevCount: number | string = findingStats ? (findingStats.kev_open ?? '—') : 0
-  const pendingCount = findingStats?.by_status?.fix_applied ?? 0
+  // Headline numbers all come from the one overview stats response — no
+  // per-number list requests (those pushed a single page load past the
+  // per-user read limit). '—' until the api exposes the field (older api).
+  const overview = useMemo(() => findingsOverview(findingStats), [findingStats])
 
   // Initial loading state (only true when we don't have stats yet)
   const isInitialLoading = statsLoading && !findingStats
@@ -872,40 +866,6 @@ function FindingsContent() {
     if (!findingsResponse?.data) return []
     return findingsResponse.data.map(transformApiToUiFinding)
   }, [findingsResponse])
-
-  // Use finding stats for stable counts (not affected by tab filter)
-  const stats = useMemo(() => {
-    const defaultBySeverity: Record<Severity, number> = {
-      critical: 0,
-      high: 0,
-      medium: 0,
-      low: 0,
-      info: 0,
-      none: 0,
-    }
-
-    if (!findingStats) {
-      return {
-        total: 0,
-        bySeverity: defaultBySeverity,
-        averageCvss: 'N/A',
-        overdueCount: 0,
-      }
-    }
-
-    // none (CVSS 0.0) is shown as info.
-    const bySeverity: Record<Severity, number> = {
-      ...severityCounts(findingStats.by_severity),
-      none: 0,
-    }
-
-    return {
-      total: findingStats.total,
-      bySeverity,
-      averageCvss: 'N/A',
-      overdueCount: findingStats.open_count,
-    }
-  }, [findingStats])
 
   const selectedCount = selectedFindingIds.length
 
@@ -1496,72 +1456,90 @@ function FindingsContent() {
     slaFilter.length +
     sourceFilter.length
 
+  // Each card is a shortcut: it applies exactly the filter it counts (the
+  // Open tab plus one facet), shows as active while that filter is the whole
+  // view, and clears it on a second click. Its number never moves with the
+  // tab or the filters (research/81).
+  const onlyFacet = (facet: 'none' | 'critical' | 'high' | 'sla' | 'kev') =>
+    !groupBy &&
+    !verifyView &&
+    activeCount === (facet === 'none' ? 0 : facet === 'sla' ? OVERDUE_SLA.length : 1) &&
+    (facet !== 'critical' || sameSet(severities, ['critical'])) &&
+    (facet !== 'high' || sameSet(severities, ['high'])) &&
+    (facet !== 'sla' || sameSet(slaFilter, OVERDUE_SLA)) &&
+    (facet !== 'kev' || kevActive)
+  const showOnly = (nextLens: FindingLens, apply?: () => void) => {
+    clearAllFilters()
+    setGroupParam('')
+    setViewParam('')
+    setLensParam(nextLens)
+    apply?.()
+  }
+  const openCard = (facet: 'critical' | 'high' | 'sla' | 'kev', apply: () => void) => {
+    const on = lens === 'open' && onlyFacet(facet)
+    showOnly('open', on ? undefined : apply)
+  }
+
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
-      label: 'All findings',
-      value: stats.total,
-      onClick: () => {
-        clearAllFilters()
-        setGroupParam('')
-        setViewParam('')
-      },
-      active: activeCount === 0 && !groupBy && !verifyView,
+      label: 'Total',
+      description: 'Every finding you can see, in every state (the All tab).',
+      value: overview.total,
+      onClick: () => showOnly(lens === 'all' && onlyFacet('none') ? 'open' : 'all'),
+      active: lens === 'all' && onlyFacet('none'),
     },
     {
       key: 'open',
       label: 'Open',
-      value: findingStats?.open_count ?? 0,
-      onClick: () => setStatusParam(sameSet(statuses, OPEN_STATUSES) ? [] : OPEN_STATUSES),
-      active: sameSet(statuses, OPEN_STATUSES),
+      description: 'Findings that still need work (the Open tab).',
+      value: overview.open,
+      onClick: () => showOnly('open'),
+      active: lens === 'open' && onlyFacet('none'),
     },
     {
       key: 'critical',
-      label: 'Critical',
-      value: stats.bySeverity.critical,
+      label: 'Critical open',
+      description: 'Open findings of critical severity.',
+      value: overview.criticalOpen,
       tone: 'danger',
-      onClick: () => setSeverities(sameSet(severities, ['critical']) ? [] : ['critical']),
-      active: sameSet(severities, ['critical']),
+      onClick: () => openCard('critical', () => setSeverities(['critical'])),
+      active: lens === 'open' && onlyFacet('critical'),
     },
     {
       key: 'high',
-      label: 'High',
-      value: stats.bySeverity.high,
-      onClick: () => setSeverities(sameSet(severities, ['high']) ? [] : ['high']),
-      active: sameSet(severities, ['high']),
+      label: 'High open',
+      description: 'Open findings of high severity.',
+      value: overview.highOpen,
+      onClick: () => openCard('high', () => setSeverities(['high'])),
+      active: lens === 'open' && onlyFacet('high'),
     },
     {
       key: 'overdue',
       label: 'Overdue SLA',
-      value: overdueCount,
+      description: "Open findings past the remediation deadline of your organization's SLA policy.",
+      value: overview.overdue,
       tone: 'danger',
-      onClick: () => {
-        // Open AND past due — the same scope as the count.
-        const on = sameSet(slaFilter, OVERDUE_SLA) && sameSet(statuses, OPEN_STATUSES)
-        setSlaFilter(on ? [] : OVERDUE_SLA)
-        setStatusParam(on ? [] : OPEN_STATUSES)
-      },
-      active: sameSet(slaFilter, OVERDUE_SLA) && sameSet(statuses, OPEN_STATUSES),
+      onClick: () => openCard('sla', () => setSlaFilter(OVERDUE_SLA)),
+      active: lens === 'open' && onlyFacet('sla'),
     },
     {
       key: 'kev',
       label: 'In CISA KEV',
-      value: kevCount,
+      description:
+        'Open findings whose CVE is in the CISA Known Exploited Vulnerabilities catalog.',
+      value: overview.kev,
       tone: 'danger',
-      onClick: () => {
-        // Open AND in KEV — the same scope as the count.
-        const on = kevActive && sameSet(statuses, OPEN_STATUSES)
-        setKevFilter(on ? 'false' : 'true')
-        setStatusParam(on ? [] : OPEN_STATUSES)
-      },
-      active: kevActive && sameSet(statuses, OPEN_STATUSES),
+      onClick: () => openCard('kev', () => setKevFilter('true')),
+      active: lens === 'open' && onlyFacet('kev'),
     },
     {
       // The verification queue: fixes claimed by owners, waiting for a
       // verifier to confirm or reject (grouped by CVE).
       key: 'verify',
       label: 'Awaiting verification',
-      value: pendingCount,
+      description: 'Fixes claimed by an owner, waiting for a verifier.',
+      value: overview.awaitingVerification,
       onClick: () => setViewParam(verifyView ? '' : 'verify'),
       active: verifyView,
     },
@@ -1697,7 +1675,8 @@ function FindingsContent() {
 
   const facetPanelScrollable = <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
 
-  const total = findingsResponse?.total ?? 0
+  // The grouped views do not load the flat page; the tab count is the same number.
+  const total = findingsResponse?.total ?? lensStats?.by_state?.[lens] ?? 0
 
   const filterButtons = (
     <FilterPanelToggle
