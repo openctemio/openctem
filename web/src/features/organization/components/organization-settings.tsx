@@ -39,6 +39,8 @@ import { useTenantLogo } from '../hooks/use-tenant-logo'
 import { planGeneralSave, planHasChanges } from '../lib/general-save-plan'
 import {} from '../types/settings.types'
 import { AccessRestrictionsCard, isIpLockoutError, parseLines } from './access-restrictions-card'
+import { PersonalAccountsCard } from './personal-accounts-card'
+import type { PersonalAccountsPolicy, SSOException } from '../types/settings.types'
 import { DeleteOrganization } from './delete-organization'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
 import { SensorOptInSwitches } from '@/features/sensors/components/sensor-opt-in-switches'
@@ -370,6 +372,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
   const [ipAllowlistError, setIpAllowlistError] = useState<string | null>(null)
   const [securityForm, setSecurityForm] = useState({
     mfa_required: false,
+    mfa_required_for_admins: false,
     session_timeout_min: 60,
     ip_whitelist: '',
     allowed_domains: '',
@@ -377,6 +380,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
     require_sensor_local_policy_for_private_targets: false,
     allow_sensor_interactsh: false,
     allow_sensor_custom_templates: false,
+    personal_accounts: 'allowed' as PersonalAccountsPolicy,
+    sso_exceptions: [] as SSOException[],
   })
 
   const [brandingForm, setBrandingForm] = useState({
@@ -409,6 +414,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
       })
       setSecurityForm({
         mfa_required: settings.security?.mfa_required || false,
+        mfa_required_for_admins: settings.security?.mfa_required_for_admins || false,
         session_timeout_min: settings.security?.session_timeout_min || 60,
         ip_whitelist: (settings.security?.ip_whitelist || []).join('\n'),
         allowed_domains: (settings.security?.allowed_domains || []).join('\n'),
@@ -418,6 +424,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
           settings.security?.require_sensor_local_policy_for_private_targets || false,
         allow_sensor_interactsh: settings.security?.allow_sensor_interactsh || false,
         allow_sensor_custom_templates: settings.security?.allow_sensor_custom_templates || false,
+        personal_accounts: settings.security?.personal_accounts ?? 'allowed',
+        sso_exceptions: settings.security?.sso_exceptions ?? [],
       })
       setBrandingForm({
         primary_color: settings.branding.primary_color || '#3B82F6',
@@ -520,6 +528,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
 
       const result = await updateSecuritySettings({
         mfa_required: securityForm.mfa_required,
+        mfa_required_for_admins: securityForm.mfa_required_for_admins,
         ip_whitelist: ipWhitelist,
         allowed_domains: allowedDomains,
         email_verification_mode: securityForm.email_verification_mode,
@@ -527,6 +536,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
           securityForm.require_sensor_local_policy_for_private_targets,
         allow_sensor_interactsh: securityForm.allow_sensor_interactsh,
         allow_sensor_custom_templates: securityForm.allow_sensor_custom_templates,
+        personal_accounts: securityForm.personal_accounts,
+        sso_exceptions: securityForm.sso_exceptions,
       })
       if (result) {
         mutate(result)
@@ -637,6 +648,27 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                       setSecurityForm({ ...securityForm, mfa_required: checked })
                     }
                     disabled={!canManageSecurityAndAPI}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="tenant-mfa-admins">
+                      Require two-factor authentication for owners and admins
+                    </Label>
+                    <p className="text-sm text-muted-foreground" id="tenant-mfa-admins-desc">
+                      Owners and administrators can change the organization, so they must use an
+                      authenticator app even when other members do not. On for new organizations.
+                    </p>
+                  </div>
+                  <Switch
+                    id="tenant-mfa-admins"
+                    aria-describedby="tenant-mfa-admins-desc"
+                    checked={securityForm.mfa_required || securityForm.mfa_required_for_admins}
+                    onCheckedChange={(checked) =>
+                      setSecurityForm({ ...securityForm, mfa_required_for_admins: checked })
+                    }
+                    disabled={!canManageSecurityAndAPI || securityForm.mfa_required}
                   />
                 </div>
 
@@ -764,6 +796,15 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
               }
               currentIp={settings?.security?.current_ip}
               ipAllowlistError={ipAllowlistError}
+              disabled={!canManageSecurityAndAPI}
+            />
+            <PersonalAccountsCard
+              tenantSlug={tenantId}
+              policy={securityForm.personal_accounts}
+              onPolicyChange={(p) => setSecurityForm({ ...securityForm, personal_accounts: p })}
+              exceptions={securityForm.sso_exceptions}
+              onExceptionsChange={(e) => setSecurityForm({ ...securityForm, sso_exceptions: e })}
+              ssoEnforced={!!settings?.security?.sso_enforced}
               disabled={!canManageSecurityAndAPI}
             />
             <SsoManagedNotice />

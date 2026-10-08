@@ -3,7 +3,6 @@
 | | |
 |---|---|
 | Status | Accepted (decisions R-1..R-6, FI-1..FI-7, 2026-10-05; P-1..P-6, 2026-10-07); R1, R2, F1 and P1 implemented |
-| Research | research/33 (runner mode), research/36 §3 (CI row), research/37 S14 (runner mode in the SDK kit) |
 | Related | RFC-008 (shift-left CI scanning), RFC-023 (sensors), RFC-040 (result binding), RFC-043 (finding identity), RFC-050 (asset access model) |
 
 ## 1. Summary
@@ -35,8 +34,8 @@ CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs 
   mode; the OIDC exchange lives in the SDK kit (sdk-go `pkg/sensorkit`), next
   to the runner entry point.
 - **R-2** CI authenticates by OIDC federation only. The `runner` sensor
-  type (a sensor API key used from CI) was deprecated, then removed (owner
-  decision 2026-10-05, migration `001146`): existing runner sensors and their
+  type (a sensor API key used from CI) was deprecated, then removed (decided
+  2026-10-05, migration `001146`): existing runner sensors and their
   keys are deleted, the type is refused, and the CI ingest path submits
   reports as a CI run (`ingest.ProducerCIRun`), never as a sensor. **OIDC
   required for CI** (`tenants.ci_require_oidc`, migration `001120`, `GET/PUT

@@ -50,7 +50,8 @@ import {
   X,
   Layers,
 } from 'lucide-react'
-import { type Asset } from '@/features/assets'
+import type { Asset } from '@/features/assets'
+import type { CredentialLeakRow } from '@/features/credentials/lib'
 import type { Severity, Status } from '@/features/shared/types'
 import {
   useCredentialsApi,
@@ -188,7 +189,7 @@ export default function CredentialsPage() {
     search: debouncedSearch || undefined,
   })
 
-  // Map API data to Asset type for UI compatibility
+  // Map API data to CredentialLeakRow type for UI compatibility
   const credentials = useMemo(() => {
     if (!apiResponse?.items) return []
     return mapCredentialsToAssets(apiResponse.items)
@@ -222,7 +223,7 @@ export default function CredentialsPage() {
     return derived
   }, [allCredentialsResponse])
 
-  const [selectedCredential, setSelectedCredential] = useState<Asset | null>(null)
+  const [selectedCredential, setSelectedCredential] = useState<CredentialLeakRow | null>(null)
 
   // Filter data (client-side filtering for source since API doesn't support it directly)
   const filteredData = useMemo(() => {
@@ -279,7 +280,7 @@ export default function CredentialsPage() {
 
   // Table columns. No selection column: the page has no bulk actions, and a
   // checkbox that selects rows nothing can act on is a dead control.
-  const columns: ColumnDef<Asset>[] = [
+  const columns: ColumnDef<CredentialLeakRow>[] = [
     {
       accessorKey: 'name',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Credential" />,
@@ -393,7 +394,7 @@ export default function CredentialsPage() {
   // sensors; their lifecycle is resolve / accept / false positive. Do not add
   // Add/Edit/Delete controls back until the backend exists.
 
-  const handleCopyCredential = (credential: Asset) => {
+  const handleCopyCredential = (credential: CredentialLeakRow) => {
     copyToClipboard(credential.name)
     toast.success('Credential name copied to clipboard')
   }
@@ -416,7 +417,7 @@ export default function CredentialsPage() {
     )
   }
 
-  const handleMarkResolved = async (credential: Asset) => {
+  const handleMarkResolved = async (credential: CredentialLeakRow) => {
     try {
       const response = await csrfFetch(`/api/v1/credentials/${credential.id}/resolve`, {
         method: 'POST',
@@ -594,7 +595,10 @@ export default function CredentialsPage() {
 
       {/* Detail Sheet */}
       <AssetDetailSheet
-        asset={selectedCredential}
+        // The sheet frames the leak (header, classification, tabs); the
+        // leak's own fields render in the overview below, not as asset
+        // properties, so its details type stays apart from the asset schema.
+        asset={selectedCredential as unknown as Asset | null}
         open={!!selectedCredential}
         onOpenChange={(open) => !open && setSelectedCredential(null)}
         icon={KeyRound}

@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -20,7 +21,8 @@ import (
 // the upload-token lookup (the token is the credential) and the OIDC replay
 // table (global by design).
 type CIRunRepository struct {
-	db *DB
+	db         *DB
+	planLimits // ci_trusts
 }
 
 var _ cirun.Repository = (*CIRunRepository)(nil)
@@ -83,6 +85,9 @@ func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 
 // CreateTrustConfig inserts a configuration.
 func (r *CIRunRepository) CreateTrustConfig(ctx context.Context, c *cirun.TrustConfig) error {
+	if err := r.checkLimit(ctx, c.TenantID, plan.CITrusts, 1); err != nil {
+		return err
+	}
 	rules, err := json.Marshal(c.Rules)
 	if err != nil {
 		return err

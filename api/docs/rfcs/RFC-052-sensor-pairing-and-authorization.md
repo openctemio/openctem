@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 in implementation |
+| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented |
 | Scope | api, web, sdk-go (`pkg/sensorsig`, `pkg/sensorproto/pairing`, `pkg/sensorkit`, `pkg/httpsec`), sensor |
 | Builds on | [RFC-032](RFC-032-sensor-enrollment-and-identity.md) (sensor-held Ed25519 key, RFC 9421 signatures, enrollment, `octs_`/`octe_`), [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) (result binding, signed jobs, local ceiling), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones), [RFC-046](RFC-046-scans-redesign.md) and the stage catalog (tiers T0/T1/T2) |
 | Architecture | [sensor-pairing.md](../architecture/sensor-pairing.md), [sensor-platform-trust.md](../architecture/sensor-platform-trust.md), [authorization-matrix.md](../architecture/authorization-matrix.md) |
@@ -56,7 +56,7 @@ keeps today's behaviour and is flagged in the console until someone narrows it.
 
 ## 2. Decisions
 
-Adopted per the owner's direction ("do the most secure, best option"):
+Adopted, choosing the most secure option at each point:
 
 | # | Decision |
 |---|---|
@@ -67,7 +67,7 @@ Adopted per the owner's direction ("do the most secure, best option"):
 | SA-5 | One identity = one tenant. Widening needs a stronger permission and is audited and notified; narrowing is instant. Time-boxed intrusive grants (SP4). |
 | SA-6 | "Purge everything sensor X wrote since T" and kill switches are part of the design (SP3/SP4). |
 
-Secure defaults (owner, 2026-10-05):
+Secure defaults (decided 2026-10-05):
 
 | # | Default |
 |---|---|

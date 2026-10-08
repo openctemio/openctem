@@ -1,9 +1,9 @@
 # RFC-007: License-Aware Continuous Scan Coverage (Tenable Nessus Pro + Tenable.sc)
 
-- **Status**: Paused (owner decision D-14, 2026-10-04). Sensor v0.8.0 removed the Tenable runner, so the connector and the coverage scheduler are switched off and hidden in the UI; code and data are kept behind one switch (`integration.TenableConnectorEnabled` in the API, `TENABLE_CONNECTOR_ENABLED` in the web). Being rebuilt as a two-way Tenable.sc connector in the sensor: RFC-047. Before the pause: Phase 1 shipped (#139 converter, #141 `POST /api/v1/assets/import/nessus-findings`). Phases 2–4 partly shipped for Nessus Pro in sensor mode: Tenable config and validation (#147, #150), batch planner (#145), sensor dispatch and rotation scheduler (#152, #153, migration `000176`), `GET /api/v1/scans/coverage` (#156) and the coverage card (openctemio/ui#157). Not shipped: Tenable.sc cap and reclaim (the scheduler skips any engine but Nessus Pro), API-side direct mode, Phase 5 (checked 2026-10-04).
+- **Status**: Paused (decided 2026-10-04). Sensor v0.8.0 removed the Tenable runner, so the connector and the coverage scheduler are switched off and hidden in the UI; code and data are kept behind one switch (`integration.TenableConnectorEnabled` in the API, `TENABLE_CONNECTOR_ENABLED` in the web). Being rebuilt as a two-way Tenable.sc connector in the sensor: RFC-047. Before the pause: Phase 1 shipped (#139 converter, #141; `.nessus` findings are now imported through `POST /api/v1/findings/import`). Phases 2–4 partly shipped for Nessus Pro in sensor mode: Tenable config and validation (#147, #150), batch planner (#145), sensor dispatch and rotation scheduler (#152, #153, migration `000176`), `GET /api/v1/scans/coverage` (#156) and the coverage card (openctemio/ui#157). Not shipped: Tenable.sc cap and reclaim (the scheduler skips any engine but Nessus Pro), API-side direct mode, Phase 5 (checked 2026-10-04).
 - **Created**: 2026-06-04
 - **Owner**: Platform / Discovery
-- **Problem**: A customer must continuously cover a large estate (e.g. **3000 IPs**) with vulnerability scanning, but their scanner license is smaller than the estate (e.g. **500 active IPs**). They want to scan in rolling, license-sized batches, store every result durably in OpenCTEM, free the scanner per cycle, and loop until the whole estate is covered — **without** wrongly resolving findings for the assets that weren't in the current batch. The customer runs **both Nessus Professional (unlimited IPs) and Tenable.sc (active-IP licensed)** and needs *both* supported as first-class engines.
+- **Problem**: An organization must continuously cover a large estate (e.g. **3000 IPs**) with vulnerability scanning, but their scanner license is smaller than the estate (e.g. **500 active IPs**). They want to scan in rolling, license-sized batches, store every result durably in OpenCTEM, free the scanner per cycle, and loop until the whole estate is covered — **without** wrongly resolving findings for the assets that weren't in the current batch. Deployments may run **both Nessus Professional (unlimited IPs) and Tenable.sc (active-IP licensed)**, so *both* must be supported as first-class engines.
 
 ---
 
@@ -13,14 +13,14 @@
 |---|---|---|---|
 | **Nessus Professional/Expert** | Per *scanner*, **unlimited IPs** | n/a | Breadth engine. Batching is for **scan duration/load**, not license. No reclaim step. |
 | **Tenable.sc / SecurityCenter** | **Active IPs** in repositories (e.g. 500) | **Explicit removal** of repo results (immediate) and/or **aging** (passive) | License-capped engine. Scheduler enforces the cap; reclaim frees slots each cycle. Managed scanners reach segmented networks Nessus Pro can't. |
-| *(ref) Tenable.io / VM* | Assets, **90-day** count | Deletion lag ~90d | **Not** the customer's case; rotation can't reclaim in time. Out of scope, noted so the model isn't mis-applied. |
+| *(ref) Tenable.io / VM* | Assets, **90-day** count | Deletion lag ~90d | **Not** covered; rotation can't reclaim in time. Out of scope, noted so the model isn't mis-applied. |
 
 **Design stance:** a single engine-agnostic abstraction (`ScanEngine`) with a per-engine **`LicensePolicy`**. The scheduler is identical for both; it reads the policy to decide batch sizing and whether a reclaim step runs:
 
 - `nessus_pro` → `LicensePolicy{Mode: Unlimited, Reclaim: None}` → batch = perf chunk, no reclaim.
 - `tenable_sc` → `LicensePolicy{Mode: ActiveIPCap, Cap: 500, Reclaim: Remove}` → batch ≤ headroom, reclaim after each cycle.
 
-This makes the customer's "scan 500 → store → free 500 → next 500" loop a **safe, first-class** mode on `.sc`, while on Nessus Pro the same coverage is achieved without the fragile delete loop.
+This makes the "scan 500 → store → free 500 → next 500" loop a **safe, first-class** mode on `.sc`, while on Nessus Pro the same coverage is achieved without the fragile delete loop.
 
 ## 1. Current state (grounded — more exists than expected)
 
@@ -273,7 +273,7 @@ not "agent/runner".
 
 ## 5. Alternatives considered
 
-- **Nessus Pro only, ignore the cap** — valid for breadth (Pro is unlimited), but the customer explicitly needs `.sc` too (managed scanners reach segmented networks, compliance/dashboards). Support both.
+- **Nessus Pro only, ignore the cap** — valid for breadth (Pro is unlimited), but `.sc` is needed too (managed scanners reach segmented networks, compliance/dashboards). Support both.
 - **Tenable Nessus Agents** — licensed by agent count; for 3000 internal hosts often cheaper and removes network-scan license pressure. Worth a commercial evaluation; orthogonal to this design (agents still feed `.nessus`/`.sc`).
 - **Hard delete-and-recreate to dodge a cap** — the original idea. On `.sc` this is exactly `Reclaim: Remove` done safely (gated on ingest, repo-scoped). On `.io` it doesn't reclaim in time and risks licensing terms — excluded.
 - **External cron script orchestrates, OpenCTEM only ingests** — fine for the Phase 1 pilot (manual `.nessus` import), but leaves coverage/scheduling invisible; move orchestration into OpenCTEM (Phases 2–3).
