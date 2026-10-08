@@ -93,7 +93,7 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 
 	targetType, err := scopedom.ParseTargetType(input.TargetType)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err // wraps shared.ErrValidation
 	}
 
 	// Check if pattern already exists
@@ -552,7 +552,7 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 
 	exclusionType, err := scopedom.ParseExclusionType(input.ExclusionType)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err // wraps shared.ErrValidation
 	}
 
 	web, err := webRuleFor(exclusionType, input.Pattern, input.PathPrefix, input.Methods)
@@ -1163,7 +1163,7 @@ func (s *Service) CheckPatternOverlaps(ctx context.Context, tenantID string, tar
 
 	parsedTargetType, err := scopedom.ParseTargetType(targetType)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err // wraps shared.ErrValidation
 	}
 
 	// Get all active targets for this tenant

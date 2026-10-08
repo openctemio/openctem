@@ -455,6 +455,63 @@ check_client_ip_headers() {
 }
 
 # ---------------------------------------------------------------------------
+# Rule 8: an HTTP response body is never read without a size limit.
+#
+# io.ReadAll(resp.Body) or json.NewDecoder(resp.Body) buffers whatever an
+# upstream sends (a hostile SCM, ticketing, OAuth or LLM endpoint, or a feed),
+# so one response can exhaust the API's memory (RFC-049 F-12). Read through
+# httpsec.ReadLimited / httpsec.DecodeJSON (oversize is an error, never
+# truncated data), or httpsec.NewLimitedReader for a stream parsed as it is
+# read. Inbound request bodies are capped by the BodyLimit middleware and are
+# not matched (r.Body / req.Body). Tests are excluded.
+# ---------------------------------------------------------------------------
+check_bounded_response_reads() {
+    local hits
+    hits="$(grep -RnE '(io|ioutil)\.ReadAll\([A-Za-z_]*(resp|res|response|Resp)\.Body\)|(json|xml|yaml)\.NewDecoder\([A-Za-z_]*(resp|res|response|Resp)\.Body\)' \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        api/ 2>/dev/null | grep -v '^api/tests/' || true)"
+
+    if [[ -n "$hits" ]]; then
+        say_fail "Rule 8: unbounded read of an HTTP response body — use httpsec.ReadLimited / httpsec.DecodeJSON:"
+        printf '%s\n' "$hits" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 8: every HTTP response body read is bounded (api/)"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 9: an upstream response body never goes into an error.
+#
+# Errors reach API responses, audit entries and the tenant's UI; a third-party
+# body can echo request data, tokens or upstream internals (RFC-049 F-2).
+# Return httpsec.NewUpstreamStatusError (provider + status; the body is logged
+# at debug level, bounded and sanitized). Tests are excluded.
+# ---------------------------------------------------------------------------
+check_upstream_body_in_errors() {
+    local hits
+    hits="$(grep -RnE 'Errorf\(.*string\((resp|res|response)?[Bb]ody\)|Errorf\(.*string\(respBody\)' \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        api/ 2>/dev/null | grep -v '^api/tests/' | grep -v '/includetest/' || true)"
+
+    if [[ -n "$hits" ]]; then
+        say_fail "Rule 9: an upstream response body in an error — use httpsec.NewUpstreamStatusError:"
+        printf '%s\n' "$hits" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 9: no upstream response body in errors (api/)"
+}
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 printf '== security-lint ==\n'
@@ -475,6 +532,8 @@ check_agent_dangerous_flags
 check_httpsec_used
 check_httpsec_drift
 check_client_ip_headers
+check_bounded_response_reads
+check_upstream_body_in_errors
 printf '\n'
 if [[ $fail -ne 0 ]]; then
     printf '%sSecurity lint FAILED.%s Fix the rules above before merging.\n' "$RED" "$RST"

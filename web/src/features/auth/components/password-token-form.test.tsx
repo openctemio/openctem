@@ -7,6 +7,18 @@ import { PasswordTokenForm } from './password-token-form'
 
 vi.mock('../actions/local-auth-actions', () => ({ resetPasswordAction: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// The policy the API reports (GET /auth/providers); the form keeps no copy.
+const policy = vi.hoisted(() => ({
+  current: {
+    min_length: 16,
+    require_uppercase: true,
+    require_lowercase: true,
+    require_number: true,
+    require_special: false,
+    reset_link_valid_minutes: 60,
+  } as Record<string, unknown> | undefined,
+}))
+vi.mock('../api/use-auth-providers', () => ({ usePasswordPolicy: () => policy.current }))
 
 const mockReset = vi.mocked(resetPasswordAction)
 const PASSWORD = 'Str0ng!Passw0rd#2026'
@@ -80,5 +92,31 @@ describe('PasswordTokenForm', () => {
     await fillAndSubmit(/^set password$/i)
     expect(await screen.findByText('Token expired')).toBeInTheDocument()
     expect(screen.getByText(/ask your administrator for a new one/i)).toBeInTheDocument()
+  })
+})
+
+describe('PasswordTokenForm password policy', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('states the policy the API reports', () => {
+    render(<PasswordTokenForm mode="reset" token="tok-p" />)
+    expect(
+      screen.getByText(
+        /At least 16 characters, with an uppercase letter, a lowercase letter and a number\./
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('refuses a password shorter than the API minimum before calling the API', async () => {
+    render(<PasswordTokenForm mode="reset" token="tok-p" />)
+    const user = userEvent.setup()
+    const [pw, confirm] = screen.getAllByPlaceholderText(/password/i)
+    await user.type(pw, 'Short1Pass')
+    await user.type(confirm, 'Short1Pass')
+    await user.click(screen.getByRole('button', { name: /^reset password$/i }))
+    expect(
+      await screen.findByText('Password must be at least 16 characters long')
+    ).toBeInTheDocument()
+    expect(mockReset).not.toHaveBeenCalled()
   })
 })
