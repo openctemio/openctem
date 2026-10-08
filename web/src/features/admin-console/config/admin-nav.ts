@@ -1,5 +1,6 @@
 import {
   Building2,
+  Gauge,
   History,
   KeyRound,
   LayoutDashboard,
@@ -113,6 +114,13 @@ export const adminNav: AdminNavSection[] = [
         icon: KeyRound,
         minRole: 'super_admin',
         keywords: ['identity provider', 'idp', 'sso', 'oidc'],
+      },
+      {
+        title: 'Plans',
+        i18nKey: 'admin.nav.plans',
+        url: '/admin/system/plans',
+        icon: Gauge,
+        keywords: ['limits', 'free', 'pro', 'enterprise', 'quotas'],
       },
     ],
   },

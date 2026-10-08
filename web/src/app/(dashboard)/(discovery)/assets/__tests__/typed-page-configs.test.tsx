@@ -315,7 +315,7 @@ describe('typed drawer sections', () => {
       ...bareService,
       subType: 'http',
       name: 'https://partial.example.org',
-      metadata: { status_code: 200, service: { port: 443, protocol: 'https' } },
+      metadata: { status_code: 200, port: 443, protocol: 'https' },
     } as Asset
     const { container } = render(
       <TypedDetailSections sections={servicesConfig.detailSections ?? []} asset={partial} />

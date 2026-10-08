@@ -1049,9 +1049,15 @@ type EmailCredentials struct {
 	ToEmails    []string `json:"to_emails"`
 	UseTLS      bool     `json:"use_tls"`
 	UseSTARTTLS bool     `json:"use_starttls"`
-	SkipVerify  bool     `json:"skip_verify"`
-	ReplyTo     string   `json:"reply_to,omitempty"`
+	// SkipVerify is accepted only to refuse it: a tenant may not turn off
+	// certificate verification for the relay it sends its SMTP password to
+	// (RFC-049 F-5). It is never stored or used.
+	SkipVerify bool   `json:"skip_verify"`
+	ReplyTo    string `json:"reply_to,omitempty"`
 }
+
+// errSMTPSkipVerify refuses a tenant request to turn off TLS verification.
+var errSMTPSkipVerify = fmt.Errorf("%w: skip_verify is not supported: the SMTP server certificate is always verified (use a certificate from a trusted CA)", shared.ErrValidation)
 
 // EmailMetadata represents non-sensitive email config stored in integration.metadata.
 // This allows the frontend to display current config when editing without exposing secrets.
@@ -1063,7 +1069,6 @@ type EmailMetadata struct {
 	ToEmails    []string `json:"to_emails"`
 	UseTLS      bool     `json:"use_tls"`
 	UseSTARTTLS bool     `json:"use_starttls"`
-	SkipVerify  bool     `json:"skip_verify"`
 	ReplyTo     string   `json:"reply_to,omitempty"`
 }
 
@@ -1083,7 +1088,6 @@ func splitEmailCredentials(creds *EmailCredentials) (*EmailMetadata, *EmailSensi
 		ToEmails:    creds.ToEmails,
 		UseTLS:      creds.UseTLS,
 		UseSTARTTLS: creds.UseSTARTTLS,
-		SkipVerify:  creds.SkipVerify,
 		ReplyTo:     creds.ReplyTo,
 	}
 	sensitive := &EmailSensitiveCredentials{
@@ -1103,7 +1107,6 @@ func mergeEmailConfig(metadata *EmailMetadata, sensitive *EmailSensitiveCredenti
 		ToEmails:    metadata.ToEmails,
 		UseTLS:      metadata.UseTLS,
 		UseSTARTTLS: metadata.UseSTARTTLS,
-		SkipVerify:  metadata.SkipVerify,
 		ReplyTo:     metadata.ReplyTo,
 	}
 	if sensitive != nil {
@@ -1144,7 +1147,6 @@ func (s *IntegrationService) parseEmailCredentials(credentials string) (*notifie
 		ToEmails:    emailCreds.ToEmails,
 		UseTLS:      emailCreds.UseTLS,
 		UseSTARTTLS: emailCreds.UseSTARTTLS,
-		SkipVerify:  emailCreds.SkipVerify,
 		ReplyTo:     emailCreds.ReplyTo,
 	}, nil
 }
@@ -1213,7 +1215,6 @@ func (s *IntegrationService) buildEmailConfig(intg *integrationdom.Integration, 
 			FromName:    getStringFromMap(metadata, "from_name"),
 			UseTLS:      getBoolFromMap(metadata, "use_tls"),
 			UseSTARTTLS: getBoolFromMap(metadata, "use_starttls"),
-			SkipVerify:  getBoolFromMap(metadata, "skip_verify"),
 			ReplyTo:     getStringFromMap(metadata, "reply_to"),
 		}
 
@@ -1273,6 +1274,9 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
 	}
+	if emailCreds.SkipVerify {
+		return errSMTPSkipVerify
+	}
 
 	// Validate required fields
 	if emailCreds.SMTPHost == "" {
@@ -1300,7 +1304,6 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 		"to_emails":    metadata.ToEmails,
 		"use_tls":      metadata.UseTLS,
 		"use_starttls": metadata.UseSTARTTLS,
-		"skip_verify":  metadata.SkipVerify,
 		"reply_to":     metadata.ReplyTo,
 	})
 
@@ -1323,6 +1326,9 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
+	}
+	if emailCreds.SkipVerify {
+		return errSMTPSkipVerify
 	}
 
 	// Get existing metadata to merge
@@ -1371,7 +1377,6 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	// Boolean flags - use from input (these have default values, so always set)
 	newMetadata["use_tls"] = emailCreds.UseTLS
 	newMetadata["use_starttls"] = emailCreds.UseSTARTTLS
-	newMetadata["skip_verify"] = emailCreds.SkipVerify
 
 	// Reply To
 	if emailCreds.ReplyTo != "" {
@@ -1533,7 +1538,6 @@ func (s *IntegrationService) populateMetadataFromCredentials(intg *integrationdo
 		newMetadata["to_emails"] = emailCreds.ToEmails
 		newMetadata["use_tls"] = emailCreds.UseTLS
 		newMetadata["use_starttls"] = emailCreds.UseSTARTTLS
-		newMetadata["skip_verify"] = emailCreds.SkipVerify
 		if emailCreds.ReplyTo != "" {
 			newMetadata["reply_to"] = emailCreds.ReplyTo
 		}

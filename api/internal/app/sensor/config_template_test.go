@@ -75,7 +75,7 @@ func fullData(t *testing.T) SensorTemplateData {
 	return SensorTemplateData{
 		Sensor:  daemonSensor("nuclei", "trivy"),
 		APIKey:  "rda_4b1e0123456789abcdef",
-		BaseURL: "https://192.168.8.204",
+		BaseURL: "https://192.0.2.204",
 		Image:   "ghcr.io/openctemio/sensor:v0.4.2",
 		CACert:  string(testCAPEM(t)),
 	}
@@ -120,7 +120,7 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 		continuationLinesOK(t, dir+" docker", d)
 		for _, want := range []string{
 			"ghcr.io/openctemio/sensor:v0.4.2",
-			"-e API_URL='https://192.168.8.204'",
+			"-e API_URL='https://192.0.2.204'",
 			"-e API_KEY='rda_4b1e0123456789abcdef'",
 			"-e SENSOR_TOOLS=nuclei,trivy",
 			"-e SSL_CERT_DIR=/etc/openctem/certs",
@@ -132,6 +132,7 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 			// Hardened by default (RFC-040 §5.10).
 			"--read-only --cap-drop ALL --security-opt no-new-privileges:true",
 			"--tmpfs /tmp",
+			"-e XDG_CONFIG_HOME=/tmp/.config -e XDG_CACHE_HOME=/tmp/.cache",
 			":/var/lib/openctem/outbox",
 			"-v dmz-scanner-01-state:/var/lib/openctem/state",
 			"-v dmz-scanner-01-content:/var/lib/openctem/content",
@@ -144,7 +145,9 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 				t.Errorf("[%s] docker snippet lacks %q:\n%s", dir, want, d)
 			}
 		}
-		for _, bad := range []string{"openctemio/agent", ":latest", "AGENT_", "-config", "/path/to/scan"} {
+		// The image's home directory holds the baked nuclei-templates
+		// release: nothing is mounted over it.
+		for _, bad := range []string{"openctemio/agent", ":latest", "AGENT_", "-config", "/path/to/scan", "/home/openctem"} {
 			if strings.Contains(d, bad) {
 				t.Errorf("[%s] docker snippet still has %q:\n%s", dir, bad, d)
 			}
@@ -226,7 +229,7 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 		if s.Image != "ghcr.io/openctemio/sensor:v0.4.2" || s.Restart != "unless-stopped" {
 			t.Errorf("[%s] image=%q restart=%q", dir, s.Image, s.Restart)
 		}
-		if s.Environment["API_URL"] != "https://192.168.8.204" || s.Environment["SENSOR_TOOLS"] != "nuclei,trivy" ||
+		if s.Environment["API_URL"] != "https://192.0.2.204" || s.Environment["SENSOR_TOOLS"] != "nuclei,trivy" ||
 			s.Environment["SSL_CERT_DIR"] != "/etc/openctem/certs" {
 			t.Errorf("[%s] environment = %v", dir, s.Environment)
 		}
@@ -244,7 +247,8 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 		}
 		// Hardened, with the sensor-local policy required (RFC-040).
 		if !s.ReadOnly || len(s.CapDrop) != 1 || s.CapDrop[0] != "ALL" || len(s.SecurityOpt) != 1 ||
-			s.SecurityOpt[0] != "no-new-privileges:true" || len(s.Tmpfs) == 0 ||
+			s.SecurityOpt[0] != "no-new-privileges:true" || len(s.Tmpfs) != 1 || s.Tmpfs[0] != "/tmp" ||
+			s.Environment["XDG_CONFIG_HOME"] != "/tmp/.config" || s.Environment["XDG_CACHE_HOME"] != "/tmp/.cache" ||
 			s.Environment["SENSOR_LOCAL_POLICY"] != "/etc/openctem/policy/sensor-policy.yaml" ||
 			s.Environment["SENSOR_KILL_SWITCH_FILE"] != "/etc/openctem/policy/STOP" {
 			t.Errorf("[%s] hardening/policy: read_only=%v cap_drop=%v security_opt=%v tmpfs=%v env=%v", dir,
@@ -291,10 +295,17 @@ func TestTemplates_KubernetesManifestsAreValid(t *testing.T) {
 			"SSL_CERT_DIR", "mountPath: /var/lib/openctem/outbox", "type: Recreate", "BEGIN CERTIFICATE",
 			"mountPath: /var/lib/openctem/state", "claimName: dmz-scanner-01-state",
 			"mountPath: /var/lib/openctem/content", "claimName: dmz-scanner-01-content", "storage: 5Gi",
+			// The identity key stays 0600 across pod replacements.
+			"fsGroupChangePolicy: OnRootMismatch",
+			"value: /tmp/.config", "mountPath: /tmp",
 		} {
 			if !strings.Contains(k, want) {
 				t.Errorf("[%s] manifest lacks %q", dir, want)
 			}
+		}
+		// The baked nuclei-templates release lives in the image's home.
+		if strings.Contains(k, "mountPath: /home/openctem") {
+			t.Errorf("[%s] manifest mounts over the image's home directory:\n%s", dir, k)
 		}
 	}
 }
@@ -334,7 +345,7 @@ func TestTemplates_YAMLEnvCLIUseTheCurrentSensorSettings(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(out.YAML), &cfg); err != nil {
 			t.Fatalf("[%s] yaml: %v\n%s", dir, err, out.YAML)
 		}
-		if cfg.Sensor["name"] != "DMZ Scanner 01" || cfg.Server.BaseURL != "https://192.168.8.204" ||
+		if cfg.Sensor["name"] != "DMZ Scanner 01" || cfg.Server.BaseURL != "https://192.0.2.204" ||
 			cfg.Server.APIKey != "rda_4b1e0123456789abcdef" || cfg.Server.SensorID == "" || cfg.Outbox["dir"] == nil {
 			t.Errorf("[%s] yaml = %+v\n%s", dir, cfg, out.YAML)
 		}

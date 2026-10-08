@@ -632,6 +632,11 @@ type SensorHeartbeatData struct {
 	// (RFC-029 §5.3). Protocol 0 leaves the stored values untouched.
 	Protocol  int
 	UserAgent string
+	// Binding is the binding the heartbeat arrived on (decided by the
+	// platform, RFC-059); FallbackReason is the sensor's account of why it
+	// is not on gRPC (untrusted, sanitized before it is stored).
+	Binding        string
+	FallbackReason string
 
 	// UptimeSeconds is the process uptime the heartbeat reported; 0 when it
 	// did not report one. Clamped before it is stored.
@@ -817,12 +822,15 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		Protocol:      data.Protocol,
 		Load:          load,
 		UserAgent:     userAgent,
-		UptimeSeconds: uptime,
-		Report:        report,
-		Build:         build,
-		Interval:      sensordom.FollowedHeartbeatInterval(data.Control, data.AdvisedSeconds, data.DoorbellAware),
-		Control:       data.Control,
-		LocalPolicy:   localPolicy,
+
+		Binding:        heartbeatBinding(data.Binding),
+		FallbackReason: sensordom.SanitizeFallbackReason(data.FallbackReason),
+		UptimeSeconds:  uptime,
+		Report:         report,
+		Build:          build,
+		Interval:       sensordom.FollowedHeartbeatInterval(data.Control, data.AdvisedSeconds, data.DoorbellAware),
+		Control:        data.Control,
+		LocalPolicy:    localPolicy,
 		// The digest the sensor holds: "" (none) marks a stored report stale.
 		ConfigReportDigest: sensordom.HeartbeatConfigDigest(data.ConfigReport),
 	})
@@ -1976,4 +1984,13 @@ func (s *SensorService) ListAllSensors(ctx context.Context, tenantID string) ([]
 		}
 	}
 	return all, nil
+}
+
+// heartbeatBinding keeps a known binding only.
+func heartbeatBinding(b string) string {
+	switch b {
+	case sensordom.BindingGRPC, sensordom.BindingHTTPS, sensordom.BindingV2:
+		return b
+	}
+	return ""
 }

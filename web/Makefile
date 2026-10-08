@@ -3,7 +3,6 @@
 # Variables
 APP_NAME := openctem-ui
 COMPOSE_BASE := docker-compose.yml
-COMPOSE_PROD := docker-compose.prod.yml
 
 # Node/npm commands
 NPM := npm
@@ -114,32 +113,27 @@ docker-dev-d:
 	@echo "Starting development environment (detached)..."
 	docker compose -f $(COMPOSE_BASE) up -d --build
 
-## docker-prod: Start production environment
+## docker-prod: Production runs from api/deploy (one HTTPS port): see its docker-compose.yml
 docker-prod:
-	@echo "Starting production environment..."
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) up -d --build
+	@echo "Production deployment, from the repository root: cd api/deploy && cp .env.example .env && docker compose up -d"
 
 ## docker-down: Stop all Docker Compose services
 docker-down:
 	@echo "Stopping services..."
 	docker compose -f $(COMPOSE_BASE) down 2>/dev/null || true
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) down 2>/dev/null || true
 
 ## docker-logs: View Docker Compose logs
 docker-logs:
-	docker compose -f $(COMPOSE_BASE) logs -f 2>/dev/null || \
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) logs -f
+	docker compose -f $(COMPOSE_BASE) logs -f
 
 ## docker-ps: Show running containers
 docker-ps:
-	docker compose -f $(COMPOSE_BASE) ps 2>/dev/null || \
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) ps
+	docker compose -f $(COMPOSE_BASE) ps
 
 ## docker-clean: Remove all containers, volumes, and images
 docker-clean:
 	@echo "Cleaning Docker resources..."
 	docker compose -f $(COMPOSE_BASE) down -v --rmi local 2>/dev/null || true
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) down -v --rmi local 2>/dev/null || true
 
 # =============================================================================
 # PRE-COMMIT & LINTING

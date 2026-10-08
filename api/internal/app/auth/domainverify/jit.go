@@ -77,3 +77,8 @@ func (s *Service) IsLapsedSSODomain(ctx context.Context, rawDomain string) (bool
 	}
 	return lapsed, nil
 }
+
+// GetDomain returns one of the organization's verified domains.
+func (s *Service) GetDomain(ctx context.Context, tenantID, id shared.ID) (*verifieddomain.VerifiedDomain, error) {
+	return s.repo.GetByID(ctx, tenantID, id)
+}
