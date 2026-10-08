@@ -53,9 +53,11 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
+	repo := postgres.NewMCPOAuthRepository(deps.DB)
 	s, err := mcpoauthapp.NewService(mcpoauthapp.Config{
-		Repository: postgres.NewMCPOAuthRepository(deps.DB),
-		Endpoints:  d.Endpoints,
+		Repository:  repo,
+		Connections: repo,
+		Endpoints:   d.Endpoints,
 		// Codes and tokens are stored as HMAC-SHA256 with the application
 		// key; tokens hashed under a previous key keep working during a
 		// rotation.

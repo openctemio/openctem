@@ -54,6 +54,7 @@ type Service struct {
 	members      MembershipChecker
 	permissions  HolderPermissions
 	policies     PolicyReader
+	connections  mcpoauth.ConnectionRepository
 	trustedHosts []string
 	audit        AuditLogger
 	log          *logger.Logger
@@ -69,6 +70,8 @@ type Config struct {
 	Fetcher     MetadataFetcher
 	Members     MembershipChecker
 	Permissions HolderPermissions
+	// Connections lists and manages connections (RFC-062 §12); optional.
+	Connections mcpoauth.ConnectionRepository
 	// Policies reads the organization MCP policy (RFC-062 §8); nil applies
 	// the defaults.
 	Policies PolicyReader
@@ -89,7 +92,7 @@ func NewService(c Config) (*Service, error) {
 	return &Service{
 		repo: c.Repository, endpoints: c.Endpoints, pepper: c.Pepper, oldPeppers: c.OldPeppers,
 		fetcher: c.Fetcher, members: c.Members, permissions: c.Permissions, audit: c.Audit,
-		policies: c.Policies, trustedHosts: NormalizeTrustedHosts(c.TrustedClientHosts),
+		policies: c.Policies, trustedHosts: NormalizeTrustedHosts(c.TrustedClientHosts), connections: c.Connections,
 		log: c.Logger.With("service", "mcp-oauth"), now: time.Now,
 	}, nil
 }

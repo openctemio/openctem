@@ -1,4 +1,5 @@
 import {
+  Bot,
   Building2,
   Gauge,
   History,
@@ -121,6 +122,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/plans',
         icon: Gauge,
         keywords: ['limits', 'free', 'pro', 'enterprise', 'quotas'],
+      },
+      {
+        title: 'AI applications',
+        i18nKey: 'admin.nav.aiApplications',
+        url: '/admin/system/ai-applications',
+        icon: Bot,
+        keywords: ['mcp', 'oauth', 'clients', 'connected apps'],
       },
     ],
   },
