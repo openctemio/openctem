@@ -442,7 +442,8 @@ func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (
 		}
 
 		step.Description = originalStep.Description
-		step.SetUIPosition(originalStep.UIPosition.X, originalStep.UIPosition.Y)
+		// A stored position is always valid; a bad one keeps the default.
+		_ = step.SetUIPosition(originalStep.UIPosition.X, originalStep.UIPosition.Y)
 		step.SetTool(originalStep.Tool)
 		step.SetConfig(originalStep.Config)
 		if err := step.SetTimeout(originalStep.TimeoutSeconds); err != nil {
