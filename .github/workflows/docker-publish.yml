@@ -413,13 +413,28 @@ jobs:
         env:
           REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
         run: syft "$REF" -o spdx-json="sbom-${{ matrix.name }}-${{ needs.prepare.outputs.version }}.spdx.json"
+      # The SBOM as a signed attestation on the image digest, so it can be
+      # verified (cosign verify-attestation --type spdxjson) and not only downloaded.
+      - name: Attest the SBOM
+        env:
+          REF: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ needs.prepare.outputs.version }}
+        run: |
+          digest=$(crane digest "$REF")
+          cosign attest --yes --type spdxjson \
+            --predicate "sbom-${{ matrix.name }}-${{ needs.prepare.outputs.version }}.spdx.json" "${REF%:*}@${digest}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'push'
+        with:
+          path: src
+          persist-credentials: false
+          sparse-checkout: .github/scripts/release
       - name: Attach SBOM to the GitHub release
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           for _ in $(seq 1 30); do gh release view "${{ github.ref_name }}" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break; sleep 10; done
-          gh release upload "${{ github.ref_name }}" -R "$GITHUB_REPOSITORY" --clobber sbom-*.spdx.json
+          bash src/.github/scripts/release/gh-retry.sh release upload "${{ github.ref_name }}" -R "$GITHUB_REPOSITORY" --clobber sbom-*.spdx.json
 
   mirror-to-dockerhub:
     name: Mirror ${{ matrix.image.name }} to Docker Hub
