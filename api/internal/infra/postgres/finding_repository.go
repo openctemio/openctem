@@ -3327,6 +3327,16 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		)`, uIdx, tIdx))
 	}
 
+	// A solution family: the findings sharing one remediation key, pentest
+	// findings excluded (the same set FindingRemediationKeyRepository counts).
+	if filter.RemediationKey != nil {
+		conditions = append(conditions, fmt.Sprintf(
+			`source <> 'pentest' AND EXISTS (SELECT 1 FROM finding_remediation_keys frk WHERE frk.finding_id = findings.id AND frk.tenant_id = findings.tenant_id AND frk.remediation_key = $%d)`,
+			argIndex))
+		args = append(args, *filter.RemediationKey)
+		argIndex++
+	}
+
 	// Layer 2: Data Scope - only findings on the user's in-scope assets. Fail
 	// closed: a user with no scope row sees no finding, and a user scope
 	// without a tenant matches nothing.
