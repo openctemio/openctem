@@ -39,7 +39,7 @@ repository       —                     github.com/org/repo         repo norm  
 cloud_account    —                     account alias               trim               account ID
 storage          —                     bucket/registry name        trim               —
                  s3_bucket             bucket-name                 strip s3://        —
-                 container_registry    registry.io/path            URL norm           —
+                 container_registry    registry.example.com/path           URL norm           —
 
 container        —                     container name/ID           lowercase          image SHA
 

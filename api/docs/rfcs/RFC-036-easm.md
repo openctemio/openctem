@@ -465,8 +465,8 @@ monotone and explainable: each row says how much it added.
 **Review queue**
 
 - Sorted by confidence × potential impact (open ports, high-risk tech).
-- Each row shows the evidence chain as sentences, for example: "`api.acme.io`
-  — SAN on the certificate also serving `www.acme.com` (confirmed) — seen in CT
+- Each row shows the evidence chain as sentences, for example: "`api.example.com`
+  — SAN on the certificate also serving `www.example.com` (confirmed) — seen in CT
   2026-09-30".
 - Actions: confirm / reject / dependency / monitor only, with bulk and "apply
   to all with this evidence".

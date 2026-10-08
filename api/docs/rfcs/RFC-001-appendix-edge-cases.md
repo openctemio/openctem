@@ -189,7 +189,7 @@ func normalizeIPAddress(name string) string {
 | H14 | Cloud instance ID | AWS `i-0abc123` | Hostname `ip-10-0-0-5.ec2.internal` | **MAYBE** | Correlate by `external_id` if set |
 | H15 | Dual-stack host | IPv4 `192.0.2.10` | IPv6 `2001:db8::10` | YES if same host | Both in `ip_addresses[]` → match |
 | H16 | Hostname with domain search | `server01` (short) | `server01.corp.example.com` (resolved) | **MAYBE** | Correlate by IP. Name alone → ambiguous |
-| H17 | Reverse DNS mismatch | Forward: `web.example.com` → `1.2.3.4` | Reverse: `1.2.3.4` → `host-1-2-3-4.isp.net` | YES | Same IP → merge, keep forward DNS name |
+| H17 | Reverse DNS mismatch | Forward: `web.example.com` → `1.2.3.4` | Reverse: `1.2.3.4` → `host-1-2-3-4.isp.example.net` | YES | Same IP → merge, keep forward DNS name |
 | H18 | Hostname rename | Was `web-01`, renamed to `api-gateway-01` | Same IPs | YES | IP match → merge/rename |
 
 **Sub_type edge cases:**
@@ -243,12 +243,12 @@ func normalizeIPAddress(name string) string {
 
 | # | Edge Case | Input A | Input B | Same entity? | Rule |
 |---|---|---|---|---|---|
-| SU1 | Query string variation | `https://app.com/login?ref=1` | `https://app.com/login?ref=2` | YES | Strip query params |
-| SU2 | Fragment variation | `https://app.com/page#section1` | `https://app.com/page#section2` | YES | Strip fragment |
-| SU3 | Trailing slash | `https://app.com/login/` | `https://app.com/login` | YES | Strip trailing slash |
-| SU4 | Double slash in path | `https://app.com//login` | `https://app.com/login` | YES | Normalize path slashes |
-| SU5 | URL encoding | `https://app.com/path%20with%20spaces` | `https://app.com/path with spaces` | YES | Decode %XX then re-encode canonical |
-| SU6 | Case in path | `https://app.com/Login` | `https://app.com/login` | **DEPENDS** | Paths CAN be case-sensitive (server-dependent). Default: keep case, lowercase host only |
+| SU1 | Query string variation | `https://app.example.com/login?ref=1` | `https://app.example.com/login?ref=2` | YES | Strip query params |
+| SU2 | Fragment variation | `https://app.example.com/page#section1` | `https://app.example.com/page#section2` | YES | Strip fragment |
+| SU3 | Trailing slash | `https://app.example.com/login/` | `https://app.example.com/login` | YES | Strip trailing slash |
+| SU4 | Double slash in path | `https://app.example.com//login` | `https://app.example.com/login` | YES | Normalize path slashes |
+| SU5 | URL encoding | `https://app.example.com/path%20with%20spaces` | `https://app.example.com/path with spaces` | YES | Decode %XX then re-encode canonical |
+| SU6 | Case in path | `https://app.example.com/Login` | `https://app.example.com/login` | **DEPENDS** | Paths CAN be case-sensitive (server-dependent). Default: keep case, lowercase host only |
 
 ---
 
@@ -301,7 +301,7 @@ func normalizeIPAddress(name string) string {
 | R8 | Repo renamed | `github.com/org/old-name` | `github.com/org/new-name` | **MAYBE** | Correlate by `external_id` (repo ID persists across renames) |
 | R9 | Fork | `github.com/org/repo` | `github.com/fork-org/repo` | **NO** | Different orgs = different repos (even if forked) |
 | R10 | Monorepo subpath | `github.com/org/monorepo` | `github.com/org/monorepo/packages/lib` | **NO** | Subpath = different scope, but same repo |
-| R11 | Self-hosted GitLab | `gitlab.internal.company.com/org/repo` | `org/repo` (from CI) | **MAYBE** | Correlate via integration URL |
+| R11 | Self-hosted GitLab | `gitlab.internal.example.com/org/repo` | `org/repo` (from CI) | **MAYBE** | Correlate via integration URL |
 | R12 | Azure DevOps format | `dev.azure.com/org/project/_git/repo` | `org/project/repo` | YES | Normalize Azure format |
 | R13 | Bitbucket format | `bitbucket.org/org/repo` | `org/repo` | **MAYBE** | Correlate via integration |
 | R14 | Trailing slash | `github.com/org/repo/` | `github.com/org/repo` | YES | Strip trailing slash |
@@ -378,10 +378,10 @@ func normalizeRepoName(name string) string {
 
 | # | Edge Case | Input A | Input B | Same entity? | Rule |
 |---|---|---|---|---|---|
-| SR1 | With/without tag | `registry.io/org/image:latest` | `registry.io/org/image` | YES | Strip tag for registry identity |
-| SR2 | With digest | `registry.io/org/image@sha256:abc` | `registry.io/org/image` | YES | Strip digest |
+| SR1 | With/without tag | `registry.example.com/org/image:latest` | `registry.example.com/org/image` | YES | Strip tag for registry identity |
+| SR2 | With digest | `registry.example.com/org/image@sha256:abc` | `registry.example.com/org/image` | YES | Strip digest |
 | SR3 | Docker Hub implicit | `nginx` | `docker.io/library/nginx` | YES | Expand Docker Hub short name |
-| SR4 | Case | `Registry.IO/Org/Image` | `registry.io/org/image` | YES | Lowercase |
+| SR4 | Case | `Registry.Example.COM/Org/Image` | `registry.example.com/org/image` | YES | Lowercase |
 | SR5 | Port in registry | `registry.internal:5000/org/image` | `registry.internal/org/image` | **NO** | Different port = potentially different registry |
 
 ---
@@ -512,7 +512,7 @@ func normalizeNetworkName(name string, subType string) string {
 |---|---|---|---|---|---|
 | ID1 | Username vs ARN | `admin` | `arn:aws:iam::123:user/admin` | YES | Correlate by `external_id` (ARN) |
 | ID2 | ARN case | ARN is case-sensitive in AWS | — | Keep exact case for ARN | BUT username part can be matched case-insensitively |
-| ID3 | Email vs username | `admin@company.com` | `admin` | **MAYBE** | Correlate if same provider |
+| ID3 | Email vs username | `admin@example.com` | `admin` | **MAYBE** | Correlate if same provider |
 | ID4 | Service account email | `sa@project.iam.gserviceaccount.com` | `sa` | **MAYBE** | Correlate by `external_id` |
 | ID5 | Cross-account same name | AWS account A `admin` | AWS account B `admin` | **NO** | Different accounts. Store account in properties |
 | ID6 | Role vs user same name | IAM role `admin` | IAM user `admin` | **NO** | Different sub_types |
