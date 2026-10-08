@@ -110,3 +110,17 @@ describe('CreateTeamForm — no personal default name', () => {
     expect(screen.queryByDisplayValue(/'s Team$/)).not.toBeInTheDocument()
   })
 })
+
+// A self-hosted console runs on its own domain: the slug prefix states that
+// host, not a fixed product domain.
+describe('CreateTeamForm — slug prefix', () => {
+  it('shows the host the console is served from', () => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { href: '', origin: 'https://ctem.example.com' },
+    })
+    render(<CreateTeamForm isFirstTeam={false} showCancel={false} />)
+    expect(screen.getByTestId('slug-host-prefix')).toHaveTextContent('ctem.example.com/')
+    expect(document.body.textContent).not.toContain('openctem.io')
+  })
+})
