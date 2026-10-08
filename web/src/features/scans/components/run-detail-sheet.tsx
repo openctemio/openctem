@@ -186,7 +186,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
           </DetailStatGrid>
 
           <DetailSections>
-            {(run.step_runs?.length ?? 0) > 0 && (
+            {(run.scan_run_steps?.length ?? 0) > 0 && (
               <DetailSection title="Run map">
                 <RunMap
                   runId={run.id}
