@@ -129,6 +129,8 @@ type Repositories struct {
 	ScanZone *postgres.ScanZoneRepository
 	// Scan freeze windows (docs/architecture/scan-zones.md)
 	ScanFreezeWindow *postgres.ScanFreezeWindowRepository
+	// Content packs (RFC-061)
+	ContentPack *postgres.ContentPackRepository
 
 	// Scanning
 	ScanProfile      *postgres.ScanProfileRepository
@@ -380,6 +382,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Scan zones (RFC-023)
 		ScanZone:         postgres.NewScanZoneRepository(db),
 		ScanFreezeWindow: postgres.NewScanFreezeWindowRepository(db),
+		ContentPack:      postgres.NewContentPackRepository(db),
 
 		// Scanning
 		ScanProfile:      postgres.NewScanProfileRepository(db),

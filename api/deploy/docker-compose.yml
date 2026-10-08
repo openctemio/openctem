@@ -244,6 +244,8 @@ services:
       APP_ENCRYPTION_KEY_PREVIOUS: ${APP_ENCRYPTION_KEY_PREVIOUS:-}
       # Master of the custom-template signing keys (unset: derived from APP_ENCRYPTION_KEY).
       APP_TEMPLATE_SIGNING_KEY: ${APP_TEMPLATE_SIGNING_KEY:-}
+      # Master of the content pack signing keys (unset: derived from APP_ENCRYPTION_KEY).
+      APP_CONTENT_SIGNING_KEY: ${APP_CONTENT_SIGNING_KEY:-}
       # Who creates organizations: admin_only (platform administrator: console or
       # bootstrap-admin -org-*) or self_service (any signed-in user; SaaS/trial).
       TENANT_CREATION_MODE: ${TENANT_CREATION_MODE:-admin_only}
