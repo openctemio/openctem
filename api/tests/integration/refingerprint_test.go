@@ -50,7 +50,7 @@ func (f *mergeFixture) v1SCA(asset shared.ID, purl, cve, status string, created 
 func TestRefingerprint_DryRunEqualsRunAndMergesKeepState(t *testing.T) {
 	f := newMergeFixture(t, "refp-merge")
 	ctx := context.Background()
-	old := f.v1SCA(f.keep, "pkg:npm/lodash@4.17.15", "CVE-2021-23337", "accepted_risk", time.Now().Add(-72*time.Hour))
+	old := f.v1SCA(f.keep, "pkg:npm/lodash@4.17.15", "CVE-2021-23337", "accepted", time.Now().Add(-72*time.Hour))
 	newer := f.v1SCA(f.keep, "pkg:npm/lodash@4.17.20", "CVE-2021-23337", "new", time.Now().Add(-time.Hour))
 	other := f.v1SCA(f.keep, "pkg:npm/lodash@4.17.20", "CVE-2020-8203", "new", time.Now())
 	if _, err := f.db.Exec(`UPDATE findings SET work_item_uris = ARRAY['JIRA-1'] WHERE id = $1`, old.String()); err != nil {
@@ -90,7 +90,7 @@ func TestRefingerprint_DryRunEqualsRunAndMergesKeepState(t *testing.T) {
 		t.Fatalf("%d findings after the run, %d before: a merge deleted a row", n, before)
 	}
 	s := f.state(old)
-	if s.status != "accepted_risk" || len(s.tickets) != 1 {
+	if s.status != "accepted" || len(s.tickets) != 1 {
 		t.Fatalf("survivor lost its triage: %+v", s)
 	}
 	if l := f.state(newer); l.status != "duplicate" || !l.duplicateOf.Valid || l.duplicateOf.String != old.String() {
@@ -210,7 +210,7 @@ func TestRefingerprint_TenantIsolation(t *testing.T) {
 	// Tenant B has a finding under exactly that key (older, triaged).
 	bID := shared.NewID()
 	if _, err := b.db.Exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, status,
-		fingerprint, created_at, updated_at) VALUES ($1,$2,$3,'sca','trivy','x','high','accepted_risk',$4,$5,$5)`,
+		fingerprint, created_at, updated_at) VALUES ($1,$2,$3,'sca','trivy','x','high','accepted',$4,$5,$5)`,
 		bID.String(), b.tenant.String(), b.keep.String(), k.Fingerprint(), time.Now().Add(-48*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestRefingerprint_TenantIsolation(t *testing.T) {
 		t.Fatalf("tenant A finding: %+v", s)
 	}
 	var st string
-	if err := b.db.QueryRow(`SELECT status FROM findings WHERE id = $1`, bID.String()).Scan(&st); err != nil || st != "accepted_risk" {
+	if err := b.db.QueryRow(`SELECT status FROM findings WHERE id = $1`, bID.String()).Scan(&st); err != nil || st != "accepted" {
 		t.Fatalf("tenant B's finding changed: %q %v", st, err)
 	}
 }
@@ -301,7 +301,7 @@ func TestRefingerprint_NeverMergesAcrossAssets(t *testing.T) {
 	}
 	elsewhere := shared.NewID()
 	if _, err := f.db.Exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, status,
-		fingerprint, created_at, updated_at) VALUES ($1,$2,$3,'sca','trivy','x','high','accepted_risk',$4,$5,$5)`,
+		fingerprint, created_at, updated_at) VALUES ($1,$2,$3,'sca','trivy','x','high','accepted',$4,$5,$5)`,
 		elsewhere.String(), f.tenant.String(), f.away.String(), "other-"+elsewhere.String(), time.Now().Add(-48*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestRefingerprint_NeverMergesAcrossAssets(t *testing.T) {
 	if s := f.state(id); s.fingerprint != "v1-"+id.String() || s.status != "new" {
 		t.Fatalf("finding changed: %+v", s)
 	}
-	if s := f.state(elsewhere); s.status != "accepted_risk" || s.duplicateOf.Valid {
+	if s := f.state(elsewhere); s.status != "accepted" || s.duplicateOf.Valid {
 		t.Fatalf("the other asset's finding changed: %+v", s)
 	}
 }

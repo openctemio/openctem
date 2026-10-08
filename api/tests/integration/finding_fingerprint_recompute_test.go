@@ -119,7 +119,7 @@ func TestApproveAndMerge_KeepsTriagedFindingAndItsHistory(t *testing.T) {
 	old := time.Now().Add(-48 * time.Hour)
 	triaged := f.composite(f.away, "base-shared", "new", old)
 	fresh := f.composite(f.keep, "base-shared", "new", old.Add(24*time.Hour))
-	if _, err := f.db.Exec(`UPDATE findings SET status='accepted_risk', resolution='accepted_risk',
+	if _, err := f.db.Exec(`UPDATE findings SET status='accepted', resolution='accepted_risk',
 			work_item_uris='{https://jira.example/browse/RISK-1}' WHERE id=$1`, triaged.String()); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestApproveAndMerge_KeepsTriagedFindingAndItsHistory(t *testing.T) {
 	if s.asset != f.keep.String() || s.fingerprint != wantFP {
 		t.Errorf("survivor not re-keyed onto the kept asset: asset=%s fp=%s", s.asset, s.fingerprint)
 	}
-	if s.status != "accepted_risk" || s.resolution != "accepted_risk" {
+	if s.status != "accepted" || s.resolution != "accepted_risk" {
 		t.Errorf("survivor lost its risk acceptance: status=%s resolution=%s", s.status, s.resolution)
 	}
 	if len(s.tickets) != 2 {

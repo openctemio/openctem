@@ -264,5 +264,5 @@ Test completed
 ---
 
 **Related documentation:**
-- [Notification Outbox Pattern](../../docs/architecture/notification-outbox-pattern.md)
-- [API CLAUDE.md](../CLAUDE.md)
+- [Notification system](../../docs/architecture/notification-system.md)
+- [API CLAUDE.md](../../CLAUDE.md)

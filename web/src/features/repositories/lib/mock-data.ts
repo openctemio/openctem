@@ -22,7 +22,7 @@ import type {
 interface FindingsSummaryUI {
   total: number
   by_severity: Record<Severity, number>
-  by_status: Record<FindingStatus, number>
+  by_status: Partial<Record<FindingStatus, number>>
   by_type: Record<ScannerType, number>
   trend?: 'increasing' | 'decreasing' | 'stable'
 }
@@ -114,12 +114,12 @@ const createFindingsSummary = (
     info: 0,
   },
   by_status: {
-    open: Math.floor(total * 0.6),
+    new: Math.floor(total * 0.6),
     confirmed: Math.floor(total * 0.1),
     in_progress: Math.floor(total * 0.1),
     resolved: Math.floor(total * 0.15),
     false_positive: Math.floor(total * 0.03),
-    accepted_risk: Math.floor(total * 0.02),
+    accepted: Math.floor(total * 0.02),
   },
   by_type: {
     sast: Math.floor(total * 0.3),

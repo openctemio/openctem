@@ -106,11 +106,10 @@ import {
   SLA_STATUS_COLORS,
   SCANNER_TYPE_LABELS,
 } from '@/features/repositories'
+import { FINDING_STATUS_CONFIG, type FindingStatus } from '@/features/findings/types/finding.types'
 
 // Additional types for detail page
 type Repository = RepositoryView
-type FindingStatus =
-  'open' | 'confirmed' | 'in_progress' | 'resolved' | 'false_positive' | 'accepted_risk'
 type TriageStatus = 'needs_triage' | 'triaged' | 'escalated'
 type ActivityAction =
   | 'scan_started'
@@ -144,24 +143,6 @@ const STATUS_LABELS: Record<string, string> = {
   pending: 'Pending',
   completed: 'Completed',
   failed: 'Failed',
-}
-
-const FINDING_STATUS_LABELS: Record<FindingStatus, string> = {
-  open: 'Open',
-  confirmed: 'Confirmed',
-  in_progress: 'In Progress',
-  resolved: 'Resolved',
-  false_positive: 'False Positive',
-  accepted_risk: 'Accepted Risk',
-}
-
-const FINDING_STATUS_COLORS: Record<FindingStatus, { bg: string; text: string }> = {
-  open: { bg: 'bg-red-500/15', text: 'text-red-600' },
-  confirmed: { bg: 'bg-orange-500/15', text: 'text-orange-600' },
-  in_progress: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
-  resolved: { bg: 'bg-green-500/15', text: 'text-green-600' },
-  false_positive: { bg: 'bg-gray-500/15', text: 'text-gray-600' },
-  accepted_risk: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
 }
 
 const TRIAGE_STATUS_LABELS: Record<TriageStatus, string> = {
@@ -300,7 +281,7 @@ function mapApiFindingToDetail(f: ApiFinding): FindingDetail {
     title: f.title || f.message,
     description: f.description || f.message,
     severity: f.severity as Severity,
-    status: (f.status === 'new' ? 'open' : f.status) as FindingStatus,
+    status: f.status as FindingStatus,
     triage_status: f.is_triaged ? 'triaged' : 'needs_triage',
     scanner_type: f.source as ScannerType,
     file_path: f.file_path,
@@ -437,13 +418,7 @@ interface ApiAssetResponse {
         low: number
         info: number
       }
-      by_status?: {
-        open: number
-        in_progress: number
-        resolved: number
-        false_positive: number
-        accepted_risk: number
-      }
+      by_status?: Partial<Record<FindingStatus, number>>
     }
     components_summary?: {
       total: number
@@ -496,12 +471,12 @@ function transformToRepositoryView(asset: ApiAssetResponse): RepositoryView {
     total: baseFindingsSummary.total,
     by_severity: baseFindingsSummary.by_severity,
     by_status: {
-      open: (apiByStatus as Record<string, number>).open || 0,
+      new: (apiByStatus as Record<string, number>).new || 0,
       confirmed: (apiByStatus as Record<string, number>).confirmed || 0,
       in_progress: (apiByStatus as Record<string, number>).in_progress || 0,
       resolved: (apiByStatus as Record<string, number>).resolved || 0,
       false_positive: (apiByStatus as Record<string, number>).false_positive || 0,
-      accepted_risk: (apiByStatus as Record<string, number>).accepted_risk || 0,
+      accepted: (apiByStatus as Record<string, number>).accepted || 0,
     },
     by_type: {
       sast: 0,
@@ -648,9 +623,10 @@ function SeverityBadge({ severity, count }: { severity: Severity; count?: number
 }
 
 function FindingStatusBadge({ status }: { status: FindingStatus }) {
+  const cfg = FINDING_STATUS_CONFIG[status]
   return (
-    <Badge variant="outline" className={cn('gap-1 text-xs', FINDING_STATUS_COLORS[status])}>
-      {FINDING_STATUS_LABELS[status]}
+    <Badge variant="outline" className={cn('gap-1 text-xs', cfg?.bgColor, cfg?.textColor)}>
+      {cfg?.label ?? status}
     </Badge>
   )
 }
@@ -1489,17 +1465,7 @@ function FindingsTab({
     }
     if (severityFilter !== 'all')
       f.severities = [severityFilter as 'critical' | 'high' | 'medium' | 'low' | 'info']
-    if (statusFilter !== 'all')
-      f.statuses = [
-        statusFilter as
-          | 'confirmed'
-          | 'in_progress'
-          | 'fix_applied'
-          | 'not_observed'
-          | 'resolved'
-          | 'false_positive'
-          | 'accepted_risk',
-      ]
+    if (statusFilter !== 'all') f.statuses = [statusFilter as FindingStatus]
     if (scannerFilter !== 'all')
       f.sources = [scannerFilter as 'sast' | 'sca' | 'secret' | 'dast' | 'iac' | 'container']
     if (debouncedSearch) f.search = debouncedSearch
