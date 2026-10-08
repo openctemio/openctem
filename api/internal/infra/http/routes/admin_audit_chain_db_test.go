@@ -88,7 +88,9 @@ type chainHarness struct {
 	admins  *postgres.AdminRepository
 }
 
-func newChainHarness(t *testing.T) *chainHarness {
+// newChainHarness builds the console over a migrated database. extra adds
+// more console handlers (other console route tests reuse the harness).
+func newChainHarness(t *testing.T, extra ...func(h *Handlers, db *postgres.DB)) *chainHarness {
 	t.Helper()
 	dbURL := testdb.URL()
 	if dbURL == "" {
@@ -137,7 +139,7 @@ func newChainHarness(t *testing.T) *chainHarness {
 	authCfg := AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}
 
 	router := infrahttp.NewChiRouter()
-	Register(router, Handlers{
+	handlers := Handlers{
 		Audit:               handler.NewAuditHandler(auditSvc, v, log),
 		Tenant:              handler.NewTenantHandler(tenantSvc, v, log),
 		AdminAuth:           handler.NewAdminAuthHandler(log),
@@ -145,7 +147,11 @@ func newChainHarness(t *testing.T) *chainHarness {
 		AdminConsole:        handler.NewAdminConsoleHandler(console, false, "refresh_token", log),
 		AdminAuditChain:     handler.NewAdminAuditChainHandler(auditSvc, console, adminAudit, orgs, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(console, log),
-	}, cfg, log, authCfg, tenantRepo, tenant.NewUserService(userRepo, log), nil, nil, nil)
+	}
+	for _, f := range extra {
+		f(&handlers, db)
+	}
+	Register(router, handlers, cfg, log, authCfg, tenantRepo, tenant.NewUserService(userRepo, log), nil, nil, nil)
 
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)

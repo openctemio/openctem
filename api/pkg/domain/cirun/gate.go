@@ -288,7 +288,7 @@ func honored(f RunFinding, now time.Time) bool {
 	switch f.Status {
 	case "false_positive", "duplicate":
 		return true
-	case "accepted", "accepted_risk":
+	case "accepted":
 		return f.AcceptanceExpiresAt == nil || f.AcceptanceExpiresAt.After(now)
 	}
 	return false

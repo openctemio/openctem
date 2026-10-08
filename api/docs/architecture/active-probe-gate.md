@@ -222,6 +222,78 @@ retest. A refused retest therefore stops and is reported; it does not fall
 back to another probe of the same target (finding L-08 of research/15). The
 auto-retest scheduler logs the refusal and moves on.
 
+## Re-check at claim
+
+A probing job (scan, validate, retest, connector scan) can wait in the
+queue while its scope changes: an exclusion is
+added, a scope entry is removed or its tier lowered, an asset's ownership is
+rejected, a scan zone is deleted or shrunk, or the actor's act scope is
+revoked. So the gate runs again when a sensor gets the job
+(`internal/app/command/scope_recheck.go`).
+
+**One enforcement point.** The command service re-checks on every hand-out
+path: the listing poll (`Poll`), claim-N (`Claim`) and the claim by id
+(`Acknowledge`). Protocol v2 (`GET /api/v2/sensor/commands`, `POST
+.../commands/{id}/claim`) and protocol v3 (`ClaimCommands`,
+`TransitionCommand` claim; RFC-059, served through the v2 handler) reach
+commands only through them.
+
+**Same inputs as the dispatch.** Each command records, on create, what its
+targets were gated with (`commands.dispatch_gate`, migration 001352, written
+by the platform only and never sent to a sensor): the probe tier, whether the
+stage is passive (only rejected names refused), and the act scope with the
+user the job acts for. The claim calls `ResolveDispatchTargets` with that
+record, the command's tenant, the targets named in its payload, the claiming
+sensor (zone membership), `AllowNonNetworkTargets` unless the record says
+the targets passed the full validator, and `SkipZoneRouting` when the
+dispatch did not route over zones:
+
+| Creator | Record |
+|---|---|
+| Workflow step (`scanrun` `QueueRunStep`, seeds and chained hops) | the stage's tier and passive flag (the tool's tier outside the stage catalog); act scope of the run actor (`runActor`) |
+| Single-scanner run (`scan/trigger.go`, `scan/zones.go`) | the scanner's tier (`ProbeTier`); passive for a passive or takeover-only probe; act scope of the person who triggered it, else the scan owner |
+| `POST /commands` | act scope of the caller; no tier ceiling (as `GateCommandPayload` checks) |
+| Validate and retest commands (`validation.CommandDispatcher`, `CheckTarget`) | the full gate at t1, no act scope (`ProbeDispatchGate`); the zone routing that stamped `scan_zone_id` |
+| `connector_scan` (`tenablesc.NewScanCommand`: scan runs and coverage batches) | the full gate at t1 outside every zone (`no_zone_routing`); a scan run adds the act scope of who triggered it, else the scan owner (`connectorDispatchGate`) |
+| A scan command without a record (queued before the upgrade) | the baseline: passive, no tier, no act scope (exclusions, rejected names, the private-address and zone rules) |
+| A validate, retest or `connector_scan` command without a record (queued before the upgrade) | its type's strict defaults (`StrictDispatchGateFor`): the full gate at t1, no act scope, zone routing as for its type (none for a connector scan); one whose targets cannot be read from its payload is refused with `GATE_RECORD_MISSING` (settled like `SCOPE_CHANGED`) and has to be created again |
+
+Other commands without a record (health checks, config updates, content
+refreshes, connector syncs) are not re-checked. A validate command names its
+target as `target.address`; the claim reads it there. `AllowNonNetworkTargets` replaces
+the validator with the private-range rule, as on the scan trigger (a
+repository is dispatched by its asset name, which the validator refuses); an
+internal address still needs a scan zone. A target that now routes to
+another zone than the command's `scan_zone_id` (or into or out of every
+zone) is refused as `zone_changed`. The re-check never asks more than the
+dispatch did, so a job is refused only for a change.
+
+**Outcome.** Refused targets are taken out of the job before it is handed
+out: out of `targets`, `target` and `context.targets`, in the response and in
+the stored payload (a conditional write on the pending command), so result
+binding narrows too. A job left with no target is not handed out: it is
+failed with `SCOPE_CHANGED: <target> (<code>); ...` (a conditional write on
+the pending command, so a second or concurrent claim records nothing), and
+what waits on it is settled as on a sensor's failure
+(`CommandHandler.OnCommandFailed`, the `command.FailureObserver`): its scan
+step fails with `SCOPE_CHANGED` (failure class `scope`, not retried), a
+validation run is finished as failed with that code, a retest is settled
+(unknown). A
+claim by id of such a job answers `command-claimed` (409 in v2, the same
+problem in v3), which tells the sensor to drop it; claim-N and the listing
+poll simply leave it out. The response shapes do not change.
+
+**Fail closed.** A gate that cannot decide (a lookup error, the gate not
+wired yet at startup) withholds the job: it is not handed out, it stays
+pending for a later claim, and a claim by id answers `command-claimed`. A
+lookup failure is usually short; failing the job would lose work to a
+blip, and the command TTL (`COMMAND_EXPIRED`) ends a job that can never be
+checked.
+
+**Cost.** Commands with the same record (the chunks of one step) share one
+gate call; a claim with only commands that are not re-checked makes none. Each refusal is
+logged (`SECURITY: ... at claim`) with the refusal codes.
+
 ## Act scope: who may scan what
 
 Owner decision D9 (research/15 L-06) limits scan targets to what the actor may

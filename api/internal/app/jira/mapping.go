@@ -135,7 +135,7 @@ func DefaultMappingConfig() MappingConfig {
 		// LOSSY BY NATURE: OpenCTEM has a richer lifecycle than Jira's 3 stock
 		// statuses, so several finding states fold onto "Done" / "In Progress".
 		// Deliberately UNMAPPED here (→ no auto-push; sync comments instead):
-		//   - false_positive / accepted / accepted_risk — no stock Jira status;
+		//   - false_positive / accepted — no stock Jira status;
 		//     customers map these to their "Won't Do"/"Acknowledged" resolution.
 		//   - draft / in_review — internal pentest states, hidden pre-publication.
 		//   - duplicate — usually linked, not a board move.
@@ -143,11 +143,8 @@ func DefaultMappingConfig() MappingConfig {
 			"new":         "To Do",
 			"confirmed":   "To Do",
 			"in_progress": "In Progress",
-			"remediation": "In Progress", // pentest: dev fixing
-			"retest":      "In Progress", // pentest: awaiting re-verification
 			"fix_applied": "Done",
 			"resolved":    "Done",
-			"verified":    "Done", // pentest resolve
 		},
 		SyncEnabled:      false,
 		DefaultPriority:  "Medium",

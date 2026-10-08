@@ -35,7 +35,7 @@
 	}
 
 	# Plane mcp: straight to the API.
-	@plane_mcp path /api/v1/mcp /api/v1/mcp/*
+	@plane_mcp path /api/v1/mcp /api/v1/mcp/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
 	handle @plane_mcp {
 		import to_api
 	}

@@ -216,11 +216,13 @@ export function useComponentAssetsApi(
   if (perPage) params.set('per_page', String(perPage))
   const qs = params.toString()
   const url = shouldFetch ? `/api/v1/components/${componentId}/assets${qs ? `?${qs}` : ''}` : null
-  const key = url && currentTenant ? ([url, currentTenant.id] as const) : null
+  // Keyed by the URL alone: a tenant switch drops every cached answer
+  // (tenant-provider), so one key per endpoint cannot leak across tenants.
+  const key = url
 
   return useSWR<ApiComponentAssetUsageListResponse>(
     key,
-    ([url]) => get<ApiComponentAssetUsageListResponse>(url),
+    (u: string) => get<ApiComponentAssetUsageListResponse>(u),
     { ...defaultConfig, ...config }
   )
 }
@@ -251,11 +253,13 @@ export function useComponentVulnsApi(
   const url = shouldFetch
     ? `/api/v1/components/${componentId}/vulnerabilities${qs ? `?${qs}` : ''}`
     : null
-  const key = url && currentTenant ? ([url, currentTenant.id] as const) : null
+  // Keyed by the URL alone: a tenant switch drops every cached answer
+  // (tenant-provider), so one key per endpoint cannot leak across tenants.
+  const key = url
 
   return useSWR<ApiComponentVulnerabilityListResponse>(
     key,
-    ([url]) => get<ApiComponentVulnerabilityListResponse>(url),
+    (u: string) => get<ApiComponentVulnerabilityListResponse>(u),
     { ...defaultConfig, ...config }
   )
 }

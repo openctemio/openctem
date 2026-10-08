@@ -1,9 +1,8 @@
 # Automations: how runs start and how many
 
 Automations are the event rules at `/api/v1/workflows` ("When → If → Then").
-This page covers how an event becomes runs and the limits on them. The
-redesign (a durable event journal, versions, retries) is planned in research
-doc 61. Who a run acts as is covered in
+This page covers how an event becomes runs and the limits on them. A
+redesign (a durable event journal, versions, retries) is **Planned**. Who a run acts as is covered in
 [authorization-matrix.md](authorization-matrix.md), "Automation runs act as
 one person".
 

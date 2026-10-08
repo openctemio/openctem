@@ -243,7 +243,9 @@ if depType == DependencyTypeDirect {
 
 ## API Response Examples
 
-### GET /api/v1/assets/{id}/dependencies
+### GET /api/v1/assets/{id}/components
+
+Illustrative shape (the spec at `GET /openapi.yaml` is authoritative):
 
 ```json
 {
@@ -280,7 +282,7 @@ if depType == DependencyTypeDirect {
 }
 ```
 
-### GET /api/v1/assets/{id}/dependency-tree
+### Dependency tree (**Planned**)
 
 ```json
 {

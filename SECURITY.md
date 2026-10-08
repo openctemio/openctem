@@ -1,92 +1,53 @@
 # Security Policy
 
-## Supported Versions
+This policy covers everything in this repository (the API, the web console and
+the all-in-one image) and the other `openctemio` repositories that link to it.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+## Supported versions
 
-## Reporting a Vulnerability
+Security fixes are released for the **latest minor release** (the newest
+`vX.Y.*`). Upgrade to the latest patch of that minor release to receive them.
+Older minor releases do not receive fixes.
 
-We take security seriously at OpenCTEM. If you discover a security vulnerability, please follow these steps:
+## Reporting a vulnerability
 
-### DO NOT
+**Do not open a public GitHub issue, pull request or discussion for a
+vulnerability.**
 
-- Open a public GitHub issue for security vulnerabilities
-- Disclose the vulnerability publicly before it's fixed
-- Exploit the vulnerability beyond what's necessary to demonstrate it
+Email **security@openctem.io** with:
 
-### DO
+- the affected component and version (or commit),
+- a description of the vulnerability and its impact,
+- step-by-step reproduction (a proof of concept, request/response samples or
+  logs where possible),
+- any suggested fix or mitigation,
+- whether and how you would like to be credited.
 
-1. **Email us directly** at security@openctem.io with:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Suggested fix (if any)
+Only test against an installation you own or are authorised to test, and use
+test data. Stop and report as soon as you confirm the issue; do not access,
+modify or keep data that is not yours.
 
-2. **Use our bug bounty program** (if available) through:
-   - [HackerOne](https://hackerone.com.openctemio) (coming soon)
+## What to expect
 
-### What to expect
+| Step | Target |
+|---|---|
+| Acknowledgement of your report | within 3 business days |
+| Triage (validity, severity, affected versions) | within 10 business days |
+| Fix released | typically within 90 days, sooner for critical issues |
 
-- **Acknowledgment**: Within 48 hours
-- **Initial Assessment**: Within 5 business days
-- **Resolution Timeline**: Depends on severity
-  - Critical: 24-72 hours
-  - High: 1-2 weeks
-  - Medium: 2-4 weeks
-  - Low: Next release cycle
+We keep you informed while we work on the fix, agree a disclosure date with you
+(coordinated disclosure), publish a GitHub security advisory with the fixed
+version, and credit you unless you prefer otherwise.
 
-### Security Measures
+## Safe harbor
 
-This repository uses:
+We will not pursue legal action against, or ask law enforcement to investigate,
+anyone who researches and reports a vulnerability in good faith under this
+policy: testing only systems they own or are authorised to test, avoiding
+privacy violations, data destruction and service disruption, and giving us
+reasonable time to fix the issue before any public disclosure.
 
-- **CodeQL** - Static Application Security Testing (SAST)
-- **Gosec** - Go security checker
-- **Govulncheck** - Go vulnerability database scanning
-- **Trivy** - Container and dependency vulnerability scanning
-- **Betterleaks** - Secret detection
-- **Dependabot** - Automated dependency updates
+## More
 
-## Security Best Practices for Contributors
-
-1. **Never commit secrets** - Use environment variables
-2. **Validate all inputs** - Especially user-provided data
-3. **Use parameterized queries** - Prevent SQL injection
-4. **Follow the principle of least privilege**
-5. **Keep dependencies updated** - Review Dependabot PRs promptly
-6. **Enable 2FA** on your GitHub account
-
-## Secure Development Guidelines
-
-### Authentication & Authorization
-- Use JWT with proper expiration
-- Implement refresh token rotation
-- Validate tokens on every request
-- Use secure password hashing (bcrypt/argon2)
-
-### Data Protection
-- Encrypt sensitive data at rest
-- Use TLS for all communications
-- Sanitize logs (no PII/secrets)
-- Implement proper CORS policies
-
-### Input Validation
-- Validate and sanitize all user inputs
-- Use strong typing
-- Implement rate limiting
-- Validate file uploads
-
-## Compliance
-
-We aim to comply with:
-- OWASP Top 10
-- CWE/SANS Top 25
-- SOC 2 Type II (planned)
-- ISO 27001 (planned)
-
-## Contact
-
-- Security Team: security@openctem.io
-- General Issues: https://github.com/openctemio/openctem/issues
+The full disclosure process is published at
+<https://docs.openctem.io/security/vulnerability-disclosure/>.

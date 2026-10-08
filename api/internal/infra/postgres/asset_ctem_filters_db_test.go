@@ -115,7 +115,7 @@ func TestAsset_CTEMInventoryFilters(t *testing.T) {
 	assertOnly("last_seen_after", list(asset.NewFilter().WithLastSeenAfter(now.Add(-24*time.Hour))), assetA, assetC)
 
 	// Facet counts.
-	stats, err := repo.GetAggregateStats(ctx, tenantID, asset.AccessScope{}, nil, nil, "")
+	stats, err := repo.GetAggregateStats(ctx, tenantID, asset.AccessScope{}, nil, nil, nil, "")
 	if err != nil {
 		t.Fatalf("aggregate stats: %v", err)
 	}

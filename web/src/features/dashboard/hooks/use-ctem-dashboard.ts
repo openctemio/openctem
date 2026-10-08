@@ -172,11 +172,16 @@ const config: SWRConfiguration = {
   shouldRetryOnError: false,
 }
 
-/** Build a tenant-scoped SWR key that only fires when tenant + permission are ready. */
-function useKey(url: string | null, tenantId: string | null): [string, string] | null {
+/**
+ * The SWR key: the URL, once tenant and permission are ready. Keyed by the URL
+ * alone so every page reading an endpoint shares one cached answer; a tenant
+ * switch drops every cached answer (tenant-provider), so this cannot leak
+ * across tenants.
+ */
+function useKey(url: string | null, tenantId: string | null): string | null {
   const { can } = usePermissions()
   const ready = !!tenantId && !!url && can(Permission.DashboardRead)
-  return ready ? [url as string, tenantId as string] : null
+  return ready ? url : null
 }
 
 // ============================================
@@ -186,7 +191,7 @@ function useKey(url: string | null, tenantId: string | null): [string, string] |
 export function useRiskTrend(tenantId: string | null, days = 90) {
   return useSWR<RiskTrendPoint[]>(
     useKey(`/api/v1/dashboard/risk-trend?days=${days}`, tenantId),
-    ([url]) => get<RiskTrendPoint[]>(url),
+    (url: string) => get<RiskTrendPoint[]>(url),
     config
   )
 }
@@ -201,7 +206,7 @@ export type ProgramMetrics = ApiResponse<'/dashboard/program-metrics', 'get'>
 export function useProgramMetrics(tenantId: string | null, days = 90) {
   return useSWR<ProgramMetrics>(
     useKey(`/api/v1/dashboard/program-metrics?days=${days}`, tenantId),
-    ([url]) => get<ProgramMetrics>(url),
+    (url: string) => get<ProgramMetrics>(url),
     config
   )
 }
@@ -209,7 +214,7 @@ export function useProgramMetrics(tenantId: string | null, days = 90) {
 export function useExecutiveSummary(tenantId: string | null) {
   return useSWR<ExecutiveSummary>(
     useKey('/api/v1/dashboard/executive-summary', tenantId),
-    ([url]) => get<ExecutiveSummary>(url),
+    (url: string) => get<ExecutiveSummary>(url),
     config
   )
 }
@@ -217,7 +222,7 @@ export function useExecutiveSummary(tenantId: string | null) {
 export function useMttrAnalytics(tenantId: string | null) {
   return useSWR<MttrAnalytics>(
     useKey('/api/v1/dashboard/mttr-analytics', tenantId),
-    ([url]) => get<MttrAnalytics>(url),
+    (url: string) => get<MttrAnalytics>(url),
     config
   )
 }
@@ -226,7 +231,7 @@ export function useMttrAnalytics(tenantId: string | null) {
 export function useDataQuality(tenantId: string | null) {
   return useSWR<DataQualityScorecard>(
     useKey('/api/v1/dashboard/data-quality', tenantId),
-    ([url]) => get<DataQualityScorecard>(url),
+    (url: string) => get<DataQualityScorecard>(url),
     config
   )
 }
@@ -234,7 +239,7 @@ export function useDataQuality(tenantId: string | null) {
 export function useThreatIntelStats(tenantId: string | null) {
   return useSWR<ThreatIntelStats>(
     useKey('/api/v1/threat-intel/stats', tenantId),
-    ([url]) => get<ThreatIntelStats>(url),
+    (url: string) => get<ThreatIntelStats>(url),
     config
   )
 }
@@ -242,7 +247,7 @@ export function useThreatIntelStats(tenantId: string | null) {
 export function useExposureChains(tenantId: string | null) {
   return useSWR<ExposureChainsResponse>(
     useKey('/api/v1/attack-surface/exposure-chains', tenantId),
-    ([url]) => get<ExposureChainsResponse>(url),
+    (url: string) => get<ExposureChainsResponse>(url),
     config
   )
 }
@@ -250,7 +255,7 @@ export function useExposureChains(tenantId: string | null) {
 export function useAttackPaths(tenantId: string | null) {
   return useSWR<AttackPathsResponse>(
     useKey('/api/v1/attack-surface/attack-paths', tenantId),
-    ([url]) => get<AttackPathsResponse>(url),
+    (url: string) => get<AttackPathsResponse>(url),
     config
   )
 }
@@ -258,7 +263,7 @@ export function useAttackPaths(tenantId: string | null) {
 export function useScanCoverage(tenantId: string | null) {
   return useSWR<ScanCoverage>(
     useKey('/api/v1/scans/coverage', tenantId),
-    ([url]) => get<ScanCoverage>(url),
+    (url: string) => get<ScanCoverage>(url),
     config
   )
 }
@@ -266,7 +271,7 @@ export function useScanCoverage(tenantId: string | null) {
 export function useValidationCoverage(tenantId: string | null) {
   return useSWR<ValidationCoverage>(
     useKey('/api/v1/validation/coverage', tenantId),
-    ([url]) => get<ValidationCoverage>(url),
+    (url: string) => get<ValidationCoverage>(url),
     config
   )
 }
@@ -279,7 +284,7 @@ export function useValidationCoverage(tenantId: string | null) {
 export function useCtemMaturityTrend(tenantId: string | null, enabled: boolean) {
   return useSWR<CtemMaturityTrend>(
     useKey(enabled ? '/api/v1/ctem-cycles/metrics/trend' : null, tenantId),
-    ([url]) => get<CtemMaturityTrend>(url),
+    (url: string) => get<CtemMaturityTrend>(url),
     config
   )
 }
