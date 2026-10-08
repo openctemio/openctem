@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -58,7 +59,7 @@ func TestAdminCreateOrgUser_FirstOwnerOnly_DB(t *testing.T) {
 	newHandler := func(smtp bool) *AdminOrganizationHandler {
 		prov := tenant.NewUserProvisioningService(tenantRepo, userRepo, nil, firstOwnerTestMailer{deliverable: smtp}, nil, log)
 		return NewAdminOrganizationHandler(postgres.NewAdminOrganizationRepository(pg), tenants, userRepo, validator.New(), log).
-			WithUserProvisioning(prov)
+			WithUserProvisioning(prov).WithStepUp(recoveryStepUp{})
 	}
 	org := func() string {
 		id := uuid.NewString()
@@ -80,6 +81,11 @@ func TestAdminCreateOrgUser_FirstOwnerOnly_DB(t *testing.T) {
 		req.SetPathValue(middleware.AdminTenantParam, orgID)
 		if role != "" {
 			req = req.WithContext(context.WithValue(req.Context(), middleware.AdminRoleKey, string(role)))
+			a, err := admin.NewAdminUser("fo-"+string(role)+"@op.example", "FO", role, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req = req.WithContext(context.WithValue(req.Context(), middleware.AdminUserKey, a))
 		}
 		rec := httptest.NewRecorder()
 		h.CreateUser(rec, req)
@@ -164,7 +170,7 @@ func TestAdminCreateOrgUser_FirstOwnerOnly_DB(t *testing.T) {
 
 	t.Run("suspended owner: recovery by super admin creates the owner, emailed only", func(t *testing.T) {
 		id := orgWithSuspendedOwner()
-		code, body := callAs(admin.AdminRoleSuperAdmin, newHandler(true), id, `{"email":"`+email()+`","recovery":true}`)
+		code, body := callAs(admin.AdminRoleSuperAdmin, newHandler(true), id, `{"email":"`+email()+`","recovery":true,"reason":"Every owner left the company; ticket 4411","totp_code":"123456"}`)
 		if code != http.StatusCreated {
 			t.Fatalf("status %d (%v), want 201", code, body)
 		}
@@ -182,7 +188,7 @@ func TestAdminCreateOrgUser_FirstOwnerOnly_DB(t *testing.T) {
 		id := orgWithSuspendedOwner()
 		for _, role := range []admin.AdminRole{admin.AdminRoleOpsAdmin, admin.AdminRoleReadonly, ""} {
 			addr := email()
-			code, body := callAs(role, newHandler(true), id, `{"email":"`+addr+`","recovery":true}`)
+			code, body := callAs(role, newHandler(true), id, `{"email":"`+addr+`","recovery":true,"reason":"Every owner left the company; ticket 4411","totp_code":"123456"}`)
 			if code != http.StatusForbidden {
 				t.Fatalf("role %q: status %d (%v), want 403", role, code, body)
 			}
@@ -199,14 +205,40 @@ func TestAdminCreateOrgUser_FirstOwnerOnly_DB(t *testing.T) {
 		if code, body := call(newHandler(false), id, `{"email":"`+email()+`"}`); code != http.StatusCreated {
 			t.Fatalf("first owner: %d %v", code, body)
 		}
-		code, body := callAs(admin.AdminRoleSuperAdmin, newHandler(true), id, `{"email":"`+email()+`","recovery":true}`)
+		code, body := callAs(admin.AdminRoleSuperAdmin, newHandler(true), id, `{"email":"`+email()+`","recovery":true,"reason":"Every owner left the company; ticket 4411","totp_code":"123456"}`)
 		if code != http.StatusConflict {
 			t.Fatalf("status %d (%v), want 409", code, body)
 		}
 	})
 
+	t.Run("recovery needs a reason and a fresh authenticator code", func(t *testing.T) {
+		id := orgWithSuspendedOwner()
+		cases := []struct {
+			name, extra string
+			want        int
+		}{
+			{"no reason", `"totp_code":"123456"`, http.StatusBadRequest},
+			{"short reason", `"reason":"because","totp_code":"123456"`, http.StatusBadRequest},
+			{"no code", `"reason":"Every owner left the company; ticket 4411"`, http.StatusUnauthorized},
+			{"wrong code", `"reason":"Every owner left the company; ticket 4411","totp_code":"000000"`, http.StatusUnauthorized},
+		}
+		for _, c := range cases {
+			addr := email()
+			code, body := callAs(admin.AdminRoleSuperAdmin, newHandler(true), id,
+				`{"email":"`+addr+`","recovery":true,`+c.extra+`}`)
+			if code != c.want {
+				t.Fatalf("%s: status %d (%v), want %d", c.name, code, body, c.want)
+			}
+			var n int
+			_ = raw.QueryRow(`SELECT count(*) FROM users WHERE email=$1`, addr).Scan(&n)
+			if n != 0 {
+				t.Fatalf("%s: a refused recovery created an account", c.name)
+			}
+		}
+	})
+
 	t.Run("recovery without email delivery: 400, link never returned", func(t *testing.T) {
-		code, body := callAs(admin.AdminRoleSuperAdmin, newHandler(false), orgWithSuspendedOwner(), `{"email":"`+email()+`","recovery":true}`)
+		code, body := callAs(admin.AdminRoleSuperAdmin, newHandler(false), orgWithSuspendedOwner(), `{"email":"`+email()+`","recovery":true,"reason":"Every owner left the company; ticket 4411","totp_code":"123456"}`)
 		if code != http.StatusBadRequest {
 			t.Fatalf("status %d (%v), want 400", code, body)
 		}
@@ -214,4 +246,14 @@ func TestAdminCreateOrgUser_FirstOwnerOnly_DB(t *testing.T) {
 			t.Fatalf("a refused recovery returned a setup token")
 		}
 	})
+}
+
+// recoveryStepUp accepts the code 123456 and refuses any other.
+type recoveryStepUp struct{}
+
+func (recoveryStepUp) StepUp(_ context.Context, _ *admin.AdminUser, code, purpose string, _ adminconsole.ClientInfo) error {
+	if code != "123456" || purpose != stepUpPurposeOwnerRecovery {
+		return admin.ErrInvalidMFACode
+	}
+	return nil
 }

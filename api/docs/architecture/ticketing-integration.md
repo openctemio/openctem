@@ -71,7 +71,7 @@ Only **Jira** has a ticketing client. `linear` and `asana` are declared in
 `pkg/domain/integration` but have no client, so creating one is refused with
 HTTP 400 (`ErrProviderNotSupported`) instead of being stored as an integration
 that never runs. The rule is general — `Provider.HasClient()` gates every
-category (Wiz, Snyk, CrowdStrike, AWS, GCP and Azure are refused the same way),
+category (any provider declared without a client is refused the same way),
 and the integration response carries `supported: false` for any older row of
 such a provider so the UI can show it honestly. GitHub Issues ticketing rides
 the GitHub **SCM** integration (see `github-issue-ticketing.md`).
@@ -260,9 +260,6 @@ The full operator UI is in the `ui` repo:
 | **Routing rules editor** (severity/scope/criticality/tag → project) | "Routing" dialog on the integration card | openctemio/ui#189 |
 | **Create ticket from a finding** | findings table row menu + finding **detail drawer** | openctemio/ui#189 (row), openctemio/ui#192 (drawer) |
 
-> Note: an earlier roadmap entry credited a `openctemio/ui#170` mapping editor that was never
-> actually merged to `develop`; the real mapping/create-ticket/routing UI landed in
-> openctemio/ui#184/#189/#192/#193 (some recovered from a stacked-PR mishap — see git history).
 > Inbound status-name mapping editor (arbitrary Jira status → finding status) is the
 > one remaining UI gap; stock-Jira inbound defaults cover the common case.
 
