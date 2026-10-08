@@ -8,6 +8,7 @@
 
 'use client'
 
+import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -50,14 +51,7 @@ function useAttack() {
   return useAttackPaths(currentTenant?.id ?? null)
 }
 
-const OPEN_EXCLUDE = [
-  'resolved',
-  'false_positive',
-  'accepted',
-  'duplicate',
-  'verified',
-  'accepted_risk',
-]
+const OPEN_EXCLUDE = findingStatusesInCategory('closed')
 
 type WidgetSize = { w: number; h: number }
 

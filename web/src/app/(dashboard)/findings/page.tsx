@@ -116,6 +116,7 @@ import {
   FindingDetailDrawer,
   CreateFindingDialog,
   FINDING_STATUS_CONFIG,
+  findingStatusesInCategory,
 } from '@/features/findings'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
@@ -339,13 +340,18 @@ const FILTERS_OPEN_KEY = 'openctem:findings-filters-open'
 /** Saved per browser: hide informational findings when no severity is picked. */
 const HIDE_INFO_KEY = 'openctem:findings-hide-info'
 const OPEN_STATUSES: string[] = [...FINDINGS_OPEN_STATUSES]
+// The status filter groups the one registry by category; every status appears
+// once. Pentest pre-publication states get their own group (hidden by default).
+const PRE_PUBLICATION: readonly string[] = FINDINGS_LIST_HIDDEN_STATUSES
 const STATUS_GROUPS = [
-  { label: 'Open', values: OPEN_STATUSES },
   {
-    label: 'Closed',
-    values: ['resolved', 'verified', 'false_positive', 'accepted', 'accepted_risk'],
+    key: 'open',
+    label: 'Open',
+    values: findingStatusesInCategory('open').filter((s) => !PRE_PUBLICATION.includes(s)),
   },
-  { label: 'Pentest workflow', values: ['draft', 'in_review'] },
+  { key: 'in_progress', label: 'In progress', values: findingStatusesInCategory('in_progress') },
+  { key: 'closed', label: 'Closed', values: findingStatusesInCategory('closed') },
+  { key: 'pre_publication', label: 'Pentest workflow', values: [...PRE_PUBLICATION] },
 ]
 const OVERDUE_SLA = ['overdue', 'exceeded']
 const SLA_OPTIONS: SLAStatus[] = ['overdue', 'exceeded', 'warning', 'on_track', 'not_applicable']
@@ -1473,9 +1479,11 @@ function FindingsContent() {
     setSearchQuery('')
   }
 
-  const statusLabel = (v: string) =>
-    FINDING_STATUS_CONFIG[v as FindingStatus]?.label ??
-    v.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+  const statusLabel = (v: string) => {
+    const cfg = FINDING_STATUS_CONFIG[v as FindingStatus]
+    if (!cfg) return v.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+    return t(cfg.labelKey, cfg.label)
+  }
 
   const activeCount =
     Number(mineActive) +
@@ -1619,11 +1627,13 @@ function FindingsContent() {
       </FacetSection>
       <FacetSection title="Status" selectedCount={statuses.length}>
         {STATUS_GROUPS.map((g) => (
-          <div key={g.label}>
+          <div key={g.key}>
             <FacetGroupLabel
               onSelectAll={() => setStatusParam(Array.from(new Set([...statuses, ...g.values])))}
             >
-              {g.label}
+              {g.key === 'pre_publication'
+                ? g.label
+                : t(`findings.statusCategory.${g.key}`, g.label)}
             </FacetGroupLabel>
             {g.values.map((v) => (
               <FacetOption

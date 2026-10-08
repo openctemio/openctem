@@ -584,5 +584,20 @@
   "plan.key.invites_per_day": "Lời mời mỗi ngày",
   "plan.key.platform_scans_per_day": "Lượt quét nền tảng mỗi ngày",
   "plan.key.platform_scans_concurrent": "Lượt quét nền tảng đồng thời",
-  "plan.key.free_teams_per_user": "Tổ chức miễn phí mỗi người"
+  "plan.key.free_teams_per_user": "Tổ chức miễn phí mỗi người",
+  "findings.status.new": "Mới",
+  "findings.status.confirmed": "Đã xác nhận",
+  "findings.status.in_progress": "Đang xử lý",
+  "findings.status.fix_applied": "Đã áp dụng bản sửa",
+  "findings.status.validated_fixed": "Đã xác thực khắc phục",
+  "findings.status.not_observed": "Không còn quan sát thấy",
+  "findings.status.resolved": "Đã khắc phục",
+  "findings.status.false_positive": "Dương tính giả",
+  "findings.status.accepted": "Chấp nhận rủi ro",
+  "findings.status.duplicate": "Trùng lặp",
+  "findings.status.draft": "Bản nháp",
+  "findings.status.in_review": "Đang rà soát",
+  "findings.statusCategory.open": "Mở",
+  "findings.statusCategory.in_progress": "Đang xử lý",
+  "findings.statusCategory.closed": "Đã đóng"
 }
