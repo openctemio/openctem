@@ -1,6 +1,6 @@
 package postgres
 
-// Content packs (docs/rfcs/RFC-061-content-packs.md; migration 001380).
+// Content packs (docs/rfcs/RFC-061-content-packs.md; migration 001384).
 // Every statement is tenant-scoped, and a pack's blob is the same tenant's
 // by the composite foreign key (tenant_id, digest).
 

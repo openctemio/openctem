@@ -1,7 +1,7 @@
 ### Added: content pack store for organization uploads (RFC-061 K2)
 
 - `/api/v1/content-packs`: upload, list, get, download and revoke immutable packs of templates, rules and wordlists, plus the organization's content-signing public key.
-  - Permissions: `scans:content:read` and `scans:content:write` (owner and admin, migration 001380).
+  - Permissions: `scans:content:read` and `scans:content:write` (owner and admin, migration 001384).
   - Uploads and revocations need a recent sign-in.
 - **Ingest:**
   - safe in-memory unpacking: no links or devices, path and size limits;
