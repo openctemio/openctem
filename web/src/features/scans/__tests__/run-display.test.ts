@@ -21,6 +21,20 @@ describe('runTriggeredByLabel', () => {
     expect(runTriggeredByLabel({ triggered_by: USER_ID })).toBe('Unknown user')
   })
 
+  it('reads the trigger shape first: a person by name, the rest by kind', () => {
+    expect(
+      runTriggeredByLabel({ trigger: { type: 'user', id: USER_ID, label: 'Olivia Owner' } })
+    ).toBe('Olivia Owner')
+    expect(runTriggeredByLabel({ trigger: { type: 'user', id: USER_ID } })).toBe('Unknown user')
+    expect(
+      runTriggeredByLabel({ triggered_by: 'workflow:x', trigger: { type: 'automation', id: 'x' } })
+    ).toBe('Automation')
+    expect(runTriggeredByLabel({ trigger: { type: 'schedule' } })).toBe('Schedule')
+    expect(runTriggeredByLabel({ triggered_by: 'system', trigger: { type: 'system' } })).toBe(
+      'Platform'
+    )
+  })
+
   it('keeps non-user triggers as sent, and nothing when there is none', () => {
     expect(runTriggeredByLabel({ triggered_by: 'system' })).toBe('system')
     expect(runTriggeredByLabel({})).toBeNull()

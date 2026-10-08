@@ -12,7 +12,7 @@ import (
 )
 
 // SignupPolicyRepository stores the sign-up policy in platform_settings
-// (migration 001307). Platform data: no tenant column.
+// (migration 001313). Platform data: no tenant column.
 type SignupPolicyRepository struct {
 	db *DB
 }

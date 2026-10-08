@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/signup"
 )
 
-// The sign-up policy row (migration 001307) as the application role: seeding
+// The sign-up policy row (migration 001313) as the application role: seeding
 // never overwrites, and an update with a stale version is refused.
 // Requires DATABASE_URL.
 func TestSignupPolicyRepository(t *testing.T) {
