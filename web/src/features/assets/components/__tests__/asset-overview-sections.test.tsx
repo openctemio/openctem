@@ -163,8 +163,8 @@ describe('PropertiesSection', () => {
       <PropertiesSection
         type="domain"
         properties={{
-          ip: '202.160.124.20',
-          ip_addresses: ['202.160.124.20', '202.160.124.21'],
+          ip: '198.51.100.20',
+          ip_addresses: ['198.51.100.20', '198.51.100.21'],
           registrar: 'Example Registrar',
           x_vendor_score: 7,
         }}
@@ -172,8 +172,8 @@ describe('PropertiesSection', () => {
     )
     expect(screen.getByText('IP addresses')).toBeInTheDocument()
     expect(screen.queryByText('Ip')).not.toBeInTheDocument()
-    const link = screen.getByRole('link', { name: '202.160.124.20' })
-    expect(link).toHaveAttribute('href', '/assets?types=ip_address&q=202.160.124.20')
+    const link = screen.getByRole('link', { name: '198.51.100.20' })
+    expect(link).toHaveAttribute('href', '/assets?types=ip_address&q=198.51.100.20')
     expect(screen.getAllByRole('link')).toHaveLength(2)
     expect(screen.getByText('Registrar')).toBeInTheDocument()
     expect(screen.getByText('Other')).toBeInTheDocument()

@@ -522,6 +522,9 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    protocol_version = CASE WHEN $15::smallint > 0 THEN $15::smallint ELSE protocol_version END,
 		    protocol_client = CASE WHEN $15::smallint > 0 THEN NULLIF($16, '') ELSE protocol_client END,
 		    protocol_seen_at = CASE WHEN $15::smallint > 0 THEN NOW() ELSE protocol_seen_at END,
+		    -- Transport (RFC-059): with the protocol telemetry.
+		    protocol_binding = CASE WHEN $15::smallint > 0 THEN NULLIF($39, '') ELSE protocol_binding END,
+		    protocol_fallback_reason = CASE WHEN $15::smallint > 0 THEN NULLIF($40, '') ELSE protocol_fallback_reason END,
 		    -- Process start time from the reported uptime; 0 (not reported)
 		    -- keeps the stored value.
 		    process_started_at = CASE WHEN $17::bigint > 0
@@ -586,6 +589,7 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		rep.clearMaxJobs,
 		heartbeatIntervalSeconds(hb.Interval), control, localPolicy,
 		hb.ConfigReportDigest,
+		hb.Binding, hb.FallbackReason,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -859,6 +863,7 @@ func (r *SensorRepository) selectQuery() string {
 		       created_at, updated_at, key_expires_at,
 		       outbox_stats, outbox_reported_at,
 		       protocol_version, protocol_client, protocol_seen_at,
+		       protocol_binding, protocol_fallback_reason,
 		       process_started_at,
 		       reported_tools, reported_capabilities, reported_max_jobs,
 		       reported_os, reported_arch, reported_at,
@@ -1002,6 +1007,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		protocolVersion  sql.NullInt16
 		protocolUA       sql.NullString
 		protocolSeenAt   sql.NullTime
+		protocolBinding  sql.NullString
+		protocolReason   sql.NullString
 		processStarted   sql.NullTime
 		reportedTools    []byte
 		reportedCaps     pq.StringArray
@@ -1085,6 +1092,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&protocolVersion,
 		&protocolUA,
 		&protocolSeenAt,
+		&protocolBinding,
+		&protocolReason,
 		&processStarted,
 		&reportedTools,
 		&reportedCaps,
@@ -1208,7 +1217,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	}
 
 	if protocolVersion.Valid && protocolVersion.Int16 > 0 {
-		a.Protocol = &sensor.ProtocolInfo{Version: int(protocolVersion.Int16), UserAgent: protocolUA.String}
+		a.Protocol = &sensor.ProtocolInfo{Version: int(protocolVersion.Int16), UserAgent: protocolUA.String,
+			Binding: protocolBinding.String, FallbackReason: protocolReason.String}
 		if protocolSeenAt.Valid {
 			a.Protocol.SeenAt = protocolSeenAt.Time
 		}

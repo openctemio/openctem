@@ -62,7 +62,10 @@ type resolvedTargets struct {
 	// covering them allow a lower tier than the scanner probes at
 	// (RFC-054 §4.2 step 6, tier_ceiling.go).
 	TierExceeded int
-	Warnings     []string
+	// InternalOutsideZones counts internal-address targets left out because
+	// no scan zone of the tenant covers them (internal_targets.go).
+	InternalOutsideZones int
+	Warnings             []string
 }
 
 // resolveScanTargets builds the target list server-side: the scan's direct
@@ -219,6 +222,9 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	if out.Unconfirmed > 0 {
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"%d target(s) were skipped: %s", out.Unconfirmed, ReasonOwnershipNotConfirmed))
+	}
+	if err := s.dropInternalOutsideZones(ctx, sc.TenantID, out); err != nil {
+		return nil, err
 	}
 	if err := s.dropTierExceeded(ctx, sc.TenantID, sc.ScannerName, out); err != nil {
 		return nil, err

@@ -176,6 +176,10 @@ type SecuritySettings struct {
 	// factor) while SSO is enforced, each with a reason and an end at most
 	// MaxSSOExceptionDays away. Changed by an owner with step-up.
 	SSOExceptions []SSOException `json:"sso_exceptions,omitempty"`
+	// JITRequiresApproval holds everyone the organization's SSO admits for
+	// the first time until an administrator approves them (RFC-058).
+	// Changed by an owner with step-up.
+	JITRequiresApproval bool `json:"jit_requires_approval,omitempty"`
 
 	// A restricted_data_scope key left in stored JSON is ignored: members
 	// without a scope row see nothing in every organization (owner decision

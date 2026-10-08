@@ -364,7 +364,7 @@ func TestScopeEntry_PlatformGuardrails(t *testing.T) {
 	if len(tr.targets) != 0 {
 		t.Fatal("a refused pattern was saved")
 	}
-	if _, err := svc.CreateTarget(context.Background(), scope.CreateTargetInput{TenantID: tenantID.String(), TargetType: "domain", Pattern: "*.vndirect.com.vn", Actor: approverA}); err != nil {
+	if _, err := svc.CreateTarget(context.Background(), scope.CreateTargetInput{TenantID: tenantID.String(), TargetType: "domain", Pattern: "*.example.co.uk", Actor: approverA}); err != nil {
 		t.Fatalf("a registrable domain: %v", err)
 	}
 }

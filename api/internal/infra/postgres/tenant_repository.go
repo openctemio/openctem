@@ -265,13 +265,14 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 	// suspended row is left alone and reported as a conflict.
 	memberQuery := `
 		INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at,
-		                            kind, home_tenant_id, home_domain, expires_at, expiry_reason)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		                            kind, home_tenant_id, home_domain, expires_at, expiry_reason,
+		                            status, suspended_at, suspended_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT (user_id, tenant_id) DO UPDATE
 		SET id = EXCLUDED.id, role = EXCLUDED.role, invited_by = EXCLUDED.invited_by,
-		    joined_at = EXCLUDED.joined_at, status = 'active',
-		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = NULL, suspended_by = NULL,
-		    suspended_reason = NULL, kind = EXCLUDED.kind, home_tenant_id = EXCLUDED.home_tenant_id,
+		    joined_at = EXCLUDED.joined_at, status = EXCLUDED.status,
+		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = EXCLUDED.suspended_at, suspended_by = NULL,
+		    suspended_reason = EXCLUDED.suspended_reason, kind = EXCLUDED.kind, home_tenant_id = EXCLUDED.home_tenant_id,
 		    home_domain = EXCLUDED.home_domain, expires_at = EXCLUDED.expires_at,
 		    expiry_reason = EXCLUDED.expiry_reason
 		WHERE tenant_members.status = 'offboarded'
@@ -282,6 +283,8 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 		invitedBy = sql.NullString{String: m.InvitedBy().String(), Valid: true}
 	}
 
+	// The status comes from the membership: a new membership is active,
+	// or suspended while it waits for approval (RFC-058).
 	res, err := r.db.ExecContext(ctx, memberQuery, append([]any{
 		m.ID().String(),
 		m.UserID().String(),
@@ -289,7 +292,7 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 		m.Role().String(),
 		invitedBy,
 		m.JoinedAt(),
-	}, memberAccessArgs(m)...)...)
+	}, append(memberAccessArgs(m), string(m.Status()), nullTime(m.SuspendedAt()), nullString(m.SuspendedReason()))...)...)
 	if err != nil {
 		if isCheckViolation(err) {
 			return tenant.ErrPlatformAdminMembership

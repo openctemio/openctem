@@ -14,7 +14,7 @@ is built, where it lives and how to work on it.
 | Control stream `Subscribe`, push on command changes (one replica) | built | `sensortransport/subscribe.go`, `postgres/command_notify.go` |
 | Sensor CA, `IssueCertificate`, mTLS listener (gRPC binding), revocation | built | `sensortransport/ca.go`, `issuer.go`, `mtls.go`; `SensorService.SetStatusNotifier` |
 | Redis wake fan-out across replicas | built | `internal/infra/redis/sensor_wake.go` (`SensorWakeBus`, channel `sensor:v3:wake`) |
-| Gateway SNI passthrough | planned | step 5 |
+| Gateway SNI passthrough (Compose), PROXY protocol | built | `deploy/gateway/Dockerfile`, `deploy/gateway/sensors/*.wrappers`, `deploy/docker-compose.sensor-passthrough.yml`; `SENSOR_MTLS_TRUSTED_PROXIES` |
 
 ## How a call is served
 
@@ -58,6 +58,17 @@ over 512 bytes or carries ids that are not UUIDs is dropped, and a wake only
 ever makes a stream re-read the database. Without Redis, other replicas see
 a change at their 30 s re-check.
 
+## Transport per sensor
+
+Every heartbeat stores, with the protocol telemetry, the binding it arrived on
+(`sensors.protocol_binding`: `grpc`, `https` or `v2`) and the sensor's
+fallback reason (`protocol_fallback_reason`, printable ASCII, 256
+characters). The binding is the platform's: the v3 server marks the in-process
+heartbeat with the listener it came on (`handler.WithServedTransport`); a
+claimed binding in the body is ignored. A v3 heartbeat records protocol 3.
+The sensors API returns them under `protocol.binding` /
+`protocol.fallback_reason`; the detail sheet shows "Transport: …".
+
 ## Certificates and the gRPC binding
 
 - **CA**: `SENSOR_MTLS_CA_CERT_FILE` + `SENSOR_MTLS_CA_KEY_FILE`, or created once
@@ -86,6 +97,38 @@ a change at their 30 s re-check.
   a sensor and revoking a key wake its streams (`SetStatusNotifier`); the
   identity is re-resolved and a stream of a revoked identity ends with
   UNAUTHENTICATED within the wake jitter (test: under 2 s).
+
+## Deploying the gRPC binding (Compose)
+
+The gRPC binding needs a host name of its own, routed by SNI on port 443:
+
+```bash
+# DNS: sensors.example.com -> the gateway (same address as the platform host)
+SENSOR_PUBLIC_HOSTNAME=sensors.example.com \
+  docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up -d --build
+```
+
+- The override builds the gateway with the layer4 module (`deploy/gateway/Dockerfile`,
+  caddy-l4 pinned) and sets `OPENCTEM_SENSOR_GATEWAY=passthrough`: a TLS
+  connection whose SNI is `SENSOR_PUBLIC_HOSTNAME` is not terminated; its bytes
+  go to `api:8443` behind a PROXY protocol v2 header. Every other host is
+  served exactly as before.
+- It turns protocol v3 on in the API (`SENSOR_TRANSPORT_V3_ENABLED`,
+  `SENSOR_PUBLIC_HOST=<name>:443`, `SENSOR_MTLS_LISTEN_ADDR=:8443`) and trusts
+  the PROXY header from the gateway's address only
+  (`SENSOR_MTLS_TRUSTED_PROXIES`); a PROXY header from any other peer closes
+  the connection, so a sensor cannot choose the address it is recorded with.
+- No public certificate is needed for the sensor host: the API mints its
+  server certificate from the sensor CA and sensors pin that CA.
+- The gateway entrypoint refuses `passthrough` without `SENSOR_PUBLIC_HOSTNAME`,
+  with a port in it, with the platform host name, in TLS mode `http`, or on an
+  image without the layer4 module.
+- A separate port instead of SNI: publish the API's 8443 directly (or through
+  any TCP load balancer) and set `SENSOR_PUBLIC_HOST=<host>:<port>`.
+
+Without the override, `SENSOR_TRANSPORT_V3_ENABLED=true` alone serves the
+HTTPS binding (`/api/v3/sensor`, through the normal TLS termination) and no
+gRPC listener.
 
 ## Working on the proto
 

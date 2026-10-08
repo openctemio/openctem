@@ -33,7 +33,7 @@ import (
 func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 	f := newFleetHarness(t, sensordom.HealthPolicy{})
 	f.sh.SetTemplateService(sensor.NewSensorConfigTemplateService("../../../../configs/sensor-templates", logger.NewNop()))
-	f.sh.SetPublicAPIURL("https://192.168.8.204")
+	f.sh.SetPublicAPIURL("https://192.0.2.204")
 	f.sh.SetSensorImage("ghcr.io/openctemio/sensor:v0.4.2")
 
 	call := func(key string) (*httptest.ResponseRecorder, SensorConfigTemplatesResponse) {
@@ -67,7 +67,7 @@ func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 			t.Errorf("%s snippet is empty", name)
 		}
 	}
-	if resp.Image != "ghcr.io/openctemio/sensor:v0.4.2" || resp.APIURL != "https://192.168.8.204" || resp.APIKeyIncluded {
+	if resp.Image != "ghcr.io/openctemio/sensor:v0.4.2" || resp.APIURL != "https://192.0.2.204" || resp.APIKeyIncluded {
 		t.Errorf("image=%q api_url=%q key_included=%v", resp.Image, resp.APIURL, resp.APIKeyIncluded)
 	}
 	if !strings.Contains(resp.Docker, "OPENCTEM_API_KEY") || resp.CACertificate != "" || resp.CAFingerprintSHA256 != "" {

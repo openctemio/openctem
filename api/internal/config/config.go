@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // Environment constants
@@ -365,15 +366,15 @@ const DefaultSensorKeyRenewGrace = 15 * time.Minute
 // DefaultSensorLatestVersion is the newest sensor release when this API was
 // built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
 // the platform is upgraded; set it to "none" to turn the comparison off.
-const DefaultSensorLatestVersion = "v0.6.4"
+const DefaultSensorLatestVersion = "v0.11.0"
 
 // DefaultSensorMinVersion is the oldest supported sensor release
 // (SENSOR_MIN_VERSION); empty means no minimum.
-const DefaultSensorMinVersion = ""
+const DefaultSensorMinVersion = "v0.9.0"
 
 // DefaultSensorSDKLatestVersion is the newest SDK release
 // (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.
-const DefaultSensorSDKLatestVersion = "v0.14.0"
+const DefaultSensorSDKLatestVersion = "v0.18.0"
 
 // DefaultSensorSDKMinVersion is the oldest supported SDK release
 // (SENSOR_SDK_MIN_VERSION); empty means no minimum.
@@ -763,6 +764,10 @@ type SensorTransportV3Config struct {
 	// CertTTL is the client certificate lifetime (SENSOR_MTLS_CERT_TTL,
 	// default 168h, clamped to 1h..720h).
 	CertTTL time.Duration
+	// MTLSTrustedProxies are the CIDRs (comma-separated
+	// SENSOR_MTLS_TRUSTED_PROXIES) whose PROXY protocol v2 header the mTLS
+	// listener believes: the gateway that passes the sensor host through.
+	MTLSTrustedProxies []string
 }
 
 // SensorConfig holds sensor management configuration.
@@ -1083,6 +1088,8 @@ func Load() (*Config, error) {
 				CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
 				CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),
 				CertTTL:        getEnvDuration("SENSOR_MTLS_CERT_TTL", 7*24*time.Hour),
+
+				MTLSTrustedProxies: getEnvSlice("SENSOR_MTLS_TRUSTED_PROXIES", nil),
 			},
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
@@ -1453,6 +1460,12 @@ func (c *Config) validateBasic() error {
 		}
 	}
 	if err := c.Scope.validate(); err != nil {
+		return err
+	}
+	// The SSRF guard ignores a refused private-egress setting; refusing to
+	// start makes the operator notice instead of debugging blocked calls.
+	if err := httpsec.ValidatePrivateEgress(c.App.Env,
+		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
 		return err
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {

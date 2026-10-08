@@ -30,11 +30,11 @@ func TestReviewAddressStore(t *testing.T) {
 		exec(`INSERT INTO asset_relationships (tenant_id, source_asset_id, target_asset_id, relationship_type) VALUES ($1, $2, $3, 'resolves_to')`,
 			tenant.String(), src.String(), dst.String())
 	}
-	const addr = "202.160.124.20"
+	const addr = "198.51.100.20"
 	ip := seedOwnedAsset(t, db, tenantA, addr, "ip_address")
-	exec(`UPDATE assets SET properties = '{"asn": 131386, "asn_org": "VNDIRECT Securities Corporation"}' WHERE id = $1`, ip.String())
-	apex := seedOwnedAsset(t, db, tenantA, "vndirect.com.vn", "domain")
-	www := seedOwnedAsset(t, db, tenantA, "www.vndirect.com.vn", "subdomain")
+	exec(`UPDATE assets SET properties = '{"asn": 64500, "asn_org": "EXAMPLECO Securities Corporation"}' WHERE id = $1`, ip.String())
+	apex := seedOwnedAsset(t, db, tenantA, "example.co.uk", "domain")
+	www := seedOwnedAsset(t, db, tenantA, "www.example.co.uk", "subdomain")
 	edge(tenantA, apex, ip)
 	edge(tenantA, www, ip)
 	// Tenant B has the same address and a name resolving to it.
@@ -47,18 +47,18 @@ func TestReviewAddressStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(got[addr], []string{"vndirect.com.vn", "www.vndirect.com.vn"}) {
+	if !slices.Equal(got[addr], []string{"example.co.uk", "www.example.co.uk"}) {
 		t.Fatalf("resolved_from = %v (tenant B's name must not appear)", got[addr])
 	}
 	// A restricted member sees only the names in their data scope.
 	member := seedActUser(t, db)
 	grantScope(t, db, tenantA, member, www)
 	got, err = repo.ResolvedFrom(ctx, tenantA, &member, []string{addr})
-	if err != nil || !slices.Equal(got[addr], []string{"www.vndirect.com.vn"}) {
+	if err != nil || !slices.Equal(got[addr], []string{"www.example.co.uk"}) {
 		t.Fatalf("restricted resolved_from = %v %v", got[addr], err)
 	}
 	props, err := repo.AddressProps(ctx, tenantA, []string{addr})
-	if err != nil || props[addr]["asn_org"] != "VNDIRECT Securities Corporation" {
+	if err != nil || props[addr]["asn_org"] != "EXAMPLECO Securities Corporation" {
 		t.Fatalf("props = %v %v", props, err)
 	}
 
