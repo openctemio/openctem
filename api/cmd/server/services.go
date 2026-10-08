@@ -2363,6 +2363,13 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		}
 	}
 	s.SSO.SetDomainVerifier(s.DomainVerify)
+	// Email-first sign-in asks which organization holds an email's SSO
+	// domain (domainverify.Service.OwnerOfDomain).
+	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
+		s.SSO.SetDomainOwnerLookup(owners)
+	} else {
+		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
+	}
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
 	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)

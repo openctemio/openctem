@@ -76,6 +76,9 @@ export const authEndpoints = {
    */
   register: () => `${API_BASE.AUTH}/register`,
 
+  /** Email-first sign-in: where does this email sign in? (email in the body) */
+  discover: () => `${API_BASE.AUTH}/discover`,
+
   /**
    * Login with email/password (local auth)
    */
