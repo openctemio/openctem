@@ -231,8 +231,8 @@ means a new stack: finish [section 4](#4-database-migration-path) on your
 v0.8.0 stack, take a new `pg_dump` of the migrated database, start the new stack
 with an empty database volume up to Postgres only, `pg_restore` the dump, then
 start the rest. It needs `OPENCTEM_VERSION`, `OPENCTEM_HOSTNAME`,
-`OPENCTEM_PUBLIC_URL`, `DB_PASSWORD`, `REDIS_PASSWORD`, `AUTH_JWT_SECRET`,
-`APP_ENCRYPTION_KEY` (same value as before) and `CSRF_SECRET`
+`OPENCTEM_PUBLIC_URL`, `DB_PASSWORD`, `REDIS_PASSWORD`, `AUTH_JWT_SECRET`
+and `APP_ENCRYPTION_KEY` (same value as before)
 (`api/deploy/.env.example`). Sensors then use `https://<hostname>` as `API_URL`.
 
 ### 3.3 API environment variables
@@ -291,7 +291,7 @@ correct client IPs, login rate limits and IP allowlists), `SCOPE_DENY_EXTRA`
 | `NEXT_PUBLIC_SSE_BASE_URL` | Removed; use `NEXT_PUBLIC_WS_BASE_URL` (leave it empty: the WebSocket opens on the web origin and is forwarded to `BACKEND_API_URL`). |
 | `NEXT_PUBLIC_API_PORT` | Removed (same reason). |
 | `TRUST_PROXY_HEADERS` | New, default `false`. Set `true` only behind a proxy that **overwrites** `X-Real-IP`/`X-Forwarded-For`; pair it with `SERVER_TRUSTED_PROXIES` on the API. |
-| `CSRF_SECRET` | Unchanged; at least 32 characters. Required by `api/deploy/docker-compose.yml`. |
+| `CSRF_SECRET` | Removed: the web never used it (CSRF is the double-submit cookie, no secret). Delete it from your environment. |
 | `NEXT_PUBLIC_TERMS_URL`, `NEXT_PUBLIC_PRIVACY_URL` | New, optional (build time). |
 
 ### 3.5 Helm (chart 0.4.1 → 0.13.0)
