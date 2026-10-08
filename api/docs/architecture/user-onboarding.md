@@ -21,7 +21,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 ## Sign-up policy (Console > System > Sign-up)
 
 Who may create an organization on this deployment is **one platform setting**,
-`signup_policy` in `platform_settings` (migration 001307), edited in the admin
+`signup_policy` in `platform_settings` (migration 001313), edited in the admin
 console:
 
 | Mode | Meaning |

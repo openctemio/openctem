@@ -2,7 +2,7 @@
 
 - Who may create an organization (`admin_only` or `self_service`, plus whether
   people may request access) is now one platform setting, stored in the new
-  `platform_settings` table (migration 001307) and edited on Console > System >
+  `platform_settings` table (migration 001313) and edited on Console > System >
   Sign-up. create-first-team, `POST /tenants` and `GET /auth/providers` read
   it per request; a read failure means `admin_only`.
 - Any administrator reads it. A super admin changes it with a fresh
