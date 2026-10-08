@@ -43,6 +43,11 @@ creates and updates findings but changes no existing asset.
 
 Also part of group (C):
 
+- Scan coverage auto-resolve (`INGEST_COVERAGE_AUTO_RESOLVE`) considers only
+  the assets the command covers. A report still "touches" every existing
+  asset it names (an uncovered one only gets its last-seen time), but the
+  absence of a finding proves something only where the command was sent to
+  scan.
 - A sensor with no declared and no reported tools no longer auto-resolves
   (it could close any tool's findings with a "full" report).
 - Validation evidence without the validate command assigned to the sensor
