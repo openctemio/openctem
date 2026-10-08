@@ -784,8 +784,8 @@ export function useAssetWithRepository(assetId: string | null) {
   const shouldFetch = assetId && currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<BackendAssetWithRepository>(
-    shouldFetch ? ['asset-with-repository', assetId] : null,
-    () => get<BackendAssetWithRepository>(endpoints.assets.getFull(assetId!)),
+    shouldFetch ? endpoints.assets.getFull(assetId!) : null,
+    (url: string) => get<BackendAssetWithRepository>(url),
     {
       revalidateOnFocus: false,
     }
@@ -812,8 +812,8 @@ export function useRepositoryExtension(assetId: string | null) {
   const shouldFetch = assetId && currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<BackendRepositoryExtension>(
-    shouldFetch ? ['repository-extension', assetId] : null,
-    () => get<BackendRepositoryExtension>(endpoints.assets.getRepository(assetId!)),
+    shouldFetch ? endpoints.assets.getRepository(assetId!) : null,
+    (url: string) => get<BackendRepositoryExtension>(url),
     {
       revalidateOnFocus: false,
     }

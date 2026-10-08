@@ -61,8 +61,8 @@ export function useExposure(tenantId: string | null, exposureId: string | null) 
   const shouldFetch = tenantId && exposureId && canReadFindings
 
   const { data, error, isLoading, mutate } = useSWR<ExposureEvent>(
-    shouldFetch ? ['exposure', tenantId, exposureId] : null,
-    () => get<ExposureEvent>(exposureEndpoints.get(exposureId!)),
+    shouldFetch ? exposureEndpoints.get(exposureId!) : null,
+    (url: string) => get<ExposureEvent>(url),
     {
       revalidateOnFocus: false,
     }
@@ -125,8 +125,8 @@ export function useExposureHistory(tenantId: string | null, exposureId: string |
   const shouldFetch = tenantId && exposureId && canReadFindings
 
   const { data, error, isLoading, mutate } = useSWR<ExposureStateHistoryResponse>(
-    shouldFetch ? ['exposure-history', tenantId, exposureId] : null,
-    () => get<ExposureStateHistoryResponse>(exposureEndpoints.history(exposureId!)),
+    shouldFetch ? exposureEndpoints.history(exposureId!) : null,
+    (url: string) => get<ExposureStateHistoryResponse>(url),
     {
       revalidateOnFocus: false,
     }

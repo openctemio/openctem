@@ -15,7 +15,7 @@ export { LoginForm, RegisterForm, SignOutDialog, SignOutButton } from './compone
 // HOOKS
 // ============================================
 
-export { useAuth, useProtectedRoute, useRequireRoles, useRequireAuth } from './hooks'
+export { useAuth } from './hooks'
 
 // ============================================
 // SERVER ACTIONS

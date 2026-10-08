@@ -29,8 +29,8 @@ export function useAssetTags(prefix?: string, enabled = true, types?: string[]) 
   const url = qs ? `/api/v1/assets/tags?${qs}` : '/api/v1/assets/tags'
 
   const { data, error, isLoading } = useSWR<TagsResponse>(
-    shouldFetch ? ['asset-tags', prefix, ...(types ?? [])] : null,
-    () => get<TagsResponse>(url),
+    shouldFetch ? url : null,
+    (key: string) => get<TagsResponse>(key),
     {
       revalidateOnFocus: false,
       dedupingInterval: 60000,
