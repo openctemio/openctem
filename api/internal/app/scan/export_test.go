@@ -12,9 +12,11 @@ import (
 // Test hooks for the external scan_test package, whose DB tests import
 // infra/postgres (which imports this package, so they cannot be internal).
 
-// NewGroupResolverForTest builds a Service that only resolves scan targets.
+// NewGroupResolverForTest builds a Service that only resolves scan targets:
+// the given exclusions (nil: none), no ownership refusal, an actor who may
+// scan everything.
 func NewGroupResolverForTest(groups assetgroup.Repository, exclusions ScopeExclusionFilter) *Service {
-	return &Service{assetGroupRepo: groups, scopeExclusions: exclusions, logger: logger.NewNop()}
+	return allowAllChecks(&Service{assetGroupRepo: groups, scopeExclusions: exclusions, logger: logger.NewNop()})
 }
 
 // ResolvedForTest is what resolveScanTargets and recordResolvedTargets give.
