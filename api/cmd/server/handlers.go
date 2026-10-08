@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
@@ -310,6 +311,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
+		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
