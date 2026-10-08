@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/internal/infra/redis"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
@@ -482,6 +483,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
+					metrics.RecordPanic("scope_evaluate")
 					s.logger.Error("panic in scope rule evaluation", "asset_id", assetID.String(), "recover", r)
 				}
 			}()
@@ -1150,6 +1152,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
+					metrics.RecordPanic("scope_evaluate")
 					s.logger.Error("panic in scope rule evaluation", "asset_id", assetID.String(), "recover", r)
 				}
 			}()
