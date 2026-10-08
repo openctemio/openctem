@@ -29,8 +29,8 @@ func ownsAny(v bool, err error) func(context.Context, shared.ID) (bool, error) {
 }
 
 func TestAddressClassifier(t *testing.T) {
-	host, ipas := shared.NewID(), shared.NewID()
-	owners := fakeOwners{owners: map[string]shared.ID{"pti.com.vn": host, "ipas.com.vn": ipas}}
+	host, partner := shared.NewID(), shared.NewID()
+	owners := fakeOwners{owners: map[string]shared.ID{"example.com": host, "example.com.au": partner}}
 	ctx := context.Background()
 
 	cases := []struct {
@@ -41,8 +41,8 @@ func TestAddressClassifier(t *testing.T) {
 		home     *shared.ID
 		personal bool
 	}{
-		{"own domain", "an@pti.com.vn", true, tenantdom.MemberKindInternal, nil, false},
-		{"sister company", "nam@IPAS.com.vn", true, tenantdom.MemberKindExternal, &ipas, false},
+		{"own domain", "an@example.com", true, tenantdom.MemberKindInternal, nil, false},
+		{"sister company", "nam@EXAMPLE.com.au", true, tenantdom.MemberKindExternal, &partner, false},
 		{"personal", "j.doe@gmail.com", true, tenantdom.MemberKindExternal, nil, true},
 		{"personal even with no verified domain", "j.doe@gmail.com", false, tenantdom.MemberKindExternal, nil, true},
 		{"unclaimed work domain", "x@mssp.vn", true, tenantdom.MemberKindExternal, nil, false},

@@ -203,6 +203,15 @@ func (s *GroupService) reconcileUser(ctx context.Context, tenantID, userID share
 	}
 	desired := effectiveRole(names, mappings)
 	current := string(m.Role())
+	if desired == "" {
+		// No role group: least privilege, nothing is raised. Only an
+		// administrator falls back (to member), so leaving the admin group
+		// still removes admin.
+		if current != string(tenantdom.RoleAdmin) {
+			return nil
+		}
+		desired = string(tenantdom.RoleMember)
+	}
 	if current == desired {
 		return nil
 	}
@@ -371,8 +380,10 @@ func (s *GroupService) auditMappingChange(ctx context.Context, tenantID shared.I
 // effectiveRole maps a user's group display names to a tenant role. A
 // per-tenant mapping (keyed by lowercased display name) takes precedence; groups
 // with no mapping fall back to a name-match default (member, viewer). The
-// highest-privilege match wins; none → member. Admin comes only from a mapping
-// the owner configured.
+// highest-privilege match wins. No match returns "": the caller keeps the
+// current role (a group change never raises anyone by default) except that an
+// administrator falls back to member. Admin comes only from a mapping the
+// owner configured.
 func effectiveRole(groupNames []string, mappings map[string]scimgroup.RoleMapping) string {
 	best := ""
 	bestRank := 0
@@ -385,9 +396,6 @@ func effectiveRole(groupNames []string, mappings map[string]scimgroup.RoleMappin
 			bestRank = r
 			best = role
 		}
-	}
-	if best == "" {
-		return string(tenantdom.RoleMember)
 	}
 	return best
 }

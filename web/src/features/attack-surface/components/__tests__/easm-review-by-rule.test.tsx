@@ -43,16 +43,16 @@ const wrap = (ui: ReactNode) =>
 const suggestions = {
   suggestions: [
     {
-      id: 'domain:*.dev.ipas.com.vn',
+      id: 'domain:*.dev.example.com.au',
       kind: 'domain_wildcard',
       target_type: 'domain',
-      pattern: '*.dev.ipas.com.vn',
+      pattern: '*.dev.example.com.au',
       strength: 'strong',
       covered: 12,
-      covered_sample: ['a.dev.ipas.com.vn', 'b.dev.ipas.com.vn'],
+      covered_sample: ['a.dev.example.com.au', 'b.dev.example.com.au'],
       blocked: 1,
-      blocked_sample: [{ name: 'old.dev.ipas.com.vn', code: 'rejected' }],
-      hints: [{ kind: 'verified_domain', value: 'ipas.com.vn' }],
+      blocked_sample: [{ name: 'old.dev.example.com.au', code: 'rejected' }],
+      hints: [{ kind: 'verified_domain', value: 'example.com.au' }],
     },
   ],
   individual: [{ asset_id: 'x', name: '104.16.1.2', shared_ip: true }],
@@ -63,13 +63,13 @@ const preview = {
   allowed: true,
   entry: {
     kind: 'scope_target',
-    pattern: '*.dev.ipas.com.vn',
+    pattern: '*.dev.example.com.au',
     status: 'pending',
     approvals_required: 1,
   },
-  would_confirm: [{ asset_id: 'a', name: 'a.dev.ipas.com.vn' }],
+  would_confirm: [{ asset_id: 'a', name: 'a.dev.example.com.au' }],
   would_reject: [],
-  stays_blocked: [{ asset_id: 'o', name: 'old.dev.ipas.com.vn', code: 'rejected' }],
+  stays_blocked: [{ asset_id: 'o', name: 'old.dev.example.com.au', code: 'rejected' }],
   step_up_required: true,
 }
 
@@ -85,15 +85,17 @@ describe('suggested rules', () => {
   it('show what each rule covers, what stays out, and the evidence', async () => {
     api.get.mockResolvedValue(suggestions)
     wrap(<EASMRuleSuggestions onApplied={() => {}} />)
-    const card = (await screen.findByText('*.dev.ipas.com.vn')).closest('li')!
+    const card = (await screen.findByText('*.dev.example.com.au')).closest('li')!
     expect(
-      within(card).getByText('Covers dev.ipas.com.vn and every name below it')
+      within(card).getByText('Covers dev.example.com.au and every name below it')
     ).toBeInTheDocument()
     expect(within(card).getByText('Strong')).toBeInTheDocument()
     expect(
-      within(card).getByText(/1 stay out: old\.dev\.ipas\.com\.vn \(Marked not ours\)/)
+      within(card).getByText(/1 stay out: old\.dev\.example\.com\.au \(Marked not ours\)/)
     ).toBeInTheDocument()
-    expect(within(card).getByText('Under ipas.com.vn, a domain you verified')).toBeInTheDocument()
+    expect(
+      within(card).getByText('Under example.com.au, a domain you verified')
+    ).toBeInTheDocument()
     expect(screen.getByText(/shared or CDN address is never grouped/)).toBeInTheDocument()
   })
 
@@ -119,7 +121,7 @@ describe('suggested rules', () => {
     expect(within(review).getByText(/asked to confirm it is you/)).toBeInTheDocument()
     expect(api.post).toHaveBeenCalledWith(
       '/api/v1/easm/candidates/rules/preview',
-      expect.objectContaining({ action: 'accept_rule', pattern: '*.dev.ipas.com.vn' })
+      expect.objectContaining({ action: 'accept_rule', pattern: '*.dev.example.com.au' })
     )
 
     const apply = within(dialog).getByRole('button', { name: 'Accept as rule' })
@@ -130,12 +132,12 @@ describe('suggested rules', () => {
       expect(api.post).toHaveBeenCalledWith('/api/v1/easm/candidates/rules', {
         action: 'accept_rule',
         target_type: 'domain',
-        pattern: '*.dev.ipas.com.vn',
+        pattern: '*.dev.example.com.au',
         reason: 'OPS-12',
       })
     )
     expect(toast.success).toHaveBeenCalledWith(
-      '*.dev.ipas.com.vn is waiting for approval',
+      '*.dev.example.com.au is waiting for approval',
       expect.anything()
     )
     expect(onApplied).toHaveBeenCalled()
@@ -161,7 +163,7 @@ describe('suggested rules', () => {
     perms.scopeWrite = false
     api.get.mockResolvedValue(suggestions)
     wrap(<EASMRuleSuggestions onApplied={() => {}} />)
-    await screen.findByText('*.dev.ipas.com.vn')
+    await screen.findByText('*.dev.example.com.au')
     expect(screen.queryByRole('button', { name: 'Accept as rule' })).not.toBeInTheDocument()
   })
 })
@@ -179,9 +181,9 @@ describe('review queue', () => {
                 data: [
                   {
                     asset_id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
-                    name: 'a.vndirect.com.vn',
+                    name: 'a.example.co.uk',
                     state: 'needs_review',
-                    covered_by: { kind: 'scope_target', pattern: '*.vndirect.com.vn' },
+                    covered_by: { kind: 'scope_target', pattern: '*.example.co.uk' },
                   },
                   {
                     asset_id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5c',
@@ -194,7 +196,7 @@ describe('review queue', () => {
     )
     const user = userEvent.setup()
     wrap(<EASMReviewQueue />)
-    expect(await screen.findByText('*.vndirect.com.vn')).toBeInTheDocument()
+    expect(await screen.findByText('*.example.co.uk')).toBeInTheDocument()
     const promo = screen.getByText('promo.net').closest('tr')!
     expect(within(promo).getByText(/Not in scope/)).toBeInTheDocument()
     expect(within(promo).getByRole('button', { name: 'Add to scope' })).toBeInTheDocument()
@@ -226,15 +228,15 @@ describe('review queue', () => {
                 data: [
                   {
                     asset_id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a60',
-                    name: '202.160.124.20',
+                    name: '198.51.100.20',
                     type: 'ip_address',
                     state: 'needs_review',
                     hint: 'ip_needs_ip_entry',
-                    resolved_from: ['vndirect.com.vn', 'www.vndirect.com.vn'],
-                    network: { asn: 'AS131386', org: 'VNDIRECT', shared: false, org_matches: true },
+                    resolved_from: ['example.co.uk', 'www.example.co.uk'],
+                    network: { asn: 'AS64500', org: 'EXAMPLECO', shared: false, org_matches: true },
                     fixes: [
-                      { action: 'add_entry', target_type: 'ip_address', pattern: '202.160.124.20' },
-                      { action: 'add_entry', target_type: 'cidr', pattern: '202.160.124.0/24' },
+                      { action: 'add_entry', target_type: 'ip_address', pattern: '198.51.100.20' },
+                      { action: 'add_entry', target_type: 'cidr', pattern: '198.51.100.0/24' },
                     ],
                   },
                   {
@@ -255,15 +257,15 @@ describe('review queue', () => {
       )
     )
     wrap(<EASMReviewQueue />)
-    const ip = (await screen.findByText('202.160.124.20')).closest('tr')!
+    const ip = (await screen.findByText('198.51.100.20')).closest('tr')!
     expect(within(ip).getByText(/Names never grant their addresses/)).toBeInTheDocument()
-    expect(within(ip).getByText('www.vndirect.com.vn')).toBeInTheDocument()
+    expect(within(ip).getByText('www.example.co.uk')).toBeInTheDocument()
     expect(within(ip).getByText(/matches your organization/)).toBeInTheDocument()
     expect(
-      within(ip).getByRole('button', { name: 'Add to scope: 202.160.124.20' })
+      within(ip).getByRole('button', { name: 'Add to scope: 198.51.100.20' })
     ).toBeInTheDocument()
     expect(
-      within(ip).getByRole('button', { name: 'Add to scope: 202.160.124.0/24' })
+      within(ip).getByRole('button', { name: 'Add to scope: 198.51.100.0/24' })
     ).toBeInTheDocument()
 
     const cdn = screen.getByText('104.16.1.2').closest('tr')!
