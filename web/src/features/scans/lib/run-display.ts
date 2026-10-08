@@ -124,3 +124,37 @@ export const LIVE_RUN_REFRESH_MS = 5000
 export function runRefreshInterval(run?: { status: string } | null): number {
   return run && isRunInProgress(run) ? LIVE_RUN_REFRESH_MS : 0
 }
+
+/** The run kinds a person filters by (system runs are housekeeping: hidden). */
+export const RUN_KIND_FILTERS = [
+  { value: 'all', label: 'All kinds' },
+  { value: 'scan', label: 'Scans' },
+  { value: 'quick', label: 'Quick scans' },
+  { value: 'retest', label: 'Retests' },
+] as const
+
+const RUN_KIND_LABELS: Record<string, string> = {
+  scan: 'Scan',
+  quick: 'Quick scan',
+  retest: 'Retest',
+  validation: 'Validation',
+  test: 'Test',
+  connector: 'Connector',
+  system: 'System',
+}
+
+/** A run kind in words; a run from before kinds existed is a scan. */
+export function runKindLabel(kind?: string | null): string {
+  return RUN_KIND_LABELS[kind || 'scan'] ?? 'Run'
+}
+
+/** The finding a run is about (a retest), when it names one. */
+export function runSubjectFindingId(run: { subject?: Record<string, unknown> }): string | null {
+  const id = run.subject?.finding_id
+  return typeof id === 'string' && id !== '' ? id : null
+}
+
+/** The Runs page with one run open (a retest's "View run"). */
+export function runHref(runId: string): string {
+  return `/scans/runs?run=${encodeURIComponent(runId)}`
+}
