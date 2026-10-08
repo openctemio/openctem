@@ -3,7 +3,7 @@
 An organization on the **Free** plan that nobody signs in to moves through a
 lifecycle, so abandoned workspaces do not accumulate on a shared platform.
 Paid plans (Pro, Enterprise) and organizations without a plan are never
-touched. Owner decision 2026-10-08 (research/71 §7.1).
+touched. Decided 2026-10-08.
 
 ## Stages
 

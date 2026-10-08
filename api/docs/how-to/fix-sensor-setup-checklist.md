@@ -8,7 +8,7 @@ shows them as the sensor's setup checklist and explains how to fix each
 problem for your install type.
 
 Design: [RFC-033 §11](../rfcs/RFC-033-sensor-manifest.md) and
-[architecture/sensors.md](../architecture/sensors.md#config-report-the-setup-checklist-research26).
+[architecture/sensors.md](../architecture/sensors.md#config-report-the-setup-checklist).
 
 ## Where to look
 
