@@ -13,32 +13,19 @@ describe('client error reporting', () => {
 
   beforeEach(() => {
     resetClientErrorThrottle()
-    beacon = vi.fn(() => true)
-    Object.defineProperty(navigator, 'sendBeacon', {
-      value: beacon,
-      configurable: true,
-      writable: true,
-    })
+    beacon = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', beacon)
+    document.cookie = 'csrf_token=page-token; path=/'
   })
 
   afterEach(() => {
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
+    document.cookie = 'csrf_token=; max-age=0; path=/'
   })
 
-  // jsdom's Blob has no text(): read it the way a browser page would.
-  function readBlob(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result))
-      reader.onerror = () => reject(reader.error)
-      reader.readAsText(blob)
-    })
-  }
-
   async function sentBodies(): Promise<unknown[]> {
-    return Promise.all(
-      beacon.mock.calls.map(async ([, blob]) => JSON.parse(await readBlob(blob as Blob)))
-    )
+    return beacon.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string))
   }
 
   it('classifies chunk-load failures, including the module factory error after a deploy', () => {
@@ -59,6 +46,13 @@ describe('client error reporting', () => {
     expect(beacon).toHaveBeenCalledTimes(1)
     expect(beacon.mock.calls[0][0]).toBe(CLIENT_ERRORS_ENDPOINT)
     expect(await sentBodies()).toEqual([{ kind: 'render' }])
+  })
+
+  it('sends the CSRF header and survives a reload (keepalive)', () => {
+    reportClientError('render')
+    const init = beacon.mock.calls[0][1] as RequestInit
+    expect(init).toMatchObject({ method: 'POST', keepalive: true })
+    expect((init.headers as Record<string, string>)['X-CSRF-Token']).toBe('page-token')
   })
 
   it('throttles: one report per kind a minute, ten per page', () => {
@@ -87,17 +81,10 @@ describe('client error reporting', () => {
     expect(beacon).toHaveBeenCalledTimes(2)
   })
 
-  it('never throws when the beacon is unavailable', () => {
-    Object.defineProperty(navigator, 'sendBeacon', {
-      value: undefined,
-      configurable: true,
-      writable: true,
+  it('never throws when the request fails', () => {
+    beacon.mockImplementation(() => {
+      throw new Error('offline')
     })
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
     expect(() => reportClientError('other')).not.toThrow()
-    expect(fetchSpy).toHaveBeenCalledWith(
-      CLIENT_ERRORS_ENDPOINT,
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ kind: 'other' }) })
-    )
   })
 })

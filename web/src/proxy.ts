@@ -24,6 +24,13 @@
  *    /invitations#token=..., so the token leaves the path
  *    (src/lib/middleware/invitation-link.ts).
  *
+ * 5. CSRF (src/lib/server-auth-cookies.ts). A state-changing request to a page
+ *    is a Server Action (sign-in, registration, password reset, invitation,
+ *    second factor, SSO start, ...): it must come from this origin and echo
+ *    the `csrf_token` cookie in `X-CSRF-Token`, or it gets a 403 before any
+ *    action runs. Every page response that lacks the cookie sets one, so the
+ *    pre-session forms have a token to echo. API routes check themselves.
+ *
  * Keep it cheap: no database, no API call, no JWT verification.
  *
  * @see https://nextjs.org/docs/app/guides/content-security-policy
@@ -34,14 +41,22 @@ import { handleAuth } from '@/lib/middleware/auth'
 import { detectLocale } from '@/lib/middleware/i18n'
 import { cspForRequest, generateNonce } from '@/lib/middleware/csp'
 import { handleLegacyInvitationLink } from '@/lib/middleware/invitation-link'
+import { csrfRejection, ensureCsrfCookie } from '@/lib/server-auth-cookies'
 
 export function proxy(req: NextRequest) {
+  // Server Actions: same origin and the double-submit pair, before anything runs.
+  const csrf = csrfRejection(req)
+  if (csrf) return csrf
+
   // Invitation links from before RFC-041 carry the token in the path.
   const invitation = handleLegacyInvitationLink(req)
   if (invitation) return invitation
 
   const redirect = handleAuth(req)
-  if (redirect) return redirect
+  if (redirect) {
+    ensureCsrfCookie(req, redirect)
+    return redirect
+  }
 
   const nonce = generateNonce()
   const csp = cspForRequest(nonce)
@@ -53,6 +68,7 @@ export function proxy(req: NextRequest) {
 
   const response = NextResponse.next({ request: { headers } })
   response.headers.set('Content-Security-Policy', csp)
+  ensureCsrfCookie(req, response)
   return response
 }
 
