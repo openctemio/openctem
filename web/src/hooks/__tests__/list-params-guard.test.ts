@@ -47,4 +47,23 @@ describe('list URL parameters', () => {
     const hits = files.filter((abs) => RAW_PAGING.test(readFileSync(abs, 'utf8'))).map(rel)
     expect(hits).toEqual([])
   })
+
+  // Feature views that are a route's main list (a tab, a view or a mode of
+  // the page) keep their page in the URL too.
+  const ROUTE_LIST_VIEWS = [
+    'src/features/ci-runners/components/ci-pipelines-panel.tsx',
+    'src/features/ci-runners/components/ci-coverage-view.tsx',
+    'src/features/ci-runners/components/ci-runs-view.tsx',
+    'src/features/sensors/components/fleet-all-view.tsx',
+    'src/features/attack-surface/components/easm-review-queue.tsx',
+  ]
+
+  it('route list views page through useListParams', () => {
+    const local = /const \[(page|currentPage), set\w+\] = useState|useState\(\{ pageIndex/
+    const hits = ROUTE_LIST_VIEWS.filter((f) => {
+      const src = readFileSync(join(ROOT, f), 'utf8')
+      return local.test(src) || !src.includes('useListParams(')
+    })
+    expect(hits).toEqual([])
+  })
 })
