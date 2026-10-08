@@ -305,6 +305,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpAuth = apiKeyAuth.Handler
 	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
+	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
+	// endpoint also accepts its access tokens, and a refused call that
+	// another scope would allow gets a step-up challenge.
+	var mcpOAuthHandler *handler.MCPOAuthHandler
+	if mcpOAuth := newMCPOAuthService(mcpDiscovery, deps, log); mcpOAuth != nil && mcpHandler != nil {
+		mcpOAuthHandler = handler.NewMCPOAuthHandler(mcpOAuth, log)
+		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
+		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
+	}
 
 	handlers := routes.Handlers{
 		ModuleGate:   moduleGate,
@@ -312,6 +321,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		MCP:          mcpHandler,
 		MCPAuth:      mcpAuth,
 		MCPDiscovery: mcpDiscovery,
+		MCPOAuth:     mcpOAuthHandler,
 		APIKeyAuth:   apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
