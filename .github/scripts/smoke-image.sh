@@ -37,4 +37,14 @@ set -e
 if [ "$rc" -ge 126 ] || grep -qi 'exec format error' /tmp/smoke.out; then
   cat /tmp/smoke.out >&2; echo "smoke: $img cannot execute on $want (rc=$rc)" >&2; exit 1
 fi
+# The API serves its OpenAPI spec from the image (it is generated, not committed).
+case "$comp" in
+  openctem-api) spec=/app/api/openapi/swagger.yaml ;;
+  openctem)     spec=/opt/openctem/api/api/openapi/swagger.yaml ;;
+  *)            spec="" ;;
+esac
+if [ -n "$spec" ]; then
+  docker run --rm --entrypoint sh "$img" -c "test -s '$spec' && grep -q '^paths:' '$spec'" \
+    || { echo "smoke: $img has no OpenAPI spec at $spec" >&2; exit 1; }
+fi
 echo "smoke: $comp $img arch=$got elf=${m:-n/a} exec-rc=$rc OK"

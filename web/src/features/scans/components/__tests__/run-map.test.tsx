@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { SWRConfig } from 'swr'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { RunMap as RunMapData } from '@/lib/api/generated'
+import type { RunMap as RunMapData, RunTask } from '@/lib/api/generated'
 
 const get = vi.fn()
 vi.mock('@/lib/api/client', () => ({ get: (url: string) => get(url) }))
@@ -48,10 +48,31 @@ const data: RunMapData = {
   edges: [{ from: 'subdomains', to: 'probe', count: 312 }],
 }
 
+const tasks = [
+  {
+    id: 't1',
+    step_key: 'probe',
+    tool: 'httpx',
+    status: 'queued',
+    targets: 40,
+    attempts: 0,
+    created_at: '2026-10-08T06:00:00Z',
+  },
+  {
+    id: 't2',
+    step_key: 'subdomains',
+    tool: 'subfinder',
+    status: 'completed',
+    targets: 1,
+    attempts: 1,
+    created_at: '2026-10-08T06:00:00Z',
+  },
+] as RunTask[]
+
 const renderMap = () =>
   render(
     <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
-      <RunMap runId="r1" />
+      <RunMap runId="r1" tasks={tasks} />
     </SWRConfig>
   )
 
@@ -78,6 +99,27 @@ describe('RunMap', () => {
     expect(props.status).toEqual({ subdomains: 'completed', probe: 'pending' })
     const edgeLabel = props.edgeLabel as (a: string, b: string) => string | undefined
     expect(edgeLabel('subdomains', 'probe')).toBe('312')
+  })
+
+  it('opens a step panel with its state, outputs and only its tasks', async () => {
+    get.mockResolvedValue(data)
+    renderMap()
+    await screen.findByTestId('stages')
+    const select = seen[seen.length - 1].onSelectStep as (key: string) => void
+    act(() => select('probe'))
+    const panel = await screen.findByRole('region', { name: 'Step Probe' })
+    expect(within(panel).getAllByText('Waiting for a sensor').length).toBeGreaterThan(0)
+    expect(within(panel).getByText('Nothing produced yet.')).toBeInTheDocument()
+    expect(within(panel).getAllByText('httpx').length).toBeGreaterThan(0)
+    expect(within(panel).queryAllByText('subfinder')).toHaveLength(0)
+
+    act(() => select('probe')) // the same step again closes it
+    expect(screen.queryByRole('region', { name: 'Step Probe' })).not.toBeInTheDocument()
+
+    act(() => select('subdomains'))
+    const sub = await screen.findByRole('region', { name: 'Step Subdomains' })
+    expect(within(sub).getByText('domain')).toBeInTheDocument()
+    expect(within(sub).getByText('312')).toBeInTheDocument()
   })
 
   it('says when the map cannot be loaded', async () => {

@@ -236,6 +236,9 @@ type AppConfig struct {
 
 // SensorConfigConfig holds the sensor config template service settings.
 type SensorConfigConfig struct {
+	// TransportV3 is sensor protocol v3 (RFC-059,
+	// docs/rfcs/RFC-059-sensor-transport-v3.md).
+	TransportV3 SensorTransportV3Config
 	// TemplatesDir is the filesystem path containing sensor config templates
 	// (yaml.tmpl, env.tmpl, docker.tmpl, cli.tmpl). Operators can edit these
 	// without rebuilding the API or UI.
@@ -546,12 +549,8 @@ type AuthConfig struct {
 	LockoutDuration   time.Duration // Account lockout duration (default: 15m)
 	MaxActiveSessions int           // Max concurrent sessions per user (default: 10)
 
-	// Registration settings
-	// AllowRegistration lets anyone create an account on /auth/register
-	// (AUTH_ALLOW_REGISTRATION, default false). Off by default: accounts come
-	// from an administrator, an invitation, or the organization SSO.
-	// An invited person can still register with their invitation token.
-	AllowRegistration        bool
+	// Registration settings. Who may create an account is the sign-up policy
+	// (internal/app/signup), not a config flag.
 	RequireEmailVerification bool // Require email verification (default: true)
 
 	// Email verification/reset token settings
@@ -740,6 +739,32 @@ type RateLimitConfig struct {
 	ReadRequestsPerMin int
 }
 
+// SensorTransportV3Config configures sensor protocol v3 (RFC-059).
+type SensorTransportV3Config struct {
+	// Enabled mounts v3: the HTTPS binding under /api/v3/sensor (and, with a
+	// sensor CA, the gRPC binding). SENSOR_TRANSPORT_V3_ENABLED, default
+	// false: nothing changes for sensors until an operator turns it on.
+	Enabled bool
+	// PublicHost is host[:port] sensors dial for the gRPC binding
+	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443). Empty: the
+	// platform serves only the HTTPS binding (no mTLS listener).
+	PublicHost string
+	// MTLSListenAddr is the gRPC binding's TLS 1.3 listener
+	// (SENSOR_MTLS_LISTEN_ADDR, default :8443). The gateway passes the
+	// PublicHost name through to it at layer 4.
+	MTLSListenAddr string
+	// CACertFile and CAKeyFile are the sensor CA (SENSOR_MTLS_CA_CERT_FILE,
+	// SENSOR_MTLS_CA_KEY_FILE, PEM). Its key is not the job signer's.
+	CACertFile string
+	CAKeyFile  string
+	// CADir is where the sensor CA is created once when the two files are
+	// not set (SENSOR_MTLS_CA_DIR, default data/sensor-ca).
+	CADir string
+	// CertTTL is the client certificate lifetime (SENSOR_MTLS_CERT_TTL,
+	// default 168h, clamped to 1h..720h).
+	CertTTL time.Duration
+}
+
 // SensorConfig holds sensor management configuration.
 type SensorConfig struct {
 	// HeartbeatTimeout is the duration after which a sensor is marked as inactive
@@ -817,6 +842,27 @@ type SensorConfig struct {
 	// (free tier), when crt.sh still fails after its retries. Set
 	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
 	CertMonitorCertSpotterURL string
+
+	// InvitationPurgeInterval is how often expired, unaccepted invitations
+	// (an email address and a token hash) are deleted. They can no longer be
+	// accepted or resent. INVITATION_PURGE_INTERVAL, default 1h.
+	InvitationPurgeInterval time.Duration
+
+	// AdminSessionPurgeInterval is how often platform-admin console sessions
+	// past their absolute expiry are deleted. ADMIN_SESSION_PURGE_INTERVAL,
+	// default 1h.
+	AdminSessionPurgeInterval time.Duration
+
+	// QuarantinePurgeInterval is how often reviewed (accepted or rejected)
+	// quarantined sensor results older than QuarantineRetention are deleted;
+	// pending items are never purged. SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL,
+	// default 24h.
+	QuarantinePurgeInterval time.Duration
+
+	// QuarantineRetention is how long a reviewed quarantined sensor result is
+	// kept after review. SENSOR_RESULT_QUARANTINE_RETENTION, default 720h
+	// (30 days); zero or negative means the default.
+	QuarantineRetention time.Duration
 
 	// LoadBalancing holds configuration for sensor load balancing weights.
 	LoadBalancing LoadBalancingConfig
@@ -986,9 +1032,18 @@ func (c *AITriageConfig) IsConfigured() bool {
 	return c.AnthropicAPIKey != "" || c.OpenAIAPIKey != "" || c.GeminiAPIKey != ""
 }
 
-// Load loads configuration from environment variables.
 // envDevelopment is the APP_ENV value of a developer machine.
 const envDevelopment = "development"
+
+// defaultAppEnv is APP_ENV when it is not set. An unset APP_ENV is treated as
+// production, so an image or binary started without configuration gets every
+// production check (secrets, TLS to Postgres and Redis, Secure cookies,
+// rate limits) instead of silently running in development mode. Developer
+// setups (.env.example, docker-compose.dev.yml) set APP_ENV=development.
+const defaultAppEnv = EnvProduction
+
+// appEnv is the APP_ENV value Load uses, with the default applied.
+func appEnv() string { return getEnv("APP_ENV", defaultAppEnv) }
 
 // defaultLogLevel is LOG_LEVEL when it is not set.
 func defaultLogLevel(appEnv string) string {
@@ -1006,6 +1061,7 @@ func defaultLogFormat(appEnv string) string {
 	return "json"
 }
 
+// Load loads configuration from environment variables and validates it.
 func Load() (*Config, error) {
 	if err := rejectRetiredEnv(os.LookupEnv); err != nil {
 		return nil, err
@@ -1014,11 +1070,20 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		App: AppConfig{
 			Name:  getEnv("APP_NAME", "openctem"),
-			Env:   getEnv("APP_ENV", "development"),
+			Env:   appEnv(),
 			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
 			URL:   getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
+			TransportV3: SensorTransportV3Config{
+				Enabled:        getEnvBool("SENSOR_TRANSPORT_V3_ENABLED", false),
+				PublicHost:     getEnv("SENSOR_PUBLIC_HOST", ""),
+				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":8443"),
+				CACertFile:     getEnv("SENSOR_MTLS_CA_CERT_FILE", ""),
+				CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
+				CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),
+				CertTTL:        getEnvDuration("SENSOR_MTLS_CERT_TTL", 7*24*time.Hour),
+			},
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
@@ -1103,8 +1168,8 @@ func Load() (*Config, error) {
 			// Unset: debug/text for APP_ENV=development (readable while
 			// developing), info/json everywhere else. Set, they apply in every
 			// environment.
-			Level:              getEnv("LOG_LEVEL", defaultLogLevel(getEnv("APP_ENV", envDevelopment))),
-			Format:             getEnv("LOG_FORMAT", defaultLogFormat(getEnv("APP_ENV", envDevelopment))),
+			Level:              getEnv("LOG_LEVEL", defaultLogLevel(appEnv())),
+			Format:             getEnv("LOG_FORMAT", defaultLogFormat(appEnv())),
 			SamplingEnabled:    getEnvBool("LOG_SAMPLING_ENABLED", false),   // Enable via env for production
 			SamplingThreshold:  getEnvInt("LOG_SAMPLING_THRESHOLD", 100),    // First 100 identical logs/sec
 			SamplingRate:       getEnvFloat("LOG_SAMPLING_RATE", 0.1),       // Then 10%
@@ -1113,7 +1178,7 @@ func Load() (*Config, error) {
 			SlowRequestSeconds: getEnvInt("LOG_SLOW_REQUEST_SECONDS", 5),    // Warn on slow requests
 		},
 		Auth: AuthConfig{
-			Provider:                  AuthProvider(getEnv("AUTH_PROVIDER", "oidc")), // Default to OIDC for backward compatibility
+			Provider:                  AuthProvider(getEnv("AUTH_PROVIDER", string(AuthProviderLocal))),
 			JWTSecret:                 getEnv("AUTH_JWT_SECRET", ""),
 			JWTIssuer:                 getEnv("AUTH_JWT_ISSUER", "api"),
 			AccessTokenDuration:       getEnvDuration("AUTH_ACCESS_TOKEN_DURATION", 15*time.Minute),
@@ -1127,11 +1192,10 @@ func Load() (*Config, error) {
 			MaxLoginAttempts:          getEnvInt("AUTH_MAX_LOGIN_ATTEMPTS", 5),
 			LockoutDuration:           getEnvDuration("AUTH_LOCKOUT_DURATION", 15*time.Minute),
 			MaxActiveSessions:         getEnvInt("AUTH_MAX_ACTIVE_SESSIONS", 10),
-			AllowRegistration:         getEnvBool("AUTH_ALLOW_REGISTRATION", false),
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
-			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(getEnv("APP_ENV", "development"))),
+			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(appEnv())),
 			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),                          // Empty = current host
 			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"),                     // "strict", "lax", or "none"
 			AccessTokenCookieName:     getEnv("AUTH_ACCESS_TOKEN_COOKIE_NAME", "auth_token"),     // Cookie name for access token
@@ -1216,6 +1280,10 @@ func Load() (*Config, error) {
 			EASMDNSInterval:             getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
 			EASMDNSMaxNamesPerRun:       getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
 			CertMonitorCertSpotterURL:   getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
+			InvitationPurgeInterval:     getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
+			AdminSessionPurgeInterval:   getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
+			QuarantinePurgeInterval:     getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
+			QuarantineRetention:         getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
@@ -1392,6 +1460,9 @@ func (c *Config) validateBasic() error {
 	}
 	if c.Database.Host == "" {
 		return fmt.Errorf("database host is required")
+	}
+	if err := c.validatePlaceholders(); err != nil {
+		return err
 	}
 	if err := c.validateAuth(); err != nil {
 		return err
@@ -1621,6 +1692,55 @@ func (c *Config) validateAuth() error {
 	}
 
 	return nil
+}
+
+// validatePlaceholders refuses secrets that still hold the placeholder text of
+// an example file ("openssl rand -hex 32", "<CHANGE_ME...>",
+// "your-super-secret-..."), in every environment. Without it such a value
+// either fails later with a length error that does not say what is wrong, or,
+// worse, is long enough to be accepted as a real secret.
+func (c *Config) validatePlaceholders() error {
+	secrets := []struct{ name, value string }{
+		{"APP_ENCRYPTION_KEY", c.Encryption.Key},
+		{"APP_TEMPLATE_SIGNING_KEY", c.Encryption.TemplateSigningKey},
+		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
+		{"DB_PASSWORD", c.Database.Password},
+		{"REDIS_PASSWORD", c.Redis.Password},
+		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
+		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
+		{"METRICS_TOKEN", c.Metrics.Token},
+	}
+	for i, prev := range c.Encryption.PreviousKeys {
+		secrets = append(secrets, struct{ name, value string }{fmt.Sprintf("APP_ENCRYPTION_KEY_PREVIOUS entry %d", i+1), prev})
+	}
+	for _, s := range secrets {
+		if isPlaceholderSecret(s.value) {
+			// The value is example text, not a secret, but it is still not echoed.
+			return fmt.Errorf("%s holds placeholder text from an example file, not a secret: "+
+				"replace it with the output of `openssl rand -hex 32`", s.name)
+		}
+	}
+	return nil
+}
+
+// placeholderMarkers are substrings only example files put in a secret.
+var placeholderMarkers = []string{"openssl rand", "change_me", "changeme", "your-super-secret", "replace-me", "replace_me"}
+
+func isPlaceholderSecret(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return false
+	}
+	if strings.HasPrefix(v, "<") && strings.HasSuffix(v, ">") {
+		return true
+	}
+	lv := strings.ToLower(v)
+	for _, m := range placeholderMarkers {
+		if strings.Contains(lv, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // devDefaultJWTSecrets is the closed set of "dev-quickstart" JWT secret

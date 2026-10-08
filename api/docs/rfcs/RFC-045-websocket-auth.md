@@ -1,6 +1,6 @@
 # RFC-045: Real-time WebSocket authentication and session binding
 
-> Status: **Implemented** (owner decisions 2026-10-03, §7; implemented by #934 and #950).
+> Status: **Implemented** (decisions 2026-10-03, §7; implemented by #934 and #950).
 > Scope: `api/` (`internal/infra/websocket`, `/api/v1/ws` route chain, auth
 > services' session revocation, permission version), `web/`
 > (`src/lib/websocket`, `src/context/websocket-provider.tsx`,
@@ -9,7 +9,7 @@
 > [architecture/authorization-matrix.md](../architecture/authorization-matrix.md#real-time-websocket-apiv1ws),
 > [architecture/notification-system.md](../architecture/notification-system.md#real-time-push).
 >
-> Owner's question (2026-10-03): `GET /api/v1/auth/ws-token` looks redundant;
+> Question (2026-10-03): `GET /api/v1/auth/ws-token` looks redundant;
 > is there a better, more secure, more modern way to authenticate the
 > real-time socket? Redesign the socket layer to be as secure and as good as
 > possible, not only the authentication.
@@ -76,7 +76,7 @@ Out of scope: a compromised browser or XSS in the UI origin (it can open the
 socket legitimately); Redis compromise beyond T7 (covered by RFC-040's Redis
 ACL work).
 
-## 4. Research
+## 4. Background
 
 Primary sources; quotes abbreviated.
 
@@ -169,7 +169,7 @@ Removed: `GET /auth/ws-token`, `LocalAuthHandler.GetWSToken`,
 `auth.WSTicketService` and its Redis store, `middleware.WSTicketAuth`,
 `AuthService.GenerateWSToken` / `jwt.GenerateShortLivedToken`, the gateway's
 `ticket` log redaction, the web `fetchWsTicket` and ticket/token URL
-parameters. No deprecation window (owner D2): web and API ship in one image
+parameters. No deprecation window (D2): web and API ship in one image
 set, and a browser tab still running the old bundle keeps working, because
 its upgrade carries the cookie and the server ignores the stale `?ticket=`
 parameter.
@@ -289,14 +289,14 @@ user, tenant and session.
 PR A is valid on its own: tickets now carry the requesting session id and
 token expiry, so ticket-opened sockets are bound too until PR B removes them.
 
-## 7. Decisions (owner, 2026-10-03)
+## 7. Decisions (2026-10-03)
 
 - **D1** Cookie authentication on the same-origin upgrade through the
   standard tenant chain, exact Origin allowlist, Origin required with the
   cookie. Accepted.
 - **D2** Remove `/auth/ws-token`, the ticket service and middleware and the
-  JWT-in-URL fallback completely; no deprecation window. Accepted (owner
-  overrode the draft's `Deprecated()` plan).
+  JWT-in-URL fallback completely; no deprecation window. Accepted (this
+  replaced the draft's `Deprecated()` plan).
 - **D3** No ticket for cross-site deployments; serve the socket same-origin
   (gateway or proxy). Accepted.
 - **D4** Bind sockets to the session: close at expiry (cap 15 min), on

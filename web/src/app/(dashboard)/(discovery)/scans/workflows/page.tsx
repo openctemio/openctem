@@ -74,6 +74,7 @@ import {
 import { toast } from 'sonner'
 
 import { ScanWorkflowForm } from '@/features/scan-workflows/components/workflow-form'
+import { firstProblem, readinessLabel } from '@/features/scan-workflows/lib/readiness'
 import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
 import { ScansPageHeader, ScansSectionTabs } from '@/features/scans/components/scans-section-tabs'
 import { NewScanWorkflowButton } from '@/features/scan-workflows/components/new-scan-workflow-button'
@@ -114,7 +115,7 @@ export default function ScanWorkflowsPage() {
     data: workflows,
     isLoading: loadingWorkflows,
     error: workflowsError,
-  } = useScanWorkflows({ per_page: 100 })
+  } = useScanWorkflows({ per_page: 100, include: 'readiness' })
   const { data: stats, isLoading: loadingStats } = useScanManagementStats()
 
   // Mutations
@@ -287,6 +288,15 @@ export default function ScanWorkflowsPage() {
               {workflow.is_system_template && (
                 <Badge variant="secondary" className="shrink-0 text-xs">
                   System
+                </Badge>
+              )}
+              {readinessLabel(workflow.readiness) && (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 text-xs"
+                  title={firstProblem(workflow.readiness)?.reason}
+                >
+                  {readinessLabel(workflow.readiness)}
                 </Badge>
               )}
             </div>

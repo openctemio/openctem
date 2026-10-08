@@ -1,4 +1,4 @@
-# RFC-046 appendix A — status audit of the scans research (2026-10-03)
+# RFC-046 appendix A — status audit of the scans review (2026-10-03)
 
 Companion to [RFC-046](RFC-046-scans-redesign.md). Every row below was
 checked in code on `origin/develop` at `7a0c6c5f` (2026-10-03), with sdk-go
@@ -10,7 +10,7 @@ Status values: **fixed** (the defect cannot happen on develop), **partly**
 (the main path is fixed and a named gap remains), **open** (not started or
 not effective).
 
-## A.1 The worst bugs from the 2026-10-02 research
+## A.1 The worst bugs from the 2026-10-02 review
 
 | # | Bug | Status | Evidence | Remaining work |
 |---|---|---|---|---|

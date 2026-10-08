@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import type { ColumnDef } from '@tanstack/react-table'
-import type { Asset } from '@/features/assets'
+import type { CredentialLeakRow } from '@/features/credentials/lib'
 import type { ApiIdentityExposure } from '../../api/credential-api.types'
 
 const get = vi.fn()
@@ -9,7 +9,7 @@ vi.mock('@/lib/api/client', () => ({ get: (url: string) => get(url) }))
 
 import { CredentialIdentityGroups } from '../credential-identity-groups'
 
-const columns: ColumnDef<Asset>[] = [{ accessorKey: 'name', header: 'Name' }]
+const columns: ColumnDef<CredentialLeakRow>[] = [{ accessorKey: 'name', header: 'Name' }]
 
 const identity = (name: string, active = 1): ApiIdentityExposure =>
   ({

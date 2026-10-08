@@ -6,6 +6,7 @@
  */
 
 import { redirect } from 'next/navigation'
+import { NOT_SET_UP_PATH, SIGNUP_NOT_AVAILABLE } from '@/features/auth/lib/signup-outcome'
 import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { cookies } from 'next/headers'
 
@@ -69,6 +70,9 @@ export default async function OAuthCallbackPage({ params, searchParams }: OAuthC
   const result = await handleOAuthCallback(provider, code, state)
 
   if (!result.success) {
+    // The sign-up policy refused to create an account: the one "not set up"
+    // page, whatever the reason.
+    if (result.code === SIGNUP_NOT_AVAILABLE) redirect(NOT_SET_UP_PATH)
     redirect(loginErrorHref('callback_failed'))
   }
 

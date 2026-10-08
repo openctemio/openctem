@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -351,7 +352,10 @@ func (h *SCIMHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SCIMHandler) writeProvisionError(w http.ResponseWriter, err error) {
+	var lim *plan.ErrLimitReached
 	switch {
+	case errors.As(err, &lim):
+		h.scimError(w, http.StatusForbidden, "", PlanLimitMessage(lim))
 	case errors.Is(err, shared.ErrNotFound):
 		h.scimError(w, http.StatusNotFound, "", "user not found")
 	case errors.Is(err, shared.ErrValidation):
