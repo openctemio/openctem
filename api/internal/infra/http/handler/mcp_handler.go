@@ -142,6 +142,9 @@ type MCPHandler struct {
 	// handler behaves identically minus the audit trail, so tests and stub builds
 	// need not provide one.
 	audit *auditapp.AuditService
+	// resourceMetadata is the Protected Resource Metadata URL named in
+	// insufficient_scope challenges (empty: no challenges).
+	resourceMetadata string
 }
 
 // NewMCPHandler builds the handler and its tool registry from existing services.
@@ -288,7 +291,10 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 	// API keys are never admin, so HasPermission consults only the key's scopes.
 	if tool.RequiredPerm != "" && !middleware.HasPermission(ctx, tool.RequiredPerm) {
 		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultDenied, true, 0)
-		h.writeResult(w, req.ID, toolResult("permission denied: this API key lacks the scope required for this tool ("+tool.RequiredPerm+")", true))
+		if h.writeScopeChallenge(w, r, req.ID, tool.RequiredPerm) {
+			return
+		}
+		h.writeResult(w, req.ID, toolResult("permission denied: this credential lacks the permission this tool needs ("+tool.RequiredPerm+")", true))
 		return
 	}
 
@@ -342,6 +348,7 @@ func (h *MCPHandler) auditToolCall(r *http.Request, tenantID, toolName string, a
 			"api_key_prefix": middleware.GetAPIKeyPrefix(ctx),
 		},
 	}
+	oauthAuditMetadata(r, event.Metadata)
 	actx := auditapp.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(ctx),
@@ -376,6 +383,7 @@ func (h *MCPHandler) auditPromptGet(r *http.Request, tenantID, promptName string
 			"api_key_prefix": middleware.GetAPIKeyPrefix(ctx),
 		},
 	}
+	oauthAuditMetadata(r, event.Metadata)
 	actx := auditapp.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(ctx),

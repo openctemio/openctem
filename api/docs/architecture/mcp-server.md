@@ -21,8 +21,9 @@ Supported methods: `initialize`, `notifications/*` (acknowledged, no body),
 
 ## Authentication (shipped)
 
-Authenticated **only** by a tenant-scoped `oct_` API key — never the browser JWT
-chain, because an MCP client presents a static bearer token.
+Authenticated by an OAuth access token the platform issued to an MCP client
+(`Bearer octm_at_…`, [mcp-authorization.md](./mcp-authorization.md)) or by a
+tenant-scoped `oct_` API key (below) — never the browser JWT chain.
 
 - `middleware.APIKeyAuth` resolves the key via
   `apikey.Service.AuthenticateWithPermissions` (peppered-hash lookup, legacy
