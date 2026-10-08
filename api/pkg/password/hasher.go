@@ -34,10 +34,13 @@ type Policy struct {
 	RequireSpecial bool
 }
 
+// MinLengthDefault is the default minimum password length.
+const MinLengthDefault = 12
+
 // DefaultPolicy returns a sensible default password policy.
 func DefaultPolicy() Policy {
 	return Policy{
-		MinLength:      8,
+		MinLength:      MinLengthDefault,
 		RequireUpper:   true,
 		RequireLower:   true,
 		RequireNumber:  true,
@@ -140,6 +143,11 @@ func ValidateWithPolicy(password string, policy Policy) error {
 	}
 	if policy.RequireSpecial && !hasSpecial {
 		return ErrPasswordNoSpecial
+	}
+	// Always on: a password from a breached-password list is refused,
+	// whatever the composition rules say.
+	if IsCommon(password) {
+		return ErrPasswordCommon
 	}
 
 	return nil
