@@ -8,7 +8,7 @@ import { memberDisplayName } from '@/features/organization/lib/member-lifecycle'
 import { useTenant } from '@/context/tenant-provider'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { ResolveCampaignDialog } from '@/features/remediation/components/resolve-campaign-dialog'
 import { useConfirmCampaignCompletion } from '@/features/remediation/components/complete-campaign-confirm'
 import { progressPercent } from '@/features/remediation/lib/campaign-completion'
@@ -46,10 +46,10 @@ import {
 } from 'lucide-react'
 import {
   useRemediationCampaign,
+  useRemediationCampaignFindings,
   useUpdateRemediationCampaign,
   useUpdateCampaignStatus,
 } from '@/features/remediation/api/use-remediation-campaigns'
-import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import { SeverityBadge } from '@/features/shared'
 import { StatusSelect } from '@/features/findings/components/status-select'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
@@ -195,22 +195,19 @@ export default function CampaignDetailPage() {
   // Completing with findings still open asks first and says how many.
   const { confirmCompletion, completionDialog } = useConfirmCampaignCompletion()
 
-  // The campaign's explicitly-linked findings (one fix → many findings). Only
-  // fetched when there are some: without a finding_ids filter the hook would
-  // fetch every finding in the tenant, and a campaign with none (or one still
-  // loading) needs no request at all.
+  // The campaign's findings, from the server: the same set its finding_count
+  // counts (finding filter, remediation key or explicit finding_ids), on the
+  // caller's in-scope assets. Explicitly linked ids can be unlinked here.
   const linkedFindingIds = (campaign?.finding_filter?.finding_ids as string[] | undefined) ?? []
+  const { can } = usePermissions()
+  const canReadFindings = can(Permission.FindingsRead)
   const {
-    data: linkedFindingsData,
+    data: campaignFindingsData,
     isLoading: findingsLoading,
     mutate: mutateFindings,
-  } = useFindingsApi(
-    // GET takes at most 100 ids per list (RFC-048: more is a 400, never a
-    // silent cut), and the page shows one page of 100 anyway.
-    { finding_ids: linkedFindingIds.slice(0, 100), per_page: 100 },
-    { enabled: linkedFindingIds.length > 0 }
-  )
-  const linkedFindings = linkedFindingIds.length > 0 ? (linkedFindingsData?.data ?? []) : []
+  } = useRemediationCampaignFindings(id, canReadFindings)
+  const linkedFindings = campaignFindingsData?.data ?? []
+  const campaignFindingTotal = campaignFindingsData?.total ?? 0
   const [ticketFinding, setTicketFinding] = useState<{ id: string; title: string } | null>(null)
 
   // Inline finding actions on the campaign (reuse the finding endpoints).
@@ -459,20 +456,20 @@ export default function CampaignDetailPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Target className="h-4 w-4" />
-              Findings ({linkedFindingIds.length})
+              Findings ({canReadFindings ? campaignFindingTotal : campaign.finding_count})
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {linkedFindingIds.length === 0 ? (
+            {!canReadFindings ? (
               <p className="text-muted-foreground text-sm">
-                No findings linked yet. Link findings from the task list (Edit → Link Findings) so
-                this campaign resolves them together.
+                You need permission to view findings to see this campaign&apos;s findings.
               </p>
             ) : findingsLoading ? (
-              <p className="text-muted-foreground text-sm">Loading linked findings…</p>
+              <p className="text-muted-foreground text-sm">Loading findings…</p>
             ) : linkedFindings.length === 0 ? (
               <p className="text-muted-foreground text-sm">
-                The linked findings are no longer available (they may have been deleted or merged).
+                No findings match this campaign yet. Link findings from the task list (Edit → Link
+                Findings) so this campaign resolves them together.
               </p>
             ) : (
               <div className="divide-y">
@@ -534,18 +531,25 @@ export default function CampaignDetailPage() {
                         >
                           <Ticket className="me-2 h-4 w-4" /> Create ticket
                         </DropdownMenuItem>
-                        <Can permission={Permission.RemediationWrite}>
-                          <DropdownMenuItem
-                            className="text-red-500"
-                            onClick={() => handleUnlinkFinding(f.id)}
-                          >
-                            <Link2Off className="me-2 h-4 w-4" /> Unlink from campaign
-                          </DropdownMenuItem>
-                        </Can>
+                        {linkedFindingIds.includes(f.id) && (
+                          <Can permission={Permission.RemediationWrite}>
+                            <DropdownMenuItem
+                              className="text-red-500"
+                              onClick={() => handleUnlinkFinding(f.id)}
+                            >
+                              <Link2Off className="me-2 h-4 w-4" /> Unlink from campaign
+                            </DropdownMenuItem>
+                          </Can>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                 ))}
+                {campaignFindingTotal > linkedFindings.length && (
+                  <p className="text-muted-foreground px-2 pt-2 text-xs">
+                    Showing {linkedFindings.length} of {campaignFindingTotal} findings.
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
