@@ -35,8 +35,11 @@ import { useScanRuns, useScanManagementStats } from '@/lib/api/scan-workflow-hoo
 import type { ScanRun, ScanRunListFilters } from '@/lib/api/scan-workflow-types'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
+  IDLE_RUN_LIST_REFRESH_MS,
   RUN_KIND_FILTERS,
   elapsedMs,
+  isRunInProgress,
+  runListRefreshInterval,
   runKindLabel,
   runSubjectFindingId,
   runTriggeredByLabel,
@@ -127,8 +130,13 @@ function ScanRunsTable() {
   }
   const [exporting, setExporting] = useState(false)
 
+  // Every 30 s while a listed run is live, every 2 min otherwise.
   const swrConfig = useMemo(
-    () => ({ revalidateOnFocus: false, refreshInterval: 30000, dedupingInterval: 5000 }),
+    () => ({
+      revalidateOnFocus: false,
+      refreshInterval: runListRefreshInterval(30000, IDLE_RUN_LIST_REFRESH_MS),
+      dedupingInterval: 5000,
+    }),
     []
   )
 
@@ -144,8 +152,14 @@ function ScanRunsTable() {
   }
 
   const { data, isLoading, error } = useScanRuns(filters, swrConfig)
-  const { data: overview, isLoading: isLoadingStats } = useScanManagementStats(swrConfig)
   const runs = data?.data ?? []
+  // The counts follow the list: live while a listed run is live.
+  const runsLive = runs.some(isRunInProgress)
+  const { data: overview, isLoading: isLoadingStats } = useScanManagementStats({
+    revalidateOnFocus: false,
+    dedupingInterval: 5000,
+    refreshInterval: runsLive ? 30000 : IDLE_RUN_LIST_REFRESH_MS,
+  })
   const counts = overview?.scan_runs
 
   const { setFilter } = list
