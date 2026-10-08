@@ -195,6 +195,7 @@ organization settings (`tenant.MCPSettings`), audited as
 | `scopes` | all read scopes | the scopes members may grant |
 | `api_keys_allowed` | on | off: `oct_` keys are `403` on the MCP endpoint (`middleware.MCPKeyPolicyGate`); still valid on the REST API |
 | `refresh_days` | 90 | a connection ends this many days after the person approved it |
+| `require_dpop` | off | only DPoP-bound tokens (below) |
 
 The policy is read on every use: at consent (the page shows why an
 application is blocked), at code redemption, at refresh (a connection older
@@ -229,6 +230,30 @@ days after they were revoked or expired, dynamic clients unused for 30 days
 and metadata-document clients without connections not fetched for 90 days.
 Blocked clients are kept.
 
+## DPoP (shipped)
+
+Sender-constrained tokens (RFC 9449), `pkg/dpop` and `mcpoauth/dpop.go`:
+
+- A client that sends a `DPoP` proof (ES256 or EdDSA, `typ: dpop+jwt`,
+  public `jwk`, `htm`/`htu` of the token endpoint, `iat` within 60 s, a
+  unique `jti`) to `/oauth/token` gets a grant bound to the key's RFC 7638
+  thumbprint (`mcp_oauth_grants.dpop_jkt`, migration `001356`) and
+  `token_type: DPoP`. The proof is checked before the code is redeemed, so a
+  bad proof does not burn the code.
+- Refreshing a bound grant needs a proof of the same key.
+- An MCP request with a bound token must use `Authorization: DPoP <token>`
+  and one `DPoP` header whose proof covers `POST ${APP_URL}/api/v1/mcp` and
+  the token (`ath`); a bearer token sent under the DPoP scheme, a bound
+  token sent as `Bearer`, a second proof header, a replayed proof or another
+  key is `401` with `WWW-Authenticate: DPoP error="invalid_dpop_proof",
+  algs="ES256 EdDSA"`.
+- Proof ids are remembered in Redis (`SETNX`, 2 minutes) across replicas;
+  without the cache proofs are refused (fail closed).
+- Organization policy `require_dpop` refuses code exchanges without a proof
+  and stops existing bearer connections at once.
+- Metadata: `dpop_signing_alg_values_supported` in both documents,
+  `dpop_bound_access_tokens_required: false` in the resource metadata.
+
 ## Planned
 
-DPoP and write-tool confirmation: see RFC-062 §14.
+Write-tool confirmation: see RFC-062 §10 and §14.

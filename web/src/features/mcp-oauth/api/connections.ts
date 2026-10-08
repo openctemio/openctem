@@ -43,13 +43,21 @@ export interface McpPolicy {
   api_keys_allowed: boolean
   refresh_days: number
   effective_refresh_days: number
+  /** Only DPoP-bound tokens (proof of the client key on every request). */
+  require_dpop: boolean
   platform_client_hosts: string[]
   available_scopes: McpScopeInfo[]
 }
 
 export type McpPolicyUpdate = Pick<
   McpPolicy,
-  'enabled' | 'any_client' | 'client_hosts' | 'scopes' | 'api_keys_allowed' | 'refresh_days'
+  | 'enabled'
+  | 'any_client'
+  | 'client_hosts'
+  | 'scopes'
+  | 'api_keys_allowed'
+  | 'refresh_days'
+  | 'require_dpop'
 >
 
 export const MY_CONNECTIONS_URL = '/api/v1/mcp-access/my-connections'
