@@ -164,4 +164,5 @@ UPDATE assets a
     OR jsonb_typeof(a.properties -> 'service') = 'object'
     OR jsonb_typeof(a.properties -> 'certificate') = 'object';
 
+-- expand-contract-ok: drops the temporary mapping table this migration created above, never a table the app reads
 DROP TABLE block_promotion;
