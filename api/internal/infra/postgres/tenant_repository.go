@@ -1849,3 +1849,38 @@ func (r *TenantRepository) ListActiveExternalFromHome(ctx context.Context, host,
 	}
 	return out, rows.Err()
 }
+
+// ListExternalHomed returns external memberships across organizations whose
+// home organization is f.Home (the home cascade, a system path): active ones,
+// or suspended ones with f.SuspendedReason. Each row carries its own host
+// tenant and is changed in that host only.
+func (r *TenantRepository) ListExternalHomed(ctx context.Context, f tenant.HomedFilter) ([]*tenant.Membership, error) {
+	query := `
+		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
+		       m.invited_by, m.joined_at,
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by,
+		       m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.expiry_reason, m.suspended_reason
+		FROM tenant_members m
+		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.kind = 'external' AND m.home_tenant_id = $1
+		  AND ($2::uuid IS NULL OR m.user_id = $2::uuid)
+		  AND ($3 = '' OR m.home_domain = $3)
+		  AND (($4 = '' AND m.status = 'active') OR ($4 <> '' AND m.status = 'suspended' AND m.suspended_reason = $4))
+		ORDER BY m.joined_at
+		LIMIT 5000
+	`
+	rows, err := r.db.QueryContext(ctx, query, f.Home.String(), nullID(f.User), f.Domain, f.SuspendedReason)
+	if err != nil {
+		return nil, fmt.Errorf("list external members by home: %w", err)
+	}
+	defer rows.Close()
+	var out []*tenant.Membership
+	for rows.Next() {
+		m, err := r.scanMembershipRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

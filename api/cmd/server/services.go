@@ -2364,6 +2364,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		return domainverify.OwnsAnySSODomain(ctx, repos.VerifiedDomain, tenantID)
 	})
 	s.Tenant.SetAddressClassifier(s.AddressClassifier)
+	// A domain the home organization stops holding suspends the members it
+	// managed elsewhere; proving it again restores them (RFC-058).
+	s.DomainVerify.SetClaimListener(s.Tenant)
 	s.Auth.SetInviteeClassifier(s.Tenant)
 
 	// Trusted organizations (RFC-058): home-realm sign-in for external
