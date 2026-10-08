@@ -89,7 +89,6 @@ import {
   type ScanWorkflow,
   type CreateScanWorkflowRequest,
   type UpdateScanWorkflowRequest,
-  SCAN_RUN_TRIGGER_LABELS,
   SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
 } from '@/lib/api'
 
@@ -274,9 +273,6 @@ export default function ScanWorkflowsPage() {
   const visibleWorkflows =
     owner === 'mine' ? tenantWorkflows : owner === 'system' ? systemTemplates : allWorkflows
 
-  const triggerText = (workflow: ScanWorkflow) =>
-    workflow.triggers.map((t) => SCAN_RUN_TRIGGER_LABELS[t.type]).join(', ') || 'Manual'
-
   const workflowColumns: ColumnDef<ScanWorkflow>[] = [
     {
       accessorKey: 'name',
@@ -312,16 +308,6 @@ export default function ScanWorkflowsPage() {
               ? 'Unavailable'
               : 'Inactive'}
         </Badge>
-      ),
-    },
-    {
-      id: 'trigger',
-      enableSorting: false,
-      header: 'Trigger',
-      cell: ({ row }) => (
-        <span className="whitespace-nowrap text-sm text-muted-foreground">
-          {triggerText(row.original)}
-        </span>
       ),
     },
     {
@@ -592,11 +578,7 @@ export default function ScanWorkflowsPage() {
                       </Badge>
                     </>
                   }
-                  meta={[
-                    pl.triggers.length > 0
-                      ? pl.triggers.map((t) => SCAN_RUN_TRIGGER_LABELS[t.type]).join(', ')
-                      : 'Manual',
-                  ]}
+                  meta={[`${pl.steps?.length ?? 0} steps`]}
                   actions={
                     isTemplate ? (
                       <>

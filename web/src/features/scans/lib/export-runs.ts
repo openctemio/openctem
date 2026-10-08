@@ -17,7 +17,7 @@ import type {
   ScanRunListResponse,
 } from '@/lib/api/scan-workflow-types'
 import type { ExportFieldConfig } from '@/hooks/use-csv-export'
-import { elapsedMs } from './run-display'
+import { elapsedMs, runKindLabel } from './run-display'
 
 /** The most runs one export reads. */
 export const RUN_EXPORT_CAP = 5000
@@ -33,7 +33,7 @@ export interface RunExport {
 
 /** Every run of the list for `filters` (status and sort), up to `cap`. */
 export async function fetchRunsForExport(
-  filters: Pick<ScanRunListFilters, 'status' | 'scan_id' | 'sort'>,
+  filters: Pick<ScanRunListFilters, 'status' | 'scan_id' | 'kind' | 'sort'>,
   cap: number = RUN_EXPORT_CAP,
   fetchPage: (url: string) => Promise<ScanRunListResponse> = (url) => get<ScanRunListResponse>(url)
 ): Promise<RunExport> {
@@ -54,6 +54,7 @@ export async function fetchRunsForExport(
 /** The columns of the export. */
 export const RUN_EXPORT_FIELDS: ExportFieldConfig<ScanRun>[] = [
   { header: 'Run ID', accessor: (r) => r.id },
+  { header: 'Kind', accessor: (r) => runKindLabel(r.kind) },
   {
     header: 'Scan',
     accessor: (r) => (r.scan_id ? (r.scan_name ?? 'Deleted scan') : 'Scan run'),
