@@ -132,7 +132,8 @@ func (s *RoleService) capExternalTarget(ctx context.Context, tid, uid roledom.ID
 	if s.membershipReader == nil || r == nil {
 		return nil
 	}
-	if r.ID() != roledom.OwnerRoleID && r.ID() != roledom.AdminRoleID && !r.HasFullDataAccess() {
+	privileged := r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID || r.HasFullDataAccess()
+	if !privileged && (s.externalCeiling == nil || r.ID() == roledom.ViewerRoleID) {
 		return nil
 	}
 	t, err := shared.IDFromString(tid.String())
@@ -150,10 +151,33 @@ func (s *RoleService) capExternalTarget(ctx context.Context, tid, uid roledom.ID
 		}
 		return fmt.Errorf("load membership: %w", err)
 	}
-	if m != nil && m.IsExternal() {
+	if m == nil || !m.IsExternal() {
+		return nil
+	}
+	if privileged {
 		return ErrExternalRoleCeiling
 	}
+	// The trust with the member's home may cap them at viewer.
+	if m.HomeTenantID() != nil {
+		ceiling, cerr := s.externalCeiling(ctx, t, *m.HomeTenantID())
+		if cerr != nil {
+			return fmt.Errorf("load the trust ceiling: %w", cerr)
+		}
+		if ceiling == "viewer" {
+			return ErrExternalViewerCeiling
+		}
+	}
 	return nil
+}
+
+// ErrExternalViewerCeiling refuses more than viewer for an external member
+// whose home organization's trust caps them at viewer.
+var ErrExternalViewerCeiling = fmt.Errorf("%w: the trust with this member's organization allows the viewer role only", ErrGrantForbidden)
+
+// SetExternalRoleCeiling wires the trust ceiling for external members:
+// ceiling returns "viewer" or "member" for members homed in home.
+func (s *RoleService) SetExternalRoleCeiling(ceiling func(ctx context.Context, host, home shared.ID) (string, error)) {
+	s.externalCeiling = ceiling
 }
 
 // ErrAdminPromotionOwnerOnly is returned when someone other than an owner tries

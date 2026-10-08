@@ -565,14 +565,18 @@ func (h *CommandHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := command.ListInput{
 		TenantID: tenantID,
 		SensorID: r.URL.Query().Get("sensor_id"),
 		Type:     r.URL.Query().Get("type"),
 		Status:   r.URL.Query().Get("status"),
 		Priority: r.URL.Query().Get("priority"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:     paging.Page,
+		PerPage:  paging.PerPage,
 	}
 
 	result, err := h.service.List(r.Context(), input)
@@ -838,7 +842,7 @@ func (h *CommandHandler) triggerScanRunStarted(ctx context.Context, cmd *command
 		return
 	}
 	if err := h.scanRunService.OnStepStarted(ctx, payload.ScanRunID, payload.StepKey, *cmd.SensorID, cmd.ID); err != nil {
-		h.logger.Warn("failed to mark pipeline step started",
+		h.logger.Warn("failed to mark scan workflow step started",
 			"scan_run_id", payload.ScanRunID,
 			"step_key", payload.StepKey,
 			"error", err,

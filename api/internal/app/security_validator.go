@@ -335,13 +335,13 @@ func (v *SecurityValidator) validateToolNameAndGetCapabilities(ctx context.Conte
 		// Try tenant-specific tool
 		t, err = v.toolRepo.GetByTenantAndName(ctx, tenantID, toolName)
 		if err != nil {
-			return nil, fmt.Errorf("tool not found in registry: %s", toolName)
+			return nil, fmt.Errorf("tool %q is not installed in this organization", toolName)
 		}
 	}
 
 	// Check if tool is active
 	if !t.IsActive {
-		return nil, fmt.Errorf("tool is not active: %s", toolName)
+		return nil, fmt.Errorf("tool %q is turned off", toolName)
 	}
 
 	// Normalize capabilities to lowercase for comparison
