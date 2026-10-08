@@ -94,7 +94,7 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 	}
 	if len(step.Capabilities) == 0 {
 		return StepTool{}, shared.NewDomainError(codeStepInvalid,
-			fmt.Sprintf("Step '%s' has no tool or capabilities configured. Please edit the pipeline and configure a scanner for this step.", step.StepKey),
+			fmt.Sprintf("Step '%s' has no tool or capabilities configured. Edit the scan workflow and configure a scanner for this step.", step.StepKey),
 			shared.ErrValidation)
 	}
 	if tools == nil {

@@ -56,7 +56,8 @@ type ctlSensor struct {
 	tools []string
 }
 
-func newCtlHarness(t *testing.T) *ctlHarness {
+// opts configure the command service (the claim-time scope re-check).
+func newCtlHarness(t *testing.T, opts ...command.Option) *ctlHarness {
 	t.Helper()
 	dbURL := testdb.URL()
 	if dbURL == "" {
@@ -82,7 +83,7 @@ func newCtlHarness(t *testing.T) *ctlHarness {
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
 	cmdRepo := postgres.NewCommandRepository(db)
-	cmdSvc := command.NewService(cmdRepo, log)
+	cmdSvc := command.NewService(cmdRepo, log, opts...)
 	sensorSvc.SetCancelFinder(cmdRepo)
 
 	ih := handler.NewIngestHandler(ingestSvc, sensorSvc, log)
