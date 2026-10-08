@@ -1579,8 +1579,7 @@ viewer (1) ┴─ Can only view resources
    Role-set changes also drop the user's cached membership, so
    `RequireTeamAdmin/Owner` see the new team role on the next request.
    `RevokeAllSessions` forces immediate re-auth. So the token is the fast path,
-   but the database is the source of truth — see
-   [permission-realtime-sync.md](./permission-realtime-sync.md).
+   but the database is the source of truth.
 
 3. **IDOR Prevention**: JWT-based tenant routes eliminate IDOR by design - users can only access their current tenant's data.
 
