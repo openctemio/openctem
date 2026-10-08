@@ -102,7 +102,7 @@ func TestTenableSCConnector_Flow(t *testing.T) {
 	tid := tenant
 	agt := &sensor.Sensor{ID: connSensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	cmdID := res.CommandID
-	bind := ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmdID, Tool: tenablesc.ToolName}
+	bind := ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmdID, Tool: tenablesc.ToolName, CommandType: command.CommandTypeConnectorSync}
 	for _, rep := range reports {
 		out, err := ing.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
 		if err != nil || len(out.Errors) > 0 {
