@@ -110,7 +110,7 @@ func newOptInScanService(o scanservice.OptInPolicy) (*scanservice.Service, *test
 	svc := scanservice.NewService(deps.scanRepo, deps.templateRepo, deps.assetGroupRepo, deps.runRepo,
 		deps.stepRepo, &mockStepRunRepo{}, deps.commandRepo, &mockScannerTemplateRepo{}, &mockTemplateSourceRepo{},
 		deps.toolRepo, &mockTemplateSyncer{}, deps.sensorSelector, deps.secValidator, logger.NewNop(),
-		scanservice.WithAuditService(deps.auditSvc), scanservice.WithOptInPolicy(o))
+		allowAllTargetChecks(scanservice.WithAuditService(deps.auditSvc), scanservice.WithOptInPolicy(o))...)
 	deps.toolRepo.tools["nuclei"] = &tool.Tool{ID: shared.NewID(), Name: "nuclei", IsActive: true, SupportedTargets: []string{"url", "domain", "ip"}}
 	return svc, deps
 }

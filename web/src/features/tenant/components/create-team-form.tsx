@@ -10,6 +10,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { devLog } from '@/lib/logger'
+import { useAppHost } from '@/hooks/use-app-origin'
 import { useRouter } from 'next/navigation'
 import { useForm, type UseFormReturn } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -338,6 +339,7 @@ function CreateTeamFormUI({
   selectedBundles,
   onToggleBundle,
 }: CreateTeamFormUIProps) {
+  const appHost = useAppHost()
   // No Card wrapper, no duplicate title, no icon clutter on labels.
   // The page-level <h1> already says "Set up your first team" — the form
   // just needs to be the form, not re-introduce a card title.
@@ -364,7 +366,7 @@ function CreateTeamFormUI({
           )}
         />
 
-        {/* URL Slug — single composite input. The "app.openctem.io/" prefix
+        {/* URL Slug — single composite input. The "<console host>/" prefix
             sits inline at the start of the box; the input shares the same
             border so the whole thing reads as one field, not two glued
             rectangles. */}
@@ -376,8 +378,11 @@ function CreateTeamFormUI({
               <FormLabel>Team URL</FormLabel>
               <FormControl>
                 <div className="border-input bg-background focus-within:border-ring focus-within:ring-ring/50 flex h-9 items-center rounded-md border shadow-xs transition-[color,box-shadow] focus-within:ring-[3px]">
-                  <span className="text-muted-foreground select-none ps-3 text-sm">
-                    app.openctem.io/
+                  <span
+                    data-testid="slug-host-prefix"
+                    className="text-muted-foreground select-none ps-3 text-sm"
+                  >
+                    {appHost}/
                   </span>
                   <Input
                     placeholder="acme-corp"

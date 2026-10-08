@@ -41,8 +41,13 @@ func TestCommandTierFor(t *testing.T) {
 		{"side effects", Job{Tool: "nuclei"}, sideEffects, TierIntrusive},
 		{"unreadable descriptor", Job{Tool: "nuclei"}, unreadable, TierIntrusive},
 		// A built-in tool the catalog does not route: its capabilities' floors.
-		{"built-in outside the catalog", Job{Tool: "acme-builtin"}, builtinContract("T0", "sast.code@1"), TierPassive},
-		{"built-in without capabilities", Job{Tool: "acme-builtin"}, builtinContract("T0"), TierIntrusive},
+		{"built-in outside the catalog", Job{Tool: "file-import"}, builtinContract("T0", "sast.code@1"), TierPassive},
+		{"built-in without capabilities", Job{Tool: "file-import"}, builtinContract("T0"), TierIntrusive},
+		// SECURITY: "builtin" is a sensor claim, honored only for a tool a
+		// released sensor compiles in; any other tool claiming it is
+		// unverified (T2), catalog-routed name or not.
+		{"unknown tool claims builtin", Job{Tool: "acme-builtin"}, builtinContract("T0", "sast.code@1"), TierIntrusive},
+		{"catalog tool the sensor does not ship claims builtin", Job{Tool: "zap"}, builtinContract("T0", "dast.web@1"), TierIntrusive},
 		// Out-of-band callbacks stay intrusive whatever the contract says.
 		{"interactsh", Job{Tool: "nuclei", Interactsh: true}, builtinContract("T1", "vuln.templates@1"), TierIntrusive},
 	}
@@ -59,16 +64,23 @@ func TestCommandTierFor(t *testing.T) {
 }
 
 func TestToolTrust(t *testing.T) {
-	if ToolTrust(nil) != "" || ToolTrust(builtinContract("T1")) != ToolTrustBuiltin {
+	if ToolTrust("naabu", nil) != "" || ToolTrust("naabu", builtinContract("T1")) != ToolTrustBuiltin {
 		t.Fatal("trust")
+	}
+	if ToolTrust("Gitleaks", builtinContract("T0")) != ToolTrustBuiltin {
+		t.Fatal("a retired name of a built-in tool is the built-in tool")
+	}
+	// SECURITY: a sensor cannot make its own tool builtin by claiming it.
+	if ToolTrust("acme-scan", builtinContract("T1")) != ToolTrustUnverified {
+		t.Fatal("an unknown tool claiming builtin is unverified")
 	}
 	c := builtinContract("T1")
 	c.Origin = ToolOriginAdapter
-	if ToolTrust(c) != ToolTrustUnverified {
+	if ToolTrust("naabu", c) != ToolTrustUnverified {
 		t.Fatal("an adapter is unverified")
 	}
 	c.Origin = ""
-	if ToolTrust(c) != ToolTrustUnverified {
+	if ToolTrust("naabu", c) != ToolTrustUnverified {
 		t.Fatal("an unknown origin is unverified")
 	}
 }

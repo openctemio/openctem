@@ -105,7 +105,7 @@ func (s *Service) PreviewJoin(ctx context.Context, tenantID, targetType, pattern
 	}
 	tt, err := scopedom.ParseTargetType(targetType)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err // wraps shared.ErrValidation
 	}
 	candidate, err := scopedom.NewTarget(tid, tt, pattern, "", "")
 	if err != nil {
