@@ -31,6 +31,12 @@ export interface VerifiedDomain {
   last_checked_at?: string | null
   created_at: string
   updated_at?: string
+  /**
+   * Another organization also held this domain verified for SSO when domain
+   * claims became exclusive (one organization per SSO domain). Both keep
+   * working until a platform administrator removes one of the claims.
+   */
+  claim_conflict?: boolean
 }
 
 /** GET list response is wrapped in a `verified_domains` envelope. */
