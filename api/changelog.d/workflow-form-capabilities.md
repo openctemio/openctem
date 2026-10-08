@@ -14,9 +14,9 @@
   uniqueness. Renaming a step never changes its key, and a key change moves
   the dependencies on it. Once a workflow has runs, the API refuses a change
   of a saved step's key: run history and data hops refer to it.
-- Editing a workflow in the form sends its steps only when they changed, and
-  then every field (id, tool preferences, retries, condition, settings,
-  layout); the builder sends every field too.
+- Editing a workflow in the form shows its steps again and sends them only
+  when they changed, and then every field (id, tool preferences, retries,
+  condition, settings, layout); the builder sends every field too.
 - A step position from the builder canvas may be fractional or negative: it
   is stored rounded. A non-finite or out-of-range position is a 400, not a
   500 (`invalid input syntax for type integer`).
