@@ -35,7 +35,7 @@ func newSessionsHarness(t *testing.T) *chainHarness {
 
 func sessionsOf(t *testing.T, c *consoleAdmin) handler.AdminSessionListResponse {
 	t.Helper()
-	code, body := c.do(http.MethodGet, "/api/v1/admin/sessions", nil, false)
+	code, body := c.do(http.MethodGet, "/api/v1/admin/console-sessions", nil, false)
 	if code != http.StatusOK {
 		t.Fatalf("list sessions: %d %s", code, body)
 	}
@@ -57,7 +57,7 @@ func TestAdminSessions(t *testing.T) {
 			ro.verify()
 			return ro
 		}()} {
-			if code, _ := c.do(http.MethodGet, "/api/v1/admin/sessions", nil, false); code != http.StatusForbidden {
+			if code, _ := c.do(http.MethodGet, "/api/v1/admin/console-sessions", nil, false); code != http.StatusForbidden {
 				t.Fatalf("list as %s: %d, want 403", c.a.Role(), code)
 			}
 		}
@@ -80,18 +80,18 @@ func TestAdminSessions(t *testing.T) {
 	}
 
 	t.Run("your own current session is refused", func(t *testing.T) {
-		if code, body := super.do(http.MethodDelete, "/api/v1/admin/sessions/"+mine,
+		if code, body := super.do(http.MethodDelete, "/api/v1/admin/console-sessions/"+mine,
 			map[string]string{"reason": "Testing self termination", "totp_code": super.freshCode(true)}, true); code != http.StatusBadRequest {
 			t.Fatalf("own session: %d %s, want 400", code, body)
 		}
 	})
 
 	t.Run("a reason and a code are required", func(t *testing.T) {
-		if code, _ := super.do(http.MethodDelete, "/api/v1/admin/sessions/"+theirs,
+		if code, _ := super.do(http.MethodDelete, "/api/v1/admin/console-sessions/"+theirs,
 			map[string]string{"totp_code": "123456"}, true); code != http.StatusBadRequest {
 			t.Fatalf("no reason: %d, want 400", code)
 		}
-		if code, _ := super.do(http.MethodDelete, "/api/v1/admin/sessions/"+theirs,
+		if code, _ := super.do(http.MethodDelete, "/api/v1/admin/console-sessions/"+theirs,
 			map[string]string{"reason": "Laptop reported stolen, ticket 77"}, true); code != http.StatusUnauthorized {
 			t.Fatalf("no code: %d, want 401", code)
 		}
@@ -102,7 +102,7 @@ func TestAdminSessions(t *testing.T) {
 
 	t.Run("ending a session signs that administrator out at once", func(t *testing.T) {
 		super.resetReplayGuard()
-		code, body := super.do(http.MethodDelete, "/api/v1/admin/sessions/"+theirs,
+		code, body := super.do(http.MethodDelete, "/api/v1/admin/console-sessions/"+theirs,
 			map[string]string{"reason": "Laptop reported stolen, ticket 77", "totp_code": super.freshCode(false)}, true)
 		if code != http.StatusNoContent {
 			t.Fatalf("end session: %d %s", code, body)

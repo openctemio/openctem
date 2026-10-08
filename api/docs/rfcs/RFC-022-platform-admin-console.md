@@ -593,9 +593,9 @@ again, without touching what an organization holds:
 ## Revision 16: security center
 
 - **Sessions** (Security > Sessions, super admin only, like the roster):
-  `GET /api/v1/admin/sessions` lists every open console session (the
+  `GET /api/v1/admin/console-sessions` lists every open console session (the
   administrator, role, break-glass, how they signed in, IP, started, last
-  seen; the caller's own is marked). `DELETE /api/v1/admin/sessions/{id}`
+  seen; the caller's own is marked). `DELETE /api/v1/admin/console-sessions/{id}`
   ends one at once: a reason (10 to 500 characters) and a fresh authenticator
   code, audited at high severity as `console.session_ended`. The caller's
   own current session is refused (sign out instead).
