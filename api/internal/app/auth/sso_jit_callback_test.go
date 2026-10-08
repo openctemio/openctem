@@ -212,7 +212,6 @@ func runOktaCallbackWith(t *testing.T, email string, verified map[string]bool, a
 		JWTSecret: "cb-test-secret-0123456789abcdef0123456789abcdef", JWTIssuer: "t",
 		AccessTokenDuration: time.Minute, RefreshTokenDuration: time.Hour, SessionDuration: time.Hour,
 		AllowedRedirectURIs: []string{"https://app.example.com/auth/sso/callback"},
-		AllowRegistration:   false, // SSO admission must not depend on self-registration
 	}
 	svc := NewSSOService(cbIPRepo{ip: ip}, cbTenantRepo{t: tn}, users, cbSessionRepo{created: sessions}, cbRefreshRepo{}, enc, cfg, logger.NewNop())
 	svc.httpClient = idpSrv.Client() // trust the mock's TLS cert (SafeHTTPClient refuses loopback)

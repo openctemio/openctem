@@ -251,7 +251,9 @@ async function backendFetchWithMeta<T>(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
+    const err = new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
+    if (typeof errorData.code === 'string') (err as Error & { code?: string }).code = errorData.code
+    throw err
   }
 
   const refreshToken = extractRefreshFromSetCookie(response)
@@ -310,6 +312,7 @@ export async function registerAction(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Registration failed',
+      code: (error as { code?: unknown } | null)?.code as string | undefined,
     }
   }
 }

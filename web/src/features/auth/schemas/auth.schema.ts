@@ -245,6 +245,8 @@ export type AuthErrorResponse = {
   success: false
   error: string
   errors?: Record<string, string[]> // Field-specific errors
+  /** The API's error code, when it sent one (e.g. SIGNUP_NOT_AVAILABLE). */
+  code?: string
 }
 
 /**

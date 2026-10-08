@@ -67,8 +67,6 @@ services:
       AUTH_MAX_LOGIN_ATTEMPTS: "5"
       AUTH_LOCKOUT_DURATION: 15m
       AUTH_MAX_ACTIVE_SESSIONS: "10"
-      # Self-registration is off by default; set true for an open dev instance.
-      AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-false}
       # Who creates organizations: admin_only (platform administrator: console or
       # bootstrap-admin -org-*) or self_service (any signed-in user; SaaS/trial).
       TENANT_CREATION_MODE: ${TENANT_CREATION_MODE:-admin_only}

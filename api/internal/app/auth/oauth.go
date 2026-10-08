@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
@@ -84,6 +85,38 @@ type OAuthService struct {
 	// pkceStore holds each login's PKCE code_verifier server-side, keyed by
 	// its state, until the callback consumes it.
 	pkceStore PKCEVerifierStore
+	// signupPolicy decides whether a social sign-in may create an account
+	// (signup.Admit). Nil: TENANT_CREATION_MODE from the config.
+	signupPolicy signupdom.PolicySource
+	// invitations answers whether a pending invitation is addressed to an
+	// email (an invited person may sign up with Google/GitHub/Microsoft).
+	invitations InvitationLookup
+}
+
+// InvitationLookup answers whether any organization has a pending invitation
+// for an email. Implemented by the tenant repository.
+type InvitationLookup interface {
+	HasPendingInvitationForEmail(ctx context.Context, email string) (bool, error)
+}
+
+// SetSignupPolicy wires the platform sign-up policy (the console setting).
+func (s *OAuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
+
+// SetInvitationLookup wires the pending-invitation check.
+func (s *OAuthService) SetInvitationLookup(l InvitationLookup) { s.invitations = l }
+
+// invitedPending reports whether a pending invitation is addressed to email.
+// A lookup error counts as not invited (fail-closed).
+func (s *OAuthService) invitedPending(ctx context.Context, email string) bool {
+	if s.invitations == nil {
+		return false
+	}
+	ok, err := s.invitations.HasPendingInvitationForEmail(ctx, email)
+	if err != nil {
+		s.logger.Warn("pending-invitation lookup failed; treating as not invited", "error", err)
+		return false
+	}
+	return ok
 }
 
 // SetPKCEStore replaces the PKCE verifier store. Production wires the Redis
@@ -770,13 +803,16 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 		return existingUser, nil
 	}
 
-	// SECURITY (FIX 4): when public registration is disabled, social login may
-	// only bind to an existing/pre-invited account (handled above) — it must NOT
-	// create a brand-new user. Reaching here means no account exists, so refuse.
-	if !s.authConfig.AllowRegistration {
-		s.logger.Warn("OAuth login refused: registration disabled and no account exists",
-			"email", userInfo.Email, "provider", provider)
-		return nil, ErrRegistrationDisabled
+	// SECURITY (FIX 4, sign-up policy): no account exists, so this sign-in
+	// would create one. It may only when the sign-up policy admits it
+	// (signup.Admit): self-service sign-up, or a pending invitation for this
+	// verified email. Otherwise nothing is written (no orphan account).
+	if !signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), signupdom.Identity{
+		Intent:         signupdom.IntentAccount,
+		InvitedPending: s.invitedPending(ctx, userInfo.Email),
+	}).Admitted() {
+		s.logger.Warn("OAuth sign-up refused by the sign-up policy", "provider", provider)
+		return nil, ErrSignupNotAvailable
 	}
 
 	// Create new user

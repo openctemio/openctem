@@ -35,6 +35,10 @@ var (
 	ErrAccountSuspended     = errors.New("account is suspended")
 	ErrEmailNotVerified     = errors.New("email is not verified")
 	ErrRegistrationDisabled = errors.New("registration is disabled")
+	// ErrSignupNotAvailable is the one refusal of every sign-up path the
+	// sign-up policy does not admit (signup.Admit). The caller has written
+	// nothing; the answer is the same whatever the reason.
+	ErrSignupNotAvailable = errors.New("sign-up is not available")
 	// ErrTenantCreationDisabled: TENANT_CREATION_MODE=admin_only, so only the
 	// platform administrator creates organizations (RFC-022).
 	ErrTenantCreationDisabled   = errors.New("organization creation is reserved for the application administrator")
@@ -388,8 +392,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// an unknown, expired or mismatched token, gets the same generic refusal so
 	// the response says nothing about the token.
 	invitationTenantID, invited := s.pendingInvitationFor(ctx, input.InvitationToken, email)
-	if !s.config.AllowRegistration && !invited {
-		return nil, ErrRegistrationDisabled
+	if !signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{
+		Intent: signupdom.IntentAccount, InvitedPending: invited,
+	}).Admitted() {
+		return nil, ErrSignupNotAvailable
 	}
 
 	// Check if email already exists
@@ -1642,13 +1648,28 @@ type CreateFirstTeamResult struct {
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
-// selfServiceTenantCreation reports whether people may create their own
-// organization: the console sign-up policy when wired, else the config.
-func (s *AuthService) selfServiceTenantCreation(ctx context.Context) bool {
-	if s.signupPolicy != nil {
-		return s.signupPolicy.Current(ctx).AllowsSelfService()
+// signupPolicyNow is the sign-up policy in force: the console setting when
+// wired, else TENANT_CREATION_MODE from the config (admin_only unless
+// self_service).
+func (s *AuthService) signupPolicyNow(ctx context.Context) signupdom.Policy {
+	return policyOrConfig(ctx, s.signupPolicy, s.config)
+}
+
+// policyOrConfig is shared by the services that admit sign-ups.
+func policyOrConfig(ctx context.Context, src signupdom.PolicySource, cfg config.AuthConfig) signupdom.Policy {
+	if src != nil {
+		return src.Current(ctx)
 	}
-	return s.config.SelfServiceTenantCreation()
+	if cfg.SelfServiceTenantCreation() {
+		return signupdom.Policy{Mode: signupdom.ModeSelfService}
+	}
+	return signupdom.Default()
+}
+
+// selfServiceTenantCreation reports whether people may create their own
+// organization (signup.Admit for an organization).
+func (s *AuthService) selfServiceTenantCreation(ctx context.Context) bool {
+	return signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{Intent: signupdom.IntentOrganization}).Admitted()
 }
 
 // CreateFirstTeam creates the first team for a user who has no tenants.

@@ -16,7 +16,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
-| Self-registration | `POST /api/v1/auth/register` | `AUTH_ALLOW_REGISTRATION=true` only (default false) |
+| Self-registration (email, or the first Google/GitHub/Microsoft sign-in) | `POST /api/v1/auth/register`, `/api/v1/auth/oauth/*` | the sign-up policy is `self_service`, or a pending invitation for the email ([Admission](#admission-one-rule-for-every-path)) |
 
 ## Sign-up policy (Console > System > Sign-up)
 
@@ -50,6 +50,30 @@ organization (the request queue follows in its own change).
 - **No lock-out.** A mode change never touches existing organizations,
   members, invitations or sessions; it decides only who may create a new
   organization from then on.
+
+### Admission: one rule for every path
+
+Every path that would write an account or an organization asks one function,
+`signup.Admit` (`pkg/domain/signup/admit.go`), so the paths cannot drift:
+
+| Creating | Admitted when | Path |
+|----------|---------------|------|
+| an organization | the policy is `self_service` | create-first-team, `POST /tenants` |
+| an account | an organization's SSO admits the identity (JIT: auto-provision, DNS-verified SSO domain, allowed domains), in either mode | OIDC/SAML callbacks |
+| an account | a pending invitation is addressed to the email, in either mode | register with the invitation token; a social sign-in whose verified email has a pending invitation |
+| an account | the policy is `self_service` | register, first social sign-in |
+
+Anything else is refused **before anything is written**: no `users`,
+`sessions`, `refresh_tokens` or membership row. Register and the social
+callback answer one refusal, 403 `SIGNUP_NOT_AVAILABLE` ("Your organization
+isn't set up yet"), whatever the reason, and the web sends the person to
+`/not-set-up` (en/vi), which names no organization. An account that already
+exists signs in as before: a mode change never locks anyone out.
+
+`AUTH_ALLOW_REGISTRATION` is retired: it could contradict
+`TENANT_CREATION_MODE` (with `admin_only` and registration on, a social
+sign-in created an account that could never get an organization). Startup
+logs a warning when it is still set.
 
 ### Invitation tokens stay out of URLs
 
@@ -201,7 +225,6 @@ UPDATE tenants
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `AUTH_ALLOW_REGISTRATION` | `false` | Open self-registration. Invited people can register either way. |
 | `TENANT_CREATION_MODE` | `admin_only` | **Seeds** the sign-up policy on the first start only (see [Sign-up policy](#sign-up-policy-console--system--sign-up)); afterwards the console value applies. Anything but `admin_only`/`self_service` fails startup. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password?token=`). |

@@ -80,7 +80,7 @@ func TestOAuthFindOrCreate_BlocksFederatedIdentityMismatch(t *testing.T) {
 // in with, so subsequent logins can be identity-matched.
 func TestOAuthFindOrCreate_BindsOnCreate(t *testing.T) {
 	repo := &fakeUserRepo{byEmail: nil} // no existing user → create path
-	s := &OAuthService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: true}}
+	s := &OAuthService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService}}
 
 	if _, err := s.findOrCreateUser(context.Background(),
 		&OAuthUserInfo{Email: "new@corp.com", Name: "New", Issuer: "iss-A", Subject: "sub-A"},
