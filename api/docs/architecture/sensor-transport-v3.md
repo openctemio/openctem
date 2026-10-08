@@ -170,3 +170,9 @@ Rules:
 | `GetSuppressions` | `GET /suppressions` (+ `If-None-Match`) |
 | `CheckFingerprints`, `BaselineDiff` | `POST /fingerprints/check`, `/fingerprints/baseline-diff` |
 | `IssueCertificate` | (new) client certificate for the sensor's key |
+
+`ClaimCommands` and the claim of `TransitionCommand` go through the same
+claim-time scope re-check as v2: a scan job whose targets were refused after
+it was queued comes back narrowed, or not at all (failed with
+`SCOPE_CHANGED`; a claim by id answers `command-claimed`). See
+[active-probe-gate.md](active-probe-gate.md#re-check-at-claim).

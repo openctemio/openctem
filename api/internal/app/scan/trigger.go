@@ -720,6 +720,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		return err
 	}
 	cmd.FreezeOverride = run.FreezeOverride
+	cmd.DispatchGate = scanDispatchGate(sc, run)
 
 	// usePlatform was decided before the run was created (decideSensorRouting).
 	if usePlatform {
