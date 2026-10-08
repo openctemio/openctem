@@ -13,7 +13,8 @@ import { NodePalette } from './node-palette'
 import type { ScanWorkflow, ScanWorkflowStep, UIPosition } from '@/lib/api'
 import { getErrorMessage } from '@/lib/api'
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
-import { generateTempStepId, generateStepKey } from '@/lib/utils'
+import { generateTempStepId } from '@/lib/utils'
+import { stepKeyBase, uniqueStepKey } from '../lib/step-keys'
 
 interface SaveData {
   steps: ScanWorkflowStep[]
@@ -142,9 +143,10 @@ export function VisualBuilderDialog({
     }) => {
       const { nodeType, position, label, capabilities, toolName } = data
       const stepName = label || `New ${nodeType.charAt(0).toUpperCase() + nodeType.slice(1)}`
-      // Use tool name for step_key if available (more meaningful), otherwise use step name
-      const stepKeyBase = toolName || stepName
-      const stepKey = generateStepKey(stepKeyBase)
+      const stepKey = uniqueStepKey(
+        stepKeyBase(toolName || stepName),
+        localSteps.map((s) => s.step_key)
+      )
 
       const newStep: ScanWorkflowStep = {
         id: generateTempStepId(), // Temporary ID - backend will assign real UUID on save
@@ -154,7 +156,8 @@ export function VisualBuilderDialog({
         order: localSteps.length + 1,
         node_type: 'scanner', // All workflow steps are scanners
         tool: toolName || '', // Pre-fill tool from palette
-        capabilities: capabilities || ['scan'],
+        // The palette passes the tool's own words; never a hardcoded one.
+        capabilities: capabilities ?? [],
         timeout_seconds: 3600,
         depends_on: [],
         ui_position: position,
@@ -168,7 +171,7 @@ export function VisualBuilderDialog({
       // Select the new node
       setSelectedStepId(newStep.id)
     },
-    [localSteps.length]
+    [localSteps]
   )
 
   // Handle node delete

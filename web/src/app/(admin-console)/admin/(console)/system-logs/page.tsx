@@ -1,17 +1,19 @@
 'use client'
 
-import { useState } from 'react'
 import { Main } from '@/components/layout'
 import { Input } from '@/components/ui/input'
 import { ErrorState, PageHeader } from '@/features/shared'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useListParams } from '@/hooks/use-list-params'
 import { useAdminAuditLogs } from '@/features/admin-console/api/use-admin-audit'
 import { AdminActivityTable } from '@/features/admin-console/components/admin-activity-table'
 
 export default function SystemLogsPage() {
-  const [page, setPage] = useState(1)
-  const [action, setAction] = useState('')
-  const [adminEmail, setAdminEmail] = useState('')
+  // The list lives in the URL (one list convention): page and its filters.
+  const list = useListParams({ filters: { action: '', admin_email: '' } })
+  const { page, setPage } = list
+  const action = list.filters.action
+  const adminEmail = list.filters.admin_email
   const dAction = useDebounce(action, 300)
   const dEmail = useDebounce(adminEmail, 300)
   const { data, error, isLoading, mutate } = useAdminAuditLogs({
@@ -44,20 +46,14 @@ export default function SystemLogsPage() {
                 <Input
                   placeholder="Action, e.g. console.login"
                   value={action}
-                  onChange={(e) => {
-                    setAction(e.target.value)
-                    setPage(1)
-                  }}
+                  onChange={(e) => list.setFilter('action', e.target.value)}
                   className="sm:max-w-xs"
                   aria-label="Filter by action"
                 />
                 <Input
                   placeholder="Administrator email"
                   value={adminEmail}
-                  onChange={(e) => {
-                    setAdminEmail(e.target.value)
-                    setPage(1)
-                  }}
+                  onChange={(e) => list.setFilter('admin_email', e.target.value)}
                   className="sm:max-w-xs"
                   aria-label="Filter by administrator"
                 />

@@ -618,6 +618,8 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 				// A failed retest check settles its retest now (unknown)
 				// instead of at the next sweep.
 				h.commands.triggerRetestSettle(res.Command)
+				h.commands.settleValidationRun(res.Command, false,
+					sensor.RedactPlatformText(res.Command.ErrorMessage), failCode)
 			}
 		}
 	}
