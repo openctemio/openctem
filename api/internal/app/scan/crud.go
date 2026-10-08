@@ -390,9 +390,10 @@ func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tena
 		return fmt.Errorf("%w: invalid scan_workflow_id", shared.ErrValidation)
 	}
 
-	pipelineTemplate, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, scanWorkflowID)
+	// A starter (system) workflow is usable by every tenant, read-only.
+	pipelineTemplate, err := s.usableWorkflow(ctx, tenantID, scanWorkflowID)
 	if err != nil {
-		return fmt.Errorf("scan workflow not found: %w", err)
+		return err
 	}
 
 	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, pipelineTemplate.ID)
@@ -724,8 +725,8 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			return nil, fmt.Errorf("%w: invalid scan_workflow_id", shared.ErrValidation)
 		}
 		tenantID, _ := shared.IDFromString(input.TenantID)
-		if _, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, scanWorkflowID); err != nil {
-			return nil, fmt.Errorf("scan workflow not found: %w", err)
+		if _, err := s.usableWorkflow(ctx, tenantID, scanWorkflowID); err != nil {
+			return nil, err
 		}
 		if err := sc.SetWorkflow(scanWorkflowID); err != nil {
 			return nil, err
