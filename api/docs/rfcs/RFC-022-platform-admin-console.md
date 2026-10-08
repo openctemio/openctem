@@ -22,6 +22,10 @@
 > change made in the console waits for an owner of the organization (see
 > [Revision 8](#revision-8-sso-changes-wait-for-an-owner)).
 
+> **Revision 10** (2026-10-08): who may create an organization is a console
+> setting, no longer only an environment variable (see
+> [Revision 10](#revision-10-the-sign-up-policy-is-a-console-setting)).
+
 > Scope: api + ui. Separates *application (platform) administration* from
 > *organization (tenant) administration*: the system administrator is an account
 > with a system-level role and a different menu (Organizations, Users, Scanning,
@@ -437,6 +441,24 @@ organization. So the console only **proposes** such a change:
   (`GET /admin/tenants/{id}/sso/changes`). Owners decide on
   Settings › SSO approvals (`/settings/sso-approvals`), linked from the
   notification.
+
+## Revision 10: the sign-up policy is a console setting
+
+`TENANT_CREATION_MODE` (revision 6) could only be changed by redeploying, and
+nothing in the console showed it. It is now the platform setting
+`signup_policy`, on System > Sign-up:
+
+- `admin_only` (default) or `self_service`, plus whether people may request
+  access;
+- the environment variable seeds it on the first start; the stored value wins
+  afterwards;
+- any administrator reads it; a super admin changes it with a fresh
+  authenticator code and the version read; every change is audited at
+  critical severity and emailed to the other administrators;
+- a read failure means `admin_only`; a change never touches existing
+  organizations, users or sessions.
+
+Details: `docs/architecture/user-onboarding.md`, "Sign-up policy".
 
 ## Later phases
 

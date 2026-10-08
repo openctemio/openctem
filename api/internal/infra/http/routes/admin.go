@@ -29,6 +29,8 @@ import (
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         ops_admin+ (+ audited)
 //	/admin/platform-idp       super_admin       super_admin (audited)
+//	/admin/settings/signup    any admin         super_admin + fresh TOTP code
+//	                                            (critical audit, admins emailed)
 //	/admin/tenants/{id}/audit-chain
 //	                          any admin         rebaseline: super_admin + fresh
 //	                                            TOTP code (audited, both logs)
@@ -97,6 +99,19 @@ func registerAdminRoutes(
 
 	// Build identity for the console's Help > About (any admin role).
 	router.GET("/api/v1/admin/version", handler.Version, adminMiddlewares...)
+
+	// The sign-up policy (Console > System > Sign-up): who may create an
+	// organization. Any admin reads; a super admin changes it with a fresh
+	// authenticator code (checked in the handler, which also writes the
+	// critical audit row and tells the other administrators).
+	if h.AdminSignup != nil {
+		router.Group("/api/v1/admin/settings/signup", func(r Router) {
+			r.GET("/", h.AdminSignup.Get)
+		}, adminMiddlewares...)
+		router.Group("/api/v1/admin/settings/signup", func(r Router) {
+			r.PUT("/", h.AdminSignup.Update)
+		}, superAdminOnly...)
+	}
 
 	// Provisioning a platform administrator (links or creates the users-table
 	// account they sign in with). Super admin only; the service writes the
