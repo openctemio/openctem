@@ -1216,6 +1216,27 @@ export async function forgotPasswordAction(
 }
 
 /**
+ * Email-first sign-in: asks whether the email's domain signs in through an
+ * organization's SSO. Any failure answers "password".
+ */
+export async function discoverSignInAction(
+  email: string
+): Promise<{ next: 'sso' | 'password'; org: string }> {
+  try {
+    const data = await backendFetch<{ next?: string; org?: string }>(authEndpoints.discover(), {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+    if (data.next === 'sso' && typeof data.org === 'string' && data.org) {
+      return { next: 'sso', org: data.org }
+    }
+  } catch {
+    // Discovery is a convenience: sign-in still works without it.
+  }
+  return { next: 'password', org: '' }
+}
+
+/**
  * Reset password with token
  */
 export async function resetPasswordAction(

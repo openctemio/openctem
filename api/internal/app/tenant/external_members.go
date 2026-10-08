@@ -187,6 +187,9 @@ func (s *TenantService) ClassifyAcceptedInvitation(ctx context.Context, inv *ten
 	if err != nil {
 		return err
 	}
+	if err := s.requirePersonalAllowed(ctx, inv.TenantID(), class); err != nil {
+		return err
+	}
 	return ApplyInviteeClassification(inv, m, class, access, now)
 }
 
@@ -204,4 +207,93 @@ func ApplyInviteeClassification(inv *tenantdom.Invitation, m *tenantdom.Membersh
 		return fmt.Errorf("%w (ask the organization for a new invitation)", err)
 	}
 	return nil
+}
+
+// ErrPersonalAccountsBlocked refuses a personal address in an organization
+// that blocks personal accounts.
+var ErrPersonalAccountsBlocked = fmt.Errorf("%w: this organization does not accept personal email accounts", shared.ErrForbidden)
+
+// requirePersonalAllowed refuses a personal invitee when the organization
+// blocks personal accounts.
+func (s *TenantService) requirePersonalAllowed(ctx context.Context, tenantID shared.ID, class tenantdom.Classification) error {
+	if !class.Personal {
+		return nil
+	}
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return fmt.Errorf("read the personal account policy: %w", err)
+	}
+	if sec.PersonalAccounts.Effective() == tenantdom.PersonalAccountsBlocked {
+		return ErrPersonalAccountsBlocked
+	}
+	return nil
+}
+
+// validateSSOExceptions checks each exception and that it names a member of
+// the organization.
+func (s *TenantService) validateSSOExceptions(ctx context.Context, tenantID shared.ID, exceptions []tenantdom.SSOException) error {
+	now := time.Now().UTC()
+	seen := map[string]bool{}
+	for _, e := range exceptions {
+		if err := e.Validate(now); err != nil {
+			return err
+		}
+		if seen[e.UserID] {
+			return fmt.Errorf("%w: one sso exception per member", shared.ErrValidation)
+		}
+		seen[e.UserID] = true
+		uid, _ := shared.IDFromString(e.UserID)
+		m, err := s.repo.GetMembership(ctx, uid, tenantID)
+		if err != nil || m == nil || m.IsOffboarded() {
+			return fmt.Errorf("%w: an sso exception must name a member of this organization", shared.ErrValidation)
+		}
+	}
+	return nil
+}
+
+// Lookalikes returns the members whose address looks like email once
+// personal-mail variants are ignored (dots and +tags in Gmail, +tags
+// elsewhere). It only warns: identity always stays the exact address.
+func (s *TenantService) Lookalikes(ctx context.Context, tenantID shared.ID, email string) []string {
+	want := canonicalMailbox(email)
+	if want == "" {
+		return nil
+	}
+	members, err := s.repo.ListMembersWithUserInfo(ctx, tenantID)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, m := range members {
+		if !strings.EqualFold(m.Email, email) && canonicalMailbox(m.Email) == want {
+			out = append(out, m.Email)
+		}
+	}
+	return out
+}
+
+// canonicalMailbox folds the variants a mail provider delivers to the same
+// mailbox: lower case, +tag removed, and for Gmail dots removed and
+// googlemail.com mapped to gmail.com.
+func canonicalMailbox(email string) string {
+	email = strings.ToLower(strings.TrimSpace(email))
+	at := strings.LastIndex(email, "@")
+	if at <= 0 || at == len(email)-1 {
+		return ""
+	}
+	local, domain := email[:at], email[at+1:]
+	if i := strings.IndexByte(local, '+'); i >= 0 {
+		local = local[:i]
+	}
+	if domain == "googlemail.com" {
+		domain = "gmail.com"
+	}
+	if domain == "gmail.com" {
+		local = strings.ReplaceAll(local, ".", "")
+	}
+	return local + "@" + domain
 }

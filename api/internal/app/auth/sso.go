@@ -93,6 +93,11 @@ type SSOService struct {
 	// pre-wiring. Fail-closed: an unverified/unknown domain never JIT-provisions.
 	domainVerifier DomainVerifier
 
+	// domainOwner answers which organization holds an email domain verified
+	// for SSO (email-first sign-in, discovery.go). Nil: discovery always
+	// answers "password".
+	domainOwner DomainOwnerLookup
+
 	// revocations records back-channel-logged-out sessions so their access
 	// tokens (and live WebSocket connections) stop at once rather than at
 	// expiry. nil = they expire naturally.

@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"time"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
@@ -177,14 +176,11 @@ func (h *CIAdminHandler) GetCoverage(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("state must be fresh, stale or never").WriteJSON(w)
 		return
 	}
-	in.Page, _ = strconv.Atoi(q.Get("page"))
-	in.PerPage, _ = strconv.Atoi(q.Get("per_page"))
-	if in.Page < 1 {
-		in.Page = 1
+	paging, ok := listPage(w, r, 25)
+	if !ok {
+		return
 	}
-	if in.PerPage < 1 || in.PerPage > cirunapp.MaxCoveragePerPage {
-		in.PerPage = 25
-	}
+	in.Page, in.PerPage = paging.Page, min(paging.PerPage, cirunapp.MaxCoveragePerPage)
 	scope, err := resolveDataScope(r.Context(), h.dataScope, tenantID)
 	if err != nil {
 		h.writeErr(w, err, "resolve data scope", "CI coverage")

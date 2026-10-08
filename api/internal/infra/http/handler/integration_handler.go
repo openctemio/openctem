@@ -581,14 +581,18 @@ func (h *IntegrationHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	query := r.URL.Query()
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := integrationapp.ListIntegrationsInput{
 		TenantID:  tenantID,
 		Category:  query.Get("category"),
 		Provider:  query.Get("provider"),
 		Status:    query.Get("status"),
 		Search:    query.Get("search"),
-		Page:      parseQueryInt(query.Get("page"), 1),
-		PerPage:   parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:      paging.Page,
+		PerPage:   paging.PerPage,
 		SortBy:    query.Get("sort"),
 		SortOrder: query.Get("order"),
 	}
@@ -1182,12 +1186,16 @@ func (h *IntegrationHandler) ListRepositories(w http.ResponseWriter, r *http.Req
 	}
 
 	query := r.URL.Query()
+	paging, ok := listPage(w, r, 30)
+	if !ok {
+		return
+	}
 	input := integrationapp.IntegrationListReposInput{
 		IntegrationID: id,
 		TenantID:      tenantID,
 		Search:        query.Get("search"),
-		Page:          parseQueryInt(query.Get("page"), 1),
-		PerPage:       parseQueryIntBounded(query.Get("per_page"), 30, 1, MaxPerPage),
+		Page:          paging.Page,
+		PerPage:       paging.PerPage,
 	}
 
 	result, err := h.service.ListSCMRepositories(r.Context(), input)
