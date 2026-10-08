@@ -60,6 +60,7 @@ const TUPLE_KEY_BASELINE: Record<string, number> = {
 const POLLING_BASELINE: Record<string, number> = {
   'app/(dashboard)/(discovery)/scans/[id]/page.tsx': 2,
   'app/(dashboard)/notifications/page.tsx': 1,
+  'features/admin-console/api/use-admin-overview.ts': 1,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
   'features/ci-runners/api/use-ci.ts': 2,
   'features/findings/api/use-finding-retests.ts': 1,

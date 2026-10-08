@@ -64,7 +64,7 @@ const PROTECTED_PAGES = [
   '/administrators',
 ]
 
-const ADMIN_PAGES = ['/admin', '/admin/organizations', '/admin/system-logs']
+const ADMIN_PAGES = ['/admin', '/admin/organizations', '/admin/security/activity']
 
 describe('decideAuth: routes x cookie states', () => {
   for (const [state, cookies] of Object.entries(COOKIE_STATES)) {

@@ -492,8 +492,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Docs: handler.NewDocsHandler("api/openapi/swagger.yaml"),
 
 		// Admin Auth (API Key authentication for Admin UI)
-		AdminAuth:           handler.NewAdminAuthHandler(log),
-		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
+		AdminAuth:         handler.NewAdminAuthHandler(log),
+		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
+		AdminOverview: handler.NewAdminOverviewHandler(
+			func(ctx context.Context, now time.Time) (postgres.AdminOverviewCounts, error) {
+				return postgres.ReadAdminOverview(ctx, deps.DB.DB, now)
+			},
+			func(ctx context.Context) (postgres.OpsSnapshot, error) {
+				return postgres.ReadOpsSnapshot(ctx, deps.DB.DB)
+			},
+			repos.Admin, shippedSchemaVersion(log), log),
 		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:     handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
