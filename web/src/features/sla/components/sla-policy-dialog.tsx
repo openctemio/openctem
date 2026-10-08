@@ -37,10 +37,11 @@ import { NO_SLA } from '../schemas/sla-policy-schema'
 
 import {
   slaPolicySchema,
-  DEFAULT_SLA_FORM,
+  newSlaPolicyForm,
   type SlaPolicyFormData,
 } from '../schemas/sla-policy-schema'
 import {
+  useDefaultSlaPolicyApi,
   useCreateSlaPolicy,
   useUpdateSlaPolicy,
   invalidateSlaPoliciesCache,
@@ -77,19 +78,25 @@ function toFormData(policy: SlaPolicy): SlaPolicyFormData {
 export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPolicyDialogProps) {
   const isEdit = Boolean(policy)
 
+  // A new policy starts from the windows the API reports as effective (the
+  // organization's default policy, else the platform defaults).
+  const { data: effective, isLoading: effectiveLoading } = useDefaultSlaPolicyApi()
+  const seed = policy ? toFormData(policy) : effective ? newSlaPolicyForm(effective) : undefined
+
   const form = useForm<SlaPolicyFormData>({
     resolver: zodResolver(slaPolicySchema),
-    defaultValues: DEFAULT_SLA_FORM,
+    defaultValues: seed,
   })
 
-  // Re-seed the form whenever the target policy (or open state) changes.
-  // react-hook-form's reset is stable across renders, so it adds no re-runs.
+  // Re-seed the form whenever the target policy, the effective windows or the
+  // open state change. react-hook-form's reset is stable across renders.
   const { reset } = form
   useEffect(() => {
-    if (open) {
-      reset(policy ? toFormData(policy) : DEFAULT_SLA_FORM)
-    }
-  }, [open, policy, reset])
+    if (!open) return
+    if (policy) reset(toFormData(policy))
+    else if (effective) reset(newSlaPolicyForm(effective))
+  }, [open, policy, effective, reset])
+  const seedMissing = !policy && !effective
 
   const { trigger: createPolicy, isMutating: isCreating } = useCreateSlaPolicy()
   const { trigger: updatePolicy, isMutating: isUpdating } = useUpdateSlaPolicy()
@@ -328,6 +335,13 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
               )}
             />
 
+            {seedMissing && (
+              <p className="text-sm text-muted-foreground" role="status">
+                {effectiveLoading
+                  ? 'Loading the current windows…'
+                  : 'The current windows could not be loaded; try again in a moment.'}
+              </p>
+            )}
             <DialogFooter>
               <Button
                 type="button"
@@ -337,7 +351,7 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isMutating}>
+              <Button type="submit" disabled={isMutating || seedMissing}>
                 {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                 {isEdit ? 'Save changes' : 'Create policy'}
               </Button>
