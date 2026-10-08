@@ -263,10 +263,10 @@ func (s *Service) PreviewTarget(ctx context.Context, input CreateTargetInput) (*
 	}
 	targetType, err := scopedom.ParseTargetType(input.TargetType)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err // wraps shared.ErrValidation
 	}
 	if err := scopedom.ValidatePattern(targetType, input.Pattern); err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err // wraps shared.ErrValidation
 	}
 	g := scopedom.DefaultGuardrails()
 	if s.guardrails != nil {
