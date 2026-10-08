@@ -1,53 +1,53 @@
 # RFC-001 Review: Multi-Perspective Assessment & Final Implementation Plan
 
-> **Status**: Completed — Feature doc: [docs/architecture/asset-identity-resolution.md](../architecture/asset-identity-resolution.md)
+> **Status**: Implemented — Feature doc: [docs/architecture/asset-identity-resolution.md](../architecture/asset-identity-resolution.md)
 
 ---
 
 ## Part 1: PM / Tech Lead / BA Assessment
 
-### 1.1 Gaps trong RFC hiện tại
+### 1.1 Gaps in the current RFC
 
 | # | Gap | Severity | Detail |
 |---|---|---|---|
-| G1 | **Thiếu acceptance criteria** | HIGH | RFC có design nhưng không có definition of done cho mỗi phase |
-| G2 | **Phase 1 migration quá mạo hiểm** | HIGH | Normalize + merge existing data trong 1 migration, nếu lỗi → data loss. Cần tách: normalize trước, merge sau (manual approve) |
-| G3 | **SDK-Go normalization duplicate logic** | MEDIUM | RFC đề xuất SDK-Go + API đều có normalize → 2 nơi maintain cùng logic. API đã là authoritative → SDK-Go chỉ cần lightweight (trim + lowercase), không cần full logic |
-| G4 | **Thiếu monitoring/metrics** | MEDIUM | Không có metric nào để track: bao nhiêu assets bị merge, bao nhiêu rename, bao nhiêu correlation miss |
-| G5 | **Thiếu backward compatibility test** | MEDIUM | Existing API consumers gửi name cũ (chưa normalize) — cần verify API response trả name mới không break client |
-| G6 | **findByIPs trả nhiều kết quả** | HIGH | RFC nói "1 query per batch" nhưng `FindByIPs` trả `map[string]*Asset` — cùng 1 IP có thể match nhiều assets (đây là vấn đề đang giải quyết). Cần trả `map[string][]*Asset` |
-| G7 | **Merge logic thiếu FK cascade** | HIGH | `mergeAsset()` phải di chuyển references từ 12+ tables (findings, asset_services, asset_relationships, compliance_mappings, suppressions...). RFC chỉ mention findings |
-| G8 | **Phase estimate quá lạc quan** | MEDIUM | Phase 1 "2 days" nhưng có migration normalize + merge existing data → thực tế 4-5 days gồm testing |
+| G1 | **Missing acceptance criteria** | HIGH | The RFC has a design but no definition of done for each phase |
+| G2 | **Phase 1 migration too risky** | HIGH | Normalize + merge existing data in 1 migration; on error → data loss. Must be split: normalize first, merge later (manual approval) |
+| G3 | **SDK-Go normalization duplicate logic** | MEDIUM | The RFC proposes normalization in both SDK-Go and the API → the same logic maintained in 2 places. The API is already authoritative → SDK-Go only needs a lightweight version (trim + lowercase), not the full logic |
+| G4 | **Missing monitoring/metrics** | MEDIUM | No metric tracks how many assets are merged, how many renamed, how many correlation misses |
+| G5 | **Missing backward compatibility test** | MEDIUM | Existing API consumers send old (not yet normalized) names — must verify that an API response returning the new name does not break clients |
+| G6 | **findByIPs returns multiple results** | HIGH | The RFC says "1 query per batch" but `FindByIPs` returns `map[string]*Asset` — the same IP can match several assets (the very problem being solved). It must return `map[string][]*Asset` |
+| G7 | **Merge logic lacks FK cascade** | HIGH | `mergeAsset()` must move references from 12+ tables (findings, asset_services, asset_relationships, compliance_mappings, suppressions...). The RFC only mentions findings |
+| G8 | **Phase estimate too optimistic** | MEDIUM | Phase 1 is "2 days" but includes a migration that normalizes + merges existing data → realistically 4-5 days including testing |
 
 ### 1.2 Risk assessment
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Migration merge sai asset | Medium | HIGH (data loss) | Dry-run + manual approval trước merge |
-| Performance regression khi ingest | Low | HIGH | Benchmark trước/sau, feature flag |
-| Breaking API contract (name thay đổi) | Medium | MEDIUM | Đánh version API, document breaking change |
-| Race condition trong correlation | Low | LOW | Accept eventual consistency |
+| Migration merges the wrong asset | Medium | HIGH (data loss) | Dry-run + manual approval before merge |
+| Performance regression during ingest | Low | HIGH | Benchmark before/after, feature flag |
+| Breaking API contract (name changes) | Medium | MEDIUM | Version the API, document the breaking change |
+| Race condition in correlation | Low | LOW | Accept eventual consistency |
 
 ---
 
 ## Part 2: Security Expert Assessment
 
-### 2.1 Security issues trong RFC
+### 2.1 Security issues in the RFC
 
 | # | Issue | Severity | Detail |
 |---|---|---|---|
-| S1 | **ReDoS trong URL normalize** | HIGH | `url.Parse()` an toàn, nhưng nếu thêm regex cho path normalization → ReDoS risk. RFC dùng `strings` functions → OK |
-| S2 | **Homoglyph/IDN attack** | MEDIUM | RFC nhắc punycode nhưng để Phase 3. Attack: `exаmple.com` (Cyrillic 'а') tạo asset khác `example.com`. Attacker có thể tạo asset giả mạo để ẩn findings |
-| S3 | **Merge log exposes tenant data** | LOW | `asset_merge_log` có `kept_asset_name`, `merged_asset_name` — nếu admin endpoint query cross-tenant → info leak. Cần filter by tenant_id |
-| S4 | **FindByIPs query timing attack** | LOW | `?|` operator trên JSONB array có thể slower cho arrays lớn → potential DoS nếu attacker gửi asset với 10000 IPs |
-| S5 | **IP correlation bypass** | MEDIUM | Attacker gửi asset "malicious-server" với IP của victim asset → force merge → hijack findings. Mitigation: chỉ merge cùng asset_type, verify provider trust |
-| S6 | **Normalization bypass** | LOW | Nếu normalize bị bypass (bug), 2 assets cùng canonical name nhưng khác raw name có thể tồn tại. DB unique constraint trên raw name → vẫn cho phép. Mitigation: normalize trong entity constructor (single chokepoint) |
+| S1 | **ReDoS in URL normalize** | HIGH | `url.Parse()` is safe, but adding a regex for path normalization → ReDoS risk. The RFC uses `strings` functions → OK |
+| S2 | **Homoglyph/IDN attack** | MEDIUM | The RFC mentions punycode but leaves it to Phase 3. Attack: `exаmple.com` (Cyrillic 'а') creates an asset distinct from `example.com`. An attacker can create a spoofed asset to hide findings |
+| S3 | **Merge log exposes tenant data** | LOW | `asset_merge_log` has `kept_asset_name`, `merged_asset_name` — if an admin endpoint queries across tenants → info leak. Must filter by tenant_id |
+| S4 | **FindByIPs query timing attack** | LOW | The `?|` operator on a JSONB array can be slower for large arrays → potential DoS if an attacker sends an asset with 10000 IPs |
+| S5 | **IP correlation bypass** | MEDIUM | An attacker sends an asset "malicious-server" with the victim asset's IP → forced merge → hijacked findings. Mitigation: only merge the same asset_type, verify provider trust |
+| S6 | **Normalization bypass** | LOW | If normalization is bypassed (a bug), 2 assets with the same canonical name but different raw names can coexist. The DB unique constraint is on the raw name → still allowed. Mitigation: normalize in the entity constructor (single chokepoint) |
 
 ### 2.2 Recommendations
 
-1. **S5 là quan trọng nhất**: Thêm `provider trust level` — chỉ merge khi cả 2 sources đều trusted, hoặc incoming source có trust >= existing
-2. **Giới hạn ip_addresses array**: Max 20 IPs per asset. Reject nếu vượt quá
-3. **Rate limit trên correlation**: Nếu 1 batch có >100 assets cần correlation → log warning, có thể skip correlation cho batch đó
+1. **S5 is the most important**: add a `provider trust level` — merge only when both sources are trusted, or the incoming source's trust >= the existing one
+2. **Limit the ip_addresses array**: max 20 IPs per asset. Reject if exceeded
+3. **Rate limit on correlation**: if 1 batch has >100 assets needing correlation → log a warning; correlation may be skipped for that batch
 
 ---
 
@@ -57,17 +57,17 @@
 
 | Scenario | User sees | Good/Bad |
 |---|---|---|
-| Asset renamed (IP → hostname) | Asset name thay đổi trong dashboard | **Confusing** nếu không thông báo |
-| 2 assets merge thành 1 | Finding count tăng, asset cũ biến mất | **Confusing** nếu user đang track asset cũ |
-| Search bằng tên cũ | Không tìm thấy (tên đã normalize) | **Bad** — cần search cả tên cũ |
-| Create asset trùng tên (case khác) | "Asset already exists" error | **Good** — clear feedback |
+| Asset renamed (IP → hostname) | Asset name changes in the dashboard | **Confusing** if not announced |
+| 2 assets merged into 1 | Finding count rises, the old asset disappears | **Confusing** if the user is tracking the old asset |
+| Search by the old name | Not found (the name was normalized) | **Bad** — search must also cover old names |
+| Create an asset with a duplicate name (different case) | "Asset already exists" error | **Good** — clear feedback |
 
-### 3.2 UX improvements cần thêm
+### 3.2 UX improvements to add
 
-1. **Search by alias**: Khi normalize rename asset, lưu tên cũ trong `properties.aliases[]` → search match cả aliases
-2. **Merge notification**: Khi merge xảy ra, hiện banner "X assets were merged due to duplicate detection"
-3. **Asset history**: Show timeline "Renamed from 192.168.1.10 → web-server-01 (correlated by IP)"
-4. **Preview normalization**: Trong form create asset, hiện preview "Will be saved as: example.com" khi user nhập "Example.COM"
+1. **Search by alias**: when normalization renames an asset, store the old name in `properties.aliases[]` → search also matches aliases
+2. **Merge notification**: when a merge happens, show a banner "X assets were merged due to duplicate detection"
+3. **Asset history**: Show timeline "Renamed from 192.0.2.10 → web-server-01 (correlated by IP)"
+4. **Preview normalization**: in the create-asset form, show the preview "Will be saved as: example.com" when the user types "Example.COM"
 
 ---
 
@@ -85,30 +85,30 @@
 
 | Concern | Severity | Analysis |
 |---|---|---|
-| `FindByIPs` with `?|` operator | MEDIUM | GIN index trên `ip_addresses` giúp, nhưng `?|` trên array of 200 IPs sẽ chậm. Benchmark cần thiết |
-| Multiple `OR` conditions trong `FindByIPs` | MEDIUM | 4 `OR` branches (name, ip, ip_address.address, ip_addresses) → Postgres có thể không dùng index hiệu quả → cần `EXPLAIN ANALYZE` |
-| Migration normalize 100K+ assets | HIGH | UPDATE 100K rows → table lock. Cần batch update (1000 rows/batch) |
-| Correlation per asset (not batched) | HIGH | RFC Section 5.3 gọi correlator per asset trong loop → N queries nếu không batch. Section 5.4 có batch solution nhưng chưa wire vào 5.3 |
+| `FindByIPs` with `?|` operator | MEDIUM | A GIN index on `ip_addresses` helps, but `?|` on an array of 200 IPs will be slow. Benchmark required |
+| Multiple `OR` conditions in `FindByIPs` | MEDIUM | 4 `OR` branches (name, ip, ip_address.address, ip_addresses) → Postgres may not use indexes efficiently → needs `EXPLAIN ANALYZE` |
+| Migration normalize 100K+ assets | HIGH | UPDATE 100K rows → table lock. Needs batched updates (1000 rows/batch) |
+| Correlation per asset (not batched) | HIGH | RFC Section 5.3 calls the correlator per asset in a loop → N queries without batching. Section 5.4 has a batch solution but it is not wired into 5.3 |
 
 ### 4.3 Query optimization recommendations
 
-1. **Tách FindByIPs thành 2 queries**: Query 1 check `ip_addresses ?| array` (GIN index), Query 2 check `properties->>'ip' = ANY()` (btree index). Postgres xử lý 2 indexed queries nhanh hơn 1 query 4 OR branches
-2. **Batch correlation**: Gom tất cả IPs cần correlate → 1 query thay vì N queries
+1. **Split FindByIPs into 2 queries**: Query 1 checks `ip_addresses ?| array` (GIN index), Query 2 checks `properties->>'ip' = ANY()` (btree index). Postgres handles 2 indexed queries faster than 1 query with 4 OR branches
+2. **Batch correlation**: collect all IPs to correlate → 1 query instead of N queries
 3. **Migration chunked**: UPDATE ... WHERE id IN (SELECT id FROM assets LIMIT 1000) — batch 1000 rows
-4. **Add composite index**: `CREATE INDEX idx_assets_tenant_type_name ON assets(tenant_id, asset_type, LOWER(name))` cho case-insensitive lookup
+4. **Add composite index**: `CREATE INDEX idx_assets_tenant_type_name ON assets(tenant_id, asset_type, LOWER(name))` for case-insensitive lookup
 
 ---
 
 ## Part 5: Final Implementation Plan (Revised)
 
-### Thay đổi so với RFC gốc
+### Changes from the original RFC
 
-1. **Tách Phase 1 thành 1a + 1b**: Normalize code (safe) + Data migration (risky) riêng biệt
-2. **Thêm Phase 0**: Monitoring + metrics setup trước
-3. **Batch correlation thay vì per-asset**: Wire FindByIPs batch vào flow
-4. **Aliases support**: Lưu tên cũ khi rename
-5. **Giới hạn ip_addresses**: Max 20 IPs/asset
-6. **Trust-based merge**: Chỉ merge khi sources đều trusted
+1. **Split Phase 1 into 1a + 1b**: normalize code (safe) and data migration (risky) separately
+2. **Add Phase 0**: set up monitoring + metrics first
+3. **Batch correlation instead of per-asset**: wire the FindByIPs batch into the flow
+4. **Aliases support**: keep the old name on rename
+5. **Limit ip_addresses**: max 20 IPs/asset
+6. **Trust-based merge**: merge only when both sources are trusted
 
 ### Revised Phases
 
@@ -155,7 +155,7 @@ Phase 4: Admin Tools + UX (2 days)
 
 ### Phase 0: Foundation (1 day)
 
-**Goal**: Setup infrastructure trước khi thay đổi logic.
+**Goal**: set up infrastructure before changing logic.
 
 ```go
 // config/config.go
@@ -718,13 +718,13 @@ Phase 0 ──→ Phase 1a ──→ Phase 1b ──→ Phase 2 ──→ Phase 
                                                       └──→ Phase 4
 ```
 
-Phases 3 và 4 có thể song song nếu có 2 dev.
+Phases 3 and 4 can run in parallel with 2 developers.
 
 ---
 
-## Checklist trước khi bắt đầu
+## Checklist before starting
 
-- [ ] Backup database production trước Phase 1b
+- [ ] Back up the production database before Phase 1b
 - [ ] Dry-run migration report reviewed by team
 - [ ] Feature flags documented in deployment guide
 - [ ] Monitoring dashboard for asset normalization metrics ready

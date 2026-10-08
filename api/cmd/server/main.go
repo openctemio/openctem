@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
@@ -33,8 +34,8 @@ import (
 // @contact.url    https://github.com/openctemio/openctem
 // @contact.email  support@openctem.io
 
-// @license.name  MIT
-// @license.url   https://opensource.org/licenses/MIT
+// @license.name  GPL-3.0-only
+// @license.url   https://www.gnu.org/licenses/gpl-3.0.html
 
 // @host      localhost:8080
 // @BasePath  /api/v1
@@ -60,6 +61,9 @@ var (
 	routePath   = flag.String("route-path", "", "Filter routes containing this path")
 	routeSort   = flag.String("route-sort", "path", "Sort routes by: path, method, handler")
 
+	checkConfig = flag.Bool("check-config", false,
+		"Load and validate the configuration from the environment, print the result and exit (0 = valid, 1 = invalid); connects to nothing")
+
 	sensorUpgradeCheck = flag.Bool("sensor-upgrade-check", false,
 		"Report data and schema still carrying the pre-sensor 'agent' vocabulary after migration 000230, then exit (0 = clean, 1 = leftovers)")
 )
@@ -76,6 +80,9 @@ func run() int {
 	// Configuration & Logger
 	// ==========================================================================
 	cfg, err := config.Load()
+	if *checkConfig {
+		return reportConfigCheck(os.Stdout, os.Stderr, cfg, err)
+	}
 	if err != nil {
 		log := logger.NewDefault()
 		log.Error("failed to load configuration", "error", err)
@@ -344,6 +351,11 @@ func run() int {
 
 	server := http.NewServer(cfg, log)
 	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache, services.PermCache, services.PermVersion)
+	// Sensor protocol v3 HTTPS binding (RFC-059): ahead of the router, which
+	// would cut its control stream; it carries its own guards.
+	if handlers.SensorV3 != nil {
+		server.MountPrefix(sensortransport.PathPrefix, handlers.SensorV3.HTTPSHandler(handlers.SensorResultsV2.AuthenticateV3))
+	}
 
 	// Handle --routes flag
 	if *showRoutes {
@@ -407,6 +419,11 @@ func run() int {
 			log.Error("server error", "error", err)
 		}
 	}()
+	if handlers.SensorV3 != nil {
+		if err := handlers.SensorV3.Start(ctx); err != nil {
+			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
+		}
+	}
 	log.Info("application started", "http_addr", cfg.Server.Addr())
 
 	// ==========================================================================
@@ -435,6 +452,11 @@ func run() int {
 	}
 
 	// Then stop server
+	if handlers.SensorV3 != nil {
+		if err := handlers.SensorV3.Shutdown(shutdownCtx); err != nil {
+			log.Error("sensor protocol v3 gRPC binding shutdown", "error", err)
+		}
+	}
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error("shutdown error", "error", err)
 		return 1

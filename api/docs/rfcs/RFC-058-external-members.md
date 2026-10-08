@@ -121,16 +121,38 @@ An organization may verify several SSO domains (one claim per domain, platform-w
 
 Lapsed-domain members keep their access. Their sign-in method (SSO, or password with MFA) is unchanged; the flag lets an administrator review them.
 
-## 10. Parts still to build
+## 10. Console (part 6, implemented)
+
+| Surface | What it shows |
+|---|---|
+| **Organization switcher** | `GET /users/me/tenants` (and `GET /tenants`) return, for each of the caller's own memberships, `kind`, `access_expires_at` and `blocked_reason`. `blocked_reason` is `suspended`, `expired`, `home_access_ended`, `home_domain_lapsed`, `trust_revoked` or `personal_accounts_blocked`. The switcher marks external organizations, says when access ends, and disables a blocked organization with the reason. It also skips blocked organizations in the keyboard shortcuts and offers a search above seven organizations. |
+| **Members** | The list filters on `?kind=internal|external` (the External members view). Shared badges: External (managed by a named organization), Personal, Unmanaged, Lapsed domain, SSO exception, end of access. A disabled member shows why (access ended, left their organization, ...). Owners and admins change an external member's end of access (`PATCH /organization/members/{member_id}/access`). |
+| **Invitations** | The invite dialog takes an end of access for people outside the organization (empty: the API proposes 90 days). After creation it shows the look-alike warning and the end of access. |
+| **Trusted organizations** | Settings › Organization › Trusted organizations lists the organizations this one trusts and those that trust it. Owners request a trust (domain, highest role, home SSO, MFA proof, API keys, proposed end of access), change its settings, approve an incoming trust (attesting the identity provider's MFA) or end one. Admins read. |
+| **Platform administrator console** | The verified domains of an organization show how SSO treats newcomers on each domain (role, or not admitted) and change it (per-domain JIT). |
+| **Authentication settings** | Personal accounts policy and, while SSO is enforced, the SSO exception list, saved with the rest of the security settings (owner, step-up). |
+
+## 11. Least-privilege defaults (part 7, implemented)
+
+Every way into an organization starts at the lowest privilege. Raising it is a decision someone takes, is audited and is announced.
+
+| Path | Default and guard | Where |
+|---|---|---|
+| Invitation, created user | The console preselects the viewer role. Admin is offered only to the owner; the role ceiling and the external viewer-only rule apply as before. | `defaultViewerRoleId`, `CreateInvitation` |
+| SSO just-in-time | The role of the domain (part 5), else the identity provider's default, which is viewer for a new OIDC provider and a new SAML configuration. | `jitRoleFor`, `samlprovider.New` |
+| SCIM | A provisioned person is a viewer. A group change only applies a role group that matches (mapped, or named member / viewer). Without one the role is kept: nothing is raised, and an administrator falls back to member. | `scim.ProvisioningService`, `reconcileUser` |
+| Data scope | No path adds a team or a grant: a newcomer sees no data until a team includes them. | unchanged |
+| Raising JIT | An identity provider's default role is changed through an SSO change that an owner approves with step-up. A platform administrator who raises a domain's provisioning (admits newcomers, or a higher role) now also goes through the owner (`domain_jit` change, migration 001339). Lowering it applies at once. | `SSOChangeService.SubmitDomainJIT`, `JITRaises` |
+| **Approval mode** | `Security.jit_requires_approval` (owner, step-up). With it on, a newcomer SSO admits gets a membership that is suspended with the reason `awaiting_approval`. Their sign-in answers "waiting for an administrator's approval", and the administrators are told. Approving is re-enabling the member (audited as an approval); rejecting is offboarding. | `Membership.HoldForApproval`, `holdIfApprovalRequired`, `ReactivateMember` |
+| **Privilege notices** | Owners and administrators get an in-app notice when a member gains privileges: the membership role raised; the owner, admin or a full-data-access role granted (assign, set, bulk); or a newcomer approved. | `TenantService.NotifyPrivilegeIncrease`, `RoleService.notifyElevated` |
+
+## 12. Parts still to build
 
 1. **Policy:** `Security.ExternalMembers` (off / invite-only / trusted-only).
 2. **Home cascade, remaining cause:** the home organization itself being suspended or scheduled for deletion. This waits for the organization states from research/71.
 3. **Personal accounts:** a second factor (TOTP) for social-login accounts.
-4. **Domains:** include-subdomains on a verified domain; SSO-only suspension of lapsed-domain members after 30 days.
-5. **UI:**
-   - org switcher (recent, search, external chip, blocked rows with the reason);
-   - External members view;
-   - Trusted organizations setting;
-   - shared member badges (SSO / Domain / External / Personal / Unmanaged / Lapsed / Exception).
+4. **Domains:**
+   - include-subdomains on a verified domain;
+   - SSO-only suspension of lapsed-domain members after 30 days.
 
 Invitation-based cross-organization membership, badges, expiry and the home cascade work on every plan. Trusts, home-realm SSO acceptance and trusted-domain JIT need SSO.

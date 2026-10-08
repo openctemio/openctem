@@ -79,7 +79,7 @@ stable per (type, host), so a daily re-poll upserts the same rows (refreshing
 ## 6. Not built (Phase 2 — deliberately deferred)
 
 - **Lookalike / typosquat detection** — flagging brand-adjacent domains in CT
-  (e.g. `acme-login.com` for `acme.com`). This needs a similarity search over CT,
+  (e.g. `example-login.test` for `example.com`). This needs a similarity search over CT,
   is noisy, and maps to a CTEM-ID `lookalike domains` category; deferred.
 - **Asset promotion** — turning a discovered subdomain into a first-class asset
   record. This connector only emits exposures; asset creation stays owned by the

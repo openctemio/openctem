@@ -67,15 +67,32 @@ Your plan allows 5 seats; you use 7. Remove some, or ask your administrator for 
 is refused ("This could not be checked against your plan right now"). Every
 refusal increments `openctem_plan_limit_refusals_total{key}`.
 
-| Path | Key | Status |
-|------|-----|--------|
-| `POST /api/v1/tenants` (another self-service organization) | `free_teams_per_user` | enforced |
-| invitation accept, SSO JIT, SCIM create | `seats` | next change |
-| asset create and ingest (refused with an error and the metric, never dropped silently) | `assets` | next change |
-| sensor pairing | `sensors` | next change |
-| API key create | `api_keys` | next change |
-| CI trust create | `ci_trusts` | next change |
-| invitation create | `invites_per_day` | next change |
+The check sits at the **insert** (`internal/infra/postgres/plan_limits.go`),
+so every path that adds a row passes it, whatever the caller:
+
+| Insert | Key | Paths it covers |
+|--------|-----|-----------------|
+| `TenantRepository.CreateMembership`, `AcceptInvitationTx` | `seats` | invitation accept (both endpoints), SSO and federated JIT, SCIM create, administrator-created users, direct adds |
+| `TenantRepository.CreateInvitation` | `invites_per_day` | invitation create |
+| `AssetRepository.Create` | `assets` | asset create, discovery that creates one asset |
+| `AssetRepository.UpsertBatch` | `assets` (only the batch's assets that do not exist yet) | ingest: a batch over the limit is refused **whole** with the limit error, never dropped silently; re-ingesting existing assets is never refused |
+| `SensorRepository.Create` | `sensors` (not platform sensors) | sensor create, bootstrap registration |
+| `SensorPairingRepository.Approve` (new sensor, not a re-pair) | `sensors` | sensor pairing |
+| `APIKeyRepository.Create` | `api_keys` | API key create |
+| `CIRunRepository.CreateTrustConfig` | `ci_trusts` | CI trust create |
+| `POST /api/v1/tenants` | `free_teams_per_user` | another self-service organization |
+
+Not checked: the first owner of an organization (its creation, and the
+console's first-owner account), and re-activating an existing row.
+
+Answers: 403 `PLAN_LIMIT` with the message above on the management API; SCIM
+answers 403 with the message as `detail`; an SSO sign-up into an organization
+with no free seat answers 403 `PLAN_LIMIT` "This organization has no free seat
+for you" (no usage numbers, the person is not a member yet).
+
+The check reads usage before the insert, outside its transaction, so two
+concurrent additions at limit-1 can both pass. The limit is a commercial cap,
+not a security boundary; that overshoot is accepted.
 
 ## Who changes what
 
@@ -90,6 +107,17 @@ refusal increments `openctem_plan_limit_refusals_total{key}`.
 
 The defaults are stored in `platform_settings` under `plan_limits`; until an
 administrator saves them the built-in defaults above apply.
+
+## Where people see it
+
+- Console > System > Plans: the plan defaults (a grid of plans and limits;
+  empty means unlimited). Read-only for administrators below super admin.
+- Console > Organizations > an organization > Plan: the plan (ops_admin+ can
+  change it), used/allowed per limit, an **Over limit** badge, and limits set
+  for this organization (reason, optional expiry; removable).
+- Settings > Organization > Plan & usage (`/settings/plan`, owners and
+  admins, en/vi): the plan and used/allowed per limit, with a notice when the
+  organization is over its plan.
 
 ## Code map
 

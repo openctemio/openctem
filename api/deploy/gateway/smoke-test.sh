@@ -9,7 +9,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 image="caddy:${CADDY_VERSION:-2.11.4-alpine}"
-run="gwsmoke-$$"
+run="${SMOKE_PREFIX:-gwsmoke}-$$"
 net="$run-net"
 fail=0
 
@@ -62,6 +62,11 @@ refuses "internal without hostname" -e OPENCTEM_TLS_MODE=internal
 refuses "acme without ACME_EMAIL" -e OPENCTEM_TLS_MODE=acme -e OPENCTEM_HOSTNAME=x
 refuses "files without a certificate" -e OPENCTEM_TLS_MODE=files -e OPENCTEM_HOSTNAME=x
 refuses "plain http without opt-in" -e OPENCTEM_TLS_MODE=http
+refuses "unknown sensor gateway mode" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=tcp
+refuses "sensor passthrough without its host name" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=passthrough
+refuses "sensor passthrough with a port in the host name" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=s.x:443
+refuses "sensor passthrough on the platform host name" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=x
+refuses "sensor passthrough without the layer4 module" -e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=x -e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=s.x
 if docker run --rm -e OPENCTEM_TLS_MODE=http -e OPENCTEM_ALLOW_PLAIN_HTTP=true -v "$here:/etc/caddy:ro" \
 	--entrypoint sh "$image" /etc/caddy/entrypoint.sh true >/dev/null 2>&1; then
 	ok "plain http with OPENCTEM_ALLOW_PLAIN_HTTP=true is accepted"
@@ -111,6 +116,7 @@ done
 # from the API's plane table).
 probe api GET /api/v1/agent/heartbeat
 probe api PUT /api/v2/sensor/results/r1/segments/0
+probe api POST /api/v3/sensor/openctem.sensor.v3.SensorService/Heartbeat
 probe api POST /api/v1/validation/evidence
 probe api GET /scim/v2/Users
 probe api POST /api/v1/mcp

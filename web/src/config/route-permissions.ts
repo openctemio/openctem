@@ -588,7 +588,16 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     message: 'Only an owner can approve or reject SSO changes.',
   },
+  // Owners and admins read trusts; changes are owner only (api RFC-058).
+  '/settings/trusted-organizations': {
+    permission: Permission.TeamUpdate,
+    message: 'Only owners and admins can see trusted organizations.',
+  },
   '/settings/modules': {
+    permission: Permission.TeamUpdate,
+  },
+  // Plan & usage: owners and admins (GET /organization/plan needs admin).
+  '/settings/plan': {
     permission: Permission.TeamUpdate,
   },
   // The user's own notification settings live at /account/notifications

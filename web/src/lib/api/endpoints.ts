@@ -384,6 +384,18 @@ export const tenantEndpoints = {
     `/api/v1/organization/members/${memberId}/access-report`,
 
   /**
+   * When an external member's access ends (PATCH, owner/admin) — RFC-058
+   */
+  memberAccess: (memberId: string) => `/api/v1/organization/members/${memberId}/access`,
+
+  /**
+   * Trusted organizations (GET owner/admin; changes owner + step-up) — RFC-058
+   */
+  orgTrusts: () => '/api/v1/organization/trusts',
+  orgTrust: (trustId: string) => `/api/v1/organization/trusts/${trustId}`,
+  approveOrgTrust: (trustId: string) => `/api/v1/organization/trusts/${trustId}/approve`,
+
+  /**
    * Offboard a member with mandatory reassignment (POST, owner/admin)
    */
   offboardMember: (memberId: string) => `/api/v1/organization/members/${memberId}/offboard`,

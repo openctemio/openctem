@@ -37,6 +37,9 @@ type CommandRepository struct {
 	db *DB
 	// lease is how long a claim holds without renewal (command_lease.go).
 	lease time.Duration
+	// notify hears about writes that give or take a sensor's work
+	// (command_notify.go); nil: none.
+	notify CommandChangeNotifier
 }
 
 // NewCommandRepository creates a new CommandRepository.
@@ -97,7 +100,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 		}
 		return fmt.Errorf("failed to create command: %w", err)
 	}
-
+	r.changed(cmd)
 	return nil
 }
 
@@ -680,7 +683,7 @@ func (r *CommandRepository) Update(ctx context.Context, cmd *command.Command) er
 	if rowsAffected == 0 {
 		return shared.ErrNotFound
 	}
-
+	r.changed(cmd)
 	return nil
 }
 
@@ -1577,6 +1580,7 @@ func (r *CommandRepository) ReleasePendingFromUnavailableSensors(ctx context.Con
 	if err != nil {
 		return 0, fmt.Errorf("failed to read rows affected: %w", err)
 	}
+	r.changedMany(n)
 	return n, nil
 }
 
@@ -1601,7 +1605,7 @@ func (r *CommandRepository) RecoverStuckTenantCommands(ctx context.Context, stuc
 	if err != nil {
 		return 0, fmt.Errorf("failed to recover stuck tenant commands: %w", err)
 	}
-
+	r.changedMany(recovered)
 	return recovered, nil
 }
 
@@ -1725,6 +1729,9 @@ func (r *CommandRepository) CancelByScanRunID(ctx context.Context, tenantID, run
 	if err != nil {
 		return 0, fmt.Errorf("failed to read rows affected: %w", err)
 	}
+	if rows > 0 {
+		r.changedTenant(tenantID)
+	}
 	return rows, nil
 }
 
@@ -1844,6 +1851,9 @@ func (r *CommandRepository) ReleaseForSensor(ctx context.Context, tenantID, comm
 	n, err := res.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	if n > 0 {
+		r.changedTenant(tenantID)
 	}
 	return n > 0, nil
 }

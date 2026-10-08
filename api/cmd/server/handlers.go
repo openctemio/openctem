@@ -37,6 +37,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -588,6 +589,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.OrgTrust = handler.NewOrgTrustHandler(svc.OrgTrust, log)
 		}
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
+		handlers.VerifiedDomain.SetChangeApproval(svc.SSOChange)
 		// Tenant self-service verification for EASM (research/22 P0-10, E6).
 		var audit handler.AttributionAuditor
 		if svc.Audit != nil {
@@ -630,7 +632,59 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
 		handlers.SignupPolicy = svc.Signup
 	}
+	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
 	return handlers
+}
+
+// newSensorV3Server builds the sensor protocol v3 server (RFC-059) when
+// SENSOR_TRANSPORT_V3_ENABLED is on and protocol v2 is served (v3 runs every
+// call through the v2 routes). Command writes wake its control streams.
+func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, redisClient *redis.Client,
+	v2 *handler.SensorResultsV2Handler, log *logger.Logger,
+) *sensortransport.Server {
+	tc := cfg.SensorConfig.TransportV3
+	if !tc.Enabled {
+		return nil
+	}
+	if v2 == nil {
+		log.Warn("SENSOR_TRANSPORT_V3_ENABLED is set but protocol v2 results are off; protocol v3 is not served")
+		return nil
+	}
+	srv := sensortransport.NewServer(sensortransport.Config{MaxContentBytes: v2.Limits().MaxContentBytes}, nil, log)
+	// Command and sensor changes wake the control streams: this replica's
+	// directly, the other replicas' through Redis (T12).
+	if redisClient != nil {
+		bus := redis.NewSensorWakeBus(redisClient, srv.Hub(), log)
+		srv.SetWakeBus(bus)
+		repos.Command.SetChangeNotifier(bus)
+		svc.Sensor.SetStatusNotifier(bus.Wake)
+	} else {
+		repos.Command.SetChangeNotifier(srv.Hub())
+		svc.Sensor.SetStatusNotifier(srv.Hub().Wake)
+	}
+
+	// The sensor CA: certificates for the gRPC binding. Without it the
+	// HTTPS binding still serves (IssueCertificate answers Unimplemented).
+	grpcEndpoint := ""
+	ca, err := sensortransport.LoadCA(tc.CACertFile, tc.CAKeyFile, tc.CADir)
+	if err != nil {
+		log.Error("sensor CA not loaded: protocol v3 serves the HTTPS binding only", "error", err)
+	} else {
+		srv.SetCertificateIssuer(sensortransport.NewIssuer(ca, svc.Sensor, svc.Sensor, tc.CertTTL, tc.PublicHost, log))
+		if tc.PublicHost != "" {
+			mcfg := sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: tc.PublicHost, TrustedProxies: tc.MTLSTrustedProxies}
+			if err := srv.EnableMTLS(mcfg, ca, svc.Sensor); err != nil {
+				log.Error("sensor protocol v3 gRPC binding not served", "error", err)
+			} else {
+				grpcEndpoint = tc.PublicHost
+			}
+		}
+		log.Info("sensor CA loaded", "fingerprint", ca.Fingerprint())
+	}
+	srv.SetGRPCEndpoint(grpcEndpoint)
+	v2.SetTransportV3(&protov2.TransportV3{HTTPSPath: sensortransport.PathPrefix, GRPCEndpoint: grpcEndpoint})
+	log.Info("sensor protocol v3 enabled", "https_path", sensortransport.PathPrefix, "grpc_endpoint", grpcEndpoint)
+	return srv
 }
 
 // frontendOrigin extracts scheme://host from the configured frontend callback
@@ -666,6 +720,9 @@ func InitLocalAuthHandler(
 			log,
 		)
 		log.Info("local auth handler initialized")
+		if svc.Signup != nil {
+			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
+		}
 		// Widening a sensor's grant needs a recent sign-in or step-up.
 		if svc.SensorGrant != nil {
 			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{

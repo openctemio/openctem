@@ -230,6 +230,9 @@ type propOut struct {
 	Format   string   `json:"format,omitempty"`
 	Synonyms []string `json:"synonyms,omitempty"`
 	Classes  []string `json:"classes,omitempty"`
+	// List: every type declares the key as a list, so synonyms fold into
+	// one array; otherwise a synonym's value moves to the key unchanged.
+	List bool `json:"list,omitempty"`
 }
 
 type idLabel struct {
@@ -768,11 +771,21 @@ func resolveProperties(m *model, cfg *config) error { //nolint:gocognit,gocyclo,
 	common := set(cfg.CommonProperties)
 	used := map[string]bool{}
 	attrClasses := map[string]map[string]bool{}
+	shape := map[string]string{}
 	for _, t := range m.Types {
 		for _, a := range t.Attributes {
-			// Synonyms fold into a list: the canonical key is one on every type.
-			if len(cfg.Properties[a.Name].Synonyms) > 0 && a.Type != "list" {
-				return fmt.Errorf("type %s attribute %q: a property with synonyms is a list", t.Type, a.Name)
+			if err := checkPropertyName(a.Name, a.Type); err != nil {
+				return fmt.Errorf("type %s attribute %q: %w", t.Type, a.Name, err)
+			}
+			// One shape per key on every type, so a synonym folds the same way
+			// whatever the asset (list: merged into one array; scalar: moved).
+			s := attrShape(a.Type)
+			if prev, ok := shape[a.Name]; ok && prev != s {
+				return fmt.Errorf("type %s attribute %q: is a %s here but a %s on another type", t.Type, a.Name, s, prev)
+			}
+			shape[a.Name] = s
+			if len(cfg.Properties[a.Name].Synonyms) > 0 && s == kindObject {
+				return fmt.Errorf("type %s attribute %q: an object property cannot have synonyms", t.Type, a.Name)
 			}
 			used[a.Name] = true
 			if attrClasses[a.Name] == nil {
@@ -839,10 +852,52 @@ func resolveProperties(m *model, cfg *config) error { //nolint:gocognit,gocyclo,
 		}
 		m.Properties = append(m.Properties, propOut{
 			Key: k, Label: p.Label, LabelVI: p.LabelVI, Format: p.Format,
-			Synonyms: p.Synonyms, Classes: p.Classes,
+			Synonyms: p.Synonyms, Classes: p.Classes, List: shape[k] == kindList,
 		})
 	}
 	m.CommonProperties = cfg.CommonProperties
+	return nil
+}
+
+// Attribute kinds the property schema treats specially.
+const (
+	kindList   = "list"
+	kindObject = "object"
+)
+
+// attrShape is how a value of an attribute type is stored: a list, an
+// opaque object or one scalar.
+func attrShape(kind string) string {
+	switch kind {
+	case kindList, kindObject:
+		return kind
+	}
+	return "scalar"
+}
+
+// specTimeTerms are timestamps named by the spec they come from (X.509
+// validity), kept as the spec spells them instead of `<event>_at`.
+var specTimeTerms = set([]string{"not_before", "not_after"})
+
+// checkPropertyName enforces the property naming convention
+// (docs/architecture/asset-inventory-v2.md, "Property names"): a boolean
+// starts with is_ or has_, a timestamp ends with _at (or is a spec term),
+// a list is plural.
+func checkPropertyName(name, kind string) error {
+	switch kind {
+	case "bool":
+		if !strings.HasPrefix(name, "is_") && !strings.HasPrefix(name, "has_") {
+			return errors.New("a boolean property is named is_<state> or has_<thing>")
+		}
+	case "time":
+		if !strings.HasSuffix(name, "_at") && !specTimeTerms[name] {
+			return errors.New("a timestamp property is named <event>_at")
+		}
+	case kindList:
+		if !strings.HasSuffix(name, "s") {
+			return errors.New("a list property has a plural name")
+		}
+	}
 	return nil
 }
 
@@ -1269,6 +1324,9 @@ func renderGo(m *model) ([]byte, error) {
 		if len(p.Classes) > 0 {
 			w(", Classes: %s", goTyped("Class", "Class", p.Classes))
 		}
+		if p.List {
+			w(", List: true")
+		}
 		w("},\n")
 	}
 	w("}\n\n")
@@ -1524,9 +1582,17 @@ func renderTS(m *model) string {
 func renderTSProperties(w func(string, ...any), m *model) {
 	w("export type AssetPropertyFormat = 'ip' | 'url' | 'code'\n\n")
 	w("export interface AssetPropertyDefinition {\n  label: string\n  labelVi: string\n")
-	w("  format?: AssetPropertyFormat\n  synonyms?: readonly string[]\n  classes?: readonly AssetClass[]\n}\n\n")
+	w("  format?: AssetPropertyFormat\n  synonyms?: readonly string[]\n  classes?: readonly AssetClass[]\n")
+	w("  /** Stored as an array (synonyms merge into it). */\n  list?: boolean\n}\n\n")
+	keys := make([]string, len(m.Properties))
+	for i, p := range m.Properties {
+		keys[i] = p.Key
+	}
+	w("/**\n * A property key of the schema. Web code names a key through this type, never\n")
+	w(" * as a free string, so a key outside the registry does not compile.\n */\n")
+	w("export type AssetPropertyKey =%s\n\n", tsUnion(keys))
 	w("/** Every property key of the schema, with its labels and display format. */\n")
-	w("export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>> = {\n")
+	w("export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDefinition>> = {\n")
 	quoted := func(items []string) string {
 		q := make([]string, len(items))
 		for i, s := range items {
@@ -1545,6 +1611,9 @@ func renderTSProperties(w func(string, ...any), m *model) {
 		if len(p.Classes) > 0 {
 			fields = append(fields, "classes: "+quoted(p.Classes))
 		}
+		if p.List {
+			fields = append(fields, "list: true")
+		}
 		line := fmt.Sprintf("  %s: { %s },", p.Key, strings.Join(fields, ", "))
 		if len(line) <= 100 {
 			w("%s\n", line)
@@ -1558,13 +1627,13 @@ func renderTSProperties(w func(string, ...any), m *model) {
 	}
 	w("}\n\n")
 	w("/** The property keys every type may hold (platform keys, CTIS technical blocks). */\n")
-	w("export const ASSET_COMMON_PROPERTIES: readonly string[] = [\n")
+	w("export const ASSET_COMMON_PROPERTIES: readonly AssetPropertyKey[] = [\n")
 	for _, k := range m.CommonProperties {
 		w("  '%s',\n", k)
 	}
 	w("]\n\n")
 	w("/** The attribute keys of each type, in display order. */\n")
-	w("export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly string[]>> = {\n")
+	w("export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly AssetPropertyKey[]>> = {\n")
 	for _, t := range m.Types {
 		keys := make([]string, len(t.Attributes))
 		for i, a := range t.Attributes {

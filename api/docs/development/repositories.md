@@ -18,7 +18,7 @@ them, shows how they talk to each other, and points you at the right place to wo
 | Directory | Stack | What it is | Image |
 |-----------|-------|------------|-------|
 | [`api/`](../../) | Go 1.26 · Chi · PostgreSQL 17 · Redis 7 | The **control plane**. Multi-tenant REST API, domain logic (DDD/clean architecture), auth & RBAC, persistence, migrations, background workers, admin CLI. Go module `github.com/openctemio/openctem/api`. | `ghcr.io/openctemio/openctem-api` (+ `migrations`, `seed`, `admin-cli`) |
-| [`web/`](../../../web/) | Next.js 16 · React 19 · TypeScript · Tailwind v4 · shadcn/ui | The **web console** users work in. Talks only to the API. Its navigation is the CTEM loop (see the [User Guide](../user-guide/README.md)). | `ghcr.io/openctemio/openctem-web` |
+| [`web/`](../../../web/) | Next.js 16 · React 19 · TypeScript · Tailwind v4 · shadcn/ui | The **web console** users work in. Talks only to the API. Its navigation is the CTEM loop (see the [User guide](https://docs.openctem.io/user-guide/)). | `ghcr.io/openctemio/openctem-web` |
 | [`deploy/allinone/`](../../../deploy/allinone/) | Dockerfile + supervisor | **All-in-one image**: API + web + the `api/deploy/gateway` Caddy gateway in one container (Postgres/Redis external). | `ghcr.io/openctemio/openctem` |
 | [`.github/`](../../../.github/) | GitHub Actions | One set of workflows for both components, path-gated per component. See [CI/CD](ci-cd.md). | — |
 | [`.githooks/`](../../../.githooks/) | sh | Repository git hooks (`make hooks`): gofmt / type-check + lint-staged on staged files, and a commit-msg guard. | — |
@@ -109,7 +109,7 @@ There is no compose file or `.env.example` at the root: the API's live in
 and the web's in `web/`. See [Getting Started](../getting-started.md) and
 [Development Setup](setup.md). The sensor is optional locally and connects with
 a key you create in the console
-([Discovery → Connect an agent](../user-guide/04-discovery.md#connect-an-agent)).
+([Sensors](https://docs.openctem.io/user-guide/04-discovery/#sensors)).
 
 ## Cross-repo gotchas worth knowing early
 
@@ -125,9 +125,10 @@ a key you create in the console
   import `sdk-go`. Keep that boundary.
 - **Run Go from `api/` with `GOWORK=off`**, which is what CI does. The monorepo
   has no `go.work`, but a parent directory's might be picked up.
-- **Docs for a feature** (architecture doc, RFC, and if user-facing the
-  [User Guide](../user-guide/README.md)) live in `api/docs/`. See the
-  [RFC index](../rfcs/README.md).
+- **Docs for a feature** (architecture doc, RFC) live in `api/docs/`. See the
+  [RFC index](../rfcs/README.md). If the feature is user-facing, also update the
+  [User guide](https://docs.openctem.io/user-guide/), which lives in the
+  [docs](https://github.com/openctemio/docs) repository.
 
 ## History
 

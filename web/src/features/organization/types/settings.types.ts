@@ -37,6 +37,8 @@ export type EmailVerificationMode = 'auto' | 'always' | 'never'
 
 export interface SecuritySettings {
   mfa_required: boolean
+  /** Owners and admins must use 2FA (on for new organizations). */
+  mfa_required_for_admins?: boolean
   session_timeout_min: number
   ip_whitelist: string[]
   allowed_domains: string[]
@@ -54,10 +56,28 @@ export interface SecuritySettings {
    * IP allowlist so an owner does not lock themselves out.
    */
   current_ip?: string
+  /** Set by the platform administrator; read-only here. */
+  sso_enforced?: boolean
+  /** Whether personal email accounts may join (api RFC-058). */
+  personal_accounts?: PersonalAccountsPolicy
+  /** Members who may sign in without SSO while it is enforced. */
+  sso_exceptions?: SSOException[]
+  /** SSO newcomers wait for an administrator's approval (api RFC-058). */
+  jit_requires_approval?: boolean
+}
+
+export type PersonalAccountsPolicy = 'allowed' | 'allowed_with_mfa' | 'blocked'
+
+export interface SSOException {
+  user_id: string
+  reason: string
+  /** RFC 3339, at most 90 days ahead. */
+  expires_at: string
 }
 
 export interface UpdateSecuritySettingsInput {
   mfa_required?: boolean
+  mfa_required_for_admins?: boolean
   session_timeout_min?: number
   ip_whitelist?: string[]
   allowed_domains?: string[]
@@ -66,6 +86,10 @@ export interface UpdateSecuritySettingsInput {
   /** research/25 D3: off unless an owner enables it; enabling is audited. */
   allow_sensor_interactsh?: boolean
   allow_sensor_custom_templates?: boolean
+  personal_accounts?: PersonalAccountsPolicy
+  /** Replaces the whole list. */
+  sso_exceptions?: SSOException[]
+  jit_requires_approval?: boolean
 }
 
 // ============================================
