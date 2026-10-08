@@ -801,6 +801,6 @@
   "admin.sessions.endWhat": "{email} bị đăng xuất khỏi trang quản trị ngay (đăng nhập từ {ip}). Các quản trị viên khác thấy thao tác này trong nhật ký kiểm toán.",
   "admin.sessions.ended": "Đã kết thúc phiên.",
   "admin.sessions.idp": "Nhà cung cấp danh tính",
-  "admin.sessions.password": "Mật khẩu + ứng dụng xác thực",
+  "admin.sessions.methodLocal": "Mật khẩu + ứng dụng xác thực",
   "admin.sessions.superOnly": "Chỉ quản trị cấp cao mới xem được các phiên quản trị."
 }
