@@ -881,6 +881,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
 
+	// Plans and limits (docs/architecture/plans-and-limits.md), with or
+	// without local auth.
+	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
+
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)
 	s.Tenant = tenantapp.NewTenantService(repos.Tenant, log,
@@ -2276,7 +2280,6 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
 	// Plans and limits: self-service organizations are Free.
-	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
 	s.Auth.SetFreePlan(s.Entitlement)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
