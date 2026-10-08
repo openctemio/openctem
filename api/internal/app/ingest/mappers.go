@@ -537,7 +537,11 @@ func buildServiceProperties(svc *ctis.ServiceTechnical) map[string]any {
 	if svc.Protocol != "" {
 		props["protocol"] = svc.Protocol
 	}
-	props["tls"] = svc.TLS
+	// A false TLS is what an unmeasured report sends too, so only a TLS the
+	// scanner saw is recorded (has_tls once promoted).
+	if svc.TLS {
+		props["tls"] = true
+	}
 	if svc.Banner != "" {
 		props["banner"] = svc.Banner
 	}

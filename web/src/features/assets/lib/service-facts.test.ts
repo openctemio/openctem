@@ -70,9 +70,7 @@ describe('HTTP facts', () => {
     expect(webServer(sdkLiveHost)).toBe('cloudflare')
     expect(webServer(withMeta({ server: 'Apache' }))).toBe('Apache')
     // service.name of an SSH service is not a web server.
-    expect(
-      webServer(withMeta({ service: { name: 'ssh', protocol: 'ssh', port: 22 } }))
-    ).toBeUndefined()
+    expect(webServer(withMeta({ service: 'ssh', protocol: 'ssh', port: 22 }))).toBeUndefined()
   })
 })
 
@@ -160,7 +158,7 @@ describe('network facts', () => {
     expect(openPorts(sensorIpWithPorts)?.map((p) => p.port)).toEqual([22, 80, 443, 8443])
     // A port is a service of its own, never a host property.
     expect(openPorts(withMeta({ open_ports: ['443/tcp'] }))).toBeNull()
-    expect(openPorts(withMeta({ ip_address: { ports: [] } }))).toEqual([])
+    expect(openPorts(withMeta({ ports: [] }))).toEqual([])
     expect(openPorts(bareService)).toBeNull()
   })
 
@@ -183,20 +181,6 @@ describe('tlsFacts', () => {
     expect(t.cert.sans).toEqual(['*.example.com', 'example.com'])
   })
 
-  it('reads the nmap-style service TLS fields', () => {
-    const t = tlsFacts(
-      withMeta({
-        service: {
-          port: 443,
-          tls_cert_issuer: 'Example CA',
-          tls_cert_expiry: new Date(NOW - 3 * DAY).toISOString(),
-        },
-      }),
-      NOW
-    )
-    expect(t.kind === 'cert' && t.cert.status).toBe('expired')
-  })
-
   it('says TLS without a certificate when only the scheme is known', () => {
     expect(tlsFacts(sensorHttpService, NOW)).toEqual({ kind: 'tls' })
   })
@@ -205,14 +189,13 @@ describe('tlsFacts', () => {
     expect(tlsFacts(sensorHttpServiceNoTech, NOW)).toEqual({ kind: 'none' })
   })
 
-  it('does not treat the sensor\'s unmeasured `service.tls: false` as "No TLS"', () => {
-    expect(tlsFacts(withMeta({ service: { port: 8443, tls: false } }), NOW)).toEqual({
-      kind: 'not_collected',
-    })
+  it('reads TLS only when it was measured (ingest stores `has_tls` only when on)', () => {
+    expect(tlsFacts(withMeta({ port: 8443 }), NOW)).toEqual({ kind: 'not_collected' })
+    expect(tlsFacts(withMeta({ port: 8443, has_tls: true }), NOW)).toEqual({ kind: 'tls' })
   })
 
   it('keeps a certificate without expiry "unknown", never valid', () => {
-    const facts = tlsFacts(withMeta({ certificate: { issuer_org: 'Example CA' } }), NOW)
+    const facts = tlsFacts(withMeta({ issuer_org: 'Example CA' }), NOW)
     expect(facts.kind).toBe('cert')
     if (facts.kind === 'cert') expect(facts.cert.status).toBe('unknown')
   })

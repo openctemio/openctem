@@ -38,8 +38,8 @@ func newExtFixture(t *testing.T) (*extFixture, func(q string, args ...any) error
 	f.home = createTestTenant(t, db, "ext-home")
 	f.b = createTestTenant(t, db, "ext-other")
 	stamp := time.Now().UnixNano()
-	f.owner = createTestUser(t, db, "owner-"+shared.NewID().String()+"@pti.example", "Owner")
-	f.outside = createTestUser(t, db, "nam-"+shared.NewID().String()+"@ipas.example", "Nam")
+	f.owner = createTestUser(t, db, "owner-"+shared.NewID().String()+"@home.example", "Owner")
+	f.outside = createTestUser(t, db, "nam-"+shared.NewID().String()+"@partner.example", "Nam")
 	_ = stamp
 	createTestMembership(t, db, f.host, f.owner, "owner")
 	f.ownerCtx = audit.AuditContext{TenantID: f.host.String(), ActorID: f.owner.String()}
@@ -65,7 +65,7 @@ func (f *extFixture) addExternal(t *testing.T, until *time.Time) *tenantdom.Memb
 		t.Fatal(err)
 	}
 	home := f.home
-	if err := m.Classify(tenantdom.Classification{Kind: tenantdom.MemberKindExternal, HomeTenantID: &home, Domain: "ipas.example"},
+	if err := m.Classify(tenantdom.Classification{Kind: tenantdom.MemberKindExternal, HomeTenantID: &home, Domain: "partner.example"},
 		tenantdom.ExternalAccess{ExpiresAt: until, Reason: "project"}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
