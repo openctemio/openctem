@@ -272,17 +272,65 @@ load.
 
 ## 8. Overlays
 
-- Create / edit forms: `<Dialog>` (up to `sm:max-w-lg`; `sm:max-w-2xl` for
-  long forms). Large editors: a full page.
-- A dialog laid out edge to edge (split panes, a tinted aside, a scrolling
-  body with a sticky footer): `<DialogContent showCloseButton={false}
-className="flex flex-col gap-0 p-0 sm:p-0 …">` with a `<DialogHeaderBar>`
-  (title, description, close) first, then the body. Pass
-  `onOpenAutoFocus={(e) => focusDialogBody(e, bodyRef.current)}` (body has
-  `tabIndex={-1}`) so it opens on the first field, not on the close button. The close button stays on
-  the dialog surface, never on a tinted region; a secondary panel is inset
-  (margin + radius), not bled to the edge. Install sensor and Edit sensor are
-  the reference. Ordinary dialogs keep the default corner close button.
+- Every modal surface (Dialog, AlertDialog, Sheet) has one frame, in
+  `src/components/ui/modal-layout.tsx`: a **fixed header** (title,
+  description, `actions`, the close button), a **body that is the only part
+  that scrolls**, and a **fixed footer** (the actions, always visible). The
+  title, the close button and the primary action never scroll away.
+
+  ```tsx
+  <DialogContent size="lg">
+    <DialogHeader>
+      <DialogTitle>Add finding</DialogTitle>
+      <DialogDescription>…</DialogDescription>
+    </DialogHeader>
+    <DialogForm onSubmit={submit}>
+      <DialogBody className="space-y-4">…fields…</DialogBody>
+      <DialogFooter>
+        <Button variant="outline" type="button">
+          Cancel
+        </Button>
+        <Button type="submit">Create</Button>
+      </DialogFooter>
+    </DialogForm>
+  </DialogContent>
+  ```
+
+  - Never put `max-h-*`, `overflow-*`, `flex`/`grid`, `p-0` or `gap-*` on a
+    `DialogContent` / `AlertDialogContent` / `SheetContent`, and never a
+    `max-w-*` on a dialog: width is `size` — `sm` (28rem), `md` (32rem, the
+    default; create / edit forms), `lg` (42rem; long forms), `xl` (56rem;
+    editors, tables), `full` (a workspace, 90% of the screen). Large editors:
+    a full page. `modal-layout-governance.test.ts` fails on these.
+  - The body scrolls between header and footer (`overscroll-contain`, so the
+    page behind never moves). A divider shows under the header only while
+    the body is scrolled, and above the footer only while there is more below.
+    Avoid a second scroll box inside the body (a picker list may keep a
+    bounded height of its own).
+  - A form wraps body and footer (`DialogForm` / `SheetForm`): Enter in a
+    field submits, the primary button is `type="submit"`. Footer order:
+    secondary first, primary last (on phones the primary is on top, buttons
+    are full width and 44px tall).
+  - Initial focus is the body's first field (never the close button); on a
+    touch screen the body itself, so the keyboard does not pop up uninvited.
+    Esc closes and focus returns to the trigger. Confirmations
+    (`AlertDialog`) have no close button and open on Cancel.
+  - Phones (under `sm`): a dialog is a bottom sheet, full width, as tall as
+    its content up to the visible screen. It stays above the on-screen
+    keyboard (`useKeyboardInset`: the visual viewport is measured, the
+    surface lifted, the focused field scrolled back into view), and the
+    footer clears the home indicator (`env(safe-area-inset-bottom)`). No
+    motion under reduced motion.
+  - Long forms may label groups inside the body with plain section headings;
+    never a second fixed bar.
+
+- A dialog laid out edge to edge (split panes, a tinted aside) still uses the
+  frame: the panes go in the body (`<DialogBody className="p-0">`). The older
+  `<DialogHeaderBar>` + `focusDialogBody` pattern (Install sensor, Edit
+  sensor) is being moved onto `DialogHeader` + `DialogBody`; do not use it for
+  new dialogs. The close button stays on the dialog surface, never on a
+  tinted region; a secondary panel is inset (margin + radius), not bled to
+  the edge.
 - Quick detail views: `<Sheet side="right">`. Read top to bottom as state →
   why → what it can do → what it did → identity, with the parts in
   `src/features/shared/components/detail-sheet.tsx`: a `<DetailCallout>`
