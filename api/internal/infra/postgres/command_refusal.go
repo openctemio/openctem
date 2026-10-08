@@ -72,6 +72,9 @@ func (r *CommandRepository) RequeueRefused(ctx context.Context, tenantID, comman
 	if err != nil {
 		return false, fmt.Errorf("failed to read rows affected: %w", err)
 	}
+	if n > 0 {
+		r.changedTenant(tenantID)
+	}
 	return n > 0, nil
 }
 

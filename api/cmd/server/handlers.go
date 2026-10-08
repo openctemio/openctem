@@ -35,6 +35,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -613,7 +614,30 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
 		handlers.SignupPolicy = svc.Signup
 	}
+	handlers.SensorV3 = newSensorV3Server(cfg, repos, handlers.SensorResultsV2, log)
 	return handlers
+}
+
+// newSensorV3Server builds the sensor protocol v3 server (RFC-059) when
+// SENSOR_TRANSPORT_V3_ENABLED is on and protocol v2 is served (v3 runs every
+// call through the v2 routes). Command writes wake its control streams.
+func newSensorV3Server(cfg *config.Config, repos *Repositories, v2 *handler.SensorResultsV2Handler, log *logger.Logger) *sensortransport.Server {
+	tc := cfg.SensorConfig.TransportV3
+	if !tc.Enabled {
+		return nil
+	}
+	if v2 == nil {
+		log.Warn("SENSOR_TRANSPORT_V3_ENABLED is set but protocol v2 results are off; protocol v3 is not served")
+		return nil
+	}
+	srv := sensortransport.NewServer(sensortransport.Config{
+		GRPCEndpoint:    tc.PublicHost,
+		MaxContentBytes: v2.Limits().MaxContentBytes,
+	}, nil, log)
+	repos.Command.SetChangeNotifier(srv.Hub())
+	v2.SetTransportV3(&protov2.TransportV3{HTTPSPath: sensortransport.PathPrefix, GRPCEndpoint: tc.PublicHost})
+	log.Info("sensor protocol v3 enabled", "https_path", sensortransport.PathPrefix, "grpc_endpoint", tc.PublicHost)
+	return srv
 }
 
 // frontendOrigin extracts scheme://host from the configured frontend callback

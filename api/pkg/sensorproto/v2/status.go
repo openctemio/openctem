@@ -274,6 +274,18 @@ type Hello struct {
 	Digests      []string               `json:"digests"`
 	Limits       Limits                 `json:"limits"`
 	Deprecations map[string]Deprecation `json:"deprecations,omitempty"`
+	// TransportV3 says where this platform serves sensor protocol v3
+	// (docs/rfcs/RFC-059-sensor-transport-v3.md); absent when it does not.
+	TransportV3 *TransportV3 `json:"transport_v3,omitempty"`
+}
+
+// TransportV3 locates protocol v3 on a v2 hello.
+type TransportV3 struct {
+	// HTTPSPath is the HTTPS binding's path on this host (/api/v3/sensor).
+	HTTPSPath string `json:"https_path"`
+	// GRPCEndpoint is host:port of the gRPC (mTLS) binding; absent when
+	// only the HTTPS binding is served.
+	GRPCEndpoint string `json:"grpc_endpoint,omitempty"`
 }
 
 // NewHello builds the hello document for the given limits. Results are always
