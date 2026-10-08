@@ -150,6 +150,29 @@ policy may narrow it:
    - **Kubernetes backend:** the same forwarder runs as the sensor Pod's
      sidecar service, and the task Pod's NetworkPolicy allows egress only to
      it.
+   **Measured (2026-10-08, Linux 6.8):**
+
+   | Environment | Unprivileged user + network namespace |
+   |---|---|
+   | Ubuntu 24.04 host (`kernel.apparmor_restrict_unprivileged_userns=1`) | refused (the `uid_map` write is denied) unless an AppArmor profile for the sensor binary grants `userns` |
+   | Docker, default seccomp profile, non-root user | refused (`unshare` gets EPERM) |
+   | Docker, a seccomp profile that allows `unshare`/`clone` with namespace flags, non-root user | works (only `lo` in the namespace) |
+   | Container root mapping uid 0 | refused without `CAP_SETFCAP`; the sensor runs non-root, so it maps its own uid |
+
+   Deployment therefore ships with:
+   - a seccomp profile for the sensor container: the runtime default plus
+     `unshare`/`clone` with user, network, mount and PID flags. It is
+     referenced by the Compose file and the Helm chart (`Localhost` profile);
+   - an AppArmor profile for host installs that grants `userns` to the sensor
+     binary only.
+
+   Platform (shared) sensors are deployed by the platform operator with
+   both, and run `required`.
+
+   Where neither is installed, Landlock ABI 4 (Linux 6.7+) can still limit
+   TCP `connect` to the relay's port, and seccomp can refuse UDP sockets
+   other than to the relay. That narrows egress to one port; it is not an
+   invariant, so the backend still reports `NetworkEnforced=false`.
 6. **Tools that ignore proxy variables.**
    - Every built-in tool honours them, or takes a proxy flag that the
      toolhost sets (RFC-034 §6.5 table).
