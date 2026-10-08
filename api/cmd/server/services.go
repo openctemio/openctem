@@ -1903,6 +1903,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Chained steps take what their predecessors produced, through the
 		// per-hop gate (hop_router.go).
 		scanrun.WithHopStore(scanHops),
+		// A run executes the workflow version it started with (research/62 P0-10).
+		scanrun.WithVersionStore(repos.ScanWorkflow),
 		// Web steps carry the path exclusions of their hosts (RFC-056).
 		scanrun.WithWebScope(s.Scope),
 		// Incremental web scanning: new or changed endpoints only (RFC-056).
@@ -1912,6 +1914,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
 	s.Scan.SetStepQueuer(s.ScanRun)
+	s.Scan.SetWorkflowVersions(repos.ScanWorkflow)
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
 	if s.Retest != nil {
 		s.Retest.SetRunRecorder(s.ScanRun)
