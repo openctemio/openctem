@@ -508,7 +508,7 @@ them:
 
 - **Navigation.** Overview · Customers (Organizations) · Scanning (Target
   mappings) · Security (Admin activity, Administrators) · System (Sign-up,
-  Admin sign-in). Later sections (Users, Requests, Plans & usage, Operations)
+  Admin sign-in, Plans). Later sections (Users, Requests, Plans & usage, Operations)
   are added together with their pages, never ahead of them. Pages that moved
   (`/admin/system-logs` to `/admin/security/activity`, `/admin/administrators`
   to `/admin/security/administrators`) have no redirect.
