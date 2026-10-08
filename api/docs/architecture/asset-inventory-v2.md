@@ -9,7 +9,6 @@ are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
   unless a section says so. P0 ships as the seven slices in RFC-042 §9.1.
 - Update each section from "planned" to "shipped" in the PR that lands
   it.
-- The UI design is in `web/docs/ui/inventory-integrations-2026-10.md`.
 
 ## The model in five lines
 
