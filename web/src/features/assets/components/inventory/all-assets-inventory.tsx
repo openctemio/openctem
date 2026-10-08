@@ -10,12 +10,26 @@
  * parsed from it on every render and written back with router.replace, so a
  * reload or a shared link restores the exact view (deep-linkable, scoped to the
  * viewer's own tenant). Saved / named views are intentionally deferred to v2.
+ *
+ * One page for every asset type (research/77): `?types=host` (and
+ * `&sub_type=` for a registry alias such as IAM users) switches it to typed
+ * mode, all from the type registry: the type's name in the header, its
+ * columns, attribute facets and yes/no counts, an "Add <type>" form built
+ * from its attributes, row actions, and an empty state that says how to find
+ * the type. Create, edit, delete and CSV export work for every type here.
  */
 
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Lock, RefreshCw, Search } from 'lucide-react'
+import { Download, Lock, RefreshCw, Search } from 'lucide-react'
+import { toast } from 'sonner'
+import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
+import { inSentence, typeViewOf, type TypeView } from '@/features/asset-types/lib/type-view'
+import { propertyLabel } from '@/features/asset-types/lib/property-schema'
+import { exportInventory } from '../../lib/inventory-export'
+import { useInventoryAssetForms } from './inventory-asset-forms'
+import { InventoryAddButton } from './inventory-add-button'
 import { Main } from '@/components/layout'
 import { PageHeader, EmptyState, FilterPanelToggle, FilterSheet } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -53,6 +67,8 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
   return {
     search: f.search,
     types: f.types,
+    subType: f.subType,
+    propertiesFilter: f.propertiesFilter,
     criticalities: f.criticalities,
     statuses: f.statuses,
     scopes: f.scopes,
@@ -99,6 +115,19 @@ function useAssetsKeepingPrevious(filters: AssetSearchFilters) {
     /** True only before anything has ever loaded. */
     isFirstLoad: result.isLoading && !settled,
   }
+}
+
+/** How a type's assets get into the inventory, for its empty list. */
+function emptyHint(view: TypeView): string {
+  if (view.type === 'repository') {
+    return 'Connect a source-code integration in Settings to import repositories, or add one.'
+  }
+  if (view.type === 'cloud_account') {
+    return 'Connect a cloud integration in Settings to import accounts, or add one.'
+  }
+  return view.scannable
+    ? `Add one, or run a discovery scan to find ${inSentence(view.plural)}.`
+    : `Add one, or import ${inSentence(view.plural)} from a connected source.`
 }
 
 /** First-load placeholder shaped like the toolbar + table it stands in for. */
@@ -193,6 +222,43 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const { stats, isLoading: statsLoading, mutate: statsMutate } = useAssetStats()
   const { data: buData } = useBusinessUnits()
 
+  // Typed mode: the list is one type (and maybe one sub-type).
+  const { registry } = useAssetTypeRegistry()
+  const typeView = useMemo(
+    () => typeViewOf(registry, filters.types, filters.subType),
+    [registry, filters.types, filters.subType]
+  )
+  const facetKeys = useMemo(() => typeView?.facets.map((f) => f.key) ?? [], [typeView])
+  // The type's own counts. Without a type this is the same request as the
+  // tenant-wide stats above (SWR shares it).
+  const {
+    stats: typeStats,
+    isLoading: typeStatsLoading,
+    mutate: typeStatsMutate,
+  } = useAssetStats(
+    typeView ? [typeView.type] : undefined,
+    undefined,
+    typeView?.subType,
+    facetKeys.length > 0 ? facetKeys : undefined
+  )
+  const attributeFacets = useMemo(
+    () =>
+      (typeView?.facets ?? []).map((attribute) => ({
+        attribute,
+        label: propertyLabel(attribute.key),
+        counts: typeStats.metadataCounts?.[attribute.key] ?? {},
+      })),
+    [typeView, typeStats]
+  )
+  const boolFacets = useMemo(
+    () =>
+      (typeView?.facets ?? [])
+        .filter((f) => f.kind === 'bool')
+        .slice(0, 3)
+        .map((f) => ({ key: f.key, label: propertyLabel(f.key) })),
+    [typeView]
+  )
+
   const businessUnitLabels = useMemo(() => {
     const map: Record<string, string> = {}
     for (const bu of buData?.data ?? []) map[bu.id] = bu.name
@@ -235,10 +301,25 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     clearSelection()
   }, [queryKey, clearSelection])
 
-  const refresh = () => {
+  const refresh = useCallback(() => {
     void mutate()
     void statsMutate()
-  }
+    void typeStatsMutate()
+  }, [mutate, statsMutate, typeStatsMutate])
+
+  const forms = useInventoryAssetForms(registry, refresh)
+  const [exporting, setExporting] = useState(false)
+  const handleExport = useCallback(async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      await exportInventory(searchFilters, typeView)
+    } catch {
+      toast.error('Failed to export assets')
+    } finally {
+      setExporting(false)
+    }
+  }, [exporting, searchFilters, typeView])
 
   if (!canRead) {
     return (
@@ -260,6 +341,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       filters={filters}
       stats={stats}
       onChange={setFilters}
+      attributeFacets={attributeFacets}
       activeCount={activeCount}
       onClearAll={clearAll}
     />
@@ -311,15 +393,31 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   return (
     <Main>
-      <PageHeader title="Assets">{viewSwitcher}</PageHeader>
+      <PageHeader title={typeView ? typeView.plural : 'Assets'}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void handleExport()}
+          disabled={exporting}
+        >
+          <Download className="me-2 h-4 w-4" />
+          {exporting ? 'Exporting…' : 'Export'}
+        </Button>
+        {canWrite && (
+          <InventoryAddButton registry={registry} view={typeView} onAdd={forms.openCreate} />
+        )}
+        {viewSwitcher}
+      </PageHeader>
       <AssetsSectionTabs />
 
       <InventoryStatStrip
         className="mt-5"
-        stats={stats}
+        stats={typeView ? typeStats : stats}
         filters={filters}
-        isLoading={statsLoading}
+        isLoading={typeView ? typeStatsLoading : statsLoading}
         onChange={setFilters}
+        typeLabel={typeView?.plural}
+        boolFacets={boolFacets}
       />
 
       <div className="mt-5 flex items-start">
@@ -406,6 +504,16 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 </>
               }
               hasFilters={!isInventoryFilterEmpty(filters)}
+              typeView={typeView}
+              onEditAsset={forms.openEdit}
+              onDeleteAsset={forms.openDelete}
+              {...(typeView &&
+              isInventoryFilterEmpty({ ...filters, types: undefined, subType: undefined })
+                ? {
+                    emptyMessage: `No ${inSentence(typeView.plural)} yet`,
+                    emptyDescription: emptyHint(typeView),
+                  }
+                : {})}
             />
           )}
         </div>
@@ -420,6 +528,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           refresh()
         }}
       />
+
+      {forms.dialogs}
 
       <FilterSheet
         open={filterSheetOpen}

@@ -71,21 +71,21 @@ const CATEGORY_ICONS: Record<AssetTypeCategory, LucideIcon> = {
 
 // Asset type to URL mapping
 const ASSET_TYPE_URLS: Record<string, string> = {
-  domain: '/assets/domains',
-  subdomain: '/assets/domains',
-  certificate: '/assets/certificates',
-  ip_address: '/assets/ip-addresses',
-  application: '/assets/websites',
-  service: '/assets/services',
-  host: '/assets/hosts',
-  container: '/assets/containers',
-  kubernetes: '/assets/containers',
-  network: '/assets/networks',
-  cloud_account: '/assets/cloud-accounts',
-  storage: '/assets/storage',
-  database: '/assets/databases',
-  identity: '/assets/identity',
-  repository: '/assets/repositories',
+  domain: '/assets?types=domain,subdomain',
+  subdomain: '/assets?types=domain,subdomain',
+  certificate: '/assets?types=certificate',
+  ip_address: '/assets?types=ip_address',
+  application: '/assets?types=application&sub_type=website',
+  service: '/assets?types=service',
+  host: '/assets?types=host',
+  container: '/assets?types=container,kubernetes',
+  kubernetes: '/assets?types=container,kubernetes',
+  network: '/assets?types=network',
+  cloud_account: '/assets?types=cloud_account',
+  storage: '/assets?types=storage',
+  database: '/assets?types=database',
+  identity: '/assets?types=identity',
+  repository: '/assets?types=repository',
 }
 
 // Mapping from asset type to sub-module slug (for filtering based on module visibility)
