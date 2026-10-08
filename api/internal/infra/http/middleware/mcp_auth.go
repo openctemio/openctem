@@ -32,6 +32,8 @@ func MCPChallenge(e mcpoauth.Endpoints) func(http.Handler) http.Handler {
 }
 
 // challengeWriter sets WWW-Authenticate when the response status is 401.
+// Only the status passes through it: a body written without an explicit
+// status is a 200 and goes straight to the underlying writer.
 type challengeWriter struct {
 	http.ResponseWriter
 	challenge string
@@ -46,13 +48,6 @@ func (c *challengeWriter) WriteHeader(code int) {
 		}
 	}
 	c.ResponseWriter.WriteHeader(code)
-}
-
-func (c *challengeWriter) Write(b []byte) (int, error) {
-	if !c.wrote {
-		c.WriteHeader(http.StatusOK)
-	}
-	return c.ResponseWriter.Write(b)
 }
 
 // Unwrap lets http.ResponseController reach the underlying writer.
