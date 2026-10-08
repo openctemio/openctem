@@ -55,6 +55,10 @@ type RetestCommandPayload struct {
 	// RequiredCapabilities routes the command only to sensors whose tool has
 	// a retest handler (["retest:<tool>"]).
 	RequiredCapabilities []string `json:"required_capabilities"`
+	// ScanRunID is the run that holds the command (its tasks and logs).
+	// The sensor ignores it; it is not a step key, so the scan run service
+	// does not drive the run from the command result.
+	ScanRunID string `json:"scan_run_id,omitempty"`
 }
 
 // ToolRetestJob is one finding re-checked by its own tool's retest handler.
@@ -70,6 +74,9 @@ type ToolRetestJob struct {
 	RuleID         string
 	Fingerprint    string
 	TimeoutSeconds int
+	// ScanRunID / ScanRunStepID tag the command with the retest's run.
+	ScanRunID     shared.ID
+	ScanRunStepID shared.ID
 }
 
 // DispatchToolRetest enqueues one retest command. The target passes the same
@@ -104,6 +111,7 @@ func (d *CommandDispatcher) DispatchToolRetest(ctx context.Context, job ToolRete
 			RuleID: job.RuleID, Fingerprint: job.Fingerprint,
 		}},
 		RequiredCapabilities: []string{RetestCapability(job.Tool)},
+		ScanRunID:            idString(job.ScanRunID),
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -115,6 +123,9 @@ func (d *CommandDispatcher) DispatchToolRetest(ctx context.Context, job ToolRete
 	}
 	if zone != nil {
 		cmd.SetScanZone(zone.ID)
+	}
+	if !job.ScanRunStepID.IsZero() {
+		cmd.SetStepRunID(job.ScanRunStepID)
 	}
 	if err := d.commands.Create(ctx, cmd); err != nil {
 		return shared.ID{}, fmt.Errorf("enqueue retest command: %w", err)
