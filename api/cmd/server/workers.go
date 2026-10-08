@@ -672,6 +672,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Run timelines: command_events past 30 days (research/62 P0-4).
+	if repos.CommandEvent != nil {
+		w.ControllerManager.Register(controller.NewCommandEventRetentionController(
+			repos.CommandEvent,
+			&controller.CommandEventRetentionConfig{
+				Interval:      6 * time.Hour,
+				RetentionDays: 30,
+				Logger:        log.With("controller", "command-event-retention"),
+			},
+		))
+	}
+
 	// Web surface (RFC-056 WS14): unseen 30 days -> gone, gone a year ->
 	// deleted, change feed kept 90 days.
 	if repos.WebEndpoint != nil {

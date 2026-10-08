@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -291,6 +292,7 @@ func (d *WorkflowEventDispatcher) DispatchFindingsCreated(ctx context.Context, t
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
 				d.logger.Error("panic recovered in workflow dispatch",
 					"tenant_id", tenantID,
 					"panic", r,
@@ -401,6 +403,7 @@ func (d *WorkflowEventDispatcher) DispatchFindingStatusChanged(
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
 				d.logger.Error("panic recovered in finding_status_changed dispatch",
 					"tenant_id", tenantID,
 					"panic", r,
@@ -671,6 +674,7 @@ func (d *WorkflowEventDispatcher) DispatchAITriageCompleted(
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
 				d.logger.Error("panic recovered in AI triage completed dispatch",
 					"triage_id", triageID,
 					"panic", r,
@@ -708,6 +712,7 @@ func (d *WorkflowEventDispatcher) DispatchAITriageFailed(
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
 				d.logger.Error("panic recovered in AI triage failed dispatch",
 					"triage_id", triageID,
 					"panic", r,

@@ -55,7 +55,7 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23, NULLIF($24, ''), $25, $26)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -181,7 +181,7 @@ func (r *ScanRunRepository) Update(ctx context.Context, run *scanrun.Run) error 
 		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7, total_findings = $8,
 		    started_at = $9, completed_at = $10, error_message = $11,
 		    scan_profile_id = $12, quality_gate_result = $13, retry_attempt = $14,
-		    deadline_at = COALESCE(deadline_at, ` + runDeadlineSQL("$9::timestamptz", "scan_runs.scan_id") + `)
+		    deadline_at = COALESCE(deadline_at, ` + runDeadlineSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `)
 		WHERE id = $1
 		  AND status NOT IN ` + terminalRunStatusesSQL + `
 	`
@@ -491,7 +491,7 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23, NULLIF($24, ''), $25, $26)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26)
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -559,14 +559,23 @@ func isOccurrenceConflict(err error) bool {
 const AbsoluteRunTimeoutSeconds = 24 * 60 * 60
 
 // runDeadlineSQL is the deadline of a run that started at startedAt for the
-// scan scanID: the scan timeout, or AbsoluteRunTimeoutSeconds when the run has
-// no scan (or the scan none), capped at AbsoluteRunTimeoutSeconds. NULL while
-// the run has not started. It is written once, when the run starts, so a scan
-// edit never moves the deadline of a run already in flight (RFC-046 §6.3).
-func runDeadlineSQL(startedAt, scanID string) string {
+// scan scanID and the scan workflow workflowID: the scan's timeout; for a run
+// with no scan (or a scan with none), the workflow's timeout_seconds setting
+// (research/62 SG-7: it was stored and shown but never applied); otherwise
+// AbsoluteRunTimeoutSeconds. Always capped at AbsoluteRunTimeoutSeconds.
+// NULL while the run has not started. It is written once, when the run
+// starts, so a scan or workflow edit never moves the deadline of a run
+// already in flight (RFC-046 §6.3).
+func runDeadlineSQL(startedAt, scanID, workflowID string) string {
 	return fmt.Sprintf(`CASE WHEN %[1]s IS NULL THEN NULL ELSE %[1]s + make_interval(secs => LEAST(
-		COALESCE((SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = %[2]s), %[3]d), %[3]d)) END`,
-		startedAt, scanID, AbsoluteRunTimeoutSeconds)
+		COALESCE(
+			(SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = %[2]s),
+			(SELECT CASE WHEN (w.settings->>'timeout_seconds') ~ '^[0-9]{1,9}$'
+			              THEN NULLIF((w.settings->>'timeout_seconds')::bigint, 0) END
+			 FROM scan_workflows w WHERE w.id = %[3]s),
+			%[4]d),
+		%[4]d)) END`,
+		startedAt, scanID, workflowID, AbsoluteRunTimeoutSeconds)
 }
 
 // MaxUnfinishedTargets bounds the unfinished targets a run records at its
@@ -612,7 +621,7 @@ func (r *ScanRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error)
 			FROM scan_runs pr
 			WHERE pr.status IN ('pending', 'running')
 			  AND pr.started_at IS NOT NULL
-			  AND NOW() > COALESCE(pr.deadline_at, ` + runDeadlineSQL("pr.started_at", "pr.scan_id") + `)
+			  AND NOW() > COALESCE(pr.deadline_at, ` + runDeadlineSQL("pr.started_at", "pr.scan_id", "pr.scan_workflow_id") + `)
 			FOR UPDATE OF pr SKIP LOCKED
 		), open_targets AS (
 			SELECT d.id,
