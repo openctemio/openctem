@@ -122,7 +122,6 @@ function openAt(search: string) {
   window.history.replaceState(null, '', `/findings${search}`)
 }
 const params = () => new URLSearchParams(window.location.search)
-const lastListFilters = () => listCalls[listCalls.length - 1]
 
 beforeEach(() => {
   listCalls.length = 0
