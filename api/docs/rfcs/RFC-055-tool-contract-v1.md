@@ -225,7 +225,7 @@ description: Fast TCP connect port scanner.
 publisher: openctemio
 license: MIT
 engine: {name: naabu, license: MIT, min_version: 2.3.0, version_probe: [naabu, -version]}
-presentation: {display_name: Naabu, category: network, icon: radar, docs_url: https://docs.openctem.io/tools/naabu}
+presentation: {display_name: Naabu, category: network, icon: radar, docs_url: https://docs.openctem.io/scanning/tools/}
 class: target-scan                  # target-scan | connector | parser | enricher
 tier: T1                            # a request; the platform assigns (§5)
 implements:
