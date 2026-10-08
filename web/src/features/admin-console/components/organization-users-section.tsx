@@ -12,6 +12,7 @@ import {
 import { useOrganizationUsers } from '../api/use-admin-organizations'
 import type { AdminOrganizationUser } from '../types'
 import { CreateFirstOwnerDialog } from './create-first-owner-dialog'
+import { OwnerRecoveryDialog } from './owner-recovery-dialog'
 
 const columns: ColumnDef<AdminOrganizationUser>[] = [
   {
@@ -65,11 +66,16 @@ const columns: ColumnDef<AdminOrganizationUser>[] = [
  */
 export function OrganizationUsersSection({
   tenantId,
+  orgName,
   canManage,
+  canRecover = false,
   onChanged,
 }: {
   tenantId: string
+  orgName: string
   canManage: boolean
+  /** Super admin: may run an owner recovery when every owner is suspended. */
+  canRecover?: boolean
   /** The organization's member count changed. */
   onChanged?: () => void
 }) {
@@ -88,12 +94,22 @@ export function OrganizationUsersSection({
           <h2 className="text-base font-semibold">Users</h2>
           <p className="text-sm text-muted-foreground">
             {ownersAllSuspended
-              ? 'Every owner of this organization is suspended. A suspended owner still owns the organization, so the console cannot create another one; a super admin can run an owner recovery (the new owner gets a set-password link by email only).'
+              ? 'Every owner of this organization is suspended. A suspended owner still owns the organization, so the console cannot create another one; a super admin can recover ownership (with a reason and an authenticator code; the new owner gets a set-password link by email only).'
               : hasOwner
                 ? "People with an account in this organization. The organization's owner and administrators invite or create users; the platform console only creates an organization's first owner."
                 : 'This organization has no owner yet. Create its first owner; they add everyone else.'}
           </p>
         </div>
+        {canRecover && ownersAllSuspended && (
+          <OwnerRecoveryDialog
+            tenantId={tenantId}
+            orgName={orgName}
+            onRecovered={() => {
+              refresh()
+              onChanged?.()
+            }}
+          />
+        )}
         {canBootstrap && (
           <CreateFirstOwnerDialog
             tenantId={tenantId}

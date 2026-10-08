@@ -94,7 +94,7 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
         ? '{name} has no owner: nobody can manage its members, sign-in or plan.'
         : '{count} organizations have no owner: nobody can manage their members, sign-in or plan.',
       vars: { count: o.organizations.without_owner, name: first ? first.name : '' },
-      href: one ? `/admin/organizations/${first.id}` : '/admin/organizations',
+      href: one ? `/admin/organizations/${first.id}?tab=users` : '/admin/organizations?owner=none',
       actionKey: adminCan(role, 'ops_admin') ? 'admin.attention.addOwner' : 'admin.attention.view',
       action: adminCan(role, 'ops_admin') ? 'Add an owner' : 'View',
     })
