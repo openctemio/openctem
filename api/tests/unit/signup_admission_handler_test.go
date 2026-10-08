@@ -70,6 +70,15 @@ func TestRegister_SelfServiceCreatesTheAccount(t *testing.T) {
 	}
 }
 
+// Self-service sign-up refuses a disposable-address email, writing nothing.
+func TestRegister_SelfServiceRefusesDisposableEmail(t *testing.T) {
+	h, deps, _ := signupHarness(t, signupdom.ModeSelfService)
+	rec := postJSON(t, h.Register, map[string]string{"email": "x@mailinator.com", "password": "Str0ngPassw0rd!", "name": "X"})
+	if rec.Code != http.StatusForbidden || deps.userRepo.createCalls != 0 {
+		t.Fatalf("expected a refusal with no account, got %d %s (creates=%d)", rec.Code, rec.Body.String(), deps.userRepo.createCalls)
+	}
+}
+
 // Switching to admin_only never locks out someone who already has an account.
 func TestSignupModeSwitch_ExistingAccountStillSignsIn(t *testing.T) {
 	h, _, pol := signupHarness(t, signupdom.ModeSelfService)

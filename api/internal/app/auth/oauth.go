@@ -808,8 +808,9 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 	// (signup.Admit): self-service sign-up, or a pending invitation for this
 	// verified email. Otherwise nothing is written (no orphan account).
 	if !signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), signupdom.Identity{
-		Intent:         signupdom.IntentAccount,
-		InvitedPending: s.invitedPending(ctx, userInfo.Email),
+		Intent:          signupdom.IntentAccount,
+		InvitedPending:  s.invitedPending(ctx, userInfo.Email),
+		DisposableEmail: disposableEmail(userInfo.Email),
 	}).Admitted() {
 		s.logger.Warn("OAuth sign-up refused by the sign-up policy", "provider", provider)
 		return nil, ErrSignupNotAvailable

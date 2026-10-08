@@ -9,6 +9,8 @@
   that could never get an organization.
 - A social sign-in whose verified email has a pending invitation may now create
   the account in `admin_only` too (before, it was refused).
+- In `self_service`, an email on a disposable-address service cannot sign up
+  (an invitation or an organization SSO still admits it).
 - Every refusal answers 403 `SIGNUP_NOT_AVAILABLE`; the web shows one
   "Your organization isn't set up yet" page (`/not-set-up`, en/vi) whatever the
   reason. An existing account signs in as before.
