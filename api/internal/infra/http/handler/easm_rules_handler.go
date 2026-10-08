@@ -79,7 +79,10 @@ func (h *EASMHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
 		}
 		states = append(states, st)
 	}
-	limit := parseQueryIntBounded(r.URL.Query().Get("limit"), 50, 1, 50)
+	limit, ok := listLimit(w, r, 50, 50)
+	if !ok {
+		return
+	}
 	out, err := h.rules.Suggest(r.Context(), tenantID, states, limit)
 	if err != nil {
 		h.logger.Error("review by rule: suggestions", "error", logger.SanitizeError(err))

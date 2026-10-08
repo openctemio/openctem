@@ -8,6 +8,7 @@ import type { Status } from '@/features/shared/types'
 import type { CriticalityLevel } from '@/lib/criticality'
 import {
   LEGACY_ASSET_CATEGORY_LABELS,
+  type AssetPropertyKey,
   type LegacyAssetCategory,
 } from '@/features/asset-types/registry.generated'
 
@@ -608,346 +609,16 @@ export type DomainDiscoverySource =
   | 'web_crawl' // Web crawler discovery
 
 /**
- * Asset metadata varies by asset type.
+ * An asset's properties (the API's `properties`, kept as `asset.metadata`).
  *
- * IMPORTANT: All metadata keys use snake_case convention (e.g., cpu_cores, os_version).
- * The backend normalizes camelCase keys to snake_case on ingest.
- * Config files should access metadata via `Record<string, unknown>` with snake_case keys.
- *
- * @deprecated Use `Record<string, unknown>` with snake_case keys instead of this typed interface.
+ * The keys are the registry's (api/configs/asset-types.yaml, generated into
+ * `AssetPropertyKey`): web code reads and writes a property only by a schema
+ * key, so a key outside the registry does not compile
+ * (docs/architecture/asset-inventory-v2.md, "Property names"). Third-party
+ * or custom keys (`x_` prefix) are kept and shown under "Other", and are
+ * read only by listing the entries, never by name.
  */
-export interface AssetMetadata {
-  // ============================================
-  // Domain-specific - Hierarchy (NEW - Best Practice)
-  // ============================================
-  /** Root/apex domain (e.g., "techviet.vn") */
-  rootDomain?: string
-  /** Domain level: 1=root, 2=subdomain, 3=sub-subdomain, etc. */
-  domainLevel?: number
-  /** Parent domain (e.g., "api.techviet.vn" -> "techviet.vn") */
-  parentDomain?: string
-  /** Is this a wildcard domain (*.domain.com) */
-  isWildcard?: boolean
-  /** How the domain was discovered */
-  discoverySource?: DomainDiscoverySource
-
-  // ============================================
-  // Domain-specific - DNS Information
-  // ============================================
-  /** DNS record types (A, AAAA, CNAME, MX, NS, TXT, etc.) */
-  dnsRecordTypes?: string[]
-  /** IP addresses this domain resolves to */
-  resolvedIPs?: string[]
-  /** MX (mail exchange) records */
-  mxRecords?: string[]
-  /** CNAME target if applicable */
-  cnameTarget?: string
-  /** DNS TTL in seconds */
-  ttl?: number
-
-  // ============================================
-  // Domain-specific - WHOIS & Registration
-  // ============================================
-  registrar?: string
-  expiryDate?: string
-  nameservers?: string[]
-  whoisOrganization?: string
-  registrationDate?: string
-  updatedDate?: string
-
-  // ============================================
-  // Domain-specific - Security
-  // ============================================
-  dnssecEnabled?: boolean
-  /** CAA record value */
-  caa?: string
-  /** SPF record */
-  spf?: string
-  /** DKIM record */
-  dkim?: string
-  /** DMARC record */
-  dmarc?: string
-  /** Has linked SSL/TLS certificate */
-  hasCertificate?: boolean
-  /** Link to certificate asset ID */
-  certificateAssetId?: string
-
-  // ============================================
-  // Certificate-specific (NEW)
-  // ============================================
-  certIssuer?: string
-  certSubject?: string
-  certSerialNumber?: string
-  certNotBefore?: string
-  certNotAfter?: string
-  certDaysUntilExpiry?: number
-  certSignatureAlgorithm?: string
-  certKeySize?: number
-  certSans?: string[] // Subject Alternative Names
-  certChainValid?: boolean
-  certIsWildcard?: boolean
-  certTransparencyLogged?: boolean
-
-  // ============================================
-  // IP Address-specific (NEW)
-  // ============================================
-  ipVersion?: 'ipv4' | 'ipv6'
-  ipAddress?: string
-  asn?: string
-  asnOrganization?: string
-  ipCountry?: string
-  ipCity?: string
-  ipIsp?: string
-  ipReverseDns?: string
-  ipIsPublic?: boolean
-  ipOpenPorts?: number[]
-  ipServices?: string[]
-
-  // ============================================
-  // Website-specific
-  // ============================================
-  technology?: string[]
-  ssl?: boolean
-  sslExpiry?: string
-  httpStatus?: number
-  responseTime?: number
-  server?: string
-  wafDetected?: string
-  cdnDetected?: string
-
-  // ============================================
-  // API-specific
-  // ============================================
-  apiType?: 'rest' | 'graphql' | 'grpc' | 'websocket' | 'soap'
-  baseUrl?: string
-  apiVersion?: string
-  authType?: 'none' | 'api_key' | 'oauth2' | 'jwt' | 'basic' | 'mtls'
-  endpointCount?: number
-  documentationUrl?: string
-  openApiSpec?: boolean
-  rateLimit?: number
-  rateLimitEnabled?: boolean
-  corsEnabled?: boolean
-  tlsVersion?: string
-  owner?: string
-  team?: string
-  requestsPerDay?: number
-  avgResponseTime?: number
-  errorRate?: number
-  lastActivity?: string
-
-  // ============================================
-  // Mobile App-specific
-  // ============================================
-  platform?: 'ios' | 'android' | 'cross-platform'
-  bundleId?: string
-  appVersion?: string
-  buildNumber?: string
-  minSdkVersion?: string
-  targetSdkVersion?: string
-  storeUrl?: string
-  lastRelease?: string
-  downloads?: number
-  rating?: number
-  permissions?: string[]
-  sdks?: string[]
-
-  // ============================================
-  // Cloud Account-specific (NEW)
-  // ============================================
-  cloudProvider?: CloudProvider
-  accountId?: string
-  accountAlias?: string
-  organizationId?: string
-  rootEmail?: string
-  mfaEnabled?: boolean
-  ssoEnabled?: boolean
-  resourceCount?: number
-  monthlySpend?: number
-  complianceFrameworks?: string[]
-
-  // ============================================
-  // Compute-specific (NEW - VM/Instance)
-  // ============================================
-  instanceId?: string
-  instanceType?: string
-  instanceState?: 'running' | 'stopped' | 'terminated' | 'pending'
-  availabilityZone?: string
-  vpcId?: string
-  subnetId?: string
-  privateIp?: string
-  publicIp?: string
-  securityGroups?: string[]
-  iamRole?: string
-  launchTime?: string
-  imageId?: string // AMI ID
-
-  // ============================================
-  // Storage-specific (NEW - S3/Blob/GCS)
-  // ============================================
-  bucketName?: string
-  storageClass?: string
-  bucketRegion?: string
-  isPubliclyAccessible?: boolean
-  encryptionEnabled?: boolean
-  encryptionType?: 'none' | 'sse-s3' | 'sse-kms' | 'sse-c'
-  versioningEnabled?: boolean
-  loggingEnabled?: boolean
-  lifecycleRules?: number
-  objectCount?: number
-  totalSizeGB?: number
-  lastModified?: string
-
-  // ============================================
-  // Serverless-specific (NEW)
-  // ============================================
-  functionName?: string
-  functionRuntime?: string
-  functionHandler?: string
-  functionMemory?: number
-  functionTimeout?: number
-  functionCodeSize?: number
-  functionLastModified?: string
-  functionTriggers?: string[]
-  functionEnvVars?: number
-  functionLayers?: string[]
-  functionVpcEnabled?: boolean
-
-  // ============================================
-  // Host-specific
-  // ============================================
-  ip?: string
-  hostname?: string
-  os?: string
-  osVersion?: string
-  architecture?: 'x86' | 'x64' | 'arm64'
-  cpuCores?: number
-  memoryGB?: number
-  isVirtual?: boolean
-  hypervisor?: string
-  openPorts?: number[]
-  lastBoot?: string
-
-  // ============================================
-  // Container-specific
-  // ============================================
-  image?: string
-  imageTag?: string
-  registry?: string
-  runtime?: 'docker' | 'containerd' | 'cri-o'
-  orchestrator?: 'kubernetes' | 'docker-swarm' | 'ecs' | 'standalone'
-  namespace?: string
-  cluster?: string
-  replicas?: number
-  cpuLimit?: string
-  memoryLimit?: string
-  containerPorts?: number[]
-  containerVulnerabilities?: number
-
-  // ============================================
-  // Database-specific
-  // ============================================
-  engine?:
-    | 'mysql'
-    | 'postgresql'
-    | 'mongodb'
-    | 'redis'
-    | 'elasticsearch'
-    | 'mssql'
-    | 'oracle'
-    | 'dynamodb'
-    | 'cosmosdb'
-  dbVersion?: string
-  dbHost?: string
-  dbPort?: number
-  sizeGB?: number
-  encryption?: boolean
-  backupEnabled?: boolean
-  lastBackup?: string
-  replication?: 'single' | 'replica-set' | 'cluster'
-  connections?: number
-  dbPubliclyAccessible?: boolean
-
-  // ============================================
-  // Network-specific (NEW)
-  // ============================================
-  networkType?:
-    'vpc' | 'vnet' | 'firewall' | 'load_balancer' | 'nat_gateway' | 'vpn' | 'transit_gateway'
-  vpcCidr?: string
-  subnetCidrs?: string[]
-  routeTableCount?: number
-  networkAclCount?: number
-  peeringConnections?: string[]
-  flowLogsEnabled?: boolean
-  // Firewall specific
-  firewallRules?: number
-  allowedPorts?: number[]
-  deniedPorts?: number[]
-  // Load balancer specific
-  lbType?: 'application' | 'network' | 'classic' | 'gateway'
-  lbScheme?: 'internet-facing' | 'internal'
-  lbTargetGroups?: number
-  lbListeners?: number
-  healthCheckEnabled?: boolean
-
-  // ============================================
-  // Project-specific (Git repositories)
-  // ============================================
-  projectProvider?: 'github' | 'gitlab' | 'bitbucket' | 'azure_devops' | 'codecommit'
-  /** @deprecated Use projectProvider instead */
-  repoProvider?: 'github' | 'gitlab' | 'bitbucket' | 'azure_devops' | 'codecommit'
-  visibility?: 'public' | 'private' | 'internal'
-  language?: string
-  languages?: Record<string, number> // language -> percentage
-  stars?: number
-  forks?: number
-  openIssues?: number
-  defaultBranch?: string
-  lastCommit?: string
-  contributors?: number
-  hasSecurityPolicy?: boolean
-  branchProtection?: boolean
-  secretScanningEnabled?: boolean
-  dependabotEnabled?: boolean
-
-  // ============================================
-  // Credential Leak specific (for credential assets)
-  // ============================================
-  /** Whether the leak carries a stored secret (password, API key, etc.) */
-  hasSecret?: boolean
-  /** Display-safe mask of the secret; the plaintext is revealed on demand */
-  secretMasked?: string
-  /** Keyed fingerprint: the same value means the same secret leaked again */
-  secretFingerprint?: string
-  /** Type of credential (password, api_key, aws_key, database_cred, etc.) */
-  credentialType?: string
-
-  // ============================================
-  // Legacy fields (deprecated, for migration)
-  // ============================================
-  /** @deprecated Use repoProvider instead */
-  provider?: 'github' | 'gitlab' | 'bitbucket'
-  /** @deprecated Use specific port fields instead */
-  port?: number
-  /** @deprecated Use apiType service detection instead */
-  protocol?: string
-  /** @deprecated Use appropriate version field instead */
-  version?: string
-  /** @deprecated Use ipServices instead */
-  banner?: string
-  /** @deprecated Use dedicated region fields instead */
-  region?: string
-  /** @deprecated Compute type is now a separate asset type */
-  resourceType?: string
-  /** @deprecated Moved to Identities module */
-  source?: string
-  /** @deprecated Moved to Identities module */
-  username?: string
-  /** @deprecated Moved to Identities module */
-  leakDate?: string
-  /** @deprecated Use containerVulnerabilities instead */
-  vulnerabilities?: number
-}
+export type AssetMetadata = Partial<Record<AssetPropertyKey, unknown>>
 
 /**
  * Asset represents a single discoverable asset
@@ -1080,7 +751,7 @@ export interface CreateAssetInput {
   groupId?: string // Optional - can create ungrouped assets
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
-  metadata?: Partial<AssetMetadata> & Record<string, unknown>
+  metadata?: AssetMetadata & Record<string, unknown>
   tags?: string[]
 }
 
@@ -1103,7 +774,7 @@ export interface UpdateAssetInput {
   groupId?: string | null // null to remove from group
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
-  metadata?: Partial<AssetMetadata> & Record<string, unknown>
+  metadata?: AssetMetadata & Record<string, unknown>
   tags?: string[]
 }
 

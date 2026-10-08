@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
@@ -31,6 +32,30 @@ var (
 	v2ReadBurstPerSensor  = 20
 )
 
+// sensorV2Budgets are the rate and concurrency budgets of the sensor
+// routes. One set serves both protocol v2 and protocol v3 (which runs every
+// call through the same routes, RFC-059), so a sensor cannot double its
+// budget by using both.
+type sensorV2Budgets struct {
+	// tenant is the per-tenant ingest budget shared with v1 (nil when rate
+	// limiting is off).
+	tenant      *middleware.TelemetryRateLimiter
+	write       *middleware.TelemetryRateLimiter
+	read        *middleware.TelemetryRateLimiter
+	renew       *middleware.TelemetryRateLimiter
+	concurrency *middleware.TenantConcurrencyLimiter
+}
+
+func newSensorV2Budgets(tenantRateLimiter *middleware.TelemetryRateLimiter, log *logger.Logger) *sensorV2Budgets {
+	return &sensorV2Budgets{
+		tenant:      tenantRateLimiter,
+		write:       middleware.NewTelemetryRateLimiter(v2WriteRatePerSensor, v2WriteBurstPerSensor, 10*time.Minute, log),
+		read:        middleware.NewTelemetryRateLimiter(v2ReadRatePerSensor, v2ReadBurstPerSensor, 10*time.Minute, log),
+		renew:       middleware.NewTelemetryRateLimiter(renewRatePerSecond, renewBurst, time.Hour, log),
+		concurrency: middleware.NewTenantConcurrencyLimiter(IngestMaxConcurrentPerTenant),
+	}
+}
+
 // registerSensorV2Routes mounts sensor protocol v2 results (RFC-026,
 // docs/rfcs/RFC-026-sensor-results-ingest.md) under /api/v2/sensor.
 //
@@ -46,18 +71,33 @@ var (
 //
 // tenantRateLimiter is the per-tenant ingest budget shared with v1 (nil when
 // rate limiting is off).
-//
-//nolint:cyclop // route registration
 func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ctl *handler.SensorControlV2Handler,
 	tenantRateLimiter *middleware.TelemetryRateLimiter, log *logger.Logger,
 ) {
-	limits := h.Limits()
-	writeLimiter := middleware.NewTelemetryRateLimiter(v2WriteRatePerSensor, v2WriteBurstPerSensor, 10*time.Minute, log)
-	readLimiter := middleware.NewTelemetryRateLimiter(v2ReadRatePerSensor, v2ReadBurstPerSensor, 10*time.Minute, log)
-	concurrency := middleware.NewTenantConcurrencyLimiter(IngestMaxConcurrentPerTenant)
+	mountSensorV2(router, h, ctl, newSensorV2Budgets(tenantRateLimiter, log), h.Authenticate)
+}
 
-	throttleWrite := middleware.V2Throttle(tenantRateLimiter, writeLimiter, concurrency, handler.SensorKey)
-	throttleRead := middleware.V2Throttle(nil, readLimiter, nil, handler.SensorKey)
+// sensorV2InProcess is the v2 route group protocol v3 serves its calls
+// through (RFC-059 T2): the same routes, edge chain and budgets, behind
+// handler.AuthenticateInProcess, which only accepts an identity the v3
+// server put in the context. It is never mounted on a listener.
+func sensorV2InProcess(h *handler.SensorResultsV2Handler, ctl *handler.SensorControlV2Handler, b *sensorV2Budgets) http.Handler {
+	r := infrahttp.NewChiRouter()
+	mountSensorV2(r, h, ctl, b, handler.AuthenticateInProcess)
+	return r.Handler()
+}
+
+// mountSensorV2 mounts the v2 routes on router behind the route metrics and
+// authenticate (h.Authenticate on the listener, handler.AuthenticateInProcess
+// for protocol v3, whose calls are counted per v2 route too).
+//
+//nolint:cyclop // route registration
+func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handler.SensorControlV2Handler,
+	b *sensorV2Budgets, authenticate Middleware,
+) {
+	limits := h.Limits()
+	throttleWrite := middleware.V2Throttle(b.tenant, b.write, b.concurrency, handler.SensorKey)
+	throttleRead := middleware.V2Throttle(nil, b.read, nil, handler.SensorKey)
 	// The content chain of a PUT, in the RFC-026 §3.3 order. BodyLimit
 	// replaces the global 10 MB limit with the v2 request limit.
 	content := []Middleware{
@@ -73,10 +113,9 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ct
 	// budget is for report writes). Key renewal also takes a per-sensor renewal
 	// budget (a burst of 5, then one every 2 minutes): it mints a credential each
 	// time, and a stolen key must not mint an unbounded set of fresh ones.
-	controlWrite := []Middleware{middleware.V2Throttle(nil, writeLimiter, nil, handler.SensorKey)}
+	controlWrite := []Middleware{middleware.V2Throttle(nil, b.write, nil, handler.SensorKey)}
 	controlRead := []Middleware{throttleRead}
-	renewLimiter := middleware.NewTelemetryRateLimiter(renewRatePerSecond, renewBurst, time.Hour, log)
-	keys := []Middleware{middleware.V2Throttle(nil, renewLimiter, nil, handler.SensorKey), controlWrite[0]}
+	keys := []Middleware{middleware.V2Throttle(nil, b.renew, nil, handler.SensorKey), controlWrite[0]}
 	if ctl != nil {
 		h.SetControlFeatures(ctl.Features())
 	}
@@ -122,7 +161,7 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ct
 		if ctl.HasSuppressions() {
 			r.GET(protov2.SuppressionsPath, ctl.Suppressions, controlRead...)
 		}
-	}, middleware.V2Observe(v2RouteName), h.Authenticate)
+	}, middleware.V2Observe(v2RouteName), authenticate)
 }
 
 // v2RouteNames maps the matched route pattern to the metric label.

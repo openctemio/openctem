@@ -96,6 +96,11 @@ func TestSSOException_AtTokenMint(t *testing.T) {
 			h := newMFAHarness(t)
 			a := newPolicyTenant(t, h.tenants, "sso-host", false)
 			h.tenants.userMemberships = memberOf(map[*tenant.Tenant]string{a: "member"})
+			// The membership the token-mint gates read (a new organization
+			// asks its owners and admins for a second factor, so the role is
+			// looked up; a member is not asked).
+			vendor, _ := tenant.NewMembership(shared.NewID(), a.ID(), tenant.RoleMember, nil)
+			h.tenants.membershipByTenant = map[string]*tenant.Membership{a.ID().String(): vendor}
 			uid := h.seedUser(t, "vendor@partner.example")
 			res := h.login(t, "vendor@partner.example")
 			if tc.enrolled {

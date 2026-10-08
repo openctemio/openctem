@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/emaildomain"
 )
 
 // Repository defines the interface for tenant persistence.
@@ -98,6 +99,37 @@ type TenantWithRole struct {
 	Tenant   *Tenant
 	Role     Role
 	JoinedAt time.Time
+	// The caller's own membership (RFC-058), for the organization switcher.
+	MemberStatus    MemberStatus
+	Kind            MemberKind
+	HomeTenantID    *shared.ID
+	HomeDomain      string
+	ExpiresAt       *time.Time
+	SuspendedReason string
+}
+
+// Blocked reasons of the organization switcher (RFC-058).
+const (
+	BlockedSuspended               = "suspended"
+	BlockedPersonalAccountsBlocked = "personal_accounts_blocked"
+)
+
+// BlockedReason says why the user cannot open this organization now ("" when
+// they can): the membership is suspended (with its reason when one is
+// recorded: expired, home_access_ended, ...), or the organization blocks
+// personal accounts and this is one.
+func (t *TenantWithRole) BlockedReason() string {
+	if t.MemberStatus == MemberStatusSuspended {
+		if t.SuspendedReason != "" {
+			return t.SuspendedReason
+		}
+		return BlockedSuspended
+	}
+	if t.Tenant != nil && t.Kind == MemberKindExternal && t.HomeTenantID == nil && emaildomain.IsConsumer(t.HomeDomain) &&
+		t.Tenant.TypedSettings().Security.PersonalAccounts.Effective() == PersonalAccountsBlocked {
+		return BlockedPersonalAccountsBlocked
+	}
+	return ""
 }
 
 // MemberInfo represents a membership with user info.
@@ -174,6 +206,8 @@ type MemberSearchFilters struct {
 	// Role filters on the effective system role (owner, admin, member,
 	// viewer); empty = any.
 	Role string
+	// Kind filters on internal or external members (RFC-058); empty = any.
+	Kind string
 }
 
 // Member status filter values for MemberSearchFilters.Status.

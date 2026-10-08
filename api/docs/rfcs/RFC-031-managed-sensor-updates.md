@@ -1,16 +1,17 @@
 # RFC-031 — Managed sensor updates: scanner content now, signed images next
 
-> Status: **Proposed** (Part A in implementation, Part B proposed).
-> Scope: sensor (`openctemio/sensor`, local checkout `agent`) + sdk-go + api + ui.
+> Status: **Part A implemented** in the API (tenant content policy:
+> `sensor_content_policies`, sensor content routes); **Part B Proposed**.
+> Scope: sensor (`openctemio/sensor`) + sdk-go + api + ui.
 > Builds on: [RFC-023](RFC-023-scan-zones-and-scanners.md) (sensors, the
 > doorbell's reserved `update` action), [RFC-026](RFC-026-sensor-results-ingest.md)
 > (v2 results, `ingest_reports.header`), [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md)
 > (protocol v2, sensor-reported tools §4.3.1, evolution rules §4.11) and
-> api#679 (fleet health: state ladder, health reasons, release channel).
+> #679 (fleet health: state ladder, health reasons, release channel).
 > Operator view: [architecture/sensors.md](../architecture/sensors.md).
 >
-> Owner's question (2026-10-02): **"Can the sensor hot-update third-party
-> tools like trivy?"** Owner's direction: "do everything best".
+> Question (2026-10-02): **"Can the sensor hot-update third-party
+> tools like trivy?"**
 
 ## 1. Answer in short
 

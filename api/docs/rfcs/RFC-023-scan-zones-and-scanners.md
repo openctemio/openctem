@@ -1,13 +1,17 @@
 # RFC-023 — Scan zones and the Scanners resource
 
-> Status: **Proposed** (2026-10-01). §9.5 complete rename — **API step
-> implemented** (api#563, migration 000230; contract:
+> Status: **Implemented in part** (proposed 2026-10-01). The §9.5 complete
+> rename is implemented (#563, migration 000230; contract:
 > [RFC-023-sensor-rename-contract.md](RFC-023-sensor-rename-contract.md)).
-> SDK, sensor binary, Helm and UI steps pending.
-> **Phase 1 (scan zones), API implemented** (migration 000231; §8.1;
-> architecture: [scan-zones.md](../architecture/scan-zones.md), which also
-> holds the UI contract). Zones UI pending.
-> Scope: api + agent + ui (+ sdk-go for job verification).
+> **Phase 1 (scan zones) is implemented** in the API (migration 000231; §8.1;
+> `/api/v1/scan-zones`; architecture: [scan-zones.md](../architecture/scan-zones.md))
+> and the web console (Settings → Sensors). Phases 2–4 were carried forward by
+> [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md),
+> [RFC-031](RFC-031-managed-sensor-updates.md),
+> [RFC-032](RFC-032-sensor-enrollment-and-identity.md) and
+> [RFC-040](RFC-040-platform-sensor-mutual-distrust.md); what they do not
+> cover remains Proposed.
+> Scope: api + sensor + ui (+ sdk-go for job verification).
 > Mutual distrust: [RFC-040](RFC-040-platform-sensor-mutual-distrust.md)
 > specifies who signs jobs (D9, P5, P6: a separate signer with its own
 > scope ledger and two-person widening) and turns D8 into a sensor-local
@@ -25,8 +29,8 @@
 
 ## 1. Problem
 
-A tenant with segmented networks (e.g. `10.230.0.0/16`, `10.1.0.0/16`,
-`10.210.0.0/16`, each reachable only from a scanner inside it) cannot express
+A tenant with segmented networks (e.g. `10.1.0.0/16`, `10.2.0.0/16`,
+`10.3.0.0/16`, each reachable only from a scanner inside it) cannot express
 "scans of 10.230.x run on the scanner in that network", and nothing stops any
 scanner from scanning any address. The 2026-10-01 code review found:
 
@@ -402,7 +406,7 @@ build instead of a customer deployment.
 
 ### 9.5 Decision update: complete rename (supersedes the "keep" rows of 9.4)
 
-The product owner asked for a complete move to *sensor*, inside the code as
+Decision: a complete move to *sensor*, inside the code as
 well, with no permanent internal aliases. That is feasible and is the plan.
 The only things that keep an old name are those that **cannot** change without
 breaking something already deployed or rewriting history, and each is
@@ -433,7 +437,7 @@ package and needs ~2 min per invocation on this tree.
 | Sensor protocol | Protocol v2 uses `/api/v2/sensor/*` and sensor terms throughout. | Protocol v1 (`/api/v1/agent/*`) is **still served** by the legacy adapter, because sensors and SDKs already deployed speak it. Retired when the operator raises the minimum protocol (C7); usage per tenant is visible on the Sensors page. | Compatibility CI job runs the last released agent/SDK against every API build (C8). |
 | SDK (`sdk-go`) | All 19 *Agent* identifiers renamed in the next release (pre-1.0, so a breaking minor is allowed by semver); a **migration codemod** (`sensor-migrate`, built on the same `gopls` approach) ships with it so third parties upgrade with one command. | Old SDK versions already compiled into deployed sensors keep working over protocol v1. | Release notes + migration guide; conformance suite (D23). |
 | Sensor binary, repository, images | Repository `openctemio/agent` → `openctemio/sensor` (GitHub keeps redirects for clones and links); binary `openctemio-sensor`; images `openctemio/sensor:{ci,full,slim,…}`. | Existing `openctemio/agent:*` tags stay **pullable but frozen** (no new versions), so customer CI pipelines keep running the last version until they switch; the frozen image logs a one-line notice. | Our GitHub/GitLab CI templates switch to the new image in the same release. |
-| Environment variables, CLI flags, Helm | `SENSOR_*`, `--sensor-*`, Helm values `sensor.*` (chart major version). | Old names are **migrated, not refused** (product owner, 2026-10-01): the new binary and chart read the old `AGENT_*` / `--agent-*` / `agent.*` names when the new ones are unset, with a warning naming both; they refuse to start or render **only when an old and a new name are set to different values**, never silently picking one (e.g. private targets suddenly blocked or allowed). The API server's own `AGENT_*` settings already follow this rule. | Startup test per variable (mapping, warning, conflict); `helm template` tests for old values (mapped + notice) and conflicting values (fails with the keys). |
+| Environment variables, CLI flags, Helm | `SENSOR_*`, `--sensor-*`, Helm values `sensor.*` (chart major version). | Old names are **migrated, not refused** (decided 2026-10-01): the new binary and chart read the old `AGENT_*` / `--agent-*` / `agent.*` names when the new ones are unset, with a warning naming both; they refuse to start or render **only when an old and a new name are set to different values**, never silently picking one (e.g. private targets suddenly blocked or allowed). The API server's own `AGENT_*` settings already follow this rule. | Startup test per variable (mapping, warning, conflict); `helm template` tests for old values (mapped + notice) and conflicting values (fails with the keys). |
 | UI | Routes, feature folders, components, permission constants, copy: `/sensors` everywhere. | `/agents` URLs redirect (bookmarks). | Type-check, lint, vitest, route tests. |
 | Audit log | New events are `sensor.*`. | Historical `agent.*` rows stay as written: the audit log is hash-chained and tamper-evident, so rewriting history would break its integrity by design. Queries and filters treat both as the same event family. | Chain verification unchanged. |
 | Docs | Rewritten; a glossary explains the change once. | — | Link checker. |

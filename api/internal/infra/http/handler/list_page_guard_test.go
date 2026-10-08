@@ -2,39 +2,59 @@ package handler
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
-// The scan, scan run and scan workflow lists read `page` and `per_page` only
-// through listPage (pagination.FromRequest): one parser, one validation, one
-// cap. A handler that parses them itself drifts (a silent default for
-// page=abc, a different cap, limit/offset next to page). The rest of the API
-// joins this list as its handlers move to the shared parser.
+// Every list reads its window through one parser: `page` and `per_page`
+// through listPage / listPageMax (pagination.FromRequest), a top-N list's
+// `limit` through listLimit (pagination.LimitFromRequest). One validation
+// (a bad value is a 400, never a silent default) and one cap per list. A
+// handler that reads them itself drifts: a silent default for page=abc, a
+// different cap, limit/offset next to page.
+//
+// The reads below are not list paging and are allowed, each with its reason.
+var pagingReadAllowed = map[string]string{
+	// The audit chain check verifies up to `limit` entries (0: the default
+	// window); it is not a list.
+	`audit_handler.go:Get("limit")`: "audit chain verification window, not a list",
+	// A saved view's `page` names the console page it belongs to.
+	`saved_view_handler.go:Get("page")`: "the console page a saved view belongs to",
+	// The run tasks list pages by an opaque cursor; per_page sizes it.
+	`scan_workflow_handler.go:Get("per_page")`: "cursor-paged run tasks (size of a cursor page)",
+	// The sensor protocol's command poll: part of the sensor wire contract.
+	`sensor_control_v2_handler.go:Get("limit")`: "sensor protocol v2 poll, a wire contract",
+}
+
 func TestListHandlersUseTheSharedPageParser(t *testing.T) {
-	direct := regexp.MustCompile(`Get\("(page|limit|offset|page_size)"\)|parseQuery\w*\(r\.URL\.Query\(\)\.Get\("per_page"\)`)
-	for _, file := range []string{"scan_handler.go", "scan_workflow_handler.go", "credential_import_handler.go",
-		"finding_activity_handler.go", "outbox_handler.go", "secretstore_handler.go",
-		"template_source_handler.go", "group_handler.go", "assignment_rule_handler.go",
-		"scope_rule_handler.go", "ai_triage_handler.go", "attacker_profile_handler.go",
-		"business_service_handler.go", "business_unit_handler.go", "compensating_control_handler.go",
-		"compliance_handler.go", "ctem_cycle_handler.go", "remediation_campaign_handler.go",
-		"report_schedule_handler.go", "threat_actor_handler.go", "threat_model_handler.go",
-		"admin_audit_handler.go", "admin_target_mapping_handler.go", "admin_user_handler.go",
-		"admin_organization_handler.go", "asset_service_handler.go", "asset_state_history_handler.go",
-		"apikey_handler.go", "asset_group_handler.go", "asset_relationship_handler.go",
-		"asset_type_handler.go", "branch_handler.go", "capability_handler.go", "ci_admin_handler.go",
-		"ci_coverage_handler.go", "ci_pipeline_handler.go", "command_handler.go", "component_handler.go",
-		"easm_handler.go", "exposure_handler.go", "finding_source_handler.go", "fleet_handler.go",
-		"notification_handler.go", "relationship_suggestion_handler.go", "scanner_template_handler.go",
-		"scanprofile_handler.go", "scope_handler.go", "sensor_handler.go", "sensor_result_handler.go",
-		"tool_handler.go", "toolcategory_handler.go", "vulnerability_handler.go", "workflow_handler.go"} {
+	direct := regexp.MustCompile(`Get\("(page|limit|offset|page_size|per_page)"\)`)
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := map[string]bool{}
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
 		src, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if m := direct.Find(src); m != nil {
-			t.Errorf("%s reads list paging itself (%s); use listPage", file, m)
+		for _, m := range direct.FindAll(src, -1) {
+			key := file + ":" + string(m)
+			if _, ok := pagingReadAllowed[key]; ok {
+				used[key] = true
+				continue
+			}
+			t.Errorf("%s reads list paging itself (%s); use listPage, listPageMax or listLimit", file, m)
+		}
+	}
+	for key := range pagingReadAllowed {
+		if !used[key] {
+			t.Errorf("allowed read %s no longer exists: drop it from pagingReadAllowed", key)
 		}
 	}
 }

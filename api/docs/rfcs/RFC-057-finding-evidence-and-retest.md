@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner delegated 2026-10-07: "do the best"; mask by default with an audited reveal; a tool-agnostic evidence contract) |
+| Status | Implemented in the API (decided 2026-10-07: mask by default with an audited reveal; a tool-agnostic evidence contract); the SDK and sensor emitters follow the tool contract track (RFC-055) |
 | Scope | api (`pkg/domain/evidence`, `internal/app/evidence`, ingest, retest), web (finding Evidence tab, Retest section); contract: CTIS 1.6 `evidence_items[]` (ctis), the emitter and retest verdict evidence (sdk-go), nuclei raw evidence and `-ms` attempts (sensor) |
 | Architecture | [finding-evidence.md](../architecture/finding-evidence.md), [continuous-retest.md](../architecture/continuous-retest.md) |
 | Related | RFC-039 (continuous retest), RFC-040 (mutual distrust), RFC-050 (asset access model), RFC-055 (tool contract) |

@@ -90,6 +90,65 @@ func TestNormalizeProperties_OtherSynonyms(t *testing.T) {
 	}
 }
 
+// A renamed scalar key keeps its value and type: a boolean stays a boolean,
+// a number stays a number. The canonical key wins over a synonym, and the
+// first synonym (in schema order) wins over a later one.
+func TestNormalizeProperties_ScalarSynonyms(t *testing.T) {
+	props := map[string]any{
+		"mfa_enabled":          false,
+		"os":                   "linux",
+		"max_session_duration": float64(3600),
+		"is_encrypted":         true,
+		"encrypted":            false,
+		"encryption_enabled":   false,
+	}
+	NormalizeProperties(props)
+	want := map[string]any{
+		"has_mfa":                      false,
+		"os_name":                      "linux",
+		"max_session_duration_seconds": float64(3600),
+		"is_encrypted":                 true,
+	}
+	if len(props) != len(want) {
+		t.Fatalf("props = %v, want %v", props, want)
+	}
+	for k, v := range want {
+		if props[k] != v {
+			t.Errorf("%s = %#v, want %#v", k, props[k], v)
+		}
+	}
+
+	props = map[string]any{"encryption_enabled": true, "encrypted": false}
+	NormalizeProperties(props)
+	if props["is_encrypted"] != false || len(props) != 1 {
+		t.Errorf("first synonym in schema order must win: %v", props)
+	}
+
+	// A null synonym is dropped without setting the key.
+	props = map[string]any{"privileged": nil}
+	NormalizeProperties(props)
+	if len(props) != 0 {
+		t.Errorf("props = %v", props)
+	}
+}
+
+// Every property name follows the convention the generator enforces; this
+// pins it for the keys that only common_properties declare too.
+func TestPropertySchema_ListFlag(t *testing.T) {
+	for _, key := range []string{"ip_addresses", "nameservers", "sans", "technologies"} {
+		p, ok := LookupProperty(key)
+		if !ok || !p.List {
+			t.Errorf("%s: want a list property, got %+v", key, p)
+		}
+	}
+	for _, key := range []string{"has_mfa", "os_name", "is_public"} {
+		p, ok := LookupProperty(key)
+		if !ok || p.List {
+			t.Errorf("%s: want a scalar property, got %+v", key, p)
+		}
+	}
+}
+
 // Nothing to fold: the map is left as it is (no empty canonical key).
 func TestNormalizeProperties_NoSynonyms(t *testing.T) {
 	props := map[string]any{"title": "x"}

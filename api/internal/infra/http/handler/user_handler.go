@@ -321,6 +321,14 @@ type TenantMembershipResponse struct {
 	Role        string    `json:"role"`
 	JoinedAt    time.Time `json:"joined_at"`
 	CreatedAt   time.Time `json:"created_at"`
+	// The user's own membership (RFC-058), for the organization switcher.
+	// Kind is "internal" or "external"; AccessExpiresAt is when an external
+	// membership ends; BlockedReason, when set, says why the organization
+	// cannot be opened (suspended, expired, home_access_ended,
+	// home_domain_lapsed, trust_revoked, personal_accounts_blocked).
+	Kind            string     `json:"kind"`
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	BlockedReason   string     `json:"blocked_reason,omitempty"`
 }
 
 // GetMyTenants returns all tenants the current user belongs to.
@@ -351,15 +359,18 @@ func (h *UserHandler) GetMyTenants(w http.ResponseWriter, r *http.Request) {
 	response := make([]TenantMembershipResponse, len(tenants))
 	for i, t := range tenants {
 		response[i] = TenantMembershipResponse{
-			ID:          t.Tenant.ID().String(),
-			Name:        t.Tenant.Name(),
-			Slug:        t.Tenant.Slug(),
-			Description: t.Tenant.Description(),
-			LogoURL:     t.Tenant.LogoURL(),
-			Plan:        t.Tenant.Plan().String(),
-			Role:        t.Role.String(),
-			JoinedAt:    t.JoinedAt,
-			CreatedAt:   t.Tenant.CreatedAt(),
+			ID:              t.Tenant.ID().String(),
+			Name:            t.Tenant.Name(),
+			Slug:            t.Tenant.Slug(),
+			Description:     t.Tenant.Description(),
+			LogoURL:         t.Tenant.LogoURL(),
+			Plan:            t.Tenant.Plan().String(),
+			Role:            t.Role.String(),
+			JoinedAt:        t.JoinedAt,
+			CreatedAt:       t.Tenant.CreatedAt(),
+			Kind:            string(memberKindOrInternal(t.Kind)),
+			AccessExpiresAt: t.ExpiresAt,
+			BlockedReason:   t.BlockedReason(),
 		}
 	}
 

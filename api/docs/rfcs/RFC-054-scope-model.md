@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner decisions S1–S6, 2026-10-07); P0 in implementation |
+| Status | Accepted (decisions S1–S6, 2026-10-07); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -22,7 +22,7 @@ This RFC makes one model out of them:
 2. **One authority check** decides for every target, typed or inventory, on
    every path. An asset's ownership record alone never authorizes an active
    probe; a scope entry must cover it. Seeds fold into entries and a verified
-   domain is proof only (research/53 SC1, SC2; §6.1 "One concept").
+   domain is proof only (§6.1 "One concept").
 3. **Names covered by a permanent scope entry are confirmed** into the
    inventory (S4): IP addresses only through IP entries; expiring entries
    never confirm; tombstones and exclusions win.
@@ -47,8 +47,8 @@ This RFC makes one model out of them:
 
 | Actor | Goal | Control |
 |---|---|---|
-| Careless admin | types `example.com` for `example.co.uk` | preview (`POST /scope/check`), step-up, second approver when the tenant has two or more admins, admin notification |
-| Compromised admin session | adds `*.victim.com` and scans it | step-up on every widening route (a stolen cookie alone cannot widen), approvals, notification of every admin, audit |
+| Careless admin | types `example.org` for `example.com` | preview (`POST /scope/check`), step-up, second approver when the tenant has two or more admins, admin notification |
+| Compromised admin session | adds `*.victim.example` and scans it | step-up on every widening route (a stolen cookie alone cannot widen), approvals, notification of every admin, audit |
 | Malicious tenant (colluding admins) | uses the platform to scan a third party | approvals do not help; **ownership proof** for probes from platform sensors (`SCOPE_ACTIVE_PROOF`), platform deny list, public-suffix refusal, CIDR caps; none of them tenant-overridable |
 | Restricted member | scans outside their assets | act scope (D9) unchanged; may only *request* a one-off entry |
 | DNS pointing to others' IPs | an in-scope name resolves to a third party's address | a name grant never becomes an IP grant: discovered addresses never inherit (S4); the sensor resolves and pins (local policy) |
@@ -85,8 +85,7 @@ forms. Scope targets and exclusions use the same matcher
 active-scan gate.
 
 **Upgrade note.** Existing `*.x` scope targets start covering their apex, and
-existing `*.x` exclusions start excluding it. Live had 3 wildcard targets, 1 of
-them without its own apex row (counted 2026-10-07). A tenant that needs the
+existing `*.x` exclusions start excluding it. A tenant that needs the
 apex out adds an exclusion of exactly `x`.
 
 **Sensor-local policy.** The sensor's operator-written policy
@@ -138,7 +137,7 @@ Ownership tab authorized it for active checks even outside every root. Now
 confirmation records ownership only; a scope entry must still cover the
 name. The refusal offers "add scope entry".
 
-### 4.3 Discovered names (S4, owner refinement 2026-10-07)
+### 4.3 Discovered names (S4, refined 2026-10-07)
 
 A declared, permanent scope entry is an intentional ownership claim, made with
 step-up and approval (§6.1, §7). So:
@@ -207,8 +206,7 @@ name, `auto_join_discovered` on) gets the `matches_scope_target` evidence and
 is re-evaluated, which confirms it. Idempotent (evidence upserted per asset,
 rule and source; confirmed records are left alone), per tenant, one system
 audit event per tenant (`attribution.backfill_confirmed`, the count and up to
-50 names). It runs at API start-up, recorded once per tenant. Live had 10 such
-names under `*.example.co.uk` (2026-10-07).
+50 names). It runs at API start-up, recorded once per tenant.
 
 Tests: a wildcard match confirms; an expiring entry does not; an IP does not
 (unless inside an IP scope entry); an exclusion or tombstone blocks; removing
@@ -302,7 +300,7 @@ Response (`ScopeTargetResponse`, also for list/get/update):
   "approvals": [{"user_id": "…", "approver": {"kind": "user", "id": "…", "name": "Lan"}, "approved_at": "…"}],
   "approved_at": null,
   "rejected_by": null, "rejected_at": null,
-  "created_by": {"kind": "user", "id": "…", "name": "Nguyen Manh"},
+  "created_by": {"kind": "user", "id": "…", "name": "Jane Doe"},
   "origin": "manual",
   "created_at": "…", "updated_at": "…",
   "warnings": ["Pattern \"*.example.com\" is a superset of existing pattern \"api.example.com\""]
@@ -316,7 +314,7 @@ Response (`ScopeTargetResponse`, also for list/get/update):
 `approved_by`) is an `ActorRef`:
 
 ```json
-{ "kind": "user", "id": "019d…", "name": "Nguyen Manh" }
+{ "kind": "user", "id": "019d…", "name": "Jane Doe" }
 { "kind": "user", "id": "…", "former_member": true }
 { "kind": "system", "code": "upgrade_wildcard_split" }
 ```
@@ -332,7 +330,7 @@ send on create, when it fixes a refused scan target), `seed`,
 platform rows `system`). Audit records keep the reference without the name.
 `status` is `active`, `pending`, `inactive`, `rejected` or `expired`.
 
-**One concept: scope entries** (research/53 SC1, SC2; migration `001262`).
+**One concept: scope entries** (migration `001262`).
 Seeds are folded into entries and `/api/v1/easm/seeds` is removed: a root
 domain to discover from is the permanent entry `*.example.com` with
 `discovery` on, created like any entry (approvers, step-up, approvals,
@@ -458,7 +456,7 @@ response by the guardrails PR. `t2` is never a default.
 ### 6.4 Dry run: `POST /check` (`scope:read`)
 
 ```json
-{ "targets": ["example.co.uk", "promo-landing.net"],
+{ "targets": ["example.com", "promo.example.net"],
   "asset_ids": ["5f0c…"],
   "sensor_preference": "auto",
   "tier": 1 }
@@ -479,16 +477,16 @@ about assets outside their data scope; `proof_required` applies with
 
 ```json
 { "results": [
-  { "target": "example.co.uk", "allowed": true,
-    "via": {"kind": "scope_target", "id": "…", "pattern": "*.example.co.uk", "proof": "asserted"},
+  { "target": "example.com", "allowed": true,
+    "via": {"kind": "scope_target", "id": "…", "pattern": "*.example.com", "proof": "asserted"},
     "zone": null },
-  { "target": "promo-landing.net", "allowed": false,
+  { "target": "promo.example.net", "allowed": false,
     "code": "no_entry",
     "message": "No scope entry covers this name.",
     "rule": null,
     "fixes": [
-      {"action": "allow_temporarily", "pattern": "promo-landing.net", "target_type": "domain", "days": 7},
-      {"action": "add_entry", "pattern": "*.promo-landing.net", "target_type": "domain"}
+      {"action": "allow_temporarily", "pattern": "promo.example.net", "target_type": "domain", "days": 7},
+      {"action": "add_entry", "pattern": "*.promo.example.net", "target_type": "domain"}
     ] }
 ] }
 ```
@@ -555,15 +553,15 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   never becomes an IP grant (§4.3). Such a row explains itself:
 
   ```json
-  { "name": "198.51.100.20", "type": "ip_address", "covered_by": null,
+  { "name": "203.0.113.20", "type": "ip_address", "covered_by": null,
     "hint": "ip_needs_ip_entry",
-    "resolved_from": ["example.co.uk", "www.example.co.uk"],
-    "network": {"asn": "AS64500", "org": "EXAMPLECO Securities Corporation",
+    "resolved_from": ["example.com", "www.example.com"],
+    "network": {"asn": "AS64500", "org": "Example Org",
                 "shared": false, "org_matches": true},
     "fixes": [
-      {"action": "add_entry", "target_type": "ip_address", "pattern": "198.51.100.20",
+      {"action": "add_entry", "target_type": "ip_address", "pattern": "203.0.113.20",
        "requires": "attack_surface:scope:approve"},
-      {"action": "add_entry", "target_type": "cidr", "pattern": "198.51.100.0/24",
+      {"action": "add_entry", "target_type": "cidr", "pattern": "203.0.113.0/24",
        "requires": "attack_surface:scope:approve"}] }
   ```
 
@@ -614,32 +612,32 @@ query `states` default `needs_review`, `limit` ≤ 50):
 
 ```json
 { "suggestions": [
-  { "id": "domain:*.dev.example.com.au",
+  { "id": "domain:*.dev.example.org",
     "kind": "domain_wildcard",
     "target_type": "domain",
-    "pattern": "*.dev.example.com.au",
+    "pattern": "*.dev.example.org",
     "strength": "strong",
     "covered": 12,
-    "covered_sample": ["a.dev.example.com.au", "b.dev.example.com.au"],
+    "covered_sample": ["a.dev.example.org", "b.dev.example.org"],
     "blocked": 1,
-    "blocked_sample": [{"name": "old.dev.example.com.au", "code": "rejected"}],
+    "blocked_sample": [{"name": "old.dev.example.org", "code": "rejected"}],
     "hints": [
-      {"kind": "discovering_scope_target", "value": "example.com.au"},
-      {"kind": "cert_org", "value": "Example Pty Ltd"},
-      {"kind": "same_ns_as_verified", "value": "ns1.example.com.au"}
+      {"kind": "discovering_scope_target", "value": "example.org"},
+      {"kind": "cert_org", "value": "Example Org"},
+      {"kind": "same_ns_as_verified", "value": "ns1.example.org"}
     ] },
   { "id": "cidr:203.0.113.0/24", "kind": "ip_cidr", "target_type": "cidr",
     "pattern": "203.0.113.0/24", "strength": "medium", "covered": 5, "blocked": 0,
     "hints": [{"kind": "rdap_allocation", "value": "203.0.112.0/22 EXAMPLE-NET"}] }
   ],
   "individual": [
-    { "asset_id": "…", "name": "104.16.1.2", "shared_ip": true,
+    { "asset_id": "…", "name": "198.51.100.2", "shared_ip": true,
       "reason": "shared or CDN provider address: accept one by one" }
   ] }
 ```
 
 - **Domains:** a wildcard at each label level from the item up to the
-  registrable domain (`*.dev.example.com.au`, then `*.example.com.au`), never at
+  registrable domain (`*.dev.example.org`, then `*.example.org`), never at
   or above a public suffix (embedded PSL, §8.2), never a deny-listed name.
 - **IPs:** the `/24` (IPv4) or `/48` (IPv6) around the items; the RDAP
   allocation or ASN only when our data already holds it (no new outbound
@@ -669,7 +667,7 @@ query `states` default `needs_review`, `limit` ≤ 50):
 ```json
 { "action": "accept_rule",
   "target_type": "domain",
-  "pattern": "*.dev.example.com.au",
+  "pattern": "*.dev.example.org",
   "asset_ids": [],
   "reason": "Our dev environment (ticket OPS-12)" }
 ```
@@ -689,10 +687,10 @@ what the action would change and changes nothing:
 { "action": "accept_rule",
   "allowed": true,
   "refusal": null,
-  "entry": {"target_type": "domain", "pattern": "*.dev.example.com.au", "status": "pending", "approvals_required": 1},
-  "would_confirm": [{"asset_id": "…", "name": "a.dev.example.com.au"}],
+  "entry": {"target_type": "domain", "pattern": "*.dev.example.org", "status": "pending", "approvals_required": 1},
+  "would_confirm": [{"asset_id": "…", "name": "a.dev.example.org"}],
   "would_reject": [],
-  "stays_blocked": [{"asset_id": "…", "name": "old.dev.example.com.au", "code": "rejected"}],
+  "stays_blocked": [{"asset_id": "…", "name": "old.dev.example.org", "code": "rejected"}],
   "step_up_required": true }
 ```
 
@@ -708,7 +706,7 @@ neither counted nor changed.
 ### 6.8 Coverage (`GET /stats`, `scope:read`)
 
 `coverage` is the share of the **internet-facing inventory** that an active
-scope target covers and no exclusion removes (research/53 SC8):
+scope target covers and no exclusion removes:
 
 - the inventory is §4.4 (confirmed or unrecorded, `dependency`,
   `monitor_only`) of the stored types `domain`, `subdomain`, `ip_address`,
@@ -826,7 +824,7 @@ are gated by zones and are not capped.
 
 | Phase | Items |
 |---|---|
-| P0 (this RFC) | S1 matcher; seeds folded into entries and verified domains proof only (research/53 SC1, SC2); one authority check (I2/I3); expiring entries + requests + approvals + step-up + notification; settings; S4 rule; structured refusals + dry run; proof setting, deny list, PSL, CIDR caps |
+| P0 (this RFC) | S1 matcher; seeds folded into entries and verified domains proof only; one authority check (I2/I3); expiring entries + requests + approvals + step-up + notification; settings; S4 rule; structured refusals + dry run; proof setting, deny list, PSL, CIDR caps |
 | P1 | proof kinds (HTTP file, cloud connector, platform-reviewed LOA); `commands.authorizing_entry_id`; platform deny list as a table with a console; velocity signals; sensor-local policy aligned with §4.1 |
 | P2 | T2 grants with engagement labels; name-vs-IP grants in signed jobs; opt-out registry |
 
