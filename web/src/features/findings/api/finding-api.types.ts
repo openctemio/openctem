@@ -600,4 +600,8 @@ export interface FindingStatsResponse {
   sla_breached?: number
   /** The state lens counts of the same filter: open, fixed, dispositioned, all. */
   by_state?: Partial<Record<'open' | 'fixed' | 'dispositioned' | 'all', number>>
+  /** The Open lens by severity (critical, high, medium, low, info). */
+  open_by_severity?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
+  /** Fixes claimed by an owner (fix_applied), waiting for a verifier. */
+  awaiting_verification?: number
 }
