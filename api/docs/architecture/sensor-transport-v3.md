@@ -13,7 +13,7 @@ is built, where it lives and how to work on it.
 | HTTPS binding (`/api/v3/sensor`) | built, behind `SENSOR_TRANSPORT_V3_ENABLED` | `internal/infra/sensortransport` (server), `handler/sensor_v3_bridge.go` (identity, in-process authenticator, stream hints), `routes/sensor_v2.go` (`sensorV2InProcess`) |
 | Control stream `Subscribe`, push on command changes (one replica) | built | `sensortransport/subscribe.go`, `postgres/command_notify.go` |
 | Sensor CA, `IssueCertificate`, mTLS listener (gRPC binding), revocation | built | `sensortransport/ca.go`, `issuer.go`, `mtls.go`; `SensorService.SetStatusNotifier` |
-| Redis wake fan-out | planned | step 4 |
+| Redis wake fan-out across replicas | built | `internal/infra/redis/sensor_wake.go` (`SensorWakeBus`, channel `sensor:v3:wake`) |
 | Gateway SNI passthrough | planned | step 5 |
 
 ## How a call is served
@@ -48,6 +48,15 @@ also re-resolves the identity: a revoked key or sensor ends the stream with
 UNAUTHENTICATED) or a keepalive (25 s). A wake always sends; a re-check
 sends only a change. Streams close after 24–30 minutes and the sensor
 reconnects; at most 4 per sensor.
+
+Across replicas, the command and sensor notifiers are a `SensorWakeBus`: it
+wakes this replica's hub at once and publishes `{origin, tenant, sensor}` on
+Redis channel `sensor:v3:wake` from a bounded queue (a full queue drops the
+wake; Wake never blocks a request). Every other replica delivers it to its
+own hub. Redis is trusted with a hint only: a message that is malformed,
+over 512 bytes or carries ids that are not UUIDs is dropped, and a wake only
+ever makes a stream re-read the database. Without Redis, other replicas see
+a change at their 30 s re-check.
 
 ## Certificates and the gRPC binding
 

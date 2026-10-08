@@ -92,6 +92,11 @@ that the report is refused (`422 RESULTS_QUARANTINE_FULL`, v2 item error
 Accept and discard are audited (`sensor.results_accepted`,
 `sensor.results_discarded`).
 
+Reviewed items (accepted or discarded) are deleted 30 days after review by the
+`sensor-result-quarantine-purge` controller (daily, one replica at a time);
+pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
+`720h`) and `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` (default `24h`) change it.
+
 ## Code
 
 | What | Where |
