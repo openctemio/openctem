@@ -33,6 +33,12 @@
 # TLS is chosen by OPENCTEM_TLS_MODE (internal | acme | files | http); each
 # mode is a pair of small files under modes/. Environment placeholders
 # {$NAME:default} are substituted when the file is read.
+#
+# Sensor protocol v3 gRPC binding (RFC-059): with
+# OPENCTEM_SENSOR_GATEWAY=passthrough, TLS for SENSOR_PUBLIC_HOSTNAME is passed
+# through at layer 4 to the API's mTLS listener (sensors/passthrough.wrappers;
+# needs the gateway image with the layer4 module, deploy/gateway/Dockerfile).
+# Default off (sensors/off.wrappers).
 # =============================================================================
 {
 	# Admin API stays inside the container (the healthcheck uses it).
@@ -62,6 +68,9 @@
 		# is whatever the client typed when the front proxy appends, and
 		# {client_ip} is what this gateway writes into X-Real-IP for the API.
 		trusted_proxies_strict
+
+		# Layer-4 routing ahead of TLS (sensor protocol v3); empty when off.
+		import sensors/{$OPENCTEM_SENSOR_GATEWAY:off}.wrappers
 	}
 
 	import modes/{$OPENCTEM_TLS_MODE}.global

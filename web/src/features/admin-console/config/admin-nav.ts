@@ -1,5 +1,6 @@
 import {
   Building2,
+  Gauge,
   Inbox,
   KeyRound,
   LayoutDashboard,
@@ -60,6 +61,7 @@ export const adminNav: AdminNavSection[] = [
         minRole: 'super_admin',
       },
       { title: 'Sign-up', url: '/admin/system/sign-up', icon: UserPlus },
+      { title: 'Plans', url: '/admin/system/plans', icon: Gauge },
       { title: 'System logs', url: '/admin/system-logs', icon: ScrollText },
     ],
   },

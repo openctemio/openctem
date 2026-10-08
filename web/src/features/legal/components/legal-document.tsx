@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { LogoFull } from '@/assets/logo'
+import { LEGAL_DOCS } from '@/lib/legal'
 
 export interface LegalSection {
   heading: string
@@ -8,17 +9,21 @@ export interface LegalSection {
 }
 
 /**
- * A plain, readable legal page (the built-in /terms and /privacy templates).
- * Server component: no client JavaScript.
+ * A plain, readable legal page (the built-in templates). Server component: no
+ * client JavaScript.
  */
 export function LegalDocument({
   title,
   effectiveDate,
   sections,
+  contact,
+  docsUrl,
 }: {
   title: string
   effectiveDate: string
   sections: LegalSection[]
+  contact: string
+  docsUrl: string
 }) {
   return (
     <div className="min-h-svh bg-background px-4 py-10 text-foreground">
@@ -36,6 +41,22 @@ export function LegalDocument({
             <div className="space-y-2 text-sm leading-6 text-muted-foreground">{s.body}</div>
           </section>
         ))}
+        <footer className="space-y-2 border-t pt-4 text-xs text-muted-foreground">
+          <nav aria-label="Legal documents" className="flex flex-wrap gap-x-4 gap-y-1">
+            {LEGAL_DOCS.map((d) => (
+              <Link
+                key={d.doc}
+                href={d.path}
+                className="hover:text-primary underline-offset-4 hover:underline"
+              >
+                {d.title}
+              </Link>
+            ))}
+          </nav>
+          <p>
+            Contact: {contact}. Documentation: {docsUrl}.
+          </p>
+        </footer>
       </article>
     </div>
   )
