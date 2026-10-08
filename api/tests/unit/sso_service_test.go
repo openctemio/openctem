@@ -789,14 +789,18 @@ func TestSSOService_GetProvidersForTenant_Success(t *testing.T) {
 	}
 }
 
+// Anti-enumeration: an unknown organization answers like one without SSO.
 func TestSSOService_GetProvidersForTenant_TenantNotFound(t *testing.T) {
 	ipRepo := newSSOmockIPRepo()
 	tenantRepo := newSSOmockTenantRepo()
 	svc := newTestSSOService(ipRepo, tenantRepo, newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	_, err := svc.GetProvidersForTenant(context.Background(), "nonexistent")
-	if !errors.Is(err, auth.ErrSSOTenantNotFound) {
-		t.Fatalf("expected ErrSSOTenantNotFound, got %v", err)
+	got, err := svc.GetProvidersForTenant(context.Background(), "nonexistent")
+	if err != nil {
+		t.Fatalf("an unknown organization must not be an error, got %v", err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Fatalf("an unknown organization must answer an empty list, got %#v", got)
 	}
 }
 
