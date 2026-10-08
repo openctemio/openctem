@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
@@ -75,10 +74,4 @@ func MCPOriginGuard(allowed []string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// normalizeOrigin lower-cases an origin and drops a trailing slash. A
-// serialized origin has no path, so anything else is left to fail the match.
-func normalizeOrigin(o string) string {
-	return strings.TrimRight(strings.ToLower(strings.TrimSpace(o)), "/")
 }
