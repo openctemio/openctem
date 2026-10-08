@@ -41,6 +41,7 @@ ci_run_findings
 ci_run_tokens
 ci_runs
 ci_trust_configs
+command_events
 command_logs
 commands
 comment_reactions
@@ -96,8 +97,6 @@ pentest_finding_templates
 pentest_findings
 pentest_reports
 pentest_retests
-scan_runs
-scan_workflows
 priority_class_audit_log
 priority_override_rules
 relationship_suggestions
@@ -114,7 +113,9 @@ scan_freeze_windows
 scan_profiles
 scan_run_stage_plans
 scan_run_targets
+scan_runs
 scan_step_outputs
+scan_workflows
 scan_zone_sensors
 scan_zones
 scanner_templates
