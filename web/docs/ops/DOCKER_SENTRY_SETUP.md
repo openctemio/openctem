@@ -10,12 +10,10 @@ To deploy OpenCTEM, use the published images and the guides at
 |---|---|
 | `web/Dockerfile` | Multi-target build on `node:26-alpine`: `development` (hot reload), `builder`, `production` (standalone output, user `nextjs`, health check on `/api/health`) |
 | `web/docker-compose.yml` | Development: service `nextjs`, source mounted, `WATCHPACK_POLLING=true`, port `${UI_PORT:-3000}` |
-| `web/docker-compose.prod-simple.yml` | The production image alone, behind your own proxy |
-| `web/docker-compose.prod.yml` | The production image behind the bundled nginx (`web/nginx/`, see [its README](../../nginx/README.md)) |
 
 The supported production layout is the platform stack in
 `api/deploy/docker-compose.yml` (gateway, web, API, PostgreSQL, Redis) or the
-all-in-one image; the web-only compose files are for testing the console image.
+all-in-one image; `web/docker-compose.yml` is for development only.
 
 ## Development in Docker
 
