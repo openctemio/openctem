@@ -24,6 +24,7 @@ var keyChainExempt = map[string]string{
 	"/api/v1/webhooks/incoming":   "HMAC-verified inbound webhooks",
 	"/api/v1/module-presets":      "JWT-only base chain",
 	"/api/v1/version":             "JWT-only base chain (authMiddleware, no oct_ keys)",
+	"/api/v1/announcements":       "JWT-only base chain (authMiddleware, no oct_ keys)",
 	"/api/v1/client-errors":       "public, no chain: counts a web error kind",
 	"/api/v1/validation/evidence": "sensor-key auth only",
 	// CI runner routes (RFC-051): mounted outside every key chain, with

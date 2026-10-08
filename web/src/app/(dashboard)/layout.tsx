@@ -13,6 +13,7 @@ import {
 import { SkipToMain } from '@/components/skip-to-main'
 import { RouteGuard } from '@/components/route-guard'
 import { StepUpDialogHost } from '@/components/step-up-dialog'
+import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
 
 type SiteLayoutProps = {
   children?: React.ReactNode
@@ -53,6 +54,8 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                 <RouteGuard>
                   {/* Global header that handles per-route visibility */}
                   <DashboardHeader />
+                  {/* The platform operator's notices (maintenance, warnings). */}
+                  <PlatformAnnouncementBanner />
                   {/*
                     `flex flex-1 flex-col` propagates the flex context
                     from SidebarInset (which is `flex flex-col flex-1`)

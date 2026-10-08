@@ -57,6 +57,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/openapi.yaml":                    {classSystem, "public API spec"},
 	"/docs":                            {classSystem, "public API docs"},
 	"/api/v1/version":                  {classSystem, "build identity"},
+	"/api/v1/announcements":            {classSystem, "platform operator notices (plain text); no tenant data"},
 	"/api/v1/client-errors":            {classSystem, "web error kind for operator metrics; reads and stores nothing"},
 	"/api/v1/auth":                     {classSystem, "authentication flows"},
 	"/api/v1/users":                    {classSystem, "the caller's own account"},
