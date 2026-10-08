@@ -1,6 +1,6 @@
 # Least-privilege database roles
 
-Owner decision D-6 (research/14, SEC-7). The API used to connect to Postgres
+Decision D-6. The API used to connect to Postgres
 as the superuser that owns the database. A SQL injection or an RCE in the API
 was then full control of the cluster: read any file the server can read
 (`pg_read_file`, `COPY ... FROM '/path'`), run programs (`COPY ... PROGRAM`),

@@ -119,7 +119,7 @@ now drives the connector; the old runner dispatcher is gone.
   (`tenablesc.Service.CoverageStatus`): the next batch waits until the
   previous `connector_scan` finished and its reports were ingested, then takes
   that scan's reported active count. A full license stops the rotation;
-  OpenCTEM never deletes data from Tenable.sc to free licenses (owner decision
+  OpenCTEM never deletes data from Tenable.sc to free licenses (decision
   Q4), so space comes back through Tenable.sc's own aging.
 - **Each batch** is one `connector_scan` (`DispatchCoverageBatch`) of the
   gated targets, pinned to the connector's sensor. One connector per tenant
