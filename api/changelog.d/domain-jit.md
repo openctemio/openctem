@@ -7,4 +7,4 @@
 - **Lapsed domains:** a domain whose DNS proof lapsed stops provisioning, and its members are flagged with `domain_lapsed` in the members list.
 - **Password reset:** a forgot-password request for an address on a lapsed domain that no organization holds now mails no reset link.
 
-Upgrade: migration 001319 adds two columns to `verified_domains`. Existing domains keep provisioning as before.
+Upgrade: migration 001326 adds two columns to `verified_domains`. Existing domains keep provisioning as before.

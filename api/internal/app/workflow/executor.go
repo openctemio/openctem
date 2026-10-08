@@ -675,7 +675,7 @@ func (e *WorkflowExecutor) executeActionNode(ctx context.Context, execCtx *Execu
 	// Execute the action as the run principal. The events the step causes
 	// (a status change, a scan) carry the run as their cause, so they cannot
 	// start a loop (loop_guard.go).
-	return handler.Execute(WithAutomationCause(stepCtx, stepCause(execCtx.Run)), input)
+	return handler.Execute(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
 }
 
 // authorizeStep checks that the run's principal may run a step with this
@@ -724,7 +724,7 @@ func (e *WorkflowExecutor) executeNotificationNode(ctx context.Context, execCtx 
 		Context:            e.buildNodeInput(execCtx, node),
 	}
 
-	return e.notificationHandler.Send(WithAutomationCause(stepCtx, stepCause(execCtx.Run)), input)
+	return e.notificationHandler.Send(WithAutomationCause(stepCtx, stepCause(execCtx.Run, node.NodeKey)), input)
 }
 
 // updateRunStats updates the run statistics.

@@ -61,9 +61,21 @@ export interface UseMembersOptions {
  * @param options - Options for fetching members
  * @param options.includeRoles - Include RBAC roles for each member
  * @param options.search - Search term for name or email
- * @param options.limit - Max results (default 10, max 100)
- * @param options.offset - Pagination offset
+ * @param options.limit - Page size (sent as per_page; default 100, max 500)
+ * @param options.offset - Offset of the first member (sent as a 1-based page)
  */
+/**
+ * The members list pages with page / per_page (one list convention); the
+ * options keep an offset window, which maps onto a page of `limit` members.
+ */
+export function setMemberPage(params: URLSearchParams, options?: UseMembersOptions) {
+  const perPage = options?.limit && options.limit > 0 ? options.limit : 0
+  if (perPage) params.set('per_page', String(perPage))
+  if (perPage && options?.offset && options.offset > 0) {
+    params.set('page', String(Math.floor(options.offset / perPage) + 1))
+  }
+}
+
 export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMembersOptions) {
   const { can } = usePermissions()
   const canReadMembers = can(Permission.MembersRead)
@@ -85,12 +97,7 @@ export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMemb
   if (options?.search) {
     params.set('search', options.search)
   }
-  if (options?.limit && options.limit > 0) {
-    params.set('limit', String(options.limit))
-  }
-  if (options?.offset && options.offset > 0) {
-    params.set('offset', String(options.offset))
-  }
+  setMemberPage(params, options)
   const status = options?.status ?? PICKER_MEMBER_STATUS
   if (status !== 'current') {
     params.set('status', status)
@@ -347,12 +354,7 @@ export function getMembersKey(tenantIdOrSlug: string, options?: UseMembersOption
   if (options?.search) {
     params.set('search', options.search)
   }
-  if (options?.limit && options.limit > 0) {
-    params.set('limit', String(options.limit))
-  }
-  if (options?.offset && options.offset > 0) {
-    params.set('offset', String(options.offset))
-  }
+  setMemberPage(params, options)
   const status = options?.status ?? PICKER_MEMBER_STATUS
   if (status !== 'current') {
     params.set('status', status)

@@ -74,6 +74,7 @@ import {
 import { toast } from 'sonner'
 
 import { ScanWorkflowForm } from '@/features/scan-workflows/components/workflow-form'
+import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
 import { ScansPageHeader, ScansSectionTabs } from '@/features/scans/components/scans-section-tabs'
 import { NewScanWorkflowButton } from '@/features/scan-workflows/components/new-scan-workflow-button'
 import {
@@ -639,23 +640,11 @@ export default function ScanWorkflowsPage() {
                         <Skeleton className="h-11 w-full" />
                       </div>
                     ) : pl.steps && pl.steps.length > 0 ? (
-                      <ol className="divide-y rounded-lg border">
-                        {pl.steps.map((step, idx) => (
-                          <li key={step.id} className="flex items-center gap-2 px-3 py-2">
-                            <span className="w-5 text-xs text-muted-foreground tabular-nums">
-                              {idx + 1}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm font-medium break-words">
-                                {step.name}
-                              </span>
-                              {step.tool && (
-                                <span className="text-xs text-muted-foreground">{step.tool}</span>
-                              )}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
+                      <WorkflowStagesView
+                        steps={pl.steps}
+                        maxParallel={pl.settings?.max_parallel_steps || 3}
+                        builderHref={isTemplate ? undefined : `/scans/workflows/${pl.id}`}
+                      />
                     ) : (
                       <p className="text-sm text-muted-foreground">
                         No steps configured.

@@ -95,7 +95,7 @@ func (s *Service) wildcardTaker(ctx context.Context, sc *scan.Scan) (bool, strin
 	}
 	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, *sc.ScanWorkflowID)
 	if err != nil {
-		return false, "", fmt.Errorf("failed to get pipeline steps: %w", err)
+		return false, "", fmt.Errorf("failed to get scan workflow steps: %w", err)
 	}
 	for _, st := range steps {
 		if len(st.DependsOn) > 0 {
