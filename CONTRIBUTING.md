@@ -11,6 +11,15 @@
    web console under `web/`. Component guides: [`api/README.md`](api/README.md),
    [`web/README.md`](web/README.md); engineering docs: [`api/docs/`](api/docs/README.md).
 
+## Checks on a pull request
+
+The required checks are listed in
+[`api/docs/development/ci-cd.md`](api/docs/development/ci-cd.md). One more check,
+**Dependency Review**, runs on every pull request but is not required: it fails
+when a Go module, npm package or GitHub Action that the pull request adds or
+upgrades has a known high or critical advisory. Treat a red result as a blocker
+unless a maintainer agrees otherwise.
+
 ## Commit messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/), scoped by
