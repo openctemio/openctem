@@ -19,5 +19,9 @@
     "/api/v1/notifications/unread-count",
     "/api/v1/auth/providers",
     "/api/v1/easm/candidates?states=needs_review%2Ccandidate&page=1&per_page=1"
-  ]
+  ],
+  "$comment_pageUses": "A page that needs one of those endpoints for its own content, not for the shell: the change-password card reads the password policy from /auth/providers.",
+  "pageUsesSessionEndpoint": {
+    "/account/security": ["/api/v1/auth/providers"]
+  }
 }
