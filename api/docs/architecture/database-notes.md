@@ -40,10 +40,10 @@ When assets are created from agents (e.g., Semgrep), the identifier format may d
 
 | Source | Identifier Format | Example |
 |--------|------------------|---------|
-| Semgrep Agent | `github.com-org/repo` | `github.com-openctem/openctemio/sdk` |
+| Sensor (semgrep) | `github.com-org/repo` | `github.com-openctem/openctemio/sdk` |
 | SCM Import | `org/repo` | `openctemio/sdk` |
 
-**Normalization logic:** `internal/app/ingest_service.go` - `normalizeRepositoryIdentifier()`
+**Normalization logic:** `internal/app/asset/service.go` - `findMatchingRepositoryAsset()` / `updateExistingRepositoryAsset()`
 
 The system handles this by:
 1. Detecting provider from prefix (e.g., `github.com-` → GitHub)

@@ -17,7 +17,7 @@ Content-Type: application/json
 
 JSON-RPC 2.0. A single request/response per POST (`application/json`); no SSE.
 Supported methods: `initialize`, `notifications/*` (acknowledged, no body),
-`ping`, `tools/list`, `tools/call`.
+`ping`, `tools/list`, `tools/call`, `prompts/list`, `prompts/get`.
 
 ## Authentication (shipped)
 
@@ -51,6 +51,26 @@ plaintext `oct_…` once).
 | `list_remediation_groups` | `GroupService.ListGroups` | solution families |
 | `list_assets` | `AssetService.ListAssets` | assets (exposure/criticality/search) |
 | `compliance_posture` | `ComplianceService.GetComplianceStats` | framework/control posture |
+| `get_campaign` | pentest campaigns | one pentest campaign |
+| `list_campaign_findings` | pentest findings | a campaign's findings |
+| `get_pentest_finding` | pentest findings | one pentest finding |
+| `list_retests` | pentest retests | retests of a finding |
+| `list_finding_templates` | pentest templates | the finding template library |
+| `campaign_report_stats` | pentest campaigns | severity and status counts for a campaign report |
+
+The tool list is `internal/infra/http/handler/mcp_tools.go` (15 tools).
+
+## Prompts (shipped)
+
+Prompt templates that assemble tenant data into a drafting prompt for the
+client's model (`internal/infra/http/handler/mcp_prompts.go`):
+
+| Prompt | Arguments | Produces |
+|---|---|---|
+| `exec_summary` | `campaign_id` | executive summary draft for a pentest campaign |
+| `finding_writeup` | `finding_id`, `section` (`description`, `impact`, `remediation`, `all`) | a finding write-up section |
+| `remediation_guidance` | `finding_id` | client-ready remediation steps from the finding's remediation and CWE/OWASP |
+| `attack_narrative` | `campaign_id` | the attack-path narrative from a campaign's ordered findings |
 
 ## Security model (the key invariants)
 
@@ -60,7 +80,8 @@ plaintext `oct_…` once).
   regression test asserts this. Every backing service takes `tenantID` explicitly
   and enforces `WHERE tenant_id = ?`.
 - **Least privilege**: each tool requires a permission (`findings:read`,
-  `assets:read`, `compliance:frameworks:read`) matched against the key's scopes;
+  `assets:read`, `compliance:frameworks:read`, the pentest read permissions)
+  matched against the key's scopes;
   tools run with the key owner's data-scope (`IsAdmin=false`), so group scoping and
   the pentest-membership gate still apply. Mint an MCP key with the read scopes it
   needs — a scopeless key can call nothing.
@@ -92,7 +113,6 @@ Code MCP server entry:
 
 ## Planned (not yet shipped)
 
-- UI settings page to mint an MCP key + show this connection block (Phase 2).
 - Per-key rate limiting (the key carries `RateLimit()`), optional `mcp:read` scope
   enforcement, write-capable tools behind explicit scopes.
-- MCP `resources`/`prompts` — would justify adopting the official Go MCP SDK.
+- MCP `resources`.

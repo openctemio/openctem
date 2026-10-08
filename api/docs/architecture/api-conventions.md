@@ -19,9 +19,9 @@ path prefix, and each plane has one authenticator. **(lint)**
 | user | `/api/v1/` | session JWT/cookie, `oct_` key | tenant **from the credential** |
 | self | `/api/v1/me/` | session | the caller's own account; the only place that lists several tenants |
 | auth | `/api/v1/auth/` | none, rate-limited | login, SSO, OAuth, SAML |
-| admin | `/api/v1/admin/` | admin session / `X-Admin-API-Key` | platform admin; may be served on its own host |
+| admin | `/api/v1/admin/` | platform admin console session (cookie) only; no API key or bearer header | platform admin; may be served on its own host |
 | sensor | `/api/v2/sensor/` | sensor key (`octs_`), enrollment token (`octe_`) | new sensor calls are protocol v2 features advertised by `GET /api/v2/sensor/hello` |
-| inbound | `/hooks/{provider}` (legacy `/api/v1/webhooks/incoming/`) | HMAC per tenant | |
+| inbound | `/api/v1/webhooks/incoming/{jira,github}` | HMAC per tenant | a dedicated `/hooks/{provider}` prefix is **Planned** (RFC-041) |
 | scim | `/scim/v2/` | SCIM bearer | casing mandated by RFC 7644 |
 | mcp | `/api/v1/mcp` | `oct_` key | |
 | ops | `/health`, `/ready`, `/metrics` | none / metrics bearer | `/metrics` and `/ready` are never exposed publicly |
@@ -49,7 +49,7 @@ Rules:
   - `/api/v1/agents/` (the old management path, retired 2026-10-05)
   - `/api/v1/tenants/{tenant}/`
   - `/api/v1/users/me/`
-  - `/api/v1/webhooks/incoming/`
+  - `/api/v1/webhooks/incoming/` (existing Jira and GitHub receivers stay)
 
 ## 2. Tenancy
 
@@ -186,9 +186,9 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   `{ "error": "...", "code": "UPPER_SNAKE", "message": "...", "details": ..., "request_id": "..." }`.
   - `code` is the machine-readable contract.
   - Add new codes to `pkg/apierror`. Do not invent them in handlers.
-- **Sensor v2 and new planes** return RFC 9457
-  `application/problem+json`, with `code` as an extension member. The user
-  plane serves it on `Accept: application/problem+json` (RFC-041 D9).
+- **The sensor v2 plane** returns RFC 9457 `application/problem+json`, with
+  `code` as an extension member. Serving it on the user plane for
+  `Accept: application/problem+json` is **Planned** (RFC-041 D9).
 - **Status codes:**
 
   | Situation | Status |
@@ -221,6 +221,8 @@ POST /{collection}/bulk/{verb}     body: { "ids": [...], ...arguments }
   ```
 
   and increments `deprecated_route_requests_total{plane,route,client}`.
+- Incoming `Idempotency-Key` handling on mutating routes is **Planned**; do not
+  rely on it.
 - **Mark the operation `deprecated: true` in the spec.**
 - **Remove it on the date only after the telemetry is at zero:**
   - web-only routes: 30 days;
