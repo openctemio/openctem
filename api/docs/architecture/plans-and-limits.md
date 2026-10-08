@@ -5,8 +5,7 @@ caps what the organization may **add** (members, assets, sensors, ...). A
 platform administrator edits the plan defaults in the console and can give one
 organization a different limit (an override).
 
-Design: research/71 (SaaS readiness), section 7.1 and the owner decisions of
-2026-10-08.
+Decided 2026-10-08.
 
 ## Limits
 
@@ -26,7 +25,7 @@ Design: research/71 (SaaS readiness), section 7.1 and the owner decisions of
 administrator sets the Pro limits in the console before selling it.
 
 Platform scanning stays off for Free organizations until the platform
-scanning redesign (research/67) lands; the two scan quotas are stored now so
+scanning redesign lands; the two scan quotas are stored now so
 the console shows them.
 
 ## Which plan an organization is on
