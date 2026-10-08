@@ -11,8 +11,7 @@
 
 A daily controller (`internal/infra/controller/easm_dns_checks.go`, name
 `easm-dns-checks`) runs two checks for every active tenant that has the
-`attack_surface` module (O10). They are **on by default** (research/22 owner
-decision E3). The CT controller also runs both checks for a tenant right
+`attack_surface` module (O10). They are **on by default** (decision E3). The CT controller also runs both checks for a tenant right
 after that tenant's CT sweep, so a name CT just promoted is checked in the
 same pass, not a full interval later (names checked within the re-check
 window are not asked again):
@@ -168,10 +167,10 @@ address is not judged at all, so a private name server is never called lame.
 
 | Variable | Default | |
 |---|---|---|
-| `EASM_DNS_CHECKS_ENABLED` | `true` | on by default (research/22 E3); each tenant's run holds a controller lease and the per-run cap, QPS and budget bound it. `false` turns the checks off platform-wide |
+| `EASM_DNS_CHECKS_ENABLED` | `true` | on by default (decision E3); each tenant's run holds a controller lease and the per-run cap, QPS and budget bound it. `false` turns the checks off platform-wide |
 | `EASM_DNS_RESOLVER` | first `nameserver` of `/etc/resolv.conf` | `host[:port]` of a recursive resolver |
 | `EASM_DNS_QPS` | `20` | |
-| `EASM_DNS_CHECK_INTERVAL` | `24h` | RFC-036 O9: daily light checks. The platform default; a tenant may set 6 h to 168 h or turn the checks off (`/api/v1/easm/settings`, research/22 P0-11). The controller ticks hourly and checks a name once its window passed |
+| `EASM_DNS_CHECK_INTERVAL` | `24h` | RFC-036 O9: daily light checks. The platform default; a tenant may set 6 h to 168 h or turn the checks off (`/api/v1/easm/settings`). The controller ticks hourly and checks a name once its window passed |
 | `EASM_DNS_MAX_NAMES_PER_RUN` | `500` | |
 
 The resolver sees which names the tenant owns. Point `EASM_DNS_RESOLVER` at
@@ -188,7 +187,7 @@ sensor scan: today a tenant expresses it as a **weekly scan configuration**
 (`schedule_type=weekly`, nuclei, on an asset group of its Tier A assets);
 the scan gate skips members that are not confirmed. The platform creates no
 scan schedule by default — nothing scans a tenant's hosts unless the tenant
-sets it up (owner decision if that should change). Automatic tier assignment
+sets it up. Automatic tier assignment
 is RFC-036 P4.
 
 ## Related

@@ -66,7 +66,7 @@ func (s *Service) gateRunContext(ctx context.Context, tenantID shared.ID, trigge
 		return out, nil
 	}
 	if s.targetGate == nil {
-		return nil, errors.New("pipeline target gate is not configured; run not started")
+		return nil, errors.New("scan run target gate is not configured; run not started")
 	}
 	gated, err := s.targetGate.ResolveDispatchTargets(ctx, scanapp.DispatchTargetsInput{
 		TenantID: tenantID, Targets: targets,

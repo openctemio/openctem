@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -33,6 +34,47 @@ type AdminOrganizationHandler struct {
 	// provisioning creates accounts (organization users, and the owner of a
 	// new organization) — the same service organization admins use.
 	provisioning *tenantapp.UserProvisioningService
+	// stepUp checks a fresh console authenticator code for owner recovery.
+	stepUp StepUpVerifier
+}
+
+// WithStepUp wires the console step-up check (owner recovery needs it).
+func (h *AdminOrganizationHandler) WithStepUp(v StepUpVerifier) *AdminOrganizationHandler {
+	h.stepUp = v
+	return h
+}
+
+// confirmRecoveryStepUp demands a fresh authenticator code. Without a
+// verifier the recovery is refused rather than run unconfirmed.
+func (h *AdminOrganizationHandler) confirmRecoveryStepUp(w http.ResponseWriter, r *http.Request, code string) bool {
+	actor := middleware.GetAdminUser(r.Context())
+	if actor == nil {
+		apierror.Unauthorized("administrator session required").WriteJSON(w)
+		return false
+	}
+	if h.stepUp == nil {
+		apierror.ServiceUnavailable("Owner recovery is not available").WriteJSON(w)
+		return false
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		apierror.New(http.StatusUnauthorized, codeStepUpRequired, "Enter a code from your authenticator to confirm the owner recovery").WriteJSON(w)
+		return false
+	}
+	if err := h.stepUp.StepUp(r.Context(), actor, code, stepUpPurposeOwnerRecovery, clientInfo(r)); err != nil {
+		switch {
+		case errors.Is(err, admin.ErrStepUpUnavailable):
+			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
+				"Enroll the console authenticator (sign in with your password and TOTP) to confirm this action").WriteJSON(w)
+		case errors.Is(err, admin.ErrInvalidMFACode):
+			apierror.Unauthorized("Invalid or already used code; wait for your authenticator to show a new one").WriteJSON(w)
+		default:
+			h.logger.Error("owner recovery step-up", "error", err)
+			apierror.InternalServerError("could not verify the code").WriteJSON(w)
+		}
+		return false
+	}
+	return true
 }
 
 // WithUserProvisioning wires administrator-created accounts.
@@ -65,6 +107,8 @@ type AdminOrganizationResponse struct {
 	ActiveIdentityProviders int       `json:"active_identity_providers"`
 	VerifiedDomains         int       `json:"verified_domains"`
 	SSOEnforced             bool      `json:"sso_enforced"`
+	// Plan is free, pro or enterprise.
+	Plan string `json:"plan"`
 }
 
 // AdminOrganizationListResponse is a page of organizations.
@@ -117,7 +161,21 @@ type AdminCreateOrgUserRequest struct {
 	// suspended. Super admin only; the set-password link is emailed and
 	// never returned; refused while any owner is active.
 	Recovery bool `json:"recovery,omitempty"`
+	// Reason (recovery only, required) is why the administrator takes this
+	// step; it is kept in the admin audit row.
+	Reason string `json:"reason,omitempty" validate:"max=500"`
+	// TOTPCode (recovery only, required) is a fresh code from the console
+	// authenticator (step-up).
+	TOTPCode string `json:"totp_code,omitempty" validate:"max=16"`
 }
+
+// Owner recovery reason length bounds.
+const (
+	ownerRecoveryReasonMin = 10
+	ownerRecoveryReasonMax = 500
+)
+
+const stepUpPurposeOwnerRecovery = "owner recovery"
 
 // AdminOrgUserResponse is one member of an organization in the console.
 type AdminOrgUserResponse struct {
@@ -155,7 +213,7 @@ func toAdminOrganizationResponse(o *admin.Organization) AdminOrganizationRespons
 		ID: o.ID.String(), Name: o.Name, Slug: o.Slug, Description: o.Description,
 		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners,
 		SAMLEnabled: o.SAMLEnabled, ActiveIdentityProviders: o.ActiveIdentityProviders,
-		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced,
+		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, Plan: o.Plan,
 	}
 }
 
@@ -188,6 +246,9 @@ func orgIDParam(r *http.Request) (shared.ID, bool) {
 // @Tags Admin Organizations
 // @Produce json
 // @Param search query string false "Match name or slug"
+// @Param owner query string false "none: no active owner; present: has one" Enums(none, present)
+// @Param plan query string false "Plan" Enums(free, pro, enterprise)
+// @Param include_system query bool false "Also list the internal platform system organization (left out by default)"
 // @Param page query int false "Page (default 1)"
 // @Param per_page query int false "Page size (default 50, max 100)"
 // @Success 200 {object} AdminOrganizationListResponse
@@ -201,9 +262,32 @@ func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	page, perPage := paging.Page, paging.PerPage
-	orgs, total, err := h.orgs.ListOrganizations(r.Context(), admin.OrganizationFilter{
+	f := admin.OrganizationFilter{
 		Search: q.Get("search"), Limit: perPage, Offset: (page - 1) * perPage,
-	})
+	}
+	switch owner := q.Get("owner"); owner {
+	case "", admin.OrganizationOwnerNone, admin.OrganizationOwnerPresent:
+		f.Owner = owner
+	default:
+		apierror.BadRequest("owner must be none or present").WriteJSON(w)
+		return
+	}
+	switch q.Get("include_system") {
+	case "", queryParamFalse:
+	case queryParamTrue:
+		f.IncludeSystem = true
+	default:
+		apierror.BadRequest("include_system must be true or false").WriteJSON(w)
+		return
+	}
+	if p := q.Get("plan"); p != "" {
+		if !plan.Plan(p).IsValid() {
+			apierror.BadRequest("plan must be free, pro or enterprise").WriteJSON(w)
+			return
+		}
+		f.Plan = p
+	}
+	orgs, total, err := h.orgs.ListOrganizations(r.Context(), f)
 	if err != nil {
 		h.logger.Error("list organizations", "error", sanitizeLogField(err.Error()))
 		apierror.InternalError(err).WriteJSON(w)
@@ -381,6 +465,13 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 		middleware.SetAuditAction(r.Context(), "organization.owner_recovery", true)
 		if middleware.GetAdminRole(r.Context()) != string(admin.AdminRoleSuperAdmin) {
 			apierror.Forbidden("Owner recovery requires the super admin role.").WriteJSON(w)
+			return
+		}
+		if n := len([]rune(strings.TrimSpace(req.Reason))); n < ownerRecoveryReasonMin || n > ownerRecoveryReasonMax {
+			apierror.BadRequest("Give a reason for the owner recovery (10 to 500 characters); it is kept in the audit log.").WriteJSON(w)
+			return
+		}
+		if !h.confirmRecoveryStepUp(w, r, req.TOTPCode) {
 			return
 		}
 		create = h.provisioning.RecoverOwner

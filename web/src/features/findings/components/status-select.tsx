@@ -27,10 +27,6 @@ const STATUS_DESCRIPTIONS: Partial<Record<FindingStatus, string>> = {
   duplicate: 'Already reported in another finding',
   draft: 'Pentest finding being drafted',
   in_review: 'Under peer review',
-  remediation: 'Developer working on fix',
-  retest: 'Awaiting re-verification',
-  verified: 'Fix confirmed via manual retest',
-  accepted_risk: 'Risk acknowledged and accepted',
 }
 
 interface StatusSelectProps {

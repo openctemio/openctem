@@ -146,6 +146,38 @@ func (h *RemediationCampaignHandler) Get(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// ListFindings handles GET /api/v1/remediation/campaigns/{id}/findings: the
+// findings the campaign's finding count counts, on the caller's in-scope
+// assets when restricted, so the count and the list always agree.
+// @Summary      List a remediation campaign's findings
+// @Description  The findings the campaign tracks (its finding filter or remediation key, any status), restricted to the caller's data scope. The total equals the campaign's finding_count for the same caller.
+// @Tags         Remediation
+// @Produce      json
+// @Param        id        path   string  true   "Campaign ID"
+// @Param        page      query  int     false  "Page number" default(1)
+// @Param        per_page  query  int     false  "Items per page" default(20)
+// @Success      200  {object}  pagination.Result[FindingResponse]
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /remediation/campaigns/{id}/findings [get]
+func (h *RemediationCampaignHandler) ListFindings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	result, err := h.service.ListCampaignFindings(r.Context(), tenantID, chi.URLParam(r, "id"), page)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	items := make([]FindingResponse, 0, len(result.Data))
+	for _, f := range result.Data {
+		items = append(items, toFindingResponse(f))
+	}
+	writeJSON(w, http.StatusOK, pagination.NewResult(items, result.Total, page))
+}
+
 // UpdateStatus transitions campaign status.
 // Resolve handles POST /api/v1/remediation/campaigns/{id}/resolve — actively
 // resolves the campaign's open findings in one action (RFC-015 Phase 3).
@@ -214,13 +246,22 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	startDate, ok := optionalDateField(w, "start_date", req.StartDate)
+	if !ok {
+		return
+	}
+	dueDate, ok := optionalDateField(w, "due_date", req.DueDate)
+	if !ok {
+		return
+	}
+
 	campaign, err := h.service.UpdateCampaign(r.Context(), tenantID, id, exposure.UpdateRemediationCampaignInput{
 		Name:          req.Name,
 		Description:   req.Description,
 		Priority:      req.Priority,
 		Tags:          req.Tags,
-		StartDate:     req.StartDate,
-		DueDate:       req.DueDate,
+		StartDate:     startDate,
+		DueDate:       dueDate,
 		FindingFilter: req.FindingFilter,
 		AssignedTo:    req.AssignedTo,
 		AssignedTeam:  req.AssignedTeam,
@@ -311,6 +352,25 @@ func (h *RemediationCampaignHandler) handleError(w http.ResponseWriter, err erro
 	}
 }
 
+// optionalDateField reads a nullable date of a PATCH body: nil when absent,
+// a pointer to "" for null (clear), the string otherwise. Any other JSON
+// value answers 400 and returns false.
+func optionalDateField(w http.ResponseWriter, field string, raw json.RawMessage) (*string, bool) {
+	if len(raw) == 0 {
+		return nil, true
+	}
+	if string(raw) == "null" {
+		empty := ""
+		return &empty, true
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		apierror.BadRequest(field + " must be an RFC 3339 timestamp, a date (YYYY-MM-DD) or null").WriteJSON(w)
+		return nil, false
+	}
+	return &s, true
+}
+
 // Request/Response types
 
 type CreateRemCampaignRequest struct {
@@ -326,15 +386,17 @@ type CreateRemCampaignRequest struct {
 }
 
 type UpdateRemCampaignRequest struct {
-	Name          *string        `json:"name,omitempty"`
-	Description   *string        `json:"description,omitempty"`
-	Priority      *string        `json:"priority,omitempty"`
-	Tags          []string       `json:"tags,omitempty"`
-	StartDate     *time.Time     `json:"start_date,omitempty"`
-	DueDate       *time.Time     `json:"due_date,omitempty"`
-	FindingFilter map[string]any `json:"finding_filter,omitempty"`
-	AssignedTo    *string        `json:"assigned_to,omitempty"`
-	AssignedTeam  *string        `json:"assigned_team,omitempty"`
+	Name        *string  `json:"name,omitempty"`
+	Description *string  `json:"description,omitempty"`
+	Priority    *string  `json:"priority,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	// StartDate and DueDate: absent = unchanged, null = clear, otherwise an
+	// RFC 3339 timestamp or a date (YYYY-MM-DD).
+	StartDate     json.RawMessage `json:"start_date,omitempty"`
+	DueDate       json.RawMessage `json:"due_date,omitempty"`
+	FindingFilter map[string]any  `json:"finding_filter,omitempty"`
+	AssignedTo    *string         `json:"assigned_to,omitempty"`
+	AssignedTeam  *string         `json:"assigned_team,omitempty"`
 }
 
 type RemediationCampaignResponse struct {

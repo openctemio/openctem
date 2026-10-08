@@ -40,6 +40,11 @@ type Service struct {
 	// job's tier (local_policy.go, RFC-055).
 	contracts     ToolContractSource
 	grantRefusals GrantRefusalObserver
+	// scopeGate re-checks the targets of every command a sensor gets
+	// (scope_recheck.go); nil: not re-checked. failures hears about a
+	// command the re-check failed.
+	scopeGate ScopeGate
+	failures  FailureObserver
 	// now is the clock (tests replace it).
 	now func() time.Time
 }
@@ -97,6 +102,9 @@ type CreateInput struct {
 	// the caller after it routed the command's targets (scan commands
 	// from POST /api/v1/commands go through scan.Service.GateCommandPayload).
 	ScanZoneID *shared.ID `json:"-"`
+	// DispatchGate is what the caller gated the targets with; the claim
+	// re-checks them with it (scope_recheck.go). Server-side only.
+	DispatchGate *commanddom.DispatchGate `json:"-"`
 }
 
 // Create creates a new command.
@@ -141,6 +149,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*commanddom.Co
 	if input.ScanZoneID != nil && !input.ScanZoneID.IsZero() {
 		cmd.SetScanZone(*input.ScanZoneID)
 	}
+	cmd.DispatchGate = input.DispatchGate
 
 	if input.ExpiresIn > 0 {
 		expiresAt := time.Now().Add(time.Duration(input.ExpiresIn) * time.Second)
@@ -275,6 +284,8 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	if input.MaxScanCommands != nil {
 		cmds = capScanCommands(cmds, *input.MaxScanCommands)
 	}
+	// Scope may have changed since the jobs were queued (scope_recheck.go).
+	cmds = s.recheckScope(ctx, tenantID, sensorID, cmds)
 	return s.signTemplates(input.SensorID, cmds), nil
 }
 
@@ -339,6 +350,9 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		cands = cands[:limit]
 	}
 	cands = capScanCommands(cands, slots)
+	// The scope may have changed since the jobs were queued: their targets
+	// pass the dispatch gate again before the claim (scope_recheck.go).
+	cands = s.recheckScope(ctx, tenantID, &sensorID, cands)
 	if len(cands) == 0 {
 		return nil, nil
 	}
@@ -438,6 +452,11 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 			if errors.Is(err, ErrOutOfGrant) && s.grantRefusals != nil {
 				s.grantRefusals.ObserveGrantRefusal(ctx, cmd.TenantID, sid, cmd.ID.String(), gate.grantRefusal(cmd))
 			}
+			return nil, err
+		}
+		// Scope may have changed since the job was queued, or polled
+		// (scope_recheck.go): its targets pass the dispatch gate again.
+		if cmd, err = s.recheckOne(ctx, sid, cmd); err != nil {
 			return nil, err
 		}
 	}

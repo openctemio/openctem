@@ -685,14 +685,14 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 				FROM findings f
 				WHERE f.tenant_id = $1
 				  AND f.component_id IS NOT NULL
-				  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+				  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 			) as vulnerable_components,
 			(
 				SELECT COUNT(*)
 				FROM findings f
 				WHERE f.tenant_id = $1
 				  AND f.component_id IS NOT NULL
-				  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+				  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 			) as total_vulnerabilities,
 			COUNT(DISTINCT ac.component_id) FILTER (WHERE ac.status IN ('deprecated', 'end_of_life')) as outdated_components
 		FROM asset_components ac
@@ -725,7 +725,7 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 			COUNT(*) as count
 		FROM findings f
 		WHERE f.tenant_id = $1
-		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 		  AND f.component_id IS NOT NULL
 		GROUP BY f.severity
 	`
@@ -760,7 +760,7 @@ func (r *ComponentRepository) GetStats(ctx context.Context, tenantID shared.ID) 
 		WHERE f.tenant_id = $1
 		  AND f.component_id IS NOT NULL
 		  AND (COALESCE(f.is_in_kev, false) OR v.cisa_kev_date_added IS NOT NULL)
-		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+		  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 	`
 	if err := r.db.QueryRowContext(ctx, kevQuery, tenantID.String()).Scan(&stats.CisaKevComponents); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		// Non-critical metric — continue with zero value if query fails
@@ -856,7 +856,7 @@ func (r *ComponentRepository) GetVulnerableComponents(ctx context.Context, tenan
 			FROM findings f
 			LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
 			WHERE f.tenant_id = $1
-			  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+			  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 			  AND f.component_id IS NOT NULL
 		)
 	`
@@ -973,7 +973,7 @@ func (r *ComponentRepository) ListAssetUsage(
 			WHERE f.tenant_id = ac.tenant_id
 			  AND f.component_id = ac.component_id
 			  AND f.asset_id = ac.asset_id
-			  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')
+			  AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')
 		)`
 	}
 
@@ -1060,7 +1060,7 @@ func (r *ComponentRepository) ListVulnerabilities(
 
 	statusFilter := ""
 	if !includeResolved {
-		statusFilter = ` AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')`
+		statusFilter = ` AND f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')`
 	}
 
 	countQuery := `
@@ -1074,7 +1074,7 @@ func (r *ComponentRepository) ListVulnerabilities(
 				f.vulnerability_id,
 				COUNT(DISTINCT f.asset_id) AS affected_assets_count,
 				COUNT(*) AS total_finding_count,
-				COUNT(*) FILTER (WHERE f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate', 'verified', 'accepted_risk')) AS open_finding_count,
+				COUNT(*) FILTER (WHERE f.status NOT IN ('resolved', 'false_positive', 'accepted', 'duplicate')) AS open_finding_count,
 				MIN(CASE f.status
 					WHEN 'new'         THEN 1
 					WHEN 'confirmed'   THEN 2
@@ -1220,4 +1220,62 @@ func truncateLicenseList(list string) string {
 		out = next
 	}
 	return out
+}
+
+// ListSBOMEntries returns the components the tenant uses for an SBOM export.
+// It starts from the tenant's own asset_components rows (the components table
+// is a global catalog), so another tenant's licenses or components never
+// appear; a non-nil scope keeps only rows of assets in the user's data scope.
+func (r *ComponentRepository) ListSBOMEntries(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope, limit int) ([]component.SBOMEntry, error) {
+	args := []any{tenantID.String()}
+	where := "ac.tenant_id = $1"
+	if assetID != nil {
+		args = append(args, assetID.String())
+		where += fmt.Sprintf(" AND ac.asset_id = $%d", len(args))
+	}
+	if scope != nil {
+		cond, scopeArgs := dataScopeCondAt("ac.asset_id", scope, len(args)+1)
+		where += " AND " + cond
+		args = append(args, scopeArgs...)
+	}
+	args = append(args, limit)
+	query := `
+		SELECT c.id, c.name, COALESCE(c.version, ''), c.ecosystem, c.purl, c.vulnerability_count,
+			COALESCE(string_agg(DISTINCT NULLIF(ac.license, ''), ','), '')
+		FROM asset_components ac
+		JOIN components c ON c.id = ac.component_id
+		WHERE ` + where + `
+		GROUP BY c.id, c.name, c.version, c.ecosystem, c.purl, c.vulnerability_count
+		ORDER BY c.name, c.version, c.id
+		LIMIT $` + fmt.Sprint(len(args))
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list SBOM components: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]component.SBOMEntry, 0, 64)
+	for rows.Next() {
+		var (
+			e        component.SBOMEntry
+			id, eco  string
+			licenses string
+		)
+		if err := rows.Scan(&id, &e.Name, &e.Version, &eco, &e.PURL, &e.VulnerabilityCount, &licenses); err != nil {
+			return nil, fmt.Errorf("failed to scan SBOM component: %w", err)
+		}
+		if e.ID, err = shared.IDFromString(id); err != nil {
+			return nil, fmt.Errorf("invalid component id %q: %w", id, err)
+		}
+		e.Ecosystem = component.Ecosystem(eco)
+		if licenses != "" {
+			e.Licenses = strings.Split(licenses, ",")
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+	return out, nil
 }

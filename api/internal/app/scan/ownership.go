@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -88,63 +87,6 @@ func (s *Service) auditRefusedTargets(ctx context.Context, tenantID shared.ID, p
 			WithMetadata("path", path).
 			WithMetadata("refused_count", len(targets)).
 			WithMetadata("refused", listed))
-}
-
-// blockedCandidates asks the gate about a run's candidates that scope
-// exclusions left in: group members by asset id, direct targets by name.
-// It returns the blocked candidates keyed by candidate id.
-func (s *Service) blockedCandidates(ctx context.Context, tenantID shared.ID, candidates []scope.ExclusionCandidate,
-	names map[shared.ID]string, memberIDs, excluded map[shared.ID]bool, takeoverOnly bool,
-) (map[string]attribution.State, error) {
-	out := map[string]attribution.State{}
-	if s.attributionGate == nil || len(candidates) == 0 {
-		return out, nil
-	}
-	ids := make([]string, 0, len(candidates))
-	typed := make([]string, 0, len(candidates))
-	typedID := map[string]shared.ID{}
-	for _, c := range candidates {
-		if excluded[c.ID] {
-			continue
-		}
-		if memberIDs[c.ID] {
-			ids = append(ids, c.ID.String())
-			continue
-		}
-		typed = append(typed, names[c.ID])
-		typedID[names[c.ID]] = c.ID
-	}
-	if len(ids) > 0 {
-		blocked, err := s.attributionGate.ActiveCheckBlocked(ctx, tenantID, ids)
-		if err == nil && takeoverOnly {
-			err = s.admitTakeoverTargets(ctx, tenantID, blocked, true)
-		}
-		if err != nil {
-			return nil, attributionCheckFailed(err)
-		}
-		for id, st := range blocked {
-			out[id] = st
-		}
-	}
-	if len(typed) > 0 {
-		blocked, err := s.attributionGate.BlockedTargets(ctx, tenantID, typed)
-		if err == nil && takeoverOnly {
-			err = s.admitTakeoverTargets(ctx, tenantID, blocked, false)
-		}
-		if err != nil {
-			return nil, attributionCheckFailed(err)
-		}
-		for t, st := range blocked {
-			if id, ok := typedID[t]; ok {
-				out[id.String()] = st
-			}
-		}
-	}
-	return out, nil
-}
-
-func attributionCheckFailed(err error) error {
-	return fmt.Errorf("attribution check failed, scan not dispatched: %w", err)
 }
 
 // logRefusedTarget records why the gate refused a target. The target is

@@ -47,6 +47,19 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
 
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'user-1' }) }))
 
+// The tab (status) and page live in the URL through useListParams.
+const listState = vi.hoisted(() => ({ status: '', setFilter: vi.fn() }))
+vi.mock('@/hooks/use-list-params', () => ({
+  useListParams: () => ({
+    page: 1,
+    perPage: 20,
+    filters: { status: listState.status },
+    pagination: { pageIndex: 0, pageSize: 20 },
+    setPagination: vi.fn(),
+    setFilter: listState.setFilter,
+  }),
+}))
+
 vi.mock('@/features/findings/types', () => ({
   APPROVAL_STATUSES: ['pending', 'approved', 'rejected', 'canceled', 'expired'],
   APPROVAL_STATUS_CONFIG: {
@@ -374,7 +387,18 @@ describe('ApprovalsPage', () => {
       })
       render(<ApprovalsPage />)
       fireEvent.mouseDown(screen.getByRole('tab', { name: /^Approved/i }))
-      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, 'approved')
+      // Choosing a tab writes the status to the URL (and page 1)...
+      expect(listState.setFilter).toHaveBeenCalledWith('status', 'approved')
+    })
+
+    it('reads the tab from the URL and asks the server for that status', () => {
+      listState.status = 'rejected'
+      mockHook({
+        data: { data: mockApprovals, total: 3, page: 1, per_page: 20, status_counts: COUNTS },
+      })
+      render(<ApprovalsPage />)
+      expect(useApprovals).toHaveBeenLastCalledWith(1, 20, 'rejected')
+      listState.status = ''
     })
 
     it('takes tab counts from the server, not from the rows of the page', () => {

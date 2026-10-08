@@ -52,7 +52,7 @@ period and none of its occurrences is open and seen within its branch's
 retention (`retention_days`, else the default). A deleted branch removes its
 occurrences; a merged branch is no longer scanned, so its occurrences age out.
 `keep_when_inactive` is not consulted: it keeps findings of branches that
-count. `not_observed` is never a fix (owner decision O2); a sighting reopens
+count. `not_observed` is never a fix (decision O2); a sighting reopens
 the finding without a regression flag.
 
 ## Where branch-only findings are left out
