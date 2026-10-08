@@ -269,7 +269,7 @@ func (h *CredentialImportHandler) ImportCSV(w http.ResponseWriter, r *http.Reque
 // @Tags Credentials
 // @Produce json
 // @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Page size" default(20)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Param severity query string false "Filter by severity (comma-separated)"
 // @Param state query string false "Filter by state (comma-separated)"
 // @Param source query string false "Filter by source (comma-separated)"
@@ -281,19 +281,11 @@ func (h *CredentialImportHandler) ImportCSV(w http.ResponseWriter, r *http.Reque
 func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	// Parse pagination
-	page := 1
-	pageSize := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := parseIntParam(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := parseIntParam(ps); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	// Parse filters
 	opts := integration.CredentialListOptions{
@@ -447,7 +439,7 @@ func (h *CredentialImportHandler) GetStats(w http.ResponseWriter, r *http.Reques
 // @Tags Credentials
 // @Produce json
 // @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Page size" default(20)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Param state query string false "Filter by state (comma-separated)"
 // @Param search query string false "Search in identifier"
 // @Success 200 {object} integration.IdentityListResult
@@ -456,19 +448,11 @@ func (h *CredentialImportHandler) GetStats(w http.ResponseWriter, r *http.Reques
 func (h *CredentialImportHandler) ListByIdentity(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	// Parse pagination
-	page := 1
-	pageSize := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := parseIntParam(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := parseIntParam(ps); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	// Parse filters
 	opts := integration.CredentialListOptions{
@@ -528,7 +512,7 @@ func (h *CredentialImportHandler) GetRelatedCredentials(w http.ResponseWriter, r
 // @Produce json
 // @Param identity path string true "Identity (username or email)"
 // @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Page size" default(20)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Success 200 {object} integration.CredentialListResult
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/identities/{identity}/exposures [get]
@@ -540,19 +524,11 @@ func (h *CredentialImportHandler) GetExposuresForIdentity(w http.ResponseWriter,
 		return
 	}
 
-	// Parse pagination
-	page := 1
-	pageSize := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := parseIntParam(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := parseIntParam(ps); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	result, err := h.service.GetExposuresForIdentity(r.Context(), tenantID, identity, page, pageSize)
 	if err != nil {
