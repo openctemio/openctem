@@ -166,6 +166,9 @@ type MemberWithUserResponse struct {
 	HomeOrganization string     `json:"home_organization,omitempty"`
 	AccessExpiresAt  *time.Time `json:"access_expires_at,omitempty"`
 	SuspendedReason  string     `json:"suspended_reason,omitempty"`
+	// DomainLapsed: the member's email domain lost its verified SSO proof in
+	// this organization (owners and admins only).
+	DomainLapsed bool `json:"domain_lapsed,omitempty"`
 }
 
 // MemberRBACRoleResponse represents a simplified RBAC role in member response.
@@ -783,6 +786,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 				response[i].MFAStatus = m.MFAStatus
 				response[i].AccessExpiresAt = m.ExpiresAt
 				response[i].SuspendedReason = m.SuspendedReason
+				response[i].DomainLapsed = m.DomainLapsed
 			}
 		}
 
