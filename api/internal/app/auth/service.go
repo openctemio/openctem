@@ -392,6 +392,18 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return nil, ErrRegistrationDisabled
 	}
 
+	// SECURITY (anti-enumeration): everything that shapes the answer is
+	// decided before the account lookup, the same way for a new and an
+	// existing email: the password policy (a weak password is refused for
+	// both) and the verification rule a new account would get.
+	if err := s.passwordHasher.Validate(input.Password); err != nil {
+		return nil, fmt.Errorf("password validation failed: %w", err)
+	}
+	requireVerification := false
+	if !invited {
+		requireVerification = s.shouldRequireEmailVerification(ctx, invitationTenantID)
+	}
+
 	// Check if email already exists
 	// Security: Return success-like result to prevent email enumeration
 	existingUser, err := s.userRepo.GetByEmail(ctx, email)
@@ -406,17 +418,12 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return &RegisterResult{
 			User:                 nil, // Signal to handler that no actual registration happened
 			VerificationToken:    "",
-			RequiresVerification: true,
+			RequiresVerification: requireVerification,
 			EmailExisted:         true, // New field to indicate this case
 		}, nil
 	}
 	if err != nil && !shared.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to check email: %w", err)
-	}
-
-	// Validate password against policy
-	if err := s.passwordHasher.Validate(input.Password); err != nil {
-		return nil, fmt.Errorf("password validation failed: %w", err)
 	}
 
 	// Hash password
@@ -437,11 +444,8 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// the rule is resolved from the invitation's tenant when a (non-matching)
 	// token was supplied, else the platform default (single-tenant heuristic /
 	// SMTP check / global env). The token is NOT consumed here; acceptance is a
-	// separate POST /invitations/{token}/accept.
-	requireVerification := false
-	if !invited {
-		requireVerification = s.shouldRequireEmailVerification(ctx, invitationTenantID)
-	}
+	// separate POST /invitations/{token}/accept. requireVerification was
+	// decided above.
 
 	var verificationToken string
 	if requireVerification {
