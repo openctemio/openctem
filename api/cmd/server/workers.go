@@ -311,6 +311,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Stalled run repair (research/62 SG-10): a run whose chained step waits
+	// for a report that failed or expired, or whose plan was saved without
+	// its commands, is advanced again.
+	if svc.ScanRun != nil {
+		w.ControllerManager.Register(controller.NewStalledRunRepairController(
+			svc.ScanRun, time.Minute, log.With("controller", "stalled-run-repair")))
+	}
+
 	// Scan retry controller: dispatches automatic retries for failed scans
 	// with retry budget remaining (uses exponential backoff)
 	w.ControllerManager.Register(controller.NewScanRetryController(
