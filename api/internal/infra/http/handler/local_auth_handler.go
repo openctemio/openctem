@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
@@ -34,6 +35,33 @@ type LocalAuthHandler struct {
 	csrfConfig     middleware.CSRFConfig
 	validator      *validator.Validator
 	logger         *logger.Logger
+	// signupPolicy answers registration_enabled on /auth/info (the console
+	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
+	signupPolicy signupdom.PolicySource
+}
+
+// SetSignupPolicy wires the platform sign-up policy.
+func (h *LocalAuthHandler) SetSignupPolicy(p signupdom.PolicySource) { h.signupPolicy = p }
+
+// registrationEnabled reports whether anyone may create an account: the
+// self_service sign-up mode.
+func (h *LocalAuthHandler) registrationEnabled(r *http.Request) bool {
+	if h.signupPolicy != nil {
+		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
+	}
+	return h.authConfig.SelfServiceTenantCreation()
+}
+
+// CodeSignupNotAvailable is the error code of every sign-up refusal; the web
+// shows the "not set up" page for it.
+const CodeSignupNotAvailable apierror.Code = "SIGNUP_NOT_AVAILABLE"
+
+// writeSignupNotAvailable is the one answer of every refused sign-up path
+// (register, social sign-in): the same status, code and text whatever the
+// reason, so it says nothing about the email or the organization.
+func writeSignupNotAvailable(w http.ResponseWriter) {
+	apierror.New(http.StatusForbidden, CodeSignupNotAvailable,
+		"Your organization isn't set up yet. Ask your administrator to invite you.").WriteJSON(w)
 }
 
 // NewLocalAuthHandler creates a new LocalAuthHandler.
@@ -1127,7 +1155,7 @@ type AuthInfoResponse struct {
 func (h *LocalAuthHandler) Info(w http.ResponseWriter, r *http.Request) {
 	resp := AuthInfoResponse{
 		Provider:             string(h.authConfig.Provider),
-		RegistrationEnabled:  h.authConfig.AllowRegistration,
+		RegistrationEnabled:  h.registrationEnabled(r),
 		EmailVerificationReq: h.authConfig.RequireEmailVerification,
 	}
 
@@ -1156,8 +1184,8 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	case errors.Is(err, auth.ErrEmailNotVerified):
 		apierror.Forbidden("Email is not verified").WriteJSON(w)
 	case WritePlanLimitError(w, err):
-	case errors.Is(err, auth.ErrRegistrationDisabled):
-		apierror.Forbidden("Registration is not available").WriteJSON(w)
+	case errors.Is(err, auth.ErrRegistrationDisabled), errors.Is(err, auth.ErrSignupNotAvailable):
+		writeSignupNotAvailable(w)
 	case errors.Is(err, auth.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):

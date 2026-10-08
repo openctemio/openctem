@@ -138,7 +138,7 @@ test-enforced (`stepUpRoutes` in `routes/step_up_routes_test.go`).
 |----------|-------------|
 | `GET /health` | Health check |
 | `GET /ready` | Readiness check |
-| `POST /api/v1/auth/register` | User registration (403 unless `AUTH_ALLOW_REGISTRATION=true` or a matching invitation token) |
+| `POST /api/v1/auth/register` | User registration (403 `SIGNUP_NOT_AVAILABLE` unless the sign-up policy is `self_service` or a matching invitation token) |
 | `POST /api/v1/auth/login` | User login |
 | `POST /api/v1/auth/token` | Token exchange |
 | `POST /api/v1/auth/refresh` | Token refresh |
@@ -960,9 +960,9 @@ owner-managed) are enforced, not just stored. See
   every tenant `oct_` API-key request on the REST API. Not applied to sensor
   keys, the MCP endpoint, the admin console, or public routes. 403 `IP_NOT_ALLOWED`; lookup errors fail closed; client IP from
   `httpsec.ClientIP` (trusted proxies only).
-- **Self-registration** (`POST /auth/register`) is off unless
-  `AUTH_ALLOW_REGISTRATION=true`; a pending invitation for the same email opens
-  it for that person only.
+- **Self-registration** (`POST /auth/register`, a first social sign-in) is off
+  unless the sign-up policy is `self_service`; a pending invitation for the same
+  email opens it for that person only (`signup.Admit`, user-onboarding.md).
 
 ## Data scope (Layer 2: access groups)
 

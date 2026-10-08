@@ -282,6 +282,9 @@ func pathID(w http.ResponseWriter, r *http.Request, what string) (shared.ID, boo
 }
 
 func (h *CIAdminHandler) writeErr(w http.ResponseWriter, err error, what, notFound string) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(ciErrMessage(err)).WriteJSON(w)

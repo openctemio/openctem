@@ -44,6 +44,7 @@ func TestLegacySensorHealthChecker_OffByDefault_KeepsStartupGrace(t *testing.T) 
 
 	// The defaults an operator gets without setting anything.
 	t.Setenv("APP_ENV", "development")
+	t.Setenv("AUTH_JWT_SECRET", "jobs-test-secret-0123456789abcdef0123456789abcdef0123456789abcd")
 	t.Setenv("WORKER_HEALTH_CHECK_ENABLED", "")
 	cfg, err := config.Load()
 	if err != nil {
