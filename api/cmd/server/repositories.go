@@ -176,6 +176,7 @@ type Repositories struct {
 
 	// Admin (Platform Admin)
 	Admin         *postgres.AdminRepository
+	SignupPolicy  *postgres.SignupPolicyRepository
 	AdminAuditLog *postgres.AuditLogRepository
 	AdminOrg      *postgres.AdminOrganizationRepository
 	AdminConsole  *postgres.AdminConsoleRepository
@@ -193,6 +194,8 @@ type Repositories struct {
 
 	// SSO Identity Providers
 	IdentityProvider *postgres.IdentityProviderRepository
+	// Federated identities (issuer + subject) bound to accounts
+	UserIdentity *postgres.UserIdentityRepository
 
 	// Domain-ownership verification (SSO P1, migration 000191)
 	VerifiedDomain *postgres.VerifiedDomainRepository
@@ -418,6 +421,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// Admin (Platform Admin)
 		Admin:         postgres.NewAdminRepository(db),
+		SignupPolicy:  postgres.NewSignupPolicyRepository(db),
 		AdminAuditLog: postgres.NewAuditLogRepository(db),
 		AdminOrg:      postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:  postgres.NewAdminConsoleRepository(db),
@@ -435,6 +439,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// SSO Identity Providers
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
+		UserIdentity:     postgres.NewUserIdentityRepository(db),
 		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),

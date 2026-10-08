@@ -153,7 +153,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
     // Owner picker: active members only (never a disabled or offboarded person).
     const params = new URLSearchParams({
       include: 'user',
-      limit: '50',
+      per_page: '50',
       status: PICKER_MEMBER_STATUS,
     })
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim())

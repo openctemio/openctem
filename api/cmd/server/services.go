@@ -65,6 +65,7 @@ import (
 	scanfreezeapp "github.com/openctemio/openctem/api/internal/app/scanfreeze"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
+	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -784,6 +785,12 @@ type Services struct {
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
+	// AddressClassifier decides whether an invitee is internal or external
+	// (RFC-058).
+	AddressClassifier *tenantapp.AddressClassifier
+
+	// The platform sign-up policy (who may create an organization).
+	Signup *signupapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -1909,6 +1916,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Retest != nil {
 		s.Retest.SetRunRecorder(s.ScanRun)
 	}
+	// Every finding validation is a run too (kind validation).
+	if s.ValidationRun != nil {
+		s.ValidationRun.SetRunRecorder(s.ScanRun)
+	}
 	// Ingest records what each step's reports wrote and tells the scan run service
 	// service when a v2 report of a command finished, so a chained step
 	// waiting for it is planned.
@@ -2257,6 +2268,13 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
+	// The sign-up policy (Console > System > Sign-up). TENANT_CREATION_MODE
+	// seeds it on the first start only; afterwards the console value wins.
+	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
+	if err := s.Signup.Seed(context.Background(), cfg.Auth.TenantCreationMode); err != nil {
+		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
+	}
+	s.Auth.SetSignupPolicy(s.Signup)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2315,6 +2333,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log,
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
+	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
@@ -2334,6 +2353,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// DNS-verified; anyone else must be invited (their consent).
 	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)
 
+	// External members (RFC-058): the holder of a verified SSO domain is the
+	// home organization of its addresses.
+	s.AddressClassifier = tenantapp.NewAddressClassifier(s.DomainVerify, func(ctx context.Context, tenantID shared.ID) (bool, error) {
+		return domainverify.OwnsAnySSODomain(ctx, repos.VerifiedDomain, tenantID)
+	})
+	s.Tenant.SetAddressClassifier(s.AddressClassifier)
+	s.Auth.SetInviteeClassifier(s.Tenant)
+
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises
 	// on /auth/providers matches the routes it registers — see registerAuthRoutes.
@@ -2349,6 +2376,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.
+		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {

@@ -66,6 +66,7 @@ func runOktaReauth(t *testing.T, reauth bool, authTime *time.Time) (*url.URL, *s
 	svc.httpClient = idp.srv.Client()
 	svc.oidcVerifier = newOIDCVerifier(idp.srv.Client(), logger.NewNop())
 	svc.SetTenantMemberRepo(members)
+	svc.SetIdentityRepo(newMemIdentities())
 	svc.SetDomainVerifier(&fakeDomainVerifier{verified: map[string]bool{"corp.com": true}})
 	ip.SetAutoProvision(true)
 

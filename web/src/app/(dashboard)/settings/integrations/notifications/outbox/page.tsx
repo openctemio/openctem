@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useListParams } from '@/hooks/use-list-params'
 import type { ColumnDef } from '@tanstack/react-table'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
@@ -170,9 +171,11 @@ function QueueHealthStatus({
 
 export default function NotificationOutboxPage() {
   // State
-  const [statusFilter, setStatusFilter] = useState<OutboxStatus | 'all'>('all')
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
-  const setPage = (page: number) => setPagination((p) => ({ ...p, pageIndex: page - 1 }))
+  // The list lives in the URL (one list convention): page, per_page, status.
+  const list = useListParams({ defaultPageSize: 10, filters: { status: 'all' } })
+  const statusFilter = list.filters.status as OutboxStatus | 'all'
+  const setStatusFilter = (value: OutboxStatus | 'all') => list.setFilter('status', value)
+  const { pagination, setPagination, setPage } = list
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<OutboxEntry | null>(null)
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)

@@ -40,6 +40,7 @@ import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useNow } from '@/hooks/use-now'
 import { exportToCsv } from '@/hooks/use-csv-export'
+import { resetListPage } from '@/hooks/use-list-params'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
@@ -257,7 +258,10 @@ export function SensorsSection({
   const canRunner = useHasPermission(Permission.CIRead) && scansEnabled
   const fleetMode: FleetPageMode = fleetPageMode(modeParam.join(','), canDaemon, canRunner)
   const setFleetMode = useCallback(
-    (m: FleetPageMode) => setModeParam(m === fleetPageMode('', canDaemon, canRunner) ? [] : [m]),
+    (m: FleetPageMode) => {
+      setModeParam(m === fleetPageMode('', canDaemon, canRunner) ? [] : [m])
+      resetListPage()
+    },
     [setModeParam, canDaemon, canRunner]
   )
   // Header counts for the Mode switch (one row of the fleet read model).

@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
+	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -615,7 +616,8 @@ func (h *FindingActionsHandler) RequestValidation(w http.ResponseWriter, r *http
 		return
 	}
 
-	cmdID, err := h.validationRunner.ValidateFinding(r.Context(), tid, fid)
+	ctx := validation.WithRequester(r.Context(), middleware.GetUserID(r.Context()))
+	cmdID, err := h.validationRunner.ValidateFinding(ctx, tid, fid)
 	if err != nil {
 		h.handleError(w, err)
 		return
