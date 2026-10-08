@@ -1297,6 +1297,9 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if r.TierExceeded > 0 {
 		runContext["tier_exceeded_target_count"] = r.TierExceeded
 	}
+	if r.InternalOutsideZones > 0 {
+		runContext["internal_outside_zones_target_count"] = r.InternalOutsideZones
+	}
 	if len(r.TargetTypes) > 0 {
 		runContext[RunContextKeyTargetTypes] = r.TargetTypes
 	}
@@ -1313,6 +1316,11 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	if len(r.Targets) == 0 && r.Unconfirmed > 0 && r.Excluded == 0 {
 		return shared.NewDomainError("ALL_TARGETS_UNCONFIRMED",
 			fmt.Sprintf("No target of scan %q is authorized for active scanning; nothing to scan. Confirm their ownership on each asset's Ownership tab, or cover them with a scope target in Scoping > Targets.", sc.Name),
+			shared.ErrValidation)
+	}
+	if len(r.Targets) == 0 && r.InternalOutsideZones > 0 && r.Unconfirmed == 0 && r.Excluded == 0 {
+		return shared.NewDomainError("INTERNAL_TARGET_OUTSIDE_ZONES",
+			fmt.Sprintf("Scan %q has only internal address targets outside every scan zone; nothing to scan. Add the ranges to a scan zone in Settings > Scan zones.", sc.Name),
 			shared.ErrValidation)
 	}
 	if len(r.Targets) == 0 && r.Excluded > 0 {
