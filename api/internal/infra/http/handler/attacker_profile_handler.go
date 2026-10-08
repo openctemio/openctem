@@ -36,8 +36,10 @@ func NewAttackerProfileHandler(db *sql.DB, log *logger.Logger) *AttackerProfileH
 func (h *AttackerProfileHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	var total int64
 	err := h.db.QueryRowContext(r.Context(),
@@ -65,7 +67,7 @@ func (h *AttackerProfileHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]AttackerProfileResponse, 0, perPage)
+	items := make([]AttackerProfileResponse, 0, page.PerPage)
 	for rows.Next() {
 		p, err := scanAttackerProfile(rows)
 		if err != nil {
