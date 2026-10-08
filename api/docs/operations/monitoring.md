@@ -222,9 +222,14 @@ the gateway container, its certificate and DNS. Compare with
 
 ### TlsCertExpiringSoon
 
-The public certificate expires within 14 days (warning) or 3 days (critical).
-With automatic certificates check the gateway log for renewal errors (DNS,
-port 80 reachability); with an internal CA, renew the CA-issued certificate.
+A public-CA certificate expires within 14 days (warning) or 3 days
+(critical): check the gateway log for renewal errors (DNS, port 80
+reachability).
+
+With `OBS_PUBLIC_PROBE_MODULE=http_2xx_internal_ca` the gateway's internal CA
+issues 12-hour certificates and renews them itself, so the thresholds are 2
+hours (warning) and 30 minutes (critical): renewal has stopped. Check the
+gateway log and restart the gateway.
 
 ### ApiHigh5xxRate
 
