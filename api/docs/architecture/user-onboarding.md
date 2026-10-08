@@ -21,7 +21,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 ## Sign-up policy (Console > System > Sign-up)
 
 Who may create an organization on this deployment is **one platform setting**,
-`signup_policy` in `platform_settings` (migration 001304), edited in the admin
+`signup_policy` in `platform_settings` (migration 001307), edited in the admin
 console:
 
 | Mode | Meaning |
@@ -154,6 +154,23 @@ roles: `member` when they include the system member or admin role, otherwise
 `viewer`. After the membership is created the granted roles replace the user's
 role set exactly. The same applies to invitations (including ones created
 before this rule).
+
+### Anti-enumeration on the public endpoints
+
+No public sign-in endpoint tells an unauthenticated caller whether an email
+has an account or an organization exists:
+
+| Endpoint | Unknown and known answer the same way |
+|---|---|
+| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal |
+| `POST /auth/register` | 201 with the same body for a new and an existing email: no account id, the verification rule a new account would get, one message; the password policy is checked first for both; the verification email is sent after the response |
+| `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response |
+| `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
+| `GET /auth/sso/{provider}/authorize?org=` | 404 "SSO provider not configured" for an unknown organization and a missing provider alike |
+| `GET /auth/saml/{org}/metadata` | SP metadata for any well-formed slug (it is built from the slug and the deployment URL only) |
+| `GET /auth/saml/{org}/login`, `POST …/acs` | every failure redirects to `/login?error=saml` |
+
+Tests: `tests/unit/auth_anti_enumeration_test.go`.
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 

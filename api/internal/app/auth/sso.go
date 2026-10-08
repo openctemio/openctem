@@ -197,10 +197,19 @@ func (s *SSOService) HasUsableSSOPath(ctx context.Context, orgSlug string) (bool
 }
 
 // GetProvidersForTenant returns active SSO providers for a tenant identified by slug.
+//
+// SECURITY (anti-enumeration): an unknown slug answers exactly like an
+// organization without SSO, an empty list and no error, so the public
+// providers endpoint does not tell whether an organization exists. The same
+// provider query runs for an unknown slug (on a random id that matches
+// nothing), so both answers cost the same.
 func (s *SSOService) GetProvidersForTenant(ctx context.Context, orgSlug string) ([]SSOProviderInfo, error) {
 	t, err := s.tenantRepo.GetBySlug(ctx, orgSlug)
 	if err != nil {
-		return nil, ErrSSOTenantNotFound
+		if _, lerr := s.ipRepo.ListActiveByTenant(ctx, shared.NewID().String()); lerr != nil {
+			return nil, fmt.Errorf("list active providers: %w", lerr)
+		}
+		return []SSOProviderInfo{}, nil
 	}
 
 	providers, err := s.ipRepo.ListActiveByTenant(ctx, t.ID().String())
