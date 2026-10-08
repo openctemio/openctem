@@ -153,6 +153,11 @@ type Repository interface {
 	// access applies the acting user's data scope, the same predicate as List.
 	GetAggregateStats(ctx context.Context, tenantID shared.ID, access AccessScope, types []string, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
 
+	// GetInventoryOverview counts the caller's assets per (lens, type,
+	// sub-type) for the inventory overview, in one aggregate query.
+	// access applies the acting user's data scope, the same predicate as List.
+	GetInventoryOverview(ctx context.Context, tenantID shared.ID, access AccessScope) ([]InventoryOverviewRow, error)
+
 	// GetPropertyFacets returns distinct JSONB property keys and their top values for faceted filtering.
 	// access applies the acting user's data scope, the same predicate as List.
 	GetPropertyFacets(ctx context.Context, tenantID shared.ID, access AccessScope, types []string, subType string) ([]PropertyFacet, error)
@@ -190,6 +195,23 @@ type PropertyFacet struct {
 	Label  string
 	Values []string
 	Count  int
+}
+
+// InventoryOverviewRow is one (lens, type, sub-type) of the inventory
+// overview. Total and the attention counts cover the assets the default
+// inventory lists (attribution confirmed, dependency or monitor only, or no
+// record); NeedsReview counts the names in the review queue (needs_review,
+// candidate), which the default inventory hides. Rejected names are in
+// neither.
+type InventoryOverviewRow struct {
+	Lens        string `json:"lens"`
+	Type        string `json:"type"`
+	SubType     string `json:"sub_type"`
+	Total       int    `json:"total"`
+	Unowned     int    `json:"unowned"`
+	HighRisk    int    `json:"high_risk"`
+	New7d       int    `json:"new_7d"`
+	NeedsReview int    `json:"needs_review"`
 }
 
 // AggregateStats holds all statistics computed via SQL aggregation.
