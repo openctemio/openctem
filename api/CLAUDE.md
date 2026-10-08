@@ -329,13 +329,13 @@ exactly two sources:
   (migration `000372`), managed with `team:groups:write` through
   `GET/POST/DELETE /api/v1/assets/{id}/access-grants`.
 
-**Being an asset owner is not a scope grant** (owner decision O1,
+**Being an asset owner is not a scope grant** (decision O1,
 2026-10-03): naming a *user* as an owner is an assignment (accountability,
 finding assignment, notifications) and never changes what that user can see.
 Owners/admins, holders of a `has_full_data_access` role and internal calls
 with no user are never restricted; a member with no scope row sees
 **nothing**, in every organization (the per-organization "see everything"
-mode is retired, owner decision D2, 2026-10-04). By-id access is enforced in
+mode is retired, decision D2, 2026-10-04). By-id access is enforced in
 `internal/app/datascope` (out of scope answers 404, never 403). Full model:
 `docs/architecture/authorization-matrix.md`, section "Data scope".
 
@@ -422,7 +422,7 @@ touching any gate. In short:
 - Never rely on the module gate for security — it is fail-open by design.
 - Never widen a route's gate to "make a role work" — adjust the role's grant via seed/migration.
 - No permission-set deny-gate (deliberate — see the doc). Expiring access (`expires_at` + reason on
-  grants, group memberships, engagements, role assignments) is **planned** (owner decisions D4/A2,
+  grants, group memberships, engagements, role assignments) is **planned** (decisions D4/A2,
   RFC-050 W22/W23); do not add it ad hoc, build it as designed there.
 - Never add a fail-open data-scope mode back ("no scope row means everything", per organization or global): a member with no scope row sees nothing. Don't unify admin/owner oracles without signoff.
 
