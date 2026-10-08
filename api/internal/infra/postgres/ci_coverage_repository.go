@@ -298,7 +298,7 @@ func scanIDs(rows *sql.Rows) ([]shared.ID, error) {
 func (r *CIRunRepository) MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *cirun.Pipeline) ([]shared.ID, error) {
 	rows, err := r.db.QueryContext(ctx, `UPDATE findings f SET status = 'not_observed', resolution = 'source_stale',
 		resolution_method = NULL, resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
-		WHERE `+soleSourceFindings+` AND f.status IN `+coverageOpenStatuses+`
+		WHERE `+soleSourceFindings+` AND f.status IN `+staleFromSQL+`
 		RETURNING f.id::text`, tenantID.String(), p.ID.String(), p.RepositoryAssetID.String(), p.LastRunAt)
 	if err != nil {
 		return nil, fmt.Errorf("mark stale-source findings: %w", err)
@@ -333,7 +333,7 @@ func (r *CIRunRepository) RetirePipeline(ctx context.Context, tenantID, pipeline
 	}
 	rows, err := tx.QueryContext(ctx, `UPDATE findings f SET status = 'resolved', resolution = 'source_retired',
 		resolution_method = 'source_retired', resolved_at = $5, resolved_by = $6, updated_at = NOW()
-		WHERE `+soleSourceFindings+` AND (f.status IN `+coverageOpenStatuses+` OR f.status = 'not_observed')
+		WHERE `+soleSourceFindings+` AND f.status IN `+sourceRetiredFromSQL+`
 		RETURNING f.id::text`, tenantID.String(), pipelineID.String(), p.RepositoryAssetID.String(), p.LastRunAt, at, nullID(by))
 	if err != nil {
 		return nil, nil, fmt.Errorf("close retired-source findings: %w", err)

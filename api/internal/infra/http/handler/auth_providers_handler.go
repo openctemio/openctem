@@ -7,6 +7,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/password"
 )
 
 // AuthProvidersHandler exposes a public, tenant-agnostic snapshot of which
@@ -36,7 +37,35 @@ type AuthProvidersHandler struct {
 	// registrationEnabled is reported when no sign-up policy is wired (the
 	// self_service seed), so the UI can hide sign-up.
 	registrationEnabled bool
-	logger              *logger.Logger
+	// passwordPolicy is what the server enforces on a chosen password and
+	// how long a reset link lasts; forms state it instead of their own copy.
+	passwordPolicy PasswordPolicyInfo
+	logger         *logger.Logger
+}
+
+// WithPasswordPolicy reports the password rules and reset-link lifetime of
+// the local auth config.
+func (h *AuthProvidersHandler) WithPasswordPolicy(cfg config.AuthConfig) *AuthProvidersHandler {
+	h.passwordPolicy = PasswordPolicyFromConfig(cfg)
+	return h
+}
+
+// PasswordPolicyFromConfig is the policy the server enforces: the same
+// minimum length fallback as the password handlers, and the reset-link
+// lifetime in whole minutes.
+func PasswordPolicyFromConfig(cfg config.AuthConfig) PasswordPolicyInfo {
+	minLen := cfg.PasswordMinLength
+	if minLen <= 0 {
+		minLen = password.MinLengthDefault
+	}
+	return PasswordPolicyInfo{
+		MinLength:             minLen,
+		RequireUppercase:      cfg.PasswordRequireUpper,
+		RequireLowercase:      cfg.PasswordRequireLower,
+		RequireNumber:         cfg.PasswordRequireNumber,
+		RequireSpecial:        cfg.PasswordRequireSpecial,
+		ResetLinkValidMinutes: int(cfg.PasswordResetDuration.Minutes()),
+	}
 }
 
 // WithRegistrationEnabled sets the value reported as registration_enabled.
@@ -86,6 +115,19 @@ type SocialProviders struct {
 	GitHub    bool `json:"github"`
 }
 
+// PasswordPolicyInfo is the password policy the server enforces when a
+// password is chosen (register, reset, set-password, change), and how long a
+// forgot-password link stays valid. Public: the same for every caller.
+type PasswordPolicyInfo struct {
+	MinLength        int  `json:"min_length"`
+	RequireUppercase bool `json:"require_uppercase"`
+	RequireLowercase bool `json:"require_lowercase"`
+	RequireNumber    bool `json:"require_number"`
+	RequireSpecial   bool `json:"require_special"`
+	// ResetLinkValidMinutes is the lifetime of a forgot-password link.
+	ResetLinkValidMinutes int `json:"reset_link_valid_minutes"`
+}
+
 // AuthProvidersResponse is the public login-capability snapshot.
 type AuthProvidersResponse struct {
 	Social SocialProviders `json:"social"`
@@ -99,11 +141,14 @@ type AuthProvidersResponse struct {
 	// the self_service sign-up mode. When false the UI hides sign-up; an
 	// invited person can still register with their invitation.
 	RegistrationEnabled bool `json:"registration_enabled"`
+	// PasswordPolicy is the policy every password form states and the server
+	// enforces (it also rejects known-breached passwords).
+	PasswordPolicy PasswordPolicyInfo `json:"password_policy"`
 }
 
 // GetProviders returns which login providers are configured on this server.
 // @Summary      Public login-provider capability snapshot
-// @Description  Reports which social OAuth providers (and the Entra SSO env fallback) are configured, so the UI can hide dead login buttons. Booleans only — no secrets.
+// @Description  Reports which social OAuth providers (and the Entra SSO env fallback) are configured, so the UI can hide dead login buttons, and the password policy the server enforces. No secrets.
 // @Tags         OAuth
 // @Produce      json
 // @Success      200  {object}  AuthProvidersResponse
@@ -118,6 +163,7 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Reque
 		SSOEnvEntraEnabled:  h.entraSSO.IsConfigured(),
 		TenantCreationMode:  h.tenantCreationMode,
 		RegistrationEnabled: h.registrationEnabled,
+		PasswordPolicy:      h.passwordPolicy,
 	}
 	if h.signupPolicy != nil {
 		p := h.signupPolicy.Current(r.Context())

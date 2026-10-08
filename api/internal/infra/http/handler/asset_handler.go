@@ -1669,6 +1669,38 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string][]string{"tags": tags})
 }
 
+// InventoryOverviewResponse is GET /assets/overview: the inventory counted
+// per (lens, type, sub-type).
+type InventoryOverviewResponse struct {
+	Data []asset.InventoryOverviewRow `json:"data"`
+}
+
+// GetInventoryOverview handles GET /api/v1/assets/overview
+// @Summary      Inventory overview
+// @Description  Counts the caller's assets per lens, type and sub-type in one aggregate: the assets the default inventory lists (total), the unowned, high-risk (risk score 70 or more) and first-seen-in-the-last-7-days ones among them, and the names waiting in the attribution review queue. Counted over the assets the caller may list (data scope), within the caller's tenant.
+// @Tags         Assets
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  InventoryOverviewResponse
+// @Failure      401  {object}  map[string]string
+// @Failure      500  {object}  map[string]string
+// @Router       /assets/overview [get]
+func (h *AssetHandler) GetInventoryOverview(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	rows, err := h.service.GetInventoryOverview(r.Context(), tenantID,
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if rows == nil {
+		rows = []asset.InventoryOverviewRow{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(InventoryOverviewResponse{Data: rows})
+}
+
 // GetFacets returns distinct property keys and their values for faceted filtering.
 // Scoped to tenant, the caller's data scope (as the list) and an optional
 // type filter. Returns top 20 values per key.

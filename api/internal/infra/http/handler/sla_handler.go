@@ -53,15 +53,18 @@ type SLAPolicyResponse struct {
 	// P0Days..P3Days are the remediation windows per CTEM priority class.
 	// They take precedence over the severity windows for every finding that
 	// has a priority class.
-	P0Days              int       `json:"p0_days"`
-	P1Days              int       `json:"p1_days"`
-	P2Days              int       `json:"p2_days"`
-	P3Days              int       `json:"p3_days"`
-	WarningThresholdPct int       `json:"warning_threshold_pct"`
-	EscalationEnabled   bool      `json:"escalation_enabled"`
-	IsActive            bool      `json:"is_active"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	P0Days              int  `json:"p0_days"`
+	P1Days              int  `json:"p1_days"`
+	P2Days              int  `json:"p2_days"`
+	P3Days              int  `json:"p3_days"`
+	WarningThresholdPct int  `json:"warning_threshold_pct"`
+	EscalationEnabled   bool `json:"escalation_enabled"`
+	IsActive            bool `json:"is_active"`
+	// IsPlatformDefault is true when the tenant has configured no policy
+	// and the windows are the platform defaults (ID is then empty).
+	IsPlatformDefault bool      `json:"is_platform_default"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // toSLAPolicyResponse converts a domain policy to API response.
@@ -395,30 +398,55 @@ func (h *SLAHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // GetDefault handles GET /api/v1/sla-policies/default
 // @Summary      Get default SLA policy
-// @Description  Gets the default SLA policy for the tenant
+// @Description  Gets the tenant's default SLA policy. When the tenant has configured none, returns the platform default windows with is_platform_default=true and an empty id.
 // @Tags         SLA Policies
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200  {object}  SLAPolicyResponse
-// @Failure      404  {object}  map[string]string
 // @Router       /sla-policies/default [get]
 func (h *SLAHandler) GetDefault(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	p, err := h.service.GetTenantDefaultPolicy(r.Context(), tenantID)
+	ep, err := h.service.GetEffectiveTenantPolicy(r.Context(), tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	writeEffectivePolicy(w, ep)
+}
 
+// writeEffectivePolicy writes a governing policy, or the platform default
+// windows (no id, is_platform_default) when the tenant has configured none.
+func writeEffectivePolicy(w http.ResponseWriter, ep *sla.EffectivePolicy) {
+	resp := toSLAPolicyResponse(ep.Policy)
+	if ep.PlatformDefault {
+		resp = SLAPolicyResponse{
+			TenantID:            resp.TenantID,
+			Name:                resp.Name,
+			IsDefault:           true,
+			CriticalDays:        resp.CriticalDays,
+			HighDays:            resp.HighDays,
+			MediumDays:          resp.MediumDays,
+			LowDays:             resp.LowDays,
+			InfoDays:            resp.InfoDays,
+			P0Days:              resp.P0Days,
+			P1Days:              resp.P1Days,
+			P2Days:              resp.P2Days,
+			P3Days:              resp.P3Days,
+			WarningThresholdPct: resp.WarningThresholdPct,
+			EscalationEnabled:   resp.EscalationEnabled,
+			IsActive:            true,
+			IsPlatformDefault:   true,
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSLAPolicyResponse(p))
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // GetByAsset handles GET /api/v1/assets/{id}/sla-policy
 // @Summary      Get asset SLA policy
-// @Description  Gets the SLA policy for a specific asset (or default if not set)
+// @Description  Gets the SLA policy that governs an asset: its override, else the tenant default, else the platform default windows (is_platform_default=true, empty id).
 // @Tags         SLA Policies
 // @Produce      json
 // @Security     BearerAuth
@@ -435,15 +463,12 @@ func (h *SLAHandler) GetByAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := h.service.GetAssetSLAPolicy(r.Context(), tenantID, assetID)
+	ep, err := h.service.GetEffectiveAssetPolicy(r.Context(), tenantID, assetID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toSLAPolicyResponse(p))
+	writeEffectivePolicy(w, ep)
 }
 
 // slaChangeSeverity is High when any remediation window got longer (findings
