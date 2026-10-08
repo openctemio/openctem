@@ -517,7 +517,7 @@ func (s *OAuthService) exchangeCode(ctx context.Context, provider OAuthProvider,
 	defer resp.Body.Close()
 
 	// SECURITY: Limit response body to 1MB to prevent memory exhaustion
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := httpsec.ReadLimited(resp.Body, 1<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -593,7 +593,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, accessToken string
 		Picture       string `json:"picture"`
 		EmailVerified bool   `json:"verified_email"` // Google uses "verified_email" in v2
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &data); err != nil {
 		return nil, err
 	}
 
@@ -642,7 +642,7 @@ func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string
 		Email     string `json:"email"`
 		AvatarURL string `json:"avatar_url"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&userData); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &userData); err != nil {
 		return nil, err
 	}
 
@@ -698,7 +698,7 @@ func (s *OAuthService) getGitHubPrimaryEmail(ctx context.Context, accessToken st
 		Primary  bool   `json:"primary"`
 		Verified bool   `json:"verified"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &emails); err != nil {
 		return "", err
 	}
 

@@ -796,7 +796,7 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 	if err != nil {
 		return 0, err
 	}
-	filterWhere, filterArgs := buildFilterWhere(filter, 6)
+	filterWhere, filterArgs := buildFilterWhere(filter, 7)
 	extraWhere := ""
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
@@ -813,10 +813,13 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 	query := fmt.Sprintf(`
 		UPDATE findings f
 		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5, resolved_at = %s, updated_at = NOW()
-		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
+		WHERE f.tenant_id = $1 AND f.source != 'pentest' AND f.status = ANY($6) %s
 	`, resolvedAt, extraWhere)
 
-	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg}, filterArgs...)
+	// $6: the statuses a person may move a finding from to status (the
+	// lifecycle); a matching finding in any other status is left alone.
+	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg,
+		pq.Array(statusStrings(vulnerability.UserFromStatuses(status)))}, filterArgs...)
 
 	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {

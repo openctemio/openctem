@@ -214,7 +214,7 @@ func (r *SuppressionRepository) liftSuppressionsInTx(
 			}
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE findings SET status = $3, updated_at = NOW()
-				WHERE tenant_id = $1 AND id = $2 AND status <> $3`,
+				WHERE tenant_id = $1 AND id = $2 AND status <> $3 AND status IN `+suppressionRelinkFromSQL+``,
 				tenantID.String(), c.id, cover.SuppressionType().Disposition()); err != nil {
 				return 0, fmt.Errorf("re-apply suppression disposition: %w", err)
 			}
@@ -225,7 +225,8 @@ func (r *SuppressionRepository) liftSuppressionsInTx(
 			UPDATE findings
 			   SET status = 'new', resolution = NULL, resolution_method = NULL,
 			       resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
-			 WHERE tenant_id = $1 AND id = $2 AND resolution = 'suppressed'`,
+			 WHERE tenant_id = $1 AND id = $2 AND resolution = 'suppressed'
+			   AND status IN `+suppressionLiftFromSQL+``,
 			tenantID.String(), c.id); err != nil {
 			return 0, fmt.Errorf("reopen suppressed finding: %w", err)
 		}
