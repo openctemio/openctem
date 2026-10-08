@@ -571,5 +571,6 @@
   "workflowStages.view": "Chế độ xem",
   "workflowStages.viewGraph": "Đồ thị",
   "workflowStages.viewStages": "Giai đoạn",
-  "workflowStages.waitsFor": "Chờ: {steps}"
+  "workflowStages.waitsFor": "Chờ: {steps}",
+  "auth.requestAccess.captchaFailed": "Không tải được bước kiểm tra bảo mật. Hãy cho phép challenges.cloudflare.com hoặc thử mạng khác."
 }

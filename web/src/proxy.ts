@@ -44,7 +44,7 @@ export function proxy(req: NextRequest) {
   if (redirect) return redirect
 
   const nonce = generateNonce()
-  const csp = cspForRequest(nonce)
+  const csp = cspForRequest(nonce, req.nextUrl.pathname)
 
   const headers = new Headers(req.headers)
   headers.set('x-nonce', nonce)
