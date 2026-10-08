@@ -277,10 +277,19 @@ func (s *Service) resolveClient(ctx context.Context, clientID string) (*mcpoauth
 	}
 	fetched, err := s.fetcher.Fetch(ctx, clientID)
 	if err != nil {
-		s.log.Info("mcp oauth: client metadata document refused", "client_id", clientID, "reason", err.Error())
+		// The client_id is caller input: line breaks are removed before it
+		// reaches the log.
+		s.log.Info("mcp oauth: client metadata document refused",
+			"client_id", oneLine(clientID), "reason", oneLine(err.Error()))
 		return nil, ErrInvalidClientMetadata
 	}
 	return s.repo.UpsertClient(ctx, fetched)
 }
 
 var errClientBlocked = errors.New("client blocked")
+
+// oneLine strips line breaks so a value cannot forge log lines.
+func oneLine(s string) string {
+	s = strings.ReplaceAll(s, "\n", "")
+	return strings.ReplaceAll(s, "\r", "")
+}

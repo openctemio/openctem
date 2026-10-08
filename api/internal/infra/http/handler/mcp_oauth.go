@@ -241,6 +241,15 @@ func consentCaller(r *http.Request) (requestID, userID, tenantID shared.ID, ok b
 
 // GetConsentRequest serves GET /api/v1/oauth/requests/{id}: what the consent
 // page shows. Opening it claims the request for the signed-in user.
+// @Summary      Read an AI application's connection request
+// @Description  What the consent page shows for an MCP client asking to connect (RFC-062): the application, where it is published, where the browser returns, and the access in plain words, evaluated in the session's organization. The first signed-in user who opens a request claims it; for anyone else it is not found. Browser sessions only.
+// @Tags         MCP
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Authorization request id"
+// @Success      200  {object}  consentRequestResponse
+// @Failure      404  {object}  apierror.Error
+// @Router       /oauth/requests/{id} [get]
 func (h *MCPOAuthHandler) GetConsentRequest(w http.ResponseWriter, r *http.Request) {
 	requestID, userID, tenantID, ok := consentCaller(r)
 	if !ok {
@@ -264,6 +273,16 @@ func (h *MCPOAuthHandler) GetConsentRequest(w http.ResponseWriter, r *http.Reque
 }
 
 // ApproveConsent serves POST /api/v1/oauth/requests/{id}/approve.
+// @Summary      Allow an AI application to connect
+// @Description  Records the signed-in user's approval in the session's organization and returns the address the browser goes to: the application's registered redirect URI with a single-use authorization code, the state and the issuer. Scopes the user holds nothing for are not granted. Audited.
+// @Tags         MCP
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Authorization request id"
+// @Success      200  {object}  consentDecisionResponse
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Router       /oauth/requests/{id}/approve [post]
 func (h *MCPOAuthHandler) ApproveConsent(w http.ResponseWriter, r *http.Request) {
 	requestID, userID, tenantID, ok := consentCaller(r)
 	if !ok {
@@ -279,6 +298,15 @@ func (h *MCPOAuthHandler) ApproveConsent(w http.ResponseWriter, r *http.Request)
 }
 
 // DenyConsent serves POST /api/v1/oauth/requests/{id}/deny.
+// @Summary      Refuse an AI application
+// @Description  Records the refusal and returns the address the browser goes to: the application's redirect URI with error=access_denied. Audited.
+// @Tags         MCP
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Authorization request id"
+// @Success      200  {object}  consentDecisionResponse
+// @Failure      404  {object}  apierror.Error
+// @Router       /oauth/requests/{id}/deny [post]
 func (h *MCPOAuthHandler) DenyConsent(w http.ResponseWriter, r *http.Request) {
 	requestID, userID, tenantID, ok := consentCaller(r)
 	if !ok {

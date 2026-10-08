@@ -247,7 +247,8 @@ func (r *MCPOAuthRepository) CreateGrant(ctx context.Context, g *mcpoauth.Grant,
 			g.Resource, pq.Array(scopeStrings(g.Scopes)), g.CreatedAt, g.ExpiresAt); err != nil {
 			return fmt.Errorf("insert mcp grant: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE mcp_oauth_requests SET grant_id = $2 WHERE id = $1`, requestID.String(), g.ID.String()); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE mcp_oauth_requests SET grant_id = $2 WHERE id = $1 AND tenant_id = $3`,
+			requestID.String(), g.ID.String(), g.TenantID.String()); err != nil {
 			return fmt.Errorf("link mcp grant: %w", err)
 		}
 		return insertMCPTokens(ctx, tx, g.CreatedAt, tokens)
@@ -319,7 +320,7 @@ func scanMCPGrantWithUse(row rowScanner) (*mcpoauth.Grant, bool, error) {
 }
 
 // RotateRefresh implements mcpoauth.Repository.
-func (r *MCPOAuthRepository) RotateRefresh(ctx context.Context, oldHash string, scopes []mcpoauth.Scope, now time.Time, tokens ...mcpoauth.Token) error {
+func (r *MCPOAuthRepository) RotateRefresh(ctx context.Context, tenantID shared.ID, oldHash string, scopes []mcpoauth.Scope, now time.Time, tokens ...mcpoauth.Token) error {
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		var grantID string
 		err := tx.QueryRowContext(ctx, `
@@ -333,8 +334,8 @@ func (r *MCPOAuthRepository) RotateRefresh(ctx context.Context, oldHash string, 
 			return fmt.Errorf("rotate mcp refresh token: %w", err)
 		}
 		if scopes != nil {
-			if _, err := tx.ExecContext(ctx, `UPDATE mcp_oauth_grants SET scopes = $2 WHERE id = $1`,
-				grantID, pq.Array(scopeStrings(scopes))); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE mcp_oauth_grants SET scopes = $2 WHERE id = $1 AND tenant_id = $3`,
+				grantID, pq.Array(scopeStrings(scopes)), tenantID.String()); err != nil {
 				return fmt.Errorf("narrow mcp grant: %w", err)
 			}
 		}
@@ -343,14 +344,16 @@ func (r *MCPOAuthRepository) RotateRefresh(ctx context.Context, oldHash string, 
 }
 
 // RevokeGrant implements mcpoauth.Repository.
-func (r *MCPOAuthRepository) RevokeGrant(ctx context.Context, grantID shared.ID, reason string, now time.Time) error {
+func (r *MCPOAuthRepository) RevokeGrant(ctx context.Context, tenantID, grantID shared.ID, reason string, now time.Time) error {
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE mcp_oauth_grants SET revoked_at = $2, revoked_reason = $3
-			 WHERE id = $1 AND revoked_at IS NULL`, grantID.String(), now, reason); err != nil {
+			 WHERE id = $1 AND tenant_id = $4 AND revoked_at IS NULL`, grantID.String(), now, reason, tenantID.String()); err != nil {
 			return fmt.Errorf("revoke mcp grant: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM mcp_oauth_tokens WHERE grant_id = $1`, grantID.String()); err != nil {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM mcp_oauth_tokens t USING mcp_oauth_grants g
+			 WHERE t.grant_id = g.id AND g.id = $1 AND g.tenant_id = $2`, grantID.String(), tenantID.String()); err != nil {
 			return fmt.Errorf("delete mcp grant tokens: %w", err)
 		}
 		return nil
@@ -359,11 +362,11 @@ func (r *MCPOAuthRepository) RevokeGrant(ctx context.Context, grantID shared.ID,
 
 // TouchGrant implements mcpoauth.Repository. At most one write a minute per
 // grant: last use is shown to people, not used for decisions.
-func (r *MCPOAuthRepository) TouchGrant(ctx context.Context, grantID shared.ID, ip string, now time.Time) error {
+func (r *MCPOAuthRepository) TouchGrant(ctx context.Context, tenantID, grantID shared.ID, ip string, now time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE mcp_oauth_grants SET last_used_at = $2, last_used_ip = NULLIF($3, '')
-		 WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $4)`,
-		grantID.String(), now, truncate(ip, 45), now.Add(-time.Minute))
+		 WHERE id = $1 AND tenant_id = $5 AND (last_used_at IS NULL OR last_used_at < $4)`,
+		grantID.String(), now, truncate(ip, 45), now.Add(-time.Minute), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("touch mcp grant: %w", err)
 	}
