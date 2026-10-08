@@ -65,6 +65,7 @@ var assetMergeRefs = []mergeRef{
 	// A CI pipeline follows its repository (its identity is the provider's
 	// repository id, not the asset).
 	{table: "ci_pipelines", column: "repository_asset_id", tenantCol: "tenant_id"},
+	{table: "web_endpoint_events", column: "origin_asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",

@@ -244,16 +244,10 @@ type UpdateTemplateInput struct {
 // UpdateTemplate updates a template.
 // Note: System templates cannot be updated directly. They must be cloned first.
 func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput) (*scanworkflow.Workflow, error) {
-	t, err := s.GetTemplate(ctx, input.TenantID, input.TemplateID)
+	// System templates and retired workflows are read-only.
+	t, err := s.getWritableTemplate(ctx, input.TenantID, input.TemplateID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Protect system templates from direct modification
-	if t.IsSystemTemplate {
-		return nil, shared.NewDomainError("FORBIDDEN",
-			"System templates cannot be modified directly. Please clone it first using 'Use Template' button.",
-			shared.ErrForbidden)
 	}
 
 	// Verify tenant ownership
@@ -363,55 +357,35 @@ func (s *Service) getWritableTemplate(ctx context.Context, tenantID, templateID 
 	if t.IsSystemTemplate {
 		return nil, errSystemTemplateReadOnly()
 	}
+	if t.RetiredAt != nil {
+		return nil, scanworkflow.ErrScanWorkflowRetired
+	}
 	return t, nil
 }
 
-// DeleteTemplate deletes a template.
+// DeleteTemplate deletes a template, or retires it when it has runs: the
+// run history is never deleted (research/62 SW4). It is refused while a run
+// of the template is pending or running.
 func (s *Service) DeleteTemplate(ctx context.Context, tenantID, templateID string) error {
 	t, err := s.getWritableTemplate(ctx, tenantID, templateID)
 	if err != nil {
 		return err
 	}
 
-	templateName := t.Name
-
-	// Use transaction if DB is available for atomic delete
-	if s.db != nil {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("begin transaction: %w", err)
-		}
-		defer func() { _ = tx.Rollback() }()
-
-		// Delete steps first (within transaction)
-		if err := s.stepRepo.DeleteByScanWorkflowIDInTx(ctx, tx, t.ID); err != nil {
-			return err
-		}
-
-		// Delete template (within transaction)
-		if err := s.templateRepo.DeleteInTx(ctx, tx, t.ID); err != nil {
-			return err
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit transaction: %w", err)
-		}
-	} else {
-		// Fallback to non-transactional (backward compatibility)
-		if err := s.stepRepo.DeleteByScanWorkflowID(ctx, t.ID); err != nil {
-			return err
-		}
-
-		if err := s.templateRepo.Delete(ctx, t.ID); err != nil {
-			return err
-		}
+	retired, err := s.templateRepo.Remove(ctx, t.TenantID, t.ID)
+	if err != nil {
+		return err
 	}
 
-	// Audit log: template deleted (AFTER commit)
+	msg := fmt.Sprintf("Scan workflow '%s' deleted", t.Name)
+	if retired {
+		msg = fmt.Sprintf("Scan workflow '%s' deleted; retired to keep its run history", t.Name)
+	}
 	s.logAudit(ctx, AuditContext{TenantID: tenantID},
 		NewSuccessEvent(audit.ActionScanWorkflowDeleted, audit.ResourceTypeScanWorkflow, templateID).
-			WithResourceName(templateName).
-			WithMessage(fmt.Sprintf("Pipeline template '%s' deleted", templateName)))
+			WithResourceName(t.Name).
+			WithMessage(msg).
+			WithMetadata("retired", retired))
 
 	return nil
 }

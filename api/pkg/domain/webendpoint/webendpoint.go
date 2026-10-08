@@ -80,6 +80,7 @@ type Endpoint struct {
 	State         State      `json:"state"`
 	InScope       bool       `json:"in_scope"`
 	CatalogKey    string     `json:"catalog_key,omitempty"`
+	ExclusionID   *shared.ID `json:"exclusion_id,omitempty"`
 	ParamCount    int        `json:"param_count"`
 	FirstSeenAt   time.Time  `json:"first_seen_at"`
 	LastSeenAt    time.Time  `json:"last_seen_at"`

@@ -171,15 +171,6 @@ export function summarizeFleet(
   }
 }
 
-/**
- * The tenant's own sensors. Shared platform sensors have their own page
- * (/sensors/platform); the API leaves them out of GET /sensors, and this keeps
- * an older API from mixing them into the tenant's list and counts.
- */
-export function tenantSensors<T extends Pick<Sensor, 'is_platform_sensor'>>(sensors: T[]): T[] {
-  return sensors.filter((s) => !s.is_platform_sensor)
-}
-
 /** Execution mode facet: long-running daemons vs one-shot CI runs. */
 export type SensorModeFilter = 'daemon' | 'ci'
 

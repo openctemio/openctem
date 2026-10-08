@@ -37,6 +37,7 @@ import {
 } from '@/features/shared'
 import type { MetricStripItem } from '@/features/shared'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { useDebounce } from '@/hooks/use-debounce'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
@@ -183,23 +184,9 @@ export default function ExposuresPage() {
       ),
     [severityParam]
   )
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '20')
-  const pagination = useMemo(
-    () => ({
-      pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 20,
-    }),
-    [pageParam, perPageParam]
-  )
-  const setPagination = useCallback(
-    (next: { pageIndex: number; pageSize: number }) => {
-      setPageParam(String(next.pageIndex + 1))
-      setPerPageParam(String(next.pageSize))
-    },
-    [setPageParam, setPerPageParam]
-  )
-  const resetPage = useCallback(() => setPageParam('1'), [setPageParam])
+  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
+  const resetPage = useCallback(() => setPage(1), [setPage])
 
   // Selection is owned by the DataTable; we mirror it for the bulk-action bar
   // and bump the epoch to clear the table's own checkboxes.

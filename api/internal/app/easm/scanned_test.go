@@ -168,3 +168,29 @@ func TestScanStamper_UnsolicitedAndSynthetic(t *testing.T) {
 		t.Fatalf("zero sensor recorded: %v %v %v", store.saved, store.evidence, err)
 	}
 }
+
+// A platform sensor scan is evidence from "the platform": one shared source,
+// and the observation carries no platform sensor id.
+func TestScanStamper_PlatformSensorIsNeverNamed(t *testing.T) {
+	store := newFakeScanStore()
+	typed := scanned("www.example.com", asset.AssetTypeSubdomain, true, false)
+	sensorID, cmd := shared.NewID(), shared.NewID()
+	err := NewScanStamper(store, verified{}).StampScanned(context.Background(), shared.NewID(), []ingest.ScannedAsset{typed},
+		ingest.ScanProvenance{SensorID: sensorID, CommandID: &cmd, Tool: "nuclei", ObservedAt: time.Now(), Platform: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := store.evidence[typed.ID.String()]
+	if len(evs) != 1 {
+		t.Fatalf("evidence %+v", evs)
+	}
+	ev := evs[0]
+	if ev.Source != PlatformSensorSource || ev.Observed["sensor_id"] != nil || ev.Observed["platform"] != true {
+		t.Fatalf("platform evidence names the sensor: source %q observed %v", ev.Source, ev.Observed)
+	}
+	for _, v := range ev.Observed {
+		if s, ok := v.(string); ok && s == sensorID.String() {
+			t.Fatalf("platform sensor id in the observation: %v", ev.Observed)
+		}
+	}
+}

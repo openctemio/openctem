@@ -31,7 +31,6 @@ import {
   Pie,
 } from '@/components/charts'
 import { Skeleton } from '@/components/ui/skeleton'
-import { PlatformStatsCard } from '@/features/platform'
 import {
   SEVERITY_CHART_COLORS as SEVERITY_COLORS,
   SEVERITY_TEXT_COLORS,
@@ -327,15 +326,11 @@ export function ClassicDashboard() {
         )
       )}
 
-      {/* Operations Row — rich-content cards grouped together so heights balance.
-          Platform Sensors lived in the stats row before, but its 4-row body
-          (Active Jobs / Queued / Available / Sensors-by-Tier) forced the four
-          scalar stat cards to match its height, leaving them visually empty. */}
+      {/* Operations Row — rich-content cards grouped together so heights balance. */}
       {!isLoading && !error && (
-        <section className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <section className="mb-6 grid gap-4 md:grid-cols-2">
           <MTTRCard />
           <RiskVelocityCard />
-          <PlatformStatsCard />
         </section>
       )}
 
