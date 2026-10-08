@@ -125,10 +125,16 @@ func (a *scanSensorSelectorAdapter) CheckSensorAvailability(ctx context.Context,
 	}
 }
 
-// CanUsePlatformSensors implements scan.SensorSelector.
-// In OSS edition, platform sensors are not available.
-func (a *scanSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
+// PlatformSensorsAllowed says whether the tenant may send scans to the shared
+// platform sensors: the one rule the scan trigger, the pipeline and the
+// tenant's platform scanning view all use. In this build no tenant may.
+func PlatformSensorsAllowed(_ context.Context, _ shared.ID) (bool, string) {
 	return false, "Platform sensors not available in OSS edition"
+}
+
+// CanUsePlatformSensors implements scan.SensorSelector.
+func (a *scanSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
+	return PlatformSensorsAllowed(ctx, tenantID)
 }
 
 // SelectSensor implements scan.SensorSelector.
@@ -185,9 +191,8 @@ func (a *scanRunSensorSelectorAdapter) SelectSensor(ctx context.Context, req sca
 }
 
 // CanUsePlatformSensors implements scanrun.SensorSelector.
-// In OSS edition, platform sensors are not available.
 func (a *scanRunSensorSelectorAdapter) CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string) {
-	return false, "Platform sensors not available in OSS edition"
+	return PlatformSensorsAllowed(ctx, tenantID)
 }
 
 // Template Syncer adapter lives in internal/app/template/scan_adapter.go

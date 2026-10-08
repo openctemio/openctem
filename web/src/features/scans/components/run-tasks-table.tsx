@@ -13,12 +13,15 @@ import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs } from '@/features/scans/lib/run-display'
 import { RunTaskLogsDialog } from '@/features/scans/components/run-task-logs-dialog'
 
-/** Who runs a task: the tenant sensor's name, "Platform sensor", or nobody yet. */
+/**
+ * Who runs a task: "Platform scanning" (never a platform sensor's name), the
+ * tenant sensor's name, or nobody yet.
+ */
 export function taskSensorLabel(
   task: Pick<RunTask, 'sensor_name' | 'platform' | 'status'>
 ): string {
+  if (task.platform) return 'Platform scanning'
   if (task.sensor_name) return task.sensor_name
-  if (task.platform) return 'Platform sensor'
   return task.status === 'queued' ? 'Waiting for a sensor' : '-'
 }
 

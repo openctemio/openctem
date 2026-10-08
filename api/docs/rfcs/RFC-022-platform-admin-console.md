@@ -450,6 +450,14 @@ organization. So the console only **proposes** such a change:
   rev. 2). A sidebar: Overview · Organizations · Users · Scanning
   (target mappings, platform tools) · System (Configuration, Diagnostics, Job
   queue, System logs, Keys). Replaces the transitional `(dashboard)/admin` pages.
+- **Platform sensors belong to the console only** (research/67, 2026-10-07).
+  On the tenant plane a platform sensor does not exist: every
+  `/api/v1/sensors/{id}...` route answers 404 for it (one guard,
+  `SensorHandler.OwnSensor`), lists and counts leave it out, and a
+  tenant sees platform scanning only as a service
+  (`GET /api/v1/platform/scanning`: regions, state, tools, its own jobs).
+  Console pages to list, drain, re-key and retire platform sensors are not
+  built yet (Scanning section, a later phase).
 - **Phase 4 — Entitlements.** Platform-set bundle ceiling per organization,
   fail-closed, that per-module overrides cannot exceed.
 - **Audit chain per organization** (implemented, owner-approved 2026-10-02).

@@ -468,16 +468,14 @@ func (s *SensorService) ListSensors(ctx context.Context, input ListSensorsInput)
 	}
 
 	filter := sensordom.Filter{
-		TenantID: &tenantID,
-		// The tenant's own sensors. Shared platform sensors are not the
-		// tenant's to manage; their capacity has its own view (GET
-		// /platform/stats), and the sensor stats count the same rows.
-		ExcludePlatform: true,
-		Capabilities:    input.Capabilities,
-		Tools:           input.Tools,
-		Search:          input.Search,
-		HasCapacity:     input.HasCapacity,
-		SDKVersion:      input.SDKVersion,
+		// The tenant's own sensors (never shared platform sensors); the
+		// sensor stats count the same rows.
+		TenantID:     &tenantID,
+		Capabilities: input.Capabilities,
+		Tools:        input.Tools,
+		Search:       input.Search,
+		HasCapacity:  input.HasCapacity,
+		SDKVersion:   input.SDKVersion,
 	}
 
 	if input.Type != "" {
@@ -1934,33 +1932,6 @@ func (s *SensorService) HasCapability(ctx context.Context, tenantID shared.ID, c
 	return s.repo.HasSensorForCapability(ctx, tenantID, capability)
 }
 
-// =============================================================================
-// Platform Sensor Statistics
-// =============================================================================
-
-// PlatformTierStats represents statistics for a single platform sensor tier.
-type PlatformTierStats struct {
-	TotalSensors   int
-	OnlineSensors  int
-	OfflineSensors int
-	TotalCapacity  int
-	CurrentLoad    int
-	AvailableSlots int
-}
-
-// PlatformStatsOutput represents the output for platform stats.
-type PlatformStatsOutput struct {
-	Enabled         bool
-	MaxTier         string
-	AccessibleTiers []string
-	MaxConcurrent   int
-	MaxQueued       int
-	CurrentActive   int
-	CurrentQueued   int
-	AvailableSlots  int
-	TierStats       map[string]PlatformTierStats
-}
-
 // GetTenantSensorStats returns aggregate statistics for the tenant's sensors.
 // Computed via SQL aggregation in a single round-trip — replaces the
 // previous client-side .filter().length pattern that only saw the current
@@ -1998,61 +1969,4 @@ func (s *SensorService) ListAllSensors(ctx context.Context, tenantID string) ([]
 		}
 	}
 	return all, nil
-}
-
-// GetPlatformStats returns aggregate statistics for platform sensors accessible to the tenant.
-func (s *SensorService) GetPlatformStats(ctx context.Context, tenantID shared.ID) (*PlatformStatsOutput, error) {
-	s.logger.Debug("getting platform stats", "tenant_id", tenantID)
-
-	stats, err := s.repo.GetPlatformSensorStats(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get platform sensor stats: %w", err)
-	}
-
-	// If no platform sensors exist, return disabled
-	if stats.TotalSensors == 0 {
-		return &PlatformStatsOutput{
-			Enabled:         false,
-			MaxTier:         "shared",
-			AccessibleTiers: []string{"shared"},
-			TierStats:       make(map[string]PlatformTierStats),
-		}, nil
-	}
-
-	// Build tier stats
-	tierStats := make(map[string]PlatformTierStats)
-	for tier, ts := range stats.TierBreakdown {
-		tierStats[tier] = PlatformTierStats{
-			TotalSensors:   ts.TotalSensors,
-			OnlineSensors:  ts.OnlineSensors,
-			OfflineSensors: ts.TotalSensors - ts.OnlineSensors,
-			TotalCapacity:  ts.TotalCapacity,
-			CurrentLoad:    ts.CurrentLoad,
-			AvailableSlots: ts.TotalCapacity - ts.CurrentLoad,
-		}
-	}
-
-	// Determine accessible tiers (all tenants get shared; add dedicated/premium if sensors exist)
-	accessibleTiers := []string{"shared"}
-	maxTier := "shared"
-	if _, ok := stats.TierBreakdown["dedicated"]; ok {
-		accessibleTiers = append(accessibleTiers, "dedicated")
-		maxTier = "dedicated"
-	}
-	if _, ok := stats.TierBreakdown["premium"]; ok {
-		accessibleTiers = append(accessibleTiers, "premium")
-		maxTier = "premium"
-	}
-
-	return &PlatformStatsOutput{
-		Enabled:         true,
-		MaxTier:         maxTier,
-		AccessibleTiers: accessibleTiers,
-		MaxConcurrent:   stats.TotalCapacity,
-		MaxQueued:       stats.TotalCapacity * 3, // 3x capacity for queue
-		CurrentActive:   stats.CurrentActiveJobs,
-		CurrentQueued:   stats.CurrentQueuedJobs,
-		AvailableSlots:  stats.TotalCapacity - stats.CurrentActiveJobs,
-		TierStats:       tierStats,
-	}, nil
 }

@@ -1873,13 +1873,13 @@ export const threatIntelEndpoints = {
 // ============================================
 
 /**
- * Platform sensor endpoints. The API serves only the tenant's view of the
- * shared pool (GET /platform/stats); there is no tenant list of platform
- * sensors or platform jobs.
+ * Platform scanning. The API serves only the organization's view of the
+ * service (regions, state, tools, its own jobs); no tenant route lists,
+ * reads or manages a platform sensor.
  */
 export const platformEndpoints = {
-  /** Aggregate pool health plus this organization's queued platform jobs. */
-  stats: () => `${API_BASE.PLATFORM}/stats`,
+  /** Platform scanning as the organization may use it. */
+  scanning: () => `${API_BASE.PLATFORM}/scanning`,
 } as const
 
 // ============================================

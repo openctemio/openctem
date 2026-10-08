@@ -103,7 +103,6 @@ export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: Sens
         <span className="truncate font-medium" data-slot="sensor-name">
           {sensor.name}
         </span>
-        {sensor.is_platform_sensor && <SensorTag>Platform</SensorTag>}
         <ProtocolTag sensor={sensor} />
         <ConfigHealthTag health={sensor.config_health} />
         <SensorGrantTags grant={grant} />

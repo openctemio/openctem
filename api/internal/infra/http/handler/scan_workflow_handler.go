@@ -315,7 +315,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 		r := RunTaskResponse{
 			ID: t.ID.String(), StepKey: t.StepKey, Tool: t.Tool, Status: string(t.Status),
 			SensorName: t.SensorName, Platform: t.Platform, Targets: t.Targets, Attempts: t.Attempts,
-			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: t.ErrorMessage,
+			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
 			SkippedTargetsTotal: t.SkippedTotal,
 		}
 		for _, sk := range t.Skipped {
