@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -20,6 +21,14 @@ func (r *fakeUserRepo) GetByEmail(_ context.Context, _ string) (*userdom.User, e
 	return r.byEmail, nil
 }
 func (r *fakeUserRepo) Update(_ context.Context, _ *userdom.User) error { return nil }
+func (r *fakeUserRepo) GetByID(_ context.Context, id shared.ID) (*userdom.User, error) {
+	for _, u := range []*userdom.User{r.byEmail, r.created} {
+		if u != nil && u.ID() == id {
+			return u, nil
+		}
+	}
+	return nil, userdom.NotFoundError(id)
+}
 func (r *fakeUserRepo) Create(_ context.Context, u *userdom.User) error { r.created = u; return nil }
 
 func newOAuthSvcWithUser(u *userdom.User) (*OAuthService, *fakeUserRepo) {

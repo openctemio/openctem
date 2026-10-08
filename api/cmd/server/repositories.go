@@ -193,6 +193,8 @@ type Repositories struct {
 
 	// SSO Identity Providers
 	IdentityProvider *postgres.IdentityProviderRepository
+	// Federated identities (issuer + subject) bound to accounts
+	UserIdentity *postgres.UserIdentityRepository
 
 	// Domain-ownership verification (SSO P1, migration 000191)
 	VerifiedDomain *postgres.VerifiedDomainRepository
@@ -435,6 +437,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// SSO Identity Providers
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
+		UserIdentity:     postgres.NewUserIdentityRepository(db),
 		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),

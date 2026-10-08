@@ -1,0 +1,479 @@
+# OpenCTEM operator alerts. Each alert has a runbook section in
+# api/docs/operations/monitoring.md (the anchor is the alert name, lower case).
+#
+# Labels and annotations hold infrastructure vocabulary only (job, instance,
+# component, controller, probe, reason, counts): they are sent to Telegram and
+# Slack, outside the platform, so no rule may add tenant, user or target data.
+#
+# severity: critical = act now (outage, data at risk); warning = act today.
+# component: api alerts are hidden while ApiDown or PostgresDown fires.
+
+groups:
+  - name: openctem-availability
+    rules:
+      - alert: ApiDown
+        expr: probe_success{probe="api-health"} == 0
+        for: 2m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: The API does not answer its health check
+          description: GET /health on the API failed for 2 minutes. Every user and sensor request fails.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apidown
+
+      - alert: ApiScrapeFailing
+        expr: up{job="openctem-api"} == 0 and on() probe_success{probe="api-health"} == 1
+        for: 10m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: The API is up but its metrics cannot be read
+          description: The API answers /health but /metrics fails, so the API alerts are blind. Usually METRICS_TOKEN differs between the API and the monitoring stack.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apiscrapefailing
+
+      - alert: WebDown
+        expr: probe_success{probe="web-login"} == 0
+        for: 3m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: The web console does not serve its sign-in page
+          description: GET /login on the web container failed for 3 minutes.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#webdown
+
+      - alert: GatewayDown
+        expr: probe_success{probe="public-login"} == 0
+        for: 3m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: The public URL does not serve the sign-in page
+          description: GET /login through the gateway (the URL users open) failed for 3 minutes.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#gatewaydown
+
+      - alert: TlsCertExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{probe="public-login"} - time()) / 86400 < 14
+        for: 1h
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: The public TLS certificate expires in {{ $value | humanize }} days
+          description: Renew the gateway certificate before it expires (automatic renewal may be failing).
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
+
+      - alert: TlsCertExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{probe="public-login"} - time()) / 86400 < 3
+        for: 10m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: The public TLS certificate expires in {{ $value | humanize }} days
+          description: Browsers and sensors will refuse the platform when it expires.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
+
+  - name: openctem-api
+    rules:
+      - alert: ApiHigh5xxRate
+        expr: |
+          sum(rate(http_requests_total{job="openctem-api",status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{job="openctem-api"}[5m])) > 0.05
+          and sum(rate(http_requests_total{job="openctem-api"}[5m])) > 0.05
+        for: 10m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of API requests fail with a 5xx'
+          description: More than 5% of API requests answered 5xx for 10 minutes.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apihigh5xxrate
+
+      - alert: ApiHigh5xxRate
+        expr: |
+          sum(rate(http_requests_total{job="openctem-api",status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{job="openctem-api"}[5m])) > 0.20
+          and sum(rate(http_requests_total{job="openctem-api"}[5m])) > 0.05
+        for: 5m
+        labels: {severity: critical, component: api}
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of API requests fail with a 5xx'
+          description: More than 20% of API requests answered 5xx for 5 minutes.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apihigh5xxrate
+
+      - alert: ApiSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="openctem-api",path!~".*/(ws|stream|events|export).*|unmatched"}[5m]))) > 2
+        for: 15m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: API p95 latency is {{ $value | humanizeDuration }}
+          description: The 95th percentile of API request time stayed above 2s for 15 minutes.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apislow
+
+      - alert: ApiPanics
+        expr: sum by (where) (increase(openctem_panics_recovered_total[10m])) > 0
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: The API recovered {{ $value | humanize }} panic(s) in {{ $labels.where }}
+          description: A code path panicked (a bug). The request or task failed; the process kept running.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apipanics
+
+      - alert: ApiErrorLogBurst
+        expr: sum by (component) (rate(openctem_log_records_total{level="error"}[10m])) * 60 > 10
+        for: 10m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $labels.component }} logs {{ $value | humanize }} errors per minute'
+          description: A component of the API writes more than 10 ERROR lines a minute for 10 minutes.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apierrorlogburst
+
+      - alert: SchemaBehind
+        expr: max(openctem_schema_version{source="shipped"}) > max(openctem_schema_version{source="applied"})
+        for: 5m
+        labels: {severity: critical, component: api}
+        annotations:
+          summary: The database schema is behind the running API
+          description: The API ships a newer migration than the database has; queries on new columns fail. Run the migrations.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#schemabehind
+
+      - alert: SchemaDirty
+        expr: max(openctem_schema_dirty) == 1
+        for: 1m
+        labels: {severity: critical, component: api}
+        annotations:
+          summary: The last database migration failed half way (dirty)
+          description: golang-migrate marked the newest migration dirty; no further migration runs until it is fixed.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#schemadirty
+
+      - alert: OpsMetricsFailing
+        expr: max(openctem_ops_collector_up) == 0
+        for: 10m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: The API cannot read its platform-wide counts
+          description: The queue, sensor and outbox alerts are blind while this fires.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#opsmetricsfailing
+
+      - alert: ApiDbPoolSaturated
+        expr: max(go_sql_in_use_connections{job="openctem-api"} / (go_sql_max_open_connections{job="openctem-api"} > 0)) > 0.9
+        for: 10m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: The API uses {{ $value | humanizePercentage }} of its database connections
+          description: Requests wait for a connection; latency and timeouts follow.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apidbpoolsaturated
+
+      - alert: ControllerErrors
+        expr: sum by (controller) (increase(openctem_controller_reconcile_errors_total[15m])) > 3
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: Background controller {{ $labels.controller }} failed {{ $value | humanize }} times in 15 minutes
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#controllererrors
+
+  - name: openctem-work
+    rules:
+      - alert: SensorsOffline
+        expr: sum by (kind) (openctem_sensors{health=~"offline|stale"}) > 0
+        for: 15m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} active {{ $labels.kind }} sensor(s) offline or stale'
+          description: Scans routed to them wait. The Sensors page shows which ones.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsoffline
+
+      - alert: SensorConfigImpaired
+        expr: sum by (kind, config_health) (openctem_sensors_config_health{config_health=~"impaired|blocked"}) > 0
+        for: 15m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} {{ $labels.kind }} sensor(s) report configuration {{ $labels.config_health }}'
+          description: A sensor runs with a configuration problem (missing tools, ignored capabilities, policy refusals).
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorconfigimpaired
+
+      - alert: SensorSdkUnsupported
+        expr: sum by (kind) (openctem_sensors_sdk{status="unsupported"}) > 0
+        for: 1h
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} {{ $labels.kind }} sensor(s) run an SDK below the supported minimum'
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsdkunsupported
+
+      - alert: CommandQueueStuck
+        expr: max(openctem_command_oldest_pending_seconds) > 1800
+        for: 10m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: A sensor command has waited {{ $value | humanizeDuration }} for a sensor
+          description: Work is queued but no sensor takes it (offline sensors, wrong zone, missing tool).
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#commandqueuestuck
+
+      - alert: ScanRunsStuck
+        expr: max(openctem_scan_runs_past_deadline) > 0
+        for: 15m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} scan run(s) stay open past their deadline'
+          description: The scan timeout controller should have ended them; it is not running or failing.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#scanrunsstuck
+
+      - alert: IngestBacklog
+        expr: max(ingest_queue_depth{job="openctem-api"}) > 200
+        for: 30m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} ingest jobs are waiting'
+          description: Scan results are accepted faster than they are processed; findings appear late.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#ingestbacklog
+
+      - alert: IngestJobsDead
+        expr: sum(increase(ingest_jobs_processed_total{job="openctem-api",outcome="dead"}[30m])) > 0
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} ingest job(s) failed for good'
+          description: Their results were not imported after every retry.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#ingestjobsdead
+
+      - alert: OutboxLagging
+        expr: max(openctem_outbox_oldest_pending_seconds) > 900
+        for: 10m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: The oldest notification has waited {{ $value | humanizeDuration }}
+          description: The notification worker is not delivering (stopped, or every channel failing).
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#outboxlagging
+
+      - alert: OutboxDeadLetters
+        expr: max(delta(openctem_outbox_entries{status="dead"}[1h])) > 0
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} notification(s) gave up in the last hour'
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#outboxdeadletters
+
+      - alert: AutomationAutoPaused
+        expr: sum(increase(openctem_automations_auto_paused_total[15m])) > 0
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: The platform paused {{ $value | humanize }} automation(s) whose runs kept failing
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#automationautopaused
+
+      - alert: AutomationFailures
+        expr: sum(increase(openctem_automation_runs_total{status="failed"}[1h])) > 20
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} automation runs failed in the last hour'
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#automationfailures
+
+  - name: openctem-security
+    rules:
+      - alert: AuditChainBreak
+        expr: sum by (reason) (increase(openctem_security_audit_chain_breaks_total[30m])) > 0
+        labels: {severity: critical, component: api}
+        annotations:
+          summary: The audit log hash chain has {{ $value | humanize }} new break(s) ({{ $labels.reason }})
+          description: An audit entry was changed or removed outside the API. Treat as a security incident.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#auditchainbreak
+
+      - alert: LoginFailureSpike
+        expr: sum(increase(openctem_auth_login_failures_total{reason="invalid_credentials"}[5m])) > 50
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} failed password sign-ins in 5 minutes'
+          description: Possible password guessing or credential stuffing.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#loginfailurespike
+
+      - alert: RateLimitSpike
+        expr: sum(rate(http_requests_total{job="openctem-api",status="429"}[5m])) * 60 > 60
+        for: 10m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: The API refuses {{ $value | humanize }} requests a minute for rate limits
+          description: A client floods the API, or a limit is too low for real traffic.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#ratelimitspike
+
+      - alert: WebClientErrors
+        expr: sum by (kind) (increase(openctem_web_client_errors_total[10m])) > 5
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: Browsers reported {{ $value | humanize }} {{ $labels.kind }} errors in 10 minutes
+          description: chunk_load right after a deploy usually means stale assets; render or unhandled means a bug in the web console.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#webclienterrors
+
+  - name: openctem-data
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0 or up{job="postgres"} == 0
+        for: 1m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: Postgres is unreachable
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#postgresdown
+
+      - alert: PostgresTooManyConnections
+        expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
+        for: 5m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: Postgres uses {{ $value | humanizePercentage }} of its connections
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#postgrestoomanyconnections
+
+      - alert: PostgresLongTransaction
+        expr: max(pg_long_running_transactions_oldest_timestamp_seconds) > 900
+        for: 5m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: A Postgres transaction has been open for {{ $value | humanizeDuration }}
+          description: Long transactions hold locks and block vacuum.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#postgreslongtransaction
+
+      - alert: PostgresDeadlocks
+        expr: sum(increase(pg_stat_database_deadlocks[15m])) > 0
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: '{{ $value | humanize }} Postgres deadlock(s) in 15 minutes'
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#postgresdeadlocks
+
+      - alert: RedisDown
+        expr: redis_up == 0 or up{job="redis"} == 0
+        for: 1m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: Redis is unreachable
+          description: Sessions, rate limits and caches fail over to the database or refuse requests.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#redisdown
+
+      - alert: RedisMemoryHigh
+        expr: max(redis_memory_used_bytes / (redis_memory_max_bytes > 0)) > 0.9
+        for: 10m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: Redis uses {{ $value | humanizePercentage }} of its maxmemory
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#redismemoryhigh
+
+      - alert: BackupStale
+        expr: time() - max(openctem_backup_last_success_timestamp_seconds) > 26 * 3600
+        for: 10m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: The last successful database backup is {{ $value | humanizeDuration }} old
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#backupstale
+
+      - alert: BackupFailed
+        expr: max(openctem_backup_last_exit_code) != 0
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: The last database backup run failed (exit code {{ $value }})
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#backupfailed
+
+      - alert: BackupMetricMissing
+        expr: absent(openctem_backup_last_success_timestamp_seconds)
+        for: 1h
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: No backup status is reported
+          description: The backup job does not write its status file, so a failing backup would go unnoticed.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#backupmetricmissing
+
+  - name: openctem-host
+    rules:
+      - alert: HostDiskLow
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} < 0.12
+        for: 10m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: '{{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free'
+          description: When the disk fills, Postgres stops (PANIC) and the platform goes down.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostdisklow
+
+      - alert: HostDiskLow
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} < 0.07
+        for: 2m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: '{{ $labels.mountpoint }} has only {{ $value | humanizePercentage }} free'
+          description: Postgres will PANIC when the disk is full. Free space now.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostdisklow
+
+      - alert: HostDiskFillingFast
+        expr: |
+          predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}[6h], 24 * 3600) < 0
+          and node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} < 0.25
+        for: 30m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: '{{ $labels.mountpoint }} will be full within a day at the current rate'
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostdiskfillingfast
+
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 5m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: The host has {{ $value | humanizePercentage }} memory available
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostmemorylow
+
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.05
+        for: 2m
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: The host has only {{ $value | humanizePercentage }} memory available
+          description: The kernel is about to kill processes (OOM).
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostmemorylow
+
+      - alert: HostOomKill
+        expr: increase(node_vmstat_oom_kill[10m]) > 0
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: The kernel killed {{ $value | humanize }} process(es) for lack of memory
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostoomkill
+
+      - alert: HostHighLoad
+        expr: node_load15 / count without (cpu, mode) (node_cpu_seconds_total{mode="idle"}) > 2
+        for: 30m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: Host load is {{ $value | humanize }} per CPU
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hosthighload
+
+      - alert: ContainerRestarting
+        expr: changes(container_start_time_seconds{name!=""}[30m]) >= 2
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: Container {{ $labels.name }} restarted {{ $value | humanize }} times in 30 minutes
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#containerrestarting
+
+      - alert: ContainerOomKilled
+        expr: increase(container_oom_events_total{name!=""}[10m]) > 0
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: Container {{ $labels.name }} hit its memory limit and was OOM-killed
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#containeroomkilled
+
+      - alert: ContainerMemoryNearLimit
+        expr: container_memory_working_set_bytes{name!=""} / (container_spec_memory_limit_bytes{name!=""} > 0) > 0.9
+        for: 10m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: Container {{ $labels.name }} uses {{ $value | humanizePercentage }} of its memory limit
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#containermemorynearlimit
+
+  - name: openctem-monitoring
+    rules:
+      - alert: MonitoringTargetDown
+        expr: up{job!~"openctem-api|postgres|redis"} == 0
+        for: 5m
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: Monitoring cannot scrape {{ $labels.job }}
+          description: The alerts that depend on this exporter are blind.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#monitoringtargetdown
+
+      - alert: AlertDeliveryFailing
+        expr: sum by (integration) (increase(alertmanager_notifications_failed_total[15m])) > 0
+        labels: {severity: critical, component: platform}
+        annotations:
+          summary: Alert delivery to {{ $labels.integration }} is failing
+          description: Alerts do not reach this channel (wrong token or webhook, or the service is down). The other channel still receives this one.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#alertdeliveryfailing
+
+      - alert: AlertRuleFailing
+        expr: sum(increase(prometheus_rule_evaluation_failures_total[15m])) > 0
+        labels: {severity: warning, component: platform}
+        annotations:
+          summary: Some alert rules fail to evaluate
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#alertrulefailing

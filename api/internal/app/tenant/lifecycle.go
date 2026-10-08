@@ -252,16 +252,13 @@ func ErasedUserLabel(userID shared.ID) string {
 	return "Deleted user #" + hex.EncodeToString(sum[:4])
 }
 
-// cutAccess drops every cache that could still admit the user and closes
-// their sessions and sockets (the permission-version change closes sockets).
+// cutAccess drops every cache that could still admit the user to this
+// tenant, closes their sockets (the permission-version change closes them)
+// and ends the sessions this tenant may end (endTenantSessions).
 func (s *TenantService) cutAccess(ctx context.Context, tenantID, userID string) {
 	s.invalidateUserPermissions(ctx, tenantID, userID)
 	s.invalidateMembershipCache(ctx, tenantID, userID)
-	if s.sessionService != nil {
-		if err := s.sessionService.RevokeAllSessions(ctx, userID, ""); err != nil {
-			s.logger.Warn("failed to revoke sessions", "user_id", userID, "error", err)
-		}
-	}
+	s.endTenantSessions(ctx, tenantID, userID)
 	if tid, err := shared.IDFromString(tenantID); err == nil {
 		if uid, uerr := shared.IDFromString(userID); uerr == nil {
 			if _, derr := s.repo.DeletePendingInvitationsByUserID(ctx, tid, uid); derr != nil {
@@ -269,6 +266,65 @@ func (s *TenantService) cutAccess(ctx context.Context, tenantID, userID string) 
 			}
 		}
 	}
+}
+
+// endTenantSessions is the session side of cutting one member's access to
+// one tenant. Users are global, so the person's sessions also serve their
+// other organizations: a suspension or removal here must not sign them out
+// there (an administrator of one organization could otherwise log a member
+// of another out at will).
+//
+//   - The tenant's own access is already closed without touching sessions:
+//     every tenant request re-checks the membership (RequireMembership,
+//     RequireActiveMembershipFromJWT, the WebSocket upgrade), the caches
+//     were just dropped, and token exchange and refresh mint tokens only for
+//     active memberships.
+//   - Sessions this tenant's identity provider signed in end with it: the
+//     organization's assertion was their only proof of identity.
+//   - A person with no other organization left has nothing to protect
+//     elsewhere: every session ends, as before.
+//
+// Account-wide actions (password reset, a platform administrator disabling
+// the account, erasing personal data) still revoke every session.
+func (s *TenantService) endTenantSessions(ctx context.Context, tenantID, userID string) {
+	if s.sessionService == nil {
+		return
+	}
+	if !s.hasOtherOrganization(ctx, tenantID, userID) {
+		if err := s.sessionService.RevokeAllSessions(ctx, userID, ""); err != nil {
+			s.logger.Warn("failed to revoke sessions", "user_id", userID, "error", err)
+		}
+		return
+	}
+	n, err := s.sessionService.RevokeSessionsIssuedBy(ctx, userID, tenantID)
+	if err != nil {
+		s.logger.Warn("failed to revoke the tenant's sessions", "user_id", userID, "tenant_id", tenantID, "error", err)
+		return
+	}
+	s.logger.Info("member access cut in one organization; sessions kept for the others",
+		"user_id", userID, "tenant_id", tenantID, "revoked_idp_sessions", n)
+}
+
+// hasOtherOrganization reports whether the user still belongs (active or
+// suspended, not offboarded) to an organization other than tenantID. On a
+// lookup error it answers true: the tenant's own access is cut either way,
+// and other organizations' sessions are not this tenant's to end.
+func (s *TenantService) hasOtherOrganization(ctx context.Context, tenantID, userID string) bool {
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return true
+	}
+	tenants, err := s.repo.ListTenantsByUser(ctx, uid)
+	if err != nil {
+		s.logger.Warn("list organizations of a member", "user_id", userID, "error", err)
+		return true
+	}
+	for _, t := range tenants {
+		if t != nil && t.Tenant != nil && t.Tenant.ID().String() != tenantID {
+			return true
+		}
+	}
+	return false
 }
 
 // notifyAdmins tells every active owner and administrator, in-app. Best
