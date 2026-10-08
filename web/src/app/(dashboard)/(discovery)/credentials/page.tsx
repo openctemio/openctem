@@ -71,6 +71,7 @@ import { useDebounce } from '@/hooks/use-debounce'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { normalizeSeverity } from '@/lib/severity'
+import { Permission, usePermissions } from '@/lib/permissions'
 
 // Filter types
 type StatusFilter = Status | 'all'
@@ -224,6 +225,8 @@ export default function CredentialsPage() {
   }, [allCredentialsResponse])
 
   const [selectedCredential, setSelectedCredential] = useState<CredentialLeakRow | null>(null)
+  const { can } = usePermissions()
+  const canResolve = can(Permission.CredentialsWrite)
 
   // Filter data (client-side filtering for source since API doesn't support it directly)
   const filteredData = useMemo(() => {
@@ -628,7 +631,8 @@ export default function CredentialsPage() {
             : undefined
         }
         quickActions={
-          selectedCredential?.status === 'active' ? (
+          // Resolving needs the permission the API checks (credentials write).
+          selectedCredential?.status === 'active' && canResolve ? (
             <Button
               size="sm"
               variant="outline"

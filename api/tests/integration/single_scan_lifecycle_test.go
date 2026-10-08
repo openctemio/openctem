@@ -95,6 +95,7 @@ func newTriggerService(db *sql.DB) *scansvc.Service {
 		availableSensors{},
 		nil, // securityValidator
 		logger.New(logger.Config{Level: "error"}),
+		allowAllTargetChecks()...,
 	)
 }
 
