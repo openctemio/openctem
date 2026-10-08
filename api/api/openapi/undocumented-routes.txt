@@ -109,7 +109,6 @@ GET /api/v1/compliance/frameworks/{}
 GET /api/v1/compliance/frameworks/{}/controls
 GET /api/v1/compliance/frameworks/{}/stats
 GET /api/v1/compliance/stats
-GET /api/v1/components/export
 GET /api/v1/control-tests
 GET /api/v1/control-tests/stats
 GET /api/v1/ctem-cycles
