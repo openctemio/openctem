@@ -213,6 +213,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
+	if svc.Entitlement != nil {
+		tenantHandler.SetFreePlan(svc.Entitlement)
+	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}
@@ -610,6 +613,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	if svc.AccessRequest != nil {
 		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
+	}
+	if svc.Entitlement != nil {
+		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
+		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})
 	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {

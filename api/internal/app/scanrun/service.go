@@ -174,7 +174,9 @@ type SelectSensorResult struct {
 // Service handles scan workflow-related business operations.
 type Service struct {
 	// runnableTools: which tools an online sensor may run now (CheckSteps warnings).
-	runnableTools     RunnableTools
+	runnableTools RunnableTools
+	// draftRepo stores the builder drafts (draft.go).
+	draftRepo         scanworkflow.DraftRepository
 	templateRepo      scanworkflow.Repository
 	stepRepo          scanworkflow.StepRepository
 	runRepo           scanrun.RunRepository

@@ -488,6 +488,24 @@ creates the organization with the requester as owner (ops_admin+, audited).
 Details: `docs/architecture/user-onboarding.md`, "Sign-up policy" and
 "Request access".
 
+## Revision 11: plans and limits
+
+Organizations are on a plan (Free, Pro, Enterprise) that caps what they may
+add:
+
+- System > Plans: the plan defaults; any administrator reads them, a super
+  admin changes them with a fresh authenticator code and the version read,
+  audited at critical severity and emailed to the other administrators;
+- Organizations > an organization: its plan, usage, an over-limit badge, and
+  per-organization overrides (reason required, optional expiry), ops_admin+,
+  audited;
+- lowering a limit never removes members, assets or keys: new additions are
+  refused until usage is under it again;
+- organizations created before plans are Enterprise (unlimited); a
+  self-service organization starts on Free.
+
+Details: `docs/architecture/plans-and-limits.md`.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/

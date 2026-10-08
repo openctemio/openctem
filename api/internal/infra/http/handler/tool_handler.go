@@ -390,6 +390,10 @@ func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	res, err := h.service.ListToolView(r.Context(), tool.ListToolViewInput{
 		TenantID:  middleware.GetTenantID(r.Context()),
 		Source:    q.Get("source"),
@@ -398,8 +402,8 @@ func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
 		Enabled:   enabled,
 		Available: available,
 		Sort:      q.Get("sort"),
-		Page:      parseQueryInt(q.Get("page"), 1),
-		PerPage:   parseQueryIntBounded(q.Get("per_page"), 20, 1, maxPerPage),
+		Page:      paging.Page,
+		PerPage:   min(paging.PerPage, maxPerPage),
 		ToolViewOptions: tool.ToolViewOptions{
 			Availability: inc.Has(includeAvailability),
 			ZoneID:       q.Get("zone_id"),

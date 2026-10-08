@@ -24,6 +24,13 @@ type SSOEnforcedProvider interface {
 	IsSSOEnforced(ctx context.Context, tenantID string) (bool, error)
 }
 
+// SSOExceptionProvider, when the provider implements it, answers whether a
+// member has an unexpired exception to the tenant's SSO enforcement (RFC-058).
+// The token mint already required a second factor for such a member.
+type SSOExceptionProvider interface {
+	HasSSOException(ctx context.Context, tenantID, userID string) (bool, error)
+}
+
 // SSOEnforcementGate caches each tenant's sso_enforced flag with a short TTL so
 // the per-request check costs at most one tenant lookup per tenant per TTL
 // window (no N+1). Unlike the module gate this is a SECURITY boundary, so a
@@ -54,6 +61,17 @@ func NewSSOEnforcementGate(provider SSOEnforcedProvider, ttl time.Duration, log 
 		logger:   log.With("middleware", "sso_enforcement"),
 		cache:    make(map[string]cachedEnforced),
 	}
+}
+
+// excepted reports whether the member has an SSO exception; any lookup
+// failure answers no (fail closed).
+func (g *SSOEnforcementGate) excepted(ctx context.Context, tenantID, userID string) bool {
+	p, ok := g.provider.(SSOExceptionProvider)
+	if !ok || userID == "" {
+		return false
+	}
+	yes, err := p.HasSSOException(ctx, tenantID, userID)
+	return err == nil && yes
 }
 
 // isEnforced returns the tenant's sso_enforced flag, using the TTL cache. On a
@@ -162,6 +180,9 @@ func (g *SSOEnforcementGate) Enforce(next http.Handler) http.Handler {
 				"tenant_id", tenantID, "user_id", claims.UserID)
 			apierror.Forbidden("This organization requires SSO sign-in").WriteJSON(w)
 			return
+		}
+		if enforced && g.excepted(r.Context(), tenantID, claims.UserID) {
+			enforced = false
 		}
 		if enforced {
 			g.logger.Info("blocked password session from SSO-enforced tenant (per-request)",

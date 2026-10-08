@@ -178,6 +178,7 @@ type Repositories struct {
 	Admin         *postgres.AdminRepository
 	SignupPolicy  *postgres.SignupPolicyRepository
 	AccessRequest *postgres.AccessRequestRepository
+	Plan          *postgres.PlanRepository
 	AdminAuditLog *postgres.AuditLogRepository
 	AdminOrg      *postgres.AdminOrganizationRepository
 	AdminConsole  *postgres.AdminConsoleRepository
@@ -426,6 +427,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Admin:         postgres.NewAdminRepository(db),
 		SignupPolicy:  postgres.NewSignupPolicyRepository(db),
 		AccessRequest: postgres.NewAccessRequestRepository(db),
+		Plan:          postgres.NewPlanRepository(db),
 		AdminAuditLog: postgres.NewAuditLogRepository(db),
 		AdminOrg:      postgres.NewAdminOrganizationRepository(db),
 		AdminConsole:  postgres.NewAdminConsoleRepository(db),

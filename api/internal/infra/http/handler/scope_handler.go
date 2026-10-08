@@ -606,14 +606,18 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := scope.ListTargetsInput{
 		TenantID:    tenantID,
 		TargetTypes: parseQueryArray(query.Get("types")),
 		Statuses:    parseQueryArray(query.Get("statuses")),
 		Tags:        parseQueryArray(query.Get("tags")),
 		Search:      query.Get("search"),
-		Page:        parseQueryInt(query.Get("page"), 1),
-		PerPage:     parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:        paging.Page,
+		PerPage:     paging.PerPage,
 	}
 
 	result, err := h.service.ListTargets(r.Context(), input)
@@ -920,14 +924,18 @@ func (h *ScopeHandler) ListExclusions(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := scope.ListExclusionsInput{
 		TenantID:       tenantID,
 		ExclusionTypes: parseQueryArray(query.Get("types")),
 		Statuses:       parseQueryArray(query.Get("statuses")),
 		IsApproved:     parseQueryBoolPtr(query.Get("is_approved")),
 		Search:         query.Get("search"),
-		Page:           parseQueryInt(query.Get("page"), 1),
-		PerPage:        parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:           paging.Page,
+		PerPage:        paging.PerPage,
 	}
 
 	result, err := h.service.ListExclusions(r.Context(), input)

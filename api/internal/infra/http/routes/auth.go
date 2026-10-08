@@ -141,6 +141,11 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		// Per-tenant SSO endpoints (public, rate limited)
 		if h.SSO != nil {
 			// SECURITY: Rate limit all public SSO endpoints to prevent enumeration
+			// Email-first sign-in: where does this email sign in? Its own
+			// budget (20/min per address): it runs on every sign-in, before
+			// the password is typed, and must not spend the login budget.
+			discoverRL := newAuthRateLimiter("discover").TokenExchangeMiddleware()
+			r.POST("/discover", ChainFunc(h.SSO.Discover, discoverRL).ServeHTTP)
 			ssoProvidersHandler := ChainFunc(h.SSO.ListTenantProviders, loginRL)
 			r.GET("/sso/providers", ssoProvidersHandler.ServeHTTP)
 			ssoAuthorizeHandler := ChainFunc(h.SSO.Authorize, loginRL)

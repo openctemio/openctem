@@ -34,6 +34,16 @@ var (
 		[]string{"reason"},
 	)
 
+	// PlanLimitRefusalsTotal counts additions refused by a plan limit, by
+	// limit key (seats, assets, sensors, api_keys, ci_trusts, ...).
+	PlanLimitRefusalsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_plan_limit_refusals_total",
+			Help: "Additions refused by a plan limit, by limit key",
+		},
+		[]string{"key"},
+	)
+
 	// AutomationRunsTotal counts finished automation (workflow) runs by
 	// status: completed or failed.
 	AutomationRunsTotal = promauto.NewCounterVec(
