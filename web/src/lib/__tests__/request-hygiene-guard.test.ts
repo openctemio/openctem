@@ -64,7 +64,9 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/notifications/api/use-notification-api.ts': 1,
   'features/scan-freeze/api/use-freeze-windows.ts': 1,
   'features/scans/components/run-detail-sheet.tsx': 1,
-  'features/scans/components/scan-runs-tab.tsx': 1,
+  // The run list and its counts poll on their own clocks: fast only while a
+  // listed run is live (research/81); it was one shared 30 s poll before.
+  'features/scans/components/scan-runs-tab.tsx': 2,
   'features/sensors/components/sensor-detail-sheet.tsx': 1,
   'features/sensors/components/sensor-install-flow.tsx': 1,
   'lib/api/hooks.ts': 1,
