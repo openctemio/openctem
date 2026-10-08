@@ -1,10 +1,5 @@
 # Files skipped by scripts/docs_check.py until the pull request that fixes them merges.
 # Remove each entry as soon as its pull request is merged.
-api/docs/architecture/agent-audit-logging.md  # fixed by the api docs part of #1434
-api/docs/architecture/agent-heartbeat-optimization.md  # fixed by the api docs part of #1434
-api/docs/architecture/asset-identity-resolution.md  # fixed by the api docs part of #1434
-api/docs/architecture/asset-schema.md  # fixed by the api docs part of #1434
 api/docs/architecture/authorization-matrix.md  # owned by open PR #1392; broken permission-realtime-sync link, fix after it merges
-api/docs/architecture/notification-system.md  # fixed by the api docs part of #1434
 api/docs/README.md  # fixed by the api docs part of #1434
 api/scripts/tests/README_notification_outbox_test.md  # fixed by the api docs part of #1434
