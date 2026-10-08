@@ -57,47 +57,28 @@
 
 ## 2. Inventory: platform-direct integrations today
 
-Evidence is `develop` at 6d8051eca (2026-10-04). Paths are under `api/`
-unless they start with `web/`. "Safe" = `httpsec.SafeHTTPClient` (resolve
-once, vet every answer, dial the vetted IP; Go's default redirect policy, each
-hop re-vetted by the dialer; no body cap; no retries).
+The API process makes these outbound connections itself. Every
+tenant-configurable HTTP client goes through the SSRF guard in
+`pkg/httpsec` (resolve once, vet every answer, dial the vetted address);
+private ranges are refused unless the operator allows them. Credentials are
+encrypted with `APP_ENCRYPTION_KEY` (AES-256-GCM, with key rotation).
 
-### 2.1 Shared pieces
-
-| Piece | Where | Notes |
-|---|---|---|
-| SSRF guard | `pkg/httpsec/ssrf.go` (`SafeHTTPClient` :284, dialer :328-349, `ValidateURL` :229, `ResolveSafeHost` :150) | Hard block: loopback, link-local/IMDS, CGNAT, multicast, reserved. Private (RFC1918/ULA) blocked unless the **process-wide** `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` (:81). |
-| Credential encryption | `pkg/crypto/cipher.go:63-160` (AES-256-GCM), `keyring.go:70-80` (rotation); key `APP_ENCRYPTION_KEY` + `APP_ENCRYPTION_KEY_PREVIOUS` (`internal/config/config.go:1176-1179`), required unless `APP_ENV=development` (:1431) | Without a key a `NoOpEncryptor` stores plaintext (`internal/app/integration/service.go:97`). A failed decrypt returns the ciphertext as the credential (`service.go:964-977`, `infra/jira/resolver.go:210-216`, `app/ticketing/github_ticket.go:267-273`). |
-| Integration row | `migrations/000019_integrations.up.sql:7-34`; `pkg/domain/integration/entity.go` | `credentials_encrypted TEXT`, `base_url`, `config`/`metadata` JSONB, `status`, `status_message`, `sync_error`, sync timestamps. Responses redact `config`/`metadata` by key name (`infra/http/handler/integration_handler.go:180-251`) but return `status_message`/`sync_error` raw (:291, :297). |
-| Lint | `scripts/security-lint.sh` Rule 1 greps only `&http.Client{` | Blind to raw TCP dials (`pkg/email`, `notifier/email.go`, `pkg/dnsprobe`), go-git's ssh transport, SDK default transports. |
-| Audit | `pkg/domain/audit/value_objects.go` | **No `integration.*` actions exist.** Create, update, delete, test, credential change are unaudited. |
-
-### 2.2 Per integration
-
-| Integration | Client & limits | Credentials | Tenant resolution | Test / status | Gate & UI |
-|---|---|---|---|---|---|
-| Slack, Teams (`infra/notifier/slack.go:23`, `teams.go:23`) | Safe 30 s; body cap 1 MiB; no retry in-call (outbox retries) | Webhook URL encrypted (`service.go:1860`); channel in metadata | Outbox: `ListIntegrationsWithNotification(ctx, tenantID)` (`app/outbox/service.go:306`); test: `GetByID` + in-code tenant compare (`service.go:2150-2158`) | `POST /{id}/test-notification`, 30 s in-memory rate limit (`service.go:160`); result → `status_message` | `ModuleIntegrations` + `integrations:manage` (`routes/misc.go:200-246`); `web/.../settings/integrations/notifications` |
-| Telegram (`notifier/telegram.go:25`) | Safe 30 s; fixed `api.telegram.org` | Bot token encrypted (`service.go:1380`); **token is in the URL path** (:90) | as above | as above | as above |
-| Generic webhook (`notifier/webhook.go:26`) | `ValidateURL` + Safe 30 s | URL encrypted | as above | as above | as above |
-| Splunk HEC (`notifier/splunk.go:39`) | `ValidateURL` + Safe 30 s; token in `Authorization` | HEC token encrypted; `hec_url` in metadata | as above | as above | `web/.../settings/integrations/siem` |
-| Email notifications (`notifier/email.go:144`) | `ResolveSafeHost` + pinned-IP dial; TLS 1.2 floor; STARTTLS fails closed | user/password encrypted; host, port, from, to and **`skip_verify`** in metadata (`service.go:1210-1258`) | as above | as above | notifications page |
-| Transactional mail, system + per-tenant (`pkg/email/email.go:204`; `app/auth/tenant_smtp_resolver.go`) | Was `ValidateHost` then dial the hostname (fixed by #1069) | System: `SMTP_*` env. Tenant: the resolver reads `smtp_host/smtp_from/smtp_user/smtp_password/smtp_tls` **from metadata** (:63-104) | `ListByCategory(ctx, tenantID, notification)` | none | none |
-| Jira (`infra/jira/client.go:36`) | https only, `ValidateURL` + Safe 30 s, body cap 10 MiB, error bodies embedded (:126, :204, :263, :294) | JSON `{email, api_token}` encrypted (`jira/resolver.go:204-257`) | `ListByProvider(ctx, tenantID, jira)` (`resolver.go:107`) | `resolver.go:162` | `ModuleIntegrations`; ticket create/link sit in the finding routes with no module gate (`routes/exposure.go:319`); inbound `POST /api/v1/webhooks/incoming/jira` (`misc.go:465`); `web/.../settings/integrations/ticketing` |
-| GitHub Issues (`app/ticketing/github_ticket.go:113`) | Safe | SCM token | `ListByProvider(ctx, tenantID, github)` (:254) | — | finding routes |
-| GitHub, GitLab, Bitbucket, Azure DevOps (`infra/scm/*.go`) | `ValidateURL` + Safe 30 s; error bodies (1 MiB cap) embedded (`github.go:232-252`); success bodies decoded uncapped (`gitlab.go:169`) | token encrypted; `base_url` column | `GetByTenantAndID` (`service.go:645`); some paths `GetByID` + compare (:848) | `/{id}/test`, `/{id}/sync`, `/test-credentials` (arbitrary `base_url`, upstream error returned, `service.go:757-835`); inbound GitHub push/issues webhook (`handler/github_webhook_handler.go`) | `ModuleIntegrations`; `web/.../settings/integrations/scm` |
-| DefectDojo (`infra/importer/defectdojo/client.go:41`) | Safe 30 s + `CheckRedirect` re-validating; every request incl. absolute `next` links re-validated (:156); error body capped 512 B | token encrypted; **decrypt failure fails the call** (`app/defectdojo/sync.go:159`) | `ListByProvider(ctx, tenantID, defectdojo)` (:140) | `POST /integrations/defectdojo/sync` | `web/.../settings/integrations/scanners` |
-| AI-triage LLM (`infra/llm/{openai,gemini,claude}.go`) | Safe; fixed hosts; 3 retries; `AI_RATE_LIMIT_RPM`; **response read uncapped** (`openai.go:187`, `gemini.go:192`, `claude.go:165`) | platform env keys or tenant BYOK `ai.api_key` (`enc:v1:`), redacted in settings (`pkg/domain/tenant/settings_redact.go`) | tenant settings | — | no module gate (`routes.go:514`); audit `ai_triage.*` |
-| Threat intel (`app/threat/intel_service.go`) | Safe 5 min; EPSS, CISA KEV (+ GitHub mirror); 256 MiB compressed / 1 GiB decompressed caps | none | platform-global | — | admin routes. No NVD client exists. |
-| CTEM-ID feed (`app/ctemid/service.go`) | Safe 2 min; 64 MiB cap | none | global | — | — |
-| Cert monitor (`app/certmonitor/`) | Safe with header timeout; backoff + jitter, `Retry-After` ≤ 60 s | none | per-tenant cursor | — | — |
-| Social OAuth, tenant OIDC SSO, admin IdP, Keycloak (`app/auth/oauth.go:132`, `sso.go:144`, `pkg/oidc`, `pkg/keycloak`) | Safe; admin IdP also `ValidateURL` on every URL; Okta org must be `*.okta.com` | client secrets encrypted | tenant IdP record / env | — | auth plane |
-| SAML (`app/auth/saml.go`) | no outbound fetch | — | — | — | — |
-| Tenant S3 storage (`infra/storage/tenant.go`) | `ValidateURL` + Safe 5 min (operator S3 uses the SDK default transport, env-configured) | keys encrypted in settings | tenant settings | — | `RequireAdmin` |
-| Template sources (`infra/fetchers/{http,git,s3}_fetcher.go`) | HTTP: pinned dial + `CheckRedirect` (3 hops) but **no body cap** (:221); git https/http: Safe; **git ssh: go-git's own dialer** (validate-then-redial, documented :406-412) | secret store (separate encryptor, audited) | `DecryptCredentialData(ctx, tenantID, credID)` | — | `ModuleTemplateSources` |
-| Workflow `http_request` action (`app/workflow/handlers.go:298-469`) | Own guard: resolve, dial a safe IP, 3 redirects re-validated, 1 MiB cap, ≤ 30 s; logs the full blocked URL (:311) | per-action headers | workflow tenant | — | `ModuleWorkflows` |
-| DNS (EASM, domain verify) (`pkg/dnsprobe`) | UDP/TCP 53, rate-limited, authoritative servers vetted with `IsIPBlocked` | — | — | — | — |
-| Outbound tenant webhooks (`app/integration/webhook.go`) | **No delivery code**: CRUD only, nothing ever writes `webhook_deliveries` | — | — | — | no module gate |
-| SIEM inbound (`docs/architecture/siem-ingest.md`) | Not a connector: the SIEM posts to `POST /api/v1/telemetry-events` as a collector sensor; tenant from the sensor key | sensor key | sensor identity | — | — |
+| Integration | Direction | Credentials | Tenant resolution |
+|---|---|---|---|
+| Slack, Microsoft Teams, Telegram, generic webhook | outbound notifications (outbox) | webhook URL or bot token, encrypted | per tenant |
+| Splunk HEC | outbound events | HEC token, encrypted | per tenant |
+| Email notifications and transactional mail | outbound SMTP | user/password, encrypted; system SMTP from `SMTP_*` | per tenant, else system |
+| Jira | outbound tickets, inbound webhook | email + API token, encrypted | per tenant |
+| GitHub Issues | outbound tickets | SCM token | per tenant |
+| GitHub, GitLab, Bitbucket, Azure DevOps | repository sync, inbound GitHub webhook | token, encrypted | per tenant |
+| DefectDojo | finding import | API token, encrypted | per tenant |
+| AI triage (OpenAI, Gemini, Claude) | outbound LLM calls | platform key or tenant key, encrypted and redacted | tenant settings |
+| Threat intelligence (EPSS, CISA KEV), CTEM-ID feed, certificate transparency | outbound feeds | none | platform-wide |
+| Social OAuth, organization SSO (OIDC, SAML), admin IdP | sign-in | client secrets, encrypted | IdP record or environment |
+| Tenant S3 storage | object storage | keys, encrypted | tenant settings |
+| Template sources (HTTP, git, S3) | content fetch | secret store | per tenant |
+| Automation `http_request` action | outbound HTTP | per-action headers | automation tenant |
+| DNS (EASM, domain verification) | DNS queries | none | per tenant |
 
 ### 2.3 What is common, what is not
 
