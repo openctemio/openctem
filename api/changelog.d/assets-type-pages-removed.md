@@ -1,0 +1,4 @@
+### Removed: the per-type asset pages
+
+- `/assets/hosts`, `/assets/domains`, `/assets/certificates`, `/assets/ip-addresses`, `/assets/services`, `/assets/websites`, `/assets/apis`, `/assets/mobile`, `/assets/containers`, `/assets/networks`, `/assets/cloud-accounts`, `/assets/storage`, `/assets/databases`, `/assets/identity` and `/assets/repositories` (the list), and the redirect-only routes `/assets/all`, `/assets/http-services`, `/assets/open-ports`, `/assets/web-applications`, `/assets/discovered-urls`, `/assets/iam-roles`, `/assets/iam-users`, `/assets/service-accounts`, `/assets/serverless`, `/assets/cloud-resources` and `/assets/vpcs` are gone, with no redirect. Every asset type is a filter of the one inventory: `/assets?types=host`, `/assets?types=identity&sub_type=iam_user`.
+- **Upgrade note:** bookmarks to the old pages answer 404; open `/assets` and pick the type, or use `/assets?types=<type>`.

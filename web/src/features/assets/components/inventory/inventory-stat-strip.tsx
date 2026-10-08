@@ -13,11 +13,20 @@
  * "Stale" is intentionally omitted: the stats endpoint exposes no stale count,
  * and faking one from the current page would misrepresent the tenant total. The
  * "Stale >30d" view still covers that filter.
+ *
+ * Typed mode (research/77): the counts are the type's, the first metric is
+ * named after it ("Hosts") and keeps the type when clicked, and each of the
+ * type's yes/no attributes adds a metric ("Virtual machine", "MFA") counting
+ * the assets where it is true, a click filtering to them.
  */
 
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import type { AssetStatsData } from '../../hooks/use-assets'
-import { isInventoryFilterEmpty, type InventoryFilters } from '../../lib/inventory-url'
+import {
+  isInventoryFilterEmpty,
+  togglePropertyFilter,
+  type InventoryFilters,
+} from '../../lib/inventory-url'
 
 interface StatDef {
   id: string
@@ -35,6 +44,10 @@ interface StatStripProps {
   isLoading?: boolean
   onChange: (next: InventoryFilters) => void
   className?: string
+  /** Typed mode: the type's plural ("Hosts"). */
+  typeLabel?: string
+  /** Typed mode: the type's yes/no attributes to count. */
+  boolFacets?: { key: string; label: string }[]
 }
 
 export function InventoryStatStrip({
@@ -43,15 +56,23 @@ export function InventoryStatStrip({
   isLoading,
   onChange,
   className,
+  typeLabel,
+  boolFacets = [],
 }: StatStripProps) {
+  const typed = typeLabel !== undefined
   const defs: StatDef[] = [
     {
       id: 'total',
-      label: 'All assets',
+      label: typeLabel ?? 'All assets',
       value: stats.total,
-      active: isInventoryFilterEmpty(filters),
-      // Clears every filter (keeps sort + page size).
-      toggle: (f) => ({ sort: f.sort, pageSize: f.pageSize }),
+      active: isInventoryFilterEmpty(
+        typed ? { ...filters, types: undefined, subType: undefined } : filters
+      ),
+      // Clears every filter (keeps sort + page size, and the type when typed).
+      toggle: (f) =>
+        typed
+          ? { types: f.types, subType: f.subType, sort: f.sort, pageSize: f.pageSize }
+          : { sort: f.sort, pageSize: f.pageSize },
     },
     {
       id: 'critical',
@@ -96,6 +117,13 @@ export function InventoryStatStrip({
           ? { ...f, hasFindings: undefined, page: 1 }
           : { ...f, hasFindings: true, page: 1 },
     },
+    ...boolFacets.map((b): StatDef => ({
+      id: `attr:${b.key}`,
+      label: b.label,
+      value: stats.metadataCounts?.[b.key]?.['true'] ?? 0,
+      active: filters.propertiesFilter?.[b.key]?.includes('true') ?? false,
+      toggle: (f) => togglePropertyFilter(f, b.key, 'true'),
+    })),
   ]
 
   return (
