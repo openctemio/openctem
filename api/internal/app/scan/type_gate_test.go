@@ -62,7 +62,7 @@ func member(name string, t asset.AssetType, sub string) *assetgroup.ScanMember {
 // members whose stored type the scanner can scan. Before, ZAP was handed a
 // repository and a mobile app and the run only reported them "skipped".
 func TestResolveScanTargets_LeavesOutTypesTheScannerCannotScan(t *testing.T) {
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &typedMembersRepo{members: []*assetgroup.ScanMember{
 			member("https://app.example.com", asset.AssetTypeApplication, "website"),
 			member("https://api.example.com", asset.AssetTypeApplication, "api"),
@@ -74,7 +74,7 @@ func TestResolveScanTargets_LeavesOutTypesTheScannerCannotScan(t *testing.T) {
 		}},
 		toolRepo: gateTools,
 		logger:   logger.NewNop(),
-	}
+	})
 	sc := testScan("zap")
 	sc.AssetGroupID = shared.NewID()
 
@@ -112,13 +112,13 @@ func TestResolveScanTargets_LeavesOutTypesTheScannerCannotScan(t *testing.T) {
 // A run with nothing its scanner can scan is refused with a clear error
 // (400), not dispatched with an empty or wrong target list.
 func TestRecordResolvedTargets_NothingCompatibleIsRefused(t *testing.T) {
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &typedMembersRepo{members: []*assetgroup.ScanMember{
 			member("github.com/acme/app", asset.AssetTypeRepository, ""),
 		}},
 		toolRepo: gateTools,
 		logger:   logger.NewNop(),
-	}
+	})
 	sc := testScan("zap")
 	sc.AssetGroupID = shared.NewID()
 	got, err := svc.resolveScanTargets(context.Background(), sc)
@@ -139,13 +139,13 @@ func TestRecordResolvedTargets_NothingCompatibleIsRefused(t *testing.T) {
 // platform does not know, or a workflow run (no scanner): nothing is left out.
 func TestResolveScanTargets_UndecidableToolsKeepEveryMember(t *testing.T) {
 	for _, scanner := range []string{"freeform", "not-a-tool", ""} {
-		svc := &Service{
+		svc := allowAllChecks(&Service{
 			assetGroupRepo: &typedMembersRepo{members: []*assetgroup.ScanMember{
 				member("github.com/acme/app", asset.AssetTypeRepository, ""),
 			}},
 			toolRepo: gateTools,
 			logger:   logger.NewNop(),
-		}
+		})
 		sc := testScan(scanner)
 		sc.AssetGroupID = shared.NewID()
 		got, err := svc.resolveScanTargets(context.Background(), sc)
@@ -164,11 +164,11 @@ func TestResolveScanTargets_UndecidableToolsKeepEveryMember(t *testing.T) {
 // A failed tool lookup stops the dispatch (fail closed) rather than handing
 // the scanner unchecked targets.
 func TestResolveScanTargets_ToolLookupErrorFailsClosed(t *testing.T) {
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &typedMembersRepo{},
 		toolRepo:       &stubTools{err: errors.New("db down")},
 		logger:         logger.NewNop(),
-	}
+	})
 	sc := testScan("zap", "https://app.example.com")
 	if _, err := svc.resolveScanTargets(context.Background(), sc); err == nil {
 		t.Fatal("expected an error")
