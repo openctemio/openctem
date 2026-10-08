@@ -27,13 +27,12 @@ type WorkerOption func(*Worker)
 
 // Worker processes background jobs.
 type Worker struct {
-	server                *asynq.Server
-	mux                   *asynq.ServeMux
-	logger                *logger.Logger
-	notificationProcessor NotificationProcessor
-	aiTriageProcessor     AITriageProcessor
-	jiraStatusSyncer      JiraStatusSyncer
-	githubStatusSyncer    GitHubStatusSyncer
+	server             *asynq.Server
+	mux                *asynq.ServeMux
+	logger             *logger.Logger
+	aiTriageProcessor  AITriageProcessor
+	jiraStatusSyncer   JiraStatusSyncer
+	githubStatusSyncer GitHubStatusSyncer
 }
 
 // WithJiraStatusSyncer adds the outbound Jira status-sync handler to the worker.
@@ -47,13 +46,6 @@ func WithJiraStatusSyncer(syncer JiraStatusSyncer) WorkerOption {
 func WithGitHubStatusSyncer(syncer GitHubStatusSyncer) WorkerOption {
 	return func(w *Worker) {
 		w.githubStatusSyncer = syncer
-	}
-}
-
-// WithNotificationProcessor adds a notification processor to the worker.
-func WithNotificationProcessor(processor NotificationProcessor) WorkerOption {
-	return func(w *Worker) {
-		w.notificationProcessor = processor
 	}
 }
 
@@ -76,11 +68,9 @@ func NewWorker(cfg WorkerConfig, emailService *auth.EmailService, log *logger.Lo
 		asynq.Config{
 			Concurrency: cfg.Concurrency,
 			Queues: map[string]int{
-				"default":       10,
-				"email":         5,
-				"notifications": 5,
-				"ai_triage":     3,
-				"maintenance":   2,
+				"default":   10,
+				"email":     5,
+				"ai_triage": 3,
 			},
 		},
 	)
@@ -120,13 +110,6 @@ func NewWorker(cfg WorkerConfig, emailService *auth.EmailService, log *logger.Lo
 	// Apply options
 	for _, opt := range opts {
 		opt(w)
-	}
-
-	// Register notification handlers if processor is provided
-	if w.notificationProcessor != nil {
-		notificationHandler := NewNotificationTaskHandler(w.notificationProcessor, log.Logger)
-		notificationHandler.RegisterHandlers(mux)
-		log.Info("notification task handlers registered")
 	}
 
 	// Register AI triage handlers if processor is provided

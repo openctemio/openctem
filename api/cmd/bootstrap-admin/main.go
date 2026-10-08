@@ -16,8 +16,8 @@
 // change their temporary password and enroll an authenticator on first use.
 //
 // With -org-name and -org-owner-email it also creates the first organization
-// (the Tenable Security Center first-run model: organizations are created by
-// the platform administrator, TENANT_CREATION_MODE=admin_only by default). It
+// (organizations are created by the platform administrator,
+// TENANT_CREATION_MODE=admin_only by default). It
 // goes through the same services as the admin console's Organizations ->
 // Create: audited tenant.created and user.created, the owner's membership and
 // role, and a one-time set-password link for a new owner, emailed when SMTP is
