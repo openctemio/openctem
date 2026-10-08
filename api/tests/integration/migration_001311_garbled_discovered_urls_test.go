@@ -1,6 +1,6 @@
 package integration
 
-// Migration 001311 (RFC-056 WS2, RFC-043 §10): the discovered-URL assets
+// Migration 001317 (RFC-056 WS2, RFC-043 §10): the discovered-URL assets
 // v0.8.0 stored under a garbled name ("https:::host:path") become GET web
 // endpoints under their origin, like 001288 does for URL-named ones. Their
 // findings move to the origin, pending duplicate reviews naming them go, and
@@ -19,13 +19,13 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-func TestMigration001311ConvertsGarbledDiscoveredURLs(t *testing.T) {
+func TestMigration001317ConvertsGarbledDiscoveredURLs(t *testing.T) {
 	appDB := openLifecycleDB(t)
 	ctx := context.Background()
 	tenantA := seedLifecycleTenant(ctx, t, appDB)
 	tenantB := seedLifecycleTenant(ctx, t, appDB)
 
-	up, err := os.ReadFile("../../migrations/001311_garbled_discovered_url_assets.up.sql")
+	up, err := os.ReadFile("../../migrations/001317_garbled_discovered_url_assets.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestMigration001311ConvertsGarbledDiscoveredURLs(t *testing.T) {
 		}
 	}
 	if strings.Contains(strings.ToLower(strings.Join(code, "\n")), "audit_log") {
-		t.Fatal("001311 writes audit rows from SQL")
+		t.Fatal("001317 writes audit rows from SQL")
 	}
 
 	db, err := sql.Open("postgres", testdb.MigratorURL())
