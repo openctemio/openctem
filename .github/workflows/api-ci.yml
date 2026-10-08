@@ -156,10 +156,16 @@ jobs:
       # Sensor protocol v3 (RFC-059): buf lint, buf breaking against the
       # base branch, and the committed Go code matches the .proto.
       - name: Sensor Protocol v3 (buf lint, breaking, generated code)
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
-          base="origin/${{ github.base_ref || develop }}"
-          if [ "${{ github.event_name }}" = merge_group ]; then base="${{ github.event.merge_group.base_sha }}"; fi
-          git fetch --no-tags origin develop >/dev/null 2>&1 || true
+          case "$EVENT" in
+            pull_request) base="origin/${BASE_REF}" ;;
+            merge_group)  base="$MG_BASE" ;;
+            *)            base="HEAD~1" ;;
+          esac
           bash scripts/check-proto.sh "$base"
 
       - name: Security Gates (security lint)
