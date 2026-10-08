@@ -243,6 +243,26 @@ describe assets of its own class: an IP block's `version` never becomes an
 application's version. Migration `001340` promoted the blocks of rows
 written before; no reader looks inside a block any more.
 
+## One inventory, typed by the registry
+
+Every asset type is a filter of `/assets`, never a page of its own:
+`/assets?types=host`, or `&sub_type=iam_user` for an alias. With one type
+selected the list renders from the registry (`GET /api/v1/asset-types`): the
+type's `columns` by attribute kind and property format, its facet
+attributes as server-side filters (`properties=key:value`), a count per
+yes/no attribute (stats `count_by`, schema keys only, at most 10), the
+create/edit form from its attributes (schema keys only), and its row
+actions. Only API operations a single type supports (repository scan and
+sync) are listed by type, in one web module.
+
+The category view is the inventory overview: one card per registry lens
+with its types and what needs attention. `GET /api/v1/assets/overview`
+counts the caller's assets per (lens, type, sub_type) in one GROUP BY over
+the data-scoped rows: the in-inventory total (attribution confirmed,
+dependency, monitor only or none, so a card equals the list it opens), the
+unowned, high-risk and first-seen-this-week ones, and the names in the
+review queue.
+
 ## Three layers: source record, link, canonical row
 
 | Layer | Asset | Service |

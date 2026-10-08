@@ -1,0 +1,93 @@
+# Page Catalog — every route & where it lives
+
+The app has **154 `page.tsx` files** (144 under `(dashboard)`, 10 outside it for
+auth/onboarding). The sidebar links **74 URLs**. **Nothing is deleted** — every page
+is URL-reachable. This catalog is the source of truth for "what exists" so hidden
+pages aren't forgotten. Regenerate the raw lists with:
+
+```
+find src/app -name page.tsx | wc -l                       # 154 total
+find "src/app/(dashboard)" -name page.tsx | wc -l         # 144
+grep -oE "url: '[^']+'" src/config/sidebar-data.ts | sort -u   # 74 nav URLs
+```
+
+Routes under `(dashboard)` are organized into the five CTEM stages as Next.js route
+groups (the `(group)` folder does not appear in the URL):
+`(scoping)`, `(discovery)`, `(prioritization)`, `(validation)`, `(mobilization)`,
+plus top-level `insights/`, `findings/`, `reports/`, `settings/`, `account/`,
+`notifications/`.
+
+## 1. In the sidebar (46 URLs) — the live product
+
+Grouped by CTEM stage in `src/config/sidebar-data.ts`:
+
+- **Dashboard** — `/`
+- **Scoping** — Overview (`/scoping`, the
+  readiness hub, its first row; the section header only expands), Cycles (`/cycles`, detail
+  `/cycles/[id]`), Business context (tabs Crown jewels · Services · Units),
+  Scope (`/scope`: Targets · Exclusions · Seeds), Threat model (tabs
+  Threats · Attacker profiles).
+- **Discovery** — Scans, Sensors, Attack surface (+ external), Assets (one row;
+  tabs Inventory · Groups · What changed · Suggestions), Exposures (one row; its
+  Overview, Vulnerabilities, Secrets, Code weaknesses and Misconfigurations
+  views are in-page section tabs), Credential leaks, Components.
+  `/attack-surface/internal` and `/cloud` were retired; they redirect to the
+  filtered inventory.
+- **Prioritization** — Exposure Chains, Attack Paths, Threat Intel, Business Impact.
+- **Validation** — Pentest (campaigns, findings, retests, templates, reports,
+  MITRE coverage), Attack Simulation, Control Testing, Compensating Controls.
+- **Mobilization** — Remediation, Workflows, Pipelines, SLA, Exceptions.
+- **Insights** — Executive, CTEM Maturity, Program Health, Data Quality, Findings
+  list, Reports, Compliance.
+- **Settings** — Users, Roles, Access Control (Groups, Permission Sets, Assignment
+  Rules), Modules, Priority Rules, Scoring, SLA Policies, Asset Lifecycle, Audit,
+  Tenant, Pentest, and Integrations (CI/CD, SCM, SIEM, Ticketing, Notifications,
+  SAML, SCIM Tokens, MCP, Verified Domains).
+
+### These are SHIPPED — not scaffolds
+
+Earlier drafts of this catalog flagged several pages as "scaffolds to delete."
+That is now wrong. Each is sidebar-linked and backed by a real, domain-scoped hook:
+
+| Page                 | Backing hook(s)                                                        |
+| -------------------- | ---------------------------------------------------------------------- |
+| `/sla`               | `useFindingsApi` (SLA-relevant findings)                               |
+| `/controls`          | `useSWR` (compensating-controls fetch)                                 |
+| `/control-testing`   | `useControlTests`, `useControlTestStats`, `useRecordControlTestResult` |
+| `/exceptions`        | `useSuppressions` (+ approve/reject/delete mutations)                  |
+| `/workflows`         | `useWorkflows`, `useWorkflowRuns` (+ create/trigger/delete)            |
+| `/attack-simulation` | `useSimulations`, `useRunSimulation`                                   |
+
+## 2. Reachable, intentionally NOT in the sidebar (not orphaned)
+
+- **Asset types** are filters of the one inventory, never pages: `/assets?types=host`,
+  `/assets?types=identity&sub_type=iam_user` (registry-driven typed mode).
+  `/assets/duplicates` and every asset at `/assets/{id}` (a repository opens its workspace there) →
+  reached from the **/assets** hub and its rows.
+- **Exposures / Components sub-views** `/exposures/{vulnerabilities,misconfigurations,secrets,code}`
+  (the Exposures section tabs, `EXPOSURES_SECTION_TABS`) and `/components/{all,vulnerable,ecosystems,licenses,sbom-export}`
+  → reached from the parent page's tabs/cards.
+- **Solution Families** `/remediations` → the "Solution Families" tab on `/remediation`.
+- **Findings** `/findings/approvals` → the approvals tab / queue on `/findings`.
+- **Settings / account / integrations sub-pages** `/settings/*`, `/settings/integrations/*`,
+  `/settings/access-control/*`, `/account/*` → the settings hub + user menu / parent tabs.
+- **Detail / new / edit** `[id]`, `/new`, `/edit`, `/notifications` → reached from
+  their list pages / notification bell.
+
+## 3. Genuine scaffolds — none left
+
+The last pages that rendered `useDashboardStats` totals under a domain title
+(`/progress`, `/trending`, `/insights/analytics/mttr`, `/simulation/scenarios`)
+were deleted and redirect to the real page for the same
+question (`LEGACY_ORPHAN_ROUTE_REDIRECTS` in `src/config/legacy-routes.ts`).
+
+The wide "hidden placeholder" clusters listed in older revisions
+(`/collaboration/*`, `/response/*`, `/threats/*`, `/identity/*`,
+`/controls/{list,gaps,effectiveness}`, `/exceptions/{pending,accepted,false-positives}`,
+`/workflows/{active,automations,templates}`, `/attack-path-visualization`,
+`/overview`, `/scoring`, `/insights/reports/{executive,technical}`) **no longer
+exist** — those route folders were deleted. Do not re-add them here.
+
+A regression test, `src/config/__tests__/sidebar-no-scaffolds.test.ts`, walks every
+sidebar leaf to its page file and fails if the only data source is
+`useDashboardStats` — so a scaffold can never be linked from the sidebar.
