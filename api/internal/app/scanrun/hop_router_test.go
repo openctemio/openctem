@@ -83,6 +83,10 @@ func (m *memHops) PlannedTargets(_ context.Context, _, _ shared.ID, keys []strin
 	return out, nil
 }
 
+func (m *memHops) CountStepOutputs(context.Context, shared.ID, shared.ID, *shared.DataScope) ([]scanrun.StepOutputCount, error) {
+	return nil, nil
+}
+
 func (m *memHops) ListStagePlans(_ context.Context, _, runID shared.ID) ([]scanrun.StagePlan, error) {
 	var out []scanrun.StagePlan
 	for _, p := range m.plans {
