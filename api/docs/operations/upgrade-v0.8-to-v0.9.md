@@ -475,7 +475,7 @@ in ways users or integrations notice. The "Check" column names the
 | 000340, 001056 | `assets.owner_id` becomes a primary owner in `asset_owners` (owners who left the organization are dropped), then the column is dropped. | — |
 | 001151 | An `ip_address` asset named like a DNS name becomes `domain`, and the reverse. | — |
 | 001185 | Property synonyms are folded (`ip`, `ips`, `resolved_ip(s)`, `addresses` → `ip_addresses`; `technology` → `technologies` ...); keys only other classes may hold (a port on a domain) are removed. Previous values are kept in `asset_properties_pre_001185`. | — |
-| 001288, 001307 | **Crawled URL assets (`discovered_url`) become web endpoints** (method + path template + parameter names) under their site (`http_service` asset, created when missing). Their findings and exposure events move to the site; the URL assets are deleted. v0.8.0 stored these names as `https:::host:path` (lower-cased): 001307 reads them back, the path stays lower-case until the next crawl. | C4 |
+| 001288, 001311 | **Crawled URL assets (`discovered_url`) become web endpoints** (method + path template + parameter names) under their site (`http_service` asset, created when missing). Their findings and exposure events move to the site; the URL assets are deleted. v0.8.0 stored these names as `https:::host:path` (lower-cased): 001311 reads them back, the path stays lower-case until the next crawl. | C4 |
 | 000294 | HTTP services stored as `https:::host` are queued for duplicate review, not renamed. | C5 |
 | 001068, 001076, 001097 | Unused columns and tables dropped (`assets.freshness_status`, `compliance_requirements`, `last/next_assessment_at`, `source_id`, `source_ref`; `asset_sources`; `data_sources`). | — |
 
@@ -939,7 +939,7 @@ docker compose exec -T postgres pg_restore -U openctem -d openctem --no-owner < 
 There is no supported down path to v0.8.0: the baseline's down migration
 refuses (it never drops the schema), and many migrations cannot be reversed:
 
-- discovered-URL assets converted to web endpoints (001288, 001307);
+- discovered-URL assets converted to web endpoints (001288, 001311);
 - runner agents deleted (001146), declared sensor tool lists (001149);
 - revoked admin API keys and deactivated administrators (000227);
 - the data-scope policy (000910), scope rows rebuilt (001051), deleted
@@ -1059,7 +1059,7 @@ SELECT t.slug, a.name, a.execution_mode, a.last_seen_at
 SELECT t.slug, a.name, a.type, a.version, a.last_seen_at, a.tools
   FROM agents a JOIN tenants t ON t.id = a.tenant_id ORDER BY 1, 2;
 
--- C4. Crawled URL assets that become web endpoints (001288/001307), and their findings
+-- C4. Crawled URL assets that become web endpoints (001288/001311), and their findings
 SELECT count(*) AS url_assets,
        (SELECT count(*) FROM findings f JOIN assets u ON u.id = f.asset_id
          WHERE u.asset_type = 'discovered_url' OR u.sub_type = 'discovered_url') AS findings_moved_to_their_site
