@@ -1264,6 +1264,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (POST/GET /findings/{id}/evidence). Tenant-scoped; does not touch the
 	// pentest campaign gate.
 	s.Vulnerability.SetEvidenceStore(s.Attachment)
+	// Organization deletion erases the tenant's stored files (every backend)
+	// before its rows, and refuses when it cannot.
+	s.Tenant.SetBlobEraser(s.Attachment)
 
 	// Initialize Compliance service
 	s.Simulation = compliance.NewSimulationService(repos.Simulation, repos.ControlTest, log)
