@@ -52,6 +52,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -89,6 +90,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -665,6 +667,9 @@ type Services struct {
 	// TemplateKeys signs custom templates for sensors; nil when no key is
 	// configured (see initTemplateKeyring).
 	TemplateKeys *scannertemplate.Keyring
+
+	// ContentPacks is the content pack store (RFC-061).
+	ContentPacks *contentpackapp.Service
 
 	// Workflows
 	Workflow           *workflow.WorkflowService
@@ -1607,6 +1612,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Custom templates leave for sensors signed with the tenant's key
 	// (sensors refuse unsigned ones; RFC-038 "Custom template trust").
 	s.TemplateKeys = initTemplateKeyring(cfg, log)
+	// Content packs are stored in each tenant's namespace of the operator
+	// file storage and signed with the tenant's content key.
+	s.ContentPacks = contentpackapp.NewService(repos.ContentPack, fileStorage, initContentSigner(cfg, log), s.Audit, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -2565,6 +2573,35 @@ func initTemplateKeyring(cfg *config.Config, log *logger.Logger) *scannertemplat
 		}
 	}
 	log.Warn("no template signing key (APP_TEMPLATE_SIGNING_KEY / APP_ENCRYPTION_KEY); custom templates go unsigned and sensors refuse them")
+	return nil
+}
+
+// initContentSigner returns the signer of content packs (RFC-061): from
+// APP_CONTENT_SIGNING_KEY, else derived from APP_ENCRYPTION_KEY under the
+// content label, a key family separate from template, job and sensor CA
+// keys. nil (no key at all, development only): uploads are refused.
+func initContentSigner(cfg *config.Config, log *logger.Logger) *contentpackdom.Signer {
+	if k := cfg.Encryption.ContentSigningKey; k != "" {
+		raw, err := crypto.ParseKey(k, "")
+		if err == nil {
+			if s, err := contentpackdom.NewSigner(raw); err == nil {
+				log.Info("content pack signing enabled", "key_source", "APP_CONTENT_SIGNING_KEY")
+				return s
+			}
+		}
+		log.Error("APP_CONTENT_SIGNING_KEY is invalid; content pack uploads are refused")
+		return nil
+	}
+	if cfg.Encryption.IsConfigured() {
+		raw, err := crypto.ParseKey(cfg.Encryption.Key, cfg.Encryption.KeyFormat)
+		if err == nil {
+			if s, err := contentpackdom.NewSignerFromEncryptionKey(raw); err == nil {
+				log.Info("content pack signing enabled", "key_source", "derived from APP_ENCRYPTION_KEY")
+				return s
+			}
+		}
+	}
+	log.Warn("no content signing key (APP_CONTENT_SIGNING_KEY / APP_ENCRYPTION_KEY); content pack uploads are refused")
 	return nil
 }
 
