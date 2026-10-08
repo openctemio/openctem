@@ -68,7 +68,15 @@ const nextConfig: NextConfig = {
     const backend = (process.env.BACKEND_API_URL || 'http://localhost:8080').replace(/\/+$/, '')
     return {
       // Before the /api/v1/[...path] route handler, which cannot proxy upgrades.
-      beforeFiles: [{ source: '/api/v1/ws', destination: `${backend}/api/v1/ws` }],
+      beforeFiles: [
+        { source: '/api/v1/ws', destination: `${backend}/api/v1/ws` },
+        // The API's OAuth metadata for MCP clients (RFC-062); in production the
+        // gateway sends these paths straight to the API.
+        {
+          source: '/.well-known/oauth-protected-resource/:path*',
+          destination: `${backend}/.well-known/oauth-protected-resource/:path*`,
+        },
+      ],
       afterFiles: [],
       fallback: [],
     }

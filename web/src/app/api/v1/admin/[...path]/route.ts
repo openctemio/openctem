@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/env'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
 import { proxyBackendPath } from '@/lib/api/proxy-path'
+import { csrfRejection } from '@/lib/server-auth-cookies'
 
 /** Backend cookie name the admin API reads the /login refresh token from. */
 const BACKEND_REFRESH_COOKIE = 'refresh_token'
@@ -36,6 +37,12 @@ const FORWARD_HEADERS = ['x-csrf-token', 'x-request-id', 'user-agent'] as const
 const MAX_BODY_BYTES = 1024 * 1024
 
 async function proxy(request: NextRequest, path: string[]): Promise<NextResponse> {
+  // Same origin and a double-submit pair on every write, the console's sign-in
+  // steps included. The header matches `admin_csrf` once the console session
+  // exists (the API checks that pair again), the page's `csrf_token` before.
+  const csrf = csrfRejection(request, ['admin_csrf'])
+  if (csrf) return csrf
+
   // Each segment is re-encoded below, but refuse dot segments outright too so
   // both proxies apply the same rule.
   if (proxyBackendPath(path) === null) {
