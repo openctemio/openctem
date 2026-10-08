@@ -821,6 +821,11 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 	s.invalidateUserPermissions(ctx, tenantID, userID)
 	s.invalidateMembershipCache(ctx, tenantID, userID)
 	s.endTenantSessions(ctx, tenantID, userID)
+	// The home organization controls the person: their access to other
+	// organizations as an external member ends with it (RFC-058).
+	if !membership.IsExternal() {
+		s.homeAccessEnded(ctx, membership.TenantID(), membership.UserID())
+	}
 
 	if deleted, derr := s.repo.DeletePendingInvitationsByUserID(ctx, membership.TenantID(), membership.UserID()); derr != nil {
 		s.logger.Warn("failed to clean up invitations on suspend", "error", derr)
@@ -902,6 +907,9 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	// status='active' immediately.
 	s.invalidateUserPermissions(ctx, tenantID, userID)
 	s.invalidateMembershipCache(ctx, tenantID, userID)
+	if !membership.IsExternal() {
+		s.homeAccessRestored(ctx, membership.TenantID(), membership.UserID())
+	}
 
 	// Best-effort: notify the user via email that their access is back.
 	s.notifyMemberStatusChange(ctx, false, tenantID, userID, actx.ActorID)
