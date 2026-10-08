@@ -154,6 +154,11 @@ type Command struct {
 	// create only; never sent to a sensor.
 	HostKeys []string
 
+	// DispatchGate is what the dispatch gate checked the targets with; the
+	// claim re-checks them with it (dispatch_gate.go). Nil: not recorded.
+	// Written on create only; never sent to a sensor.
+	DispatchGate *DispatchGate
+
 	// ==========================================================================
 	// Platform Job Fields (v3.2)
 	// ==========================================================================

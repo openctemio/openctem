@@ -524,7 +524,7 @@ used for an organization that requires 2FA (`mfa_required`) gets
 
 ## Known follow-ups (not yet shipped)
 
-- **SAML / SCIM** — not supported (only OIDC/OAuth). See `docs/IDEAS.md` §3.5.
+- **SAML / SCIM**: organization SAML 2.0 SSO and SCIM provisioning are documented in [saml-sso.md](saml-sso.md) and [scim-provisioning.md](scim-provisioning.md).
 - The env fallback currently covers `entra_id` only; Okta/Google could follow
   the same `envProvider` seam.
 - **SSO-enforcement residual window** — closed: the access token carries the
@@ -542,7 +542,7 @@ used for an organization that requires 2FA (`mfa_required`) gets
 ## Default role of just-in-time members
 
 An SSO provider (OIDC or SAML) and the `SSO_ENTRA_DEFAULT_ROLE` fallback may
-only provision **member** or **viewer** (owner decision B18). `admin` is
+only provision **member** or **viewer** (decision B18). `admin` is
 refused when the provider is saved, and a provider stored before this rule
 with `admin` provisions viewers: an IdP misconfiguration must not mint
 administrators. Admins are promoted explicitly.
