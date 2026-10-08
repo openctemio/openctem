@@ -105,6 +105,8 @@ type Repositories struct {
 	SensorGrant *postgres.SensorGrantRepository
 	// SensorEvent is the sensor activity timeline (sensor_events).
 	SensorEvent *postgres.SensorEventRepository
+	// CommandEvent is the command lifecycle (command_events): run timelines.
+	CommandEvent *postgres.CommandEventRepository
 	// SensorHeartbeatHistory is the per-sensor heartbeat history behind the
 	// Control channel sparkline (sensor_heartbeat_history, RFC-035).
 	SensorHeartbeatHistory *postgres.SensorHeartbeatHistoryRepository
@@ -193,6 +195,8 @@ type Repositories struct {
 
 	// SSO Identity Providers
 	IdentityProvider *postgres.IdentityProviderRepository
+	// Federated identities (issuer + subject) bound to accounts
+	UserIdentity *postgres.UserIdentityRepository
 
 	// Domain-ownership verification (SSO P1, migration 000191)
 	VerifiedDomain *postgres.VerifiedDomainRepository
@@ -358,6 +362,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorPairing:          postgres.NewSensorPairingRepository(db),
 		SensorGrant:            postgres.NewSensorGrantRepository(db),
 		SensorEvent:            postgres.NewSensorEventRepository(db),
+		CommandEvent:           postgres.NewCommandEventRepository(db),
 		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
 		CommandLog:             postgres.NewCommandLogRepository(db),
 		Command:                postgres.NewCommandRepository(db),
@@ -436,6 +441,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 
 		// SSO Identity Providers
 		IdentityProvider: postgres.NewIdentityProviderRepository(db),
+		UserIdentity:     postgres.NewUserIdentityRepository(db),
 		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
 		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
 		Attribution:      postgres.NewAttributionRepository(db),

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -49,6 +50,7 @@ func (d *WorkflowEventDispatcher) DispatchAssetsDiscovered(_ context.Context, te
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
 				d.logger.Error("panic recovered in asset_discovered dispatch",
 					"tenant_id", tenantID, "panic", r)
 			}
@@ -186,8 +188,8 @@ func buildAssetsDiscoveredTriggerData(assets []*asset.Asset) map[string]any {
 	}
 }
 
-// DispatchScanCompleted fires `scan_completed` when a pipeline run settles
-// (completed, partial or failed). Each automation picks the outcomes it runs
+// DispatchScanCompleted fires `scan_completed` when a scan run ends
+// (completed, partial, failed, timeout or canceled). Each automation picks the outcomes it runs
 // on with status_filter (scanOutcomeMatches). Wired as the pipeline service's
 // run-settled callback. Async with panic recovery, like every other dispatch
 // path.
@@ -198,6 +200,7 @@ func (d *WorkflowEventDispatcher) DispatchScanCompleted(_ context.Context, run *
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
 				d.logger.Error("panic recovered in scan_completed dispatch",
 					"run_id", run.ID, "panic", r)
 			}
@@ -267,10 +270,9 @@ func (d *WorkflowEventDispatcher) dispatchScanCompleted(ctx context.Context, run
 	return triggered
 }
 
-// scanOutcomes are the run outcomes `scan_completed` reports.
-var scanOutcomes = []string{
-	string(scanrun.RunStatusCompleted), string(scanrun.RunStatusPartial), string(scanrun.RunStatusFailed),
-}
+// scanOutcomes are the run outcomes `scan_completed` reports: every way a
+// run ends (research/62 P0-11).
+var scanOutcomes = workflowdom.ScanOutcomes
 
 // scanOutcomeMatches applies the scan_completed trigger's status_filter
 // ([]string of completed, partial, failed). Without one the trigger fires on

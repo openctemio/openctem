@@ -111,17 +111,6 @@ export interface StepCondition {
 }
 
 // ============================================
-// SCAN_WORKFLOW TRIGGER
-// ============================================
-
-export interface ScanWorkflowTrigger {
-  type: ScanWorkflowTriggerType
-  schedule?: string
-  webhook?: string
-  filters?: Record<string, unknown>
-}
-
-// ============================================
 // SENSOR PREFERENCE
 // ============================================
 
@@ -151,22 +140,14 @@ export const SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS: Record<
 export interface ScanWorkflowSettings {
   max_parallel_steps: number
   fail_fast: boolean
-  retry_failed_steps: number
   timeout_seconds: number
-  notify_on_complete: boolean
-  notify_on_failure: boolean
-  notification_channels?: string[]
   sensor_preference?: ScanWorkflowSensorPreference
 }
 
 export const DEFAULT_SCAN_WORKFLOW_SETTINGS: ScanWorkflowSettings = {
   max_parallel_steps: 3,
   fail_fast: false,
-  retry_failed_steps: 0,
   timeout_seconds: 3600,
-  notify_on_complete: false,
-  notify_on_failure: true,
-  notification_channels: [],
   sensor_preference: 'auto',
 }
 
@@ -222,7 +203,6 @@ export interface ScanWorkflow {
   version: number
   is_active: boolean
   is_system_template?: boolean
-  triggers: ScanWorkflowTrigger[]
   settings: ScanWorkflowSettings
   tags?: string[]
   steps: ScanWorkflowStep[]
@@ -267,15 +247,26 @@ export interface StepRun {
  * Scan runs are workflow runs: this is the one run type of the web (scan-types
  * re-exports it). List rows carry no step runs or tasks; the run read does.
  */
+/**
+ * What a run is (API scan_runs.kind). A run that executes no scan workflow
+ * (a retest) has no scan_workflow_id and names what it is about in subject.
+ */
+export type ScanRunKind =
+  'scan' | 'quick' | 'retest' | 'validation' | 'test' | 'connector' | 'system'
+
 export interface ScanRun {
   id: string
   tenant_id: string
-  scan_workflow_id: string
+  /** Empty for a run that executes no scan workflow (kind retest, ...). */
+  scan_workflow_id?: string
+  kind?: ScanRunKind
+  /** What a run without a workflow is about, e.g. { finding_id, retest_id }. */
+  subject?: Record<string, unknown>
   asset_id?: string
   scan_id?: string
   /** The run's scan, named by the server on list rows (empty when deleted). */
   scan_name?: string
-  trigger_type: ScanWorkflowTriggerType
+  trigger_type: ScanWorkflowTriggerType | 'system'
   triggered_by?: string
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
   triggered_by_name?: string
@@ -313,7 +304,6 @@ export interface ScanRun {
 export interface CreateScanWorkflowRequest {
   name: string
   description?: string
-  triggers?: ScanWorkflowTrigger[]
   settings?: Partial<ScanWorkflowSettings>
   tags?: string[]
   steps: CreateStepRequest[]
@@ -347,7 +337,6 @@ export interface CreateStepRequest {
 export interface UpdateScanWorkflowRequest {
   name?: string
   description?: string
-  triggers?: ScanWorkflowTrigger[]
   settings?: Partial<ScanWorkflowSettings>
   tags?: string[]
   steps?: CreateStepRequest[]
@@ -404,6 +393,8 @@ export interface ScanRunListFilters {
   asset_id?: string
   /** The scan the runs belong to (a scan's "View all runs"). */
   scan_id?: string
+  /** Run kinds, comma-separated; system runs are hidden unless named. */
+  kind?: string
   status?: ScanRunStatus
   trigger_type?: ScanWorkflowTriggerType
   /** One sort key, `-` for descending (created_at, started_at, completed_at, total_findings). */

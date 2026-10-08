@@ -55,7 +55,7 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23, NULLIF($24, ''), $25, $26)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -181,7 +181,7 @@ func (r *ScanRunRepository) Update(ctx context.Context, run *scanrun.Run) error 
 		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7, total_findings = $8,
 		    started_at = $9, completed_at = $10, error_message = $11,
 		    scan_profile_id = $12, quality_gate_result = $13, retry_attempt = $14,
-		    deadline_at = COALESCE(deadline_at, ` + runDeadlineSQL("$9::timestamptz", "scan_runs.scan_id") + `)
+		    deadline_at = COALESCE(deadline_at, ` + runDeadlineSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `)
 		WHERE id = $1
 		  AND status NOT IN ` + terminalRunStatusesSQL + `
 	`
@@ -491,7 +491,7 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid") + `, $23, NULLIF($24, ''), $25, $26)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26)
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -559,14 +559,23 @@ func isOccurrenceConflict(err error) bool {
 const AbsoluteRunTimeoutSeconds = 24 * 60 * 60
 
 // runDeadlineSQL is the deadline of a run that started at startedAt for the
-// scan scanID: the scan timeout, or AbsoluteRunTimeoutSeconds when the run has
-// no scan (or the scan none), capped at AbsoluteRunTimeoutSeconds. NULL while
-// the run has not started. It is written once, when the run starts, so a scan
-// edit never moves the deadline of a run already in flight (RFC-046 §6.3).
-func runDeadlineSQL(startedAt, scanID string) string {
+// scan scanID and the scan workflow workflowID: the scan's timeout; for a run
+// with no scan (or a scan with none), the workflow's timeout_seconds setting
+// (research/62 SG-7: it was stored and shown but never applied); otherwise
+// AbsoluteRunTimeoutSeconds. Always capped at AbsoluteRunTimeoutSeconds.
+// NULL while the run has not started. It is written once, when the run
+// starts, so a scan or workflow edit never moves the deadline of a run
+// already in flight (RFC-046 §6.3).
+func runDeadlineSQL(startedAt, scanID, workflowID string) string {
 	return fmt.Sprintf(`CASE WHEN %[1]s IS NULL THEN NULL ELSE %[1]s + make_interval(secs => LEAST(
-		COALESCE((SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = %[2]s), %[3]d), %[3]d)) END`,
-		startedAt, scanID, AbsoluteRunTimeoutSeconds)
+		COALESCE(
+			(SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = %[2]s),
+			(SELECT CASE WHEN (w.settings->>'timeout_seconds') ~ '^[0-9]{1,9}$'
+			              THEN NULLIF((w.settings->>'timeout_seconds')::bigint, 0) END
+			 FROM scan_workflows w WHERE w.id = %[3]s),
+			%[4]d),
+		%[4]d)) END`,
+		startedAt, scanID, workflowID, AbsoluteRunTimeoutSeconds)
 }
 
 // MaxUnfinishedTargets bounds the unfinished targets a run records at its
@@ -595,6 +604,13 @@ const MaxUnfinishedTargets = 10000
 //
 // Returns the number of runs settled.
 func (r *ScanRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error) {
+	reaped, err := r.MarkTimedOutRunsReporting(ctx)
+	return int64(len(reaped)), err
+}
+
+// MarkTimedOutRunsReporting is MarkTimedOutRuns, reporting the runs it
+// ended (scanrun.ReapedRunReporter).
+func (r *ScanRunRepository) MarkTimedOutRunsReporting(ctx context.Context) ([]scanrun.ReapedRun, error) {
 	// The timeout message says only what is actually known: nothing reported
 	// back. An earlier wording ('scan exceeded configured timeout') asserted a
 	// cause, and was shown to users whose scanner had in fact failed
@@ -612,7 +628,7 @@ func (r *ScanRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error)
 			FROM scan_runs pr
 			WHERE pr.status IN ('pending', 'running')
 			  AND pr.started_at IS NOT NULL
-			  AND NOW() > COALESCE(pr.deadline_at, ` + runDeadlineSQL("pr.started_at", "pr.scan_id") + `)
+			  AND NOW() > COALESCE(pr.deadline_at, ` + runDeadlineSQL("pr.started_at", "pr.scan_id", "pr.scan_workflow_id") + `)
 			FOR UPDATE OF pr SKIP LOCKED
 		), open_targets AS (
 			SELECT d.id,
@@ -680,22 +696,41 @@ func (r *ScanRunRepository) MarkTimedOutRuns(ctx context.Context) (int64, error)
 			(SELECT COUNT(*) FROM settled),
 			(SELECT COUNT(*) FROM closed_commands),
 			(SELECT COUNT(*) FROM closed_steps),
-			COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM settled WHERE scan_id IS NOT NULL), '{}')
+			COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM settled WHERE scan_id IS NOT NULL), '{}'),
+			COALESCE((SELECT array_agg(tenant_id::text || ':' || id::text) FROM settled), '{}')
 	`
 
 	var (
 		runs, commands, steps int64
-		scanIDs               []string
+		scanIDs, reapedKeys   []string
 	)
-	if err := r.db.QueryRowContext(ctx, query, MaxUnfinishedTargets).Scan(&runs, &commands, &steps, pq.Array(&scanIDs)); err != nil {
-		return 0, fmt.Errorf("failed to mark timed out runs: %w", err)
+	if err := r.db.QueryRowContext(ctx, query, MaxUnfinishedTargets).Scan(&runs, &commands, &steps, pq.Array(&scanIDs), pq.Array(&reapedKeys)); err != nil {
+		return nil, fmt.Errorf("failed to mark timed out runs: %w", err)
 	}
+	reaped := parseReapedRuns(reapedKeys)
 	// The scans' summaries are recomputed after the statement: a summary
 	// computed inside it would still see the runs as open (one snapshot).
 	if err := refreshScanRunSummariesByID(ctx, r.db, scanIDs); err != nil {
-		return runs, fmt.Errorf("runs timed out, scan summaries not refreshed: %w", err)
+		return reaped, fmt.Errorf("runs timed out, scan summaries not refreshed: %w", err)
 	}
-	return runs, nil
+	return reaped, nil
+}
+
+// parseReapedRuns reads "tenant:run" keys.
+func parseReapedRuns(keys []string) []scanrun.ReapedRun {
+	out := make([]scanrun.ReapedRun, 0, len(keys))
+	for _, k := range keys {
+		tenant, run, ok := strings.Cut(k, ":")
+		if !ok {
+			continue
+		}
+		tid, terr := shared.IDFromString(tenant)
+		rid, rerr := shared.IDFromString(run)
+		if terr == nil && rerr == nil {
+			out = append(out, scanrun.ReapedRun{TenantID: tid, RunID: rid})
+		}
+	}
+	return out
 }
 
 // GetUnfinishedTargets returns the targets runID recorded as unfinished at its
@@ -832,6 +867,13 @@ func (r *ScanRunRepository) CloseCanceledRun(ctx context.Context, tenantID, runI
 // its commands are failed so no sensor picks them up late, and the scan
 // summary is recomputed from its runs.
 func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error) {
+	reaped, err := r.AbortUnclaimedRunsReporting(ctx, scheduledAfter, interactiveAfter)
+	return int64(len(reaped)), err
+}
+
+// AbortUnclaimedRunsReporting is AbortUnclaimedRuns, reporting the runs it
+// ended (scanrun.ReapedRunReporter).
+func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) ([]scanrun.ReapedRun, error) {
 	const query = `
 		WITH candidates AS (
 			SELECT pr.id,
@@ -882,21 +924,23 @@ func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAft
 		)
 		SELECT (SELECT COUNT(*) FROM unclaimed), (SELECT COUNT(*) FROM closed_commands),
 		       (SELECT COUNT(*) FROM closed_steps),
-		       COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM unclaimed WHERE scan_id IS NOT NULL), '{}')
+		       COALESCE((SELECT array_agg(DISTINCT scan_id::text) FROM unclaimed WHERE scan_id IS NOT NULL), '{}'),
+		       COALESCE((SELECT array_agg(tenant_id::text || ':' || id::text) FROM unclaimed), '{}')
 	`
 	var (
 		runs, commands, steps int64
-		scanIDs               []string
+		scanIDs, reapedKeys   []string
 	)
 	if err := r.db.QueryRowContext(ctx, query,
 		int64(scheduledAfter.Seconds()), int64(interactiveAfter.Seconds()), AbsoluteRunTimeoutSeconds,
-	).Scan(&runs, &commands, &steps, pq.Array(&scanIDs)); err != nil {
-		return 0, fmt.Errorf("failed to abort unclaimed runs: %w", err)
+	).Scan(&runs, &commands, &steps, pq.Array(&scanIDs), pq.Array(&reapedKeys)); err != nil {
+		return nil, fmt.Errorf("failed to abort unclaimed runs: %w", err)
 	}
+	reaped := parseReapedRuns(reapedKeys)
 	if err := refreshScanRunSummariesByID(ctx, r.db, scanIDs); err != nil {
-		return runs, fmt.Errorf("unclaimed runs aborted, scan summaries not refreshed: %w", err)
+		return reaped, fmt.Errorf("unclaimed runs aborted, scan summaries not refreshed: %w", err)
 	}
-	return runs, nil
+	return reaped, nil
 }
 
 // ListPendingRetries atomically claims failed scan_runs eligible for automatic retry.

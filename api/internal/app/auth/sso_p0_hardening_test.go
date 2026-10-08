@@ -273,7 +273,7 @@ func TestFix3_EntraUnverifiedEmail_NeverProducesUserInfo(t *testing.T) {
 // brand-new user on a verified domain is created by JIT ...
 func TestSSO_RegistrationDisabled_JITStillAdmitsVerifiedDomain(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: nil} // no existing user
-	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{},
+	svc := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: config.AuthConfig{},
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}}}
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
@@ -287,7 +287,7 @@ func TestSSO_RegistrationDisabled_JITStillAdmitsVerifiedDomain(t *testing.T) {
 // ... and without auto-provisioning the same login is refused with nothing created.
 func TestSSO_RegistrationDisabled_NoAutoProvision_Refused(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: nil}
-	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{},
+	svc := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: config.AuthConfig{},
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}}}
 
 	_, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
@@ -316,6 +316,7 @@ func TestFix4_SSO_RegistrationDisabled_BindsExisting(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: invited}
 	svc := &SSOService{
 		userRepo:       repo,
+		identities:     newMemIdentities(),
 		logger:         logger.NewNop(),
 		authConfig:     config.AuthConfig{},
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}},

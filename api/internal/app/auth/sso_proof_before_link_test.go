@@ -25,7 +25,7 @@ import (
 // gate. verifiedDomains==nil leaves the verifier UNWIRED (fail-closed path).
 func proofSvc(existing *userdom.User, verifiedDomains map[string]bool) (*SSOService, *ssoFakeUserRepo) {
 	repo := &ssoFakeUserRepo{byEmail: existing}
-	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled()}
+	svc := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: regEnabled()}
 	if verifiedDomains != nil {
 		svc.domainVerifier = &fakeDomainVerifier{verified: verifiedDomains}
 	}
@@ -38,8 +38,8 @@ func proofSvc(existing *userdom.User, verifiedDomains map[string]bool) (*SSOServ
 func TestProofBeforeLink_Case4_ReturningUser_Allowed(t *testing.T) {
 	const entraIss = "https://login.microsoftonline.com/dir-1/v2.0"
 	u, _ := userdom.NewOAuthUser("user@corp.com", "User", "", userdom.AuthProviderMicrosoft)
-	u.BindFederatedIdentity(entraIss, "entra-sub")
 	svc, repo := proofSvc(u, map[string]bool{"corp.com": true})
+	idsOf(svc).bindTo(u, entraIss, "entra-sub")
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "user@corp.com", Issuer: entraIss, Subject: "entra-sub", EmailVerified: true},
@@ -78,8 +78,8 @@ func TestProofBeforeLink_Case3_DifferentProvider_Rejected(t *testing.T) {
 // even with a verified domain (a verified domain must never override the pin).
 func TestProofBeforeLink_Case3_SameProviderDifferentIssuer_Rejected(t *testing.T) {
 	victim, _ := userdom.NewFromKeycloak("kc", "victim@corp.com", "Victim") // OIDC
-	victim.BindFederatedIdentity(corpOkta, "corp-sub")
 	svc, repo := proofSvc(victim, map[string]bool{"corp.com": true})
+	idsOf(svc).bindTo(victim, corpOkta, "corp-sub")
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: "victim@corp.com", Issuer: evilOkta, Subject: "evil", EmailVerified: true},
@@ -93,8 +93,8 @@ func TestProofBeforeLink_Case3_SameProviderDifferentIssuer_Rejected(t *testing.T
 	if repo.updated != nil {
 		t.Fatal("rejected login must not persist a binding")
 	}
-	if iss := victim.FederatedIssuer(); iss == nil || *iss != corpOkta {
-		t.Fatalf("victim issuer must stay %q, got %v", corpOkta, iss)
+	if keys := idsOf(svc).keysOf(victim.ID()); len(keys) != 1 || keys[0].Issuer != corpOkta {
+		t.Fatalf("victim binding must stay %q, got %+v", corpOkta, keys)
 	}
 }
 
@@ -120,7 +120,7 @@ func TestProofBeforeLink_Case1_PasswordAccount_RefusedNotLinked(t *testing.T) {
 		t.Fatal("refused login must not persist a login or a federated binding")
 	}
 	// The account must remain purely local — no federated identity was bound.
-	if pw.FederatedIssuer() != nil {
+	if len(idsOf(svc).keysOf(pw.ID())) != 0 {
 		t.Fatal("a password account must not gain a federated binding from a refused login")
 	}
 }
@@ -147,8 +147,8 @@ func TestProofBeforeLink_Case2_VerifiedEmailAndDomain_ClaimedAndBound(t *testing
 	if got == nil {
 		t.Fatal("expected the claimed account back")
 	}
-	if bound := got.FederatedIssuer(); bound == nil || *bound != iss {
-		t.Fatalf("the claimed seat must be bound to the IdP issuer %q, got %v", iss, bound)
+	if keys := idsOf(svc).keysOf(got.ID()); len(keys) != 1 || keys[0].Issuer != iss {
+		t.Fatalf("the claimed seat must be bound to the IdP issuer %q, got %v", iss, keys)
 	}
 	if repo.updated == nil {
 		t.Fatal("the claim + binding must be persisted via Update")
@@ -169,7 +169,7 @@ func TestProofBeforeLink_Case2_UnverifiedDomain_Refused(t *testing.T) {
 	if got != nil || repo.updated != nil {
 		t.Fatal("refused claim must not return a user or persist a binding")
 	}
-	if invited.FederatedIssuer() != nil {
+	if len(idsOf(svc).keysOf(invited.ID())) != 0 {
 		t.Fatal("refused claim must not bind a federated identity")
 	}
 }
@@ -212,6 +212,7 @@ func TestProofBeforeLink_Case2_VerifierError_Refused(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: invited}
 	svc := &SSOService{
 		userRepo:       repo,
+		identities:     newMemIdentities(),
 		logger:         logger.NewNop(),
 		authConfig:     regEnabled(),
 		domainVerifier: &fakeDomainVerifier{err: errors.New("dns backend down")},
@@ -261,8 +262,8 @@ func TestProofBeforeLink_NewUser_CreatedNormally(t *testing.T) {
 	if got == nil || repo.created == nil {
 		t.Fatal("expected a newly created user")
 	}
-	if bound := repo.created.FederatedIssuer(); bound == nil || *bound != iss {
-		t.Fatalf("new user must be bound to %q, got %v", iss, bound)
+	if keys := idsOf(svc).keysOf(repo.created.ID()); len(keys) != 1 || keys[0].Issuer != iss {
+		t.Fatalf("new user must be bound to %q, got %v", iss, keys)
 	}
 }
 
@@ -271,7 +272,7 @@ func TestProofBeforeLink_NewUser_CreatedNormally(t *testing.T) {
 // people only through JIT on a verified domain).
 func TestProofBeforeLink_NewUser_UnverifiedDomain_Refused(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: nil}
-	svc := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService},
+	svc := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService},
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"other.com": true}}}
 
 	_, err := svc.findOrCreateUser(context.Background(), ssoTn(t),

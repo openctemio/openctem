@@ -56,8 +56,10 @@ func TestTokenPathIsNotLoggedOrLabelled(t *testing.T) {
 		t.Fatalf("access log lost the route shape: %s", buf.String())
 	}
 
-	if got := testutil.ToFloat64(httpRequestsTotal.WithLabelValues(http.MethodGet, "/api/v1/invitations/{redacted}/preview", "404")); got < 1 {
-		t.Fatalf("request not counted under the redacted path label (got %v)", got)
+	// No route matched here (no router): the request is counted under the
+	// shared label, never under its path.
+	if got := testutil.ToFloat64(httpRequestsTotal.WithLabelValues(http.MethodGet, unmatchedRoute, "404")); got < 1 {
+		t.Fatalf("request not counted under the unmatched label (got %v)", got)
 	}
 	families, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {

@@ -257,6 +257,40 @@ func (s *SessionService) RevokeAllSessions(ctx context.Context, userID, exceptSe
 	return nil
 }
 
+// RevokeSessionsIssuedBy ends the user's sessions whose sign-in was asserted
+// by tenantID's own identity provider (Session.IDPTenantID): that
+// organization's assertion was the only proof of identity behind them, so
+// they end when the organization removes the person. Every other session
+// (password, social login, another organization's IdP) stays: the
+// organization's own data is closed to it by the per-request membership
+// check, and it is not this organization's to end. Returns how many sessions
+// were revoked.
+func (s *SessionService) RevokeSessionsIssuedBy(ctx context.Context, userID, tenantID string) (int, error) {
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid user id: %w", err)
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("invalid tenant id: %w", err)
+	}
+	sessions, err := s.sessionRepo.GetActiveByUserID(ctx, uid)
+	if err != nil {
+		return 0, fmt.Errorf("list sessions: %w", err)
+	}
+	revoked := 0
+	for _, sess := range sessions {
+		if !sess.IDPTenantID().Equals(tid) {
+			continue
+		}
+		if err := s.RevokeSession(ctx, userID, sess.ID().String()); err != nil {
+			return revoked, err
+		}
+		revoked++
+	}
+	return revoked, nil
+}
+
 // ValidateSession checks if a session is valid.
 func (s *SessionService) ValidateSession(ctx context.Context, sessionID string) (*sessiondom.Session, error) {
 	id, err := shared.IDFromString(sessionID)

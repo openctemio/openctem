@@ -148,6 +148,7 @@ func runGoogleCallback(t *testing.T, c googleCase) (*SSOCallbackResult, *cbUserR
 	svc.httpClient = client
 	svc.oidcVerifier = newOIDCVerifier(client, logger.NewNop())
 	svc.SetTenantMemberRepo(members)
+	svc.SetIdentityRepo(newMemIdentities())
 	svc.SetDomainVerifier(&fakeDomainVerifier{verified: c.verified, err: c.verifierErr})
 
 	auth, err := svc.GenerateAuthorizeURL(context.Background(), SSOAuthorizeInput{

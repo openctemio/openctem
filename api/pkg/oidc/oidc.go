@@ -272,6 +272,9 @@ type Claims struct {
 	AZP     string   `json:"azp"`
 	// TID is the Entra directory id; EntraIssuer checks it against iss.
 	TID string `json:"tid"`
+	// OID is the Entra user's object id: the same for every application in
+	// the directory, unlike sub, which is pairwise per application.
+	OID string `json:"oid"`
 	// HD is the Google Workspace (hosted) domain of the account. Google sends
 	// it only for accounts that belong to a Workspace or Cloud organization; a
 	// consumer Google account never carries it, whatever its email address.
