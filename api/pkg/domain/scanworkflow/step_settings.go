@@ -103,7 +103,7 @@ func NormalizeStepConfig(tool string, config map[string]any) (map[string]any, er
 		delete(out, StepKeyEndpointSelector)
 	}
 	if _, ok := out[stepKeyAllowInteractsh]; ok {
-		return nil, fmt.Errorf("%w: %s cannot be set on a pipeline step", ErrInvalidStepSetting, stepKeyAllowInteractsh)
+		return nil, fmt.Errorf("%w: %s cannot be set on a scan workflow step", ErrInvalidStepSetting, stepKeyAllowInteractsh)
 	}
 	if v, ok := out[stepKeyExclude]; ok {
 		list, err := stringList(v)

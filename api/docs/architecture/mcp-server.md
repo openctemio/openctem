@@ -92,7 +92,11 @@ Code MCP server entry:
 
 ## Planned (not yet shipped)
 
-- UI settings page to mint an MCP key + show this connection block (Phase 2).
-- Per-key rate limiting (the key carries `RateLimit()`), optional `mcp:read` scope
-  enforcement, write-capable tools behind explicit scopes.
-- MCP `resources`/`prompts` — would justify adopting the official Go MCP SDK.
+- **OAuth 2.1 for MCP clients** ([RFC-062](../rfcs/RFC-062-mcp-authorization.md)):
+  standard discovery (Protected Resource Metadata, `WWW-Authenticate`),
+  OpenCTEM as the authorization server with its own consent page, short-lived
+  tokens bound to one user, organization, client and this endpoint, read
+  scopes mapped onto permissions, an organization MCP policy and a connected
+  applications page. `oct_` keys stay for headless use.
+- Write-capable tools, confirmed by the person in the web UI (RFC-062 §10).
+- MCP `resources`; the MCP 2026-07-28 protocol revision (stateless requests).
