@@ -28,6 +28,7 @@ export function isIdSegment(segment: string): boolean {
  */
 export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/admin/scanning',
+  '/admin/security',
   '/admin/system',
   '/auth',
   '/auth/callback',
