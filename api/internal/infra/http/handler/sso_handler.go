@@ -210,11 +210,11 @@ func (h *SSOHandler) BackChannelLogout(w http.ResponseWriter, r *http.Request) {
 // handlePublicError handles errors for public SSO endpoints with generic messages.
 func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, auth.ErrSSOTenantNotFound):
-		apierror.NotFound("Organization not found").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSONoActiveProviders):
-		apierror.NotFound("No SSO providers configured").WriteJSON(w)
-	case errors.Is(err, auth.ErrSSOProviderNotFound):
+	// Anti-enumeration: an unknown organization answers exactly like an
+	// organization without that provider.
+	case errors.Is(err, auth.ErrSSOTenantNotFound),
+		errors.Is(err, auth.ErrSSONoActiveProviders),
+		errors.Is(err, auth.ErrSSOProviderNotFound):
 		apierror.NotFound("SSO provider not configured").WriteJSON(w)
 	case errors.Is(err, auth.ErrSSOProviderInactive):
 		apierror.BadRequest("SSO provider is not active").WriteJSON(w)

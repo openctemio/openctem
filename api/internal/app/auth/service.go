@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -399,6 +400,18 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return nil, ErrRegistrationDisabled
 	}
 
+	// SECURITY (anti-enumeration): everything that shapes the answer is
+	// decided before the account lookup, the same way for a new and an
+	// existing email: the password policy (a weak password is refused for
+	// both) and the verification rule a new account would get.
+	if err := s.passwordHasher.Validate(input.Password); err != nil {
+		return nil, fmt.Errorf("password validation failed: %w", err)
+	}
+	requireVerification := false
+	if !invited {
+		requireVerification = s.shouldRequireEmailVerification(ctx, invitationTenantID)
+	}
+
 	// Check if email already exists
 	// Security: Return success-like result to prevent email enumeration
 	existingUser, err := s.userRepo.GetByEmail(ctx, email)
@@ -413,17 +426,12 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		return &RegisterResult{
 			User:                 nil, // Signal to handler that no actual registration happened
 			VerificationToken:    "",
-			RequiresVerification: true,
+			RequiresVerification: requireVerification,
 			EmailExisted:         true, // New field to indicate this case
 		}, nil
 	}
 	if err != nil && !shared.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to check email: %w", err)
-	}
-
-	// Validate password against policy
-	if err := s.passwordHasher.Validate(input.Password); err != nil {
-		return nil, fmt.Errorf("password validation failed: %w", err)
 	}
 
 	// Hash password
@@ -444,11 +452,8 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// the rule is resolved from the invitation's tenant when a (non-matching)
 	// token was supplied, else the platform default (single-tenant heuristic /
 	// SMTP check / global env). The token is NOT consumed here; acceptance is a
-	// separate POST /invitations/{token}/accept.
-	requireVerification := false
-	if !invited {
-		requireVerification = s.shouldRequireEmailVerification(ctx, invitationTenantID)
-	}
+	// separate POST /invitations/{token}/accept. requireVerification was
+	// decided above.
 
 	var verificationToken string
 	if requireVerification {
@@ -553,7 +558,9 @@ type LoginResult struct {
 // Login authenticates a user and creates a session.
 // Returns a global refresh token and list of tenant memberships.
 // Client should call ExchangeToken to get a tenant-scoped access token.
-func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult, error) {
+func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *LoginResult, err error) {
+	defer func() { recordLoginFailure(err) }()
+
 	// Normalize email
 	email := strings.TrimSpace(strings.ToLower(input.Email))
 
@@ -2132,4 +2139,23 @@ func (s *AuthService) dummyPasswordHash() string {
 		}
 	})
 	return s.dummyHash
+}
+
+// recordLoginFailure counts a refused password sign-in by reason, for the
+// operator's login-failure alert (credential stuffing shows as a spike of
+// invalid_credentials). Only the reason is recorded: never the email or IP.
+func recordLoginFailure(err error) {
+	if err == nil {
+		return
+	}
+	reason := "other"
+	switch {
+	case errors.Is(err, ErrInvalidCredentials):
+		reason = "invalid_credentials"
+	case errors.Is(err, ErrAccountLocked):
+		reason = "locked"
+	case errors.Is(err, ErrAccountSuspended):
+		reason = "suspended"
+	}
+	metrics.LoginFailuresTotal.WithLabelValues(reason).Inc()
 }

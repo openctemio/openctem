@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -49,6 +50,7 @@ func (d *WorkflowEventDispatcher) DispatchAssetsDiscovered(_ context.Context, te
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
 				d.logger.Error("panic recovered in asset_discovered dispatch",
 					"tenant_id", tenantID, "panic", r)
 			}
@@ -198,6 +200,7 @@ func (d *WorkflowEventDispatcher) DispatchScanCompleted(_ context.Context, run *
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
 				d.logger.Error("panic recovered in scan_completed dispatch",
 					"run_id", run.ID, "panic", r)
 			}

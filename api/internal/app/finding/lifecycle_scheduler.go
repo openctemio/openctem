@@ -106,6 +106,7 @@ func (s *FindingLifecycleScheduler) run() {
 	defer s.wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
+			metrics.RecordPanic("finding_lifecycle")
 			s.logger.Error("finding lifecycle scheduler panicked", "panic", r)
 		}
 	}()
@@ -131,6 +132,7 @@ func (s *FindingLifecycleScheduler) run() {
 func (s *FindingLifecycleScheduler) safeExpireFeatureBranchFindings() {
 	defer func() {
 		if r := recover(); r != nil {
+			metrics.RecordPanic("finding_lifecycle")
 			s.logger.Error("panic during feature branch expiry", "panic", r)
 		}
 	}()

@@ -177,7 +177,7 @@ export function useFindingActivitiesInfinite(
     if (!currentTenant || !findingId) return null
 
     // Return URL with page param (1-indexed for backend)
-    return `/api/v1/findings/${findingId}/activities?page=${pageIndex + 1}&page_size=${pageSize}`
+    return `/api/v1/findings/${findingId}/activities?page=${pageIndex + 1}&per_page=${pageSize}`
   }
 
   const { data, error, isLoading, isValidating, size, setSize, mutate } =
