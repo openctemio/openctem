@@ -1287,58 +1287,15 @@ func (h *ScanHandler) resolveScanCreatorNames(ctx context.Context, scans []*scan
 }
 
 // resolveRunTriggerNames batch-loads the display names of the users who
-// triggered these runs, keyed by user id. TriggeredBy is free text: a user id
-// for a manual trigger, otherwise "system", a schedule or a webhook name, so
-// only values that parse as an id are looked up. One query per page of runs.
+// triggered these runs (runTriggerNames).
 func (h *ScanHandler) resolveRunTriggerNames(ctx context.Context, runs ...*scanrun.Run) map[string]string {
-	if h.userRepo == nil || len(runs) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(runs))
-	ids := make([]shared.ID, 0, len(runs))
-	for _, run := range runs {
-		if run == nil || run.TriggeredBy == "" {
-			continue
-		}
-		if _, ok := seen[run.TriggeredBy]; ok {
-			continue
-		}
-		seen[run.TriggeredBy] = struct{}{}
-		id, err := shared.IDFromString(run.TriggeredBy)
-		if err != nil {
-			continue
-		}
-		ids = append(ids, id)
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	users, err := h.userRepo.GetByIDs(ctx, ids)
-	if err != nil {
-		h.logger.Warn("failed to batch-resolve run trigger names", "error", err)
-		return nil
-	}
-	names := make(map[string]string, len(users))
-	for _, u := range users {
-		if u == nil {
-			continue
-		}
-		name := u.Name()
-		if name == "" {
-			name = u.Email()
-		}
-		names[u.ID().String()] = name
-	}
-	return names
+	return runTriggerNames(ctx, h.userRepo, h.logger, runs...)
 }
 
-// withTriggerName sets TriggeredByName from a map built by
+// withTriggerName sets the trigger labels from a map built by
 // resolveRunTriggerNames. Pure.
 func withTriggerName(resp *RunResponse, names map[string]string) *RunResponse {
-	if resp != nil {
-		resp.TriggeredByName = names[resp.TriggeredBy]
-	}
-	return resp
+	return withRunTriggerLabel(resp, names)
 }
 
 // buildScanResponse converts a domain scan to API response using a pre-resolved

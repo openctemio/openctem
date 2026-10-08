@@ -1,6 +1,7 @@
 package scanworkflow_test
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -190,4 +191,23 @@ func TestConditionMet_UnevaluableConditionsNeverPass(t *testing.T) {
 	if err := (&scanworkflow.Step{}).SetCondition(scanworkflow.ExpressionCondition("x")); err == nil {
 		t.Error("an expression condition was accepted")
 	}
+}
+
+// The builder canvas sends fractional and negative positions; the stored
+// layout is whole numbers. A non-finite or absurd coordinate is a
+// validation error, never a server error.
+func TestStep_SetUIPosition(t *testing.T) {
+	s, err := scanworkflow.NewStep(shared.NewID(), "ports", "Ports", 1, []string{"scan.ports"})
+	require.NoError(t, err)
+
+	require.NoError(t, s.SetUIPosition(-307.4222108759977, 120.5))
+	assert.Equal(t, scanworkflow.UIPosition{X: -307, Y: 121}, s.UIPosition)
+
+	for _, bad := range [][2]float64{
+		{math.NaN(), 0}, {0, math.Inf(1)}, {math.Inf(-1), 0}, {2e6, 0}, {0, -1e300},
+	} {
+		err := s.SetUIPosition(bad[0], bad[1])
+		assert.ErrorIs(t, err, shared.ErrValidation, "%v", bad)
+	}
+	assert.Equal(t, scanworkflow.UIPosition{X: -307, Y: 121}, s.UIPosition, "a refused position changes nothing")
 }
