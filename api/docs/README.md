@@ -80,6 +80,7 @@
 - [CI/CD](development/ci-cd.md) - GitHub Actions workflows
 
 ### Deployment
+- [**Upgrading from v0.8.0 to v0.9.0**](operations/upgrade-v0.8-to-v0.9.md) - The full upgrade for a v0.8.0 production installation: pre-flight checks and inventory queries, image/Compose/Helm/env changes, the two-hop database path through `pre-baseline-001146`, data migrations users notice, removed routes and permissions, sensor order and compatibility, SSO/IdP changes, verification, rollback
 - [Safe Deploy & Migrations](deployment/safe-deploy-and-migrations.md) - Canonical safe-deploy sequence, expand-contract rules, schema-check semantics, dirty-migration recovery, rollback
 - [Least-privilege database roles](deployment/database-roles.md) - The API connects as `openctem_app` (DML only), migrations as `openctem_migrator` (schema owner); the bootstrap script, what the API needs at run time, compose/helm variables, and the upgrade runbook
 - [Rotating APP_ENCRYPTION_KEY](deployment/encryption-key-rotation.md) - What the key protects, `cmd/rekey` (dry run, apply, sweep), `APP_ENCRYPTION_KEY_PREVIOUS`, and the zero-downtime runbook
