@@ -105,7 +105,7 @@ func (f *coverageFixture) finding(t *testing.T, asset shared.ID, tool, scanID st
 		b = branch.String()
 	}
 	f.exec(t, `INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, scan_id, branch_id)
-		VALUES ($1, $2, $3, 'dast', $4, 'm', 'high', $5, 'open', $6, $7)`,
+		VALUES ($1, $2, $3, 'dast', $4, 'm', 'high', $5, 'new', $6, $7)`,
 		id, f.tenant, asset, tool, "fp-"+id.String(), scanID, b)
 	return id
 }
@@ -189,7 +189,7 @@ func TestCoverageAutoResolve_NonRepositoryFindings(t *testing.T) {
 	if resolved, err := repo.ResolveCoverageStale(ctx, f.tenant, stale); err != nil || len(resolved) != 0 {
 		t.Fatalf("resolve after triage = %v, %v; want nothing", resolved, err)
 	}
-	f.exec(t, `UPDATE findings SET status = 'open' WHERE id = $1`, gone)
+	f.exec(t, `UPDATE findings SET status = 'new' WHERE id = $1`, gone)
 
 	resolved, err := repo.ResolveCoverageStale(ctx, f.tenant, stale)
 	if err != nil || len(resolved) != 1 || resolved[0] != gone {
@@ -202,7 +202,7 @@ func TestCoverageAutoResolve_NonRepositoryFindings(t *testing.T) {
 		"still reported": stillThere, "uncovered asset": uncovered, "other tool": otherTool,
 		"other profile": otherProfile, "v1 sighting": v1Sighting, "repository branch": onBranch,
 	} {
-		if s := f.status(t, id); s != "open" {
+		if s := f.status(t, id); s != "new" {
 			t.Errorf("%s finding was changed to %s", name, s)
 		}
 	}

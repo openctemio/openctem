@@ -46,7 +46,8 @@ import { useAuthProviders } from '../api/use-auth-providers'
 import { useTenantSSOProviders } from '@/features/sso/api/use-sso-api'
 import { useEmailDiscovery } from '../hooks/use-email-discovery'
 import { initiateSSOLogin } from '@/features/sso/actions/sso-auth-actions'
-import { getProviderLabel, type SSOProviderType } from '@/features/sso/types/sso.types'
+import { type SSOProviderType } from '@/features/sso/types/sso.types'
+import { identityProviderLabel } from '@/lib/identity-provider-label'
 
 // ============================================
 // TYPES
@@ -252,7 +253,7 @@ export function LoginForm({
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)
-      toast.error(`Failed to sign in with ${provider}. Please try again.`)
+      toast.error(`Failed to sign in with ${identityProviderLabel(provider)}. Please try again.`)
     }
   }
 
@@ -267,7 +268,7 @@ export function LoginForm({
     } catch (error) {
       setLoadingSSOProvider(null)
       console.error(`SSO login error (${provider}):`, error)
-      toast.error(`Failed to sign in with ${getProviderLabel(provider)}. Please try again.`)
+      toast.error(`Failed to sign in with ${identityProviderLabel(provider)}. Please try again.`)
     }
   }
 

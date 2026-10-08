@@ -59,7 +59,6 @@ export const AUTH_ERROR_MESSAGES = {
   EMAIL_REQUIRED: 'Please enter your email address.',
   EMAIL_INVALID: 'Please enter a valid email address.',
   PASSWORD_REQUIRED: 'Please enter your password.',
-  PASSWORD_TOO_SHORT: 'Password must be at least 8 characters long.',
   PASSWORDS_DONT_MATCH: "Passwords don't match. Please try again.",
 
   // Authorization errors
@@ -91,7 +90,6 @@ export const VALIDATION_MESSAGES = {
   },
   PASSWORD: {
     REQUIRED: 'Please enter your password',
-    MIN_LENGTH: 'Password must be at least 8 characters long',
     WEAK: 'Password is too weak. Use a mix of letters, numbers, and symbols.',
   },
   CONFIRM_PASSWORD: {

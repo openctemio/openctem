@@ -1875,12 +1875,15 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 		return err
 	}
 
-	// Security: tenant_id is first parameter for isolation
+	// Security: tenant_id is first parameter for isolation. $6 holds the
+	// statuses a person may move a finding from to status (the lifecycle), so
+	// a finding that changed since the caller checked it is left alone.
 	placeholders := make([]string, len(ids))
-	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg}
+	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg,
+		pq.Array(statusStrings(vulnerability.UserFromStatuses(status)))}
 
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+6)
+		placeholders[i] = fmt.Sprintf("$%d", i+7)
 		args = append(args, id.String())
 	}
 
@@ -1896,7 +1899,7 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 	query := fmt.Sprintf(`
 		UPDATE findings
 		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5%s, updated_at = NOW()
-		WHERE tenant_id = $1 AND source != 'pentest' AND id IN (%s)
+		WHERE tenant_id = $1 AND source != 'pentest' AND status = ANY($6) AND id IN (%s)
 	`, resolvedClause, strings.Join(placeholders, ", "))
 
 	if _, err := r.db.ExecContext(ctx, query, args...); err != nil {
@@ -3380,7 +3383,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 				AND f.branch_id = $5
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.status IN ` + autoResolveFromSQL + `
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -3404,7 +3407,7 @@ func (r *FindingRepository) AutoResolveStale(ctx context.Context, tenantID share
 				AND f.scan_id != $4
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.status IN ` + autoResolveFromSQL + `
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -3479,7 +3482,7 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 				AND f.branch_id = $5
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.status IN ` + autoResolveFromSQL + `
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -3502,7 +3505,7 @@ func (r *FindingRepository) AutoResolveStaleByAssets(ctx context.Context, tenant
 				AND f.scan_id != $4
 				AND f.branch_id = rb.id
 				AND rb.is_default = true
-				AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+				AND f.status IN ` + autoResolveFromSQL + `
 				AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')
 			RETURNING f.id
 		`
@@ -3556,7 +3559,7 @@ func (r *FindingRepository) AutoReopenByFingerprint(ctx context.Context, tenantI
 			updated_at = NOW()
 		WHERE tenant_id = $1
 			AND fingerprint = $2
-			AND status IN ('resolved', 'verified')
+			AND status IN ` + fixedReopenFromSQL + `
 			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
 		RETURNING id
 	`
@@ -3604,13 +3607,11 @@ func (r *FindingRepository) AutoReopenByFingerprintsBatch(ctx context.Context, t
 			FROM findings
 			WHERE tenant_id = $1
 				AND fingerprint = ANY($2)
-				AND (
-					(status IN ('resolved', 'verified')
-						AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed')))
-					OR status = 'validated_fixed'
-					-- Seen again: a not_observed finding is observed (O2).
-					OR status = 'not_observed'
-				)
+				AND status IN ` + regressionReopenFromSQL + `
+				-- A finding closed as fixed reopens; a deliberate disposition
+				-- recorded in the resolution note does not.
+				AND (status NOT IN ` + fixedReopenFromSQL + `
+					OR resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
 			FOR UPDATE
 		)
 		UPDATE findings f
@@ -3695,7 +3696,7 @@ func (r *FindingRepository) ExpireFeatureBranchFindings(ctx context.Context, ten
 			AND f.branch_id = rb.id
 			AND rb.is_default = false
 			AND rb.keep_when_inactive = false
-			AND f.status IN ('new', 'open')
+			AND f.status IN ` + branchExpiryFromSQL + `
 			AND f.last_seen_at < NOW() - make_interval(days => COALESCE(rb.retention_days, $2))
 	`
 
@@ -4250,7 +4251,7 @@ func (r *FindingRepository) CountAutoResolveCandidates(ctx context.Context, tena
 			AND f.asset_id = ANY($2)
 			AND f.tool_name = $3
 			AND rb.is_default = true
-			AND f.status IN ('new', 'open', 'confirmed', 'in_progress', 'fix_applied')
+			AND f.status IN `+autoResolveFromSQL+`
 			AND f.source NOT IN ('pentest', 'manual', 'bug_bounty', 'red_team')`,
 		tenantID.String(), pq.Array(ids), toolName, currentScanID).Scan(&stale, &open)
 	if err != nil {

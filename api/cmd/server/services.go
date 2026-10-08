@@ -60,6 +60,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
@@ -800,6 +801,8 @@ type Services struct {
 	Signup *signupapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
+	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
+	IdleWorkspaces *lifecycleapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -891,6 +894,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (docs/architecture/plans-and-limits.md). Seats and invitations are
 	// checked where the rows are inserted.
 	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
+	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	for _, r := range []interface{ SetPlanLimits(plan.Checker) }{
 		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing,
 	} {
@@ -1809,7 +1813,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 		scan.WithAuditService(scanAuditAdapter),
 		scan.WithProfileRepo(repos.ScanProfile),
-		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
+		// Enforce scope EXCLUSIONS on every dispatch path; unwired or failing, nothing is dispatched (fail closed).
 		scan.WithScopeExclusionFilter(s.Scope),
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
