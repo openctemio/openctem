@@ -13,7 +13,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/url"
 	"strings"
 	"time"
@@ -138,8 +137,9 @@ func publicKey(jwk map[string]any, alg string) (any, string, error) {
 		if err1 != nil || err2 != nil || len(xb) != 32 || len(yb) != 32 {
 			return nil, "", fail("bad EC coordinates")
 		}
-		pub := &ecdsa.PublicKey{Curve: elliptic.P256(), X: new(big.Int).SetBytes(xb), Y: new(big.Int).SetBytes(yb)}
-		if !pub.Curve.IsOnCurve(pub.X, pub.Y) { //nolint:staticcheck // explicit point validation of untrusted input
+		// The uncompressed SEC 1 form; parsing rejects a point not on the curve.
+		pub, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), append(append([]byte{4}, xb...), yb...))
+		if err != nil {
 			return nil, "", fail("EC point not on the curve")
 		}
 		// RFC 7638 §3.2: required members, lexicographic order.
