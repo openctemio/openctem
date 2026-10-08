@@ -30,7 +30,7 @@ Accounts are global and memberships are per organization, so one person can belo
 |---|---|
 | An invitee is classified when the invitation is created and again when it is accepted (the domain may have been claimed or released in between). | `tenant.AddressClassifier`, `TenantService.ClassifyAcceptedInvitation` |
 | An external invitee joins as a **viewer** and has **no data scope** until a host administrator adds them to a team. An invitation offering more than viewer is refused; an acceptance re-classified as external grants viewer only. | `CreateInvitation`, `ApplyInviteeClassification` |
-| An external member can **never be an owner**: a CHECK on `tenant_members` plus triggers on `user_roles` and on `tenant_members.kind`. The role grant guard also refuses them the admin role and any full-data-access role, on every path (role assignment, role set, bulk assign, invitation acceptance, membership role change). | migration 001308, `RoleService.capExternalTarget`, `UpdateMemberRole` |
+| An external member can **never be an owner**: a CHECK on `tenant_members` plus triggers on `user_roles` and on `tenant_members.kind`. The role grant guard also refuses them the admin role and any full-data-access role, on every path (role assignment, role set, bulk assign, invitation acceptance, membership role change). | migration 001310, `RoleService.capExternalTarget`, `UpdateMemberRole` |
 | An **unmanaged** external member must have an access end date: 90 days by default, 365 at most. A managed external member may have one (optional). | `tenant.ExternalAccess.Validate`, `SettleExternalAccess` |
 | An expired membership is **suspended within a minute** (`suspended_reason = expired`) in its own organization only. Access is cut, the organization's own IdP sessions end, administrators are told, and an audit row is written. | `MemberAccessExpiryController`, `TenantService.ExpireMemberships` |
 | An expired member comes back only with a new end date. `PATCH /api/v1/organization/members/{member_id}/access` takes `expires_at` and `reason`, needs owner/admin plus `members:write`, re-enables an expired membership and is audited as `member.access_changed`. A plain reactivation is refused. | `ExtendMemberAccess`, `ReactivateMember` |
@@ -39,7 +39,7 @@ Accounts are global and memberships are per organization, so one person can belo
 
 Classification fails closed: a lookup error refuses the invitation or the acceptance; it never guesses internal.
 
-## 4. Data (migration 001308, expand-only)
+## 4. Data (migration 001310, expand-only)
 
 - `tenant_members`:
   - new columns `kind` (default `internal`), `home_tenant_id` (FK, `ON DELETE SET NULL`), `home_domain`, `expires_at`, `expiry_reason`, `suspended_reason`;

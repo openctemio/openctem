@@ -8,4 +8,4 @@
 - Administrators set a new end date with `PATCH /api/v1/organization/members/{member_id}/access`. The members list shows `kind`, `home_organization`, `access_expires_at` and `suspended_reason`.
 - Existing memberships are unchanged (all internal).
 - An organization that has not verified any domain keeps treating colleagues on its own unclaimed domain as internal.
-- Migration 001308.
+- Migration 001310.
