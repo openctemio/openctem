@@ -51,8 +51,10 @@ func NewCTEMCycleHandler(db *sql.DB, metrics ctemcycle.MetricsRepository, log *l
 func (h *CTEMCycleHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	var total int64
 	err := h.db.QueryRowContext(r.Context(),
@@ -79,7 +81,7 @@ func (h *CTEMCycleHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]CTEMCycleResponse, 0, perPage)
+	items := make([]CTEMCycleResponse, 0, page.PerPage)
 	for rows.Next() {
 		c, err := h.scanCycle(rows)
 		if err != nil {
