@@ -17,7 +17,7 @@
   gets an `insufficient_scope` challenge.
 - Every consent, token issue, reuse and revocation is audited; tool-call
   audit rows name the application and connection.
-- Migration `001367_mcp_oauth`.
+- Migration `001381_mcp_oauth`.
 - **Upgrade note:** the gateway sends `/.well-known/oauth-authorization-server`
   and `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` to the API; update a
   custom reverse proxy the same way. `APP_URL` must be the public `https`

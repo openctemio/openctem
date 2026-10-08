@@ -1,375 +1,58 @@
-# Docker Deployment
+# Docker (development)
 
-> **Migrations:** auto-migration is a **development-only** convenience. In
-> production the API does **not** auto-migrate — a one-shot `migrate` service
-> applies migrations before the app starts, and the app fails fast if the schema
-> is behind. See [Safe Deploy & Migrations](safe-deploy-and-migrations.md) and
-> [Production Migrations](#production-migrations) below.
+This page covers the API's Docker files for development and image builds. To
+deploy OpenCTEM with Docker Compose or the all-in-one image, follow
+[docs.openctem.io/install](https://docs.openctem.io/install/).
 
-## Overview
+> **Migrations:** auto-migration is a development-only convenience. In
+> production the API does not migrate: a one-shot `migrate` service applies
+> migrations before the API starts, and the API refuses to start while the schema
+> is behind. See [Safe Deploy & Migrations](safe-deploy-and-migrations.md).
 
-OpenCTEM uses a **single Dockerfile with multiple build targets**:
-
-```
-Dockerfile
-├── base        # Shared: Go 1.26, dependencies
-├── development # Dev: Air (hot reload), Delve (debugger)
-├── builder     # Build: Compile binary
-└── production  # Prod: Minimal Alpine image
-```
-
-### Files
+## Files
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Multi-target build (dev, prod) |
-| `docker-compose.yml` | Base services (PostgreSQL, Redis) |
-| `docker-compose.dev.yml` | Development app (target: development) |
-| `docker-compose.prod.yml` | Production API alone (target: production), not published |
-| `deploy/docker-compose.yml` | **Production stack**: gateway (one HTTPS port) + web UI + API + Postgres/Redis with TLS |
-| `deploy/gateway/` | Gateway Caddyfile, `planes.caddy` (routing by plane, generated from the API's plane table; do not edit), TLS modes, entrypoint, `smoke-test.sh` |
+| `api/Dockerfile` | Multi-target build: `development` (Air, Delve, migrate), `base` and `builder`, `production` (Alpine, non-root user `openctem`) |
+| `api/Dockerfile.migrations`, `Dockerfile.seed`, `Dockerfile.admin-cli` | The `migrations`, `seed` and `admin-cli` release images |
+| `api/docker-compose.yml` | Base services: PostgreSQL 17 and Redis 7 (ports published for development) |
+| `api/docker-compose.dev.yml` | The API in the `development` target, source bind-mounted |
+| `api/deploy/docker-compose.yml` | The supported Compose deployment: gateway (one HTTPS port), web, API, PostgreSQL and Redis with TLS, and the one-shot `datastore-tls`, `db-roles` and `migrate` services |
+| `api/deploy/backup.sh` | Backup (`backup`), restore check (`verify`) and restore (`restore <dir> --yes`) of that stack |
+| `api/deploy/gateway/` | Gateway Caddyfile, TLS modes, entrypoint and `smoke-test.sh`. `planes.caddy` is generated from the API's plane table: do not edit it by hand |
+| `deploy/allinone/` | The all-in-one image (`ghcr.io/openctemio/openctem`): API, web and gateway in one container |
 
----
-
-## Quick Start
-
-### Development (Hot Reload)
+## Development environment
 
 ```bash
-make docker-dev
-
-# Or directly
+cd api
+make docker-dev        # foreground; make docker-dev-d for background
+# same as:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-Features:
-- Hot reload with Air
-- **Auto-migration on startup**
-- Delve debugger on port 2345
-- Source code mounted as volume
-- SDK module mounted (local development)
-- Debug logging (text format)
+The `development` container (`scripts/dev-entrypoint.sh`):
 
-### Production
+1. waits for PostgreSQL,
+2. applies migrations (`migrate -path /app/migrations up`) unless
+   `AUTO_MIGRATE=false`,
+3. starts Air for hot reload.
 
-```bash
-# Set required environment variables
-export DB_PASSWORD=your_secure_password
-export REDIS_PASSWORD=your_redis_password
-export KEYCLOAK_BASE_URL=https://keycloak.example.com
-export KEYCLOAK_REALM=openctem
-export CORS_ALLOWED_ORIGINS=https://app.example.com
+The source tree is bind-mounted at `/app`; ports are 8080 (HTTP), 9090 (gRPC) and
+2345 (Delve). Logging is `debug`/`text`, authentication is `AUTH_PROVIDER=local`.
 
-make docker-prod
-
-# Or directly
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-```
-
-Features:
-- Optimized multi-stage build (~15MB image)
-- Non-root user
-- JSON logging
-- Resource limits (CPU/Memory)
-- Health checks
-- Auto-restart
-- **Migrations applied by a one-shot `migrate` service before the API starts**
-  (the API does NOT auto-migrate in prod — see below)
-
----
-
-## Production Migrations
-
-Unlike the development container, the **production API binary does not run
-migrations**. On startup it runs a fail-fast schema check
-(`cmd/server/schema_check.go`): if the DB schema is behind the migrations shipped
-in the binary, it **refuses to start** rather than 500-ing every request against
-a missing column. Do **not** set `SKIP_SCHEMA_CHECK=true` in production — it is
-the last-line safety net.
-
-`docker-compose.prod.yml` therefore includes a one-shot **`migrate`** service
-(built from `Dockerfile.migrations` / published as `ghcr.io/openctemio/migrations:<VERSION>`)
-that runs `migrate ... up` and exits. The `app` service declares
-`depends_on: migrate: { condition: service_completed_successfully }`, so the API
-only starts **after migrations succeed**:
+Migrations by hand:
 
 ```bash
-# Keep both images at the same version.
-export API_VERSION=v1.0.0
-export MIGRATIONS_VERSION=v1.0.0   # defaults to API_VERSION if unset
-
-# `up` runs migrate → waits for it to complete → then starts the app.
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-```
-
-If a migration fails midway, `golang-migrate` marks `schema_migrations.dirty` and
-the app will refuse to start. Recover with `migrate force` (see the
-[runbook](safe-deploy-and-migrations.md#dirty-migration-recovery)):
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm migrate \
-  -path=/migrations -database "$DATABASE_URL" force <last-good-version>
-```
-
-For the full canonical sequence, expand-contract rules, and rollback guidance,
-see [Safe Deploy & Migrations](safe-deploy-and-migrations.md).
-
----
-
-## Dockerfile Structure
-
-```dockerfile
-# =============================================================================
-# Base stage (shared)
-# =============================================================================
-FROM golang:1.25-alpine AS base
-WORKDIR /app
-RUN apk add --no-cache git ca-certificates tzdata
-COPY go.mod go.sum ./
-RUN go mod download
-
-# =============================================================================
-# Development stage
-# =============================================================================
-FROM base AS development
-RUN go install github.com/air-verse/air@latest
-RUN go install github.com/go-delve/delve/cmd/dlv@latest
-EXPOSE 8080 9090 2345
-CMD ["air", "-c", ".air.toml"]
-
-# =============================================================================
-# Builder stage
-# =============================================================================
-FROM base AS builder
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/bin/server ./cmd/server
-
-# =============================================================================
-# Production stage
-# =============================================================================
-FROM alpine:3.20 AS production
-WORKDIR /app
-RUN addgroup -g 1000 -S openctem && adduser -u 1000 -S openctem -G openctem
-COPY --from=builder /app/bin/server .
-USER openctem
-EXPOSE 8080 9090
-HEALTHCHECK CMD wget --spider http://localhost:8080/health || exit 1
-ENTRYPOINT ["./server"]
-```
-
----
-
-## SDK Module Setup
-
-The API depends on the SDK module (`github.com/openctemio/sdk-go`).
-
-### Development (Local SDK)
-
-In development, SDK is mounted as a volume and resolved via `go.work.docker`:
-
-```yaml
-# docker-compose.dev.yml
-volumes:
-  - ../sdk:/app/sdk              # Mount SDK source
-  - ./go.work.docker:/app/go.work  # Go workspace for local resolution
-```
-
-```go
-// go.work.docker (for Docker container)
-go 1.25.0
-
-use (
-  .       // API (mounted at /app)
-  ./sdk   // SDK (mounted at /app/sdk)
-)
-```
-
-### Production (GitHub Module)
-
-In production, SDK is fetched from GitHub as a released module:
-
-```go
-// go.mod
-require github.com/openctemio/sdk-go v0.1.0
-```
-
-> **Note**: SDK must be released on GitHub with proper version tag (e.g., `v0.1.0`) before production builds work.
-
----
-
-## Auto-Migration (Development)
-
-Development containers automatically run database migrations on startup.
-
-### How It Works
-
-```
-1. Wait for database to be ready (max 30s)
-2. Run: migrate -path /app/migrations up
-3. Start Air for hot reload
-```
-
-### Entrypoint Script
-
-```bash
-# scripts/dev-entrypoint.sh
-=== Development Entrypoint ===
-Waiting for database...
-Database is ready!
-Running database migrations...
-no change
-Migrations complete!
-Starting development server with Air...
-```
-
-### Disable Auto-Migration
-
-```yaml
-# docker-compose.dev.yml
-services:
-  app:
-    environment:
-      AUTO_MIGRATE: "false"   # Skip migrations on startup
-```
-
-### Manual Migration
-
-```bash
-# Inside container
-migrate -path /app/migrations -database "$DB_URL" up
-
-# From host (using Make)
-make docker-migrate-up
+make docker-migrate-up        # uses the migrate/migrate image and DATABASE_URL
 make docker-migrate-down
 make docker-migrate-version
 ```
 
----
+### Debugging with Delve
 
-## Build Commands
+Attach a debugger to port 2345, for example VS Code:
 
-```bash
-# Build specific target
-docker build --target development -t openctem:dev .
-docker build --target production -t openctem:latest .
-
-# Using Makefile
-make docker-build       # Production image
-make docker-build-dev   # Development image
-```
-
----
-
-## Docker Compose Usage
-
-### Development
-
-```yaml
-# docker-compose.dev.yml
-services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: development    # <-- Use development stage
-    volumes:
-      - .:/app               # Mount source for hot reload
-    ports:
-      - "8080:8080"
-      - "2345:2345"          # Delve debugger
-```
-
-### Production
-
-```yaml
-# docker-compose.prod.yml
-services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: production     # <-- Use production stage
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 512M
-```
-
----
-
-## Make Commands
-
-```bash
-# Development
-make docker-dev          # Start with hot reload (foreground)
-make docker-dev-d        # Start in background
-
-# Production
-make docker-prod         # Start production
-
-# Build
-make docker-build        # Build production image
-make docker-build-dev    # Build development image
-
-# Management
-make docker-down         # Stop all containers
-make docker-logs         # View all logs
-make docker-logs-app     # View app logs only
-make docker-ps           # Show running containers
-make docker-clean        # Remove containers, volumes, images
-```
-
----
-
-## Environment Variables
-
-### Development (auto-set)
-
-```env
-APP_ENV=development
-LOG_LEVEL=debug
-LOG_FORMAT=text
-```
-
-### Production (required)
-
-```bash
-# Database
-export DB_PASSWORD=secure_password
-export DB_SSLMODE=require
-
-# Redis
-export REDIS_PASSWORD=redis_password
-
-# Keycloak Authentication (external)
-export KEYCLOAK_BASE_URL=https://keycloak.example.com
-export KEYCLOAK_REALM=openctem
-export KEYCLOAK_CLIENT_ID=api  # Optional
-
-# CORS
-export CORS_ALLOWED_ORIGINS=https://app.example.com
-
-# Optional
-export DB_USER=openctem
-export SERVER_REQUEST_TIMEOUT=30s
-```
-
----
-
-## Debugging with Delve
-
-Development image includes Delve debugger:
-
-```bash
-# Start with debug mode
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-
-# Connect VS Code to port 2345
-# Or use: dlv connect localhost:2345
-```
-
-VS Code `launch.json`:
 ```json
 {
   "name": "Docker: Attach",
@@ -381,62 +64,64 @@ VS Code `launch.json`:
 }
 ```
 
----
-
-## Health Checks
+## Building images
 
 ```bash
-# App
-curl http://localhost:8080/health
+make docker-build        # production target, tagged openctem:latest
+make docker-build-dev    # development target
 
-# PostgreSQL (use docker compose exec with service name)
-docker compose exec postgres pg_isready -U openctem
-
-# Redis (use docker compose exec with service name)
-docker compose exec redis redis-cli ping
+# From the repository root: API, web and the all-in-one image, tagged :local
+make allinone
 ```
 
----
+Release images are built by `.github/workflows/docker-publish.yml` from a
+`vX.Y.Z` tag: `ghcr.io/openctemio/openctem-api`, `openctem-web`, `openctem`
+(all-in-one), `migrations`, `seed` and `admin-cli`.
+
+## Production
+
+The supported deployments are `api/deploy/docker-compose.yml`, the all-in-one
+image and the Helm chart; the API-only and web-only Compose files are removed.
+`make docker-prod` only prints how to start `api/deploy`. Operators follow
+[docs.openctem.io/install](https://docs.openctem.io/install/).
+
+In `api/deploy` the API starts only after the `migrate` one-shot service
+succeeds (`depends_on: migrate: { condition: service_completed_successfully }`),
+and `OPENCTEM_VERSION` tags every platform image, so the migrations always match
+the API.
+
+The API image runs in production mode unless `APP_ENV` says otherwise: an unset
+`APP_ENV` means `production`. Check a configuration without starting anything:
+
+```bash
+docker run --rm --env-file api.env ghcr.io/openctemio/openctem-api:vX.Y.Z -check-config
+# or, in api/deploy:
+docker compose run --rm --no-deps api -check-config
+```
+
+If a migration fails midway, `golang-migrate` marks `schema_migrations.dirty` and
+the API refuses to start. Recovery is in the
+[runbook](safe-deploy-and-migrations.md#dirty-migration-recovery). Never set
+`SKIP_SCHEMA_CHECK=true` in production.
+
+## Make targets
+
+```bash
+make docker-down         # stop the development compose stack
+make docker-logs         # follow logs
+make docker-logs-app     # API logs only
+make docker-ps           # running containers
+make docker-clean        # remove containers, volumes and local images
+make docker-psql         # psql shell in the postgres container
+```
 
 ## Troubleshooting
 
-### Hot reload not working
-
-Check `.air.toml` has polling enabled:
-```toml
-[build]
-  poll = true
-  poll_interval = 500
-```
-
-### Build cache issues
-
-```bash
-# Rebuild without cache
-docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache
-```
-
-### Image size
-
-```bash
-# Check image sizes
-docker images openctem
-
-# Production should be ~15-20MB
-# Development will be larger (~500MB+)
-```
-
----
-
-## Future: Kubernetes & Helm
-
-The `deploy/` folder is reserved for additional deployment configurations:
-
-```
-deploy/
-├── kubernetes/          # K8s manifests (Deployment, Service, Ingress)
-├── helm/               # Helm charts
-└── terraform/          # Infrastructure as code
-```
-
-Docker files (Dockerfile, docker-compose*.yml) remain in the project root for simplicity and convention.
+- **Hot reload does not pick up changes:** `.air.toml` uses polling
+  (`poll = true`, `poll_interval = 500`); check the bind mount works on your
+  host.
+- **Stale build cache:**
+  `docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache`.
+- **Health:** `curl http://localhost:8080/health`,
+  `docker compose exec postgres pg_isready -U openctem`,
+  `docker compose exec redis redis-cli ping`.

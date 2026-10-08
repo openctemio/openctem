@@ -111,7 +111,7 @@ export function FindingDetailDrawer({
   )
 
   const { data: approvals } = useFindingApprovals(
-    open && finding && ['false_positive', 'accepted', 'accepted_risk'].includes(triage.status)
+    open && finding && ['false_positive', 'accepted'].includes(triage.status)
       ? finding.id
       : undefined
   )

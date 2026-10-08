@@ -32,6 +32,27 @@ type DispatchGate struct {
 // act scope (validation.CheckTarget).
 var ProbeDispatchGate = DispatchGate{Tier: 1, Validated: true}
 
+// ConnectorDispatchGate is the record of a connector_scan command: the full
+// gate at t1, outside every scan zone (it runs on its pinned connector
+// sensor). A scan run adds the act scope of its actor.
+var ConnectorDispatchGate = DispatchGate{Tier: 1, Validated: true, NoZoneRouting: true}
+
+// StrictDispatchGateFor is the gate a probing command queued without a
+// record (before records existed) is re-checked with: its type's record
+// without an act scope, the full gate at t1. ok is false for a command type
+// that is not re-checked without a record.
+func StrictDispatchGateFor(t CommandType) (DispatchGate, bool) {
+	switch t {
+	case CommandTypeScan:
+		return BaselineDispatchGate, true
+	case CommandTypeValidate, CommandTypeRetest:
+		return ProbeDispatchGate, true
+	case CommandTypeConnectorScan:
+		return ConnectorDispatchGate, true
+	}
+	return DispatchGate{}, false
+}
+
 // BaselineDispatchGate is the gate a scan command created without a record
 // is re-checked with: what every dispatch path applies (exclusions,
 // rejected names, the private-address and zone rules), and nothing a path

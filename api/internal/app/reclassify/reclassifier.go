@@ -137,7 +137,7 @@ func (r *Reclassifier) reclassifyTenant(
 	filter := vulnerability.FindingFilter{
 		TenantID: &tenantID,
 		// Non-terminal only: mirror FindingStatus.IsClosed so resolved /
-		// false_positive / accepted / duplicate / verified / accepted_risk
+		// false_positive / accepted / duplicate
 		// rows are not re-classified.
 		ExcludeStatuses: vulnerability.ClosedFindingStatuses(),
 	}

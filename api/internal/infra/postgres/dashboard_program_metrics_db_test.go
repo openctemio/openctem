@@ -184,7 +184,7 @@ func TestProgramMetrics_MTTRValidated(t *testing.T) {
 
 	// F2: verified 24h after validation; an earlier not_detected run is not a
 	// confirmation of exploitability.
-	f2 := f.finding(tenant, nil, "verified", f.at(-30*pmDay), ptrT(f.at(-10*pmDay)), nil)
+	f2 := f.finding(tenant, nil, "resolved", f.at(-30*pmDay), ptrT(f.at(-10*pmDay)), nil)
 	f.evidence(tenant, f2, "not_detected", f.at(-20*pmDay))
 	f.evidence(tenant, f2, "detected", f.at(-10*pmDay-24*pmHour))
 
