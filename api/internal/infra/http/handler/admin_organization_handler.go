@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -190,19 +189,18 @@ func orgIDParam(r *http.Request) (shared.ID, bool) {
 // @Produce json
 // @Param search query string false "Match name or slug"
 // @Param page query int false "Page (default 1)"
-// @Param per_page query int false "Page size (default 50, max 200)"
+// @Param per_page query int false "Page size (default 50, max 100)"
 // @Success 200 {object} AdminOrganizationListResponse
 // @Failure 401 {object} apierror.Error "Unauthorized"
 // @Security BearerAuth
 // @Router /admin/tenants [get]
 func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	page, _ := strconv.Atoi(q.Get("page"))
-	page = max(page, 1)
-	perPage, _ := strconv.Atoi(q.Get("per_page"))
-	if perPage <= 0 || perPage > 200 {
-		perPage = 50
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
+	page, perPage := paging.Page, paging.PerPage
 	orgs, total, err := h.orgs.ListOrganizations(r.Context(), admin.OrganizationFilter{
 		Search: q.Get("search"), Limit: perPage, Offset: (page - 1) * perPage,
 	})

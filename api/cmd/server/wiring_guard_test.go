@@ -293,6 +293,10 @@ func TestServices_EachServiceConstructedOnce(t *testing.T) {
 // must be wired: the services nil-guard their collaborators, so an unwired
 // setter is a feature that silently never runs.
 var optionalServiceSetters = map[string]string{
+	// Plan seam: the entitlement layer (plans with SSO) is not built yet;
+	// until it is, every plan may trust another organization.
+	"OrgTrust.SetSSOEntitlement": "plan entitlements not built yet (trusts allowed on every plan)",
+
 	// Business operations named Set*, not collaborator seams.
 	"Branch.SetDefaultBranch":           "request operation, called by the branch handler",
 	"PermVersion.Set":                   "cache operation, not a seam",

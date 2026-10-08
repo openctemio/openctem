@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
@@ -261,19 +261,10 @@ func (h *AssetTypeHandler) legacyAssetTypeRows(r *http.Request, resp *AssetTypeR
 		return nil
 	}
 
-	pageNum := 1
-	perPage := 50
-	if p := query.Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			pageNum = parsed
-		}
+	page, err := pagination.FromRequest(query, 50)
+	if err != nil {
+		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
 	}
-	if pp := query.Get("per_page"); pp != "" {
-		if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 {
-			perPage = parsed
-		}
-	}
-	page := pagination.New(pageNum, perPage)
 
 	filter := assettype.NewFilter()
 	if search := query.Get("search"); search != "" {

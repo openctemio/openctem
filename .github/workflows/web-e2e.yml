@@ -97,7 +97,9 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Two image builds (cold cache: about 11 min) plus the suite (3 min): 15
+    # minutes cut off runs whose tests had all passed.
+    timeout-minutes: 25
     env:
       API_IMAGE: local/openctem-api:e2e
       WEB_IMAGE: local/openctem-web:e2e
