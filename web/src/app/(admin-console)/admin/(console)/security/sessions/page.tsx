@@ -69,7 +69,7 @@ export default function AdminSessionsPage() {
           <span className="text-sm">
             {row.original.auth_method === 'idp'
               ? t('admin.sessions.idp', 'Identity provider')
-              : t('admin.sessions.password', 'Password + authenticator')}
+              : t('admin.sessions.methodLocal', 'Password + authenticator')}
           </span>
         ),
       },
