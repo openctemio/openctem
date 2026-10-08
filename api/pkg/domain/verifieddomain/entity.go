@@ -67,8 +67,11 @@ type VerifiedDomain struct {
 	// verified for SSO before claims were exclusive (migration 001303). The
 	// platform administrator resolves it; until then the row keeps working.
 	claimConflict bool
-	createdAt     time.Time
-	updatedAt     time.Time
+	// jitDisabled / jitRole: per-domain just-in-time provisioning (jit.go).
+	jitDisabled bool
+	jitRole     string
+	createdAt   time.Time
+	updatedAt   time.Time
 }
 
 // New creates a pending VerifiedDomain. The domain is normalized and validated;
