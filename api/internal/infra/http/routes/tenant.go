@@ -26,6 +26,7 @@ func registerTenantRoutes(
 	membershipReader middleware.MembershipReader,
 	localAuth *handler.LocalAuthHandler,
 	ssoChanges *handler.SSOChangeHandler,
+	plans *handler.PlanHandler,
 ) {
 	if membershipReader == nil {
 		membershipReader = tenantRepo
@@ -156,6 +157,11 @@ func registerTenantRoutes(
 		// GET returns the current subscription + catalog; POST replaces it.
 		r.GET("/settings/modules/bundles", h.GetModuleBundles, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
 		r.POST("/settings/modules/bundles", h.SubscribeModuleBundles, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+
+		// The organization's plan, limits and usage (Settings > Plan & usage).
+		if plans != nil {
+			r.GET("/plan", plans.GetOwnPlan, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		}
 
 		// Security settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite), requireStepUp())

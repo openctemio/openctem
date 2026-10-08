@@ -16,7 +16,7 @@ import (
 func TestInvitationRoutes_BodyRoutesAndDeprecatedAliases(t *testing.T) {
 	router := infrahttp.NewChiRouter()
 	noAuth := func(next http.Handler) http.Handler { return next }
-	registerTenantRoutes(router, &handler.TenantHandler{}, noAuth, nil, routeTenantRepo{}, routeMembers{}, &handler.LocalAuthHandler{}, nil)
+	registerTenantRoutes(router, &handler.TenantHandler{}, noAuth, nil, routeTenantRepo{}, routeMembers{}, &handler.LocalAuthHandler{}, nil, nil)
 	mux := router.(interface{ Handler() http.Handler }).Handler()
 
 	// A malformed token is refused by the handler before any service call, so

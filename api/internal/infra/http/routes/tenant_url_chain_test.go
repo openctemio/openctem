@@ -67,7 +67,7 @@ func urlChainFixture(t *testing.T, tokenRole string, memberRole tenant.Role) (ht
 	t.Cleanup(func() { ssoEnforcementMiddleware = prevSSO })
 
 	router := infrahttp.NewChiRouter()
-	registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil)
+	registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil, nil)
 	return router.(interface{ Handler() http.Handler }).Handler(), tn
 }
 

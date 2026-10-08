@@ -148,6 +148,8 @@ tenant_identity_providers
 tenant_invitations
 tenant_members
 tenant_modules
+tenant_plan_overrides
+tenant_plans
 tenant_tool_configs
 threat_actors
 threat_model_threats

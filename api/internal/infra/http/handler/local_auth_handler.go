@@ -1146,6 +1146,7 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Forbidden("Account is suspended").WriteJSON(w)
 	case errors.Is(err, auth.ErrEmailNotVerified):
 		apierror.Forbidden("Email is not verified").WriteJSON(w)
+	case WritePlanLimitError(w, err):
 	case errors.Is(err, auth.ErrRegistrationDisabled):
 		apierror.Forbidden("Registration is not available").WriteJSON(w)
 	case errors.Is(err, auth.ErrTenantCreationDisabled):
