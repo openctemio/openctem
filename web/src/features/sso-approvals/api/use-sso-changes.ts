@@ -17,7 +17,7 @@ export type SSOChangeStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 
 
 export interface SSOChange {
   id: string
-  kind: 'saml_config' | 'idp_create' | 'idp_update'
+  kind: 'saml_config' | 'idp_create' | 'idp_update' | 'domain_jit'
   target_id?: string
   status: SSOChangeStatus
   summary: string

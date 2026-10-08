@@ -2352,6 +2352,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// managed elsewhere; proving it again restores them (RFC-058).
 	s.DomainVerify.SetClaimListener(s.Tenant)
 	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
+	s.SSO.SetJITApprovalNotifier(s.Tenant)
+	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInviteeClassifier(s.Tenant)
 
 	// Trusted organizations (RFC-058): home-realm sign-in for external
@@ -2401,6 +2403,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// in main once the email service exists).
 	s.SSOChange = auth.NewSSOChangeService(repos.SSOChange, s.SAML, s.SSO, repos.Tenant, repos.Tenant, log)
 	s.SSOChange.SetNotificationService(s.Notification)
+	if s.DomainVerify != nil {
+		s.SSOChange.SetDomainJITStore(s.DomainVerify)
+	}
 
 	// Wire the SSO-path checker so TenantService can refuse enabling sso_enforced
 	// when the tenant has no usable SSO login path. main.go rebuilds s.Tenant, so

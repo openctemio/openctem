@@ -569,6 +569,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.OrgTrust = handler.NewOrgTrustHandler(svc.OrgTrust, log)
 		}
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
+		handlers.VerifiedDomain.SetChangeApproval(svc.SSOChange)
 		// Tenant self-service verification for EASM (research/22 P0-10, E6).
 		var audit handler.AttributionAuditor
 		if svc.Audit != nil {

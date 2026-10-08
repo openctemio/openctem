@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
+	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 )
 
 // SSOChangeRepository persists organization SSO changes that wait for an
@@ -135,6 +136,21 @@ func (r *SSOChangeRepository) Approve(ctx context.Context, tenantID, id, decided
 				return fmt.Errorf("%w: identity provider belongs to another organization", shared.ErrValidation)
 			}
 			return updateIdentityProvider(ctx, tx, write.IdPUpdate)
+		case write.DomainJIT != nil:
+			if write.DomainJIT.TenantID() != tenantID {
+				return fmt.Errorf("%w: domain belongs to another organization", shared.ErrValidation)
+			}
+			on, role := write.DomainJIT.JIT()
+			res, err := tx.ExecContext(ctx,
+				`UPDATE verified_domains SET jit_enabled = $3, jit_role = $4, updated_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+				write.DomainJIT.ID().String(), tenantID.String(), on, nullString(role))
+			if err != nil {
+				return fmt.Errorf("apply domain jit: %w", err)
+			}
+			if n, _ := res.RowsAffected(); n != 1 {
+				return verifieddomain.ErrNotFound
+			}
+			return nil
 		}
 		return fmt.Errorf("%w: approval has nothing to apply", shared.ErrValidation)
 	})
