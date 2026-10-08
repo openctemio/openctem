@@ -442,8 +442,9 @@ func (p *ComponentProcessor) createOrUpdateComponent(
 	dep *ctis.Dependency,
 	output *ComponentOutput,
 ) (shared.ID, error) {
-	// Step 1: Parse ecosystem
-	ecosystem, _ := component.ParseEcosystem(dep.Ecosystem)
+	// Step 1: Ecosystem, from the label or else the package URL (trivy
+	// components carry only a PURL).
+	ecosystem := component.ResolveEcosystem(dep.Ecosystem, dep.PURL)
 
 	// Step 2: Create or update global component
 	comp, err := component.NewComponent(dep.Name, dep.Version, ecosystem)
