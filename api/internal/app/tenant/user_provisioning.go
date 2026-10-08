@@ -74,7 +74,13 @@ type UserProvisioningService struct {
 	audit   *auditapp.AuditService
 	logger  *logger.Logger
 	now     func() time.Time
+	// classifier refuses creating accounts for people outside the
+	// organization (they join by invitation, RFC-058).
+	classifier *AddressClassifier
 }
+
+// SetAddressClassifier wires external-member classification.
+func (s *UserProvisioningService) SetAddressClassifier(c *AddressClassifier) { s.classifier = c }
 
 // NewUserProvisioningService wires the service. mailer and audit may be nil.
 func NewUserProvisioningService(tenants tenantdom.Repository, users userdom.Repository, roles RoleGranter, mailer AccountSetupMailer, auditSvc *auditapp.AuditService, log *logger.Logger) *UserProvisioningService {
@@ -146,6 +152,19 @@ func (s *UserProvisioningService) CreateUser(ctx context.Context, in CreateUserI
 	}
 	if !t.TypedSettings().Security.EmailDomainAllowed(email) {
 		return nil, ErrEmailDomainNotAllowed
+	}
+	// An organization administrator creates accounts for the organization's
+	// own people only; someone outside it joins by accepting an invitation.
+	// The platform administrator's first-owner bootstrap (no creator) is not
+	// limited: the owner's domain is usually not verified yet.
+	if !in.CreatedBy.IsZero() && s.classifier != nil {
+		class, cerr := s.classifier.Classify(ctx, tenantID, email)
+		if cerr != nil {
+			return nil, cerr
+		}
+		if class.Kind == tenantdom.MemberKindExternal {
+			return nil, ErrExternalNeedsInvitation
+		}
 	}
 
 	if _, err := s.users.GetByEmail(ctx, email); err == nil {

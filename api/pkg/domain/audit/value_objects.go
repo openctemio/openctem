@@ -83,6 +83,9 @@ const (
 	// ActionMemberDataErased: an offboarded person's name and email were
 	// anonymised (owner only).
 	ActionMemberDataErased Action = "member.data_erased"
+	// ActionMemberAccessChanged: the end date of an external member's access
+	// was changed (RFC-058).
+	ActionMemberAccessChanged Action = "member.access_changed"
 
 	// Invitation actions
 	ActionInvitationCreated  Action = "invitation.created"
@@ -560,6 +563,7 @@ func (a Action) IsValid() bool {
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
+		ActionMemberAccessChanged,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
 		ActionComponentCreated, ActionComponentUpdated, ActionComponentDeleted,
@@ -666,7 +670,8 @@ func (a Action) Category() string {
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated:
 		return "tenant"
 	case ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged,
-		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased:
+		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
+		ActionMemberAccessChanged:
 		return "member"
 	case ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired:
 		return "invitation"
