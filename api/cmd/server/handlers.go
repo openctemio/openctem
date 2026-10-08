@@ -304,13 +304,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpHandler.SetAuditService(svc.Audit)
 		mcpAuth = apiKeyAuth.Handler
 	}
+	mcpDiscovery := newMCPDiscovery(cfg, log)
 
 	handlers := routes.Handlers{
-		ModuleGate: moduleGate,
-		DataScope:  svc.DataScope,
-		MCP:        mcpHandler,
-		MCPAuth:    mcpAuth,
-		APIKeyAuth: apiKeyAuth,
+		ModuleGate:   moduleGate,
+		DataScope:    svc.DataScope,
+		MCP:          mcpHandler,
+		MCPAuth:      mcpAuth,
+		MCPDiscovery: mcpDiscovery,
+		APIKeyAuth:   apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),

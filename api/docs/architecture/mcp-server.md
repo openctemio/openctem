@@ -34,6 +34,9 @@ chain, because an MCP client presents a static bearer token.
   key has one rate-limit budget across both. See [api-keys.md](./api-keys.md).
 - Any failure → generic `401` (no key enumeration). Keys are never accepted in the
   query string. A JWT bearer is never treated as an API key.
+- The `401` carries `WWW-Authenticate: Bearer resource_metadata=…` (OAuth
+  discovery, [mcp-authorization.md](./mcp-authorization.md)), and a request
+  from a browser page on a foreign `Origin` is `403` before authentication.
 
 Mint a key with the existing JWT-gated CRUD: `POST /api/v1/api-keys` (returns the
 plaintext `oct_…` once).
@@ -69,7 +72,8 @@ plaintext `oct_…` once).
 - **Network policy**: the organization IP allowlist (`security.ip_whitelist`)
   runs right after key auth, exactly as for the same key on the REST API: a key
   used from outside the listed networks gets `403 IP_NOT_ALLOWED` on both. The
-  chain is `[per-IP rate limit, key auth, IP allowlist]` (`routes/mcp.go`).
+  chain is `[Origin check, 401 challenge, per-IP rate limit, key auth, IP
+  allowlist]` (`routes/mcp.go`).
 - **Rate limit**: a per-IP limiter runs before auth. List tools clamp to ≤100 rows.
 - **Errors**: internal errors are redacted; only input-validation messages surface.
 
