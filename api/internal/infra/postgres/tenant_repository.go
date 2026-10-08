@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
@@ -18,6 +19,10 @@ import (
 // TenantRepository implements tenant.Repository using PostgreSQL.
 type TenantRepository struct {
 	db *DB
+	// Seats: invitation accept, SSO JIT, SCIM, administrator-created users
+	// and direct adds all insert through CreateMembership or
+	// AcceptInvitationTx. Invitations: CreateInvitation (invites_per_day).
+	planLimits
 }
 
 // NewTenantRepository creates a new TenantRepository.
@@ -250,6 +255,9 @@ func (r *TenantRepository) ListActiveTenantIDs(ctx context.Context) ([]shared.ID
 // CreateMembership creates a new membership.
 // Inserts into tenant_members (membership record) and user_roles (role assignment).
 func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membership) error {
+	if err := r.checkLimit(ctx, m.TenantID(), plan.Seats, 1); err != nil {
+		return err
+	}
 	// Insert into tenant_members with role. The offboarded tombstone of a
 	// person who left is reused for a re-join (member lifecycle): it is
 	// re-activated with the new id, role and inviter, and starts from zero
@@ -1271,6 +1279,9 @@ func (r *TenantRepository) GetUserMemberships(ctx context.Context, userID shared
 
 // CreateInvitation creates a new invitation.
 func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Invitation) error {
+	if err := r.checkLimit(ctx, inv.TenantID(), plan.InvitesPerDay, 1); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO tenant_invitations (id, tenant_id, email, role, role_ids, token, invited_by, expires_at, created_at,
 		                                access_expires_at, access_expiry_reason)
@@ -1474,6 +1485,9 @@ func (r *TenantRepository) DeletePendingInvitationsByUserID(
 // AcceptInvitationTx atomically updates the invitation and creates the membership in a single transaction.
 // Creates membership in tenant_members and role assignment in user_roles.
 func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.Invitation, m *tenant.Membership) error {
+	if err := r.checkLimit(ctx, inv.TenantID(), plan.Seats, 1); err != nil {
+		return err
+	}
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		// Update invitation
 		updateQuery := `

@@ -91,6 +91,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
@@ -885,9 +886,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
 
-	// Plans and limits (docs/architecture/plans-and-limits.md), with or
-	// without local auth.
+	// Plans and limits: every creation path checks the organization limits
+	// (docs/architecture/plans-and-limits.md). Seats and invitations are
+	// checked where the rows are inserted.
 	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
+	for _, r := range []interface{ SetPlanLimits(plan.Checker) }{
+		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing,
+	} {
+		r.SetPlanLimits(s.Entitlement)
+	}
 
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)

@@ -188,6 +188,12 @@ func (e *ErrLimitReached) Error() string {
 // Unwrap lets errors.Is(err, shared.ErrForbidden) match.
 func (e *ErrLimitReached) Unwrap() error { return shared.ErrForbidden }
 
+// Checker refuses an addition of delta to key over the organization's limit
+// (*ErrLimitReached; fail-closed). entitlement.Service implements it.
+type Checker interface {
+	Check(ctx context.Context, tenantID shared.ID, key Key, delta int) error
+}
+
 // Repository persists plans and overrides.
 type Repository interface {
 	// GetDefaults returns the stored defaults and their version, or
