@@ -111,17 +111,6 @@ export interface StepCondition {
 }
 
 // ============================================
-// SCAN_WORKFLOW TRIGGER
-// ============================================
-
-export interface ScanWorkflowTrigger {
-  type: ScanWorkflowTriggerType
-  schedule?: string
-  webhook?: string
-  filters?: Record<string, unknown>
-}
-
-// ============================================
 // SENSOR PREFERENCE
 // ============================================
 
@@ -151,22 +140,14 @@ export const SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS: Record<
 export interface ScanWorkflowSettings {
   max_parallel_steps: number
   fail_fast: boolean
-  retry_failed_steps: number
   timeout_seconds: number
-  notify_on_complete: boolean
-  notify_on_failure: boolean
-  notification_channels?: string[]
   sensor_preference?: ScanWorkflowSensorPreference
 }
 
 export const DEFAULT_SCAN_WORKFLOW_SETTINGS: ScanWorkflowSettings = {
   max_parallel_steps: 3,
   fail_fast: false,
-  retry_failed_steps: 0,
   timeout_seconds: 3600,
-  notify_on_complete: false,
-  notify_on_failure: true,
-  notification_channels: [],
   sensor_preference: 'auto',
 }
 
@@ -222,7 +203,6 @@ export interface ScanWorkflow {
   version: number
   is_active: boolean
   is_system_template?: boolean
-  triggers: ScanWorkflowTrigger[]
   settings: ScanWorkflowSettings
   tags?: string[]
   steps: ScanWorkflowStep[]
@@ -313,7 +293,6 @@ export interface ScanRun {
 export interface CreateScanWorkflowRequest {
   name: string
   description?: string
-  triggers?: ScanWorkflowTrigger[]
   settings?: Partial<ScanWorkflowSettings>
   tags?: string[]
   steps: CreateStepRequest[]
@@ -347,7 +326,6 @@ export interface CreateStepRequest {
 export interface UpdateScanWorkflowRequest {
   name?: string
   description?: string
-  triggers?: ScanWorkflowTrigger[]
   settings?: Partial<ScanWorkflowSettings>
   tags?: string[]
   steps?: CreateStepRequest[]
