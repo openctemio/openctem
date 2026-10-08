@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-href'
 import {
   byReadiness,
   firstProblem,
@@ -390,7 +391,7 @@ function ChoiceCard({
             {problem?.fix && fixHref && (
               <>
                 {' '}
-                <Link href={fixHref} className="underline">
+                <Link href={safeHref(fixHref) ?? '#'} className="underline">
                   {problem.fix}
                 </Link>
               </>
