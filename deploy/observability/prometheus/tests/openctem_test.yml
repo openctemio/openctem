@@ -1,0 +1,120 @@
+# promtool test rules deploy/observability/prometheus/tests/openctem_test.yml
+# (run from deploy/observability/prometheus; see the CI job and
+# deploy/observability/test/check-config.sh).
+rule_files:
+  - ../rules/openctem.yml
+
+evaluation_interval: 30s
+
+tests:
+  # The API health probe fails: ApiDown after 2 minutes, not before.
+  - interval: 30s
+    input_series:
+      - series: 'probe_success{probe="api-health",job="blackbox",instance="http://api:8080/health"}'
+        values: '1 1 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m30s
+        alertname: ApiDown
+        exp_alerts: []
+      - eval_time: 3m30s
+        alertname: ApiDown
+        exp_alerts:
+          - exp_labels: {severity: critical, component: platform, probe: api-health, job: blackbox, instance: 'http://api:8080/health'}
+            exp_annotations:
+              summary: The API does not answer its health check
+              description: GET /health on the API failed for 2 minutes. Every user and sensor request fails.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apidown
+
+  # /metrics fails while /health answers: the token is wrong.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="openctem-api",instance="api:8080"}'
+        values: '0x15'
+      - series: 'probe_success{probe="api-health",job="blackbox",instance="http://api:8080/health"}'
+        values: '1x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ApiScrapeFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, component: platform, job: openctem-api, instance: 'api:8080'}
+            exp_annotations:
+              summary: The API is up but its metrics cannot be read
+              description: The API answers /health but /metrics fails, so the API alerts are blind. Usually METRICS_TOKEN differs between the API and the monitoring stack.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apiscrapefailing
+
+  # 5% of disk left: both levels fire (Alertmanager hides the warning).
+  - interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{mountpoint="/",fstype="ext4",job="node",instance="node-exporter:9100",device="/dev/sda1"}'
+        values: '5x15'
+      - series: 'node_filesystem_size_bytes{mountpoint="/",fstype="ext4",job="node",instance="node-exporter:9100",device="/dev/sda1"}'
+        values: '100x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: HostDiskLow
+        exp_alerts:
+          - exp_labels: {severity: warning, component: platform, mountpoint: /, fstype: ext4, job: node, instance: 'node-exporter:9100', device: /dev/sda1}
+            exp_annotations:
+              summary: '/ has 5% free'
+              description: When the disk fills, Postgres stops (PANIC) and the platform goes down.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostdisklow
+          - exp_labels: {severity: critical, component: platform, mountpoint: /, fstype: ext4, job: node, instance: 'node-exporter:9100', device: /dev/sda1}
+            exp_annotations:
+              summary: '/ has only 5% free'
+              description: Postgres will PANIC when the disk is full. Free space now.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostdisklow
+
+  # A new audit chain break pages at once; the counter standing still does not.
+  - interval: 1m
+    input_series:
+      - series: 'openctem_security_audit_chain_breaks_total{reason="hash_mismatch",job="openctem-api",instance="api:8080"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: AuditChainBreak
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: AuditChainBreak
+        exp_alerts:
+          - exp_labels: {severity: critical, component: api, reason: hash_mismatch}
+            exp_annotations:
+              summary: The audit log hash chain has 1 new break(s) (hash_mismatch)
+              description: An audit entry was changed or removed outside the API. Treat as a security incident.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#auditchainbreak
+      - eval_time: 45m
+        alertname: AuditChainBreak
+        exp_alerts: []
+
+  # The API ships migration 1300 but the database is at 1299.
+  - interval: 1m
+    input_series:
+      - series: 'openctem_schema_version{source="shipped",job="openctem-api",instance="api:8080"}'
+        values: '1300x10'
+      - series: 'openctem_schema_version{source="applied",job="openctem-api",instance="api:8080"}'
+        values: '1299x10'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: SchemaBehind
+        exp_alerts:
+          - exp_labels: {severity: critical, component: api}
+            exp_annotations:
+              summary: The database schema is behind the running API
+              description: The API ships a newer migration than the database has; queries on new columns fail. Run the migrations.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#schemabehind
+
+  # A backup more than 26 hours old.
+  - interval: 1m
+    input_series:
+      - series: 'openctem_backup_last_success_timestamp_seconds{job="node",instance="node-exporter:9100"}'
+        values: '0x1700'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: BackupStale
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels: {severity: critical, component: platform}
+            exp_annotations:
+              summary: The last successful database backup is 1d 3h 0m 0s old
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#backupstale
