@@ -32,6 +32,7 @@ type Config struct {
 	OAuth        OAuthConfig
 	Keycloak     KeycloakConfig
 	CORS         CORSConfig
+	MCP          MCPConfig
 	RateLimit    RateLimitConfig
 	SMTP         SMTPConfig
 	Worker       SensorConfig
@@ -717,6 +718,14 @@ func (c *KeycloakConfig) IssuerURL() string {
 	return fmt.Sprintf("%s/realms/%s", c.BaseURL, c.Realm)
 }
 
+// MCPConfig is the authorization server of the MCP endpoint (RFC-062).
+type MCPConfig struct {
+	// TrustedClientHosts are hosts whose Client ID Metadata Documents every
+	// organization treats as verified (MCP_OAUTH_TRUSTED_CLIENT_HOSTS,
+	// comma-separated). Organizations add their own on top.
+	TrustedClientHosts []string
+}
+
 // CORSConfig holds CORS configuration.
 type CORSConfig struct {
 	AllowedOrigins []string
@@ -1227,6 +1236,9 @@ func Load() (*Config, error) {
 			ClientID:            getEnv("KEYCLOAK_CLIENT_ID", ""),
 			JWKSRefreshInterval: getEnvDuration("KEYCLOAK_JWKS_REFRESH_INTERVAL", 1*time.Hour),
 			HTTPTimeout:         getEnvDuration("KEYCLOAK_HTTP_TIMEOUT", 10*time.Second),
+		},
+		MCP: MCPConfig{
+			TrustedClientHosts: getEnvSlice("MCP_OAUTH_TRUSTED_CLIENT_HOSTS", nil),
 		},
 		CORS: CORSConfig{
 			// F-12: Default to localhost dev origin instead of wildcard. Production

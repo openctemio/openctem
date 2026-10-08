@@ -2,6 +2,8 @@ package routes
 
 import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 )
 
 // registerMCPOAuthRoutes mounts the authorization server of the MCP endpoint
@@ -25,11 +27,23 @@ func registerMCPOAuthRoutes(router Router, h *handler.MCPOAuthHandler, rateLimit
 	router.POST("/oauth/revoke", h.Revoke, pub...)
 
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
 	router.Group("/api/v1/oauth/requests", func(r Router) {
 		// Any member may connect an application for themselves: the grant
 		// never exceeds what they hold, so no permission gate applies.
 		r.GET("/{id}", h.GetConsentRequest)
 		r.POST("/{id}/approve", h.ApproveConsent)
 		r.POST("/{id}/deny", h.DenyConsent)
+	}, tenantMiddlewares...)
+}
+
+// registerMCPSettingsRoutes mounts the organization MCP policy (RFC-062 §8).
+// Changing it needs a recent sign-in, like the other security settings; API
+// keys are refused here (APIKeyRouteDenied).
+func registerMCPSettingsRoutes(router Router, h *handler.MCPSettingsHandler, authMiddleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/mcp-access/settings", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
+		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 }

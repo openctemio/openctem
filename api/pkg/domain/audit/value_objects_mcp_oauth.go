@@ -20,6 +20,9 @@ const (
 	// ActionMCPGrantRevoked records a grant revoked by the client
 	// (revocation endpoint), the person or an administrator.
 	ActionMCPGrantRevoked Action = "mcp_grant.revoked"
+	// ActionMCPSettingsUpdated records a change of the organization's MCP
+	// policy (RFC-062 §8).
+	ActionMCPSettingsUpdated Action = "mcp_settings.updated"
 )
 
 // Resource types of the MCP OAuth actions.
@@ -34,6 +37,7 @@ var _ = registerActions("mcp", map[Action]Severity{
 	ActionMCPCodeReused:       SeverityHigh,
 	ActionMCPRefreshReused:    SeverityHigh,
 	ActionMCPGrantRevoked:     SeverityMedium,
+	ActionMCPSettingsUpdated:  SeverityHigh,
 })
 
 func init() {

@@ -55,6 +55,8 @@ type Handlers struct {
 	// MCPOAuth is the authorization server of the MCP endpoint (RFC-062);
 	// nil without discovery or a database.
 	MCPOAuth *handler.MCPOAuthHandler
+	// MCPSettings is the organization MCP policy (RFC-062 §8).
+	MCPSettings *handler.MCPSettingsHandler
 	// APIKeyAuth authenticates `oct_` API keys on the tenant REST routes (the
 	// token-tenant chains), read-only. Share the instance behind MCPAuth so a
 	// key has one rate-limit budget. nil leaves the REST API JWT-only.
@@ -648,6 +650,11 @@ func Register(
 	// Indicators of Compromise (IOC catalogue, feeds B6 correlator)
 	if h.IOC != nil {
 		registerIOCRoutes(router, h.IOC, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleIOCs))
+	}
+
+	// Organization MCP policy (RFC-062 §8).
+	if h.MCPSettings != nil {
+		registerMCPSettingsRoutes(router, h.MCPSettings, authMiddleware, userSync)
 	}
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
