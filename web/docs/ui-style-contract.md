@@ -5,10 +5,9 @@ deviation needs a reason written next to it in code. The Findings page
 (`src/app/(dashboard)/findings/page.tsx`) is the reference implementation of a
 list page.
 
-Decisions D14–D16 (approved 2026-10-03) added density, default sort, saved
-views, "Scroll all", the batch-bar rule, server facets, honest dashboard
-tiles and the three empty-state kinds. Background:
-`docs/ui/inventory-integrations-2026-10.md` §10.
+Decisions D14–D16 cover density, default sort, saved views, "Scroll all", the
+batch-bar rule, server facets, honest dashboard tiles and the three empty-state
+kinds.
 
 ## 1. Page anatomy
 

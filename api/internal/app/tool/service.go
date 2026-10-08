@@ -1370,7 +1370,7 @@ func (s *Service) RecordToolExecution(ctx context.Context, input RecordToolExecu
 	if input.ScanRunID != "" {
 		prid, err := shared.IDFromString(input.ScanRunID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid pipeline_run id", shared.ErrValidation)
+			return nil, fmt.Errorf("%w: invalid scan run id", shared.ErrValidation)
 		}
 		execution.ScanRunID = &prid
 	}
@@ -1560,7 +1560,7 @@ func (s *Service) ListToolExecutions(ctx context.Context, input ListToolExecutio
 	if input.ScanRunID != "" {
 		scanRunID, err := shared.IDFromString(input.ScanRunID)
 		if err != nil {
-			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid pipeline_run id", shared.ErrValidation)
+			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid scan run id", shared.ErrValidation)
 		}
 		filter.ScanRunID = &scanRunID
 	}

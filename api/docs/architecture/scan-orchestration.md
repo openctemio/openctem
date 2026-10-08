@@ -494,6 +494,8 @@ POST /api/v1/scans/{id}/trigger
 # 3. Sensor polls for command
 GET /api/v2/sensor/commands
 # Returns command with step_key, preferred_tool, payload
+# (targets re-checked against the current scope first; see
+# active-probe-gate.md "Re-check at claim")
 
 # 4. Sensor executes and reports
 POST /api/v2/sensor/commands/{id}/claim

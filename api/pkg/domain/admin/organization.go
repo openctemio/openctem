@@ -23,12 +23,26 @@ type Organization struct {
 	ActiveIdentityProviders int
 	VerifiedDomains         int
 	SSOEnforced             bool
+	// Plan is the organization's plan (free, pro, enterprise); one created
+	// before plans has no stored plan and is enterprise.
+	Plan string
 }
+
+// Owner filter values for OrganizationFilter.Owner.
+const (
+	OrganizationOwnerNone    = "none"
+	OrganizationOwnerPresent = "present"
+)
 
 // OrganizationFilter narrows the organization list.
 type OrganizationFilter struct {
 	// Search matches name or slug, case-insensitively.
 	Search string
+	// Owner is OrganizationOwnerNone (no active owner), OrganizationOwnerPresent
+	// or empty (any).
+	Owner string
+	// Plan keeps organizations on this plan; empty means any.
+	Plan   string
 	Limit  int
 	Offset int
 }
