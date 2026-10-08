@@ -266,7 +266,7 @@ func TestAdminConsoleLoginEndToEnd(t *testing.T) {
 }
 
 // TestPlatformAdminCannotJoinOrganization checks the database guarantee
-// behind the Tenable model: an administrator's account belongs to no
+// behind the platform administrator model: an administrator's account belongs to no
 // organization, and an organization member cannot be made an administrator.
 func TestPlatformAdminCannotJoinOrganization(t *testing.T) {
 	db := openConsoleDB(t)

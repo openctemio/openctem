@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -120,7 +119,7 @@ func (s *Service) fetch(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("ctem-id feed returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFeedBytes))
+	body, err := httpsec.ReadLimited(resp.Body, maxFeedBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read ctem-id feed: %w", err)
 	}

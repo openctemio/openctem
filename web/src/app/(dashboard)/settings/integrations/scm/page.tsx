@@ -327,7 +327,11 @@ export default function SCMConnectionsPage() {
           title="SCM connections"
           description="Connect GitHub, GitLab, Bitbucket or Azure DevOps, then import repositories for scanning."
         >
-          <Button variant="outline" size="sm" onClick={() => router.push('/assets/repositories')}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push('/assets?types=repository')}
+          >
             <GitBranch className="me-2 h-4 w-4" />
             Repositories
           </Button>

@@ -250,7 +250,7 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 		if !findingGone && in.Decide != nil {
 			d := in.Decide(res.PriorStatus)
 			if d.Change && d.Next != res.PriorStatus {
-				if err := moveFindingInTx(ctx, tx, in, d.Next); err != nil {
+				if err := moveFindingInTx(ctx, tx, in, res.PriorStatus, d.Next); err != nil {
 					return err
 				}
 				res.Moved = true
@@ -287,7 +287,12 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 }
 
 // moveFindingInTx writes the retest's status change on a locked finding row.
-func moveFindingInTx(ctx context.Context, tx *sql.Tx, in retest.SettleInput, next vulnerability.FindingStatus) error {
+// A move the finding lifecycle does not allow is refused, and the whole
+// settle rolls back.
+func moveFindingInTx(ctx context.Context, tx *sql.Tx, in retest.SettleInput, prior, next vulnerability.FindingStatus) error {
+	if err := vulnerability.CheckPlatformTransitions(next, prior); err != nil {
+		return fmt.Errorf("move finding: %w", err)
+	}
 	var err error
 	if next == vulnerability.FindingStatusResolved {
 		_, err = tx.ExecContext(ctx, `
