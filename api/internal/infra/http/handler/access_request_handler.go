@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // AccessRequestHandler serves the request-access queue: the public form and
@@ -118,10 +118,13 @@ type AccessRequestResponse struct {
 	ConfirmedAt *time.Time `json:"confirmed_at,omitempty"`
 }
 
-// AccessRequestListResponse is a page of requests.
+// AccessRequestListResponse is a page of requests (the list envelope).
 type AccessRequestListResponse struct {
-	Data  []AccessRequestResponse `json:"data"`
-	Total int                     `json:"total"`
+	Data       []AccessRequestResponse `json:"data"`
+	Total      int64                   `json:"total"`
+	Page       int                     `json:"page"`
+	PerPage    int                     `json:"per_page"`
+	TotalPages int                     `json:"total_pages"`
 }
 
 func toAccessRequestResponse(a *ardom.Request) AccessRequestResponse {
@@ -141,7 +144,9 @@ func toAccessRequestResponse(a *ardom.Request) AccessRequestResponse {
 // @Description  Open requests (pending and unconfirmed) by default; status=pending|unconfirmed|approved|rejected filters.
 // @Tags         Admin Organizations
 // @Produce      json
-// @Param        status  query  string  false  "Status"
+// @Param        status    query  string  false  "Status"
+// @Param        page      query  int     false  "Page (1-based)"
+// @Param        per_page  query  int     false  "Page size (default 50, at most 100)"
 // @Success      200  {object}  AccessRequestListResponse
 // @Router       /admin/access-requests [get]
 func (h *AccessRequestHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -150,15 +155,21 @@ func (h *AccessRequestHandler) List(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid status").WriteJSON(w)
 		return
 	}
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	items, total, err := h.svc.List(r.Context(), ardom.Filter{Status: status, Limit: limit, Offset: offset})
+	page, ok := listPage(w, r, 50)
+	if !ok {
+		return
+	}
+	items, total, err := h.svc.List(r.Context(), ardom.Filter{Status: status, Limit: page.Limit(), Offset: page.Offset()})
 	if err != nil {
 		h.logger.Error("list access requests", "error", err)
 		apierror.InternalServerError("could not list access requests").WriteJSON(w)
 		return
 	}
-	resp := AccessRequestListResponse{Data: make([]AccessRequestResponse, 0, len(items)), Total: total}
+	result := pagination.NewResult(items, int64(total), page)
+	resp := AccessRequestListResponse{
+		Data:  make([]AccessRequestResponse, 0, len(items)),
+		Total: result.Total, Page: result.Page, PerPage: result.PerPage, TotalPages: result.TotalPages,
+	}
 	for _, a := range items {
 		resp.Data = append(resp.Data, toAccessRequestResponse(a))
 	}
