@@ -60,8 +60,15 @@ type VerifiedDomain struct {
 	purpose           Purpose
 	verifiedAt        *time.Time
 	lastCheckedAt     *time.Time
-	createdAt         time.Time
-	updatedAt         time.Time
+	// lapsedAt is when a verified row last lost its DNS proof; another
+	// organization may claim the domain only ClaimDisputeWindow after it.
+	lapsedAt *time.Time
+	// claimConflict marks a row of a domain that several organizations had
+	// verified for SSO before claims were exclusive (migration 001303). The
+	// platform administrator resolves it; until then the row keeps working.
+	claimConflict bool
+	createdAt     time.Time
+	updatedAt     time.Time
 }
 
 // New creates a pending VerifiedDomain. The domain is normalized and validated;
@@ -127,6 +134,28 @@ func (d *VerifiedDomain) Purpose() Purpose          { return d.purpose }
 // verified, and set up for SSO (E6). An EASM-purpose domain never does.
 func (d *VerifiedDomain) AdmitsSSO() bool { return d.IsVerified() && d.purpose == PurposeSSO }
 
+// WithClaimState sets the claim bookkeeping of a reconstructed row.
+func (d *VerifiedDomain) WithClaimState(lapsedAt *time.Time, conflict bool) *VerifiedDomain {
+	d.lapsedAt = lapsedAt
+	d.claimConflict = conflict
+	return d
+}
+
+// LapsedAt is when the row last lost its DNS proof (nil when it never did or
+// has been verified again since).
+func (d *VerifiedDomain) LapsedAt() *time.Time { return d.lapsedAt }
+
+// ClaimConflict reports whether another organization also held this domain
+// verified for SSO when claims became exclusive.
+func (d *VerifiedDomain) ClaimConflict() bool { return d.claimConflict }
+
+// ClearClaimConflict drops the conflict flag once no other organization holds
+// the domain.
+func (d *VerifiedDomain) ClearClaimConflict(t time.Time) {
+	d.claimConflict = false
+	d.updatedAt = t.UTC()
+}
+
 // WithPurpose sets the purpose of a new or reconstructed row; an unknown
 // value is ignored.
 func (d *VerifiedDomain) WithPurpose(p Purpose) *VerifiedDomain {
@@ -149,6 +178,7 @@ func (d *VerifiedDomain) MarkVerified(t time.Time) {
 	d.status = StatusVerified
 	d.verifiedAt = &t
 	d.lastCheckedAt = &t
+	d.lapsedAt = nil
 	d.updatedAt = t
 }
 
@@ -159,6 +189,7 @@ func (d *VerifiedDomain) MarkChecked(t time.Time) {
 	t = t.UTC()
 	if d.status == StatusVerified {
 		d.status = StatusFailed
+		d.lapsedAt = &t
 	}
 	d.lastCheckedAt = &t
 	d.updatedAt = t

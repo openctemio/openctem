@@ -859,6 +859,12 @@ and certificates are never logged — an IdP update records
 | `PUT/POST/DELETE` on those SSO resources | **super_admin** (audited). SAML `PUT` and identity-provider `POST`/`PUT` on an organization **with an owner** only store a pending change (202) that an owner must approve; see below |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/changes` | any admin (what is waiting for the owner) |
 
+Verifying an SSO domain reads other organizations' rows for the same domain
+(`ListSSOClaims`): an SSO domain is claimed by one organization platform-wide
+(`sso-authentication.md`, "Domain claims are exclusive"). Only the decision
+leaves the service (409 "verified by another organization"); the other
+organization is never named.
+
 **First-owner bootstrap** (owner decision 2026-10-02, RFC-022 revision 5).
 The platform administrator belongs to no organization and cannot put a person
 of its choosing into one: `POST /admin/tenants/{tenantId}/users` creates only
