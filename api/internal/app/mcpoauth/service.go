@@ -46,16 +46,19 @@ type AuditLogger interface {
 
 // Service is the authorization server.
 type Service struct {
-	repo        mcpoauth.Repository
-	endpoints   mcpoauth.Endpoints
-	pepper      string
-	oldPeppers  []string
-	fetcher     MetadataFetcher
-	members     MembershipChecker
-	permissions HolderPermissions
-	audit       AuditLogger
-	log         *logger.Logger
-	now         func() time.Time
+	repo         mcpoauth.Repository
+	endpoints    mcpoauth.Endpoints
+	pepper       string
+	oldPeppers   []string
+	fetcher      MetadataFetcher
+	members      MembershipChecker
+	permissions  HolderPermissions
+	policies     PolicyReader
+	connections  mcpoauth.ConnectionRepository
+	trustedHosts []string
+	audit        AuditLogger
+	log          *logger.Logger
+	now          func() time.Time
 }
 
 // Config wires the service.
@@ -67,8 +70,16 @@ type Config struct {
 	Fetcher     MetadataFetcher
 	Members     MembershipChecker
 	Permissions HolderPermissions
-	Audit       AuditLogger
-	Logger      *logger.Logger
+	// Connections lists and manages connections (RFC-062 §12); optional.
+	Connections mcpoauth.ConnectionRepository
+	// Policies reads the organization MCP policy (RFC-062 §8); nil applies
+	// the defaults.
+	Policies PolicyReader
+	// TrustedClientHosts are metadata-document hosts the platform vouches
+	// for (MCP_OAUTH_TRUSTED_CLIENT_HOSTS).
+	TrustedClientHosts []string
+	Audit              AuditLogger
+	Logger             *logger.Logger
 }
 
 // NewService builds the authorization server. Members and Permissions are
@@ -81,6 +92,7 @@ func NewService(c Config) (*Service, error) {
 	return &Service{
 		repo: c.Repository, endpoints: c.Endpoints, pepper: c.Pepper, oldPeppers: c.OldPeppers,
 		fetcher: c.Fetcher, members: c.Members, permissions: c.Permissions, audit: c.Audit,
+		policies: c.Policies, trustedHosts: NormalizeTrustedHosts(c.TrustedClientHosts), connections: c.Connections,
 		log: c.Logger.With("service", "mcp-oauth"), now: time.Now,
 	}, nil
 }
@@ -225,6 +237,8 @@ type ScopeView struct {
 	// Granted is false when the person holds none of the scope's
 	// permissions in the organization: the scope would give nothing.
 	Granted bool
+	// NotAllowed: the organization's policy does not let members grant it.
+	NotAllowed bool
 }
 
 // ConsentView is what the consent page shows.
@@ -237,8 +251,14 @@ type ConsentView struct {
 	RedirectURI  string
 	RedirectHost string
 	LoopbackOnly bool
-	Scopes       []ScopeView
-	ExpiresAt    time.Time
+	// Verified: registered by the organization or the platform, or
+	// published on a host the organization or the platform lists.
+	Verified bool
+	// Blocked is why the organization's policy refuses the application
+	// (BlockedMCPDisabled, BlockedClientNotFound), or "".
+	Blocked   string
+	Scopes    []ScopeView
+	ExpiresAt time.Time
 }
 
 // ErrConsentUnavailable is any consent request that cannot be acted on:
@@ -264,6 +284,10 @@ func (s *Service) ConsentRequest(ctx context.Context, requestID, userID, tenantI
 	if err != nil {
 		return nil, fmt.Errorf("read permissions: %w", err)
 	}
+	pol, err := s.policy(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("read mcp policy: %w", err)
+	}
 	view := &ConsentView{
 		RequestID:    req.ID.String(),
 		ClientName:   req.Client.Name,
@@ -274,11 +298,15 @@ func (s *Service) ConsentRequest(ctx context.Context, requestID, userID, tenantI
 		RedirectHost: mcpoauth.RedirectHost(req.RedirectURI),
 		LoopbackOnly: mcpoauth.IsLoopbackOnly(req.Client.RedirectURIs),
 		ExpiresAt:    req.ExpiresAt,
+		Verified:     s.verifiedClient(pol, req.Client, tenantID),
+		Blocked:      s.blockedReason(pol, req.Client, tenantID),
 	}
 	for _, sc := range req.Scopes {
+		allowed := allowsScope(pol, sc)
 		view.Scopes = append(view.Scopes, ScopeView{
 			Scope: sc, Title: mcpoauth.Title(sc), Write: mcpoauth.IsWrite(sc),
-			Granted: all || len(intersect(mcpoauth.Permissions([]mcpoauth.Scope{sc}), held)) > 0,
+			Granted:    allowed && (all || len(intersect(mcpoauth.Permissions([]mcpoauth.Scope{sc}), held)) > 0),
+			NotAllowed: !allowed,
 		})
 	}
 	return view, nil
@@ -310,12 +338,19 @@ func (s *Service) Approve(ctx context.Context, requestID, userID, tenantID share
 	if err != nil || !ok {
 		return "", ErrConsentUnavailable
 	}
+	pol, err := s.policy(ctx, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("read mcp policy: %w", err)
+	}
+	if s.blockedReason(pol, req.Client, tenantID) != "" {
+		return "", ErrPolicy
+	}
 	all, held, err := s.permissions.HeldPermissions(ctx, tenantID, userID)
 	if err != nil {
 		return "", fmt.Errorf("read permissions: %w", err)
 	}
 	granted := make([]mcpoauth.Scope, 0, len(req.Scopes))
-	for _, sc := range req.Scopes {
+	for _, sc := range allowedScopes(pol, req.Scopes) {
 		if all || len(intersect(mcpoauth.Permissions([]mcpoauth.Scope{sc}), held)) > 0 {
 			granted = append(granted, sc)
 		}
@@ -428,15 +463,23 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, actor Actor
 	if ok, err := s.members.IsActiveMember(ctx, *req.TenantID, *req.UserID); err != nil || !ok {
 		return nil, invalid
 	}
+	pol, err := s.policy(ctx, *req.TenantID)
+	if err != nil || s.blockedReason(pol, req.Client, *req.TenantID) != "" {
+		return nil, invalid
+	}
+	scopes := allowedScopes(pol, req.GrantedScopes)
+	if len(scopes) == 0 {
+		return nil, invalid
+	}
 	grant := &mcpoauth.Grant{
 		ID:        shared.NewID(),
 		TenantID:  *req.TenantID,
 		UserID:    *req.UserID,
 		Client:    req.Client,
 		Resource:  req.Resource,
-		Scopes:    req.GrantedScopes,
+		Scopes:    scopes,
 		CreatedAt: now,
-		ExpiresAt: now.Add(mcpoauth.GrantMaxTTL),
+		ExpiresAt: now.Add(min(mcpoauth.GrantMaxTTL, grantLifetime(pol))),
 	}
 	resp, tokens, err := s.newTokens(grant, now)
 	if err != nil {
@@ -477,6 +520,14 @@ func (s *Service) refresh(ctx context.Context, form url.Values, actor Actor) (*T
 		if err == nil {
 			_ = s.repo.RevokeGrant(ctx, grant.TenantID, grant.ID, mcpoauth.RevokedMembershipGone, now)
 		}
+		return nil, invalid
+	}
+	pol, err := s.policy(ctx, grant.TenantID)
+	if err != nil {
+		return nil, oauthErr("server_error", "try again")
+	}
+	if s.blockedReason(pol, grant.Client, grant.TenantID) != "" || !now.Before(grant.CreatedAt.Add(grantLifetime(pol))) {
+		_ = s.repo.RevokeGrant(ctx, grant.TenantID, grant.ID, mcpoauth.RevokedByPolicy, now)
 		return nil, invalid
 	}
 	var narrowed []mcpoauth.Scope
@@ -623,7 +674,11 @@ func (s *Service) AuthenticateAccessToken(ctx context.Context, raw, ip string) (
 	if err != nil {
 		return nil, ErrInvalidToken
 	}
-	scopePerms := mcpoauth.Permissions(grant.Scopes)
+	pol, err := s.policy(ctx, grant.TenantID)
+	if err != nil || s.blockedReason(pol, grant.Client, grant.TenantID) != "" {
+		return nil, ErrInvalidToken
+	}
+	scopePerms := mcpoauth.Permissions(allowedScopes(pol, grant.Scopes))
 	effective := scopePerms
 	if !all {
 		effective = intersect(scopePerms, held)

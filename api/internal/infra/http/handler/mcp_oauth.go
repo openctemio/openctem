@@ -206,19 +206,25 @@ type consentScopeResponse struct {
 	Title   string `json:"title"`
 	Write   bool   `json:"write"`
 	Granted bool   `json:"granted"`
+	// NotAllowed: the organization policy does not let members grant it.
+	NotAllowed bool `json:"not_allowed"`
 }
 
 type consentRequestResponse struct {
-	ID           string                 `json:"id"`
-	ClientName   string                 `json:"client_name"`
-	ClientID     string                 `json:"client_id"`
-	ClientKind   string                 `json:"client_kind"`
-	ClientHost   string                 `json:"client_host,omitempty"`
-	RedirectHost string                 `json:"redirect_host"`
-	RedirectURI  string                 `json:"redirect_uri"`
-	LoopbackOnly bool                   `json:"loopback_only"`
-	Scopes       []consentScopeResponse `json:"scopes"`
-	ExpiresAt    time.Time              `json:"expires_at"`
+	ID           string `json:"id"`
+	ClientName   string `json:"client_name"`
+	ClientID     string `json:"client_id"`
+	ClientKind   string `json:"client_kind"`
+	ClientHost   string `json:"client_host,omitempty"`
+	RedirectHost string `json:"redirect_host"`
+	RedirectURI  string `json:"redirect_uri"`
+	LoopbackOnly bool   `json:"loopback_only"`
+	Verified     bool   `json:"verified"`
+	// Blocked is why the organization policy refuses the application
+	// (mcp_disabled, client_not_allowed), or empty.
+	Blocked   string                 `json:"blocked,omitempty"`
+	Scopes    []consentScopeResponse `json:"scopes"`
+	ExpiresAt time.Time              `json:"expires_at"`
 }
 
 type consentDecisionResponse struct {
@@ -264,10 +270,10 @@ func (h *MCPOAuthHandler) GetConsentRequest(w http.ResponseWriter, r *http.Reque
 	out := consentRequestResponse{
 		ID: view.RequestID, ClientName: view.ClientName, ClientID: view.ClientID, ClientKind: string(view.ClientKind),
 		ClientHost: view.ClientHost, RedirectHost: view.RedirectHost, RedirectURI: view.RedirectURI,
-		LoopbackOnly: view.LoopbackOnly, ExpiresAt: view.ExpiresAt,
+		LoopbackOnly: view.LoopbackOnly, ExpiresAt: view.ExpiresAt, Verified: view.Verified, Blocked: view.Blocked,
 	}
 	for _, s := range view.Scopes {
-		out.Scopes = append(out.Scopes, consentScopeResponse{Scope: string(s.Scope), Title: s.Title, Write: s.Write, Granted: s.Granted})
+		out.Scopes = append(out.Scopes, consentScopeResponse{Scope: string(s.Scope), Title: s.Title, Write: s.Write, Granted: s.Granted, NotAllowed: s.NotAllowed})
 	}
 	noStoreJSON(w, http.StatusOK, out)
 }
@@ -325,6 +331,8 @@ func (h *MCPOAuthHandler) consentError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, mcpoauthapp.ErrNothingToGrant):
 		apierror.Forbidden("You have none of the access this application asks for in this organization").WriteJSON(w)
+	case errors.Is(err, mcpoauthapp.ErrPolicy):
+		apierror.Forbidden("Your organization does not allow this application").WriteJSON(w)
 	case errors.Is(err, mcpoauthapp.ErrConsentUnavailable):
 		apierror.NotFound("Authorization request").WriteJSON(w)
 	default:

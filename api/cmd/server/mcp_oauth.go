@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+
 	"github.com/openctemio/openctem/api/internal/app/apikey"
 	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -8,6 +10,8 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -41,13 +45,19 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 	if d == nil || deps.DB == nil || svc == nil || repos == nil || svc.PermCache == nil || repos.Tenant == nil || repos.User == nil {
 		return nil
 	}
+	var policies mcpoauthapp.PolicyReader
+	if svc.Tenant != nil {
+		policies = mcpPolicyReader{tenants: svc.Tenant}
+	}
 	var audit mcpoauthapp.AuditLogger
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
+	repo := postgres.NewMCPOAuthRepository(deps.DB)
 	s, err := mcpoauthapp.NewService(mcpoauthapp.Config{
-		Repository: postgres.NewMCPOAuthRepository(deps.DB),
-		Endpoints:  d.Endpoints,
+		Repository:  repo,
+		Connections: repo,
+		Endpoints:   d.Endpoints,
 		// Codes and tokens are stored as HMAC-SHA256 with the application
 		// key; tokens hashed under a previous key keep working during a
 		// rotation.
@@ -58,10 +68,31 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 		Permissions: apikey.NewHolderPermissions(repos.Tenant, svc.PermCache),
 		Audit:       audit,
 		Logger:      log,
+		Policies:    policies,
+		// Platform-wide verified client hosts (operator list).
+		TrustedClientHosts: cfg.MCP.TrustedClientHosts,
 	})
 	if err != nil {
 		log.Warn("MCP OAuth off", "error", err.Error())
 		return nil
 	}
 	return s
+}
+
+// mcpPolicyReader reads an organization's MCP policy from its settings.
+type mcpPolicyReader struct {
+	tenants interface {
+		GetMCPSettings(ctx context.Context, tenantID string) (*tenantdom.MCPSettings, error)
+	}
+}
+
+func (r mcpPolicyReader) MCPPolicy(ctx context.Context, tenantID shared.ID) (tenantdom.MCPSettings, error) {
+	if r.tenants == nil {
+		return tenantdom.MCPSettings{}, nil
+	}
+	p, err := r.tenants.GetMCPSettings(ctx, tenantID.String())
+	if err != nil {
+		return tenantdom.MCPSettings{}, err
+	}
+	return *p, nil
 }

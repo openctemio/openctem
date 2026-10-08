@@ -18,7 +18,12 @@ export interface ConsentScope {
   write: boolean
   /** False when the person holds none of the scope's permissions here. */
   granted: boolean
+  /** The organization's policy does not let members grant it. */
+  not_allowed: boolean
 }
+
+/** Why the organization's policy refuses the application. */
+export type ConsentBlocked = 'mcp_disabled' | 'client_not_allowed'
 
 export interface ConsentRequest {
   id: string
@@ -30,6 +35,9 @@ export interface ConsentRequest {
   redirect_host: string
   redirect_uri: string
   loopback_only: boolean
+  /** Registered by the organization or published on a host it trusts. */
+  verified: boolean
+  blocked?: ConsentBlocked
   scopes: ConsentScope[]
   expires_at: string
 }
@@ -87,6 +95,13 @@ export function isSafeRedirect(to: string): boolean {
   } catch {
     return false
   }
+}
+
+/** Why the organization refuses the application, in words. */
+export function blockedMessage(b: ConsentBlocked): string {
+  return b === 'mcp_disabled'
+    ? 'Your organization has turned off AI application access.'
+    : 'Your organization only allows approved applications. Ask an administrator to allow this one.'
 }
 
 /** How a client identifies itself, in words. */

@@ -134,6 +134,7 @@ const (
 	RevokedRefreshReuse   = "refresh_reuse"
 	RevokedCodeReuse      = "code_reuse"
 	RevokedMembershipGone = "membership"
+	RevokedByPolicy       = "policy"
 )
 
 // Errors of the repository and the service.
@@ -183,4 +184,29 @@ type Repository interface {
 	RevokeGrant(ctx context.Context, tenantID, grantID shared.ID, reason string, now time.Time) error
 	// TouchGrant records the last use of a grant.
 	TouchGrant(ctx context.Context, tenantID, grantID shared.ID, ip string, now time.Time) error
+}
+
+// Connection is a grant as a list shows it, with the person it belongs to.
+type Connection struct {
+	Grant     Grant
+	UserName  string
+	UserEmail string
+}
+
+// ClientUsage is a client with its active connections (counts only).
+type ClientUsage struct {
+	Client            Client
+	ActiveConnections int
+	Organizations     int
+	LastUsedAt        *time.Time
+}
+
+// ConnectionRepository lists and manages connections (RFC-062 §12).
+type ConnectionRepository interface {
+	ListConnections(ctx context.Context, tenantID shared.ID, userID *shared.ID, now time.Time) ([]Connection, error)
+	GetGrant(ctx context.Context, tenantID, grantID shared.ID) (*Grant, error)
+	// ListClientsForPlatform and SetClientBlockedForPlatform serve the
+	// platform admin console only.
+	ListClientsForPlatform(ctx context.Context, now time.Time) ([]ClientUsage, error)
+	SetClientBlockedForPlatform(ctx context.Context, clientRef shared.ID, blocked bool, now time.Time) error
 }
