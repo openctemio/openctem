@@ -91,6 +91,17 @@ refusal increments `openctem_plan_limit_refusals_total{key}`.
 The defaults are stored in `platform_settings` under `plan_limits`; until an
 administrator saves them the built-in defaults above apply.
 
+## Where people see it
+
+- Console > System > Plans: the plan defaults (a grid of plans and limits;
+  empty means unlimited). Read-only for administrators below super admin.
+- Console > Organizations > an organization > Plan: the plan (ops_admin+ can
+  change it), used/allowed per limit, an **Over limit** badge, and limits set
+  for this organization (reason, optional expiry; removable).
+- Settings > Organization > Plan & usage (`/settings/plan`, owners and
+  admins, en/vi): the plan and used/allowed per limit, with a notice when the
+  organization is over its plan.
+
 ## Code map
 
 - `pkg/domain/plan`: plans, keys, defaults, overrides, `ErrLimitReached`.
