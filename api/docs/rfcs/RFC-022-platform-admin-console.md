@@ -512,6 +512,34 @@ stage and lets an ops_admin+ exempt it with a reason (audited).
 
 Details: `docs/architecture/idle-workspaces.md`.
 
+## Revision 13: console layout, overview and search
+
+The console is organized by what an operator does, and opens on what needs
+them:
+
+- **Navigation.** Overview · Customers (Organizations) · Scanning (Target
+  mappings) · Security (Admin activity, Administrators) · System (Sign-up,
+  Admin sign-in, Plans). Later sections (Users, Requests, Plans & usage, Operations)
+  are added together with their pages, never ahead of them. Pages that moved
+  (`/admin/system-logs` to `/admin/security/activity`, `/admin/administrators`
+  to `/admin/security/administrators`) have no redirect.
+- **Overview = attention queue.** `GET /api/v1/admin/overview` (any admin
+  role) returns counts: organizations and those without an active owner (with
+  the names of the newest five), emergency-access sign-ins in the last 7 days,
+  refused or failed administrator actions in the last 24 hours, overdue
+  break-glass tests, the applied database schema against the one the API
+  ships (and the dirty flag), platform sensors online and offline, pending
+  sensor jobs and the oldest one's age, scan runs past their deadline, and
+  failed and dead notifications. The web turns them into a list, most severe
+  first, each with its one-click action when a console page handles it (a
+  link is offered only to a role that can act on it). The response carries no
+  tenant content and no administrator email; the roster stays super-admin
+  only. It refreshes every minute.
+- **Search.** Ctrl/Cmd+K opens the console's command palette: the pages the
+  role can open, and organizations by name or slug, searched on the server.
+- **Admin activity** filters by result (`?outcome=failure`), so the overview
+  links straight to refused actions or to break-glass sign-ins.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/

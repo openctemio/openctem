@@ -23,6 +23,7 @@ import (
 //	Group                     Read (GET)        Write (POST/PATCH/DELETE)
 //	------------------------  ----------------  --------------------------
 //	/admin/auth/validate      any admin         —
+//	/admin/overview           any admin         —
 //	/admin/users              super_admin       super_admin (+ audited)
 //	/admin/administrators     —                 super_admin (audited)
 //	/admin/audit-logs         any admin         —
@@ -101,6 +102,12 @@ func registerAdminRoutes(
 
 	// Build identity for the console's Help > About (any admin role).
 	router.GET("/api/v1/admin/version", handler.Version, adminMiddlewares...)
+
+	// The console overview's attention queue (any admin role): counts only,
+	// no tenant content and no administrator emails.
+	if h.AdminOverview != nil {
+		router.GET("/api/v1/admin/overview", h.AdminOverview.Get, adminMiddlewares...)
+	}
 
 	// Plan defaults (Console > System > Plans): any admin reads; a super admin
 	// changes them with a fresh authenticator code (checked in the handler,

@@ -6,13 +6,17 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/app/sbomexport"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/api/pkg/version"
 )
 
 // ComponentHandler handles component-related HTTP requests.
@@ -305,57 +309,65 @@ func (h *ComponentHandler) GetVulnerableComponents(w http.ResponseWriter, r *htt
 	_ = json.NewEncoder(w).Encode(result)
 }
 
-// ExportComponents handles GET /api/v1/components/export
-// Returns all components for SBOM export. Paginates internally to collect all data.
-func (h *ComponentHandler) ExportComponents(w http.ResponseWriter, r *http.Request) {
+// ExportSBOM handles GET /api/v1/components/sbom.
+// @Summary      Export an SBOM
+// @Description  Downloads a software bill of materials of the components the organization's assets use (or one asset's, with asset_id), as CycloneDX 1.6 JSON (default) or SPDX 2.3 JSON. A restricted member gets only components of assets in their data scope; an asset outside it is not found. Refused with 400 above 10000 components (export one asset at a time).
+// @Tags         Components
+// @Produce      json
+// @Security     BearerAuth
+// @Param        format    query     string  false  "Output format"  Enums(cyclonedx, spdx)
+// @Param        asset_id  query     string  false  "Only this asset's components"
+// @Success      200  {file}    file
+// @Failure      400  {object}  map[string]string
+// @Failure      404  {object}  map[string]string
+// @Router       /components/sbom [get]
+func (h *ComponentHandler) ExportSBOM(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-
-	// Paginate through all components (100 per page, max 10000 total)
-	var allComponents []*component.Component
-	const maxTotal = 10000
-	for page := 1; len(allComponents) < maxTotal; page++ {
-		result, err := h.service.ListComponents(r.Context(), asset.ListComponentsInput{
-			TenantID: tenantID,
-			Page:     page,
-			PerPage:  100,
-		})
-		if err != nil {
-			h.handleServiceError(w, err)
-			return
-		}
-		allComponents = append(allComponents, result.Data...)
-		if len(allComponents) >= int(result.Total) || len(result.Data) < 100 {
-			break
-		}
+	format, err := sbomexport.ParseFormat(r.URL.Query().Get("format"))
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
 	}
 
-	type exportComponent struct {
-		Name               string `json:"name"`
-		Version            string `json:"version"`
-		Ecosystem          string `json:"ecosystem"`
-		PURL               string `json:"purl"`
-		License            string `json:"license,omitempty"`
-		VulnerabilityCount int    `json:"vulnerability_count"`
+	export, err := h.service.ListSBOMEntries(r.Context(), tenantID, r.URL.Query().Get("asset_id"))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
 	}
 
-	components := make([]exportComponent, 0, len(allComponents))
-	for _, c := range allComponents {
-		components = append(components, exportComponent{
-			Name:               c.Name(),
-			Version:            c.Version(),
-			Ecosystem:          string(c.Ecosystem()),
-			PURL:               c.PURL(),
-			License:            c.License(),
-			VulnerabilityCount: c.VulnerabilityCount(),
+	doc := sbomexport.Document{
+		Subject:     export.Subject,
+		SerialUUID:  uuid.NewString(),
+		Created:     time.Now().UTC(),
+		ToolVersion: version.Get().Version,
+		Components:  make([]sbomexport.Component, 0, len(export.Entries)),
+	}
+	if doc.Subject == "" {
+		doc.Subject = "Organization inventory"
+	}
+	for _, e := range export.Entries {
+		doc.Components = append(doc.Components, sbomexport.Component{
+			ID:                 e.ID.String(),
+			Name:               e.Name,
+			Version:            e.Version,
+			Ecosystem:          string(e.Ecosystem),
+			PURL:               e.PURL,
+			Licenses:           e.Licenses,
+			VulnerabilityCount: e.VulnerabilityCount,
 		})
 	}
+	body, err := sbomexport.Encode(format, doc)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
 
-	w.Header().Set("Content-Type", "application/json")
+	filename := "sbom-" + doc.Created.Format("20060102-150405") + format.FileExtension()
+	w.Header().Set("Content-Type", format.ContentType())
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data":  components,
-		"total": len(components),
-	})
+	_, _ = w.Write(body)
 }
 
 // ImportSBOM handles POST /api/v1/components/import

@@ -218,6 +218,7 @@ type Handlers struct {
 	// Admin Auth handler (API key authentication for Admin UI)
 	AdminAuth         *handler.AdminAuthHandler
 	AdminOrganization *handler.AdminOrganizationHandler
+	AdminOverview     *handler.AdminOverviewHandler
 	AdminConsole      *handler.AdminConsoleHandler
 	AdminAuditChain   *handler.AdminAuditChainHandler
 	// Plan: plans and limits (console plan defaults, organization plans and
