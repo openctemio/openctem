@@ -344,3 +344,7 @@ R8 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
 R9 GET /api/v1/tenants/{tenant}/settings/sso/changes
 R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/approve
 R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
+R3 DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
+R3 GET /api/v1/admin/tenants/{tenantId}/plan
+R3 PUT /api/v1/admin/tenants/{tenantId}/plan
+R3 PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
