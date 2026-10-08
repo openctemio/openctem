@@ -127,6 +127,36 @@ func adminAuditRetentionConfig(cfg *config.Config, log *logger.Logger) *controll
 	}
 }
 
+// registerPurgeControllers schedules the time-based deletes that had no caller:
+// expired invitations, expired platform-admin sessions and reviewed quarantined
+// sensor results. Each runs under its controller lease, so one replica at a
+// time; a missing dependency leaves that purge unregistered.
+func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) {
+	if svc.Tenant != nil {
+		m.Register(controller.NewPurgeController("invitation-purge", cfg.Worker.InvitationPurgeInterval,
+			svc.Tenant.CleanupExpiredInvitations, log.With("controller", "invitation-purge")))
+	}
+	if repos.AdminConsole != nil {
+		console := repos.AdminConsole
+		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,
+			func(ctx context.Context) (int64, error) { return console.DeleteExpiredSessions(ctx, time.Now()) },
+			log.With("controller", "admin-session-purge")))
+	}
+	if repos.SensorResult != nil {
+		quarantine := repos.SensorResult
+		retention := cfg.Worker.QuarantineRetention
+		if retention <= 0 {
+			retention = 30 * 24 * time.Hour
+		}
+		m.Register(controller.NewPurgeController("sensor-result-quarantine-purge", cfg.Worker.QuarantinePurgeInterval,
+			func(ctx context.Context) (int64, error) {
+				n, err := quarantine.PurgeReviewed(ctx, time.Now().Add(-retention))
+				return int64(n), err
+			},
+			log.With("controller", "sensor-result-quarantine-purge")))
+	}
+}
+
 // NewWorkers initializes all background workers.
 func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	cfg := deps.Config
@@ -434,6 +464,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewMemberAccessExpiryController(svc.Tenant, time.Minute, 200,
 			log.With("controller", "member-access-expiry")))
 	}
+
+	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
 
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(
 		repos.FindingApproval,

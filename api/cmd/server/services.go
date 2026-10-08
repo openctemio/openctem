@@ -92,6 +92,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
@@ -888,9 +889,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
 
-	// Plans and limits (docs/architecture/plans-and-limits.md), with or
-	// without local auth.
+	// Plans and limits: every creation path checks the organization limits
+	// (docs/architecture/plans-and-limits.md). Seats and invitations are
+	// checked where the rows are inserted.
 	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
+	for _, r := range []interface{ SetPlanLimits(plan.Checker) }{
+		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing,
+	} {
+		r.SetPlanLimits(s.Entitlement)
+	}
 
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)
@@ -1829,6 +1836,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A tool no online sensor may run refuses the trigger with the
 		// reason (docs/architecture/tool-availability.md).
 		scan.WithToolAvailability(s.Tool),
+		// Workflow readiness: the New Scan picker, the workflow list and
+		// the refusal of a workflow no sensor here can run.
+		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor)),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
@@ -2392,6 +2402,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// A domain the home organization stops holding suspends the members it
 	// managed elsewhere; proving it again restores them (RFC-058).
 	s.DomainVerify.SetClaimListener(s.Tenant)
+	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
 	s.Auth.SetInviteeClassifier(s.Tenant)
 
 	// Trusted organizations (RFC-058): home-realm sign-in for external

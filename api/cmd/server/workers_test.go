@@ -178,6 +178,8 @@ func TestAdminAuditRetention_DryRunIsConfigurable(t *testing.T) {
 // deployment that sets nothing keeps reporting rather than deleting, so an
 // upgrade never silently destroys audit history.
 func TestAdminAuditRetention_DefaultIsDryRun(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("AUTH_JWT_SECRET", "workers-test-secret-0123456789abcdef0123456789abcdef0123456789")
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -20,7 +21,8 @@ import (
 // the methods that read such rows end in Unscoped and are called only by the
 // pairing service (tools/lint/tenantsql).
 type SensorPairingRepository struct {
-	db *DB
+	db         *DB
+	planLimits // sensors: approving a pairing that creates a new sensor
 }
 
 // NewSensorPairingRepository creates a SensorPairingRepository.
@@ -224,6 +226,12 @@ func (r *SensorPairingRepository) GetForTenant(ctx context.Context, tenantID, id
 // request's state. A request another approver won, that expired or that
 // belongs to another tenant is ErrPairingNotFound.
 func (r *SensorPairingRepository) Approve(ctx context.Context, a sensordom.PairingApproval, repair *shared.ID) (*sensordom.PairingApprovalResult, error) {
+	// A re-pair replaces an existing sensor; only a new one counts.
+	if repair == nil {
+		if err := r.checkLimit(ctx, a.TenantID, plan.Sensors, 1); err != nil {
+			return nil, err
+		}
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin approve: %w", err)

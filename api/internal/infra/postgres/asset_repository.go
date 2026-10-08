@@ -15,6 +15,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -30,7 +31,8 @@ const providerUnsetSentinel = "unset"
 
 // AssetRepository implements asset.Repository using PostgreSQL.
 type AssetRepository struct {
-	db *DB
+	db         *DB
+	planLimits // assets: Create and the new rows of UpsertBatch (ingest)
 }
 
 // NewAssetRepository creates a new AssetRepository.
@@ -40,6 +42,9 @@ func NewAssetRepository(db *DB) *AssetRepository {
 
 // Create persists a new asset.
 func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
+	if err := r.checkLimit(ctx, a.TenantID(), plan.Assets, 1); err != nil {
+		return err
+	}
 	properties, err := json.Marshal(a.Properties())
 	if err != nil {
 		return fmt.Errorf("failed to marshal properties: %w", err)
@@ -1396,6 +1401,12 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	if len(assets) == 0 {
 		return 0, 0, map[string]shared.ID{}, nil
 	}
+	// Ingest over the asset limit is refused as a whole batch with the
+	// limit error (counted in openctem_plan_limit_refusals_total), never
+	// dropped silently. Updates of assets that already exist count nothing.
+	if err := r.checkNewAssets(ctx, assets); err != nil {
+		return 0, 0, nil, err
+	}
 
 	// Fast path: one multi-row INSERT for the whole batch (one round-trip
 	// instead of one per asset — discovery reports can carry tens of thousands
@@ -1408,6 +1419,41 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 		return r.upsertBatchPerRow(ctx, assets)
 	}
 	return created, updated, persistedIDs, nil
+}
+
+// checkNewAssets checks the assets of a batch that do not exist yet (by id or
+// by (tenant_id, name), the upsert's keys) against each organization's limit.
+func (r *AssetRepository) checkNewAssets(ctx context.Context, assets []*asset.Asset) error {
+	if r.limits == nil {
+		return nil
+	}
+	byTenant := map[shared.ID][]*asset.Asset{}
+	for _, a := range assets {
+		byTenant[a.TenantID()] = append(byTenant[a.TenantID()], a)
+	}
+	for tenantID, batch := range byTenant {
+		names := make([]string, 0, len(batch))
+		ids := make([]string, 0, len(batch))
+		for _, a := range batch {
+			names = append(names, a.Name())
+			ids = append(ids, a.ID().String())
+		}
+		var fresh int
+		err := r.db.QueryRowContext(ctx, `
+			SELECT count(DISTINCT b.name)
+			  FROM unnest($2::text[], $3::uuid[]) AS b(name, id)
+			 WHERE NOT EXISTS (
+			       SELECT 1 FROM assets a
+			        WHERE a.tenant_id = $1 AND (a.name = b.name OR a.id = b.id))`,
+			tenantID.String(), pq.Array(names), pq.Array(ids)).Scan(&fresh)
+		if err != nil {
+			return fmt.Errorf("count new assets: %w", err)
+		}
+		if err := r.checkLimit(ctx, tenantID, plan.Assets, fresh); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // assetUpsertColumnCount is the number of columns in the assets upsert. It MUST

@@ -99,11 +99,11 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
 
 require (
+	connectrpc.com/connect v1.21.0
 	github.com/crewjam/saml v0.5.1
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/openctemio/ctis v1.2.1-0.20261007105007-986a2023c50e
@@ -111,4 +111,5 @@ require (
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/mod v0.41.0
 	golang.org/x/tools v0.50.0
+	google.golang.org/protobuf v1.36.12
 )

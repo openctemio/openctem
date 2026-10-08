@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
-import { AlertTriangle, FileText, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, FileText, RefreshCw, Trash2, UserPlus } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +20,7 @@ import { RelativeTime } from '@/features/shared/components/relative-time'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useDeleteVerifiedDomain, useVerifyDomain } from '../api/use-verified-domains'
 import type { VerifiedDomain } from '../types/verified-domain.types'
+import { DomainJITDialog, jitLabel } from './domain-jit-dialog'
 import { DnsInstructions } from './dns-instructions'
 import { VerifiedDomainStatusBadge } from './verified-domain-status-badge'
 
@@ -33,6 +34,7 @@ function DomainActions({
   onChanged: () => void
 }) {
   const [dnsOpen, setDnsOpen] = useState(false)
+  const [jitOpen, setJitOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const { trigger: verify, isMutating: isVerifying } = useVerifyDomain(tenantId)
   const { trigger: remove, isMutating: isDeleting } = useDeleteVerifiedDomain(tenantId)
@@ -82,6 +84,9 @@ function DomainActions({
                 },
               ]
             : []),
+          ...(domain.status === 'verified'
+            ? [{ label: 'New people…', icon: UserPlus, onClick: () => setJitOpen(true) }]
+            : []),
           {
             label: 'Remove',
             icon: Trash2,
@@ -105,6 +110,13 @@ function DomainActions({
           </DialogContent>
         </Dialog>
       )}
+
+      <DomainJITDialog
+        tenantId={tenantId}
+        domain={jitOpen ? domain : null}
+        onOpenChange={setJitOpen}
+        onSaved={onChanged}
+      />
 
       <ConfirmDialog
         open={confirmOpen}
@@ -164,6 +176,16 @@ export function VerifiedDomainsList({
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }) => <VerifiedDomainStatusBadge status={row.original.status} />,
+    },
+    {
+      id: 'jit',
+      header: 'New people',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground" data-testid="domain-jit">
+          {row.original.status === 'verified' ? jitLabel(row.original) : 'Not until verified'}
+        </span>
+      ),
     },
     {
       id: 'activity',
