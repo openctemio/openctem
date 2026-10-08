@@ -52,8 +52,8 @@ findings (a misconfiguration, not an error).
 
 - `finding_count` = findings matching the filter (any status);
 - `resolved_count` = those whose status is in the **closed** category —
-  `resolved`, `verified`, `false_positive`, `accepted`, `accepted_risk`,
-  `duplicate` (`vulnerability.ClosedFindingStatuses()`).
+  `resolved`, `false_positive`, `accepted`, `duplicate`
+  (`vulnerability.ClosedFindingStatuses()`).
 
 "Closed" rather than only "resolved" is deliberate: a finding that was accepted
 as risk or marked a false positive is no longer outstanding remediation work.

@@ -359,14 +359,14 @@ All forms use Zod schemas (`src/features/*/schemas/`) for:
 
 ### 7.2 Authentication Schemas
 
-| Field            | Validation                      |
-| ---------------- | ------------------------------- |
-| Email            | Non-empty + valid email format  |
+| Field            | Validation                                                                             |
+| ---------------- | -------------------------------------------------------------------------------------- |
+| Email            | Non-empty + valid email format                                                         |
 | Password         | Minimum 12 characters on sign-up and reset (the API enforces the full password policy) |
-| First/Last Name  | 1-50 characters                 |
-| Confirm Password | Must match password field       |
-| Reset Token      | Non-empty string                |
-| OAuth State      | Validated against stored cookie |
+| First/Last Name  | 1-50 characters                                                                        |
+| Confirm Password | Must match password field                                                              |
+| Reset Token      | Non-empty string                                                                       |
+| OAuth State      | Validated against stored cookie                                                        |
 
 ### 7.3 TypeScript Strict Mode
 
