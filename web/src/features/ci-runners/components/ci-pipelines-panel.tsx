@@ -9,7 +9,7 @@
  * deleted). The Coverage view lists repositories by capability.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import Link from 'next/link'
 import { Search, Workflow } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -29,6 +29,7 @@ import {
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { cn } from '@/lib/utils'
 
 import { useCIPipelines } from '../api/use-ci'
@@ -137,7 +138,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
   const [statusParam, setStatusParam] = useUrlFilterList('pipeline_status')
   const [inactiveParam, setInactiveParam] = useUrlFilter('inactive', '')
   const [openId, setOpenId] = useUrlFilter('pipeline', '')
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
+  const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
 
   const statuses = useMemo(() => statusParam.filter(isPipelineStatus), [statusParam])
   const includeInactive = inactiveParam === '1'
@@ -158,7 +159,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
 
   const toggleStatuses = (next: CIPipelineStatus[]) => {
     setStatusParam(sameSet(statuses, next) ? [] : next)
-    setPagination((p) => ({ ...p, pageIndex: 0 }))
+    setPage(1)
   }
   const metrics: MetricStripItem[] = [
     {
@@ -198,7 +199,10 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
       label: 'Inactive',
       value: inactive,
       detail: 'archived, retired, revoked or never ran; hidden, not deleted',
-      onClick: () => setInactiveParam(includeInactive ? '' : '1'),
+      onClick: () => {
+        setInactiveParam(includeInactive ? '' : '1')
+        setPage(1)
+      },
       active: includeInactive,
     },
   ]
@@ -207,7 +211,10 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
     <SegmentedLens<RunnerView>
       label="Runner view"
       value={view}
-      onChange={(v) => setView(v)}
+      onChange={(v) => {
+        setView(v)
+        setPage(1)
+      }}
       options={[
         { value: 'pipelines', label: 'Pipelines', description: 'One row per workflow file' },
         { value: 'runs', label: 'Runs', description: 'Every run, newest first' },
@@ -303,7 +310,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
                   value={q}
                   onChange={(e) => {
                     setQ(e.target.value)
-                    setPagination((p) => ({ ...p, pageIndex: 0 }))
+                    setPage(1)
                   }}
                   className="h-9 ps-9"
                 />
@@ -317,7 +324,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
                 checked={includeInactive}
                 onCheckedChange={(on) => {
                   setInactiveParam(on ? '1' : '')
-                  setPagination((p) => ({ ...p, pageIndex: 0 }))
+                  setPage(1)
                 }}
               />
               <Label htmlFor="pipelines-inactive" className="text-sm font-normal">

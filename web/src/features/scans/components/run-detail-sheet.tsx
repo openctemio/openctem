@@ -37,6 +37,7 @@ import {
 } from '@/features/scans/lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
 import { RunStageLanes } from './run-stage-lanes'
+import { RunTimeline } from './run-timeline'
 
 // Lazy: the workflow overlay pulls in the graph library only when a
 // workflow run is opened.
@@ -201,6 +202,9 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                 <RunStageLanes runId={run.id} refreshInterval={runRefreshInterval(run)} />
               </DetailSection>
             )}
+            <DetailSection title="Timeline">
+              <RunTimeline runId={run.id} refreshInterval={runRefreshInterval(run)} />
+            </DetailSection>
             <DetailSection title="Tasks" count={run.task_summary?.total}>
               {run.tasks && run.tasks.length > 0 ? (
                 <RunTasksTable
