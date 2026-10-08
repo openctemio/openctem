@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -54,6 +55,8 @@ type TenantHandler struct {
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
 	// sign-up setting, read on each request.
 	signupPolicy signupdom.PolicySource
+	// freePlan: self-service organizations are Free, capped per person.
+	freePlan auth.FreePlan
 	// provisioning creates accounts on behalf of organization administrators.
 	// Nil disables POST /tenants/{tenant}/users.
 	provisioning *tenantapp.UserProvisioningService
@@ -77,6 +80,9 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
 }
+
+// SetFreePlan wires the Free plan for self-service organizations.
+func (h *TenantHandler) SetFreePlan(p auth.FreePlan) { h.freePlan = p }
 
 // SetSignupPolicy makes POST /tenants follow the console sign-up policy.
 func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
@@ -220,6 +226,9 @@ type InvitationResponse struct {
 	Pending     bool      `json:"pending"`
 	// AccessExpiresAt is when an external invitee's access will end (RFC-058).
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	// LookalikeOf lists members whose address reaches the same mailbox once
+	// dots and +tags are ignored: a warning, never a merge (create only).
+	LookalikeOf []string `json:"lookalike_of,omitempty"`
 }
 
 // =============================================================================
@@ -538,11 +547,26 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 	}
 
+	if h.freePlan != nil {
+		if err := h.freePlan.CheckFreeTeam(r.Context(), userID); err != nil {
+			if !WritePlanLimitError(w, err) {
+				h.handleServiceError(w, err)
+			}
+			return
+		}
+	}
+
 	actx := h.buildAuditContext(r)
 	t, err := h.service.CreateTenant(r.Context(), input, userID, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+	// A self-service organization starts on the Free plan.
+	if h.freePlan != nil {
+		if err := h.freePlan.AssignFree(r.Context(), t.ID()); err != nil {
+			h.logger.Error("assign the Free plan to a new organization", "tenant_id", t.ID().String(), "error", err)
+		}
 	}
 
 	// Apply the chosen module preset if one was picked during creation.
@@ -1169,9 +1193,13 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	resp := toInvitationResponse(invitation, true) // Include token for creator
+	// Look-alike addresses only warn (RFC-058): j.doe@gmail.com and
+	// jdoe+x@gmail.com reach one mailbox but stay two accounts.
+	resp.LookalikeOf = h.service.Lookalikes(r.Context(), tenantID, req.Email)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(toInvitationResponse(invitation, true)) // Include token for creator
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // canGrantRoles enforces anti-escalation for invitations and administrator-
@@ -1822,6 +1850,10 @@ type SecuritySettingsResponse struct {
 	// on (research/25 D3; off by default).
 	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates"`
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	PersonalAccounts string `json:"personal_accounts"`
+	// SSOExceptions: members who may sign in without SSO while it is enforced.
+	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
@@ -1854,6 +1886,8 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
 			AllowSensorInteractsh:                     s.Security.AllowSensorInteractsh,
 			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
+			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
+			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
@@ -1974,6 +2008,11 @@ type UpdateSecuritySettingsRequest struct {
 	// alerted.
 	AllowSensorInteractsh      *bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates *bool `json:"allow_sensor_custom_templates"`
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
+	// SSOExceptions replaces the list of members who may sign in without SSO
+	// (with a second factor) while it is enforced.
+	SSOExceptions *[]tenant.SSOException `json:"sso_exceptions" validate:"omitempty,max=100"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -2009,6 +2048,8 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		RequireSensorLocalPolicyForPrivateTargets: req.RequireSensorLocalPolicyForPrivateTargets,
 		AllowSensorInteractsh:                     req.AllowSensorInteractsh,
 		AllowSensorCustomTemplates:                req.AllowSensorCustomTemplates,
+		PersonalAccounts:                          req.PersonalAccounts,
+		SSOExceptions:                             req.SSOExceptions,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
 	}
@@ -3035,4 +3076,11 @@ func memberKindOrInternal(k tenant.MemberKind) tenant.MemberKind {
 		return k
 	}
 	return tenant.MemberKindInternal
+}
+
+func nonNilSSOExceptions(in []tenant.SSOException) []tenant.SSOException {
+	if in == nil {
+		return []tenant.SSOException{}
+	}
+	return in
 }

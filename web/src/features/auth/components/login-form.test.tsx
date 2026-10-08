@@ -27,7 +27,9 @@ const startMfaEnrollmentAction = vi.fn()
 const confirmMfaEnrollmentAction = vi.fn()
 const cancelMfaAction = vi.fn()
 const finishMfaEnrollmentAction = vi.fn()
+const discoverSignInAction = vi.fn(async (_email: string) => ({ next: 'password', org: '' }))
 vi.mock('../actions/local-auth-actions', () => ({
+  discoverSignInAction: (email: string) => discoverSignInAction(email),
   loginAction: (...a: unknown[]) => loginAction(...a),
   verifyMfaAction: (...a: unknown[]) => verifyMfaAction(...a),
   startMfaEnrollmentAction: (...a: unknown[]) => startMfaEnrollmentAction(...a),
@@ -302,5 +304,50 @@ describe('LoginForm ?error= message', () => {
     render(<LoginForm />)
     expect(toast.error).toHaveBeenCalledTimes(1)
     expect(toast.error).toHaveBeenCalledWith('Sign-in failed. Try again.')
+  })
+})
+
+describe('LoginForm email-first sign-in', () => {
+  beforeEach(() => {
+    setAuthProviders({ google: false, github: false, microsoft: false })
+    mockUseTenantSSOProviders.mockImplementation(
+      (org: string | null) =>
+        ({
+          data:
+            org === 'acme'
+              ? [{ id: 'p1', provider: 'okta', display_name: 'Acme Okta' }]
+              : undefined,
+        }) as ReturnType<typeof useTenantSSOProviders>
+    )
+    discoverSignInAction.mockClear()
+    discoverSignInAction.mockImplementation(async (email: string) =>
+      email.endsWith('@acme.com') ? { next: 'sso', org: 'acme' } : { next: 'password', org: '' }
+    )
+  })
+
+  it('offers the organization SSO once the email domain is claimed', async () => {
+    const user = userEvent.setup()
+    render(<LoginForm />)
+    await user.type(screen.getByLabelText('Email'), 'jane@acme.com')
+    expect(
+      await screen.findByRole('button', { name: /sign in with acme okta/i })
+    ).toBeInTheDocument()
+    expect(discoverSignInAction).toHaveBeenCalledWith('jane@acme.com')
+  })
+
+  it('shows no SSO for an unclaimed domain', async () => {
+    const user = userEvent.setup()
+    render(<LoginForm />)
+    await user.type(screen.getByLabelText('Email'), 'jane@other.com')
+    await new Promise((r) => setTimeout(r, 600))
+    expect(screen.queryByRole('button', { name: /sign in with/i })).not.toBeInTheDocument()
+  })
+
+  it('does not ask while ?org= already names the organization', async () => {
+    const user = userEvent.setup()
+    render(<LoginForm orgSlug="acme" />)
+    await user.type(screen.getByLabelText('Email'), 'jane@acme.com')
+    await new Promise((r) => setTimeout(r, 600))
+    expect(discoverSignInAction).not.toHaveBeenCalled()
   })
 })

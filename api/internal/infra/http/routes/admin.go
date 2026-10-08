@@ -30,6 +30,8 @@ import (
 //	/admin/threat-intel       any admin         ops_admin+ (+ audited)
 //	/admin/platform-idp       super_admin       super_admin (audited)
 //	/admin/access-requests    any admin         ops_admin+ (approve/reject, audited)
+//	/admin/settings/plans     any admin         super_admin + fresh TOTP code
+//	/admin/tenants/{id}/plan  any admin         ops_admin+ (plan, overrides; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, admins emailed)
 //	/admin/tenants/{id}/audit-chain
@@ -100,6 +102,17 @@ func registerAdminRoutes(
 
 	// Build identity for the console's Help > About (any admin role).
 	router.GET("/api/v1/admin/version", handler.Version, adminMiddlewares...)
+
+	// Plan defaults (Console > System > Plans): any admin reads; a super admin
+	// changes them with a fresh authenticator code (checked in the handler,
+	// audited, the other administrators told).
+	if h.Plan != nil {
+		requireSuperPlans := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/plans", func(r Router) {
+			r.GET("/", h.Plan.GetDefaults)
+			r.PUT("/", h.Plan.UpdateDefaults, requireSuperPlans)
+		}, adminMiddlewares...)
+	}
 
 	// The sign-up policy (Console > System > Sign-up): who may create an
 	// organization. Any admin reads; a super admin changes it with a fresh
@@ -219,6 +232,16 @@ func registerAdminRoutes(
 			if h.AdminAuditChain != nil {
 				r.GET("/{tenantId}/audit-chain", h.AdminAuditChain.Classify, read...)
 				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, superWrite, scope)
+			}
+
+			// Plan and limits of one organization: any admin reads (with
+			// the over-limit flag); ops_admin+ changes the plan or sets a
+			// per-organization limit (audited by the service).
+			if h.Plan != nil {
+				r.GET("/{tenantId}/plan", h.Plan.GetTenantPlan, read...)
+				r.PUT("/{tenantId}/plan", h.Plan.SetTenantPlan, with([]Middleware{opsWrite, scope})...)
+				r.PUT("/{tenantId}/plan/overrides/{key}", h.Plan.SetOverride, with([]Middleware{opsWrite, scope})...)
+				r.DELETE("/{tenantId}/plan/overrides/{key}", h.Plan.DeleteOverride, with([]Middleware{opsWrite, scope})...)
 			}
 
 			if h.VerifiedDomain != nil {

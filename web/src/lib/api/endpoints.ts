@@ -81,6 +81,8 @@ export const authEndpoints = {
 
   /** Confirm an access request by its emailed token (token in the body). */
   accessRequestConfirm: () => `${API_BASE.AUTH}/access-requests/confirm`,
+  /** Email-first sign-in: where does this email sign in? (email in the body) */
+  discover: () => `${API_BASE.AUTH}/discover`,
 
   /**
    * Login with email/password (local auth)
@@ -1435,6 +1437,8 @@ export const scanRunEndpoints = {
 
   /** A run's timeline: every change of its tasks, oldest first (research/62 P0-4). */
   events: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/events`,
+  /** The run drawn on its workflow version: step states, chunks, outputs. */
+  map: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/map`,
 
   /**
    * One cursor page of a run's tasks (the run read embeds the first page and

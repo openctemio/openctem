@@ -705,19 +705,8 @@ func (h *ScanWorkflowHandler) ValidateScanWorkflow(w http.ResponseWriter, r *htt
 		h.handleStepError(w, err)
 		return
 	}
-	out := ScanWorkflowGraphValidationResponse{
-		Valid:    rep.Valid(),
-		Errors:   make([]ScanWorkflowGraphIssueResponse, 0, len(rep.Errors)),
-		Warnings: make([]ScanWorkflowGraphIssueResponse, 0, len(rep.Warnings)),
-	}
-	for _, is := range rep.Errors {
-		out.Errors = append(out.Errors, toGraphIssueResponse(is))
-	}
-	for _, is := range rep.Warnings {
-		out.Warnings = append(out.Warnings, toGraphIssueResponse(is))
-	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	_ = json.NewEncoder(w).Encode(toGraphValidationResponse(rep))
 }
 
 func toGraphIssueResponse(is stage.GraphIssue) ScanWorkflowGraphIssueResponse {

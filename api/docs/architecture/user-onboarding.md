@@ -206,9 +206,17 @@ has an account or an organization exists:
 | `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
 | `GET /auth/sso/{provider}/authorize?org=` | 404 "SSO provider not configured" for an unknown organization and a missing provider alike |
 | `GET /auth/saml/{org}/metadata` | SP metadata for any well-formed slug (it is built from the slug and the deployment URL only) |
+| `POST /auth/discover` | `{"next","org"}` for every email; `sso` + the slug only for a domain an organization proved it owns and signs in to by SSO (sso-authentication.md, "Email-first sign-in") |
 | `GET /auth/saml/{org}/login`, `POST …/acs` | every failure redirects to `/login?error=saml` |
 
 Tests: `tests/unit/auth_anti_enumeration_test.go`.
+
+### Plan of a self-service organization
+
+An organization a person creates themselves starts on the **Free** plan, and
+one person owns at most the Free plan's `free_teams_per_user` (1 by default):
+another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
+`docs/architecture/plans-and-limits.md`.
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 

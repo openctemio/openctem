@@ -74,6 +74,39 @@ func (r *ScanHopRepository) RecordStepOutputs(ctx context.Context, tenantID, ste
 
 // ListStepOutputs returns the live assets the step runs produced, oldest
 // first, up to limit, and the total count.
+// CountStepOutputs counts, per step run and asset type, the live assets the
+// run's step runs produced; with a scope, only assets the caller may see.
+func (r *ScanHopRepository) CountStepOutputs(ctx context.Context, tenantID, runID shared.ID, scope *shared.DataScope) ([]scanrun.StepOutputCount, error) {
+	q := `
+		SELECT o.scan_run_step_id, a.asset_type, COUNT(DISTINCT a.id)
+		FROM scan_step_outputs o
+		JOIN assets a ON a.tenant_id = o.tenant_id AND a.id = o.asset_id AND a.deleted_at IS NULL
+		WHERE o.tenant_id = $1 AND o.run_id = $2`
+	args := []any{tenantID.String(), runID.String()}
+	if scope != nil {
+		cond, scopeArgs := dataScopeCondAt("a.id", scope, 3)
+		q += " AND " + cond
+		args = append(args, scopeArgs...)
+	}
+	q += " GROUP BY o.scan_run_step_id, a.asset_type"
+	rows, err := r.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("count step outputs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []scanrun.StepOutputCount
+	for rows.Next() {
+		var sr string
+		var c scanrun.StepOutputCount
+		if err := rows.Scan(&sr, &c.AssetType, &c.Count); err != nil {
+			return nil, fmt.Errorf("scan step output count: %w", err)
+		}
+		c.StepRunID, _ = shared.IDFromString(sr)
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 func (r *ScanHopRepository) ListStepOutputs(ctx context.Context, tenantID, runID shared.ID, stepRunIDs []shared.ID, limit int) ([]scanrun.StepOutput, int, error) {
 	ids := hopIDStrings(stepRunIDs)
 	if len(ids) == 0 || limit <= 0 {

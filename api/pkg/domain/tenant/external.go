@@ -39,6 +39,27 @@ const (
 // expired.
 const SuspendedReasonExpired = "expired"
 
+// SuspendedReasonHomeAccessEnded marks an external membership suspended
+// because the member's home organization disabled or removed them.
+const SuspendedReasonHomeAccessEnded = "home_access_ended"
+
+// SuspendedReasonHomeDomainLapsed marks an external membership suspended
+// because the home organization no longer holds the member's email domain.
+const SuspendedReasonHomeDomainLapsed = "home_domain_lapsed"
+
+// HomedFilter selects external memberships, across organizations, by their
+// home organization (the cascade from a home organization).
+type HomedFilter struct {
+	Home shared.ID
+	// User, when set, limits to one person.
+	User *shared.ID
+	// Domain, when set, limits to members whose recorded home domain it is.
+	Domain string
+	// SuspendedReason, when set, selects suspended memberships with that
+	// reason; otherwise active ones.
+	SuspendedReason string
+}
+
 // SuspendedReasonTrustRevoked marks an external membership suspended because
 // the trust between the host and the member's home organization ended.
 const SuspendedReasonTrustRevoked = "trust_revoked"
