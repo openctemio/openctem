@@ -124,8 +124,8 @@ const minimal = `
 lenses:
   - { id: code, label: Code, description: d, row: table, default_group_by: type }
 classes:
-  - { id: code_repo, label: Code repository, lens: code, jupiterone: CodeRepo }
-  - { id: other, label: Other, jupiterone: Entity }
+  - { id: code_repo, label: Code repository, lens: code }
+  - { id: other, label: Other }
 legacy_categories: [{ id: code, label: Code }, { id: other, label: Other }]
 cards: [generic, repository]
 sections: [{ id: overview, label: Overview }]
@@ -199,7 +199,7 @@ func TestResolve_RejectsInvalidRegistries(t *testing.T) {
 		{"enum without values", "{ name: provider, type: enum, values: [github], facet: true }", "{ name: provider, type: enum }", "", "enum needs values"},
 		{"unknown column", "columns: [name, provider]", "columns: [name, stars]", "", "column"},
 		{"unknown section", "sections: [overview]\n  - type: unclassified", "sections: [overview, nope]\n  - type: unclassified", "", "unknown section"},
-		{"other with a lens", "{ id: other, label: Other, jupiterone: Entity }", "{ id: other, label: Other, lens: code, jupiterone: Entity }", "", "must not have a lens"},
+		{"other with a lens", "{ id: other, label: Other }", "{ id: other, label: Other, lens: code }", "", "must not have a lens"},
 		{"unknown field", "icon: git-branch", "icon: git-branch\n    unknown_key: red", "", "unknown_key"},
 		{"unresolved relationship type", "", "", "types:\n  - id: contains\n    constraints:\n      - { sources: [repository], targets: [k8s_thing] }\n", "k8s_thing"},
 		{"type named after an /assets page", "  - type: unclassified", "  - type: groups", "", "reserved"},

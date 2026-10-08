@@ -243,7 +243,7 @@ func LooksLikeIdentifier(s string) bool {
 }
 
 // DetectAdvisory returns the namespace and canonical form of an advisory id
-// by its prefix, following OSV/DefectDojo ("<DB>-<ENTRYID>"): CVE-, GHSA-,
+// by its prefix, following the OSV id format ("<DB>-<ENTRYID>"): CVE-, GHSA-,
 // the vendor databases with their own entry, else OSV:<DB>. It is for
 // advisory ids only; a scanner rule's namespace comes from the tool.
 func DetectAdvisory(id string) (namespace, externalID string, ok bool) {
