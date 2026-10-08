@@ -88,6 +88,7 @@ ingest_reports
 integrations
 ioc_matches
 iocs
+mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
 mcp_oauth_requests
