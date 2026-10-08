@@ -414,7 +414,7 @@ func run() int {
 		}
 	}()
 	if handlers.SensorV3 != nil {
-		if err := handlers.SensorV3.ListenMTLS(); err != nil {
+		if err := handlers.SensorV3.Start(ctx); err != nil {
 			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
 		}
 	}

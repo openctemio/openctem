@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-// EnableMTLS prepares the gRPC binding (ListenMTLS starts it).
+// EnableMTLS prepares the gRPC binding (Start starts it).
 func (s *Server) EnableMTLS(cfg MTLSConfig, ca *CA, keys KeyResolver) error {
 	srv, err := s.NewMTLSServer(cfg, ca, keys)
 	if err != nil {
@@ -17,8 +17,23 @@ func (s *Server) EnableMTLS(cfg MTLSConfig, ca *CA, keys KeyResolver) error {
 	return nil
 }
 
-// ListenMTLS starts the gRPC binding when EnableMTLS prepared it.
-func (s *Server) ListenMTLS() error {
+// WakeBus delivers control-stream wakes across replicas (Redis, T12).
+type WakeBus interface {
+	Start(ctx context.Context) error
+}
+
+// SetWakeBus wires the cross-replica wake bus Start starts.
+func (s *Server) SetWakeBus(b WakeBus) { s.wakeBus = b }
+
+// Start starts the cross-replica wake bus (when set) and the gRPC binding
+// (when EnableMTLS prepared it). Without the bus each replica wakes only its
+// own streams and the others see changes at their periodic re-check.
+func (s *Server) Start(ctx context.Context) error {
+	if s.wakeBus != nil {
+		if err := s.wakeBus.Start(ctx); err != nil {
+			s.log.Error("sensor wake bus not started: streams on other replicas wake at their re-check", "error", err)
+		}
+	}
 	if s.mtls == nil {
 		return nil
 	}
