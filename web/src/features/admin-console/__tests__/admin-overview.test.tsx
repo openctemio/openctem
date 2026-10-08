@@ -210,17 +210,17 @@ describe('AdminCommandMenu', () => {
     vi.clearAllMocks()
     fetchMock.mockReset()
     globalThis.fetch = fetchMock as unknown as typeof fetch
-    fetchMock.mockResolvedValue(
+    const page = (data: unknown[]) =>
       new Response(
-        JSON.stringify({
-          data: [{ id: 'org-9', name: 'Acme Corp', slug: 'acme' }],
-          total: 1,
-          page: 1,
-          per_page: 8,
-          total_pages: 1,
-        }),
-        { status: 200 }
+        JSON.stringify({ data, total: data.length, page: 1, per_page: 8, total_pages: 1 }),
+        {
+          status: 200,
+        }
       )
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).includes('/platform-users')
+        ? page([{ id: 'user-3', email: 'wile@acme.test', name: 'Wile E.' }])
+        : page([{ id: 'org-9', name: 'Acme Corp', slug: 'acme' }])
     )
   })
 
@@ -241,11 +241,24 @@ describe('AdminCommandMenu', () => {
     await renderMenu('super_admin')
     await user.type(screen.getByRole('combobox'), 'acme')
     const option = await screen.findByRole('option', { name: /Acme Corp/ })
-    const url = String(fetchMock.mock.calls.at(-1)?.[0])
-    expect(url).toContain('/api/v1/admin/tenants?')
-    expect(url).toContain('search=acme')
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(
+      urls.some((u) => u.includes('/api/v1/admin/tenants?') && u.includes('search=acme'))
+    ).toBe(true)
     await user.click(option)
     expect(mocks.push).toHaveBeenCalledWith('/admin/organizations/org-9')
+  })
+
+  it('finds accounts too and opens the one picked', async () => {
+    const user = userEvent.setup()
+    await renderMenu('readonly')
+    await user.type(screen.getByRole('combobox'), 'wile')
+    const option = await screen.findByRole('option', { name: /Wile E\./ })
+    expect(
+      fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/v1/admin/platform-users?q=wile'))
+    ).toBe(true)
+    await user.click(option)
+    expect(mocks.push).toHaveBeenCalledWith('/admin/users/user-3')
   })
 
   it('does not query organizations for a one-letter search', async () => {

@@ -1,189 +1,137 @@
-# Getting Started
+# Getting Started (development)
+
+This page gets the API running on a developer machine. To install OpenCTEM for
+real use, follow the operator documentation at
+[docs.openctem.io/install](https://docs.openctem.io/install/).
 
 ## Prerequisites
 
 - Go 1.26+
-- Docker & Docker Compose
-- Make (optional but recommended)
+- Node.js (for the web console and the generated contract types)
+- Docker with Docker Compose
+- Make
 
 The API is the `api/` directory of the
-[`openctemio/openctem`](https://github.com/openctemio/openctem) monorepo (the web
-console is `web/`); run the commands below in `api/`. To install both
-components and the git hooks at once, run `make setup` at the repository root.
-
-## Quick Start with Docker (Recommended)
-
-### 1. Clone Repository
+[`openctemio/openctem`](https://github.com/openctemio/openctem) monorepo; the web
+console is `web/`. From the repository root, `make setup` downloads the Go and npm
+dependencies, enables the git hooks and generates the contract files.
 
 ```bash
 git clone https://github.com/openctemio/openctem.git
-cd openctem/api   # the API lives in api/ of the openctem monorepo
+cd openctem
+make setup
 ```
 
-### 2. Setup Environment
+## Run the API in Docker (recommended)
 
 ```bash
+cd api
 cp .env.example .env
-```
-
-### 3. Start Development Environment
-
-```bash
-# With hot reload
 make docker-dev
 ```
 
-This starts:
-- **App** with hot reload (Air)
-- **PostgreSQL 17**
-- **Redis 7**
+This starts PostgreSQL 17, Redis 7 and the API (`target: development` of the
+`Dockerfile`). The API container applies migrations on start, then runs with hot
+reload (Air); Delve listens on port 2345.
 
-### 4. Verify Installation
+Check it:
 
 ```bash
 curl http://localhost:8080/health
+# {"status":"healthy","timestamp":"..."}
 ```
 
-Expected response:
-```json
-{"status":"healthy","timestamp":"2025-01-01T00:00:00Z"}
-```
+Create the first platform administrator and organization with the
+`bootstrap-admin` command (flags: `-email`, `-org-name`, `-org-owner-email`; run
+`go run ./cmd/bootstrap-admin -h` for the full list). See
+[Migrations](development/migrations.md) for seeding details.
 
----
+Run the web console against it from the repository root with `make dev-web`
+(http://localhost:3000).
 
-## Local Development (Without Docker)
-
-### 1. Install Dependencies
+## Run the API without Docker
 
 ```bash
-go mod download
-```
-
-### 2. Install Development Tools
-
-```bash
-make install-tools
-```
-
-This installs:
-- `golangci-lint` - Linter
-- `air` - Hot reload
-- `migrate` - Database migrations
-- `mockgen` - Mock generator
-
-### 3. Start Infrastructure
-
-```bash
-# Start only PostgreSQL and Redis
-docker compose -f docker-compose.yml up -d
-```
-
-### 4. Run Migrations
-
-```bash
+cd api
+make install-tools               # golangci-lint, staticcheck, air, migrate, mockgen
+docker compose -f docker-compose.yml up -d   # only PostgreSQL and Redis
 make migrate-up
+make dev                         # hot reload (falls back to `make run` without air)
 ```
 
-### 5. Run Application
+## Configuration
 
-```bash
-# With hot reload
-make dev
-
-# Without hot reload
-make run
-```
-
----
-
-## Environment Variables
-
-Key environment variables (see `.env.example` for full list):
+All settings are environment variables; `api/.env.example` lists them with
+comments, and `api/internal/config/config.go` is the source of truth. The ones you
+need locally:
 
 ```env
-# Application
-APP_NAME=openctem
-APP_ENV=development          # development | production
-
-# Server
-SERVER_HOST=0.0.0.0
+APP_ENV=development              # required locally: unset means production
 SERVER_PORT=8080
-
-# Database
 DB_HOST=localhost
-DB_PORT=5432
 DB_USER=openctem
 DB_PASSWORD=secret
 DB_NAME=openctem
-DB_SSLMODE=disable
-
-# Redis
 REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# Logging
-LOG_LEVEL=debug              # debug | info | warn | error
-LOG_FORMAT=text              # text | json
-
-# Keycloak Authentication — only needed when AUTH_PROVIDER is "oidc" or "hybrid".
-# The default AUTH_PROVIDER=local uses built-in JWT auth and ignores these
-# (see .env.example). Leave unset for a local-auth quickstart.
-KEYCLOAK_BASE_URL=http://localhost:8080
-KEYCLOAK_REALM=openctem
-KEYCLOAK_CLIENT_ID=api
-
-# CORS
-CORS_ALLOWED_ORIGINS=*       # Use specific origins in production
+LOG_LEVEL=debug                  # debug | info | warn | error
+LOG_FORMAT=text                  # text | json
+AUTH_PROVIDER=local              # local (built-in accounts) | oidc | hybrid
+AUTH_JWT_SECRET=...               # the .env.example value works in development
+APP_ENCRYPTION_KEY=...            # same; generate real ones for anything else
 ```
 
----
-
-## Project Structure Overview
-
-```
-openctem/
-├── cmd/server/main.go       # Entry point
-├── internal/
-│   ├── domain/              # Business logic (no external deps)
-│   │   ├── asset/           # Asset entity, value objects, repository interface
-│   │   └── shared/          # Shared types (ID, errors)
-│   ├── app/                 # Application services
-│   └── infra/               # External adapters
-│       ├── http/            # HTTP handlers, router, middleware
-│       └── postgres/        # Database implementation
-├── pkg/                     # Reusable utilities
-├── migrations/              # SQL migrations
-└── tests/                   # Integration tests
-```
-
----
-
-## Common Commands
+The development values in `.env.example` are refused whenever `APP_ENV` is not
+`development`, and a secret still holding example text (`openssl rand -hex 32`,
+`<CHANGE_ME...>`) is refused in every mode. To validate the settings without
+starting or connecting to anything (the server reads the environment, not the
+`.env` file):
 
 ```bash
-# Development
-make dev              # Run with hot reload
-make run              # Run without hot reload
-make test             # Run tests
-make lint             # Run linter
-make fmt              # Format code
-
-# Docker
-make docker-dev       # Start dev environment
-make docker-prod      # Start prod environment
-make docker-down      # Stop containers
-make docker-logs      # View logs
-
-# Database
-make migrate-up       # Apply migrations
-make migrate-down     # Rollback last migration
-make migrate-create name=add_users  # Create new migration
+(set -a; . ./.env; set +a; GOWORK=off go run ./cmd/server -check-config)
 ```
 
----
+Operator-facing configuration (TLS, SSO, SMTP, scaling) is documented at
+[docs.openctem.io/configuration](https://docs.openctem.io/configuration/).
 
-## Next Steps
+## Project layout
 
-- Read [Architecture Overview](architecture/overview.md)
-- Explore [API Reference](api/)
-- Setup [IDE](development/setup.md)
+```
+api/
+├── cmd/server/          # API entry point (also bootstrap-admin, rekey, seed, ... in cmd/)
+├── internal/
+│   ├── app/             # Application services, one package per bounded context
+│   ├── config/          # Environment configuration
+│   └── infra/           # Adapters: http (handlers, routes, middleware), postgres, redis, ...
+├── pkg/
+│   ├── domain/          # Entities, value objects, repository interfaces (no external deps)
+│   └── ...              # Shared packages (logger, apierror, pagination, ...)
+├── migrations/          # SQL migrations (golang-migrate)
+└── tests/               # Integration and end-to-end tests
+```
+
+See [Project Structure](architecture/project-structure.md) for the full layout.
+
+## Common commands
+
+```bash
+make dev               # run with hot reload
+make test              # unit tests (DB-backed tests need TEST_DATABASE_URL, or use make test-db)
+make lint              # golangci-lint
+make fmt               # format code
+
+make docker-dev        # development stack in Docker
+make docker-down       # stop the containers
+make docker-logs       # follow the logs
+
+make migrate-up        # apply migrations
+make migrate-down      # roll back the last migration
+make migrate-create name=add_widgets   # new migration pair
+```
+
+All targets: [Makefile reference](MAKEFILE.md).
+
+## Next steps
+
+- [Architecture overview](architecture/overview.md)
+- [Development setup](development/setup.md) (IDE, debugging, tooling)
+- [API reference](api/README.md)

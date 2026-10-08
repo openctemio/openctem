@@ -176,15 +176,15 @@ mode); tenant isolation is enforced in the queries (`WHERE tenant_id = $n`).
 When creating database functions in migrations:
 
 1. **Document in `docs/architecture/database-notes.md`** - Add function signature, description, and usage examples
-2. **Use consistent naming** - `verb_noun_noun` pattern (e.g., `recover_stuck_platform_jobs`, `renew_agent_lease`)
+2. **Use consistent naming** - `verb_noun_noun` pattern (e.g., `recover_stuck_jobs`, `renew_sensor_lease`)
 3. **Return meaningful types** - Use `RETURNS TABLE` for complex results with multiple fields
 4. **Include comments in SQL** - Use `COMMENT ON FUNCTION` for function documentation
 5. **Match Go interface** - Ensure function signature matches the Go repository method that calls it
 
-**Example:**
+**Example** (illustrative):
 ```sql
 -- Function with proper documentation
-CREATE OR REPLACE FUNCTION recover_stuck_platform_jobs(
+CREATE OR REPLACE FUNCTION recover_stuck_jobs(
     p_stuck_threshold_minutes INT DEFAULT 30
 ) RETURNS INT AS $$
 DECLARE
@@ -195,8 +195,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION recover_stuck_platform_jobs IS
-    'Return stuck jobs to queue when agent goes offline (max 3 retries)';
+COMMENT ON FUNCTION recover_stuck_jobs IS
+    'Return stuck jobs to the queue when a sensor goes offline (max 3 retries)';
 ```
 
 **Go usage:**

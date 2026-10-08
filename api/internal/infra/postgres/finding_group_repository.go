@@ -67,9 +67,9 @@ func statusCountCols() string {
 		COUNT(*) FILTER (WHERE f.status IN ('new','confirmed')) as open,
 		COUNT(*) FILTER (WHERE f.status = 'in_progress') as in_progress,
 		COUNT(*) FILTER (WHERE f.status = 'fix_applied') as fix_applied,
-		COUNT(*) FILTER (WHERE f.status IN ('resolved','verified')) as resolved,
+		COUNT(*) FILTER (WHERE f.status = 'resolved') as resolved,
 		COUNT(DISTINCT f.asset_id) as affected_assets,
-		COUNT(DISTINCT f.asset_id) FILTER (WHERE f.status IN ('resolved','verified')) as resolved_assets`
+		COUNT(DISTINCT f.asset_id) FILTER (WHERE f.status = 'resolved') as resolved_assets`
 }
 
 // buildFilterWhere builds WHERE clauses from FindingFilter.
