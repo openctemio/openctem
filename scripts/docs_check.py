@@ -14,6 +14,11 @@ Scans every *.md file under each ROOT (default: the current directory) and fails
     Use example.com and the documentation ranges 192.0.2.0/24, 198.51.100.0/24,
     203.0.113.0/24 and 2001:db8::/32 instead.
 
+Files listed in scripts/docs_check_allow.txt (one path per line, relative to the
+repository root, `#` starts a comment) are skipped. Use it only for a file an open pull
+request is already fixing, with the pull request number in the comment, and remove the
+entry when it merges.
+
 A line that genuinely needs a private address (for example a page that explains how
 private ranges are handled) can carry the marker `docs-check: allow-private` in an HTML
 comment on the same line.
@@ -133,16 +138,36 @@ def check_file(path, errors):
                 errors.append(f"{path}:{lineno}: missing anchor #{anchor} in {os.path.relpath(dest)}")
 
 
+def load_allowlist():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs_check_allow.txt")
+    allowed = set()
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                entry = line.split("#", 1)[0].strip()
+                if entry:
+                    allowed.add(os.path.normpath(entry))
+    return allowed
+
+
 def main(roots):
     errors = []
     count = 0
+    allowed = load_allowlist()
+    skipped = 0
     for root in roots or ["."]:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for name in filenames:
                 if name.endswith(".md") and name not in SKIP_FILES:
+                    path = os.path.join(dirpath, name)
+                    if os.path.normpath(os.path.relpath(path, root)) in allowed:
+                        skipped += 1
+                        continue
                     count += 1
-                    check_file(os.path.join(dirpath, name), errors)
+                    check_file(path, errors)
+    if skipped:
+        print(f"docs-check: skipped {skipped} allow-listed files (scripts/docs_check_allow.txt)")
     for e in errors:
         print(e)
     print(f"docs-check: {count} files, {len(errors)} problems")

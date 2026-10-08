@@ -987,7 +987,7 @@ the fields the platform plans and binds output with.
   another tenant. A changed contract digest is a manifest change
   (`contracts` in the diff, "tool contract of N changed" on the timeline).
 - **Used by ingest** to narrow what a command-bound report of that tool may
-  carry ([scan-stages.md §4](scan-stages.md#4-report-output-type-binding-decision-g12)).
+  carry ([scan-stages.md §4](scan-stages.md#4-report-output-type-binding-owner-decision-g12)).
   A contract only narrows: it comes from the sensor.
 - **Shown** on the sensor drawer's Manifest tab (class, tier, network,
   consumes, produces, digest) and returned by
