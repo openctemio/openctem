@@ -1,9 +1,12 @@
 package main
 
 import (
+	"github.com/openctemio/openctem/api/internal/app/apikey"
+	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -27,4 +30,38 @@ func newMCPDiscovery(cfg *config.Config, log *logger.Logger) *routes.MCPDiscover
 		Metadata:       handler.NewMCPResourceMetadataHandler(e),
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 	}
+}
+
+// newMCPOAuthService builds the authorization server of the MCP endpoint
+// (RFC-062). It needs the public endpoints (discovery), the database and the
+// permission services; without any of them it is nil and the MCP endpoint
+// accepts `oct_` keys only.
+func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.Logger) *mcpoauthapp.Service {
+	svc, repos, cfg := deps.Services, deps.Repos, deps.Config
+	if d == nil || deps.DB == nil || svc == nil || repos == nil || svc.PermCache == nil || repos.Tenant == nil || repos.User == nil {
+		return nil
+	}
+	var audit mcpoauthapp.AuditLogger
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	s, err := mcpoauthapp.NewService(mcpoauthapp.Config{
+		Repository: postgres.NewMCPOAuthRepository(deps.DB),
+		Endpoints:  d.Endpoints,
+		// Codes and tokens are stored as HMAC-SHA256 with the application
+		// key; tokens hashed under a previous key keep working during a
+		// rotation.
+		Pepper:      cfg.Encryption.Key,
+		OldPeppers:  cfg.Encryption.PreviousKeys,
+		Fetcher:     mcpoauthapp.NewHTTPMetadataFetcher(),
+		Members:     apikey.NewMembershipChecker(repos.Tenant, repos.User),
+		Permissions: apikey.NewHolderPermissions(repos.Tenant, svc.PermCache),
+		Audit:       audit,
+		Logger:      log,
+	})
+	if err != nil {
+		log.Warn("MCP OAuth off", "error", err.Error())
+		return nil
+	}
+	return s
 }
