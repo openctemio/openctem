@@ -399,6 +399,12 @@ func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tena
 	if err != nil {
 		return fmt.Errorf("failed to get scan workflow steps: %w", err)
 	}
+	// A workflow no sensor here can run (or that runs only in CI) is
+	// refused, naming the steps and why.
+	pipelineTemplate.Steps = steps
+	if err := s.requireWorkflowRunnable(ctx, tenantID, pipelineTemplate); err != nil {
+		return err
+	}
 	for _, step := range steps {
 		if step.Tool != "" {
 			stepTool, err := s.toolRepo.GetByName(ctx, tenantID, step.Tool)
