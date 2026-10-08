@@ -1,10 +1,9 @@
 # RFC-036 — External Attack Surface Management (EASM)
 
-> Status: **Accepted** (2026-10-02). The owner approved decisions O1–O10 as
-> recommended (§12.3). The api + ui monorepo cutover has merged, so
-> implementation (P0 → P1) is written directly in the monorepo (`api/` +
-> `web/`); §9 tracks which phase items have shipped.
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
+> Status: **Accepted** (2026-10-02; decisions O1–O10 in §12.3). P0 and P1
+> are implemented and P2 in part (§9 tracks which phase items have shipped;
+> seeds were later folded into scope entries by RFC-054); P3–P6 are not built.
+> Scope: api + sdk-go + sensor (`openctemio/sensor`) + ui.
 > Builds on [RFC-019](RFC-019-certificate-transparency-discovery.md) (CT
 > monitoring), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones, default
 > zone, D14 shared platform scanners), [RFC-026](RFC-026-sensor-results-ingest.md)
@@ -14,8 +13,8 @@
 > [RFC-034](RFC-034-sensor-network-egress.md) (egress; no evasion).
 > Architecture page: [easm.md](../architecture/easm.md).
 >
-> Owner's request (2026-10-02): "Research deeply and plan how to complete the
-> EASM part of this system in the best, most complete, most modern way."
+> Goal (2026-10-02): plan how to complete the EASM part of this system in
+> the most complete and modern way.
 
 ## 1. Answer in short
 
@@ -62,7 +61,7 @@ The design keeps OpenCTEM's registers and adds that loop:
 
 The full loop (seeds, review queue, chained pipeline, monitoring, connectors)
 is P2–P5. Lookalike monitoring, opt-in intrusive checks, shared platform
-sensors with published IPs and any vendor-risk mode are owner decisions (§12.2).
+sensors with published IPs and any vendor-risk mode are separate decisions (§12.2).
 
 ## 2. Scope
 
@@ -86,7 +85,7 @@ non-intrusively under the customer's authorization.
   authorization (§6.3). Candidates, dependencies and lookalikes get passive
   checks only.
 - **No third-party / vendor-risk scanning** in this RFC. If it is ever wanted,
-  it is a separate mode with passive public data only, and a separate owner
+  it is a separate mode with passive public data only, and a separate
   decision (§7, O6).
 - **No takedown service** for lookalike domains, even if O5 brings lookalike
   monitoring in.
@@ -195,7 +194,7 @@ found; our rules (§6.4) are built from these patterns.
 
 **Sequencing.** These decisions shape P3 (chained pipeline, engine definitions,
 subscans) and the inventory UI. P0 and P1 continue as planned. P3 is not built
-before the owner approves the separate scans proposal, which may define the
+before the separate scans proposal is accepted, which may define the
 same pipeline model; the two are reconciled then rather than built twice.
 
 ## 5. Techniques by stage
@@ -300,8 +299,8 @@ refused fetches during the research. The KEV catalog has 1,731 entries
 (2026.10.01) [50]. EPSS is daily and free [51]. A study of 42,735 internet-facing
 devices found no correlation between CVE density and exploitation [54]. That
 supports weighting by KEV/EPSS rather than counting CVEs, which is what the P0–P3
-engine already does. EASM is the Discovery stage of Gartner's CTEM loop [53]
-(fetch refused during the research; the five stages are already OpenCTEM's IA).
+engine already does. EASM is the Discovery stage of the CTEM loop, whose five stages are already
+OpenCTEM's IA.
 
 ### 5.6 Monitoring cadence
 
@@ -349,7 +348,7 @@ checks run as a sensor job instead.
   "shared". They send from **published, stable egress ranges** with
   descriptive reverse DNS, an information web page on each source IP and an
   abuse contact, following the ZMap guidelines [55][56] and the practice of
-  CISA's scanning service [59]. This is owner decision O2.
+  CISA's scanning service [59]. This is decision O2.
 
 ### 6.3 Seeds, authorization and tiers
 
@@ -370,7 +369,7 @@ checks run as a sensor job instead.
 
 UI: Scoping › Boundaries gets a **Seeds** tab next to Targets and Exclusions.
 `root_domain` seeds reuse the `verified_domains` DNS TXT flow from SSO.
-**Amended by research/22 decision E6 (2026-10-04):** each row has a
+**Amended by decision E6 (2026-10-04):** each row has a
 `purpose`. A tenant verifies a domain itself for EASM (`purpose=easm`,
 `/api/v1/easm/verified-domains`); that proves control for attribution but
 never admits SSO JIT or SCIM users. Using a domain for SSO stays a platform
@@ -397,7 +396,7 @@ it is inside an active scope target or at/under a root-domain seed or verified
 domain (`derived_from_seed`); a rejected name refuses itself and every name
 under it. An internet-facing asset with no record outside all of them is
 `unattributed` and waits for a person. The tier ceiling is not enforced yet
-(sensor side, 22b S7). See
+(sensor side). See
 [architecture/active-probe-gate.md](../architecture/active-probe-gate.md).
 
 | Tier | Touches the target | Default |
@@ -466,8 +465,8 @@ monotone and explainable: each row says how much it added.
 **Review queue**
 
 - Sorted by confidence × potential impact (open ports, high-risk tech).
-- Each row shows the evidence chain as sentences, for example: "`api.acme.io`
-  — SAN on the certificate also serving `www.acme.com` (confirmed) — seen in CT
+- Each row shows the evidence chain as sentences, for example: "`api.example.com`
+  — SAN on the certificate also serving `www.example.com` (confirmed) — seen in CT
   2026-09-30".
 - Actions: confirm / reject / dependency / monitor only, with bulk and "apply
   to all with this evidence".
@@ -689,8 +688,8 @@ never shared across tenants.
 
 ## 7. Third-party / vendor-risk mode (separate decision)
 
-Vendor-risk ratings use public data about **other** organisations. If the owner
-ever wants it (O6), it must be:
+Vendor-risk ratings use public data about **other** organisations. If it is
+ever wanted (O6), it must be:
 
 - a separate register (`vendors`), never mixed with the tenant's inventory or
   attribution;
@@ -739,23 +738,23 @@ Effort is engineer-weeks across all repos.
 | **P0 — Make what exists honest** | E1 CT rotation cursor (oldest-checked first) and `certificate_expired` for the newest cert only; E2 recon tools in `full`/`platform` (pinned, checksummed), recon capabilities advertised only when the binary answers; E3 flags verified against each tool's `-h` and fixed, with golden tests; E4 parser type; E7 presets reference only shipped tools; E8 UI: server pagination, expiring from certificate assets, unknown ≠ valid/200; E9 real trends from state history, website bucket = application/website; E11 README (this PR) | 1.5–2 | Low | — | Tenant with 120 domains: every domain queried within 3 runs. Stock `platform` image + a test domain we own: subfinder → dnsx → httpx produce subdomain/IP/service assets live. UI cards match API counts on a fixture. No new findings from a run with zero data |
 | **P1 — Quick wins** | Dangling CNAME/NS check (API, daily, can-i-take-over-xyz fingerprints vendored with attribution) → `dangling_cname`/`dangling_ns` exposures; sensor nuclei `takeover` confirmation → `subdomain_takeover` (high); email posture (SPF/DMARC RFC 9989/MTA-STS/TLS-RPT) → `email_security_weak`; asset attribution columns + `easm_evidence` with the strong rules only; CT subdomains under **verified** domains promoted via internal ingest; `GET /easm/summary` + Overview tab | 3 | Low–medium (false positives on takeover → confirm step before *high*) | P0 | Fixture zone with a CNAME to an unclaimed provider is flagged medium within 24 h and high after confirmation. Fixture domains with `p=none` / no SPF flagged; correct ones not. Every promoted asset shows its evidence. Overview numbers equal list counts |
 | **P2 — Seeds and attribution** | `easm_seeds` + Boundaries › Seeds tab; `easm_candidates`, full rule table, noisy-OR, states, tombstones, path-cascading exclusions; collectors RDAP, RIPEstat/Cymru, PTR of seeded netblocks, SAN co-occurrence from CT; Review tab with evidence drawer and bulk; Beta learning; rule precision on Overview | 5–6 | Medium (precision; UI volume) | P1 | On a labelled test set (one real org's surface, ≥200 names), auto-confirmed precision ≥ 0.98 and queue precision ≥ 0.7. Rejected names never reappear without a new rule. Cross-tenant test: two tenants claiming one domain see nothing of each other |
-| **P3 — Active discovery pipeline** | Step-output chaining with `active_allowed` at each hop; wildcard filter in Go (puredns method); alterx bounded; naabu top-100; httpx+tlsx+cdncheck fields kept; certificate assets, `cname_of`, `serves_certificate`, `hosted_by`, `asn`/`netblock`; nuclei T1 flags; optional gowitness; one parser (sdk-go) | 5–6 | Medium–high (load on targets; tool behaviour) | P0; **RFC-030 P4 politeness** before enabling daily runs for more than pilot tenants; owner approval of the scans proposal (RFC-046) | A wildcard test zone yields 0 false subdomains. One run on a 1k-name surface stays within per_host=1 and the zone `max_rps`. Every finding traces seed → … → asset. Excluded nodes are never probed (sensor log) |
+| **P3 — Active discovery pipeline** | Step-output chaining with `active_allowed` at each hop; wildcard filter in Go (puredns method); alterx bounded; naabu top-100; httpx+tlsx+cdncheck fields kept; certificate assets, `cname_of`, `serves_certificate`, `hosted_by`, `asn`/`netblock`; nuclei T1 flags; optional gowitness; one parser (sdk-go) | 5–6 | Medium–high (load on targets; tool behaviour) | P0; **RFC-030 P4 politeness** before enabling daily runs for more than pilot tenants; acceptance of the scans proposal (RFC-046) | A wildcard test zone yields 0 false subdomains. One run on a 1k-name surface stays within per_host=1 and the zone `max_rps`. Every finding traces seed → … → asset. Excluded nodes are never probed (sensor log) |
 | **P4 — Continuous monitoring** | `easm_observations` facets + hashes; diffs → state history + exposure events (`dns_change`, `port_open/closed`, `service_changed`, certificate change, `subdomain_removed`); cadence tiers + budget; notifications via outbox; MTTD and freshness metrics | 3 | Low–medium (noise) | P3 | Changing a fixture DNS record / opening a port / rotating a cert yields one event each within the tier's cadence. Unchanged rescans write no rows. MTTD shown per asset |
 | **P5 — Sources and connectors** | `discovery_source` integrations (Cert Spotter, Censys, Shodan, SecurityTrails, Chaos, urlscan, HIBP, GitHub) with quota + cache; cloud connectors AWS (Route 53, public IPs, ELB, S3), Azure Resource Graph, GCP CAI as authoritative evidence; "cloud public IPs not in inventory" coverage metric | 6–8 (S per source, M per cloud) | Medium (credentials, terms) | P2 | Each source is per-tenant (`ListByProvider`) and isolation-tested. Quota exhaustion degrades to skip + warning. A connector-only asset auto-confirms with w = 1.0 |
-| **P6 — Optional modes** (each its own owner decision) | Lookalike monitoring (Go permutations + UTS #39 skeletons; registration/MX/CT checks; `lookalike_domain` exposure; T0 only); T2 intrusive opt-in with approver + expiry; shared platform sensors with published egress ranges, rDNS, info page, opt-out handling | 3 + 2 + (4 + ops) | Medium (legal/ops for platform sensors) | O2, O3, O5 | Lookalikes never receive active probes. T2 runs refuse without a verified seed and an unexpired approval. Published range document matches the actual egress (automated check) |
+| **P6 — Optional modes** (each its own decision) | Lookalike monitoring (Go permutations + UTS #39 skeletons; registration/MX/CT checks; `lookalike_domain` exposure; T0 only); T2 intrusive opt-in with approver + expiry; shared platform sensors with published egress ranges, rDNS, info page, opt-out handling | 3 + 2 + (4 + ops) | Medium (legal/ops for platform sensors) | O2, O3, O5 | Lookalikes never receive active probes. T2 runs refuse without a verified seed and an unexpired approval. Published range document matches the actual egress (automated check) |
 
 **Status on `develop` (checked 2026-10-04).**
 
 | Phase | Status |
 |---|---|
 | P0 | Shipped on the api/web side: E1 CT rotation and retries (#811, migration `000266`), `certificate_expired` for the newest certificate only, E7 presets with shipped tools only (#815, `000270`), E8/E9 honest numbers and real trends (#829), E11 (#724); CT names promoted to assets and the scan attribution gate (#839). Open: E10 (automatic external/shadow scope). E2–E4 are tracked in sdk-go and the sensor. E5 (httpx certificate, favicon, JARM, ASN, CDN): api ingest of the certificate asset and `serves_certificate` shipped (migration `001026`); the ctis converter, sdk-go `LiveHost` and sensor defaults (`-tls-grab -favicon -jarm -cdn`, same-host redirects, same-host crawl, rate limit honoured) are open PRs in those repositories. |
-| P1 | Shipped: dangling CNAME/NS and email posture checks (#852, `000325`; on by default since research/22 P0-8, `EASM_DNS_CHECKS_ENABLED`) and the lame-delegation check (#1012); attribution side tables and evidence, CT promotion and `GET /api/v1/easm/summary` (#839, `000324`); tenant-scan evidence `tenant_scanned` (#1004); the asset Ownership section (#856); the EASM overview cards on `/attack-surface` (#857); the review queue with bulk decisions and the asset-list attribution filter (#994 API, #1023 web: `/attack-surface/review`, inventory shows approved assets by default; [easm.md §4b](../architecture/easm.md)); findings on unconfirmed assets capped at P2 (#1009); takeover confirmation: a nuclei takeover-template match from a tenant scan on an open `dangling_cname` raises `subdomain_takeover` (high) (#1018, `000485`). Open: sensor-side C17 (dnsx resolver fallback, sensor repository). |
+| P1 | Shipped: dangling CNAME/NS and email posture checks (#852, `000325`; on by default since P0-8 below, `EASM_DNS_CHECKS_ENABLED`) and the lame-delegation check (#1012); attribution side tables and evidence, CT promotion and `GET /api/v1/easm/summary` (#839, `000324`); tenant-scan evidence `tenant_scanned` (#1004); the asset Ownership section (#856); the EASM overview cards on `/attack-surface` (#857); the review queue with bulk decisions and the asset-list attribution filter (#994 API, #1023 web: `/attack-surface/review`, inventory shows approved assets by default; [easm.md §4b](../architecture/easm.md)); findings on unconfirmed assets capped at P2 (#1009); takeover confirmation: a nuclei takeover-template match from a tenant scan on an open `dangling_cname` raises `subdomain_takeover` (high) (#1018, `000485`). Open: sensor-side C17 (dnsx resolver fallback, sensor repository). |
 | P2 | In progress: seeds (#1041: `easm_seeds`, `root_domain` watched by the CT monitor). Open: candidates and tombstones, CIDR/ASN/organization seeds with RDAP/RIPEstat/PTR collectors, noisy-OR learning, rule precision. |
 | P3–P6 | Not started (no `easm_observations`). |
 
-**research/22 P0 (EASM maturity plan, owner decisions E1–E13, 2026-10-04).**
+**EASM maturity plan P0 (decisions E1–E13, 2026-10-04).**
 One entry per item; the sensor items (P0-1 to P0-4) live in the sensor and
-sdk-go repositories, P0-5 with the scan-engine work (research/27).
+sdk-go repositories, P0-5 with the scan-engine work (RFC-046).
 
 - **P0-7 EASM alerts through the notification outbox:** shipped (this PR,
   migration `001014`). The CT monitor, the DNS checks and takeover
@@ -769,7 +768,7 @@ sdk-go repositories, P0-5 with the scan-engine work (research/27).
   shipped (#1143, migration `001017`). `EASM_DNS_CHECKS_ENABLED` defaults to
   true; the CT controller runs the DNS checks for each tenant right after its
   CT sweep; the email check also covers root-domain seeds and verified
-  domains with no domain asset (22c B3); a nuclei takeover-only scan may
+  domains with no domain asset; a nuclei takeover-only scan may
   probe a `dependency` asset with an open `dangling_cname`. The per-tenant
   off switch comes with P0-11.
 
@@ -856,7 +855,7 @@ Health page.
 
 ## 12. Decisions
 
-### 12.1 Technical decisions taken here (no owner input needed)
+### 12.1 Technical decisions taken here
 
 | # | Decision |
 |---|---|
@@ -871,7 +870,7 @@ Health page.
 | T9 | Per-tenant keys and caches for licensed sources; no cross-tenant sharing |
 | T10 | `findings.source = easm`; provenance on evidence/sightings (ADR-004) |
 
-### 12.2 Owner decisions
+### 12.2 Decisions considered
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
@@ -888,7 +887,7 @@ Health page.
 
 ### 12.3 Decisions (approved 2026-10-02)
 
-The owner approved O1–O10 **as recommended** on 2026-10-02. These are now the
+O1–O10 were approved **as recommended** on 2026-10-02. These are now the
 design; §12.2 keeps the options that were considered.
 
 | # | Decision (approved 2026-10-02) |
@@ -983,7 +982,6 @@ Standards, data sources, tools
 50. CISA KEV data. https://github.com/cisagov/kev-data
 51. FIRST EPSS. https://www.first.org/epss/
 52. CERT/CC SSVC, CISA BOD 26-04 decision model; *Publicly Exposed*. https://certcc.github.io/SSVC/howto/cisa_response/ ; https://certcc.github.io/SSVC/reference/decision_points/cisa/publicly_exposed/
-53. Gartner, CTEM (403 during research). https://www.gartner.com/en/articles/how-to-manage-cybersecurity-threats-not-episodes
 54. Harry, Sivan-Sevilla, McDermott, county attack surfaces, Journal of Cybersecurity 2024. https://doi.org/10.1093/cybsec/tyae032
 55. Durumeric, Wustrow, Halderman, "ZMap: Fast Internet-wide Scanning and Its Security Applications", USENIX Security 2013. https://www.usenix.org/conference/usenixsecurity13/technical-sessions/paper/durumeric
 56. Durumeric et al., "Ten Years of ZMap", IMC 2024. https://doi.org/10.1145/3646547.3689012
@@ -1004,6 +1002,5 @@ Standards, data sources, tools
 71. Arturi et al., "as2org+: Enriching AS-to-Organization Mappings with PeeringDB", PAM 2023. https://doi.org/10.1007/978-3-031-28486-1_17
 
 Not verified during the research (and therefore not relied on for a design
-choice): crt.sh limits; full BOD 23-02 and BOD 26-04 text on cisa.gov; Gartner's
-CTEM text; free-tier numbers of SecurityTrails, FOFA, ZoomEye, Hunter.how, OTX; mobile-app
+choice): crt.sh limits; full BOD 23-02 and BOD 26-04 text on cisa.gov; free-tier numbers of SecurityTrails, FOFA, ZoomEye, Hunter.how, OTX; mobile-app
 discovery practice.

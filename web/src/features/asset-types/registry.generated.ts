@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = 'a2b1b4119736ab35'
+export const ASSET_REGISTRY_VERSION = '9bd18ccb56c650ec'
 
 export type AssetLens =
   | 'external_surface'
@@ -370,21 +370,234 @@ export interface AssetPropertyDefinition {
   format?: AssetPropertyFormat
   synonyms?: readonly string[]
   classes?: readonly AssetClass[]
+  /** Stored as an array (synonyms merge into it). */
+  list?: boolean
 }
 
+/**
+ * A property key of the schema. Web code names a key through this type, never
+ * as a free string, so a key outside the registry does not compile.
+ */
+export type AssetPropertyKey =
+  | 'account_id'
+  | 'account_name'
+  | 'aliases'
+  | 'api_server_url'
+  | 'api_type'
+  | 'architecture'
+  | 'arn'
+  | 'asn'
+  | 'asn_org'
+  | 'authentication'
+  | 'availability_zone'
+  | 'backup_retention_days'
+  | 'banner'
+  | 'base_url'
+  | 'bucket_name'
+  | 'business_impact_notes'
+  | 'business_impact_score'
+  | 'canonical_url'
+  | 'cdn'
+  | 'certificate'
+  | 'chain_status_codes'
+  | 'cidr'
+  | 'cidr_block'
+  | 'city'
+  | 'cluster_name'
+  | 'cms'
+  | 'cname_target'
+  | 'container_id'
+  | 'content_length'
+  | 'content_type'
+  | 'country'
+  | 'cpe'
+  | 'cpu_count'
+  | 'created_at'
+  | 'default_branch'
+  | 'depth'
+  | 'device_type'
+  | 'direction'
+  | 'discovery_source'
+  | 'discovery_tool'
+  | 'display_name'
+  | 'dns_name'
+  | 'dns_record_types'
+  | 'dns_records'
+  | 'dns_servers'
+  | 'documentation_url'
+  | 'domain'
+  | 'domain_level'
+  | 'email'
+  | 'encryption_type'
+  | 'endpoint'
+  | 'endpoints_count'
+  | 'engine'
+  | 'expires_at'
+  | 'fingerprint_sha256'
+  | 'firewall_id'
+  | 'firmware_version'
+  | 'forms'
+  | 'fqdn'
+  | 'framework'
+  | 'function_name'
+  | 'gateway'
+  | 'geolocation'
+  | 'groups'
+  | 'handler'
+  | 'has_cors'
+  | 'has_dhcp'
+  | 'has_edr'
+  | 'has_flow_logs'
+  | 'has_immutable_tags'
+  | 'has_logging'
+  | 'has_mfa'
+  | 'has_network_policies'
+  | 'has_pod_security'
+  | 'has_rate_limiting'
+  | 'has_rbac'
+  | 'has_scan_on_push'
+  | 'has_ssl_pinning'
+  | 'has_tls'
+  | 'has_versioning'
+  | 'has_waf'
+  | 'host'
+  | 'hostname'
+  | 'hypervisor'
+  | 'identity_hints'
+  | 'image'
+  | 'image_count'
+  | 'image_id'
+  | 'instance_id'
+  | 'instance_type'
+  | 'ip_address'
+  | 'ip_addresses'
+  | 'is_archived'
+  | 'is_auth_required'
+  | 'is_default'
+  | 'is_encrypted'
+  | 'is_expired'
+  | 'is_private'
+  | 'is_privileged'
+  | 'is_public'
+  | 'is_reserved'
+  | 'is_self_signed'
+  | 'is_ssl_enforced'
+  | 'is_virtual'
+  | 'is_wildcard'
+  | 'isp'
+  | 'issuer_cn'
+  | 'issuer_org'
+  | 'kernel_version'
+  | 'key_algorithm'
+  | 'key_size'
+  | 'language'
+  | 'last_commit_at'
+  | 'last_login_at'
+  | 'last_modified_at'
+  | 'last_used_at'
+  | 'lb_type'
+  | 'listeners'
+  | 'mac_addresses'
+  | 'management_ip'
+  | 'max_session_duration_seconds'
+  | 'memory_gb'
+  | 'memory_mb'
+  | 'method'
+  | 'min_sdk_version'
+  | 'model'
+  | 'nameservers'
+  | 'namespace'
+  | 'namespace_count'
+  | 'namespace_labels'
+  | 'network_plugin'
+  | 'networks'
+  | 'node_count'
+  | 'not_after'
+  | 'not_before'
+  | 'organization_id'
+  | 'os_family'
+  | 'os_name'
+  | 'os_version'
+  | 'package_name'
+  | 'parameters'
+  | 'parent_domain'
+  | 'permissions'
+  | 'platform'
+  | 'pod_count'
+  | 'policies'
+  | 'port'
+  | 'ports'
+  | 'principal_id'
+  | 'private_ip'
+  | 'product'
+  | 'protocol'
+  | 'provider'
+  | 'public_access'
+  | 'public_ip'
+  | 'redirect_url'
+  | 'region'
+  | 'registered_at'
+  | 'registrar'
+  | 'registry_url'
+  | 'repository_count'
+  | 'response_code'
+  | 'response_time_ms'
+  | 'role'
+  | 'role_id'
+  | 'role_name'
+  | 'roles'
+  | 'root_domain'
+  | 'rules'
+  | 'runtime'
+  | 'sans'
+  | 'scheme'
+  | 'secondary_cidrs'
+  | 'serial_number'
+  | 'server'
+  | 'service'
+  | 'service_count'
+  | 'signature_algorithm'
+  | 'source'
+  | 'ssl_policy'
+  | 'state'
+  | 'status_code'
+  | 'store_url'
+  | 'subject_cn'
+  | 'subnet_id'
+  | 'target_sdk_version'
+  | 'technologies'
+  | 'timeout_seconds'
+  | 'title'
+  | 'tls_version'
+  | 'transport'
+  | 'trust_policy'
+  | 'url'
+  | 'user'
+  | 'user_id'
+  | 'username'
+  | 'vendor'
+  | 'version'
+  | 'visibility'
+  | 'vlan_id'
+  | 'vpc_id'
+  | 'waf'
+  | 'waf_vendor'
+  | 'whois'
+  | 'workload_kind'
+  | 'x_native_sub_type'
+  | 'zone'
+
 /** Every property key of the schema, with its labels and display format. */
-export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>> = {
+export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDefinition>> = {
   account_id: { label: 'Account ID', labelVi: 'ID tài khoản', format: 'code' },
   account_name: { label: 'Account name', labelVi: 'Tên tài khoản' },
   aliases: { label: 'Former names', labelVi: 'Tên cũ' },
   api_server_url: { label: 'API server', labelVi: 'Máy chủ API', format: 'url' },
   api_type: { label: 'API type', labelVi: 'Loại API' },
   architecture: { label: 'Architecture', labelVi: 'Kiến trúc' },
-  archived: { label: 'Archived', labelVi: 'Đã lưu trữ' },
   arn: { label: 'ARN', labelVi: 'ARN', format: 'code' },
   asn: { label: 'ASN', labelVi: 'ASN' },
   asn_org: { label: 'ASN organization', labelVi: 'Tổ chức ASN' },
-  auth_required: { label: 'Authentication required', labelVi: 'Yêu cầu xác thực' },
   authentication: { label: 'Authentication', labelVi: 'Xác thực' },
   availability_zone: { label: 'Availability zone', labelVi: 'Vùng khả dụng' },
   backup_retention_days: {
@@ -405,6 +618,7 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
   canonical_url: { label: 'Repository URL', labelVi: 'URL kho mã', format: 'url' },
   cdn: { label: 'CDN', labelVi: 'CDN' },
   certificate: { label: 'Certificate details', labelVi: 'Chi tiết chứng chỉ' },
+  chain_status_codes: { label: 'Redirect chain', labelVi: 'Chuỗi chuyển hướng', list: true },
   cidr: { label: 'CIDR', labelVi: 'CIDR' },
   cidr_block: { label: 'CIDR block', labelVi: 'Dải CIDR' },
   city: { label: 'City', labelVi: 'Thành phố' },
@@ -422,7 +636,6 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
     labelVi: 'Kiểu nội dung',
     classes: ['service', 'web_endpoint', 'application'],
   },
-  cors_enabled: { label: 'CORS enabled', labelVi: 'Bật CORS' },
   country: { label: 'Country', labelVi: 'Quốc gia' },
   cpe: { label: 'CPE', labelVi: 'CPE', format: 'code' },
   cpu_count: { label: 'CPUs', labelVi: 'Số CPU' },
@@ -430,7 +643,6 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
   default_branch: { label: 'Default branch', labelVi: 'Nhánh mặc định' },
   depth: { label: 'Crawl depth', labelVi: 'Độ sâu thu thập' },
   device_type: { label: 'Device type', labelVi: 'Loại thiết bị' },
-  dhcp_enabled: { label: 'DHCP enabled', labelVi: 'Bật DHCP' },
   direction: { label: 'Direction', labelVi: 'Chiều' },
   discovery_source: { label: 'Discovery source', labelVi: 'Nguồn phát hiện' },
   discovery_tool: { label: 'Discovery tool', labelVi: 'Công cụ phát hiện' },
@@ -438,14 +650,11 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
   dns_name: { label: 'DNS name', labelVi: 'Tên DNS' },
   dns_record_types: { label: 'DNS record types', labelVi: 'Loại bản ghi DNS' },
   dns_records: { label: 'DNS records', labelVi: 'Bản ghi DNS' },
-  dns_servers: { label: 'DNS servers', labelVi: 'Máy chủ DNS', format: 'ip' },
+  dns_servers: { label: 'DNS servers', labelVi: 'Máy chủ DNS', format: 'ip', list: true },
   documentation_url: { label: 'Documentation', labelVi: 'Tài liệu', format: 'url' },
   domain: { label: 'Domain details', labelVi: 'Chi tiết tên miền' },
   domain_level: { label: 'Domain level', labelVi: 'Cấp tên miền' },
-  edr_installed: { label: 'EDR installed', labelVi: 'Đã cài EDR' },
   email: { label: 'Email', labelVi: 'Email' },
-  encrypted: { label: 'Encrypted', labelVi: 'Đã mã hóa' },
-  encryption_enabled: { label: 'Encryption enabled', labelVi: 'Bật mã hóa' },
   encryption_type: { label: 'Encryption type', labelVi: 'Kiểu mã hóa' },
   endpoint: { label: 'Endpoint', labelVi: 'Endpoint' },
   endpoints_count: { label: 'Endpoints', labelVi: 'Số endpoint' },
@@ -457,15 +666,54 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
     format: 'code',
   },
   firewall_id: { label: 'Firewall ID', labelVi: 'ID tường lửa', format: 'code' },
-  flow_logs_enabled: { label: 'Flow logs enabled', labelVi: 'Bật flow log' },
+  firmware_version: { label: 'Firmware version', labelVi: 'Phiên bản firmware' },
   forms: { label: 'Forms', labelVi: 'Biểu mẫu' },
   fqdn: { label: 'FQDN', labelVi: 'FQDN' },
   framework: { label: 'Framework', labelVi: 'Framework' },
   function_name: { label: 'Function name', labelVi: 'Tên hàm' },
   gateway: { label: 'Gateway', labelVi: 'Cổng mạng (gateway)', format: 'ip' },
   geolocation: { label: 'Geolocation', labelVi: 'Vị trí địa lý' },
-  groups: { label: 'Groups', labelVi: 'Nhóm' },
+  groups: { label: 'Groups', labelVi: 'Nhóm', list: true },
   handler: { label: 'Handler', labelVi: 'Handler', format: 'code' },
+  has_cors: { label: 'CORS', labelVi: 'CORS', synonyms: ['cors_enabled'] },
+  has_dhcp: { label: 'DHCP', labelVi: 'DHCP', synonyms: ['dhcp_enabled'] },
+  has_edr: { label: 'EDR installed', labelVi: 'Đã cài EDR', synonyms: ['edr_installed'] },
+  has_flow_logs: { label: 'Flow logs', labelVi: 'Flow log', synonyms: ['flow_logs_enabled'] },
+  has_immutable_tags: {
+    label: 'Immutable tags',
+    labelVi: 'Tag bất biến',
+    synonyms: ['immutable_tags'],
+  },
+  has_logging: { label: 'Logging', labelVi: 'Ghi log', synonyms: ['logging_enabled'] },
+  has_mfa: { label: 'MFA', labelVi: 'MFA', synonyms: ['mfa_enabled'] },
+  has_network_policies: {
+    label: 'Network policies',
+    labelVi: 'Chính sách mạng',
+    synonyms: ['network_policies'],
+  },
+  has_pod_security: {
+    label: 'Pod security',
+    labelVi: 'Bảo mật pod',
+    synonyms: ['pod_security_enabled'],
+  },
+  has_rate_limiting: {
+    label: 'Rate limiting',
+    labelVi: 'Giới hạn tần suất',
+    synonyms: ['rate_limiting'],
+  },
+  has_rbac: { label: 'RBAC', labelVi: 'RBAC', synonyms: ['rbac_enabled'] },
+  has_scan_on_push: {
+    label: 'Scan on push',
+    labelVi: 'Quét khi đẩy',
+    synonyms: ['scan_on_push'],
+  },
+  has_ssl_pinning: { label: 'SSL pinning', labelVi: 'Ghim SSL', synonyms: ['uses_ssl_pinning'] },
+  has_tls: { label: 'TLS', labelVi: 'TLS', synonyms: ['tls_enabled'] },
+  has_versioning: {
+    label: 'Versioning',
+    labelVi: 'Lập phiên bản',
+    synonyms: ['versioning_enabled'],
+  },
   has_waf: { label: 'Behind a WAF', labelVi: 'Có WAF' },
   host: { label: 'Host', labelVi: 'Máy chủ' },
   hostname: { label: 'Hostname', labelVi: 'Tên máy' },
@@ -474,7 +722,6 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
   image: { label: 'Image', labelVi: 'Image' },
   image_count: { label: 'Images', labelVi: 'Số image' },
   image_id: { label: 'Image ID', labelVi: 'ID image', format: 'code' },
-  immutable_tags: { label: 'Immutable tags', labelVi: 'Tag bất biến' },
   instance_id: { label: 'Instance ID', labelVi: 'ID máy ảo', format: 'code' },
   instance_type: { label: 'Instance type', labelVi: 'Loại máy ảo' },
   ip_address: { label: 'IP details', labelVi: 'Chi tiết địa chỉ IP' },
@@ -483,13 +730,35 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
     labelVi: 'Địa chỉ IP',
     format: 'ip',
     synonyms: ['ip', 'ips', 'ip_address', 'resolved_ip', 'resolved_ips', 'addresses'],
+    list: true,
+  },
+  is_archived: { label: 'Archived', labelVi: 'Đã lưu trữ', synonyms: ['archived'] },
+  is_auth_required: {
+    label: 'Authentication required',
+    labelVi: 'Yêu cầu xác thực',
+    synonyms: ['auth_required'],
   },
   is_default: { label: 'Default', labelVi: 'Mặc định' },
+  is_encrypted: {
+    label: 'Encrypted',
+    labelVi: 'Đã mã hóa',
+    synonyms: ['encrypted', 'encryption_enabled', 'encryption'],
+  },
   is_expired: { label: 'Expired', labelVi: 'Đã hết hạn' },
   is_private: { label: 'Private address', labelVi: 'Địa chỉ nội bộ' },
-  is_public: { label: 'Public', labelVi: 'Công khai' },
+  is_privileged: { label: 'Privileged', labelVi: 'Đặc quyền', synonyms: ['privileged'] },
+  is_public: {
+    label: 'Public',
+    labelVi: 'Công khai',
+    synonyms: ['publicly_accessible', 'is_publicly_accessible'],
+  },
   is_reserved: { label: 'Reserved address', labelVi: 'Địa chỉ dành riêng' },
-  is_self_signed: { label: 'Self-signed', labelVi: 'Tự ký' },
+  is_self_signed: { label: 'Self-signed', labelVi: 'Tự ký', synonyms: ['self_signed'] },
+  is_ssl_enforced: {
+    label: 'SSL enforced',
+    labelVi: 'Bắt buộc SSL',
+    synonyms: ['ssl_enforced'],
+  },
   is_virtual: { label: 'Virtual machine', labelVi: 'Máy ảo' },
   is_wildcard: { label: 'Wildcard', labelVi: 'Wildcard' },
   isp: { label: 'ISP', labelVi: 'Nhà cung cấp mạng' },
@@ -500,48 +769,61 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
   key_size: { label: 'Key size', labelVi: 'Độ dài khóa' },
   language: { label: 'Language', labelVi: 'Ngôn ngữ' },
   last_commit_at: { label: 'Last commit', labelVi: 'Commit gần nhất' },
-  last_login: { label: 'Last sign-in', labelVi: 'Đăng nhập lần cuối' },
-  last_modified: { label: 'Last modified', labelVi: 'Sửa đổi lần cuối' },
-  last_used: { label: 'Last used', labelVi: 'Dùng lần cuối' },
+  last_login_at: {
+    label: 'Last sign-in',
+    labelVi: 'Đăng nhập lần cuối',
+    synonyms: ['last_login'],
+  },
+  last_modified_at: {
+    label: 'Last modified',
+    labelVi: 'Sửa đổi lần cuối',
+    synonyms: ['last_modified'],
+  },
+  last_used_at: { label: 'Last used', labelVi: 'Dùng lần cuối', synonyms: ['last_used'] },
   lb_type: { label: 'Load balancer type', labelVi: 'Loại cân bằng tải' },
   listeners: { label: 'Listeners', labelVi: 'Listener' },
-  logging_enabled: { label: 'Logging enabled', labelVi: 'Bật ghi log' },
-  mac_addresses: { label: 'MAC addresses', labelVi: 'Địa chỉ MAC', format: 'code' },
-  max_session_duration: {
+  mac_addresses: {
+    label: 'MAC addresses',
+    labelVi: 'Địa chỉ MAC',
+    format: 'code',
+    list: true,
+  },
+  management_ip: { label: 'Management IP', labelVi: 'IP quản trị', format: 'ip' },
+  max_session_duration_seconds: {
     label: 'Max session duration (s)',
     labelVi: 'Thời lượng phiên tối đa (giây)',
+    synonyms: ['max_session_duration'],
   },
   memory_gb: { label: 'Memory (GB)', labelVi: 'Bộ nhớ (GB)' },
   memory_mb: { label: 'Memory (MB)', labelVi: 'Bộ nhớ (MB)' },
   method: { label: 'Method', labelVi: 'Phương thức' },
-  mfa_enabled: { label: 'MFA enabled', labelVi: 'Bật MFA' },
   min_sdk_version: { label: 'Minimum SDK', labelVi: 'SDK tối thiểu' },
+  model: { label: 'Model', labelVi: 'Mẫu thiết bị' },
   nameservers: {
     label: 'Name servers',
     labelVi: 'Máy chủ tên miền',
     synonyms: ['nameserver'],
+    list: true,
   },
   namespace: { label: 'Namespace', labelVi: 'Namespace' },
   namespace_count: { label: 'Namespaces', labelVi: 'Số namespace' },
   namespace_labels: { label: 'Namespace labels', labelVi: 'Nhãn namespace' },
   network_plugin: { label: 'Network plugin', labelVi: 'Plugin mạng' },
-  network_policies: { label: 'Network policies', labelVi: 'Chính sách mạng' },
-  networks: { label: 'Networks', labelVi: 'Mạng' },
+  networks: { label: 'Networks', labelVi: 'Mạng', list: true },
   node_count: { label: 'Nodes', labelVi: 'Số node' },
   not_after: { label: 'Valid until', labelVi: 'Hiệu lực đến' },
   not_before: { label: 'Valid from', labelVi: 'Hiệu lực từ' },
   organization_id: { label: 'Organization ID', labelVi: 'ID tổ chức', format: 'code' },
   os_family: { label: 'OS family', labelVi: 'Họ hệ điều hành' },
-  os_name: { label: 'Operating system', labelVi: 'Hệ điều hành' },
+  os_name: { label: 'Operating system', labelVi: 'Hệ điều hành', synonyms: ['os'] },
   os_version: { label: 'OS version', labelVi: 'Phiên bản hệ điều hành' },
   package_name: { label: 'Package name', labelVi: 'Tên gói', format: 'code' },
-  parameters: { label: 'Parameters', labelVi: 'Tham số' },
+  parameters: { label: 'Parameters', labelVi: 'Tham số', list: true },
   parent_domain: { label: 'Parent domain', labelVi: 'Tên miền cha' },
-  permissions: { label: 'Permissions', labelVi: 'Quyền' },
+  permissions: { label: 'Permissions', labelVi: 'Quyền', list: true },
   platform: { label: 'Platform', labelVi: 'Nền tảng' },
   pod_count: { label: 'Pods', labelVi: 'Số pod' },
-  pod_security_enabled: { label: 'Pod security enabled', labelVi: 'Bật bảo mật pod' },
-  policies: { label: 'Policies', labelVi: 'Chính sách' },
+  policies: { label: 'Policies', labelVi: 'Chính sách', list: true },
   port: {
     label: 'Port',
     labelVi: 'Cổng',
@@ -550,15 +832,11 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
   ports: { label: 'Ports', labelVi: 'Các cổng' },
   principal_id: { label: 'Principal ID', labelVi: 'ID principal', format: 'code' },
   private_ip: { label: 'Private IP', labelVi: 'IP nội bộ', format: 'ip' },
-  privileged: { label: 'Privileged', labelVi: 'Đặc quyền' },
   product: { label: 'Product', labelVi: 'Sản phẩm' },
   protocol: { label: 'Protocol', labelVi: 'Giao thức' },
   provider: { label: 'Provider', labelVi: 'Nhà cung cấp' },
   public_access: { label: 'Public access', labelVi: 'Truy cập công khai' },
   public_ip: { label: 'Public IP', labelVi: 'IP công khai', format: 'ip' },
-  publicly_accessible: { label: 'Publicly accessible', labelVi: 'Truy cập công khai' },
-  rate_limiting: { label: 'Rate limiting', labelVi: 'Giới hạn tần suất' },
-  rbac_enabled: { label: 'RBAC enabled', labelVi: 'Bật RBAC' },
   redirect_url: { label: 'Redirects to', labelVi: 'Chuyển hướng tới', format: 'url' },
   region: { label: 'Region', labelVi: 'Vùng' },
   registered_at: { label: 'Registered', labelVi: 'Ngày đăng ký' },
@@ -574,21 +852,24 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
   role: { label: 'Role', labelVi: 'Vai trò' },
   role_id: { label: 'Role ID', labelVi: 'ID vai trò', format: 'code' },
   role_name: { label: 'Role name', labelVi: 'Tên vai trò' },
-  roles: { label: 'Roles', labelVi: 'Vai trò' },
+  roles: { label: 'Roles', labelVi: 'Vai trò', list: true },
   root_domain: { label: 'Root domain', labelVi: 'Tên miền gốc' },
   rules: { label: 'Rules', labelVi: 'Quy tắc' },
   runtime: { label: 'Runtime', labelVi: 'Môi trường chạy' },
-  sans: { label: 'Subject alternative names', labelVi: 'Tên thay thế (SAN)', synonyms: ['san'] },
-  scan_on_push: { label: 'Scan on push', labelVi: 'Quét khi đẩy' },
+  sans: {
+    label: 'Subject alternative names',
+    labelVi: 'Tên thay thế (SAN)',
+    synonyms: ['san'],
+    list: true,
+  },
   scheme: { label: 'Scheme', labelVi: 'Lược đồ' },
-  secondary_cidrs: { label: 'Secondary CIDRs', labelVi: 'Dải CIDR phụ' },
+  secondary_cidrs: { label: 'Secondary CIDRs', labelVi: 'Dải CIDR phụ', list: true },
   serial_number: { label: 'Serial number', labelVi: 'Số sê-ri', format: 'code' },
-  server: { label: 'Server', labelVi: 'Máy chủ web' },
+  server: { label: 'Server', labelVi: 'Máy chủ web', synonyms: ['web_server'] },
   service: { label: 'Service', labelVi: 'Dịch vụ' },
   service_count: { label: 'Services', labelVi: 'Số dịch vụ' },
   signature_algorithm: { label: 'Signature algorithm', labelVi: 'Thuật toán chữ ký' },
   source: { label: 'Source', labelVi: 'Nguồn' },
-  ssl_enforced: { label: 'SSL enforced', labelVi: 'Bắt buộc SSL' },
   ssl_policy: { label: 'SSL policy', labelVi: 'Chính sách SSL' },
   state: { label: 'State', labelVi: 'Trạng thái' },
   status_code: {
@@ -600,10 +881,14 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
   subject_cn: { label: 'Subject CN', labelVi: 'CN chủ thể' },
   subnet_id: { label: 'Subnet ID', labelVi: 'ID subnet', format: 'code' },
   target_sdk_version: { label: 'Target SDK', labelVi: 'SDK mục tiêu' },
-  technologies: { label: 'Technologies', labelVi: 'Công nghệ', synonyms: ['technology'] },
+  technologies: {
+    label: 'Technologies',
+    labelVi: 'Công nghệ',
+    synonyms: ['technology'],
+    list: true,
+  },
   timeout_seconds: { label: 'Timeout (s)', labelVi: 'Thời gian chờ (giây)' },
   title: { label: 'Title', labelVi: 'Tiêu đề' },
-  tls_enabled: { label: 'TLS enabled', labelVi: 'Bật TLS' },
   tls_version: { label: 'TLS version', labelVi: 'Phiên bản TLS' },
   transport: { label: 'Transport', labelVi: 'Giao thức truyền tải' },
   trust_policy: { label: 'Trust policy', labelVi: 'Chính sách tin cậy' },
@@ -611,9 +896,8 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
   user: { label: 'User', labelVi: 'Người dùng' },
   user_id: { label: 'User ID', labelVi: 'ID người dùng', format: 'code' },
   username: { label: 'Username', labelVi: 'Tên đăng nhập' },
-  uses_ssl_pinning: { label: 'SSL pinning', labelVi: 'Ghim SSL' },
+  vendor: { label: 'Vendor', labelVi: 'Nhà sản xuất' },
   version: { label: 'Version', labelVi: 'Phiên bản' },
-  versioning_enabled: { label: 'Versioning enabled', labelVi: 'Bật lập phiên bản' },
   visibility: { label: 'Visibility', labelVi: 'Chế độ hiển thị' },
   vlan_id: { label: 'VLAN ID', labelVi: 'ID VLAN' },
   vpc_id: { label: 'VPC ID', labelVi: 'ID VPC', format: 'code' },
@@ -626,7 +910,7 @@ export const ASSET_PROPERTIES: Readonly<Record<string, AssetPropertyDefinition>>
 }
 
 /** The property keys every type may hold (platform keys, CTIS technical blocks). */
-export const ASSET_COMMON_PROPERTIES: readonly string[] = [
+export const ASSET_COMMON_PROPERTIES: readonly AssetPropertyKey[] = [
   'discovery_source',
   'discovery_tool',
   'aliases',
@@ -641,7 +925,7 @@ export const ASSET_COMMON_PROPERTIES: readonly string[] = [
 ]
 
 /** The attribute keys of each type, in display order. */
-export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly string[]>> = {
+export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly AssetPropertyKey[]>> = {
   domain: [
     'root_domain',
     'domain_level',
@@ -706,9 +990,9 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'banner',
     'cpe',
     'state',
-    'tls_enabled',
+    'has_tls',
     'tls_version',
-    'auth_required',
+    'is_auth_required',
     'response_time_ms',
   ],
   http_service: [
@@ -728,6 +1012,7 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'tls_version',
     'response_time_ms',
     'redirect_url',
+    'chain_status_codes',
   ],
   open_port: [
     'ip_addresses',
@@ -773,8 +1058,8 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'version',
     'authentication',
     'documentation_url',
-    'rate_limiting',
-    'cors_enabled',
+    'has_rate_limiting',
+    'has_cors',
     'endpoints_count',
   ],
   mobile_app: [
@@ -785,7 +1070,7 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'min_sdk_version',
     'target_sdk_version',
     'permissions',
-    'uses_ssl_pinning',
+    'has_ssl_pinning',
   ],
   host: [
     'hostname',
@@ -823,7 +1108,7 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'os_version',
     'device_type',
     'user',
-    'edr_installed',
+    'has_edr',
   ],
   serverless: [
     'provider',
@@ -835,16 +1120,9 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'region',
     'arn',
     'role',
-    'last_modified',
+    'last_modified_at',
   ],
-  cloud_account: [
-    'provider',
-    'account_id',
-    'account_name',
-    'region',
-    'organization_id',
-    'mfa_enabled',
-  ],
+  cloud_account: ['provider', 'account_id', 'account_name', 'region', 'organization_id', 'has_mfa'],
   container: [
     'container_id',
     'image',
@@ -863,7 +1141,7 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'namespace',
     'workload_kind',
     'node_count',
-    'rbac_enabled',
+    'has_rbac',
   ],
   kubernetes_cluster: [
     'cluster_name',
@@ -874,9 +1152,9 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'namespace_count',
     'api_server_url',
     'network_plugin',
-    'rbac_enabled',
-    'pod_security_enabled',
-    'network_policies',
+    'has_rbac',
+    'has_pod_security',
+    'has_network_policies',
   ],
   kubernetes_namespace: [
     'namespace',
@@ -890,9 +1168,9 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'registry_url',
     'repository_count',
     'image_count',
-    'scan_on_push',
-    'encryption_enabled',
-    'immutable_tags',
+    'has_scan_on_push',
+    'is_encrypted',
+    'has_immutable_tags',
   ],
   repository: [
     'provider',
@@ -901,17 +1179,25 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'default_branch',
     'canonical_url',
     'last_commit_at',
-    'archived',
+    'is_archived',
   ],
-  identity: ['provider', 'principal_id', 'arn', 'email', 'mfa_enabled', 'privileged', 'last_used'],
+  identity: [
+    'provider',
+    'principal_id',
+    'arn',
+    'email',
+    'has_mfa',
+    'is_privileged',
+    'last_used_at',
+  ],
   iam_user: [
     'provider',
     'user_id',
     'username',
     'arn',
     'email',
-    'last_login',
-    'mfa_enabled',
+    'last_login_at',
+    'has_mfa',
     'groups',
     'policies',
   ],
@@ -920,10 +1206,10 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'role_id',
     'role_name',
     'arn',
-    'max_session_duration',
+    'max_session_duration_seconds',
     'trust_policy',
     'policies',
-    'last_used',
+    'last_used_at',
   ],
   service_account: ['provider', 'account_id', 'email', 'display_name', 'roles', 'namespace'],
   database: [
@@ -932,32 +1218,37 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'provider',
     'endpoint',
     'port',
-    'encrypted',
-    'ssl_enforced',
-    'publicly_accessible',
+    'is_encrypted',
+    'is_ssl_enforced',
+    'is_public',
     'backup_retention_days',
   ],
-  data_store: ['engine', 'provider', 'encrypted', 'publicly_accessible'],
+  data_store: ['engine', 'provider', 'is_encrypted', 'is_public'],
   storage: [
     'provider',
     'bucket_name',
     'region',
     'arn',
-    'versioning_enabled',
-    'encryption_enabled',
+    'has_versioning',
+    'is_encrypted',
     'encryption_type',
     'public_access',
-    'logging_enabled',
+    'has_logging',
   ],
-  s3_bucket: [
-    'bucket_name',
-    'region',
-    'arn',
-    'versioning_enabled',
-    'encryption_enabled',
-    'public_access',
+  s3_bucket: ['bucket_name', 'region', 'arn', 'has_versioning', 'is_encrypted', 'public_access'],
+  network: [
+    'cidr',
+    'gateway',
+    'dns_servers',
+    'has_dhcp',
+    'vlan_id',
+    'zone',
+    'vendor',
+    'model',
+    'firmware_version',
+    'management_ip',
+    'serial_number',
   ],
-  network: ['cidr', 'gateway', 'dns_servers', 'dhcp_enabled', 'vlan_id', 'zone'],
   vpc: [
     'provider',
     'vpc_id',
@@ -965,7 +1256,7 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'secondary_cidrs',
     'region',
     'is_default',
-    'flow_logs_enabled',
+    'has_flow_logs',
   ],
   subnet: ['provider', 'subnet_id', 'vpc_id', 'cidr_block', 'availability_zone', 'is_public'],
   firewall: ['ip_addresses', 'provider', 'firewall_id', 'vpc_id', 'direction', 'rules'],

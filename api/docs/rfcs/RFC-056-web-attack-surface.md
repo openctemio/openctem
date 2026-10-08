@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner delegated WS1–WS14, 2026-10-07); P0 in implementation |
+| Status | Implemented (decisions WS1–WS14, 2026-10-07; W-OC1–W-OC8) |
 | Scope | api (`pkg/domain/webendpoint`, `internal/app/ingest`, `internal/infra/postgres`, scope, dispatch, handlers, migrations), web (Web surface), ctis 1.6 (`endpoints[]`, `finding.web`, `weburl`), sdk-go (`webscope`) |
 | Architecture | [web-surface.md](../architecture/web-surface.md) |
 | Related | RFC-042 (asset inventory v2: the `web_endpoint` class), RFC-043 (finding identity: the DAST recipe), RFC-054 (scope model), RFC-055 (tool contract: the `endpoint` port, CTIS 1.6, `web_scope`) |
@@ -33,7 +33,7 @@ matched a URL. This RFC gives the web surface its own model:
    fragments are dropped by the producer and again by the platform; token-like
    path segments are templated before storage.
 
-## 2. Decisions (owner, 2026-10-07: all as recommended)
+## 2. Decisions (2026-10-07)
 
 | # | Decision |
 |---|---|
@@ -52,7 +52,7 @@ matched a URL. This RFC gives the web surface its own model:
 | WS13 | Spec import covers OpenAPI, GraphQL, Postman and HAR through one importer family, upload and CI push. |
 | WS14 | Not seen for 30 days: `gone`; gone for 365 days: purged; events kept 90 days (tenant setting). |
 
-**Excluded paths are not a blind spot** (owner, 2026-10-07). An exclusion
+**Excluded paths are not a blind spot** (decided 2026-10-07). An exclusion
 stops requests, not knowledge:
 
 - endpoints under an excluded path are still recorded from non-requesting

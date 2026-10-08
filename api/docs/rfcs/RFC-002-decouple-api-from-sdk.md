@@ -1,12 +1,12 @@
 # RFC-002: Decouple API from SDK-Go — Extract CTIS Shared Types
 
-- **Status**: Completed — feature doc: [docs/architecture/api-ctis-decoupling.md](../architecture/api-ctis-decoupling.md)
+- **Status**: Implemented — feature doc: [docs/architecture/api-ctis-decoupling.md](../architecture/api-ctis-decoupling.md)
 - **Created**: 2026-04-15
-- **Problem**: API phụ thuộc SDK-Go (client library, 50K lines). Mỗi lần update SDK → phải update API go.mod → rebuild → retest. Ngược chiều dependency: backend source-of-truth phụ thuộc client lib.
+- **Problem**: The API depends on SDK-Go (a client library, 50K lines). Every SDK update → the API's go.mod must be updated → rebuild → retest. The dependency points the wrong way: the backend source of truth depends on a client library.
 
 ---
 
-## 1. Hiện trạng
+## 1. Current state
 
 ```
 API (backend, source of truth)
@@ -19,19 +19,19 @@ API (backend, source of truth)
       └── pkg/core           (~50 lines used — interfaces)
 
 SDK-Go total: 50,711 lines
-API chỉ dùng: ~5,000 lines (10%)
+Used by the API: ~5,000 lines (10%)
 ```
 
-### Vấn đề thực tế
+### Practical problems
 
-1. **SDK-Go tag v0.2.2** → API phải `go get sdk-go@v0.2.2` → rebuild → CI → deploy
-2. SDK-Go thêm scanner wrapper (agent feature) → API cũng phải retest (transitive deps change)
-3. Agent-only bug fix trong SDK → vẫn trigger API dependency update
-4. 90% code API pull về nhưng không dùng (scanners, platform client, transport...)
+1. **SDK-Go tag v0.2.2** → the API must `go get sdk-go@v0.2.2` → rebuild → CI → deploy
+2. SDK-Go adds a scanner wrapper (an agent feature) → the API must be retested too (transitive deps change)
+3. An agent-only bug fix in the SDK → still triggers an API dependency update
+4. 90% of the code the API pulls in is unused (scanners, platform client, transport...)
 
 ---
 
-## 2. Phân tích kỹ: Gì cần extract?
+## 2. Detailed analysis: what needs to be extracted?
 
 ### 2.1 Dependency graph (current)
 
@@ -60,35 +60,35 @@ chunk/splitter.go ──→ ctis/types.go
 chunk/types.go ──→ ctis/types.go
 ```
 
-**Nếu chỉ extract ctis → chunk trong SDK-Go không compile** vì ctis biến mất.
+**If only ctis is extracted → chunk in SDK-Go does not compile** because ctis is gone.
 
-### 2.3 Phải extract cùng nhau
+### 2.3 What must be extracted together
 
-| Package | Lines | Phụ thuộc nội bộ | External deps |
+| Package | Lines | Internal deps | External deps |
 |---|---|---|---|
-| `ctis` (types, sarif, recon_converter, normalize) | 3,719 | KHÔNG | stdlib only |
-| `shared/severity` | 217 | KHÔNG | stdlib only |
-| `shared/fingerprint` | 429 | KHÔNG | stdlib only |
+| `ctis` (types, sarif, recon_converter, normalize) | 3,719 | NONE | stdlib only |
+| `shared/severity` | 217 | NONE | stdlib only |
+| `shared/fingerprint` | 429 | NONE | stdlib only |
 | `chunk` (manager, splitter, storage, types, config) | 1,711 | ctis, compress | google/uuid, modernc.org/sqlite |
-| `compress` (compress.go only, analyzer stays) | 273 | KHÔNG | klauspost/compress |
+| `compress` (compress.go only, analyzer stays) | 273 | NONE | klauspost/compress |
 | **Total** | **6,349** | | |
 
-### 2.4 compress/analyzer.go — đặc biệt
+### 2.4 compress/analyzer.go — a special case
 
-`analyzer.go` import ctis để estimate report size. Có 2 lựa chọn:
-- **A**: Move analyzer vào ctis module (clean, nhưng compress split thành 2 nơi)
-- **B**: Move cả compress package vào ctis module (simple, nhưng kéo thêm klauspost dep)
-- **C**: Analyzer stays in SDK-Go, import từ ctis module mới (best — analyzer chỉ là optimization helper)
+`analyzer.go` imports ctis to estimate report size. The options:
+- **A**: Move the analyzer into the ctis module (clean, but compress is split across two places)
+- **B**: Move the whole compress package into the ctis module (simple, but pulls in the klauspost dependency)
+- **C**: The analyzer stays in SDK-Go and imports the new ctis module (best — the analyzer is only an optimization helper)
 
-**Chọn C**: `compress.go` (core compression) + `analyzer.go` (ctis-dependent estimator) ở SDK-Go. SDK-Go import ctis module cho analyzer. Chunk cũng ở SDK-Go, import ctis module.
+**Chosen: C**: `compress.go` (core compression) + `analyzer.go` (ctis-dependent estimator) stay in SDK-Go. SDK-Go imports the ctis module for the analyzer. Chunk also stays in SDK-Go and imports the ctis module.
 
-**→ Chỉ cần extract: ctis + severity + fingerprint (4,365 lines). Chunk và compress ở lại SDK-Go, import từ module mới.**
+**→ Only ctis + severity + fingerprint need to be extracted (4,365 lines). Chunk and compress stay in SDK-Go and import the new module.**
 
 ---
 
-## 3. Thiết kế module mới
+## 3. New module design
 
-### 3.1 Cấu trúc repo
+### 3.1 Repository layout
 
 ```
 openctemio/ctis/                            ← NEW repo
@@ -128,11 +128,11 @@ module github.com/openctemio/ctis
 
 go 1.22
 
-// Zero external deps — chỉ stdlib
-// (google/uuid, sqlite ở lại với chunk trong SDK-Go)
+// Zero external deps — stdlib only
+// (google/uuid and sqlite stay with chunk in SDK-Go)
 ```
 
-**Đặc biệt nhẹ**: Không pull bất kỳ external dep nào. Chỉ stdlib.
+**Especially light**: it pulls in no external dependency at all. Stdlib only.
 
 ### 3.3 Import paths
 
@@ -142,68 +142,68 @@ import "github.com/openctemio/ctis"                // Report, Asset, Finding typ
 import "github.com/openctemio/ctis/severity"        // Severity enum
 import "github.com/openctemio/ctis/fingerprint"     // Dedup hash
 
-// SDK-Go (thay đổi internal imports)
-import "github.com/openctemio/ctis"                // thay cho pkg/ctis
-import "github.com/openctemio/ctis/severity"        // thay cho pkg/shared/severity
-import "github.com/openctemio/ctis/fingerprint"     // thay cho pkg/shared/fingerprint
-// chunk, compress, adapters, core, scanners: ở lại SDK-Go, import ctis module
+// SDK-Go (internal imports change)
+import "github.com/openctemio/ctis"                // replaces pkg/ctis
+import "github.com/openctemio/ctis/severity"        // replaces pkg/shared/severity
+import "github.com/openctemio/ctis/fingerprint"     // replaces pkg/shared/fingerprint
+// chunk, compress, adapters, core, scanners: stay in SDK-Go and import the ctis module
 ```
 
 ---
 
 ## 4. Edge Cases & Risks
 
-### 4.1 Type drift giữa ctis module và consumers
+### 4.1 Type drift between the ctis module and its consumers
 
 | Scenario | Risk | Mitigation |
 |---|---|---|
-| ctis module thêm field mới | LOW | JSON unmarshal bỏ qua unknown fields → backward compatible |
-| ctis module xoá field | HIGH | Agent gửi field, API không parse → data loss | **Semantic versioning**: breaking change = major version bump |
-| ctis module đổi JSON tag | CRITICAL | Silent data loss | **CI test**: integration test Agent → API với mỗi ctis release |
-| ctis module đổi type (string→int) | CRITICAL | Unmarshal fail | **Semver + changelog** |
+| ctis module adds a new field | LOW | JSON unmarshal ignores unknown fields → backward compatible |
+| ctis module removes a field | HIGH | Agent sends the field, API does not parse it → data loss | **Semantic versioning**: breaking change = major version bump |
+| ctis module changes a JSON tag | CRITICAL | Silent data loss | **CI test**: Agent → API integration test for every ctis release |
+| ctis module changes a type (string→int) | CRITICAL | Unmarshal fail | **Semver + changelog** |
 
 ### 4.2 Version matrix
 
-| ctis | SDK-Go | API | Agent | Tương thích? |
+| ctis | SDK-Go | API | Agent | Compatible? |
 |---|---|---|---|---|
-| v1.0.0 | v0.3.0 (uses ctis v1.0.0) | v1.x (uses ctis v1.0.0) | v1.x (uses SDK v0.3.0) | YES — cùng ctis v1.0.0 |
-| v1.1.0 (thêm field) | v0.3.0 (vẫn ctis v1.0.0) | v1.x (upgrade ctis v1.1.0) | v1.x (SDK cũ → ctis v1.0.0) | YES — thêm field backward compat |
-| v2.0.0 (breaking) | v0.4.0 (upgrade ctis v2.0.0) | v2.x (upgrade ctis v2.0.0) | v2.x (SDK v0.4.0) | Phải upgrade cùng lúc |
+| v1.0.0 | v0.3.0 (uses ctis v1.0.0) | v1.x (uses ctis v1.0.0) | v1.x (uses SDK v0.3.0) | YES — same ctis v1.0.0 |
+| v1.1.0 (adds a field) | v0.3.0 (still ctis v1.0.0) | v1.x (upgrades to ctis v1.1.0) | v1.x (old SDK → ctis v1.0.0) | YES — an added field is backward compatible |
+| v2.0.0 (breaking) | v0.4.0 (upgrade ctis v2.0.0) | v2.x (upgrade ctis v2.0.0) | v2.x (SDK v0.4.0) | Must upgrade together |
 
-**Quy tắc**: ctis module dùng **semantic versioning nghiêm ngặt**:
+**Rule**: the ctis module uses **strict semantic versioning**:
 - Patch (v1.0.x): bug fix, no struct changes
-- Minor (v1.x.0): thêm fields/types (backward compatible)
-- Major (vX.0.0): đổi/xoá fields (breaking change — coordinate upgrade)
+- Minor (v1.x.0): adds fields/types (backward compatible)
+- Major (vX.0.0): changes/removes fields (breaking change — coordinate the upgrade)
 
 ### 4.3 Fingerprint consistency
 
 | Scenario | Risk | Mitigation |
 |---|---|---|
-| API upgrade ctis v1.1, Agent vẫn dùng v1.0 | Fingerprint hash v1.0 ≠ v1.1? | **RULE**: fingerprint algorithm KHÔNG BAO GIỜ thay đổi trong minor/patch. Chỉ thêm mới type, không sửa existing |
-| Parallel Agent instances, different ctis versions | Cùng finding, khác hash | **RULE**: fingerprint module không breaking changes. Nếu cần sửa → tạo `FingerprintV2()` riêng |
+| API upgrades to ctis v1.1, Agent still uses v1.0 | Fingerprint hash v1.0 ≠ v1.1? | **RULE**: the fingerprint algorithm NEVER changes in a minor/patch release. Only new types are added; existing ones are not modified |
+| Parallel Agent instances, different ctis versions | Same finding, different hash | **RULE**: no breaking changes in the fingerprint module. If a change is needed → add a separate `FingerprintV2()` |
 
 ### 4.4 Chunk protocol compatibility
 
-Chunk ở lại SDK-Go nhưng import ctis types từ module mới.
+Chunk stays in SDK-Go but imports the ctis types from the new module.
 
 | Scenario | Risk | Mitigation |
 |---|---|---|
-| ctis v1.1 thêm field → chunk serialize khác | LOW | JSON marshal thêm field → API nhận thêm data → OK |
-| ctis v2.0 đổi struct → chunk binary incompatible | HIGH | Coordinate upgrade SDK-Go + API cùng lúc |
+| ctis v1.1 adds a field → chunk serializes differently | LOW | JSON marshal adds the field → API receives extra data → OK |
+| ctis v2.0 changes a struct → chunk binary incompatible | HIGH | Upgrade SDK-Go + API together |
 
-### 4.5 API update ctis module version
+### 4.5 API updates of the ctis module version
 
 ```
-TRƯỚC (với SDK-Go):
-  SDK-Go thêm scanner → tag v0.2.3 → API phải update → rebuild
+BEFORE (with SDK-Go):
+  SDK-Go adds a scanner → tag v0.2.3 → API must update → rebuild
 
-SAU (với ctis module):
-  SDK-Go thêm scanner → KHÔNG ảnh hưởng API
-  ctis module thêm field → API go get ctis@v1.1.0 → rebuild
-  ctis module KHÔNG thay đổi → API KHÔNG cần rebuild
+AFTER (with the ctis module):
+  SDK-Go adds a scanner → NO effect on the API
+  ctis module adds a field → API go get ctis@v1.1.0 → rebuild
+  ctis module does NOT change → API does NOT need a rebuild
 ```
 
-**Tần suất update giảm**: CTIS schema thay đổi ~1 lần/tháng. SDK-Go thay đổi ~hàng tuần (scanner updates).
+**Lower update frequency**: the CTIS schema changes ~once a month. SDK-Go changes ~weekly (scanner updates).
 
 ### 4.6 Go workspace
 
@@ -224,26 +224,26 @@ replace (
 )
 ```
 
-### 4.7 Adapters — ở đâu?
+### 4.7 Adapters — where do they go?
 
-API import `sdk-go/pkg/adapters` cho SARIF/Trivy parsing. Sau extract:
-- **Phương án A**: Adapters ở lại SDK-Go, API vẫn import SDK-Go cho adapters → **KHÔNG giải quyết vấn đề**
-- **Phương án B**: Move adapters vào ctis module → ctis trở thành quá lớn, kéo theo nhiều deps
-- **Phương án C**: Move adapters vào API (internal package) → **BEST** — API owns parsing logic
+The API imports `sdk-go/pkg/adapters` for SARIF/Trivy parsing. After the extraction:
+- **Option A**: Adapters stay in SDK-Go and the API still imports SDK-Go for them → **does NOT solve the problem**
+- **Option B**: Move adapters into the ctis module → ctis becomes too large and pulls in many deps
+- **Option C**: Move adapters into the API (internal package) → **BEST** — the API owns the parsing logic
 
-Adapters chỉ dùng bởi API (Agent KHÔNG import adapters). Copy adapters vào `api/internal/infra/adapters/`.
+Adapters are used only by the API (the Agent does NOT import adapters). Copy the adapters into `api/internal/infra/adapters/`.
 
-### 4.8 Core + Chunk — API dùng gì?
+### 4.8 Core + Chunk — what does the API use?
 
-API import `core` chỉ cho `core.ChunkManager` interface (1 interface). Inline vào handler.
+The API imports `core` only for the `core.ChunkManager` interface (1 interface). Inline it into the handler.
 
-API import `chunk` cho `chunk.Manager` trong ingest handler. Phương án:
-- **A**: API vẫn import SDK-Go chỉ cho chunk → KHÔNG clean
-- **B**: Copy chunk vào API → duplicate maintenance
-- **C**: Extract chunk vào ctis module → kéo thêm google/uuid + sqlite deps
-- **D**: API tự implement dechunk logic (nhận chunks, reassemble) → **BEST cho long-term** nhưng effort cao
+The API imports `chunk` for `chunk.Manager` in the ingest handler. Options:
+- **A**: The API still imports SDK-Go just for chunk → NOT clean
+- **B**: Copy chunk into the API → duplicate maintenance
+- **C**: Extract chunk into the ctis module → pulls in google/uuid + sqlite deps
+- **D**: The API implements its own dechunk logic (receive chunks, reassemble) → **BEST long-term**, but high effort
 
-**Pragmatic**: Phase 1 copy adapters vào API, giữ SDK-Go import cho chunk. Phase 2 remove chunk dependency.
+**Pragmatic**: Phase 1 copies the adapters into the API and keeps the SDK-Go import for chunk. Phase 2 removes the chunk dependency.
 
 ---
 
@@ -251,10 +251,10 @@ API import `chunk` cho `chunk.Manager` trong ingest handler. Phương án:
 
 ### Phase 1: Create ctis module + move types (2 hours)
 
-1. Tạo repo `openctemio/ctis`
+1. Create the repository `openctemio/ctis`
 2. Copy: types.go, dependency_types.go, sarif.go, recon_converter.go, normalize.go
 3. Copy: severity/, fingerprint/ (with tests)
-4. Copy: schemas/v1/*.json từ schemas repo
+4. Copy: schemas/v1/*.json from the schemas repository
 5. Init go.mod (zero deps)
 6. Run tests
 7. Tag v1.0.0
@@ -350,31 +350,31 @@ import "github.com/openctemio/ctis"
 
 ## 8. Rollback Plan
 
-Nếu phát hiện vấn đề sau deploy:
+If a problem is found after deployment:
 1. API: revert import paths, add `sdk-go` back to go.mod
 2. SDK-Go: revert to v0.2.2 (re-export aliases removed)
 3. ctis module: keep as-is (no harm, just unused)
 
 ---
 
-## 9. Kết quả sau refactor
+## 9. Result after the refactor
 
 ```
-TRƯỚC:
-  API ──depends──→ SDK-Go (50K lines, update hàng tuần)
+BEFORE:
+  API ──depends──→ SDK-Go (50K lines, weekly updates)
 
-SAU:
-  API ──depends──→ ctis (4K lines, update ~1 lần/tháng)
+AFTER:
+  API ──depends──→ ctis (4K lines, updated ~once a month)
   
   SDK-Go ──depends──→ ctis (4K lines)
   Agent ──depends──→ SDK-Go (unchanged)
 ```
 
-| Metric | Trước | Sau |
+| Metric | Before | After |
 |---|---|---|
 | API external deps | SDK-Go 50K lines + 40 transitive deps | ctis 4K lines + 0 external deps |
-| Update frequency | Hàng tuần (SDK scanner updates) | ~1 lần/tháng (schema changes only) |
-| API rebuild trigger | Bất kỳ SDK change | Chỉ khi CTIS schema thay đổi |
+| Update frequency | Weekly (SDK scanner updates) | ~Once a month (schema changes only) |
+| API rebuild trigger | Any SDK change | Only when the CTIS schema changes |
 | Backward compat | N/A | 100% — SDK re-exports type aliases |
 | Agent changes | N/A | ZERO |
 
@@ -382,8 +382,8 @@ SAU:
 
 ## 10. Open Questions
 
-1. **Adapters phiên bản 1**: Copy vào API hay giữ SDK-Go import cho adapters? (RFC recommends copy)
-2. **Chunk phase 2**: Khi nào tự implement dechunk trong API? (có thể sau khi ctis module stable)
-3. **schemas/ repo**: Archive hay merge vào ctis? (RFC recommends merge)
-4. **ctis module publish**: GitHub Packages hay Go proxy? (recommend Go proxy cho public access)
-5. **NormalizeAssetName trong ctis**: Giữ hay xoá? (Recommend giữ — nó là pure function liên quan đến CTIS types, không phải business logic. API có full version, ctis có lightweight version)
+1. **Adapters, first version**: copy them into the API, or keep the SDK-Go import for adapters? (RFC recommends copy)
+2. **Chunk phase 2**: when does the API implement its own dechunking? (possibly after the ctis module is stable)
+3. **schemas/ repository**: archive it or merge it into ctis? (RFC recommends merge)
+4. **ctis module publishing**: GitHub Packages or the Go proxy? (recommend the Go proxy for public access)
+5. **NormalizeAssetName in ctis**: keep or remove? (Recommend keeping it — it is a pure function tied to the CTIS types, not business logic. The API has the full version, ctis a lightweight version)

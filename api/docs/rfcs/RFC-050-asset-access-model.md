@@ -2,9 +2,8 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner approved A1–A13 as recommended, 2026-10-04); P0 in progress |
-| Research | research/21 (target model), 21a (industry), 21b (current state on `develop`) |
-| Supersedes | parts of research/15 §5 (target model); D1–D14 stay in force |
+| Status | Accepted (decisions A1–A13, 2026-10-04); P0 largely implemented (W1–W4, W6, W6a, W7, W8); P1–P3 not built |
+| Supersedes | the earlier data-scope target model; its decisions D1–D14 stay in force |
 | Related | RFC-045 (socket revocation), RFC-040 (sensor binding), RFC-046 (scans), RFC-048 (filter compile) |
 
 ## 1. Summary
@@ -41,9 +40,9 @@ Architecture: keep the materialisation in Postgres, refreshed in the same
 transaction as every source write; composite `(tenant_id, asset_id)` foreign
 keys; RLS stays a tenant-only backstop.
 
-The full catalogue of use cases, the threat model (STRIDE per principal,
-failure classes F-1..F-12) and the gap list are in research/21; this RFC
-records the decisions and tracks the implementation.
+The use cases, the threat model (STRIDE per principal) and the gap list
+behind these decisions were reviewed before this RFC; this RFC records the
+decisions and tracks the implementation.
 
 ## 2. Member lifecycle (P0, first item)
 
@@ -85,7 +84,7 @@ email domain, otherwise an invitation).
 |---|---|
 | A leaver or compromised account keeps acting through a live session, socket, key or schedule | Disable/offboard revokes sessions and refresh tokens, closes sockets, suspends or revokes keys, pauses schedules, drops scope in the same transaction; every gate is positive |
 | Re-invite restores old access (L-13) | Offboarding strips groups, grants, engagements, roles, keys; the re-join starts from zero |
-| Work silently runs as the system after the owner leaves (H2/H3 class) | Mandatory reassignment; disable pauses schedules; an inactive owner makes `ForUser` refuse |
+| Work silently runs as the system after the owner leaves | Mandatory reassignment; disable pauses schedules; an inactive owner makes `ForUser` refuse |
 | An administrator reassigns work to an outsider | Targets must be active members of the same tenant (checked in the transaction); cross-tenant and unknown ids answer 400 |
 | An administrator removes a peer administrator | Peer-administrator rule: only the owner acts on an administrator |
 | Erase destroys evidence | Erase is owner-only, after offboarding, keeps rows and foreign keys, audited Critical |
@@ -114,24 +113,23 @@ Migration `001044_member_lifecycle`.
 
 | # | Item | Status |
 |---|---|---|
-| W6a | Member lifecycle: disable / offboard / erase (§2) | this RFC's first PR |
-| W6 | Materialisation correctness: group deactivate/delete, scope-rule deactivate/narrow/delete, group asset unassign recompute in the same transaction (database triggers, migration 001051); `ReconcileByAssetGroup` gets the real tenant (H6, M-2, M-3, M-4 refresh part) | in review |
-| W1 | Exposure upsert never overwrites an out-of-scope or asset-less exposure for a restricted caller (H1) | planned |
-| W2 | Scan actor integrity: clone/import set `CreatedBy`; a nil owner refuses; an inactive owner pauses and notifies (H2, H3) | planned (coordinated with the EASM scan-authorization work) |
-| W4 | Pentest findings and PoC hidden from non-members on `/assets/{id}/findings` (H5) | planned |
-| W3 | Simulations require act scope on targets (H4) | planned |
-| W7 | Group modification cap; a suspended user cannot be added to a group | planned |
-| W8 | Suppression create checks the asset's tenant and scope (M-10) | planned |
+| W6a | Member lifecycle: disable / offboard / erase (§2) | implemented (migration 001044) |
+| W6 | Materialisation correctness: group deactivate/delete, scope-rule deactivate/narrow/delete, group asset unassign recompute in the same transaction (database triggers, migration 001051); `ReconcileByAssetGroup` gets the real tenant | implemented (migration 001051) |
+| W1 | Exposure upsert never overwrites an out-of-scope or asset-less exposure for a restricted caller | implemented |
+| W2 | Scan actor integrity: clone/import set `CreatedBy`; a nil owner refuses; an inactive owner pauses and notifies | implemented |
+| W4 | Pentest findings and PoC visible only to campaign members on `/assets/{id}/findings` | implemented |
+| W3 | Simulations require act scope on targets | implemented for create, update and run |
+| W7 | Group modification cap; a suspended user cannot be added to a group | implemented |
+| W8 | Suppression create checks the asset's tenant and scope | implemented |
 | W5, W9 | Small authz fixes and residual LOW items | planned |
 | W10 | Docs drift (expiring grants are now planned, D4/A2) | planned |
 
 P1 (W11–W20: one `decide()`, composite foreign keys, registry v2, on-behalf-of
 jobs, `scope_version`, scoped aggregates, sensitivity classes), P2 (W21–W33:
 view/act, expiry, guests, engagements, break-glass, service accounts, redacted
-nodes, owner-as-approver, recertification, SCIM scope) and P3 (W34–W38) follow
-research/21 §5.
+nodes, owner-as-approver, recertification, SCIM scope) and P3 (W34–W38) follow.
 
-## 4. Owner decisions (2026-10-04, all as recommended)
+## 4. Decisions (2026-10-04)
 
 A1 assignee/approver row relation; A2 guest members with mandatory expiry and
 expiry on role assignments; A3 no separate scan level yet; A4 delegated

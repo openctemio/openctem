@@ -1,5 +1,8 @@
 # RFC-023 §9.5 — Sensor rename: API contract changes
 
+> Status: **Implemented** (#563, migration 000230). Protocol v1 and
+> `pkg/sensorproto/legacyv1`, described in §1, were later removed
+> (2026-10-05, [RFC-029 §5](RFC-029-sensor-protocol-v2-and-sdk-stability.md)).
 > Companion to [RFC-023 §9.5](RFC-023-scan-zones-and-scanners.md#95-decision-update-complete-rename-supersedes-the-keep-rows-of-94).
 > Scope: the API step of the complete agent → sensor rename (migration
 > **000230**). This is the exhaustive list the UI follow-up, operators and

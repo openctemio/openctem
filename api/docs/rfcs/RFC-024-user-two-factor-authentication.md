@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Implemented (api `feat/user-2fa`, ui `feat/user-2fa`) |
+| Status | Implemented |
 | Scope | Local-password users of organizations. Not the platform admin console (RFC-022), not federated users. |
 | Architecture doc | [`docs/architecture/user-two-factor-authentication.md`](../architecture/user-two-factor-authentication.md) |
 
