@@ -25,6 +25,45 @@ tests:
               description: GET /health on the API failed for 2 minutes. Every user and sensor request fails.
               runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apidown
 
+  # The gateway's internal CA issues 12-hour certificates: a few hours left is
+  # normal, under two hours means renewal stopped.
+  - interval: 1m
+    input_series:
+      - series: 'probe_ssl_earliest_cert_expiry{probe="public-login",module="http_2xx_internal_ca",job="blackbox-public",instance="https://gw/login"}'
+        values: '18000x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: TlsCertExpiringSoon
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'probe_ssl_earliest_cert_expiry{probe="public-login",module="http_2xx_internal_ca",job="blackbox-public",instance="https://gw/login"}'
+        values: '4000x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: TlsCertExpiringSoon
+        exp_alerts:
+          - exp_labels: {severity: warning, component: platform, ca: internal, probe: public-login, module: http_2xx_internal_ca, job: blackbox-public, instance: 'https://gw/login'}
+            exp_annotations:
+              summary: The gateway's internal-CA certificate expires in 51m 40s
+              description: The gateway renews these short-lived certificates itself; check its logs for renewal errors.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
+
+  # A public-CA certificate with ten days left: warning, not critical.
+  - interval: 1m
+    input_series:
+      - series: 'probe_ssl_earliest_cert_expiry{probe="public-login",module="http_2xx",job="blackbox-public",instance="https://gw/login"}'
+        values: '864000x150'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: TlsCertExpiringSoon
+        exp_alerts:
+          - exp_labels: {severity: warning, component: platform, ca: public, probe: public-login, module: http_2xx, job: blackbox-public, instance: 'https://gw/login'}
+            exp_annotations:
+              summary: The public TLS certificate expires in 9d 22h 0m 0s
+              description: Renew the gateway certificate before it expires (automatic renewal may be failing).
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
+
   # /metrics fails while /health answers: the token is wrong.
   - interval: 1m
     input_series:
