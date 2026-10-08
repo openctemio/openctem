@@ -37,6 +37,7 @@ import { useMemo, useState } from 'react'
 import type { SensorPreference, NewScanFormData } from '../../types'
 import { SENSOR_PREFERENCE_CONFIG } from '../../types'
 import { useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
+import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
 import { usePlatformScanning } from '@/lib/api/platform-hooks'
 import { ScannerSelect } from '../scanner-select'
 import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
@@ -229,22 +230,10 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                   <Layers className="h-4 w-4 shrink-0" />
                   <span>Steps ({selectedWorkflow.steps?.length ?? 0})</span>
                 </div>
-                {(selectedWorkflow.steps?.length ?? 0) > 0 && (
-                  <div className="rounded-lg bg-muted/50 p-2">
-                    <div className="flex flex-wrap items-center gap-1">
-                      {selectedWorkflow.steps.map((step, index) => (
-                        <div key={step.id} className="flex items-center">
-                          <Badge variant="secondary" className="text-xs">
-                            {index + 1}. {step.tool || step.name}
-                          </Badge>
-                          {index < selectedWorkflow.steps.length - 1 && (
-                            <ChevronRight className="h-3 w-3 text-muted-foreground mx-0.5" />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <WorkflowStagesView
+                  steps={selectedWorkflow.steps ?? []}
+                  maxParallel={selectedWorkflow.settings?.max_parallel_steps || 3}
+                />
               </div>
             </div>
           )}

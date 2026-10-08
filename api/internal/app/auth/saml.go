@@ -245,7 +245,8 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 			return nil, ErrSAMLResponseInvalid
 		}
 	}
-	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(), authAt,
+	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(),
+		federatedBinding{authTime: authAt, mfa: samlMFAEvidence(assertion)},
 		samlIdentityKey(assertion, tenantAndCfg.tenant.ID()))
 }
 

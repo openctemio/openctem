@@ -49,6 +49,8 @@ type CachedMembership struct {
 	// Kind is internal or external (RFC-058); empty in entries written
 	// before it existed, which means internal.
 	Kind string `json:"kind,omitempty"`
+	// HomeTenantID is an external member's home organization.
+	HomeTenantID string `json:"home_tenant_id,omitempty"`
 }
 
 const (
@@ -112,6 +114,9 @@ func (s *MembershipCacheService) GetMembership(
 		Status:   string(m.Status()),
 		JoinedAt: m.JoinedAt(),
 		Kind:     string(m.Kind()),
+	}
+	if h := m.HomeTenantID(); h != nil {
+		val.HomeTenantID = h.String()
 	}
 	if cacheErr := s.cache.Set(ctx, key, val); cacheErr != nil {
 		s.log.Warn("failed to cache membership",
@@ -192,7 +197,13 @@ func (s *MembershipCacheService) reconstructFromCache(
 	if !kind.IsValid() {
 		kind = tenant.MemberKindInternal
 	}
-	return m.WithAccessState(kind, nil, "", nil, "", "")
+	var home *shared.ID
+	if v.HomeTenantID != "" {
+		if h, herr := shared.IDFromString(v.HomeTenantID); herr == nil {
+			home = &h
+		}
+	}
+	return m.WithAccessState(kind, home, "", nil, "", "")
 }
 
 // MembershipCacheServiceErrorIsTransient is exposed for tests that

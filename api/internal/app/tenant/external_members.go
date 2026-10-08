@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -127,8 +128,26 @@ func (s *TenantService) classifyInvitee(ctx context.Context, tenantID shared.ID,
 	if err != nil {
 		return c, access, err
 	}
+	// A trusted home organization may propose an end of access.
+	if c.Managed() && access.ExpiresAt == nil && s.trustPolicy != nil {
+		at, terr := s.trustPolicy.DefaultExpiryFor(ctx, tenantID, *c.HomeTenantID, now)
+		if terr != nil {
+			return c, access, terr
+		}
+		access.ExpiresAt = at
+	}
 	return c, SettleExternalAccess(c, access, now), nil
 }
+
+// TrustPolicy reads the trusts with members' home organizations
+// (orgtrust.Policy).
+type TrustPolicy interface {
+	MaxRoleFor(ctx context.Context, host, home shared.ID) (orgtrust.MaxRole, error)
+	DefaultExpiryFor(ctx context.Context, host, home shared.ID, now time.Time) (*time.Time, error)
+}
+
+// SetTrustPolicy wires the trusts (RFC-058).
+func (s *TenantService) SetTrustPolicy(p TrustPolicy) { s.trustPolicy = p }
 
 // SettleExternalAccess returns the access an invitee gets: none for an
 // internal member; for an external one the given access, with the default

@@ -375,6 +375,27 @@ The identity store is required: a login that carries an identity is refused
 when it is not wired. Erasing a member's personal data deletes their
 identities, so a later sign-in never finds the anonymised account.
 
+## Home-realm sign-in for external members (RFC-058)
+
+A session counts as an SSO sign-in only of the organization whose identity
+provider issued it (`Session.FederatedFor`). There is one exception: an
+**external member** of a host organization whose **home organization**
+(the holder of their email domain) is trusted by the host, with the trust
+accepted by the home. Such a member may use a session from the home's
+identity provider. The check runs at token exchange and refresh
+(`AuthService.assuranceAt`). The token then carries `auth_method=sso`, so
+the per-request gate agrees.
+
+- **Conditions:** the trust accepts home sign-in; the home still holds the
+  member's domain; MFA evidence is present when the trust requires it.
+- **Never accepted:** a password session, social login, a third
+  organization's IdP, or a trust that is not accepted.
+- **Hosts that require 2FA** additionally need MFA evidence on the session, or the home
+  owner's attestation that its IdP enforces MFA.
+- **MFA evidence** (`sessions.mfa_evidence`) is recorded at SSO callback, only
+  from the verified id_token (`amr` contains `mfa`) or from the validated SAML
+  assertion (a multi-factor `AuthnContextClassRef`).
+
 ## Enforce SSO per-tenant (with owner break-glass)
 
 A tenant that has configured SSO can **require** its members to authenticate via

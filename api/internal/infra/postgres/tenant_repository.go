@@ -1837,3 +1837,32 @@ func (r *TenantRepository) ListExpiredMemberships(ctx context.Context, now time.
 	}
 	return out, rows.Err()
 }
+
+// ListActiveExternalFromHome returns the active external memberships of host
+// whose home organization is home (trust revocation).
+func (r *TenantRepository) ListActiveExternalFromHome(ctx context.Context, host, home shared.ID) ([]*tenant.Membership, error) {
+	query := `
+		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
+		       m.invited_by, m.joined_at,
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by,
+		       m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.expiry_reason, m.suspended_reason
+		FROM tenant_members m
+		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.tenant_id = $1 AND m.kind = 'external' AND m.home_tenant_id = $2 AND m.status = 'active'
+		LIMIT 5000
+	`
+	rows, err := r.db.QueryContext(ctx, query, host.String(), home.String())
+	if err != nil {
+		return nil, fmt.Errorf("list external members from home: %w", err)
+	}
+	defer rows.Close()
+	var out []*tenant.Membership
+	for rows.Next() {
+		m, err := r.scanMembershipRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

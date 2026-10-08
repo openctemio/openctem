@@ -571,6 +571,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Verified-domain handler (SSO P1 domain-ownership verification)
 	if svc.DomainVerify != nil {
 		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)
+		if svc.OrgTrust != nil {
+			handlers.OrgTrust = handler.NewOrgTrustHandler(svc.OrgTrust, log)
+		}
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
 		// Tenant self-service verification for EASM (research/22 P0-10, E6).
 		var audit handler.AttributionAuditor
