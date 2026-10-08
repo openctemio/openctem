@@ -24,7 +24,14 @@ import { RegisterForm } from './register-form'
  * open registration or the visitor holds an invitation; otherwise explains that
  * accounts are created by an administrator.
  */
-export function RegisterGate() {
+export function RegisterGate({
+  termsUrl,
+  privacyUrl,
+}: {
+  /** The operator's legal documents (from the server environment). */
+  termsUrl?: string
+  privacyUrl?: string
+} = {}) {
   const searchParams = useSearchParams()
   const returnTo = searchParams.get('returnTo')
   const { canRegister, isLoading } = useCanSelfRegister(returnTo)
@@ -90,7 +97,7 @@ export function RegisterGate() {
         <RegisterForm />
       </CardContent>
       <CardFooter className="justify-center empty:hidden">
-        <LegalNotice action="creating an account" />
+        <LegalNotice action="creating an account" termsUrl={termsUrl} privacyUrl={privacyUrl} />
       </CardFooter>
     </Card>
   )
