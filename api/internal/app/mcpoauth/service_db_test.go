@@ -127,6 +127,7 @@ func newHarness(t *testing.T) *harness {
 	h.cfg = mcpoauth.Config{
 		Repository:  postgres.NewMCPOAuthRepository(db),
 		Connections: postgres.NewMCPOAuthRepository(db),
+		Clients:     postgres.NewMCPOAuthRepository(db),
 		Endpoints:   e,
 		Pepper:      "mcp-oauth-test-pepper",
 		Fetcher: fakeFetcher{

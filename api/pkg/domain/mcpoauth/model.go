@@ -210,3 +210,20 @@ type ConnectionRepository interface {
 	ListClientsForPlatform(ctx context.Context, now time.Time) ([]ClientUsage, error)
 	SetClientBlockedForPlatform(ctx context.Context, clientRef shared.ID, blocked bool, now time.Time) error
 }
+
+// Client id prefixes of registered clients (metadata-document clients are
+// their URL).
+const (
+	OrganizationClientPrefix = "octc_"
+	DynamicClientPrefix      = "octd_"
+)
+
+// ClientRepository manages registered clients (RFC-062 §5).
+type ClientRepository interface {
+	CreateClient(ctx context.Context, c *Client) (*Client, error)
+	ListOrganizationClients(ctx context.Context, tenantID shared.ID) ([]Client, error)
+	DeleteOrganizationClient(ctx context.Context, tenantID, id shared.ID) error
+	// PurgeForPlatform deletes ended requests, tokens and grants and unused
+	// clients (background job only).
+	PurgeForPlatform(ctx context.Context, now time.Time) (int64, error)
+}
