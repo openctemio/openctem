@@ -4,7 +4,7 @@
  * Type definitions for audit log viewing
  */
 
-import { canonicalAuditAction } from '@/lib/api/audit-types'
+import { getActionLabel } from '@/lib/api/audit-types'
 
 // ============================================
 // AUDIT LOG TYPES
@@ -151,11 +151,7 @@ export function getActionCategory(action: string): string {
   return parts[0] || 'other'
 }
 
-// Helper to format action for display. A sensor event written before the
-// sensor rename (old action prefix) reads the same as a new one.
+// Label for an audit action: one source for every audit view.
 export function formatAction(action: string): string {
-  return canonicalAuditAction(action)
-    .split(/[._]/)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
+  return getActionLabel(action)
 }

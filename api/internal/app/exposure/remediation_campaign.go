@@ -410,18 +410,22 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		}
 		campaign.SetAssignment(toPtr, teamPtr)
 	}
-	// Start/due dates arrive as ISO/RFC3339 strings from the UI; parse them so
-	// "New Task" persists them (they were silently dropped). If no start date is
-	// chosen, Activate() auto-stamps it when the task first moves to in-progress.
+	// Start/due dates: RFC 3339 or a date alone (parseCampaignDate); anything
+	// else is refused, never dropped. If no start date is chosen, Activate()
+	// auto-stamps it when the task first moves to in-progress.
 	if input.StartDate != "" {
-		if start, derr := time.Parse(time.RFC3339, input.StartDate); derr == nil {
-			campaign.SetStartDate(&start)
+		start, derr := parseCampaignDate("start_date", input.StartDate, false)
+		if derr != nil {
+			return nil, derr
 		}
+		campaign.SetStartDate(start)
 	}
 	if input.DueDate != "" {
-		if due, derr := time.Parse(time.RFC3339, input.DueDate); derr == nil {
-			campaign.SetDueDate(&due)
+		due, derr := parseCampaignDate("due_date", input.DueDate, true)
+		if derr != nil {
+			return nil, derr
 		}
+		campaign.SetDueDate(due)
 	}
 
 	if err := s.repo.Create(ctx, campaign); err != nil {
@@ -472,6 +476,33 @@ func (s *RemediationCampaignService) GetCampaign(ctx context.Context, tenantID, 
 	return campaign, nil
 }
 
+// parseCampaignDate reads a campaign start or due date: an RFC 3339
+// timestamp, or a date alone (YYYY-MM-DD) read in UTC. A date alone is the
+// start of that day for a start date and its last second for a due date, so
+// a campaign due on a day is overdue only once the day has passed. Anything
+// else is a validation error.
+func parseCampaignDate(field, s string, endOfDay bool) (*time.Time, error) {
+	s = strings.TrimSpace(s)
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return &t, nil
+	}
+	if d, err := time.Parse(time.DateOnly, s); err == nil {
+		if endOfDay {
+			d = d.Add(24*time.Hour - time.Second)
+		}
+		return &d, nil
+	}
+	return nil, fmt.Errorf("%w: %s must be an RFC 3339 timestamp or a date (YYYY-MM-DD)", shared.ErrValidation, field)
+}
+
+// optionalCampaignDate is parseCampaignDate where "" clears the date.
+func optionalCampaignDate(field, s string, endOfDay bool) (*time.Time, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	return parseCampaignDate(field, s, endOfDay)
+}
+
 // ListCampaigns lists campaigns with filtering.
 func (s *RemediationCampaignService) ListCampaigns(ctx context.Context, tenantID string, filter remediation.CampaignFilter, page pagination.Pagination) (pagination.Result[*remediation.Campaign], error) {
 	tid, _ := shared.IDFromString(tenantID)
@@ -485,8 +516,10 @@ type UpdateRemediationCampaignInput struct {
 	Description *string
 	Priority    *string
 	Tags        []string
-	StartDate   *time.Time
-	DueDate     *time.Time
+	// StartDate and DueDate: nil = leave unchanged; ptr to "" = clear;
+	// otherwise RFC 3339 or a date alone (parseCampaignDate).
+	StartDate *string
+	DueDate   *string
 	// FindingFilter re-scopes the campaign (e.g. a task's "link to finding").
 	// nil = leave the existing scope untouched; non-nil (incl. {}) = replace it.
 	FindingFilter map[string]any
@@ -522,10 +555,18 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		campaign.SetTags(input.Tags)
 	}
 	if input.StartDate != nil {
-		campaign.SetStartDate(input.StartDate)
+		start, derr := optionalCampaignDate("start_date", *input.StartDate, false)
+		if derr != nil {
+			return nil, derr
+		}
+		campaign.SetStartDate(start)
 	}
 	if input.DueDate != nil {
-		campaign.SetDueDate(input.DueDate)
+		due, derr := optionalCampaignDate("due_date", *input.DueDate, true)
+		if derr != nil {
+			return nil, derr
+		}
+		campaign.SetDueDate(due)
 	}
 	if input.FindingFilter != nil {
 		// Re-scoping the campaign (e.g. linking a finding) — apply then recompute

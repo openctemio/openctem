@@ -10,7 +10,7 @@ import type { WorkflowReadiness } from '@/features/scan-workflows/lib/readiness'
 // TRIGGER TYPES
 // ============================================
 
-import type { RunTask, RunTaskSummary } from './generated'
+import type { RunTask, RunTaskSummary, Schemas } from './generated'
 import type { RunDispatch } from './scan-types'
 
 export const SCAN_RUN_TRIGGERS = [
@@ -239,10 +239,11 @@ export interface StepRun {
   completed_at?: string
   error_message?: string
   error_code?: string
+  /** What can fix the error: config, scope, placement, policy, transient, tool, timeout or canceled. */
+  error_class?: string
   findings_count: number
   attempt: number
   max_attempts: number
-  output?: Record<string, unknown>
 }
 
 // ============================================
@@ -303,7 +304,8 @@ export interface ScanRun {
   failed_steps: number
   skipped_steps: number
   total_findings: number
-  step_runs?: StepRun[]
+  /** The run's step runs (GET /scan-runs/{id} only). */
+  scan_run_steps?: StepRun[]
   error_message?: string
   /** Why a blocked run was refused (e.g. ALL_TARGETS_EXCLUDED, WILDCARD_TARGET). */
   refusal_code?: string
@@ -468,3 +470,25 @@ export interface ScanManagementOverview {
   scans: StatusCounts
   jobs: StatusCounts
 }
+
+// ============================================
+// CONTRACT GUARD
+// ============================================
+
+/**
+ * The run types above are hand-written for their narrower unions; every field
+ * they name must be one the API sends. A field the server renamed or never
+ * had (a run read as `step_runs` while the API sends `scan_run_steps` left the
+ * run map empty) fails the type check here instead of rendering nothing.
+ */
+type OnlyApiFields<Local, Api> =
+  Exclude<keyof Local, keyof Api> extends never
+    ? true
+    : { notSentByTheApi: Exclude<keyof Local, keyof Api> }
+type AssertTrue<T extends true> = T
+export type ScanRunFieldsAreApiFields = AssertTrue<
+  OnlyApiFields<ScanRun, Schemas['internal_infra_http_handler.RunResponse']>
+>
+export type StepRunFieldsAreApiFields = AssertTrue<
+  OnlyApiFields<StepRun, Schemas['internal_infra_http_handler.StepRunResponse']>
+>

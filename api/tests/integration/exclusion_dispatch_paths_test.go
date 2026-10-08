@@ -232,6 +232,6 @@ func newTriggerServiceWith(db *sql.DB, opts ...scansvc.ServiceOption) *scansvc.S
 		availableSensors{},
 		nil,
 		logger.New(logger.Config{Level: "error"}),
-		opts...,
+		allowAllTargetChecks(opts...)...,
 	)
 }

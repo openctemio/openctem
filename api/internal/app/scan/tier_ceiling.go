@@ -60,36 +60,6 @@ func (s *Service) refuseTierExceeded(ctx context.Context, tenantID shared.ID, sc
 	return refusalError(refusals)
 }
 
-// dropTierExceeded leaves out of a run the targets covered only below the
-// scanner's tier, counting them and naming why in a warning.
-func (s *Service) dropTierExceeded(ctx context.Context, tenantID shared.ID, scanner string, r *resolvedTargets) error {
-	if scanner == "" || len(r.Targets) == 0 {
-		return nil
-	}
-	tier := ProbeTier(scanner)
-	over, err := s.tierExceeded(ctx, tenantID, r.Targets, tier)
-	if err != nil {
-		return fmt.Errorf("tier check failed, scan not dispatched: %w", err)
-	}
-	if len(over) == 0 {
-		return nil
-	}
-	kept := r.Targets[:0:0]
-	for _, t := range r.Targets {
-		if _, no := over[t]; no {
-			delete(r.TargetTypes, t)
-			continue
-		}
-		kept = append(kept, t)
-	}
-	r.TierExceeded = len(r.Targets) - len(kept)
-	r.Targets = kept
-	r.Warnings = append(r.Warnings, fmt.Sprintf(
-		"%d target(s) were skipped: %s runs %s probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Targets)",
-		r.TierExceeded, scanner, tier))
-	return nil
-}
-
 // stepScopeFilter leaves out of one workflow step the targets its tool may
 // not probe: those covered only below the tool's tier and, for an intrusive
 // (t2) tool, those not at or under a verified domain (proof is checked per
