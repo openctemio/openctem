@@ -29,8 +29,8 @@ func TestGuardrails_CheckPattern(t *testing.T) {
 		// A tenant's own name at a provider stays allowed.
 		{TargetTypeDomain, "myapp.azurewebsites.net", nil},
 		{TargetTypeDomain, "*.myapp.herokuapp.com", nil},
-		{TargetTypeDomain, "*.vndirect.com.vn", nil},
-		{TargetTypeDomain, "vndirect.com.vn", nil},
+		{TargetTypeDomain, "*.example.co.uk", nil},
+		{TargetTypeDomain, "example.co.uk", nil},
 		// Government and military, and the operator's own names.
 		{TargetTypeDomain, "*.gov.vn", ErrDenyList},
 		{TargetTypeDomain, "portal.gov.vn", ErrDenyList},
@@ -82,8 +82,8 @@ func TestGuardrails_Denies(t *testing.T) {
 		}
 	}
 	for _, target := range []string{
-		"vndirect.com.vn", "https://app.vndirect.com.vn/", "8.8.8.8", "198.51.100.0/24", "gov.example.com", "govern.vn",
-		"10.0.0.5", "example.com:8443", "8.8.8.8:53:udp", "198.51.100.7:443/tcp", "vndirect.com.vn:443:tcp",
+		"example.co.uk", "https://app.example.co.uk/", "8.8.8.8", "198.51.100.0/24", "gov.example.com", "govern.vn",
+		"10.0.0.5", "example.com:8443", "8.8.8.8:53:udp", "198.51.100.7:443/tcp", "example.co.uk:443:tcp",
 	} {
 		if g.Denies(target) {
 			t.Errorf("Denies(%q) = true", target)

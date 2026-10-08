@@ -18,3 +18,8 @@ SELECT format('ALTER ROLE openctem_monitor WITH LOGIN PASSWORD %L NOSUPERUSER NO
 \gexec
 
 GRANT pg_monitor TO openctem_monitor;
+
+-- With the least-privilege roles (api/deploy/postgres/least-privilege-roles.sql)
+-- PUBLIC cannot connect to the database: grant CONNECT explicitly (and only that).
+SELECT format('GRANT CONNECT ON DATABASE %I TO openctem_monitor', current_database())
+\gexec

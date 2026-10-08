@@ -733,8 +733,14 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 		scmOrg = scmExt.SCMOrganization()
 	}
 
-	// Decrypt credentials (falls back to plaintext for backward compatibility)
-	credentials := s.decryptCredentials(intg)
+	credentials, err := s.decryptCredentials(intg)
+	if err != nil {
+		intg.SetError(err.Error())
+		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
+			s.logger.Error("Failed to update integration after decrypt error", "error", updateErr)
+		}
+		return integrationdom.NewIntegrationWithSCM(intg, scmExt), nil
+	}
 
 	// Create SCM client and test connection
 	client, err := s.scmFactory.CreateClient(scm.Config{
@@ -934,8 +940,10 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 		baseURL = s.getDefaultBaseURL(intg.Provider())
 	}
 
-	// Decrypt credentials (falls back to plaintext for backward compatibility)
-	credentials := s.decryptCredentials(intg)
+	credentials, err := s.decryptCredentials(intg)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create SCM client
 	client, err := s.scmFactory.CreateClient(scm.Config{
@@ -1019,23 +1027,31 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 	}, nil
 }
 
-// decryptCredentials decrypts the stored credentials from an integration.
-// If decryption fails (e.g., credentials stored in plaintext), returns the original value.
-// This provides backward compatibility with existing unencrypted credentials.
-func (s *IntegrationService) decryptCredentials(intg *integrationdom.Integration) string {
+// ErrCredentialsUnreadable: the stored credential does not open under the
+// configured APP_ENCRYPTION_KEY (a key mismatch, a corrupt value, or a legacy
+// plaintext row; cmd/encrypt-credentials encrypts those). It wraps
+// scm.ErrAuthFailed so the API answers "re-enter the credentials".
+var ErrCredentialsUnreadable = fmt.Errorf("%w: stored credentials cannot be decrypted with the configured key", scm.ErrAuthFailed)
+
+// decryptCredentials decrypts the stored credentials of an integration. It
+// fails closed: a value that does not decrypt is never used as is, so a key
+// mismatch cannot send ciphertext (or a legacy plaintext value) upstream
+// (RFC-049 F-8). With APP_ALLOW_PLAINTEXT_CREDENTIALS (development) the
+// encryptor is a no-op and every value "decrypts" to itself.
+func (s *IntegrationService) decryptCredentials(intg *integrationdom.Integration) (string, error) {
 	encrypted := intg.CredentialsEncrypted()
 	if encrypted == "" {
-		return ""
+		return "", nil
 	}
 	decrypted, err := s.encryptor.DecryptString(encrypted)
 	if err != nil {
-		// Decryption failed - assume plaintext (backward compatibility)
-		s.logger.Debug("credentials not encrypted, using plaintext",
+		s.logger.Warn("integration credentials cannot be decrypted; not using them",
+			"tenant_id", intg.TenantID().String(),
 			"integration_id", intg.ID().String(),
 		)
-		return encrypted
+		return "", ErrCredentialsUnreadable
 	}
-	return decrypted
+	return decrypted, nil
 }
 
 // EmailCredentials represents the JSON structure for email SMTP credentials (full input from frontend).
@@ -1049,9 +1065,15 @@ type EmailCredentials struct {
 	ToEmails    []string `json:"to_emails"`
 	UseTLS      bool     `json:"use_tls"`
 	UseSTARTTLS bool     `json:"use_starttls"`
-	SkipVerify  bool     `json:"skip_verify"`
-	ReplyTo     string   `json:"reply_to,omitempty"`
+	// SkipVerify is accepted only to refuse it: a tenant may not turn off
+	// certificate verification for the relay it sends its SMTP password to
+	// (RFC-049 F-5). It is never stored or used.
+	SkipVerify bool   `json:"skip_verify"`
+	ReplyTo    string `json:"reply_to,omitempty"`
 }
+
+// errSMTPSkipVerify refuses a tenant request to turn off TLS verification.
+var errSMTPSkipVerify = fmt.Errorf("%w: skip_verify is not supported: the SMTP server certificate is always verified (use a certificate from a trusted CA)", shared.ErrValidation)
 
 // EmailMetadata represents non-sensitive email config stored in integration.metadata.
 // This allows the frontend to display current config when editing without exposing secrets.
@@ -1063,7 +1085,6 @@ type EmailMetadata struct {
 	ToEmails    []string `json:"to_emails"`
 	UseTLS      bool     `json:"use_tls"`
 	UseSTARTTLS bool     `json:"use_starttls"`
-	SkipVerify  bool     `json:"skip_verify"`
 	ReplyTo     string   `json:"reply_to,omitempty"`
 }
 
@@ -1083,7 +1104,6 @@ func splitEmailCredentials(creds *EmailCredentials) (*EmailMetadata, *EmailSensi
 		ToEmails:    creds.ToEmails,
 		UseTLS:      creds.UseTLS,
 		UseSTARTTLS: creds.UseSTARTTLS,
-		SkipVerify:  creds.SkipVerify,
 		ReplyTo:     creds.ReplyTo,
 	}
 	sensitive := &EmailSensitiveCredentials{
@@ -1103,7 +1123,6 @@ func mergeEmailConfig(metadata *EmailMetadata, sensitive *EmailSensitiveCredenti
 		ToEmails:    metadata.ToEmails,
 		UseTLS:      metadata.UseTLS,
 		UseSTARTTLS: metadata.UseSTARTTLS,
-		SkipVerify:  metadata.SkipVerify,
 		ReplyTo:     metadata.ReplyTo,
 	}
 	if sensitive != nil {
@@ -1144,7 +1163,6 @@ func (s *IntegrationService) parseEmailCredentials(credentials string) (*notifie
 		ToEmails:    emailCreds.ToEmails,
 		UseTLS:      emailCreds.UseTLS,
 		UseSTARTTLS: emailCreds.UseSTARTTLS,
-		SkipVerify:  emailCreds.SkipVerify,
 		ReplyTo:     emailCreds.ReplyTo,
 	}, nil
 }
@@ -1154,11 +1172,13 @@ func (s *IntegrationService) buildNotificationConfig(intg *integrationdom.Integr
 	// Populate metadata from credentials for backward compatibility (existing integrations)
 	s.populateMetadataFromCredentials(intg)
 
-	credentials := s.decryptCredentials(intg)
 	provider := intg.Provider()
-
 	config := notifier.Config{
 		Provider: notifier.Provider(provider.String()),
+	}
+	credentials, err := s.decryptCredentials(intg)
+	if err != nil {
+		return config, err
 	}
 
 	switch provider {
@@ -1213,7 +1233,6 @@ func (s *IntegrationService) buildEmailConfig(intg *integrationdom.Integration, 
 			FromName:    getStringFromMap(metadata, "from_name"),
 			UseTLS:      getBoolFromMap(metadata, "use_tls"),
 			UseSTARTTLS: getBoolFromMap(metadata, "use_starttls"),
-			SkipVerify:  getBoolFromMap(metadata, "skip_verify"),
 			ReplyTo:     getStringFromMap(metadata, "reply_to"),
 		}
 
@@ -1273,6 +1292,9 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
 	}
+	if emailCreds.SkipVerify {
+		return errSMTPSkipVerify
+	}
 
 	// Validate required fields
 	if emailCreds.SMTPHost == "" {
@@ -1300,7 +1322,6 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 		"to_emails":    metadata.ToEmails,
 		"use_tls":      metadata.UseTLS,
 		"use_starttls": metadata.UseSTARTTLS,
-		"skip_verify":  metadata.SkipVerify,
 		"reply_to":     metadata.ReplyTo,
 	})
 
@@ -1323,6 +1344,9 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
+	}
+	if emailCreds.SkipVerify {
+		return errSMTPSkipVerify
 	}
 
 	// Get existing metadata to merge
@@ -1371,7 +1395,6 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	// Boolean flags - use from input (these have default values, so always set)
 	newMetadata["use_tls"] = emailCreds.UseTLS
 	newMetadata["use_starttls"] = emailCreds.UseSTARTTLS
-	newMetadata["skip_verify"] = emailCreds.SkipVerify
 
 	// Reply To
 	if emailCreds.ReplyTo != "" {
@@ -1506,8 +1529,8 @@ func (s *IntegrationService) populateMetadataFromCredentials(intg *integrationdo
 		}
 
 		// Try to extract from credentials (legacy format: all config in credentials_encrypted)
-		credentials := s.decryptCredentials(intg)
-		if credentials == "" {
+		credentials, err := s.decryptCredentials(intg)
+		if err != nil || credentials == "" {
 			return
 		}
 
@@ -1533,7 +1556,6 @@ func (s *IntegrationService) populateMetadataFromCredentials(intg *integrationdo
 		newMetadata["to_emails"] = emailCreds.ToEmails
 		newMetadata["use_tls"] = emailCreds.UseTLS
 		newMetadata["use_starttls"] = emailCreds.UseSTARTTLS
-		newMetadata["skip_verify"] = emailCreds.SkipVerify
 		if emailCreds.ReplyTo != "" {
 			newMetadata["reply_to"] = emailCreds.ReplyTo
 		}
@@ -1699,8 +1721,10 @@ func (s *IntegrationService) GetSCMRepository(ctx context.Context, input GetSCMR
 		baseURL = s.getDefaultBaseURL(intg.Provider())
 	}
 
-	// Decrypt credentials (falls back to plaintext for backward compatibility)
-	credentials := s.decryptCredentials(intg)
+	credentials, err := s.decryptCredentials(intg)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create SCM client
 	client, err := s.scmFactory.CreateClient(scm.Config{

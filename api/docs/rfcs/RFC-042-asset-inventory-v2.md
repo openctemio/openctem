@@ -379,7 +379,7 @@ lands in this RFC.
 | I7 | **Rules + Facts with mandatory `identity_fields`.** A generated issue keeps a stable identity across runs | §6.15.2. Every policy effect, digest and any future exposure-raising action declares identity fields: `(policy_id, subject_id[, port])`, never volatile values |
 | I8 | **A field/operator/value query grammar** with typed operators, exact vs fuzzy matching, a non-empty test, and **grouping so that several conditions must match the same nested service** | §6.5. OQL adds `=` exact vs `:` fuzzy, `field:*` non-empty, and `services:( … )` same-service grouping compiled to one `EXISTS`. A regex operator is deliberately **not** offered (ReDoS, T8) |
 | I9 | **Five attribution states** (approved, dependency, monitor only, candidate, requires investigation). Ownership and discovery confidence are better stored as two fields | RFC-036 states, and #835 stores `state` and `confidence` separately. OQL exposes both (`attribution`, `attribution.confidence`) |
-| I10 | **Two-level taxonomy.** An abstract class (Host, Domain, CodeRepo, User …) sits above a source-specific type. Lists and queries work at class level across connectors | §6.3.2: 16 classes + `other` in `assets.asset_class` above the 37 types, grouped into 8 lenses; each class records its JupiterOne `_class` equivalent for interoperability (registry field `jupiterone`). The source-native type is kept on the source record. `DnsRecord` and `Image` wait for matching types |
+| I10 | **Two-level taxonomy.** An abstract class (Host, Domain, CodeRepo, User …) sits above a source-specific type. Lists and queries work at class level across connectors | §6.3.2: 16 classes + `other` in `assets.asset_class` above the 37 types, grouped into 8 lenses. The source-native type is kept on the source record. `DnsRecord` and `Image` wait for matching types |
 | I11 | **EASM kinds are a subset of the full model.** Domain, IpAddress, Certificate, Port and ApplicationEndpoint sit next to Cluster, Function, CodeRepo, User and NHI | §6.3: the service list is one lens. External surface is one class of the shared model, not a separate inventory |
 | I12 | **A common core plus per-class schemas**, not a table per type and not table inheritance. OCSF keeps device kind as one `type_id` enum on one object | D19 (a): one `assets` table with core columns and one versioned JSON Schema per type, validated in Go on write. OCSF does **not** endorse an untyped bag; that claim was refuted 0-3 |
 | I13 | **OCSF `resource_details`** gives shared field names: owner, criticality, labels, tags, type, group, region, created/modified, relationships | §6.3.4. The core field names map to OCSF in the SIEM and CTIS exports |
@@ -527,28 +527,27 @@ Each type has exactly one class, and each class belongs to exactly one
 lens. Exposure is orthogonal: an internal host is still a `host`, and a
 public bucket is still a `data_store`.
 
-Each class records its JupiterOne `_class` equivalent for interoperability
-(registry field `jupiterone`). OCSF is the reference for the shared core fields (I13).
+OCSF is the reference for the shared core fields (I13).
 
-| Class (`asset_class`) | Interop `_class` (`jupiterone`) | OpenCTEM types | Lens |
-|---|---|---|---|
-| `domain` | Domain / DomainRecord | domain, subdomain | External surface |
-| `ip_address` | IpAddress | ip_address | External surface |
-| `certificate` | Certificate | certificate | External surface |
-| `service` | Port / NetworkEndpoint | service (generic); **service rows** (§6.4); legacy `open_port`, `http_service` | External surface |
-| `web_endpoint` | ApplicationEndpoint | discovered_url | External surface |
-| `application` | Application | application, website, web_application, api, mobile_app | Applications |
-| `host` | Host / Device | host, compute, endpoint | Cloud & infrastructure |
-| `function` | Function | serverless | Cloud & infrastructure |
-| `cloud_account` | Account | cloud_account | Cloud & infrastructure |
-| `container` | Container / Workload | container | Containers & Kubernetes |
-| `cluster` | Cluster | kubernetes, kubernetes_cluster, kubernetes_namespace | Containers & Kubernetes |
-| `artifact_registry` | Repository (artifact) | container_registry | Containers & Kubernetes |
-| `code_repo` | CodeRepo | repository (components/SBOM stay in `asset_components`) | Code |
-| `identity` | User / AccessRole / NHI | identity, iam_user, iam_role, service_account | Identities |
-| `data_store` | DataStore / Database | database, data_store, storage, s3_bucket (alias) | Data |
-| `network` | Network / Firewall / Gateway | network, vpc, subnet, firewall, load_balancer | Network |
-| `other` | — | unclassified | All assets only |
+| Class (`asset_class`) | OpenCTEM types | Lens |
+|---|---|---|
+| `domain` | domain, subdomain | External surface |
+| `ip_address` | ip_address | External surface |
+| `certificate` | certificate | External surface |
+| `service` | service (generic); **service rows** (§6.4); legacy `open_port`, `http_service` | External surface |
+| `web_endpoint` | discovered_url | External surface |
+| `application` | application, website, web_application, api, mobile_app | Applications |
+| `host` | host, compute, endpoint | Cloud & infrastructure |
+| `function` | serverless | Cloud & infrastructure |
+| `cloud_account` | cloud_account | Cloud & infrastructure |
+| `container` | container | Containers & Kubernetes |
+| `cluster` | kubernetes, kubernetes_cluster, kubernetes_namespace | Containers & Kubernetes |
+| `artifact_registry` | container_registry | Containers & Kubernetes |
+| `code_repo` | repository (components/SBOM stay in `asset_components`) | Code |
+| `identity` | identity, iam_user, iam_role, service_account | Identities |
+| `data_store` | database, data_store, storage, s3_bucket (alias) | Data |
+| `network` | network, vpc, subnet, firewall, load_balancer | Network |
+| `other` | unclassified | All assets only |
 
 **Gaps against the reviewed class list.** It suggests `DnsRecord`
 and `Image` classes. OpenCTEM has no DNS-record or container-image
@@ -772,15 +771,17 @@ Every lens keeps the same machinery:
 - saved views (`saved_filters` gains `lens`);
 - dynamic groups.
 
-**URLs.** The 25 typed pages become lens presets
-(`/assets/hosts` → `/assets?lens=cloud_infra&q=type:host`). The old URLs
-keep working through 308 redirects, following the
-`web/src/config/legacy-routes.ts` pattern.
+**URLs.** The 25 typed pages become filters of the one inventory
+(`/assets?types=host`, `/assets?types=identity&sub_type=iam_user` for an
+alias), rendered from the registry: columns, attribute facets, yes/no
+counts, the create/edit form, row actions. *Amended 2026-10-08:* the old
+per-type routes are deleted, not redirected (owner rule: no aliases for
+renamed pages); every internal link points at the filtered inventory.
 
 **Reserved `/assets/*` page segments.** These static pages sit next to
-`/assets/[id]` and are not lenses: `all`, `changes`, `duplicates`,
-`groups` (asset groups, static and dynamic, §6.12), `services` and
-`suggestions` (relationship suggestions). No lens, class or type id may
+`/assets/[id]` and are not lenses: `changes`, `duplicates`, `groups`
+(asset groups, static and dynamic, §6.12), `suggestions` (relationship
+suggestions) and `web` (the web surface). No lens, class or type id may
 take one of these names; `cmd/gen-asset-types` rejects the registry if
 one does. The Assets tabs (§6.19) all live in the web under `/assets`
 (`/assets/groups`, `/assets/changes`, `/assets/suggestions`), because a
@@ -1067,6 +1068,17 @@ What this amendment changes:
    test fails on hand-written `.metadata.<key>` reads in asset code.
    `GET /assets/stats?count_by=` accepts only schema keys (synonyms fold),
    at most 10.
+6. *Flat, also for CTIS technical blocks.* Ingest stored a report's
+   technical blocks as objects (`properties.certificate.not_after`) next to
+   the flat attributes for the same facts, so every reader looked in two
+   places and a list column could not filter or sort on them. Every write
+   path now promotes a block's fields to the stored type's keys and drops
+   the block (`asset.NormalizeAssetProperties`); the field table is in the
+   architecture page. Fields with no key on the type are dropped: they are
+   relationships (a service's certificate, a host's ports) or unread
+   (`extra_info`). A service's `tls: false` is no longer recorded: a report
+   that never measured TLS sends the same value. Migration `001340`
+   promotes stored blocks; the web reads flat keys only.
 
 **Threat model.** No new input or endpoint. The fold runs inside each
 asset's own row. `count_by` was an unbounded list of arbitrary JSONB keys,

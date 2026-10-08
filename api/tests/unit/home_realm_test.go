@@ -65,7 +65,7 @@ func runHomeRealm(t *testing.T, c homeRealmCase) {
 	if c.internal {
 		kind = tenant.MemberKindInternal
 	}
-	if err := m.Classify(tenant.Classification{Kind: kind, HomeTenantID: &home, Domain: "ipas.example"}, tenant.ExternalAccess{}, time.Now()); err != nil {
+	if err := m.Classify(tenant.Classification{Kind: kind, HomeTenantID: &home, Domain: "partner.example"}, tenant.ExternalAccess{}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	deps.tenantRepo.membershipByTenant = map[string]*tenant.Membership{a.ID().String(): m}
@@ -82,11 +82,11 @@ func runHomeRealm(t *testing.T, c homeRealmCase) {
 	}
 	owners := fakeHomeOwners{}
 	if c.homeOwnsDom {
-		owners["ipas.example"] = b.ID()
+		owners["partner.example"] = b.ID()
 	}
 	svc.SetHomeRealm(fakeTrusts{t: trust}, owners)
 
-	rt, sessID := loginPassword(t, svc, deps, "nam@ipas.example")
+	rt, sessID := loginPassword(t, svc, deps, "nam@partner.example")
 	if c.issuer != "" {
 		federate(deps.sessionRepo.sessions[sessID], session.AuthMethodSSO, orgs[c.issuer].ID())
 	}
@@ -176,19 +176,19 @@ func TestHomeRealm_MFARequiredHost(t *testing.T) {
 			a := newPolicyTenant(t, h.tenants, "mfa-host", false)
 			b := newPolicyTenant(t, h.tenants, "mfa-home", false)
 			h.tenants.userMemberships = memberOf(map[*tenant.Tenant]string{a: "member"})
-			h.seedUser(t, "nam2@ipas.example")
-			res := h.login(t, "nam2@ipas.example")
+			h.seedUser(t, "nam2@partner.example")
+			res := h.login(t, "nam2@partner.example")
 			st := a.TypedSettings()
 			st.Security.MFARequired = true
 			_ = a.UpdateSettings(st)
 
 			m, _ := tenant.NewMembership(shared.NewID(), a.ID(), tenant.RoleMember, nil)
 			home := b.ID()
-			_ = m.Classify(tenant.Classification{Kind: tenant.MemberKindExternal, HomeTenantID: &home, Domain: "ipas.example"}, tenant.ExternalAccess{}, time.Now())
+			_ = m.Classify(tenant.Classification{Kind: tenant.MemberKindExternal, HomeTenantID: &home, Domain: "partner.example"}, tenant.ExternalAccess{}, time.Now())
 			h.tenants.membershipByTenant = map[string]*tenant.Membership{a.ID().String(): m}
 			trust, _ := orgtrust.New(a.ID(), b.ID(), orgtrust.DefaultSettings(), shared.NewID())
 			_ = trust.Accept(shared.NewID(), tc.attests, time.Now())
-			h.svc.SetHomeRealm(fakeTrusts{t: trust}, fakeHomeOwners{"ipas.example": b.ID()})
+			h.svc.SetHomeRealm(fakeTrusts{t: trust}, fakeHomeOwners{"partner.example": b.ID()})
 
 			sess := h.sessions.sessions[res.SessionID]
 			federate(sess, session.AuthMethodSSO, b.ID())

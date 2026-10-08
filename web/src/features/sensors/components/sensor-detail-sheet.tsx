@@ -529,6 +529,27 @@ function ProtocolValue({ sensor }: { sensor: Sensor }) {
           Upgrade to {PROTOCOL_V2_SENSOR_VERSION} before {PROTOCOL_V1_SUNSET}
         </span>
       )}
+      <TransportValue protocol={p} />
+    </span>
+  )
+}
+
+const TRANSPORT_LABELS: Record<string, string> = {
+  grpc: 'gRPC, mutual TLS',
+  https: 'HTTPS (fallback)',
+  v2: 'Protocol v2',
+}
+
+/** The transport of the last heartbeat (api RFC-059) and why it is not gRPC. */
+function TransportValue({ protocol }: { protocol: NonNullable<Sensor['protocol']> }) {
+  if (!protocol.binding) return null
+  const label = TRANSPORT_LABELS[protocol.binding] ?? protocol.binding
+  return (
+    <span className="text-xs text-muted-foreground" data-testid="sensor-transport">
+      Transport: {label}
+      {protocol.fallback_reason ? (
+        <span className="font-mono"> ({protocol.fallback_reason})</span>
+      ) : null}
     </span>
   )
 }

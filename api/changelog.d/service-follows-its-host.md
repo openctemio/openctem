@@ -1,7 +1,7 @@
 ### Fixed: a service follows its host in scope, review and dispatch
 
 - A service is stored as `host:port:proto` (for example
-  `vndirect.com.vn:443:tcp`), but the scope code read host names with a
+  `example.co.uk:443:tcp`), but the scope code read host names with a
   `host:port` parser that fails on three parts. So a service under a
   permanent scope entry stayed in the review queue instead of joining the
   inventory (RFC-054 S4), and the scope authority did not see its host.

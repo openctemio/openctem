@@ -5,11 +5,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/openctemio/openctem/api/pkg/crypto"
 )
 
 var (
@@ -44,10 +45,13 @@ func NewEncryptor(key []byte, previous ...[]byte) (*Encryptor, error) {
 }
 
 // KeyFromConfig returns the secret-store key bytes for an APP_ENCRYPTION_KEY
-// value the way the server derives them: hex-decoded when it is hex,
-// otherwise the raw bytes.
+// value, decoded exactly as configuration validation and the credentials
+// cipher decode it (crypto.ParseKey: 64 hex, 44 base64 or 32 raw
+// characters). A base64 key used to reach the secret store as its 44 raw
+// bytes, and the API refused to start with a key the configuration accepted.
+// A value ParseKey refuses is returned as is, so NewEncryptor reports it.
 func KeyFromConfig(key string) []byte {
-	if b, err := hex.DecodeString(key); err == nil {
+	if b, err := crypto.ParseKey(key, ""); err == nil {
 		return b
 	}
 	return []byte(key)

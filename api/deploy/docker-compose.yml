@@ -71,6 +71,10 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${GATEWAY_MEMORY_LIMIT:-512m}
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
@@ -110,6 +114,10 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY_LIMIT:-1g}
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
@@ -207,6 +215,13 @@ services:
       # Public origin: SAML SP URLs, links in e-mails.
       APP_URL: ${OPENCTEM_PUBLIC_URL}
       SMTP_BASE_URL: ${OPENCTEM_PUBLIC_URL}
+      # Where SSO (OAuth, OIDC, SAML) logins land in the web console. Unset it
+      # would point at http://localhost:3000.
+      OAUTH_FRONTEND_CALLBACK_URL: ${OPENCTEM_PUBLIC_URL}/auth/callback
+      # /metrics answers only with this bearer token; empty = metrics off. The
+      # gateway never routes /metrics: scrape api:8080 from inside the network
+      # (deploy/observability). openssl rand -hex 32
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       AUTH_COOKIE_SECURE: "true"
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
@@ -241,12 +256,12 @@ services:
       # Sensors: the install snippets on the Sensors page pin this image
       # release and install the gateway's internal CA (TLS mode internal; the
       # file is absent in the other modes and the snippets then skip it).
-      SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.6.4}
-      SENSOR_MIN_VERSION: ${SENSOR_MIN_VERSION:-}
+      SENSOR_LATEST_VERSION: ${SENSOR_LATEST_VERSION:-v0.11.0}
+      SENSOR_MIN_VERSION: ${SENSOR_MIN_VERSION:-v0.9.0}
       # SDK policy: a sensor built with an SDK below the minimum shows as
       # degraded ("SDK below minimum"); below the latest it is "outdated".
       SENSOR_SDK_MIN_VERSION: ${SENSOR_SDK_MIN_VERSION:-}
-      SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-v0.14.0}
+      SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-v0.18.0}
       SENSOR_CA_CERT_FILE: /ca/openctem-root-ca.crt
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
@@ -275,8 +290,14 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=100M
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-2g}
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
