@@ -568,6 +568,11 @@ func (r *MemberLifecycleRepository) ErasePersonalData(ctx context.Context, tenan
 	if _, err = tx.ExecContext(ctx, `DELETE FROM user_mfa WHERE user_id = $1`, userID.String()); err != nil {
 		return fmt.Errorf("remove second factor: %w", err)
 	}
+	// The IdP's ids for the person: personal data, and a later sign-in must
+	// not find the anonymised account.
+	if _, err = tx.ExecContext(ctx, `DELETE FROM user_identities WHERE user_id = $1`, userID.String()); err != nil {
+		return fmt.Errorf("remove federated identities: %w", err)
+	}
 	if _, err = tx.ExecContext(ctx, `
 		UPDATE sessions SET status = 'revoked', updated_at = NOW()
 		WHERE user_id = $1 AND status = 'active'`, userID.String()); err != nil {

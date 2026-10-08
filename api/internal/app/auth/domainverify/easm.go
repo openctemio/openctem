@@ -63,11 +63,11 @@ func (s *Service) AddEASMDomain(ctx context.Context, tenantID shared.ID, rawDoma
 	if err != nil {
 		return nil, TXTRecord{}, err
 	}
-	if isBlocked(domain) {
-		return nil, TXTRecord{}, verifieddomain.ErrBlockedDomain
-	}
 	if ps, _ := publicsuffix.PublicSuffix(domain); ps == domain {
 		return nil, TXTRecord{}, verifieddomain.ErrInvalidDomain
+	}
+	if isBlocked(domain) {
+		return nil, TXTRecord{}, verifieddomain.ErrBlockedDomain
 	}
 	existing, err := s.repo.ListByTenant(ctx, tenantID)
 	if err != nil {

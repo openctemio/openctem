@@ -90,6 +90,16 @@ func (m *memRepo) ListDueForRecheck(_ context.Context, checkedBefore time.Time, 
 	return out, nil
 }
 
+func (m *memRepo) ListSSOClaims(_ context.Context, domain string) ([]*verifieddomain.VerifiedDomain, error) {
+	out := make([]*verifieddomain.VerifiedDomain, 0)
+	for _, r := range m.rows {
+		if r.Domain() == domain && r.Purpose() == verifieddomain.PurposeSSO {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
 // mockResolver returns scripted TXT records / errors keyed by host.
 type mockResolver struct {
 	records map[string][]string

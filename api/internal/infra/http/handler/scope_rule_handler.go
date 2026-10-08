@@ -45,19 +45,11 @@ func (h *ScopeRuleHandler) ListScopeRules(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	limit := 50
-	offset := 0
-
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	if o := r.URL.Query().Get("offset"); o != "" {
-		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	filter := accesscontrol.ScopeRuleFilter{
 		Limit:  limit,
@@ -80,8 +72,8 @@ func (h *ScopeRuleHandler) ListScopeRules(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"rules":       mapScopeRules(rules),
 		"total_count": totalCount,
-		"limit":       limit,
-		"offset":      offset,
+		"page":        paging.Page,
+		"per_page":    paging.PerPage,
 	})
 }
 

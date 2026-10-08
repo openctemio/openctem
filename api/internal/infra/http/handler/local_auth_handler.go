@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
@@ -112,59 +113,49 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Security: Always show the same generic message to prevent email enumeration
-	// The message "check your email" is shown whether the email existed or not
-	message := "Registration successful. Please check your email to verify your account."
-
-	// Handle case where email already existed (anti-enumeration)
-	if result.EmailExisted {
-		// Return a generic response that looks identical to a successful registration
-		// to prevent attackers from discovering which emails are registered
-		resp := RegisterResponse{
-			ID:                   "", // Don't reveal any info
-			Email:                req.Email,
-			Name:                 req.Name,
-			RequiresVerification: true,
-			Message:              message,
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(resp)
-		return
-	}
-
-	// Send verification email if required (only for new users)
-	if result.RequiresVerification && result.VerificationToken != "" {
-		if h.emailService != nil {
-			if err := h.emailService.SendVerificationEmail(
-				r.Context(),
-				result.User.Email(),
-				result.User.Name(),
-				result.VerificationToken,
-				h.authConfig.EmailVerificationDuration,
-			); err != nil {
-				h.logger.Error("failed to send verification email",
-					"email", result.User.Email(),
-					"error", err,
-				)
-				// Don't fail registration if email fails - user can request resend
-			}
-		}
-	} else if !result.RequiresVerification {
-		message = "Registration successful"
-	}
-
+	// SECURITY (anti-enumeration): a new and an already registered email get
+	// byte-identical responses. The body never carries the account id, echoes
+	// the submitted email and name (normalized the same way), and states the
+	// verification rule that applies to a new account either way. The
+	// verification email is sent after the response, so its latency does not
+	// tell the two apart either.
 	resp := RegisterResponse{
-		ID:                   result.User.ID().String(),
-		Email:                result.User.Email(),
-		Name:                 result.User.Name(),
+		Email:                strings.TrimSpace(strings.ToLower(req.Email)),
+		Name:                 strings.TrimSpace(req.Name),
 		RequiresVerification: result.RequiresVerification,
-		Message:              message,
+		Message:              registerMessage(result.RequiresVerification),
+	}
+
+	if !result.EmailExisted && result.User != nil && result.RequiresVerification &&
+		result.VerificationToken != "" && h.emailService != nil {
+		u := result.User
+		token := result.VerificationToken
+		duration := h.authConfig.EmailVerificationDuration
+		go func() {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+			defer cancel()
+			if err := h.emailService.SendVerificationEmail(ctx, u.Email(), u.Name(), token, duration); err != nil {
+				// The user can request another email.
+				h.logger.Error("failed to send verification email",
+					"email", logger.SanitizeValue(u.Email()),
+					"error", logger.SanitizeError(err),
+				)
+			}
+		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// registerMessage is the one message a registration answers with, whether or
+// not the email already had an account.
+func registerMessage(requiresVerification bool) string {
+	if requiresVerification {
+		return "Registration received. Please check your email to verify your account."
+	}
+	return "Registration received. You can now sign in."
 }
 
 // LoginRequest is the request body for login.
@@ -876,42 +867,40 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Always return success to prevent email enumeration
+	// SECURITY (anti-enumeration, AUTHZ-6): the answer is the same whether or
+	// not the email has an account, and so is its latency: the whole lookup,
+	// the token write and the email run after the response, detached from
+	// the request.
 	ipAddress := getClientIP(r)
-	result, _ := h.authService.ForgotPassword(r.Context(), auth.ForgotPasswordInput{
-		Email: req.Email,
-	})
-
-	// Send password reset email asynchronously if we got a token.
-	// Anti-enumeration (AUTHZ-6): the email send only happens for existing
-	// local users, so performing it inline would leak account existence via
-	// response latency. Dispatching it in a detached goroutine keeps the
-	// synchronous response time independent of whether the account exists.
-	if result != nil && result.Token != "" && h.emailService != nil {
-		email := req.Email
-		token := result.Token
-		resetDuration := h.authConfig.PasswordResetDuration
-		go func() {
-			// Detach from the request context (which is canceled once we
-			// respond) but keep request-scoped values for tracing.
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
-			defer cancel()
-			if err := h.emailService.SendPasswordResetEmail(
-				ctx,
-				email,
-				"", // empty name for privacy
-				token,
-				resetDuration,
-				ipAddress,
-			); err != nil {
-				h.logger.Error("failed to send password reset email",
-					"email", logger.SanitizeValue(email),
-					"error", logger.SanitizeError(err),
-				)
-				// Don't reveal the error to prevent enumeration
-			}
-		}()
-	}
+	email := req.Email
+	resetDuration := h.authConfig.PasswordResetDuration
+	go func() {
+		// Detach from the request context (which is canceled once we
+		// respond) but keep request-scoped values for tracing.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+		defer cancel()
+		result, err := h.authService.ForgotPassword(ctx, auth.ForgotPasswordInput{Email: email})
+		if err != nil {
+			h.logger.Error("password reset request failed", "error", logger.SanitizeError(err))
+			return
+		}
+		if result == nil || result.Token == "" || h.emailService == nil {
+			return
+		}
+		if err := h.emailService.SendPasswordResetEmail(
+			ctx,
+			email,
+			"", // empty name for privacy
+			result.Token,
+			resetDuration,
+			ipAddress,
+		); err != nil {
+			h.logger.Error("failed to send password reset email",
+				"email", logger.SanitizeValue(email),
+				"error", logger.SanitizeError(err),
+			)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
