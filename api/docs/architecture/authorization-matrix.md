@@ -766,6 +766,8 @@ Authorization is enforced at the **route layer** in
 | `GET /api/v1/admin/settings/plans` | any admin |
 | `PUT /api/v1/admin/settings/plans` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/tenants/{tenantId}/plan` | any admin (limits, usage, over-limit flag) |
+| `GET /api/v1/admin/tenants/{tenantId}/idle` | any admin (idle lifecycle of a Free organization) |
+| `PUT /api/v1/admin/tenants/{tenantId}/idle/exemption` | **ops_admin+** (reason required to exempt; audited high; `docs/architecture/idle-workspaces.md`) |
 | `PUT /api/v1/admin/tenants/{tenantId}/plan`, `PUT/DELETE .../plan/overrides/{key}` | **ops_admin+** (audited high; an override needs a reason, an expiry is optional) |
 | `GET /api/v1/admin/settings/signup` | any admin |
 | `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |

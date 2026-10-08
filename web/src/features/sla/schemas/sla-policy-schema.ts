@@ -100,23 +100,29 @@ export interface SlaPolicyFormData {
   escalation_enabled: boolean
 }
 
+/** The windows a new-policy form starts from (read from the API, never constants). */
+export type SlaFormWindows = Omit<SlaPolicyFormData, 'name' | 'description' | 'is_default'>
+
 /**
- * Platform defaults (pkg/domain/sla: DefaultPriorityDays, DefaultSLADays, the
- * 80 % warning and escalation on). A new policy starts here.
+ * A new policy starts from the organization's effective windows as the API
+ * reports them (its default policy, else the platform defaults), unnamed and
+ * marked default.
  */
-export const DEFAULT_SLA_FORM: SlaPolicyFormData = {
-  name: '',
-  description: '',
-  is_default: true,
-  p0_days: 2,
-  p1_days: 5,
-  p2_days: 15,
-  p3_days: 30,
-  critical_days: 2,
-  high_days: 15,
-  medium_days: 30,
-  low_days: 60,
-  info_days: NO_SLA,
-  warning_threshold_pct: 80,
-  escalation_enabled: true,
+export function newSlaPolicyForm(base: SlaFormWindows): SlaPolicyFormData {
+  return {
+    name: '',
+    description: '',
+    is_default: true,
+    p0_days: base.p0_days,
+    p1_days: base.p1_days,
+    p2_days: base.p2_days,
+    p3_days: base.p3_days,
+    critical_days: base.critical_days,
+    high_days: base.high_days,
+    medium_days: base.medium_days,
+    low_days: base.low_days,
+    info_days: base.info_days,
+    warning_threshold_pct: base.warning_threshold_pct,
+    escalation_enabled: base.escalation_enabled,
+  }
 }
