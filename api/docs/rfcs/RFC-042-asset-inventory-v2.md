@@ -22,7 +22,6 @@
 > and [RFC-041](RFC-041-api-path-design.md) (API path conventions,
 > [api-conventions.md](../architecture/api-conventions.md)). Working reference:
 > [architecture/asset-inventory-v2.md](../architecture/asset-inventory-v2.md).
-> UI companion: `web/docs/ui/inventory-integrations-2026-10.md`
 > (service cards, facet menu, group-by chips, integrations catalog), written
 > in parallel; this RFC owns the data model, the engines and the APIs.
 >
@@ -2369,9 +2368,8 @@ given to owner and admin by default (member gets read). Label writes reuse
 
 ### 6.19 UI
 
-The companion document (`web/docs/ui/inventory-integrations-2026-10.md`,
-and its HTML mock with the tabs Inventory / Groups / What changed /
-Suggestions / Policies) owns layout and components. This
+The console design (the tabs Inventory / Groups / What changed /
+Suggestions / Policies, layout and components) is out of scope here. This
 RFC fixes the contracts that the UI relies on:
 
 - **Lenses, not one list.** The inventory opens on **All assets** (core
