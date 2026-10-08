@@ -237,7 +237,7 @@ Sender-constrained tokens (RFC 9449), `pkg/dpop` and `mcpoauth/dpop.go`:
 - A client that sends a `DPoP` proof (ES256 or EdDSA, `typ: dpop+jwt`,
   public `jwk`, `htm`/`htu` of the token endpoint, `iat` within 60 s, a
   unique `jti`) to `/oauth/token` gets a grant bound to the key's RFC 7638
-  thumbprint (`mcp_oauth_grants.dpop_jkt`, migration `001371`) and
+  thumbprint (`mcp_oauth_grants.dpop_jkt`, migration `001383`) and
   `token_type: DPoP`. The proof is checked before the code is redeemed, so a
   bad proof does not burn the code.
 - Refreshing a bound grant needs a proof of the same key.
