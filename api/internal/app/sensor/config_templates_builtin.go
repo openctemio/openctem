@@ -107,12 +107,15 @@ sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 # caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
 # container does not download it again; it can be deleted at any time.
 # Hardened: read-only root filesystem, no capabilities, no privilege
-# escalation (add --cap-add NET_RAW only for naabu SYN scans). /etc/openctem
-# is mounted read-only: the policy, and the kill switch the host owner
-# creates with sudo touch /etc/openctem/STOP.
+# escalation (add --cap-add NET_RAW only for naabu SYN scans). The sensor
+# writes only /tmp besides its volumes, and its tools keep their settings
+# there (XDG_*); the image's home directory stays as built, with the
+# nuclei-templates release the sensor scans with until its first update.
+# /etc/openctem is mounted read-only: the policy, and the kill switch the
+# host owner creates with sudo touch /etc/openctem/STOP.
 docker run -d --name {{$slug}} --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-  --tmpfs /tmp --tmpfs /home/openctem --tmpfs /scan --tmpfs /cache --tmpfs /config \
+  --tmpfs /tmp -e XDG_CONFIG_HOME=/tmp/.config -e XDG_CACHE_HOME=/tmp/.cache \
   -e API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
   -e API_KEY={{shellQuote .APIKey}} \
@@ -220,11 +223,14 @@ services:
 {{- end}}
 {{- if isDaemon .Sensor}}
     # Hardened: read-only root filesystem, no capabilities, no privilege
-    # escalation (add NET_RAW to cap_add only for naabu SYN scans).
+    # escalation (add NET_RAW to cap_add only for naabu SYN scans). The
+    # sensor writes only /tmp besides its volumes (its tools too: XDG_*
+    # below); the image's home directory keeps the nuclei-templates release
+    # the sensor scans with until its first update.
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    tmpfs: [/tmp, /home/openctem, /scan, /cache, /config]
+    tmpfs: [/tmp]
 {{- end}}
     environment:
       API_URL: {{yamlQuote .BaseURL}}
@@ -235,6 +241,8 @@ services:
 {{- if isDaemon .Sensor}}
       SENSOR_LOCAL_POLICY: /etc/openctem/policy/sensor-policy.yaml
       SENSOR_KILL_SWITCH_FILE: /etc/openctem/policy/STOP
+      XDG_CONFIG_HOME: /tmp/.config
+      XDG_CACHE_HOME: /tmp/.cache
 {{- if .Policy.AllowPrivate}}
       SENSOR_ALLOW_PRIVATE_TARGETS: "1"
 {{- end}}
@@ -387,10 +395,14 @@ spec:
     spec:
       securityContext:
         # The image runs as uid/gid 999; fsGroup lets it write its volumes.
+        # OnRootMismatch: the group is set on a new volume only. With the
+        # default (Always) every mount makes the files group-readable, and the
+        # sensor refuses an identity key its group can read.
         runAsNonRoot: true
         runAsUser: 999
         runAsGroup: 999
         fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -416,6 +428,13 @@ spec:
 {{- end}}
             - name: SENSOR_LOCAL_POLICY
               value: /etc/openctem/policy/sensor-policy.yaml
+            # The tools keep their settings under /tmp; the image's home
+            # directory stays as built (it holds the nuclei-templates
+            # release the sensor scans with until its first update).
+            - name: XDG_CONFIG_HOME
+              value: /tmp/.config
+            - name: XDG_CACHE_HOME
+              value: /tmp/.cache
 {{- if .Policy.AllowPrivate}}
             - name: SENSOR_ALLOW_PRIVATE_TARGETS
               value: "1"
@@ -434,17 +453,10 @@ spec:
             - name: policy
               mountPath: /etc/openctem/policy
               readOnly: true
-            # Writable scratch directories (the root filesystem is read-only).
+            # The only writable directory besides the volumes (the root
+            # filesystem is read-only).
             - name: tmp
               mountPath: /tmp
-            - name: home
-              mountPath: /home/openctem
-            - name: scan
-              mountPath: /scan
-            - name: cache
-              mountPath: /cache
-            - name: config
-              mountPath: /config
 {{- if .CACert}}
             - name: ca
               mountPath: /etc/openctem/certs
@@ -465,14 +477,6 @@ spec:
             name: {{$slug}}-policy
             defaultMode: 0444
         - name: tmp
-          emptyDir: {}
-        - name: home
-          emptyDir: {}
-        - name: scan
-          emptyDir: {}
-        - name: cache
-          emptyDir: {}
-        - name: config
           emptyDir: {}
 {{- if .CACert}}
         - name: ca
@@ -570,9 +574,10 @@ kubectl create secret generic {{$slug}}-key \
 #    This needs a sensor release later than v0.8.0; v0.8.0 and older ignore
 #    the policy and scan without one.
 
-# 3. Turn the bundled sensor on (release "openctem"; use yours). Chart 0.11.0
-#    or later: the sensor runs hardened (non-root, read-only root filesystem,
-#    no capabilities, seccomp RuntimeDefault) and mounts the policy read-only.
+# 3. Turn the bundled sensor on (release "openctem"; use yours). Use chart
+#    0.15.0 or later: the sensor runs hardened (non-root, read-only root
+#    filesystem, no capabilities, seccomp RuntimeDefault), mounts the policy
+#    read-only, and keeps the nuclei-templates baked into its image.
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \

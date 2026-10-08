@@ -132,7 +132,21 @@ Lapsed-domain members keep their access. Their sign-in method (SSO, or password 
 | **Platform administrator console** | The verified domains of an organization show how SSO treats newcomers on each domain (role, or not admitted) and change it (per-domain JIT). |
 | **Authentication settings** | Personal accounts policy and, while SSO is enforced, the SSO exception list, saved with the rest of the security settings (owner, step-up). |
 
-## 11. Parts still to build
+## 11. Least-privilege defaults (part 7, implemented)
+
+Every way into an organization starts at the lowest privilege. Raising it is a decision someone takes, is audited and is announced.
+
+| Path | Default and guard | Where |
+|---|---|---|
+| Invitation, created user | The console preselects the viewer role. Admin is offered only to the owner; the role ceiling and the external viewer-only rule apply as before. | `defaultViewerRoleId`, `CreateInvitation` |
+| SSO just-in-time | The role of the domain (part 5), else the identity provider's default, which is viewer for a new OIDC provider and a new SAML configuration. | `jitRoleFor`, `samlprovider.New` |
+| SCIM | A provisioned person is a viewer. A group change only applies a role group that matches (mapped, or named member / viewer). Without one the role is kept: nothing is raised, and an administrator falls back to member. | `scim.ProvisioningService`, `reconcileUser` |
+| Data scope | No path adds a team or a grant: a newcomer sees no data until a team includes them. | unchanged |
+| Raising JIT | An identity provider's default role is changed through an SSO change that an owner approves with step-up. A platform administrator who raises a domain's provisioning (admits newcomers, or a higher role) now also goes through the owner (`domain_jit` change, migration 001339). Lowering it applies at once. | `SSOChangeService.SubmitDomainJIT`, `JITRaises` |
+| **Approval mode** | `Security.jit_requires_approval` (owner, step-up). With it on, a newcomer SSO admits gets a membership that is suspended with the reason `awaiting_approval`. Their sign-in answers "waiting for an administrator's approval", and the administrators are told. Approving is re-enabling the member (audited as an approval); rejecting is offboarding. | `Membership.HoldForApproval`, `holdIfApprovalRequired`, `ReactivateMember` |
+| **Privilege notices** | Owners and administrators get an in-app notice when a member gains privileges: the membership role raised; the owner, admin or a full-data-access role granted (assign, set, bulk); or a newcomer approved. | `TenantService.NotifyPrivilegeIncrease`, `RoleService.notifyElevated` |
+
+## 12. Parts still to build
 
 1. **Policy:** `Security.ExternalMembers` (off / invite-only / trusted-only).
 2. **Home cascade, remaining cause:** the home organization itself being suspended or scheduled for deletion. This waits for the organization states from research/71.

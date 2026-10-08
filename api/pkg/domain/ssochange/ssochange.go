@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/identityprovider"
 	"github.com/openctemio/openctem/api/pkg/domain/samlprovider"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 )
 
 // Kind is what a pending change does.
@@ -30,6 +31,9 @@ const (
 	KindIdPCreate Kind = "idp_create"
 	// KindIdPUpdate changes an existing OIDC identity provider.
 	KindIdPUpdate Kind = "idp_update"
+	// KindDomainJIT raises a verified domain's just-in-time provisioning
+	// (admits newcomers, or gives them a higher role) (RFC-058).
+	KindDomainJIT Kind = "domain_jit"
 )
 
 // Status is where a change is in its lifecycle.
@@ -106,6 +110,7 @@ type LiveWrite struct {
 	SAML      *samlprovider.SAMLProvider
 	IdPCreate *identityprovider.IdentityProvider
 	IdPUpdate *identityprovider.IdentityProvider
+	DomainJIT *verifieddomain.VerifiedDomain
 }
 
 // Repository persists pending changes.
