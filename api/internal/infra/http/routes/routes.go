@@ -18,6 +18,7 @@ import (
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
@@ -209,10 +210,14 @@ type Handlers struct {
 	Bootstrap *handler.BootstrapHandler // nil if not initialized (no database)
 
 	// Admin Auth handler (API key authentication for Admin UI)
-	AdminAuth           *handler.AdminAuthHandler
-	AdminOrganization   *handler.AdminOrganizationHandler
-	AdminConsole        *handler.AdminConsoleHandler
-	AdminAuditChain     *handler.AdminAuditChainHandler
+	AdminAuth         *handler.AdminAuthHandler
+	AdminOrganization *handler.AdminOrganizationHandler
+	AdminConsole      *handler.AdminConsoleHandler
+	AdminAuditChain   *handler.AdminAuditChainHandler
+	// AdminSignup: Console > System > Sign-up (the sign-up policy).
+	AdminSignup *handler.AdminSignupHandler
+	// SignupPolicy answers the sign-up policy to the public auth endpoints.
+	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
 
 	// Admin Audit middleware (audit logging for admin operations)
@@ -236,6 +241,8 @@ type Handlers struct {
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
+	// OrgTrust: trusted organizations (RFC-058); nil if not initialized.
+	OrgTrust *handler.OrgTrustHandler
 
 	// Platform Stats handler (tenant-scoped platform sensor stats)
 	PlatformScanning *handler.PlatformScanningHandler
@@ -521,6 +528,7 @@ func Register(
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
+	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {

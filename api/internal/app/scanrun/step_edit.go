@@ -52,12 +52,13 @@ type AddStepInput struct {
 }
 
 // buildStep validates one step input (key format, tool and config) and
-// builds the step it describes, with a fresh id.
+// builds the step it describes, with a fresh id. The first problem refuses
+// it; CheckSteps reports every problem instead.
 func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID, input AddStepInput) (*scanworkflow.Step, error) {
 	if s.securityValidator != nil {
 		result := s.securityValidator.ValidateIdentifier(input.StepKey, 100, "step_key")
 		if !result.Valid {
-			s.logger.Warn("step_key validation failed",
+			s.logger.Debug("step_key refused",
 				"template_id", templateID.String(),
 				"step_key", sanitizeLogValue(input.StepKey),
 				"errors", len(result.Errors))
@@ -65,7 +66,25 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 		}
 	}
 
-	// Derive capabilities from the tool when none are given.
+	capabilities := s.stepCapabilities(ctx, tenantID, input)
+	if s.securityValidator != nil {
+		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, capabilities, input.Config)
+		if !result.Valid {
+			// A refused step is the user's input, not a fault: debug level.
+			s.logger.Debug("step refused",
+				"template_id", templateID.String(),
+				"step_key", sanitizeLogValue(input.StepKey),
+				"code", result.Errors[0].Code,
+				"errors", len(result.Errors))
+			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, stepMessage(input, result.Errors[0].Message))
+		}
+	}
+	return constructStep(templateID, input, capabilities)
+}
+
+// stepCapabilities are the step's capabilities, derived from its tool when
+// none are given.
+func (s *Service) stepCapabilities(ctx context.Context, tenantID shared.ID, input AddStepInput) []string {
 	capabilities := input.Capabilities
 	if len(capabilities) == 0 && input.Tool != "" && s.toolRepo != nil {
 		t, err := s.toolRepo.GetByName(ctx, tenantID, input.Tool)
@@ -81,18 +100,13 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 	if len(capabilities) == 0 && input.Tool != "" {
 		capabilities = []string{"scan"}
 	}
+	return capabilities
+}
 
-	if s.securityValidator != nil {
-		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, capabilities, input.Config)
-		if !result.Valid {
-			s.logger.Warn("step config validation failed",
-				"template_id", templateID.String(),
-				"step_key", sanitizeLogValue(input.StepKey),
-				"errors", len(result.Errors))
-			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, stepMessage(input, result.Errors[0].Message))
-		}
-	}
-
+// constructStep builds the step an input describes (no registry checks):
+// timeouts, condition, position, and the tool selection against the
+// capability contract.
+func constructStep(templateID shared.ID, input AddStepInput, capabilities []string) (*scanworkflow.Step, error) {
 	step, err := scanworkflow.NewStep(templateID, input.StepKey, input.Name, input.Order, capabilities)
 	if err != nil {
 		return nil, err
@@ -214,7 +228,7 @@ func (s *Service) ValidateSteps(ctx context.Context, inputs []AddStepInput) erro
 // errStepKeyTaken refuses a second step with the same key in one scan workflow.
 func errStepKeyTaken(key string) error {
 	return shared.NewDomainError("ALREADY_EXISTS",
-		fmt.Sprintf("a step with key '%s' already exists in this pipeline", key), shared.ErrAlreadyExists)
+		fmt.Sprintf("another step of this scan workflow already uses the key '%s'", key), shared.ErrAlreadyExists)
 }
 
 // AddStep adds a step to a template.
@@ -251,7 +265,7 @@ func (s *Service) AddStep(ctx context.Context, input AddStepInput) (*scanworkflo
 			)
 			s.logAudit(ctx, AuditContext{TenantID: input.TenantID},
 				NewFailureEvent(audit.ActionScanWorkflowStepCreated, audit.ResourceTypeScanWorkflowStep, "", err).
-					WithMessage(fmt.Sprintf("Step key collision: '%s' already exists in pipeline", input.StepKey)).
+					WithMessage(fmt.Sprintf("Step key collision: '%s' already exists in the scan workflow", input.StepKey)).
 					WithMetadata("template_id", input.TemplateID).
 					WithMetadata("step_key", input.StepKey).
 					WithMetadata("reason", "step_key_collision"))
@@ -556,7 +570,7 @@ func (s *Service) auditStep(ctx context.Context, tenantID string, action audit.A
 	s.logAudit(ctx, AuditContext{TenantID: tenantID},
 		NewSuccessEvent(action, audit.ResourceTypeScanWorkflowStep, step.ID.String()).
 			WithResourceName(step.Name).
-			WithMessage(fmt.Sprintf("Pipeline step '%s' %s", step.Name, what)).
+			WithMessage(fmt.Sprintf("Scan workflow step '%s' %s", step.Name, what)).
 			WithMetadata("template_id", step.ScanWorkflowID.String()).
 			WithMetadata("step_key", step.StepKey))
 }

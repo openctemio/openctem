@@ -411,7 +411,7 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 			SELECT COUNT(*) FROM scan_runs
 			WHERE scan_workflow_id = $1 AND scan_id IS NULL AND status IN ('pending', 'running')
 		`
-		lockID, limitMsg = run.ScanWorkflowID.String(), "maximum concurrent runs (%d) reached for this pipeline"
+		lockID, limitMsg = run.ScanWorkflowID.String(), "maximum concurrent runs (%d) reached for this scan workflow"
 	}
 	if _, err := tx.ExecContext(ctx, lockQuery, lockID); err != nil {
 		return fmt.Errorf("failed to lock run owner: %w", err)

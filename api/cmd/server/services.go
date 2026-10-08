@@ -58,6 +58,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
@@ -65,6 +66,7 @@ import (
 	scanfreezeapp "github.com/openctemio/openctem/api/internal/app/scanfreeze"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
+	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -784,6 +786,14 @@ type Services struct {
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
+	// AddressClassifier decides whether an invitee is internal or external
+	// (RFC-058).
+	AddressClassifier *tenantapp.AddressClassifier
+	// OrgTrust manages trusted organizations (RFC-058).
+	OrgTrust *orgtrustapp.Service
+
+	// The platform sign-up policy (who may create an organization).
+	Signup *signupapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -1881,6 +1891,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithDB(deps.DB),
 		scanrun.WithSensorSelector(scanRunSensorSelectorAdapter),
 		scanrun.WithToolRepo(repos.Tool),
+		// A draft check warns about steps no online sensor can run now.
+		scanrun.WithRunnableTools(s.Tool),
 		scanrun.WithQualityGate(repos.ScanProfile, repos.Finding),
 		scanrun.WithScanDeactivator(s.Scan),     // Cascade pause scans when scan workflow is deactivated
 		scanrun.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
@@ -2261,6 +2273,13 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
+	// The sign-up policy (Console > System > Sign-up). TENANT_CREATION_MODE
+	// seeds it on the first start only; afterwards the console value wins.
+	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
+	if err := s.Signup.Seed(context.Background(), cfg.Auth.TenantCreationMode); err != nil {
+		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
+	}
+	s.Auth.SetSignupPolicy(s.Signup)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2338,6 +2357,30 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
 	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)
+
+	// External members (RFC-058): the holder of a verified SSO domain is the
+	// home organization of its addresses.
+	s.AddressClassifier = tenantapp.NewAddressClassifier(s.DomainVerify, func(ctx context.Context, tenantID shared.ID) (bool, error) {
+		return domainverify.OwnsAnySSODomain(ctx, repos.VerifiedDomain, tenantID)
+	})
+	s.Tenant.SetAddressClassifier(s.AddressClassifier)
+	s.Auth.SetInviteeClassifier(s.Tenant)
+
+	// Trusted organizations (RFC-058): home-realm sign-in for external
+	// members, the role ceiling, proposed end of access and API keys.
+	s.OrgTrust = orgtrustapp.NewService(repos.OrgTrust, s.DomainVerify, s.Tenant, s.Audit, log)
+	trustPolicy := orgtrustapp.NewPolicy(repos.OrgTrust, repos.Tenant)
+	s.Tenant.SetTrustPolicy(trustPolicy)
+	s.Auth.SetHomeRealm(repos.OrgTrust, s.DomainVerify)
+	if s.Role != nil {
+		s.Role.SetExternalRoleCeiling(func(ctx context.Context, host, home shared.ID) (string, error) {
+			r, err := trustPolicy.MaxRoleFor(ctx, host, home)
+			return string(r), err
+		})
+	}
+	if s.APIKey != nil {
+		s.APIKey.SetExternalKeyPolicy(trustPolicy)
+	}
 
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises

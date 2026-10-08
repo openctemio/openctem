@@ -262,6 +262,7 @@ func run() int {
 	}
 	if services.Role != nil {
 		services.UserProvisioning = tenant.NewUserProvisioningService(repos.Tenant, repos.User, services.Role, setupMailer, services.Audit, log)
+		services.UserProvisioning.SetAddressClassifier(services.AddressClassifier)
 	}
 
 	// Wire AI triage job enqueuer if service is enabled

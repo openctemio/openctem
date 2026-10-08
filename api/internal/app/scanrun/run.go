@@ -124,7 +124,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 
 	// Verify template is active
 	if !template.IsActive {
-		return nil, shared.NewDomainError("INACTIVE", "pipeline template is not active", shared.ErrValidation)
+		return nil, shared.NewDomainError("INACTIVE", "this scan workflow is not active", shared.ErrValidation)
 	}
 
 	// Validate steps
@@ -136,7 +136,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 
 	// Validate tool references - ensure all required tools are available and active
 	if err := s.ValidateToolReferences(ctx, template, tenantID); err != nil {
-		s.logger.Warn("pipeline tool validation failed",
+		s.logger.Warn("scan workflow tool validation failed",
 			"template_id", template.ID.String(),
 			"error", err)
 		return nil, err
@@ -172,7 +172,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 	// trigger does (private-range policy, scope exclusions, scan zones).
 	runContext, err := s.gateRunContext(ctx, tenantID, input.TriggeredBy, input.Context)
 	if err != nil {
-		s.logger.Warn("pipeline run refused by the target gate",
+		s.logger.Warn("scan workflow run refused by the target gate",
 			"template_id", template.ID.String(), "error", err)
 		return nil, err
 	}
@@ -224,7 +224,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 	s.logAudit(ctx, AuditContext{TenantID: input.TenantID, ActorID: input.TriggeredBy},
 		NewSuccessEvent(audit.ActionScanRunTriggered, audit.ResourceTypeScanRun, run.ID.String()).
 			WithResourceName(template.Name).
-			WithMessage(fmt.Sprintf("Pipeline '%s' triggered", template.Name)).
+			WithMessage(fmt.Sprintf("Scan workflow '%s' triggered", template.Name)).
 			WithMetadata("trigger_type", string(triggerType)).
 			WithMetadata("template_id", template.ID.String()))
 
@@ -929,7 +929,7 @@ func (s *Service) failStep(ctx context.Context, run *scanrun.Run, stepRun *scanr
 		s.refreshStepRuns(ctx, run)
 		st := s.calculateRunStats(run)
 		s.updateRunStats(ctx, run, st)
-		s.finishRun(ctx, run, scanrun.RunStatusFailed, "Pipeline failed: "+errorMessage, st.findings)
+		s.finishRun(ctx, run, scanrun.RunStatusFailed, "Scan workflow failed: "+errorMessage, st.findings)
 		return nil
 	}
 
@@ -977,7 +977,7 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 	// scope) are not counted: the run did what it was allowed to do.
 	outcome := st.outcome()
 	uncovered := uncoveredTargetCount(run.Context)
-	partialMsg := fmt.Sprintf("Pipeline completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
+	partialMsg := fmt.Sprintf("Scan workflow completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
 	if outcome == scanrun.RunStatusCompleted && uncovered > 0 {
 		outcome = scanrun.RunStatusPartial
 		partialMsg = fmt.Sprintf("Pipeline completed, but %d target(s) were not scanned: no scan zone or sensor could reach them (see uncovered_targets)", uncovered)
