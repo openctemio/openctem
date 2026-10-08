@@ -22,8 +22,8 @@
 > and [RFC-041](RFC-041-api-path-design.md) (API path conventions,
 > [api-conventions.md](../architecture/api-conventions.md)). Working reference:
 > [architecture/asset-inventory-v2.md](../architecture/asset-inventory-v2.md).
-> (service cards, facet menu, group-by chips, integrations catalog), written
-> in parallel; this RFC owns the data model, the engines and the APIs.
+> This RFC owns the data model, the engines and the APIs; the console design
+> (service cards, facet menu, group-by chips, integrations catalog) is separate.
 >
 > Goal (2026-10-03): redesign how assets are discovered,
 > modelled, labelled, grouped, excluded, governed by policies and presented,
