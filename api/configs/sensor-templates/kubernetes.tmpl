@@ -105,10 +105,14 @@ spec:
     spec:
       securityContext:
         # The image runs as uid/gid 999; fsGroup lets it write its volumes.
+        # OnRootMismatch: the group is set on a new volume only. With the
+        # default (Always) every mount makes the files group-readable, and the
+        # sensor refuses an identity key its group can read.
         runAsNonRoot: true
         runAsUser: 999
         runAsGroup: 999
         fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -134,6 +138,13 @@ spec:
 {{- end}}
             - name: SENSOR_LOCAL_POLICY
               value: /etc/openctem/policy/sensor-policy.yaml
+            # The tools keep their settings under /tmp; the image's home
+            # directory stays as built (it holds the nuclei-templates
+            # release the sensor scans with until its first update).
+            - name: XDG_CONFIG_HOME
+              value: /tmp/.config
+            - name: XDG_CACHE_HOME
+              value: /tmp/.cache
 {{- if .Policy.AllowPrivate}}
             - name: SENSOR_ALLOW_PRIVATE_TARGETS
               value: "1"
@@ -152,17 +163,10 @@ spec:
             - name: policy
               mountPath: /etc/openctem/policy
               readOnly: true
-            # Writable scratch directories (the root filesystem is read-only).
+            # The only writable directory besides the volumes (the root
+            # filesystem is read-only).
             - name: tmp
               mountPath: /tmp
-            - name: home
-              mountPath: /home/openctem
-            - name: scan
-              mountPath: /scan
-            - name: cache
-              mountPath: /cache
-            - name: config
-              mountPath: /config
 {{- if .CACert}}
             - name: ca
               mountPath: /etc/openctem/certs
@@ -183,14 +187,6 @@ spec:
             name: {{$slug}}-policy
             defaultMode: 0444
         - name: tmp
-          emptyDir: {}
-        - name: home
-          emptyDir: {}
-        - name: scan
-          emptyDir: {}
-        - name: cache
-          emptyDir: {}
-        - name: config
           emptyDir: {}
 {{- if .CACert}}
         - name: ca

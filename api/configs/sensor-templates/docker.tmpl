@@ -35,12 +35,15 @@ sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 # caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
 # container does not download it again; it can be deleted at any time.
 # Hardened: read-only root filesystem, no capabilities, no privilege
-# escalation (add --cap-add NET_RAW only for naabu SYN scans). /etc/openctem
-# is mounted read-only: the policy, and the kill switch the host owner
-# creates with sudo touch /etc/openctem/STOP.
+# escalation (add --cap-add NET_RAW only for naabu SYN scans). The sensor
+# writes only /tmp besides its volumes, and its tools keep their settings
+# there (XDG_*); the image's home directory stays as built, with the
+# nuclei-templates release the sensor scans with until its first update.
+# /etc/openctem is mounted read-only: the policy, and the kill switch the
+# host owner creates with sudo touch /etc/openctem/STOP.
 docker run -d --name {{$slug}} --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-  --tmpfs /tmp --tmpfs /home/openctem --tmpfs /scan --tmpfs /cache --tmpfs /config \
+  --tmpfs /tmp -e XDG_CONFIG_HOME=/tmp/.config -e XDG_CACHE_HOME=/tmp/.cache \
   -e API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
   -e API_KEY={{shellQuote .APIKey}} \
