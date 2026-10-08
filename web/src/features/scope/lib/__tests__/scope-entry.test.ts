@@ -14,8 +14,8 @@ const NOW = Date.parse('2026-10-07T12:00:00Z')
 
 describe('what an entry covers (RFC-054 §4.1: *.x is x and every name below it)', () => {
   it('reads a wildcard as the domain and its subdomains', () => {
-    expect(coversText({ pattern: '*.vndirect.com.vn', covers: 'domain_and_subdomains' })).toBe(
-      'vndirect.com.vn and every name below it'
+    expect(coversText({ pattern: '*.example.co.uk', covers: 'domain_and_subdomains' })).toBe(
+      'example.co.uk and every name below it'
     )
     // Without the server's reading, the pattern still says it.
     expect(coversText({ pattern: '**.acme.io' })).toBe('acme.io and every name below it')

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -141,4 +142,39 @@ func (s *S3Storage) Delete(ctx context.Context, tenantID, storageKey string) err
 		return fmt.Errorf("failed to delete from S3: %w", err)
 	}
 	return nil
+}
+
+// EraseTenant deletes every object under "{tenantID}/" in the bucket, page by
+// page. The prefix ends in a slash and tenant ids have a fixed length, so no
+// other tenant's key can match it.
+func (s *S3Storage) EraseTenant(ctx context.Context, tenantID string) (int, error) {
+	if err := attachment.ValidateTenantNamespace(tenantID); err != nil {
+		return 0, err
+	}
+	prefix := tenantID + "/"
+	pages := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+		Prefix: aws.String(prefix),
+	})
+	n := 0
+	for pages.HasMorePages() {
+		page, err := pages.NextPage(ctx)
+		if err != nil {
+			return n, fmt.Errorf("list tenant objects: %w", err)
+		}
+		for _, obj := range page.Contents {
+			key := aws.ToString(obj.Key)
+			if !strings.HasPrefix(key, prefix) {
+				continue // the listing is not trusted to apply the prefix
+			}
+			if _, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(s.bucket),
+				Key:    aws.String(key),
+			}); err != nil {
+				return n, fmt.Errorf("delete tenant object: %w", err)
+			}
+			n++
+		}
+	}
+	return n, nil
 }

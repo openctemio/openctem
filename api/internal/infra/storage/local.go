@@ -3,8 +3,10 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,6 +84,47 @@ func (s *LocalStorage) Delete(_ context.Context, tenantID, storageKey string) er
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
 	return nil
+}
+
+// EraseTenant removes the tenant directory {basePath}/{tenantID} and every
+// file in it. A tenant directory that is a symlink is unlinked, never followed,
+// so nothing outside the tenant namespace is touched.
+func (s *LocalStorage) EraseTenant(_ context.Context, tenantID string) (int, error) {
+	if err := attachment.ValidateTenantNamespace(tenantID); err != nil {
+		return 0, err
+	}
+	baseAbs, err := filepath.Abs(s.basePath)
+	if err != nil {
+		return 0, fmt.Errorf("resolve base path: %w", err)
+	}
+	dir := filepath.Join(baseAbs, tenantID)
+	st, err := os.Lstat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("stat tenant dir: %w", err)
+	}
+	if !st.IsDir() {
+		// A symlink (or stray file) in place of the directory: remove the
+		// entry itself; os.Remove does not follow a symlink.
+		if err := os.Remove(dir); err != nil {
+			return 0, fmt.Errorf("remove tenant entry: %w", err)
+		}
+		return 0, nil
+	}
+	n := 0
+	// WalkDir does not follow symlinks; it only counts what is removed.
+	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			n++
+		}
+		return nil
+	})
+	if err := os.RemoveAll(dir); err != nil {
+		return 0, fmt.Errorf("remove tenant dir: %w", err)
+	}
+	return n, nil
 }
 
 // safePath joins basePath/tenantID/key and verifies the result (after

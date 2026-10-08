@@ -85,10 +85,13 @@ func NewIngestHandler(
 
 // HeartbeatRequest represents the heartbeat payload from sensors.
 type HeartbeatRequest struct {
-	Name     string `json:"name,omitempty"`
-	Status   string `json:"status"`
-	Version  string `json:"version,omitempty"`
-	Hostname string `json:"hostname,omitempty"`
+	// Transport is the sensor's account of its transport (sdk-go with
+	// protocol v3, RFC-059); the platform decides the binding itself.
+	Transport *HeartbeatTransport `json:"transport,omitempty"`
+	Name      string              `json:"name,omitempty"`
+	Status    string              `json:"status"`
+	Version   string              `json:"version,omitempty"`
+	Hostname  string              `json:"hostname,omitempty"`
 	// InstanceID is the random id of the sensor process (sdk-go v0.12+), for
 	// clone detection. Optional; older SDKs do not send it.
 	InstanceID    string   `json:"instance_id,omitempty"`
@@ -411,4 +414,11 @@ func extractAPIKey(r *http.Request) string {
 	// SECURITY: DO NOT use query parameter for API key
 	// Query params are logged by proxies, CDNs, WAFs, and access logs
 	return ""
+}
+
+// HeartbeatTransport is the transport member of a heartbeat (RFC-059).
+// Untrusted: only fallback_reason is used, sanitized.
+type HeartbeatTransport struct {
+	Binding        string `json:"binding,omitempty"`
+	FallbackReason string `json:"fallback_reason,omitempty"`
 }

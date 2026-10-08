@@ -23,7 +23,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { createTenantUser } from '../api/use-members'
 import { MAX_ROLES_PER_USER, type CreatedTenantUser } from '../types/member.types'
-import { RoleChecklist } from './role-checklist'
+import { RoleChecklist, defaultViewerRoleId } from './role-checklist'
 
 interface AddUserDialogProps {
   tenantSlug: string | undefined
@@ -49,18 +49,26 @@ export function AddUserDialog({
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
+  // Least privilege: start from the viewer role once the roles load.
+  const [seeded, setSeeded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Held only in this component's state; dropped when the dialog closes.
   const [created, setCreated] = useState<CreatedTenantUser | null>(null)
 
   const { roles, isLoading: rolesLoading } = useRoles({ skip: !open })
+  const viewerId = defaultViewerRoleId(roles)
+  if (open && !seeded && viewerId) {
+    setSeeded(true)
+    setRoleIds([viewerId])
+  }
 
   const close = () => {
     onOpenChange(false)
     setName('')
     setEmail('')
     setRoleIds([])
+    setSeeded(false)
     setError(null)
     setCreated(null)
   }

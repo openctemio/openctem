@@ -40,3 +40,5 @@ jobs:
         run: deploy/observability/test/check-config.sh
       - name: Compose file
         run: docker compose -f deploy/observability/docker-compose.yml --profile observability --profile grafana config --quiet
+      - name: Compose overlay for the shipped deployment renders
+        run: docker compose -f deploy/observability/docker-compose.yml -f deploy/observability/docker-compose.openctem.yml --profile observability config --quiet

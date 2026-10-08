@@ -334,7 +334,6 @@ export function EditNotificationDialog({
             to_emails: toEmailsList.length > 0 ? toEmailsList : undefined,
             use_tls: data.use_tls,
             use_starttls: data.use_starttls,
-            skip_verify: false,
           })
         }
       }
