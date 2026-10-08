@@ -28,15 +28,16 @@ var keyChainExempt = map[string]string{
 	"/api/v1/validation/evidence": "sensor-key auth only",
 	// CI runner routes (RFC-051): mounted outside every key chain, with
 	// their own authentication (the CI OIDC token, the CI run token).
-	"/api/v1/ci/oidc/exchange":           "own authenticator (CI OIDC token), outside the key chains",
-	"/api/v1/ci/runs/{id}/results":       "CI run token only (AuthenticateRun), outside the key chains",
-	"/api/v1/ci/runs/{id}/baseline-diff": "CI run token only (AuthenticateRun), outside the key chains",
-	"/api/v1/ci/runs/{id}/evaluate":      "CI run token only (AuthenticateRun), outside the key chains",
-	"/health":                            "public",
-	"/ready":                             "public",
-	"/metrics":                           "MetricsAuth bearer",
-	"/openapi.yaml":                      "public",
-	"/docs":                              "public",
+	"/api/v1/ci/oidc/exchange":              "own authenticator (CI OIDC token), outside the key chains",
+	"/api/v1/ci/runs/{id}/results":          "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/baseline-diff":    "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/evaluate":         "CI run token only (AuthenticateRun), outside the key chains",
+	"/health":                               "public",
+	"/ready":                                "public",
+	"/metrics":                              "MetricsAuth bearer",
+	"/openapi.yaml":                         "public",
+	"/docs":                                 "public",
+	"/.well-known/oauth-protected-resource": "public metadata, no chain",
 }
 
 func TestAPIKeyPolicy_EveryUngatedRouteRefusesKeys(t *testing.T) {
