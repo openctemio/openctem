@@ -37,7 +37,8 @@ globalThis.ResizeObserver ??= class {
 async function fillAndSend() {
   const user = userEvent.setup()
   await user.type(screen.getByLabelText('Email address'), 'ann@co.com')
-  await user.click(screen.getByRole('checkbox', { name: 'Viewer' }))
+  // The viewer role is preselected (least privilege).
+  expect(screen.getByRole('checkbox', { name: 'Viewer' })).toBeChecked()
   await user.click(screen.getByRole('button', { name: /send invitation/i }))
 }
 
@@ -113,9 +114,23 @@ describe('InviteUserDialog', () => {
     const user = userEvent.setup()
     render(<InviteUserDialog tenantSlug="acme" open onOpenChange={vi.fn()} />)
     await user.type(screen.getByLabelText('Email address'), 'ann@co.com')
+    // Clear the preselected viewer role.
+    await user.click(screen.getByRole('checkbox', { name: 'Viewer' }))
     await user.click(screen.getByRole('button', { name: /send invitation/i }))
     expect(await screen.findByText('Select at least one role.')).toBeInTheDocument()
     expect(mockCreate).not.toHaveBeenCalled()
+  })
+})
+
+describe('InviteUserDialog least privilege', () => {
+  it('starts from the viewer role only', () => {
+    vi.mocked(useRoles).mockReturnValue({
+      roles: [role('r-member', 'Member', 'member'), role('r-viewer', 'Viewer', 'viewer')],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useRoles>)
+    render(<InviteUserDialog tenantSlug="acme" open onOpenChange={vi.fn()} />)
+    expect(screen.getByRole('checkbox', { name: 'Viewer' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Member' })).not.toBeChecked()
   })
 })
 

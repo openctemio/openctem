@@ -3,14 +3,14 @@ package config
 import "testing"
 
 func TestLoad_SensorReleaseChannel(t *testing.T) {
-	t.Run("defaults: latest is the compiled-in release, no minimum", func(t *testing.T) {
+	t.Run("defaults: latest and minimum are the compiled-in versions.yaml values", func(t *testing.T) {
 		t.Setenv("SENSOR_LATEST_VERSION", "")
 		t.Setenv("SENSOR_MIN_VERSION", "")
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if cfg.SensorConfig.LatestVersion != DefaultSensorLatestVersion || cfg.SensorConfig.MinVersion != "" {
+		if cfg.SensorConfig.LatestVersion != DefaultSensorLatestVersion || cfg.SensorConfig.MinVersion != DefaultSensorMinVersion {
 			t.Errorf("latest=%q min=%q", cfg.SensorConfig.LatestVersion, cfg.SensorConfig.MinVersion)
 		}
 	})

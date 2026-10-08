@@ -62,6 +62,8 @@ export interface SecuritySettings {
   personal_accounts?: PersonalAccountsPolicy
   /** Members who may sign in without SSO while it is enforced. */
   sso_exceptions?: SSOException[]
+  /** SSO newcomers wait for an administrator's approval (api RFC-058). */
+  jit_requires_approval?: boolean
 }
 
 export type PersonalAccountsPolicy = 'allowed' | 'allowed_with_mfa' | 'blocked'
@@ -87,6 +89,7 @@ export interface UpdateSecuritySettingsInput {
   personal_accounts?: PersonalAccountsPolicy
   /** Replaces the whole list. */
   sso_exceptions?: SSOException[]
+  jit_requires_approval?: boolean
 }
 
 // ============================================

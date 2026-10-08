@@ -1,0 +1,45 @@
+# =============================================================================
+# Overlay: monitor the shipped Compose deployment (api/deploy/docker-compose.yml)
+# =============================================================================
+# The base file's defaults match a stack whose network, service names and
+# datastores differ from the shipped one. This overlay sets the shipped
+# stack's values: compose project `openctem`, web service `web`, Postgres with
+# TLS, Redis reachable over TLS only, verified against the stack's datastore CA.
+#
+#   docker compose -p openctem-obs --env-file api/deploy/.env \
+#     -f deploy/observability/docker-compose.yml \
+#     -f deploy/observability/docker-compose.openctem.yml --profile observability up -d
+#
+# Every value can still be overridden from the environment / --env-file.
+# Before the first start, create the monitoring role in the stack's Postgres
+# (deploy/observability/postgres/monitor-role.sql) and set OBS_PG_MONITOR_PASSWORD.
+# =============================================================================
+
+services:
+  prometheus:
+    environment:
+      OBS_WEB_UPSTREAM: ${OBS_WEB_UPSTREAM:-web:3000}
+      OBS_CONTAINER_REGEX: ${OBS_CONTAINER_REGEX:-openctem-.*|openctem-sensor.*}
+
+  postgres-exporter:
+    environment:
+      DATA_SOURCE_URI: ${OBS_POSTGRES_HOST:-postgres:5432}/${OBS_POSTGRES_DB:-openctem}?sslmode=${OBS_POSTGRES_SSLMODE:-require}
+
+  # The bundled Redis listens on TLS only; the exporter verifies its
+  # certificate against the stack's datastore CA (the certificate names `redis`).
+  redis-exporter:
+    environment:
+      REDIS_ADDR: rediss://${OBS_REDIS_ADDR:-redis:6379}
+      REDIS_EXPORTER_TLS_CA_CERT_FILE: /datastore-tls/ca.crt
+    volumes:
+      - datastore-tls:/datastore-tls:ro
+
+volumes:
+  datastore-tls:
+    external: true
+    name: ${OBS_DATASTORE_TLS_VOLUME:-openctem_datastore-tls}
+
+networks:
+  app:
+    external: true
+    name: ${OBS_APP_NETWORK:-openctem_openctem}

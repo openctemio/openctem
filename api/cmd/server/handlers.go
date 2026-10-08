@@ -589,6 +589,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.OrgTrust = handler.NewOrgTrustHandler(svc.OrgTrust, log)
 		}
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
+		handlers.VerifiedDomain.SetChangeApproval(svc.SSOChange)
 		// Tenant self-service verification for EASM (research/22 P0-10, E6).
 		var audit handler.AttributionAuditor
 		if svc.Audit != nil {
@@ -671,7 +672,8 @@ func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, r
 	} else {
 		srv.SetCertificateIssuer(sensortransport.NewIssuer(ca, svc.Sensor, svc.Sensor, tc.CertTTL, tc.PublicHost, log))
 		if tc.PublicHost != "" {
-			if err := srv.EnableMTLS(sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: tc.PublicHost}, ca, svc.Sensor); err != nil {
+			mcfg := sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: tc.PublicHost, TrustedProxies: tc.MTLSTrustedProxies}
+			if err := srv.EnableMTLS(mcfg, ca, svc.Sensor); err != nil {
 				log.Error("sensor protocol v3 gRPC binding not served", "error", err)
 			} else {
 				grpcEndpoint = tc.PublicHost
