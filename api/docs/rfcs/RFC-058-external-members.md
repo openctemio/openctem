@@ -107,18 +107,27 @@ A **personal member** is an external member with a consumer mail address (gmail.
 
 Not yet: a second factor (TOTP) for social-login accounts, with the challenge at social sign-in. Until then, a Google-only personal member of an `allowed_with_mfa` organization needs a password account with 2FA.
 
-## 9. Parts still to build
+## 9. Several domains and lapsed domains (part 5, implemented)
 
-1. **Policy:**
-   - `Security.ExternalMembers` (off / invite-only / trusted-only);
-   - personal-account policy (allowed / allowed with MFA, the new-org default / blocked);
-   - enforce-SSO exception list;
-   - look-alike Gmail warning only.
+An organization may verify several SSO domains (one claim per domain, platform-wide; RFC-022). Each domain carries its own just-in-time provisioning (migration 001330).
+
+| Rule | Where |
+|---|---|
+| **Per-domain JIT.** `jit_enabled` (default on) decides whether SSO may admit newcomers on the domain. `jit_role` (`viewer`, `member`, or empty for the identity provider default) is the role they get. `admin` and `owner` are refused, by the domain entity and by a database CHECK. Set by a platform administrator: `PATCH /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}`, audited as `sso.verified_domain_jit_changed`. | `VerifiedDomain.ChangeJIT`, `SSOService.domainJIT` / `jitRoleFor` |
+| **Fail closed.** Only a verified SSO domain of the organization admits anyone. A lookup error refuses. | `domainverify.Service.DomainJITPolicy` |
+| **Lapsed domain: JIT stops.** Once the DNS proof lapses, the domain is no longer verified, so it admits no newcomers. | as above |
+| **Lapsed domain: members flagged.** The members list reports `domain_lapsed` for members whose address is on a domain this organization held and lost. | `ListMembersWithUserInfo` |
+| **Lapsed domain: no email password reset.** A forgot-password request for an address on a domain whose verified owner lost it, and that no organization holds now, mails no link: its mailboxes may have changed hands (an expired domain re-registered). The answer is the same as for an unknown address. Recovery goes through an administrator-issued setup link. A lookup error also refuses. | `AuthService.ForgotPassword`, `domainverify.Service.IsLapsedSSODomain` |
+
+Lapsed-domain members keep their access. Their sign-in method (SSO, or password with MFA) is unchanged; the flag lets an administrator review them.
+
+## 10. Parts still to build
+
+1. **Policy:** `Security.ExternalMembers` (off / invite-only / trusted-only).
 2. **Home cascade, remaining cause:** the home organization itself being suspended or scheduled for deletion. This waits for the organization states from research/71.
-3. **Domains:**
-   - several domains per organization with a per-domain JIT role;
-   - lapsed-domain handling: stop JIT, flag members, block email password reset for local accounts on a lapsed domain.
-4. **UI:**
+3. **Personal accounts:** a second factor (TOTP) for social-login accounts.
+4. **Domains:** include-subdomains on a verified domain; SSO-only suspension of lapsed-domain members after 30 days.
+5. **UI:**
    - org switcher (recent, search, external chip, blocked rows with the reason);
    - External members view;
    - Trusted organizations setting;
