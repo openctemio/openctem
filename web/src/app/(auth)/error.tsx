@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { devLog } from '@/lib/logger'
+import { reportRouteError } from '@/lib/error-reporting'
 import Link from 'next/link'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -56,8 +57,9 @@ export default function AuthError({ error, reset }: ErrorProps) {
   const [isRedirecting, setIsRedirecting] = useState(false)
 
   useEffect(() => {
-    // Log error to monitoring service (e.g., Sentry)
     console.error('Auth error:', error)
+    // An expired session is not a fault; anything else is counted.
+    if (!isAuthError(error)) reportRouteError(error, '/auth')
 
     // If it's an auth error, redirect to login
     if (isAuthError(error)) {

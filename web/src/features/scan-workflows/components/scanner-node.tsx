@@ -1,9 +1,9 @@
 'use client'
 
-import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react'
+import { memo, useState, useCallback, useMemo, useEffect } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { Radar, Play, Flag, Clock, Link2, AlertTriangle } from 'lucide-react'
-import { cn, slugify } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -47,6 +47,8 @@ export type ScannerNodeData = {
   toolDisplayName?: string
   capabilities?: string[]
   stepKey?: string
+  /** The key cannot change (a saved step). */
+  stepKeyLocked?: boolean
   timeout?: number
   dependsOn?: string[]
   // Category info from tool
@@ -175,9 +177,6 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
   const [localCapabilities, setLocalCapabilities] = useState<string[]>(data.capabilities || [])
   const [showDescription, setShowDescription] = useState(!!data.description)
 
-  // Track if step key was manually edited
-  const stepKeyManualRef = useRef(false)
-
   // Sync local state when data changes from outside
   useEffect(() => {
     setLocalLabel(data.label)
@@ -203,26 +202,20 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
     setLocalCapabilities(data.capabilities || [])
   }, [capabilitiesJson, data.capabilities])
 
-  // Handle label change with auto step key generation
+  // Renaming a step never changes its key: other steps and run history
+  // refer to the key.
   const handleLabelChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const newLabel = e.target.value
       setLocalLabel(newLabel)
       data.onLabelChange?.(newLabel)
-
-      // Auto-generate step key if not manually edited
-      if (!stepKeyManualRef.current) {
-        const newKey = slugify(newLabel)
-        setLocalStepKey(newKey)
-        data.onStepKeyChange?.(newKey)
-      }
     },
     [data]
   )
 
   const handleStepKeyChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      stepKeyManualRef.current = true
+      if (data.stepKeyLocked) return
       const newKey = e.target.value
       setLocalStepKey(newKey)
       data.onStepKeyChange?.(newKey)
@@ -316,6 +309,13 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
           <Input
             value={localStepKey}
             onChange={handleStepKeyChange}
+            readOnly={data.stepKeyLocked}
+            aria-label="Step key"
+            title={
+              data.stepKeyLocked
+                ? 'Fixed once saved: run history and other steps refer to it.'
+                : undefined
+            }
             className="h-5 px-1 text-[10px] font-mono border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 focus-visible:ring-0"
             placeholder="step-key"
           />
