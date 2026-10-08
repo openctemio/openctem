@@ -20,4 +20,14 @@ type Repository interface {
 	// older than `checkedBefore`, across all tenants, capped at `limit`. Used by
 	// the background re-verify controller.
 	ListDueForRecheck(ctx context.Context, checkedBefore time.Time, limit int) ([]*VerifiedDomain, error)
+	// ListSSOClaims returns the SSO-purpose rows of every organization for
+	// one normalized domain. It reads across tenants on purpose: an SSO domain
+	// is claimed platform-wide. Callers use it only to decide a claim and
+	// never return another organization's row to a client.
+	ListSSOClaims(ctx context.Context, domain string) ([]*VerifiedDomain, error)
 }
+
+// ClaimDisputeWindow is how long after an organization's DNS proof lapses
+// another organization must wait before it may verify the same SSO domain.
+// The holder can restore its record within the window and keep the claim.
+const ClaimDisputeWindow = 7 * 24 * time.Hour

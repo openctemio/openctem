@@ -50,30 +50,8 @@ func (h *GroupHandler) WithSyncService(syncService *accesscontrol.GroupSyncServi
 type PaginatedResponse struct {
 	Items      any   `json:"items"`
 	TotalCount int64 `json:"total_count"`
-	Limit      int   `json:"limit"`
-	Offset     int   `json:"offset"`
-}
-
-// parsePagination extracts limit and offset from query params with defaults.
-func parsePagination(r *http.Request) (limit, offset int) {
-	limit = 20
-	offset = 0
-
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			limit = parsed
-		}
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
-
-	if limit > 100 {
-		limit = 100
-	}
-	return limit, offset
+	Page       int   `json:"page"`
+	PerPage    int   `json:"per_page"`
 }
 
 // =============================================================================
@@ -129,8 +107,8 @@ type GroupListResponse struct {
 	Groups            []GroupResponse `json:"groups"`
 	TotalCount        int64           `json:"total_count"`
 	UniqueMemberCount int             `json:"unique_member_count"`
-	Limit             int             `json:"limit"`
-	Offset            int             `json:"offset"`
+	Page              int             `json:"page"`
+	PerPage           int             `json:"per_page"`
 }
 
 // =============================================================================
@@ -408,8 +386,8 @@ func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 // @Param type query string false "Filter by group type"
 // @Param active query bool false "Filter by active status"
 // @Param search query string false "Search by name or slug"
-// @Param limit query int false "Limit results" default(20)
-// @Param offset query int false "Offset for pagination" default(0)
+// @Param page query int false "Page number" default(1)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Success 200 {object} GroupListResponse
 // @Router /groups [get]
 func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
@@ -418,21 +396,11 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	// Get tenant ID from JWT token
 	tenantID := middleware.MustGetTenantID(ctx)
 
-	// Parse query parameters
-	limit := 20
-	offset := 0
-
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-
-	if o := r.URL.Query().Get("offset"); o != "" {
-		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	input := accesscontrol.ListGroupsInput{
 		TenantID: tenantID,
@@ -482,8 +450,8 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		Groups:            groups,
 		TotalCount:        output.TotalCount,
 		UniqueMemberCount: uniqueMembers,
-		Limit:             limit,
-		Offset:            offset,
+		Page:              paging.Page,
+		PerPage:           paging.PerPage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -570,8 +538,8 @@ func (h *GroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 // @Tags groups
 // @Produce json
 // @Param groupId path string true "Group ID"
-// @Param limit query int false "Page size" default(20)
-// @Param offset query int false "Offset" default(0)
+// @Param page query int false "Page number" default(1)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Success 200 {object} PaginatedResponse{items=[]GroupMemberWithUserResponse}
 // @Failure 404 {object} apierror.Error
 // @Router /groups/{groupId}/members [get]
@@ -580,7 +548,11 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(ctx)
 	groupID := chi.URLParam(r, "groupId")
 
-	limit, offset := parsePagination(r)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	members, totalCount, err := h.service.ListGroupMembersWithUserInfo(ctx, tenantID, groupID, limit, offset)
 	if err != nil {
@@ -596,8 +568,8 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	resp := PaginatedResponse{
 		Items:      items,
 		TotalCount: totalCount,
-		Limit:      limit,
-		Offset:     offset,
+		Page:       paging.Page,
+		PerPage:    paging.PerPage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1005,8 +977,8 @@ func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Reque
 // @Tags groups
 // @Produce json
 // @Param groupId path string true "Group ID"
-// @Param limit query int false "Page size" default(20)
-// @Param offset query int false "Offset" default(0)
+// @Param page query int false "Page number" default(1)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Success 200 {object} PaginatedResponse{items=[]GroupOwnershipResponse}
 // @Failure 404 {object} apierror.Error
 // @Router /groups/{groupId}/assets [get]
@@ -1015,7 +987,11 @@ func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(ctx)
 	groupID := chi.URLParam(r, "groupId")
 
-	limit, offset := parsePagination(r)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	owners, totalCount, err := h.service.ListGroupAssets(ctx, tenantID, groupID, limit, offset)
 	if err != nil {
@@ -1051,8 +1027,8 @@ func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 	resp := PaginatedResponse{
 		Items:      items,
 		TotalCount: totalCount,
-		Limit:      limit,
-		Offset:     offset,
+		Page:       paging.Page,
+		PerPage:    paging.PerPage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

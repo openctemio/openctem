@@ -50,6 +50,40 @@ governs the global social sign-in buttons). JIT members get the provider's
 `default_role` (`admin|member|viewer`, default **viewer**, set by the platform
 administrator); only the display name is re-synced on later logins.
 
+### Domain claims are exclusive
+
+A DNS-verified SSO domain is what lets an organization's IdP speak for the
+people at that domain (JIT, SAML for existing members, the Google `hd` check).
+The claim is therefore **one organization per domain, platform-wide**
+(`domainverify.Service`, migration 001303):
+
+- **Exclusive.** A second organization may add a domain another one holds (it
+  stays `pending`), but verifying it answers 409 "verified by another
+  organization". The response never names the holder. A partial unique index
+  (`uq_verified_domains_sso_claim`: `domain` where `purpose='sso'`,
+  `status='verified'`, not `claim_conflict`) closes the race of two
+  verifications at once.
+- **7-day dispute window.** When the holder's TXT record disappears, re-verify
+  downgrades its row to `failed` and stamps `lapsed_at`. Another organization
+  may verify only 7 days after that (`verifieddomain.ClaimDisputeWindow`), so
+  a DNS outage or a hijacked record cannot move the claim at once; the holder
+  restores its record and verifies again within the window. A former holder
+  cannot take back a domain someone else now holds.
+- **Promotion counts.** Turning a verified EASM domain into an SSO domain is a
+  claim and passes the same check. EASM proof itself stays per organization
+  and non-exclusive: it admits nobody.
+- **Domains nobody can own** are refused when added (`pkg/emaildomain`):
+  public suffixes from the Public Suffix List, including every name under a
+  private-section suffix (`alice.github.io`, `x.vercel.app`); free consumer
+  mailbox providers (a maintained list); and disposable-address services (the
+  public-domain disposable-email-domains list, embedded at build time and
+  refreshed with `api/scripts/update-disposable-domains.sh`).
+- **Rows that predate exclusivity.** Migration 001303 does not drop anyone's
+  access: when two or more organizations had the same domain verified for SSO,
+  every such row is flagged `claim_conflict` and keeps working. The admin
+  console shows a "Claim conflict" badge; the platform administrator removes
+  the wrong claim, and the next re-verify clears the flag on the one left.
+
 Security: outbound calls use `httpsec.SafeHTTPClient` (refuses loopback/RFC1918/
 link-local), Entra/Graph hosts are fixed strings, an email is required, and the
 email domain is checked against the provider's allow-list.
@@ -275,9 +309,9 @@ domain (the "nOAuth" account-takeover class).
   for Google and GitHub. A domain can be verified in exactly one Entra tenant, so
   a domain-verified email is a reliable identifier. Absent/false ⇒ login refused.
 
-The account is also pinned to the immutable `(issuer, subject)`
-(`BindFederatedIdentity`); a different federated identity presenting the same
-email is rejected.
+The account is also keyed on the immutable `(issuer, subject)` (here `oid`, see
+"Accounts are keyed on the identity provider's user id" below); a different
+federated identity presenting the same email is rejected.
 
 > **Operator action required:** add the **`xms_edov`** optional claim (ID token)
 > to the app registration used for `OAUTH_MICROSOFT_*` (Azure portal → App
@@ -292,6 +326,54 @@ email is rejected.
 > whose domain the tenant owns get `xms_edov == true` and sign in normally. Use
 > the **per-tenant Entra SSO** path to admit specific external identities under an
 > explicit domain allow-list.
+
+## Accounts are keyed on the identity provider's user id
+
+Accounts are global and the email address is mutable at the identity provider,
+so every federated login finds the account by the provider's user id, never by
+the email alone. The ids live in `user_identities` (migration 001306; the old
+single `users.federated_issuer/subject` pair was copied there and is no longer
+used):
+
+| Path | Issuer | Subject | Scope |
+|---|---|---|---|
+| Organization OIDC, Okta / Google Workspace | verified `id_token` `iss` (`accounts.google.com` normalised to `https://accounts.google.com`) | `sub` | platform-wide |
+| Organization OIDC, Entra ID; social Microsoft | verified `id_token` `iss` (contains the directory `tid`) | `oid` (the same for every app in the directory; `sub` is pairwise per app). Identities bound under `sub` are re-keyed on the next login. | platform-wide |
+| Social Google | `https://accounts.google.com` | Google account id (`sub`) | platform-wide |
+| Social GitHub | `https://github.com` | numeric user id | platform-wide |
+| SAML | assertion `Issuer` (IdP entity id) | `NameID`, only when its format is `persistent` | **the organization** whose IdP certificate signed it |
+
+A SAML identity is scoped to its organization because the organization
+configures the signing certificate: another organization can configure the
+same entity id and `NameID` and must never reach an account bound elsewhere.
+An OIDC identity is platform-wide because only the issuer holds the keys that
+sign it (or, for social login, the provider's own API returned it).
+
+Every federated login:
+
+1. **Looks the identity up first.** A match is the account, whatever email the
+   provider now sends. An email changed at the provider moves with the account:
+   no second account is created and the login is not refused. The new address
+   is stored only when no other account holds it, and, for organization SSO,
+   only when the organization DNS-verified its domain (social logins rely on
+   the provider's verified email). Otherwise the account keeps its email and
+   the reason is logged.
+2. **Otherwise falls back to the email**, under the existing guards
+   (proof-before-link, cross-IdP Case 3, DNS-verified domain for an unbound
+   account of the same provider type, SAML membership + domain proof). An
+   account already bound to **another subject at the same issuer**, or to
+   another issuer, is refused (`ErrFederatedIdentityConflict`): that is another
+   person presenting the same email. This closes the gap where the organization
+   OIDC path compared the issuer only.
+3. **Binds the identity** to the account it admitted: on account creation, and
+   for an existing unbound account on its next login (its email matches the
+   provider-verified email and no other subject from the issuer is bound). The
+   database enforces one account per identity and one subject per issuer per
+   account (two unique indexes), so concurrent logins cannot bind twice.
+
+The identity store is required: a login that carries an identity is refused
+when it is not wired. Erasing a member's personal data deletes their
+identities, so a later sign-in never finds the anonymised account.
 
 ## Enforce SSO per-tenant (with owner break-glass)
 

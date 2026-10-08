@@ -1902,6 +1902,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
 	s.Scan.SetStepQueuer(s.ScanRun)
+	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
+	if s.Retest != nil {
+		s.Retest.SetRunRecorder(s.ScanRun)
+	}
 	// Ingest records what each step's reports wrote and tells the scan run service
 	// service when a v2 report of a command finished, so a chained step
 	// waiting for it is planned.
@@ -2308,6 +2312,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log,
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
+	s.SSO.SetIdentityRepo(repos.UserIdentity)
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
@@ -2342,6 +2347,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.
+		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {
