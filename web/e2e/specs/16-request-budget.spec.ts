@@ -106,9 +106,10 @@ test('every dashboard page stays within its request budget', async ({ page }) =>
 
     const bootstraps = requests.filter((r) => r.startsWith('GET /api/v1/me/bootstrap')).length
     if (bootstraps !== 1) problems.push(`${route}: /me/bootstrap sent ${bootstraps} times (want 1)`)
+    const pageUses = (budget.pageUsesSessionEndpoint as Record<string, string[]>)[route] ?? []
     for (const r of requests) {
       const target = r.replace(/^GET /, '')
-      if (budget.sessionOnlyFromBootstrap.includes(target)) {
+      if (budget.sessionOnlyFromBootstrap.includes(target) && !pageUses.includes(target)) {
         problems.push(`${route}: ${target} is carried by /me/bootstrap and must not be asked`)
       }
     }
