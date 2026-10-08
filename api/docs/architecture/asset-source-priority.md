@@ -10,7 +10,7 @@
 
 ## Problem
 
-A single real-world asset is observed by multiple data sources — Nessus scan, internal agent, cloud API, manual entry. Each source reports overlapping but conflicting information (OS, severity, owner, tags). Today every re-ingest deep-merges the new payload into `assets.properties`: on duplicate keys **the last writer wins**. Customers with a trusted source (e.g. CMDB or Nessus) want that source to be the authoritative answer for fields they care about — a lower-trust source that happens to run afterwards must not clobber it.
+A single real-world asset is observed by multiple data sources — Nessus scan, internal sensor, cloud API, manual entry. Each source reports overlapping but conflicting information (OS, severity, owner, tags). Today every re-ingest deep-merges the new payload into `assets.properties`: on duplicate keys **the last writer wins**. Customers with a trusted source (e.g. CMDB or Nessus) want that source to be the authoritative answer for fields they care about — a lower-trust source that happens to run afterwards must not clobber it.
 
 Concrete customer ask:
 

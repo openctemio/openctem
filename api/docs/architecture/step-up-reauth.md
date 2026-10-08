@@ -6,7 +6,7 @@ unlocked laptop): minting a long-lived credential, changing who can sign in,
 deleting the organization, removing a person and their data. For those the API
 asks the user to prove their identity again, recently, in the same session.
 
-Source: settings research P1-01 and owner decision B7 (window 10 minutes,
+Decision B7 (window 10 minutes,
 password or TOTP; SSO users re-authenticate at their identity provider).
 
 ## Model
