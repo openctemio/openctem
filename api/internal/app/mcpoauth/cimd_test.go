@@ -43,7 +43,7 @@ func TestValidateMetadataDocumentURL(t *testing.T) {
 
 func TestParseClientMetadataDocument(t *testing.T) {
 	const id = "https://app.example/client.json"
-	good := `{"client_id":"https://app.example/client.json","client_name":" Desk‮ Assistant ","redirect_uris":["http://127.0.0.1:3000/cb","https://app.example/cb"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none"}`
+	good := `{"client_id":"https://app.example/client.json","client_name":" Desk\u202e Assistant ","redirect_uris":["http://127.0.0.1:3000/cb","https://app.example/cb"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none"}`
 	c, err := parseClientMetadataDocument(id, []byte(good))
 	if err != nil {
 		t.Fatal(err)
