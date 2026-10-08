@@ -16,6 +16,7 @@ const kindLabel: Record<SSOChange['kind'], string> = {
   saml_config: 'SAML configuration',
   idp_create: 'New identity provider',
   idp_update: 'Identity provider change',
+  domain_jit: 'New people on a domain',
 }
 
 function ChangeCard({ change, onDecided }: { change: SSOChange; onDecided: () => void }) {

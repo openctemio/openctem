@@ -214,6 +214,7 @@ jobs:
           docker compose config -q
           docker compose -f docker-compose.yml -f docker-compose.http-redirect.yml config -q
           docker compose -f docker-compose.yml -f docker-compose.plain-http.yml config -q
+          SENSOR_PUBLIC_HOSTNAME=sensors.example.test docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml config -q
           # Only the gateway publishes a port.
           published="$(docker compose config --format json | jq -r '.services | to_entries[] | select(.value.ports != null and (.value.ports | length) > 0) | .key')"
           echo "services with published ports: $published"

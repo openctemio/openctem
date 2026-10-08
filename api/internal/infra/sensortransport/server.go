@@ -108,6 +108,11 @@ type Server struct {
 	issuer CertificateIssuer
 	// mtls is the gRPC binding's server (EnableMTLS); nil when not served.
 	mtls *http.Server
+	// mtlsProxies are the CIDRs whose PROXY header the listener believes.
+	mtlsProxies []string
+	// wakeBus fans wakes out across replicas (SetWakeBus); nil: this
+	// replica only.
+	wakeBus WakeBus
 	// done is closed by Shutdown: control streams end so the listeners
 	// can drain (a stream lives for minutes).
 	done     chan struct{}

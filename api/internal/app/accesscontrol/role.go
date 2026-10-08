@@ -40,7 +40,9 @@ type RoleService struct {
 	stepUp shared.RecentAuthGate
 	// externalCeiling is the trust ceiling for external members (RFC-058).
 	externalCeiling func(ctx context.Context, host, home shared.ID) (string, error)
-	logger          *logger.Logger
+	// privilege tells the administrators about privilege increases (RFC-058).
+	privilege PrivilegeNotifier
+	logger    *logger.Logger
 }
 
 // SetStepUpGate wires step-up re-authentication for granting the
@@ -776,6 +778,7 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	s.invalidateUserPermissions(ctx, input.TenantID, input.UserID)
 
 	s.logger.Info("role assigned", "tenant_id", input.TenantID, "user_id", input.UserID, "role_id", input.RoleID)
+	s.notifyElevated(ctx, tid, []roledom.ID{uid}, r)
 
 	// Log audit event
 	actx.TenantID = input.TenantID
@@ -880,6 +883,7 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 
 	roleIDs := make([]roledom.ID, 0, len(input.RoleIDs))
 	roleNames := make([]string, 0, len(input.RoleIDs))
+	granted := make([]*roledom.Role, 0, len(input.RoleIDs))
 	keepsOwner := false
 	for _, ridStr := range input.RoleIDs {
 		rid, err := roledom.ParseID(ridStr)
@@ -909,6 +913,7 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 
 		roleIDs = append(roleIDs, rid)
 		roleNames = append(roleNames, r.Name())
+		granted = append(granted, r)
 	}
 
 	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, roleIDs); err != nil {
@@ -924,7 +929,9 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		return fmt.Errorf("load current roles: %w", err)
 	}
 	currentRoleNames := make([]string, 0, len(currentRoles))
+	held := make(map[roledom.ID]bool, len(currentRoles))
 	for _, r := range currentRoles {
+		held[r.ID()] = true
 		currentRoleNames = append(currentRoleNames, r.Name())
 		if !slices.Contains(roleIDs, r.ID()) {
 			if err := actor.mayRevoke(r); err != nil {
@@ -950,6 +957,11 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 	s.invalidateUserPermissions(ctx, input.TenantID, input.UserID)
 
 	s.logger.Info("user roles updated", "tenant_id", input.TenantID, "user_id", input.UserID, "roles", input.RoleIDs)
+	for _, r := range granted {
+		if !held[r.ID()] {
+			s.notifyElevated(ctx, tid, []roledom.ID{uid}, r)
+		}
+	}
 
 	// Log audit event
 	actx.TenantID = input.TenantID
@@ -1059,6 +1071,7 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 		}
 		// Invalidate permissions only for the users actually assigned.
 		s.invalidateUsersPermissions(ctx, input.TenantID, assignedUserIDs)
+		s.notifyElevated(ctx, tid, userIDs, r)
 	}
 
 	s.logger.Info("bulk role assignment completed",
