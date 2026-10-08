@@ -14,20 +14,33 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// verifyAccessibleTemplate confirms a scan workflow/workflow template is usable by
-// the given tenant: either it belongs to the tenant, or it is a shared system
-// template. Returns shared.ErrNotFound otherwise. This prevents cross-tenant
-// IDOR when a template is resolved by raw ID (e.g. QuickScan).
-func (s *Service) verifyAccessibleTemplate(ctx context.Context, tenantID, templateID shared.ID) error {
-	if _, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, templateID); err == nil {
-		return nil
-	} else if !errors.Is(err, shared.ErrNotFound) {
-		return err
+// usableWorkflow returns a scan workflow the tenant may USE (create, edit or
+// run a scan with): its own workflow, or a shared system template (a starter
+// workflow), which every tenant uses read-only. Another tenant's private
+// workflow is ErrScanWorkflowNotFound, exactly like a missing one (no IDOR).
+// A retired workflow is ErrScanWorkflowRetired and an inactive one a
+// validation error naming it. Changing a workflow (edit, delete, activate)
+// keeps the tenant-only lookup: a system template is never the tenant's to
+// change.
+func (s *Service) usableWorkflow(ctx context.Context, tenantID, workflowID shared.ID) (*scanworkflow.Workflow, error) {
+	wf, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, workflowID)
+	if errors.Is(err, shared.ErrNotFound) {
+		wf, err = s.templateRepo.GetSystemTemplateByID(ctx, workflowID)
 	}
-	if _, err := s.templateRepo.GetSystemTemplateByID(ctx, templateID); err == nil {
-		return nil
+	if errors.Is(err, shared.ErrNotFound) || (err == nil && wf == nil) {
+		return nil, scanworkflow.ErrScanWorkflowNotFound
 	}
-	return shared.ErrNotFound
+	if err != nil {
+		return nil, err
+	}
+	if wf.RetiredAt != nil {
+		return nil, scanworkflow.ErrScanWorkflowRetired
+	}
+	if !wf.IsActive {
+		return nil, fmt.Errorf("%w: scan workflow %q is disabled; enable it or pick another workflow",
+			shared.ErrValidation, wf.Name)
+	}
+	return wf, nil
 }
 
 // =============================================================================
@@ -210,10 +223,12 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		// SECURITY: verify the workflow/scan workflow belongs to this
 		// tenant (or is a system template). GetByID alone is unscoped and
 		// would let a caller trigger another tenant's private scan workflow (IDOR).
-		if err := s.verifyAccessibleTemplate(ctx, tenantID, pid); err != nil {
-			s.logger.Warn("SECURITY: cross-tenant quick-scan workflow attempt",
-				"tenant_id", input.TenantID, "workflow_id", input.WorkflowID)
-			return nil, fmt.Errorf("workflow not found: %w", err)
+		if _, err := s.usableWorkflow(ctx, tenantID, pid); err != nil {
+			if errors.Is(err, shared.ErrNotFound) {
+				s.logger.Warn("SECURITY: cross-tenant quick-scan workflow attempt",
+					"tenant_id", input.TenantID, "workflow_id", input.WorkflowID)
+			}
+			return nil, err
 		}
 	} else {
 		// SECURITY: single-scanner QuickScan bypasses CreateScan, so apply the

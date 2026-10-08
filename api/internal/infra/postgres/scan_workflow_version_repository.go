@@ -13,10 +13,13 @@ import (
 
 var _ scanworkflow.VersionStore = (*ScanWorkflowRepository)(nil)
 
-// PinVersion saves spec as the next version of the tenant's workflow unless
-// the latest version has the same digest, and returns the version a run is
-// pinned to. The workflow row is locked for the transaction, so two runs
-// starting together never save the same version twice.
+// PinVersion saves spec as the next version of the workflow unless the
+// latest version has the same digest, and returns the version a run is
+// pinned to. The workflow is the tenant's own or a shared system template
+// (a starter workflow any tenant runs); a system template's versions belong
+// to the template's owner and are shared like the template. The workflow
+// row is locked for the transaction, so two runs starting together never
+// save the same version twice.
 func (r *ScanWorkflowRepository) PinVersion(ctx context.Context, tenantID, workflowID shared.ID, spec scanworkflow.Spec) (int, string, error) {
 	digest, err := spec.Digest()
 	if err != nil {
@@ -33,10 +36,11 @@ func (r *ScanWorkflowRepository) PinVersion(ctx context.Context, tenantID, workf
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var locked string
+	var owner string
 	err = tx.QueryRowContext(ctx,
-		`SELECT id FROM scan_workflows WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-		workflowID.String(), tenantID.String()).Scan(&locked)
+		`SELECT tenant_id FROM scan_workflows
+		 WHERE id = $1 AND (tenant_id = $2 OR is_system_template = TRUE) FOR UPDATE`,
+		workflowID.String(), tenantID.String()).Scan(&owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, "", shared.ErrNotFound
 	}
@@ -50,7 +54,7 @@ func (r *ScanWorkflowRepository) PinVersion(ctx context.Context, tenantID, workf
 		SELECT version, spec_digest FROM scan_workflow_versions
 		WHERE scan_workflow_id = $1 AND tenant_id = $2
 		ORDER BY version DESC LIMIT 1`,
-		workflowID.String(), tenantID.String()).Scan(&latest, &latestDigest)
+		workflowID.String(), owner).Scan(&latest, &latestDigest)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, "", fmt.Errorf("read latest scan workflow version: %w", err)
 	}
@@ -62,7 +66,7 @@ func (r *ScanWorkflowRepository) PinVersion(ctx context.Context, tenantID, workf
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO scan_workflow_versions (tenant_id, scan_workflow_id, version, spec, spec_digest)
 		VALUES ($1, $2, $3, $4, $5)`,
-		tenantID.String(), workflowID.String(), next, raw, digest); err != nil {
+		owner, workflowID.String(), next, raw, digest); err != nil {
 		return 0, "", fmt.Errorf("save scan workflow version: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -71,12 +75,15 @@ func (r *ScanWorkflowRepository) PinVersion(ctx context.Context, tenantID, workf
 	return next, digest, nil
 }
 
-// GetVersion returns a saved version of the tenant's workflow.
+// GetVersion returns a saved version of the tenant's workflow or of a shared
+// system template. Another tenant's private workflow is not found.
 func (r *ScanWorkflowRepository) GetVersion(ctx context.Context, tenantID, workflowID shared.ID, version int) (*scanworkflow.Spec, error) {
 	var raw []byte
 	err := r.db.QueryRowContext(ctx, `
-		SELECT spec FROM scan_workflow_versions
-		WHERE scan_workflow_id = $1 AND tenant_id = $2 AND version = $3`,
+		SELECT v.spec FROM scan_workflow_versions v
+		JOIN scan_workflows w ON w.id = v.scan_workflow_id AND w.tenant_id = v.tenant_id
+		WHERE v.scan_workflow_id = $1 AND v.version = $3
+		  AND (v.tenant_id = $2 OR w.is_system_template = TRUE)`,
 		workflowID.String(), tenantID.String(), version).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, shared.ErrNotFound
