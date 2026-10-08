@@ -20,7 +20,7 @@ code that defines them is the source of truth:
   test seeds a second tenant whose data would change the answer if it leaked.
 - **`null` means "not measurable"**: there was no qualifying sample in the
   window. Clients render it as "—". An empty sample is never reported as 0 or
-  100%. (The earlier fake ~100% SLA figure, api#444, came from exactly that
+  100%. (An earlier wrong ~100% SLA figure came from exactly that
   kind of default.)
 - Each figure comes with its sample size, so a mean over 2 items is not
   mistaken for a trend.

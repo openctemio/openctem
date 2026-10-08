@@ -500,5 +500,5 @@ Future versions will maintain backward compatibility where possible.
 ## Related Documentation
 
 - [Data Sources Architecture](./data-sources.md)
-- [Asset Types Reference](./asset-types.md)
-- [Ingestion API](../api/ingestion.md)
+- [Asset type registry](../development/asset-type-registry.md)
+- [Sensor results ingest (RFC-026)](../rfcs/RFC-026-sensor-results-ingest.md)
