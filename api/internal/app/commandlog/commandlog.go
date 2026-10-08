@@ -23,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/openctemio/openctem/api/internal/app/validation"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/safetext"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
@@ -109,6 +110,29 @@ type AppendResult struct {
 type Page struct {
 	Lines     []Line `json:"lines"`
 	Truncated bool   `json:"truncated"`
+	// Platform: the command is a platform job, its lines were written by a
+	// shared platform sensor (the read masks the sensor's own details).
+	Platform bool `json:"-"`
+}
+
+// shown is p as a tenant may read it: a platform sensor's own addresses and
+// paths masked (sensordom.RedactPlatformText), and never nil lines.
+func shown(p Page) Page {
+	if p.Lines == nil {
+		p.Lines = []Line{}
+	}
+	if !p.Platform {
+		return p
+	}
+	for i := range p.Lines {
+		l := &p.Lines[i]
+		l.Msg = sensordom.RedactPlatformText(l.Msg)
+		l.Source = sensordom.RedactPlatformText(l.Source)
+		for k, v := range l.Fields {
+			l.Fields[k] = sensordom.RedactPlatformValue(v)
+		}
+	}
+	return p
 }
 
 // Store persists batches (*postgres.CommandLogRepository).
@@ -187,10 +211,7 @@ func (s *Service) ListForRunTask(ctx context.Context, tenantID, runID, commandID
 	if err != nil {
 		return Page{}, err
 	}
-	if p.Lines == nil {
-		p.Lines = []Line{}
-	}
-	return p, nil
+	return shown(p), nil
 }
 
 // ListForCommand returns any command's logs (scan, retest, validate,
@@ -207,10 +228,7 @@ func (s *Service) ListForCommand(ctx context.Context, tenantID, commandID shared
 	if err != nil {
 		return Page{}, err
 	}
-	if p.Lines == nil {
-		p.Lines = []Line{}
-	}
-	return p, nil
+	return shown(p), nil
 }
 
 // CommandSubject is the finding a command is about (a retest or a

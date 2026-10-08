@@ -26,7 +26,6 @@ const SIDEBAR_LABELS: Map<string, string> = (() => {
 
 /** Sub-pages the sidebar does not list, by full path. */
 const PATH_LABELS: Record<string, string> = {
-  '/sensors/platform': 'Platform sensors',
   // The first tab of Scoping > Business context: the row is named after the
   // section, the crumb after the page (its siblings humanize to "Business
   // services" and "Business units").

@@ -135,9 +135,11 @@ func (r *SensorRepository) GetByID(ctx context.Context, id shared.ID) (*sensor.S
 	return r.scanSensor(row)
 }
 
-// GetByTenantAndID retrieves a sensor by tenant and ID.
+// GetByTenantAndID retrieves one of the tenant's own sensors by ID. A shared
+// platform sensor is never one of them, whatever its row's tenant_id: it is
+// not found here, so every tenant read and write of it answers not found.
 func (r *SensorRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sensor.Sensor, error) {
-	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2 AND NOT is_platform_sensor"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 	return r.scanSensor(row)
 }
@@ -631,7 +633,7 @@ func (r *SensorRepository) IncrementStats(ctx context.Context, id shared.ID, fin
 
 // FindByCapabilities finds sensors with the given capabilities.
 func (r *SensorRepository) FindByCapabilities(ctx context.Context, tenantID shared.ID, capabilities []string, tool string) ([]*sensor.Sensor, error) {
-	query := r.selectQuery() + " WHERE tenant_id = $1 AND status = 'active'"
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND NOT is_platform_sensor AND status = 'active'"
 	args := []any{tenantID.String()}
 	argIndex := 2
 
@@ -683,6 +685,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 		// Exclude health='unknown' as those sensors have never sent a heartbeat
 		query := r.selectQuery() + `
 			WHERE tenant_id = $1
+			  AND NOT is_platform_sensor
 			  AND status = 'active'
 			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
@@ -706,6 +709,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 	// Only select sensors with health='online' (have sent heartbeat recently)
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
+		  AND NOT is_platform_sensor
 		  AND status = 'active'
 		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
@@ -736,6 +740,7 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenantID shared.ID, capabilities []string, tool string) ([]*sensor.Sensor, error) {
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
+		  AND NOT is_platform_sensor
 		  AND status = 'active'
 		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
@@ -869,13 +874,11 @@ func (r *SensorRepository) buildWhereClause(filter sensor.Filter) (string, []any
 	argIndex := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
+		// A tenant's sensors are its own: shared platform sensors are never
+		// listed to a tenant, whatever their row's tenant_id.
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d AND is_platform_sensor = FALSE", argIndex))
 		args = append(args, filter.TenantID.String())
 		argIndex++
-	}
-
-	if filter.ExcludePlatform {
-		conditions = append(conditions, "is_platform_sensor = FALSE")
 	}
 
 	if filter.Type != nil {
@@ -1277,6 +1280,7 @@ func (r *SensorRepository) GetAvailableToolsForTenant(ctx context.Context, tenan
 		SELECT DISTINCT unnest(` + sensorDispatchTools("sensors") + `) AS tool_name
 		FROM sensors
 		WHERE tenant_id = $1
+		  AND NOT is_platform_sensor
 		  AND status = 'active'
 		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
@@ -1311,6 +1315,7 @@ func (r *SensorRepository) HasSensorForTool(ctx context.Context, tenantID shared
 		SELECT EXISTS (
 			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
+			  AND NOT is_platform_sensor
 			  AND status = 'active'
 			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
@@ -1334,6 +1339,7 @@ func (r *SensorRepository) GetAvailableCapabilitiesForTenant(ctx context.Context
 		SELECT DISTINCT unnest(effective_capabilities) AS capability_name
 		FROM sensors
 		WHERE tenant_id = $1
+		  AND NOT is_platform_sensor
 		  AND status = 'active'
 		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
@@ -1430,67 +1436,66 @@ func (r *SensorRepository) GetSensorsOfflineSince(ctx context.Context, since tim
 	return sensors, nil
 }
 
-// GetPlatformSensorStats returns aggregate statistics for platform sensors.
-// NOTE: Cross-tenant access is intentional — platform sensors are shared infrastructure
-// managed by OpenCTEM, not scoped to individual tenants. The queued jobs count is
-// tenant-scoped via the tenantID parameter.
-func (r *SensorRepository) GetPlatformSensorStats(ctx context.Context, tenantID shared.ID) (*sensor.PlatformSensorStatsResult, error) {
-	// Single CTE query combining sensor stats and queued job count to avoid N+1
-	query := `
-		WITH sensor_stats AS (
-			SELECT
-				COALESCE(labels->>'tier', 'shared') AS tier,
-				COUNT(*) AS total_sensors,
-				COUNT(*) FILTER (WHERE health IN ` + sensorDispatchableHealthSQL + `) AS online_sensors,
-				COALESCE(SUM(effective_max_jobs), 0) AS total_capacity,
-				COALESCE(SUM(` + sensorActiveCommandsSQL("sensors") + `), 0) AS current_load
-			FROM sensors
-			WHERE is_platform_sensor = TRUE AND status = 'active'
-			GROUP BY COALESCE(labels->>'tier', 'shared')
-		), queued AS (
-			SELECT COUNT(*) AS cnt FROM commands
-			WHERE is_platform_job = TRUE AND status IN ('pending', 'queued') AND tenant_id = $1
-		)
-		SELECT q.cnt, a.tier, a.total_sensors, a.online_sensors, a.total_capacity, a.current_load
-		FROM sensor_stats a, queued q
-	`
+// PlatformScanningSummary is platform scanning as one tenant may see it. It
+// reads platform sensors across tenants on purpose (they are shared), but
+// returns only per-region states and the union of the tools online ones
+// offer: no sensor id, name, host, address, version, count, capacity or load,
+// and no other tenant's jobs. The job counts are the tenant's own.
+func (r *SensorRepository) PlatformScanningSummary(ctx context.Context, tenantID shared.ID) (*sensor.PlatformScanningSummary, error) {
+	const online = `status = 'active' AND health IN ` + sensorDispatchableHealthSQL + ` AND last_seen_at IS NOT NULL`
+	out := &sensor.PlatformScanningSummary{Regions: []sensor.PlatformRegionState{}, Tools: []string{}}
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT COALESCE(NULLIF(region, ''), ''),
+		       COALESCE(bool_or(`+online+`), FALSE),
+		       COALESCE(bool_or(`+online+` AND `+sensorFreeSlotsSQL("sensors")+` > 0), FALSE)
+		FROM sensors
+		WHERE is_platform_sensor AND status = 'active'
+		GROUP BY 1
+		ORDER BY 1`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query platform sensor stats: %w", err)
+		return nil, fmt.Errorf("failed to read platform scanning regions: %w", err)
 	}
-	defer rows.Close()
-
-	result := &sensor.PlatformSensorStatsResult{
-		TierBreakdown: make(map[string]sensor.TierBreakdown),
-	}
-
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var tier string
-		var tb sensor.TierBreakdown
-		if err := rows.Scan(&result.CurrentQueuedJobs, &tier, &tb.TotalSensors, &tb.OnlineSensors, &tb.TotalCapacity, &tb.CurrentLoad); err != nil {
-			return nil, fmt.Errorf("failed to scan platform sensor stats: %w", err)
+		var st sensor.PlatformRegionState
+		if err := rows.Scan(&st.Region, &st.Online, &st.FreeSlot); err != nil {
+			return nil, fmt.Errorf("failed to scan platform scanning region: %w", err)
 		}
-		result.TierBreakdown[tier] = tb
-		result.TotalSensors += tb.TotalSensors
-		result.OnlineSensors += tb.OnlineSensors
-		result.TotalCapacity += tb.TotalCapacity
-		result.CurrentActiveJobs += tb.CurrentLoad
+		out.Regions = append(out.Regions, st)
 	}
-
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate platform sensor stats: %w", err)
+		return nil, fmt.Errorf("failed to read platform scanning regions: %w", err)
 	}
 
-	// Handle case where no sensors exist but we still need queued count
-	if len(result.TierBreakdown) == 0 {
-		queueQuery := `SELECT COUNT(*) FROM commands WHERE is_platform_job = TRUE AND status IN ('pending', 'queued') AND tenant_id = $1`
-		if err := r.db.QueryRowContext(ctx, queueQuery, tenantID.String()).Scan(&result.CurrentQueuedJobs); err != nil {
-			return nil, fmt.Errorf("failed to query queued platform jobs: %w", err)
+	tools, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT unnest(`+sensorDispatchTools("sensors")+`) AS tool
+		FROM sensors
+		WHERE is_platform_sensor AND `+online+`
+		ORDER BY tool`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read platform scanning tools: %w", err)
+	}
+	defer func() { _ = tools.Close() }()
+	for tools.Next() {
+		var t string
+		if err := tools.Scan(&t); err != nil {
+			return nil, fmt.Errorf("failed to scan platform scanning tool: %w", err)
 		}
+		out.Tools = append(out.Tools, t)
+	}
+	if err := tools.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read platform scanning tools: %w", err)
 	}
 
-	return result, nil
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FILTER (WHERE status = 'pending'),
+		       COUNT(*) FILTER (WHERE status IN ('acknowledged', 'running'))
+		FROM commands
+		WHERE tenant_id = $1 AND is_platform_job`, tenantID.String()).Scan(&out.Queued, &out.Running); err != nil {
+		return nil, fmt.Errorf("failed to count platform jobs: %w", err)
+	}
+	return out, nil
 }
 
 // GetTenantSensorStats returns aggregate statistics for a tenant's sensors.
@@ -1574,6 +1579,7 @@ func (r *SensorRepository) HasSensorForCapability(ctx context.Context, tenantID 
 		SELECT EXISTS (
 			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
+			  AND NOT is_platform_sensor
 			  AND status = 'active'
 			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL

@@ -131,7 +131,6 @@ describe('connectorSensorOptions', () => {
       sensor('a', {
         reported: { tools: [{ name: 'tenable_sc', installed: true }] } as Sensor['reported'],
       }),
-      sensor('platform', { is_platform_sensor: true }),
       sensor('off', { status: 'disabled' }),
     ])
     expect(out.map((o) => [o.sensor.id, o.runsConnector])).toEqual([

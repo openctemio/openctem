@@ -37,6 +37,9 @@ type ScanProvenance struct {
 	ObservedAt time.Time
 	// Unsolicited: the report named no command assigned to the sensor.
 	Unsolicited bool
+	// Platform: a shared platform sensor scanned. The evidence then names
+	// the platform, never the sensor (its id is operator infrastructure).
+	Platform bool
 }
 
 // ScannedAsset is one persisted asset a sensor report created or changed.
@@ -82,6 +85,7 @@ func (s *Service) stampScanAttribution(ctx context.Context, agt *sensor.Sensor, 
 		ReportID:    reportID,
 		ObservedAt:  time.Now().UTC(),
 		Unsolicited: binding.Kind == BindingUnsolicited,
+		Platform:    agt.IsPlatformSensor,
 	}
 	if err := s.scanAttribution.StampScanned(ctx, tenantID, assets, prov); err != nil {
 		s.logger.Warn("ingest: sensor-report attribution not recorded",

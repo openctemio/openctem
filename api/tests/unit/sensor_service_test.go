@@ -45,7 +45,6 @@ type sensorSvcMockRepo struct {
 	releaseJobErr               error
 	getAvailableCapabilitiesErr error
 	hasSensorForCapabilityErr   error
-	getPlatformSensorStatsErr   error
 
 	// Capability catalog (KnownCapabilityNames) and the last heartbeat write.
 	knownTools    map[string]bool
@@ -58,7 +57,6 @@ type sensorSvcMockRepo struct {
 	availableCapSensors []*sensor.Sensor
 	capabilities        []string
 	hasCapability       bool
-	platformStats       *sensor.PlatformSensorStatsResult
 	staleOfflineIDs     []shared.ID // returned by MarkStaleSensorsOffline
 	// livenessNow is the database time ListLivenessCandidates reports; zero
 	// is time.Now().
@@ -83,7 +81,6 @@ type sensorSvcMockRepo struct {
 	releaseJobCalls       int
 	getAvailCapCalls      int
 	hasSensorCapCalls     int
-	getPlatformStatsCalls int
 
 	// Last args
 	lastFilter     sensor.Filter
@@ -446,21 +443,6 @@ func (m *sensorSvcMockRepo) HasSensorForCapability(_ context.Context, _ shared.I
 		return false, m.hasSensorForCapabilityErr
 	}
 	return m.hasCapability, nil
-}
-
-func (m *sensorSvcMockRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.getPlatformStatsCalls++
-	if m.getPlatformSensorStatsErr != nil {
-		return nil, m.getPlatformSensorStatsErr
-	}
-	if m.platformStats != nil {
-		return m.platformStats, nil
-	}
-	return &sensor.PlatformSensorStatsResult{
-		TierBreakdown: make(map[string]sensor.TierBreakdown),
-	}, nil
 }
 
 func (m *sensorSvcMockRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
@@ -2041,149 +2023,6 @@ func TestSensorService_HasCapability_RepoError(t *testing.T) {
 	svc := newSensorSvcTestService(repo)
 
 	_, err := svc.HasCapability(context.Background(), shared.NewID(), "sast")
-	if err == nil {
-		t.Fatal("expected error when repo fails")
-	}
-}
-
-// ============================================================================
-// Tests: GetPlatformStats
-// ============================================================================
-
-func TestSensorService_GetPlatformStats_NoPlatformSensors(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	repo.platformStats = &sensor.PlatformSensorStatsResult{
-		TotalSensors:  0,
-		TierBreakdown: make(map[string]sensor.TierBreakdown),
-	}
-	svc := newSensorSvcTestService(repo)
-
-	out, err := svc.GetPlatformStats(context.Background(), shared.NewID())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if out.Enabled {
-		t.Error("expected Enabled=false when no platform sensors")
-	}
-	if out.MaxTier != "shared" {
-		t.Errorf("expected MaxTier='shared', got %q", out.MaxTier)
-	}
-	if len(out.AccessibleTiers) != 1 || out.AccessibleTiers[0] != "shared" {
-		t.Errorf("expected AccessibleTiers=[shared], got %v", out.AccessibleTiers)
-	}
-}
-
-func TestSensorService_GetPlatformStats_WithSensors(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	repo.platformStats = &sensor.PlatformSensorStatsResult{
-		TotalSensors:      5,
-		OnlineSensors:     3,
-		TotalCapacity:     25,
-		CurrentActiveJobs: 10,
-		CurrentQueuedJobs: 2,
-		TierBreakdown: map[string]sensor.TierBreakdown{
-			"shared": {
-				TotalSensors:  3,
-				OnlineSensors: 2,
-				TotalCapacity: 15,
-				CurrentLoad:   6,
-			},
-			"dedicated": {
-				TotalSensors:  2,
-				OnlineSensors: 1,
-				TotalCapacity: 10,
-				CurrentLoad:   4,
-			},
-		},
-	}
-	svc := newSensorSvcTestService(repo)
-
-	out, err := svc.GetPlatformStats(context.Background(), shared.NewID())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if !out.Enabled {
-		t.Error("expected Enabled=true when platform sensors exist")
-	}
-	if out.MaxTier != "dedicated" {
-		t.Errorf("expected MaxTier='dedicated', got %q", out.MaxTier)
-	}
-	if out.MaxConcurrent != 25 {
-		t.Errorf("expected MaxConcurrent=25, got %d", out.MaxConcurrent)
-	}
-	if out.MaxQueued != 75 {
-		t.Errorf("expected MaxQueued=75 (3x capacity), got %d", out.MaxQueued)
-	}
-	if out.CurrentActive != 10 {
-		t.Errorf("expected CurrentActive=10, got %d", out.CurrentActive)
-	}
-	if out.CurrentQueued != 2 {
-		t.Errorf("expected CurrentQueued=2, got %d", out.CurrentQueued)
-	}
-	if out.AvailableSlots != 15 {
-		t.Errorf("expected AvailableSlots=15, got %d", out.AvailableSlots)
-	}
-
-	// Check tier stats
-	sharedTier, ok := out.TierStats["shared"]
-	if !ok {
-		t.Fatal("expected 'shared' tier in TierStats")
-	}
-	if sharedTier.TotalSensors != 3 {
-		t.Errorf("expected shared TotalSensors=3, got %d", sharedTier.TotalSensors)
-	}
-	if sharedTier.OnlineSensors != 2 {
-		t.Errorf("expected shared OnlineSensors=2, got %d", sharedTier.OnlineSensors)
-	}
-	if sharedTier.OfflineSensors != 1 {
-		t.Errorf("expected shared OfflineSensors=1, got %d", sharedTier.OfflineSensors)
-	}
-	if sharedTier.AvailableSlots != 9 {
-		t.Errorf("expected shared AvailableSlots=9, got %d", sharedTier.AvailableSlots)
-	}
-}
-
-func TestSensorService_GetPlatformStats_WithPremiumTier(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	repo.platformStats = &sensor.PlatformSensorStatsResult{
-		TotalSensors:  2,
-		TotalCapacity: 10,
-		TierBreakdown: map[string]sensor.TierBreakdown{
-			"shared":  {TotalSensors: 1, TotalCapacity: 5},
-			"premium": {TotalSensors: 1, TotalCapacity: 5},
-		},
-	}
-	svc := newSensorSvcTestService(repo)
-
-	out, err := svc.GetPlatformStats(context.Background(), shared.NewID())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if out.MaxTier != "premium" {
-		t.Errorf("expected MaxTier='premium', got %q", out.MaxTier)
-	}
-	// Should have shared + premium
-	foundShared := false
-	foundPremium := false
-	for _, tier := range out.AccessibleTiers {
-		if tier == "shared" {
-			foundShared = true
-		}
-		if tier == "premium" {
-			foundPremium = true
-		}
-	}
-	if !foundShared || !foundPremium {
-		t.Errorf("expected AccessibleTiers to contain shared and premium, got %v", out.AccessibleTiers)
-	}
-}
-
-func TestSensorService_GetPlatformStats_RepoError(t *testing.T) {
-	repo := newSensorSvcMockRepo()
-	repo.getPlatformSensorStatsErr = errors.New("db error")
-	svc := newSensorSvcTestService(repo)
-
-	_, err := svc.GetPlatformStats(context.Background(), shared.NewID())
 	if err == nil {
 		t.Fatal("expected error when repo fails")
 	}

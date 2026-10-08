@@ -9,7 +9,6 @@ import {
   filterSensors,
   groupSensors,
   summarizeFleet,
-  tenantSensors,
   type FleetFilters,
 } from '../fleet'
 import { TEST_SENSOR_KEY_PREFIX } from '@/test/sensor-keys'
@@ -225,16 +224,6 @@ describe('filterSensors', () => {
         states: ['offline'],
       })
     ).toEqual(['branch-hn-01'])
-  })
-})
-
-describe('tenantSensors', () => {
-  it('leaves shared platform sensors out of the tenant page and its counts', () => {
-    const f = fleet()
-    f[1].is_platform_sensor = true
-    const own = tenantSensors(f)
-    expect(own.map((s) => s.name)).not.toContain('k8s-scanner-a')
-    expect(summarizeFleet(own, NOW, undefined, channel).total).toBe(5)
   })
 })
 

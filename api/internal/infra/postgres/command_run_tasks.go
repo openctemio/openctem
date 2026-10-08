@@ -42,7 +42,7 @@ const runTaskSummarySQL = `
 	count(*) FILTER (WHERE commands.status = 'completed'),
 	count(*) FILTER (WHERE commands.status NOT IN ('pending', 'acknowledged', 'running', 'completed', 'canceled')),
 	count(*) FILTER (WHERE commands.status = 'canceled'),
-	count(DISTINCT commands.sensor_id) FILTER (WHERE commands.acknowledged_at IS NOT NULL)`
+	count(DISTINCT commands.sensor_id) FILTER (WHERE commands.acknowledged_at IS NOT NULL AND NOT COALESCE(commands.is_platform_job, FALSE))`
 
 // ListRunTasks returns up to limit commands of runID in dispatch order, and
 // the summary of all of them. A command belongs to the run through the
@@ -100,7 +100,8 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		       COALESCE(sr.step_key, commands.payload->>'step_key', ''),
 		       COALESCE(`+commandToolSQL+`, ''),
 		       `+runTaskStatusSQL+`,
-		       s.id, COALESCE(s.name, ''),
+		       CASE WHEN commands.is_platform_job THEN NULL ELSE s.id END,
+		       CASE WHEN commands.is_platform_job THEN '' ELSE COALESCE(s.name, '') END,
 		       COALESCE(commands.is_platform_job, FALSE),
 		       `+runTaskTargetsSQL+`,
 		       COALESCE(commands.dispatch_attempts, 0),
@@ -113,7 +114,7 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		            ELSE 0 END
 		FROM commands
 		LEFT JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
-		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id
+		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id AND NOT s.is_platform_sensor
 		WHERE `+where+`
 		ORDER BY commands.created_at, commands.id
 		LIMIT $`+strconv.Itoa(len(args)), args...)
