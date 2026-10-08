@@ -12,7 +12,7 @@ Architecture: [scim-provisioning.md](../architecture/scim-provisioning.md).
 
 ## 1. Generate a SCIM token
 
-**Settings → Integrations → SCIM → Generate token:**
+**Settings → Directory sync (SCIM)** (`/settings/scim`) **→ Generate token:**
 
 - Give it a **Name** (e.g. "Okta production") and click **Generate**.
 - The full token (`oct_scim_…`) is shown **once** in the reveal dialog — copy it
@@ -53,7 +53,8 @@ Azure AD member-op styles.
   owner configured** (a group named "admin" is not enough). `owner` is **never**
   assignable via SCIM.
 
-> **Gotcha — group→role mapping has no UI.** Custom mappings (e.g. an IdP group
+> **Group→role mapping is API-only.** The SCIM settings page manages tokens
+> and shows the base URL; custom mappings (e.g. an IdP group
 > `Acme-OpenCTEM-Admins` → `admin`) are configured **via the API only**:
 > `PUT /api/v1/scim-tokens/group-mappings` with
 > `{"mappings":{"Acme-OpenCTEM-Admins":"admin"}}`. Without a mapping, group members

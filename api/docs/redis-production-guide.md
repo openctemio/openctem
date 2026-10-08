@@ -1,6 +1,9 @@
 # Redis Production Deployment Guide
 
-This guide covers deploying Redis integration for production environments.
+This guide covers the API's Redis configuration for production: what the API
+requires, how it uses Redis, and how to tune and troubleshoot it. The operator
+guide for a whole installation is at
+[docs.openctem.io/configuration](https://docs.openctem.io/configuration/).
 
 ## Table of Contents
 
@@ -32,7 +35,7 @@ This guide covers deploying Redis integration for production environments.
 
 ```bash
 # Required for production
-REDIS_HOST=redis.internal          # Internal DNS or IP
+REDIS_HOST=redis.example.com       # Private DNS name or IP
 REDIS_PORT=6379
 REDIS_PASSWORD=<strong-password>   # Required in production
 REDIS_DB=0
@@ -49,12 +52,23 @@ REDIS_WRITE_TIMEOUT=3s
 # TLS (required in production)
 REDIS_TLS_ENABLED=true
 REDIS_TLS_SKIP_VERIFY=false       # Must be false in production
+REDIS_TLS_CA_FILE=                # Optional: CA bundle for a private CA
+REDIS_TLS_CERT_FILE=              # Optional: client certificate (mutual TLS)
+REDIS_TLS_KEY_FILE=
 
 # Retry Configuration
 REDIS_MAX_RETRIES=3
 REDIS_MIN_RETRY_DELAY=100ms
 REDIS_MAX_RETRY_DELAY=3s
 ```
+
+### Production validation
+
+With `APP_ENV=production` the API refuses to start unless `REDIS_PASSWORD` is
+set and at least 32 characters, `REDIS_TLS_ENABLED=true`,
+`REDIS_TLS_SKIP_VERIFY=false`, `REDIS_POOL_SIZE` is between 10 and 500, and the
+dial and read timeouts are at least 1s (`validateProductionRedis` in
+`internal/config/config.go`).
 
 ### Pool Size Guidelines
 
@@ -90,7 +104,7 @@ REDIS_TLS_SKIP_VERIFY=false
 ### Password Requirements
 
 - Minimum 32 characters
-- Use secrets management (Vault, AWS Secrets Manager, etc.)
+- Keep it in a secrets manager, not in the repository
 - Rotate passwords periodically
 
 ```bash
@@ -104,11 +118,6 @@ openssl rand -base64 32
 2. **Firewall Rules**: Allow only application servers to connect
 3. **VPC/Security Groups**: Restrict to specific CIDR ranges
 
-```bash
-# Example: AWS Security Group
-Inbound: TCP 6379 from app-security-group only
-```
-
 ### Redis ACL (Redis 6+)
 
 Create dedicated user for the application:
@@ -119,49 +128,11 @@ ACL SETUSER openctem on >strongpassword openctem:* +@all -@dangerous
 
 ## High Availability
 
-### Redis Sentinel
-
-For automatic failover, use Redis Sentinel:
-
-```yaml
-# docker-compose.yml
-services:
-  redis-master:
-    image: redis:7-alpine
-    command: redis-server --requirepass ${REDIS_PASSWORD}
-
-  redis-slave:
-    image: redis:7-alpine
-    command: redis-server --slaveof redis-master 6379 --requirepass ${REDIS_PASSWORD} --masterauth ${REDIS_PASSWORD}
-
-  redis-sentinel:
-    image: redis:7-alpine
-    command: redis-sentinel /etc/redis/sentinel.conf
-    volumes:
-      - ./sentinel.conf:/etc/redis/sentinel.conf
-```
-
-**sentinel.conf:**
-```
-sentinel monitor mymaster redis-master 6379 2
-sentinel auth-pass mymaster ${REDIS_PASSWORD}
-sentinel down-after-milliseconds mymaster 5000
-sentinel failover-timeout mymaster 60000
-```
-
-### Redis Cluster
-
-For horizontal scaling (>100GB data or >100K ops/sec):
-
-```bash
-# Create 6-node cluster (3 masters, 3 replicas)
-redis-cli --cluster create \
-  node1:6379 node2:6379 node3:6379 \
-  node4:6379 node5:6379 node6:6379 \
-  --cluster-replicas 1
-```
-
-> **Note**: Current implementation supports standalone Redis only. For Sentinel/Cluster, additional code changes are required.
+The API connects to a **single standalone Redis endpoint**; Redis Sentinel and
+Redis Cluster are not supported by the client today. For availability, use a
+managed Redis service that fails over behind one endpoint, and size it so a
+restart is short: the API degrades gracefully while Redis is down (caches fall
+back to the database, rate limits fall back to per-replica memory, see below).
 
 ## Authentication rate limits
 
@@ -178,6 +149,8 @@ replicas would get N times the budget.
 | `auth:token` | `/auth/token`, `/auth/refresh` | 20/min per IP |
 | `auth:mfa`, `auth:mfa-ip` | `/auth/mfa/verify`, `/auth/mfa/enroll/*` | 10/min per challenge, 30/min per IP |
 | `account-2fa:login`, `account-2fa:password` | `/users/me/2fa/setup`, `/enable` / `/disable`, `/recovery-codes` | 5/min, 3/min per IP |
+| `account-password:password` | `/users/me/change-password` | 3/min per IP |
+| `step-up:login` | `POST /auth/step-up` | 5/min per IP |
 | `console:login`, `console:password`, `console:token` | admin console `/admin/auth/session`, `/admin/auth/mfa` / `/password` / `/idp/start`, `/idp/callback` | 5/min, 3/min, 20/min per IP |
 | `invitation:token` | `/invitations/lookup`, `/accept`, `/decline`, `/accept-with-refresh` (token in the body), and the deprecated `/invitations/{token}/...` aliases | 20/min per IP |
 
@@ -199,109 +172,42 @@ tests) the limits are in-memory only.
 
 ## Monitoring
 
-### Prometheus Metrics
+### Prometheus metrics
 
-The Redis package exports metrics automatically. Ensure your application exposes them:
+The Redis client records metrics under the `openctem_redis_` prefix, exposed on
+the API's `/metrics` endpoint (bearer token `METRICS_TOKEN`, see
+[Monitoring and alerting](operations/monitoring.md)):
 
-```go
-import (
-    "github.com/prometheus/client_golang/prometheus/promhttp"
-    "github.com/openctemio/openctem/api/internal/infra/redis"
-)
-
-// Start pool stats collector
-cancel := redis.StartPoolStatsCollector(ctx, redisClient, 15*time.Second)
-defer cancel()
-
-// Expose metrics endpoint
-http.Handle("/metrics", promhttp.Handler())
-```
-
-### Key Metrics to Monitor
-
-| Metric | Description | Alert Threshold |
+| Metric | Description | Suggested alert |
 |--------|-------------|-----------------|
-| `redis_operation_duration_seconds` | Operation latency | p99 > 100ms |
-| `redis_operation_errors_total` | Error count | > 10/min |
-| `redis_pool_total_connections` | Active connections | > 80% pool size |
-| `redis_pool_timeouts_total` | Connection timeouts | Any increase |
-| `redis_cache_hits_total` | Cache hits | Monitor ratio |
-| `redis_cache_misses_total` | Cache misses | Hit rate < 80% |
-| `redis_ratelimit_denied_total` | Rate limit denials | Monitor spikes |
+| `openctem_redis_operation_duration_seconds` | Operation latency (histogram) | p99 > 100ms |
+| `openctem_redis_operations_total` | Operations | - |
+| `openctem_redis_operation_errors_total` | Errors | > 10/min |
+| `openctem_redis_cache_hits_total`, `openctem_redis_cache_misses_total` | Cache hits and misses | hit rate < 80% |
+| `openctem_redis_ratelimit_allowed_total`, `openctem_redis_ratelimit_denied_total` | Rate-limit decisions | spikes |
+| `openctem_redis_pool_*` (`hits`, `misses`, `timeouts`, `total_connections`, `idle_connections`, `stale_connections`) | Connection pool statistics | timeouts increasing |
 
-### Grafana Dashboard
+The pool gauges are filled by `redis.StartPoolStatsCollector`
+(`internal/infra/redis/metrics.go`); they stay at zero unless the server starts
+that collector.
 
-```json
-{
-  "panels": [
-    {
-      "title": "Redis Operations/sec",
-      "expr": "rate(redis_operations_total[1m])"
-    },
-    {
-      "title": "Redis Latency p99",
-      "expr": "histogram_quantile(0.99, rate(redis_operation_duration_seconds_bucket[5m]))"
-    },
-    {
-      "title": "Cache Hit Rate",
-      "expr": "rate(redis_cache_hits_total[5m]) / (rate(redis_cache_hits_total[5m]) + rate(redis_cache_misses_total[5m]))"
-    },
-    {
-      "title": "Pool Utilization",
-      "expr": "redis_pool_total_connections / redis_pool_size"
-    }
-  ]
-}
-```
+### Health check
 
-### Health Check Endpoint
-
-```go
-func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
-    ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-    defer cancel()
-
-    if err := h.redis.Ping(ctx); err != nil {
-        w.WriteHeader(http.StatusServiceUnavailable)
-        json.NewEncoder(w).Encode(map[string]string{
-            "status": "unhealthy",
-            "redis":  err.Error(),
-        })
-        return
-    }
-
-    w.WriteHeader(http.StatusOK)
-    json.NewEncoder(w).Encode(map[string]string{
-        "status": "healthy",
-    })
-}
-```
+`GET /ready` pings the database and Redis and answers 503 when either check
+fails; use it as the readiness probe. `GET /health` is liveness only.
 
 ### Logging
 
-Enable debug logging for troubleshooting:
-
-```bash
-# Development
-LOG_LEVEL=debug
-
-# Production (reduce noise)
-LOG_LEVEL=info
-```
+Use `LOG_LEVEL=debug` to troubleshoot and `LOG_LEVEL=info` in production.
 
 ## Performance Tuning
 
 ### Connection Pool Optimization
 
-```go
-// High-throughput configuration
-cfg := &config.RedisConfig{
-    PoolSize:     100,        // Increase for high concurrency
-    MinIdleConns: 20,         // Keep connections warm
-    DialTimeout:  5*time.Second,
-    ReadTimeout:  3*time.Second,
-    WriteTimeout: 3*time.Second,
-}
+```bash
+# High-throughput configuration
+REDIS_POOL_SIZE=100        # Increase for high concurrency
+REDIS_MIN_IDLE_CONNS=20    # Keep connections warm
 ```
 
 ### Redis Server Tuning
@@ -408,7 +314,6 @@ redis-cli info stats | grep instantaneous_ops
 1. Check network latency to Redis
 2. Monitor Redis slowlog: `redis-cli slowlog get 10`
 3. Optimize hot keys
-4. Consider Redis Cluster for sharding
 
 ### Debug Commands
 
@@ -440,7 +345,7 @@ Before going to production, verify:
 - [ ] Timeouts configured
 - [ ] Retry logic configured
 - [ ] Metrics exposed and monitored
-- [ ] Health check endpoint working
+- [ ] Readiness probe on `/ready`
 - [ ] Alerts configured for key metrics
 - [ ] Backup strategy in place (if using persistence)
 - [ ] Network security configured (firewall, VPC)
@@ -455,7 +360,7 @@ Before going to production, verify:
 |----------|----------|---------|-------------|
 | `REDIS_HOST` | Yes | localhost | Redis server host |
 | `REDIS_PORT` | Yes | 6379 | Redis server port |
-| `REDIS_PASSWORD` | Prod | "" | Authentication password |
+| `REDIS_PASSWORD` | Prod | "" | Authentication password (32+ characters in production) |
 | `REDIS_DB` | No | 0 | Database number |
 | `REDIS_POOL_SIZE` | No | 10 | Connection pool size |
 | `REDIS_MIN_IDLE_CONNS` | No | 2 | Minimum idle connections |
@@ -463,7 +368,9 @@ Before going to production, verify:
 | `REDIS_READ_TIMEOUT` | No | 3s | Read operation timeout |
 | `REDIS_WRITE_TIMEOUT` | No | 3s | Write operation timeout |
 | `REDIS_TLS_ENABLED` | Prod | false | Enable TLS |
-| `REDIS_TLS_SKIP_VERIFY` | No | false | Skip cert verification |
+| `REDIS_TLS_SKIP_VERIFY` | No | false | Skip cert verification (refused in production) |
+| `REDIS_TLS_CA_FILE` | No | "" | CA bundle |
+| `REDIS_TLS_CERT_FILE`, `REDIS_TLS_KEY_FILE` | No | "" | Client certificate for mutual TLS |
 | `REDIS_MAX_RETRIES` | No | 3 | Max retry attempts |
 | `REDIS_MIN_RETRY_DELAY` | No | 100ms | Min retry backoff |
 | `REDIS_MAX_RETRY_DELAY` | No | 3s | Max retry backoff |
