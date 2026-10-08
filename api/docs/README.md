@@ -3,7 +3,7 @@
 ## Quick Links
 
 - [Getting Started](getting-started.md) - Start here!
-- [**User Guide**](user-guide/README.md) — end-user product guide (analysts/operators): the CTEM loop, sign-in, scoping → discovery → prioritization → validation → mobilization, insights, settings
+- [**User Guide**](https://docs.openctem.io/user-guide/) — end-user product guide on docs.openctem.io (analysts/operators): the CTEM loop, sign-in, scoping → discovery → prioritization → validation → mobilization, insights, settings
 - [Architecture Overview](architecture/overview.md)
 - [Development Setup](development/setup.md)
 

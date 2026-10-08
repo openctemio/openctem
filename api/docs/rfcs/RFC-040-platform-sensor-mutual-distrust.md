@@ -1,7 +1,7 @@
 # RFC-040 — Mutual distrust between the platform and sensors
 
-> Status: **Accepted** (2026-10-03; owner approved every recommendation in
-> §9). Proposed 2026-10-03 in #870. P0 implementation is split into the PR
+> Status: **Accepted** (2026-10-03; every recommendation in
+> §9 approved). Proposed 2026-10-03 in #870. P0 implementation is split into the PR
 > groups of §6.1: groups A, B and C merged; group D merged on the platform
 > and in sdk-go/sensor `main`, not yet in a sensor release (§6.1).
 > Scope: api (sensor gateway, signer, ingest pipeline, audit, detections) +
@@ -20,10 +20,9 @@
 > the in-sensor forwarder), [RFC-035](RFC-035-sensor-control-plane-under-load.md)
 > (leases and fencing), [RFC-036](RFC-036-easm.md) (ownership gate, T0/T1/T2
 > tiers) and [RFC-038](RFC-038-sensor-tool-settings.md) (signed tool
-> settings). Research: research/03-sensor-signed-config (TUF, DSSE,
-> anti-rollback, tenant binding).
+> settings).
 >
-> Owner's request (2026-10-03): the sensor ↔ platform architecture must
+> Requirement (2026-10-03): the sensor ↔ platform architecture must
 > follow a **mutual-distrust** model. Compromising one side must not be
 > enough to exploit the other: a compromised sensor must not be able to
 > attack the platform, and a compromised platform (web, API or database) must
@@ -84,7 +83,7 @@ Verified against `openctemio/openctem` `develop` b09dbf69, `openctemio/sensor`
 full table with file:line evidence and the attack each gap allows is in
 [architecture/sensor-platform-trust.md](../architecture/sensor-platform-trust.md).
 
-| Owner's control | Status | Gap rows |
+| Required control | Status | Gap rows |
 |---|---|---|
 | Separate sensor gateway | MISSING: same process, router, DB pool and role as the admin API | S1 |
 | Per-sensor identity (proof of possession, enrollment token, short-lived, TPM, revocation) | per-sensor bearer key; revocation per request; the rest PLANNED in RFC-032 | S2a–S2e |
@@ -121,8 +120,8 @@ The five highest risks (ranked in the architecture document §3):
 
 ### 3.2 Standards and incidents
 
-From research/05-mutual-distrust (2026-10-03, adversarially verified
-claims), with research 03 and the surveys in RFC-023 §2 and RFC-032 §4.
+Standards and public incidents reviewed for this design (2026-10-03), with
+the surveys in RFC-023 §2 and RFC-032 §4.
 
 | Source | What it shows | Taken here |
 |---|---|---|
@@ -241,15 +240,15 @@ a commented service. Operators move when they want the split.
 someone notices; nothing binds it to the host; admin-issued keys never
 expire.
 
-**Design.** RFC-032 as accepted (owner decisions D1–D5), unchanged:
+**Design.** RFC-032 as accepted (decisions D1–D5), unchanged:
 enrollment tokens, sensor-generated Ed25519 keys, RFC 9421 signatures on
 every v2 request, rotation, per-request revocation, clone detection,
-assurance levels. Two owner decisions of 2026-10-03 amend RFC-032: the
+assurance levels. Two decisions of 2026-10-03 amend RFC-032: the
 interim bearer sensor key is `octs_` and the one-time enrollment token is
 `octe_` (both base62 with a CRC32 checksum, replacing `rda_` for new keys
 and `ocse_`), and **every bearer sensor key (`rda_` and `octs_`) is retired
 90 days after RFC-032 P1–P2 (enrollment and key-bound identity) ship**,
-instead of on 2027-04-01; live sensors move from `rda_` to `octs_` on
+instead of on 2027-04-01; existing sensors move from `rda_` to `octs_` on
 auto-renew in the meantime. **RFC-032 P1–P2 is a P0 dependency of this
 RFC**: a per-sensor key is what a signed job is addressed to (§5.6) and what
 the object checks of §5.3 bind to. This RFC adds three points:
@@ -428,13 +427,13 @@ decides *who* signs, *what* exactly, and *what the signer refuses*.
    enrollment (RFC-032 T7, trust on first use). Key sets reach the sensor
    through the doorbell (`config_version`) and are verified against the
    root, version-monotonic and expiring, as TUF prescribes. go-tuf v2 is
-   the reference verifier (research 03 finding 5); a hand-written verifier
+   the reference verifier; a hand-written verifier
    must pass its test vectors.
 3. **What is signed: the full declarative job, as the exact bytes the
    sensor will execute.** A DSSE envelope (payload type
    `application/vnd.openctem.job.v1+json`, Ed25519 over the PAE of the
-   payload bytes; **no canonical-JSON re-serialisation**, research 03
-   finding 8, the nuclei CVE-2024-43405 lesson):
+   payload bytes; **no canonical-JSON re-serialisation**, the nuclei
+   CVE-2024-43405 lesson):
 
    ```json
    {
@@ -738,7 +737,7 @@ mode (pushed by a compromised console).
   schema and limits (RFC-038 S7; template parser and protocol allow-list,
   §5.8; size and count caps), never relying on the platform's validator.
   Activation is all-or-nothing per document, and the last good version is
-  kept for rollback (research 03 finding 15).
+  kept for rollback.
 - **Rings.** Every pushed document carries a `rollout` block: ring (canary →
   early → broad), the earliest activation time per ring, and the bake-in
   period. The platform promotes a version to the next ring only after the
@@ -823,7 +822,7 @@ P1–P2 runs in parallel as the P0 dependency.
 | New SDK with a pinned root | refuses unsigned jobs; the platform never sends it one |
 | Single-container installs | `SERVER_ROLE=all`, signer as an optional second container; the all-in-one image can supervise the signer as a separate process with its own user and key file |
 | Platform rollback below the signer release | sensors with a pinned root refuse the old platform's unsigned jobs (fail closed, visible); operators roll forward or set `require_signed_jobs: false` locally |
-| Bearer-key sunset | owner decision 2026-10-03: every bearer sensor key (`rda_`, `octs_`) is retired **90 days after RFC-032 P1–P2 ship** (no longer fixed at 2027-04-01); live `rda_` sensors move to `octs_` on auto-renew before that. At the sunset, key-bound identity, command-bound results and (for sensors on the new SDK) signed jobs become the floor |
+| Bearer-key sunset | decided 2026-10-03: every bearer sensor key (`rda_`, `octs_`) is retired **90 days after RFC-032 P1–P2 ship** (no longer fixed at 2027-04-01); existing `rda_` sensors move to `octs_` on auto-renew before that. At the sunset, key-bound identity, command-bound results and (for sensors on the new SDK) signed jobs become the floor |
 
 ## 8. Alternatives considered
 
@@ -837,9 +836,9 @@ P1–P2 runs in parallel as the P0 dependency.
 | Store credentials on the platform, sealed (T2) as the default | Concentrates every tenant's credentials in the most exposed component; kept as an option for tenants without a vault |
 | Full TUF repository for jobs | Jobs are per-sensor, short-lived and many; TUF fits the key set and content, a DSSE envelope with `seq`/`nonce`/expiry fits jobs (Uptane's Director uses the same split) |
 
-## 9. Owner decisions
+## 9. Decisions
 
-**Approved 2026-10-03:** the owner accepted every recommendation below:
+**Approved 2026-10-03:** every recommendation below was accepted:
 Q1 (a), Q2 (a), Q3 (a), Q4 (a), Q5 (c), Q6 (a), Q7 (a), Q8 (a).
 
 | # | Question | Options | Recommended |
@@ -872,4 +871,3 @@ Q1 (a), Q2 (a), Q3 (a), Q4 (a), Q5 (c), Q6 (a), Q7 (a), Q8 (a).
 - TUF security: https://theupdateframework.io/docs/security/
 - Vault Transit: https://developer.hashicorp.com/vault/docs/secrets/transit
 - AWS KMS asymmetric key specs (Ed25519): https://docs.aws.amazon.com/kms/latest/developerguide/asymmetric-key-specs.html
-- Research notes: research/03-sensor-signed-config, research/05-mutual-distrust

@@ -156,11 +156,17 @@ type SecuritySettings struct {
 	// env fallback); see TenantService.UpdateSecuritySettings. Enforcement itself
 	// lives in AuthService.ExchangeToken / RefreshToken (the tenant-selection /
 	// token-mint gate).
-	SSOEnforced       bool     `json:"sso_enforced"`
-	MFARequired       bool     `json:"mfa_required"`        // Require MFA for all users
-	SessionTimeoutMin int      `json:"session_timeout_min"` // Session timeout in minutes (15-480)
-	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
-	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
+	SSOEnforced bool `json:"sso_enforced"`
+	MFARequired bool `json:"mfa_required"` // Require MFA for all users
+	// MFARequiredForAdmins requires two-factor authentication for owners and
+	// administrators (the people who can change the organization). On for
+	// every organization created after it shipped (NewTenant); organizations
+	// created before keep their stored value (off) until an owner turns it
+	// on. MFARequired, when on, covers everyone anyway.
+	MFARequiredForAdmins bool     `json:"mfa_required_for_admins,omitempty"`
+	SessionTimeoutMin    int      `json:"session_timeout_min"` // Session timeout in minutes (15-480)
+	IPWhitelist          []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
+	AllowedDomains       []string `json:"allowed_domains"`     // Allowed email domains for signup
 
 	// PersonalAccounts says whether members with a personal address may use
 	// the organization (RFC-058): allowed (empty), allowed_with_mfa (the
@@ -202,6 +208,22 @@ type SecuritySettings struct {
 	// an owner action, audited at critical severity and alerted (D9).
 	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh,omitempty"`
 	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates,omitempty"`
+}
+
+// MFARequiredFor reports whether a member with this role must use two-factor
+// authentication in the organization.
+func (s SecuritySettings) MFARequiredFor(role string) bool {
+	if s.MFARequired {
+		return true
+	}
+	if !s.MFARequiredForAdmins {
+		return false
+	}
+	switch Role(role) {
+	case RoleOwner, RoleAdmin:
+		return true
+	}
+	return false
 }
 
 // EmailVerificationMode controls per-tenant email verification behavior.

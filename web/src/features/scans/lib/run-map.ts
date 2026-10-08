@@ -114,3 +114,19 @@ export function mapEdgeLabel(
     return n > 0 ? compactCount(n) : undefined
   }
 }
+
+/** The tasks of one step of the run (by step key). */
+export function stepTasks<T extends { step_key?: string }>(
+  tasks: T[] | undefined,
+  stepKey: string
+): T[] {
+  return (tasks ?? []).filter((t) => t.step_key === stepKey)
+}
+
+/** A step's outputs by asset type, most first: [type, count]. */
+export function outputsByType(n: RunMapNode | undefined): [string, number][] {
+  return Object.entries(n?.outputs?.by_type ?? {})
+    .map(([t, c]): [string, number] => [t, c ?? 0])
+    .filter(([, c]) => c > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+}

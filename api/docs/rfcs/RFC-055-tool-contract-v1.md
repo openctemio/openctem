@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (owner delegated 2026-10-07: TC1–TC16 as recommended) |
+| Status | Accepted (decisions TC1–TC16, 2026-10-07); in implementation: capability contracts from `ctis/capability` in the stage catalog and ingest (OC1, OC4) shipped; per-tenant tool descriptors (OC2) and later items not built |
 | Scope | ctis (`capability`, CTIS 1.5, `importer/mapping`), sdk-go (`pkg/tool`, runtime, `cmd/openctem`, `pkg/conformance`), sensor (built-in tool descriptors, parsers), api (`pkg/domain/stage`, `pkg/domain/sensor`, ingest, `tools`), web (workflow builder palette and forms) |
 | Architecture | [tool-contract.md](../architecture/tool-contract.md), [scan-stages.md](../architecture/scan-stages.md) |
 | Related | RFC-033 (sensor manifest), RFC-038 (tool config schema), RFC-040 (mutual distrust), RFC-046 (scans redesign, stage catalogue), RFC-049 (connector framework), RFC-052 (grants and tier ceilings), RFC-054 (scope authority); sdk-go `docs/rfcs/sensor-sdk-v2.md` (the tool contract runtime this RFC extends) |
@@ -378,7 +378,7 @@ comes back (mutual distrust, RFC-040).
   the issue). Otherwise the verdict is `unverifiable`. The existing rules
   stay: the target was reported done and the task finished. The platform
   then requires the exchange to match the finding's own endpoint before it
-  closes anything (research/57).
+  closes anything.
 - nuclei runs retests and re-verification with `-ms`: a non-match line is the
   attempt's exchange, an error line is no verdict, and the error text (which
   quotes the URL) never leaves the sensor.
@@ -517,7 +517,7 @@ platform ingest: CTIS validate → output binding (capability ∩ catalogue ∩ 
 ### 10.1 Retiring the legacy capability vocabulary (OC5, decided 2026-10-07)
 
 OC5 is **deferred** until one release train after the sensor release that
-ships command logs (research/62 P0-2) is live on every sensor. Then:
+ships command logs is live on every sensor. Then:
 
 - **Custom capabilities stay, as tenant labels.**
   - The `capabilities` resource (`/api/v1/capabilities`, #1304) keeps every
@@ -533,7 +533,7 @@ ships command logs (research/62 P0-2) is live on every sensor. Then:
 - **Before the drop:**
   - the availability view must show no sensor without a descriptor;
   - the drop ships as an ordinary migration with a working down, tested up,
-    down, up on a restore of live.
+    down, up on a restore of a production database.
 
 ## 11. Developer experience
 
@@ -607,7 +607,7 @@ Every implementation PR carries:
   - a classification below the floor is refused;
   - oversized or hostile input is bounded.
 
-## 13. Decisions (owner, 2026-10-07: all as recommended)
+## 13. Decisions (2026-10-07)
 
 | # | Decision |
 |---|---|

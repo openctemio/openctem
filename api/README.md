@@ -168,8 +168,7 @@ docker compose -f deploy/docker-compose.yml exec api wget -qO- localhost:8080/re
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTH_PROVIDER` | `local` | Auth provider: `local`, `oidc`, `hybrid` |
-| `AUTH_ALLOW_REGISTRATION` | `false` | Allow public self-registration. Keep it off in production: administrators create users, invite them, or the organization's SSO admits them |
-| `TENANT_CREATION_MODE` | `admin_only` | Who creates organizations: `admin_only` (the platform administrator, from the console or `bootstrap-admin -org-*`) or `self_service` (any signed-in user; SaaS/trial opt-in) |
+| `TENANT_CREATION_MODE` | `admin_only` | Seeds the sign-up policy on the first start: `admin_only` (only the platform administrator creates organizations; nobody else can create an account without an invitation or their organization's SSO) or `self_service` (anyone may sign up and create one). Afterwards change it in the console (System > Sign-up). |
 | `AI_PLATFORM_PROVIDER` | — | AI triage: `claude`, `openai`, `gemini` |
 | `SMTP_ENABLED` | `false` | Enable email notifications (required for invitations) |
 | `RATE_LIMIT_RPS` | `100` | Rate limit (requests/second) |
@@ -180,8 +179,7 @@ docker compose -f deploy/docker-compose.yml exec api wget -qO- localhost:8080/re
 Public registration and self-service organizations are off by default:
 
 ```env
-AUTH_ALLOW_REGISTRATION=false      # No public signup (the default)
-TENANT_CREATION_MODE=admin_only    # Only the platform administrator creates organizations (the default)
+TENANT_CREATION_MODE=admin_only    # Seeds the sign-up policy: no public signup (the default)
 SMTP_ENABLED=true                  # Emails set-password links and invitations
 ```
 

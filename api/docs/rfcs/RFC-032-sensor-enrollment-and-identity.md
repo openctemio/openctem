@@ -1,13 +1,17 @@
 # RFC-032 — Sensor enrollment, identity and declared capabilities
 
-> Status: **Accepted** (2026-10-02; owner decisions in §10.1). Proposed
-> 2026-10-02 in #706. Phase 0 is in implementation.
+> Status: **Accepted** (2026-10-02; decisions in §10.1). Proposed
+> 2026-10-02 in #706. Phase 0 is implemented (`octs_` keys in `pkg/sensorkey`,
+> the dedicated key pepper, the cloned-identity signal). Phase 1 (key-bound
+> identity) shipped through RFC-052 (#1189). The enrollment-token endpoint
+> (Phase 2, `POST /api/v2/sensor/enroll`) is not built; interactive pairing
+> (RFC-052) covers enrollment.
 > **Revised 2026-10-03** (§10.4): credential prefixes are `octs_` (sensor API
 > key, now issued) and `octe_` (enrollment token, replacing the proposed
 > `ocse_`), both with a base62 CRC32 checksum; `rda_` is legacy and is retired
 > **90 days after enrollment and key-bound identity (Phases 1 and 2) ship**,
 > replacing the 2027-04-01 date in D3.
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) +
+> Scope: api + sdk-go + sensor (`openctemio/sensor`) +
 > ui + helm-charts.
 > Builds on and makes concrete: [RFC-014](RFC-014-agent-identity.md) (per-sensor
 > keys, expiry, renewal, overlap; its open Phases 4 and 5),
@@ -22,17 +26,16 @@
 > specific decision and RFC-023 is amended by reference.
 > Mutual distrust: [RFC-040](RFC-040-platform-sensor-mutual-distrust.md)
 > treats Phases 1–2 of this RFC as its P0 dependency (signed jobs and the
-> object checks bind to the per-sensor key) and records the owner decisions
+> object checks bind to the per-sensor key) and records the decisions
 > of 2026-10-03 (§5.2 there): `octs_` interim sensor key and `octe_`
 > enrollment token, and the bearer-key sunset 90 days after Phases 1–2 ship
 > instead of 2027-04-01.
 >
-> Owner's question (2026-10-02): today an administrator pre-creates a sensor
+> Question (2026-10-02): today an administrator pre-creates a sensor
 > in the UI (name, role, tool chips), receives a long-lived `rda_…` key shown
 > once and pastes it into a docker / compose / Kubernetes / Helm command.
-> "The platform cannot know which tools a third-party sensor has, only the
-> sensor can say. Research thoroughly and give the best, most modern, most
-> secure option."
+> The platform cannot know which tools a third-party sensor has; only the
+> sensor can say. What is the most modern and most secure option?
 
 ## 1. Answer in short
 
@@ -666,9 +669,9 @@ start now.
 | Q5 | Scan credentials to sensors | (a) only to approved `key_bound`+ sensors, HPKE-sealed per job; legacy sensors use sensor-local credentials; (b) also to legacy sensors with a warning | **(a)** |
 | Q6 | `rda_` retirement | (a) tenant opt-in "require key-bound identity" from Phase 1; new installs enrollment-only from Phase 2; platform-wide with the v1 sunset 2027-04-01; (b) keep `rda_` indefinitely | **(a)** |
 
-### 10.1 Owner decisions (2026-10-02)
+### 10.1 Decisions (2026-10-02)
 
-The owner accepted every recommendation in the table above.
+Every recommendation in the table above was accepted.
 
 | # | Decision | Consequence |
 |---|---|---|
@@ -688,9 +691,9 @@ The owner accepted every recommendation in the table above.
 | Dedicated key-hash pepper (G9) | api | `SENSOR_KEY_PEPPER`; when unset it is derived with HKDF-SHA256 from `APP_ENCRYPTION_KEY`, so the MAC key is never the encryption key. Hashes made with the old pepper keep verifying (dual lookup; also the derived pepper once `SENSOR_KEY_PEPPER` is set, and `SENSOR_KEY_PEPPER_PREVIOUS` for replacing an explicit one); new, regenerated and renewed keys are stored with the new pepper. Rolling the API back below this release makes keys issued after it unknown to the older server. The `oct_` user API keys and SCIM tokens still use `APP_ENCRYPTION_KEY` as their pepper (follow-up). |
 | Dead bootstrap and registration-token code (G4) | api, helm, sdk-go | Removed from the api and the chart (`mode: platform`) after a cross-repository search. In sdk-go the client is public API, so it is marked `Deprecated` rather than deleted (the SDK compatibility check allows additions only); it goes with the v1 sunset. |
 | Secret-looking `scanner_config` values (G7) | api + ui | A warning in the save response and a hint in the form; never blocks. The warned values are masked (`********`) for callers without `scans:write` on scan reads, scan export and command payloads; editors, owners and admins see them, sensors receive them, and saving the mask back keeps the stored value ([sensors.md](../architecture/sensors.md)). |
-| `rda_` in GitHub secret scanning | owner | Needs the GitHub partner program; steps in §10.3. |
+| `rda_` in GitHub secret scanning | project maintainers | Needs the GitHub partner program; steps in §10.3. |
 
-### 10.3 Follow-up for the owner: GitHub secret scanning for `rda_` (and `ocse_`)
+### 10.3 Follow-up for the maintainers: GitHub secret scanning for `rda_` (and `ocse_`)
 
 > Superseded in part by §10.4: the patterns to register are now `octs_` and
 > `octe_` (checksummed), with `rda_` as the legacy pattern. The current
@@ -708,7 +711,7 @@ What the program asks for (partner program page, linked in §11):
    offline. Phase 0 does not change the `rda_` format, so `ocse_` (which
    carries a CRC32, E2) is the better first candidate; `rda_` can be
    registered alongside with the plain pattern.
-2. **A public alert endpoint** run by the vendor (for example
+2. **A public alert endpoint** run by the project (for example
    `https://openctem.io/.well-known/secret-scanning`, outside any tenant
    installation) that accepts `POST` with a JSON array of
    `{token, type, url, source}`, verifies the request signature (headers
@@ -753,13 +756,13 @@ keywords = ["rda_"]
 
 ### 10.4 Revision 2026-10-03: credential prefixes and the `rda_` sunset
 
-Owner decisions (2026-10-03):
+Decisions (2026-10-03):
 
 | # | Decision | Consequence |
 |---|---|---|
 | D6 | **New sensor API keys use `octs_`; enrollment tokens use `octe_`.** Both are `<prefix>` + base62 of 32 random bytes (43 characters, zero-padded) + base62 of the CRC32 of the random part (6 characters); the checksum lets secret scanners validate a token offline. | Implemented in `pkg/sensorkey`. Create, regenerate, renew and `RotateKey` issue `octs_` keys. The API rejects an `octs_` key whose checksum fails, and any `octe_` token presented as a key, before the hash lookup. The display prefix is 10 characters (`octs_` + 5). The checksum is a typo and scanner aid, **not** a security control. |
 | D7 | **No sensor prefix starts with `oct_`**, which the HTTP layer routes to user / MCP API-key authentication. | A test pins that `octs_`, `octe_` and `rda_` bearer tokens never reach user-key authentication. |
-| D8 | **`rda_` keys keep working until 90 days after enrollment (Phase 2) and Ed25519 key-bound identity (Phase 1) ship**; this replaces 2027-04-01 in D3. Live sensors move to `octs_` automatically on their next key renewal. | `Sensor.IsLegacyKey()`, `legacy_key` in the sensor response with a "legacy key" tag on the Sensors page, the `openctem_sensor_legacy_keys` gauge, and `previous_key_format` / `upgraded_from_legacy_key` in the `sensor.key_renewed` audit event. |
+| D8 | **`rda_` keys keep working until 90 days after enrollment (Phase 2) and Ed25519 key-bound identity (Phase 1) ship**; this replaces 2027-04-01 in D3. Deployed sensors move to `octs_` automatically on their next key renewal. | `Sensor.IsLegacyKey()`, `legacy_key` in the sensor response with a "legacy key" tag on the Sensors page, the `openctem_sensor_legacy_keys` gauge, and `previous_key_format` / `upgraded_from_legacy_key` in the `sensor.key_renewed` audit event. |
 | D9 | Secret-scanning rules for `octs_`, `octe_` and legacy `rda_` ship in the repository's `.betterleaks.toml` and are documented for customers. | [agent-identity.md, *Credential formats*](../architecture/agent-identity.md#credential-formats). |
 
 The SDK and the sensor never checked the `rda_` prefix (only test fixtures and
@@ -789,9 +792,7 @@ At that point, in one PR (code and migration together):
   premature deploy cannot lock out a live sensor; the down migration recreates
   the empty table and columns (no bearer key works after a down).
 
-State on the production restore of 2026-10-05: 8 sensors, all `bearer`
-(7 active, 1 disabled); `sensor_api_keys` 2 rows, both active and used in the
-last 7 days. Every one of them has to be re-paired or revoked first.
+Every existing bearer sensor has to be re-paired or revoked first.
 
 ## 11. Sources
 
