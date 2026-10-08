@@ -1,7 +1,7 @@
 # List query contract
 
 How list, stats, groups, search and export endpoints read their filters. The
-design, its evidence and the owner decisions are in
+design, its evidence and the decisions are in
 [RFC-048](../rfcs/RFC-048-list-query-contract.md).
 
 ## The rule
@@ -105,8 +105,8 @@ Saved views (UI contract D15) live in `saved_views` (migration 000777) and
   runs; a stored filter the registry no longer accepts is `400
   INVALID_FILTER`.
 - A view is personal, or shared with one active group the owner belongs to.
-  Members of the group use it; only the owner edits or deletes it (owner
-  decision A1); others duplicate it. 100 views per person, 100 per group.
+  Members of the group use it; only the view's owner edits or deletes it
+  (decision A1); others duplicate it. 100 views per person, 100 per group.
 - A view runs as the person using it (decision A5): `?view=<id>` on
   `/findings`, `/findings/stats`, `/findings/groups` and `/findings/export`
   compiles the view's filter as the caller, with the request's own params

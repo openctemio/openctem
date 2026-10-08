@@ -6,7 +6,13 @@
  */
 import type { AssetTypeRegistry } from '@/features/asset-types/lib/asset-registry'
 import type { InventoryOverviewRow } from '../api/use-inventory-overview'
-import { serializeInventoryFilters, type AssetType, type InventoryFilters } from './inventory-url'
+import {
+  HIGH_RISK_SCORE,
+  serializeInventoryFilters,
+  type AssetType,
+  type InventoryFilters,
+} from './inventory-url'
+import { ASSET_LENSES } from '@/features/asset-types/registry.generated'
 
 export interface OverviewTypeRow {
   key: string
@@ -90,8 +96,14 @@ export function buildOverview(
       .map(({ key, label, count, href: h }) => ({ key, label, count, href: h }))
     const allTypes = [...new Set(mine.map((r) => r.type))].sort()
     const sum = (f: (r: InventoryOverviewRow) => number) => mine.reduce((n, r) => n + f(r), 0)
-    const lensFilter: InventoryFilters =
-      allTypes.length > 0 ? { types: allTypes as AssetType[] } : {}
+    // A lens links by its id, so its aliases stored under another type's name
+    // come along; `Other` (no lens) lists its types.
+    const lensId = ASSET_LENSES.find((l) => l.id === g.id)?.id
+    const lensFilter: InventoryFilters = lensId
+      ? { lens: lensId }
+      : allTypes.length > 0
+        ? { types: allTypes as AssetType[] }
+        : {}
     return {
       id: g.id,
       label: g.label,
@@ -104,7 +116,7 @@ export function buildOverview(
       types,
       href: href(lensFilter),
       unownedHref: href({ ...lensFilter, hasOwner: false }),
-      highRiskHref: href({ ...lensFilter, sort: '-risk_score' }),
+      highRiskHref: href({ ...lensFilter, minRiskScore: HIGH_RISK_SCORE, sort: '-risk_score' }),
       reviewHref: href({ ...lensFilter, attribution: ['needs_review', 'candidate'] }),
     }
   })

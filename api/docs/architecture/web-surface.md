@@ -33,7 +33,7 @@ asset service/http (origin: https://api.example.com)
    template, query names only, masked example), refuses origins a
    command-bound report's targets do not cover, counts static files without
    storing them, and makes each origin an `http_service` asset of the report.
-3. The asset pipeline persists the origins (scope, exclusions, identity,
+3. Asset ingest persists the origins (scope, exclusions, identity,
    attribution apply).
 4. `recordEndpoints` writes each origin's endpoints only when the persisted
    origin is an `http_service` the report may change
@@ -63,7 +63,7 @@ with step-up. It is enforced in three places:
 | Where | What |
 |---|---|
 | Dispatch (`scope.Service.ExcludedTargets`) | a URL target under a blocking rule (for GET) is excluded; a host target never is |
-| Job (`pipeline.applyWebScope`) | a crawl, template or web application step carries `web_scope`: `deny_paths` for rules that block GET or HEAD, `methods: [GET, HEAD]` when a rule there blocks only other methods; nothing when no rule applies. A failed lookup refuses the step |
+| Job (`scanrun.applyWebScope`) | a crawl, template or web application step carries `web_scope`: `deny_paths` for rules that block GET or HEAD, `methods: [GET, HEAD]` when a rule there blocks only other methods; nothing when no rule applies. A failed lookup refuses the step |
 | Ingest (`markExcluded`) | an endpoint whose method a rule blocks is stored `in_scope = false` with `exclusion_id`: excluded-untested, visible, never targeted |
 
 `GET /web-endpoints/stats` counts `excluded_untested`, so "0 findings" on an
