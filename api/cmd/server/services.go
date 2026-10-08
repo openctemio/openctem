@@ -1883,6 +1883,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithToolRepo(repos.Tool),
 		// A draft check warns about steps no online sensor can run now.
 		scanrun.WithRunnableTools(s.Tool),
+		// The builder saves drafts; a publish makes them the steps runs use.
+		scanrun.WithDraftStore(repos.ScanWorkflow),
 		scanrun.WithQualityGate(repos.ScanProfile, repos.Finding),
 		scanrun.WithScanDeactivator(s.Scan),     // Cascade pause scans when scan workflow is deactivated
 		scanrun.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
