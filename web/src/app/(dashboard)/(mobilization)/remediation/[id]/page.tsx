@@ -534,7 +534,7 @@ export default function CampaignDetailPage() {
                         {linkedFindingIds.includes(f.id) && (
                           <Can permission={Permission.RemediationWrite}>
                             <DropdownMenuItem
-                              className="text-red-500"
+                              className="text-destructive"
                               onClick={() => handleUnlinkFinding(f.id)}
                             >
                               <Link2Off className="me-2 h-4 w-4" /> Unlink from campaign
