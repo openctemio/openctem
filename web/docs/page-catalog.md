@@ -62,7 +62,7 @@ That is now wrong. Each is sidebar-linked and backed by a real, domain-scoped ho
 
 - **Asset types** are filters of the one inventory, never pages: `/assets?types=host`,
   `/assets?types=identity&sub_type=iam_user` (registry-driven typed mode, research/77).
-  `/assets/duplicates` and the repository workspace `/assets/repositories/{id}` →
+  `/assets/duplicates` and every asset at `/assets/{id}` (a repository opens its workspace there) →
   reached from the **/assets** hub and its rows.
 - **Exposures / Components sub-views** `/exposures/{vulnerabilities,misconfigurations,secrets,code}`
   (the Exposures section tabs, `EXPOSURES_SECTION_TABS`) and `/components/{all,vulnerable,ecosystems,licenses,sbom-export}`
