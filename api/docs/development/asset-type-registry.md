@@ -25,7 +25,7 @@ Each type entry declares:
   kind, never a vendor or an engine;
 - top-level `type_inputs`, legacy type names still accepted on input that
   are no type of their own (`web_application` → `(application, website)`,
-  owner decision O3). They resolve like an alias but describe no stored
+  decision O3). They resolve like an alias but describe no stored
   pair, so a stored pair keeps exactly one description;
 - `sub_type_inputs`, legacy sub-type values still accepted on input and what
   they are stored as: `{ type, sub_type, provider, attributes }`

@@ -76,7 +76,7 @@ guarantee ordering (below), and keep the schema check on as the backstop.
      migrations use the **pre-deploy `Job`** and
      `kubectl wait --for=condition=complete job/openctem-migrate`.
    - **Docker Compose:** the one-shot `migrate` service in
-     `docker-compose.prod.yml` runs first; the `app` service waits on
+     `deploy/docker-compose.yml` runs first; the `api` service waits on
      `condition: service_completed_successfully`.
 
 4. **Verify the DB version** matches the shipped binary before serving:

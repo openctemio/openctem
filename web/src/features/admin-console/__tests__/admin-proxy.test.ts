@@ -19,7 +19,13 @@ const COOKIES =
 function call(handler: typeof POST, method: string, path: string[]) {
   const req = new NextRequest(`http://ui.test/api/v1/admin/${path.join('/')}`, {
     method,
-    headers: { cookie: COOKIES, authorization: 'Bearer tenant-access' },
+    // A same-origin browser write: Origin and the admin double-submit pair.
+    headers: {
+      cookie: COOKIES,
+      authorization: 'Bearer tenant-access',
+      origin: 'http://ui.test',
+      'x-csrf-token': 'c1',
+    },
   })
   return handler(req, { params: Promise.resolve({ path }) })
 }

@@ -31,7 +31,7 @@ import {
   SENSOR_PROTOCOL_REFUSAL_STATUS,
 } from '@/lib/api/sensor-protocol-guard'
 import { devLog } from '@/lib/logger'
-import { rotatedRefreshToken } from '@/lib/server-auth-cookies'
+import { csrfRejection, rotatedRefreshToken } from '@/lib/server-auth-cookies'
 
 const ACCESS_TOKEN_COOKIE = env.auth.cookieName
 const REFRESH_TOKEN_COOKIE = env.auth.refreshCookieName
@@ -190,6 +190,12 @@ async function proxyRequest(
   if (isSensorProtocolPath(params.path)) {
     return NextResponse.json(SENSOR_PROTOCOL_REFUSAL, { status: SENSOR_PROTOCOL_REFUSAL_STATUS })
   }
+
+  // Every write here is authenticated by the browser's cookies (the session,
+  // or for /auth/* the refresh cookie the API sets): same origin and the
+  // double-submit pair, signed in or not. The API checks the pair again.
+  const csrf = csrfRejection(request)
+  if (csrf) return csrf
 
   const path = proxyBackendPath(params.path)
   if (path === null) {

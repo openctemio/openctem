@@ -51,11 +51,13 @@ type dataSurface struct {
 
 var dataSurfaceRegistry = map[string]dataSurface{
 	// --- system --------------------------------------------------------------
-	"/health":                          {classSystem, "public liveness"},
-	"/ready":                           {classSystem, "public readiness"},
-	"/metrics":                         {classSystem, "operator metrics (bearer)"},
-	"/openapi.yaml":                    {classSystem, "public API spec"},
-	"/docs":                            {classSystem, "public API docs"},
+	"/health":                               {classSystem, "public liveness"},
+	"/ready":                                {classSystem, "public readiness"},
+	"/metrics":                              {classSystem, "operator metrics (bearer)"},
+	"/openapi.yaml":                         {classSystem, "public API spec"},
+	"/docs":                                 {classSystem, "public API docs"},
+	"/.well-known/oauth-protected-resource": {classSystem, "public MCP resource metadata (RFC 9728), no tenant data"},
+	"/.well-known/oauth-protected-resource/api/v1/mcp": {classSystem, "public MCP resource metadata (RFC 9728), no tenant data"},
 	"/api/v1/version":                  {classSystem, "build identity"},
 	"/api/v1/announcements":            {classSystem, "platform operator notices (plain text); no tenant data"},
 	"/api/v1/client-errors":            {classSystem, "web error kind for operator metrics; reads and stores nothing"},
