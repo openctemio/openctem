@@ -33,8 +33,8 @@ import (
 // @contact.url    https://github.com/openctemio/openctem
 // @contact.email  support@openctem.io
 
-// @license.name  MIT
-// @license.url   https://opensource.org/licenses/MIT
+// @license.name  GPL-3.0-only
+// @license.url   https://www.gnu.org/licenses/gpl-3.0.html
 
 // @host      localhost:8080
 // @BasePath  /api/v1
