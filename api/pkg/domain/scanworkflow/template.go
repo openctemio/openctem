@@ -17,6 +17,8 @@ const (
 	TriggerTypeWebhook          TriggerType = "webhook"
 	TriggerTypeAPI              TriggerType = "api"
 	TriggerTypeOnAssetDiscovery TriggerType = "on_asset_discovery"
+	// TriggerTypeSystem: platform-started work (an automatic retest).
+	TriggerTypeSystem TriggerType = "system"
 )
 
 // Trigger represents a scan workflow trigger configuration.

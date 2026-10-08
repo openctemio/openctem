@@ -22,6 +22,9 @@
 > change made in the console waits for an owner of the organization (see
 > [Revision 8](#revision-8-sso-changes-wait-for-an-owner)).
 
+> **Revision 9** (2026-10-08): an SSO domain is claimed by one organization,
+> platform-wide (see [Revision 9](#revision-9-sso-domain-claims-are-exclusive)).
+
 > **Revision 10** (2026-10-08): who may create an organization is a console
 > setting, no longer only an environment variable (see
 > [Revision 10](#revision-10-the-sign-up-policy-is-a-console-setting)).
@@ -441,6 +444,26 @@ organization. So the console only **proposes** such a change:
   (`GET /admin/tenants/{id}/sso/changes`). Owners decide on
   Settings › SSO approvals (`/settings/sso-approvals`), linked from the
   notification.
+
+## Revision 9: SSO domain claims are exclusive
+
+The verified domains a platform administrator sets up for an organization are
+what let its IdP admit people (JIT, SAML for existing members, the Google
+Workspace `hd` check). Two organizations holding the same verified domain
+would both admit its people, so a claim is now exclusive, platform-wide:
+
+- verifying a domain that another organization holds answers 409 without
+  naming it; the row stays pending;
+- after the holder's DNS proof lapses, another organization waits 7 days
+  before it can verify;
+- public suffixes (including private-section ones such as `github.io`),
+  consumer mailbox providers and disposable-address services cannot be added;
+- rows that two organizations had verified before this revision keep working,
+  flagged `claim_conflict`; the console shows a "Claim conflict" badge and the
+  administrator removes the wrong one.
+
+Details: `docs/architecture/sso-authentication.md`, "Domain claims are
+exclusive".
 
 ## Revision 10: the sign-up policy is a console setting
 

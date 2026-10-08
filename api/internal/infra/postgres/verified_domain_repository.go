@@ -25,20 +25,23 @@ var _ verifieddomain.Repository = (*VerifiedDomainRepository)(nil)
 
 const vdSelectFields = `
 	id, tenant_id, domain, verification_token, status,
-	verified_at, last_checked_at, created_at, updated_at, purpose
+	verified_at, last_checked_at, created_at, updated_at, purpose,
+	lapsed_at, claim_conflict
 `
 
 func (r *VerifiedDomainRepository) Create(ctx context.Context, d *verifieddomain.VerifiedDomain) error {
 	query := `
 		INSERT INTO verified_domains (
 			id, tenant_id, domain, verification_token, status,
-			verified_at, last_checked_at, created_at, updated_at, purpose
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			verified_at, last_checked_at, created_at, updated_at, purpose,
+			lapsed_at, claim_conflict
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 	_, err := r.db.ExecContext(ctx, query,
 		d.ID(), d.TenantID(), d.Domain(), d.VerificationToken(), string(d.Status()),
 		nullTimePtr(d.VerifiedAt()), nullTimePtr(d.LastCheckedAt()),
 		d.CreatedAt(), d.UpdatedAt(), string(d.Purpose()),
+		nullTimePtr(d.LapsedAt()), d.ClaimConflict(),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -52,14 +55,21 @@ func (r *VerifiedDomainRepository) Create(ctx context.Context, d *verifieddomain
 func (r *VerifiedDomainRepository) Update(ctx context.Context, d *verifieddomain.VerifiedDomain) error {
 	query := `
 		UPDATE verified_domains SET
-			status = $3, verified_at = $4, last_checked_at = $5, updated_at = $6, purpose = $7
+			status = $3, verified_at = $4, last_checked_at = $5, updated_at = $6, purpose = $7,
+			lapsed_at = $8, claim_conflict = $9
 		WHERE id = $1 AND tenant_id = $2
 	`
 	result, err := r.db.ExecContext(ctx, query,
 		d.ID(), d.TenantID(), string(d.Status()),
 		nullTimePtr(d.VerifiedAt()), nullTimePtr(d.LastCheckedAt()), d.UpdatedAt(), string(d.Purpose()),
+		nullTimePtr(d.LapsedAt()), d.ClaimConflict(),
 	)
 	if err != nil {
+		// uq_verified_domains_sso_claim: another organization verified the
+		// same SSO domain first (a concurrent claim).
+		if isUniqueViolation(err) {
+			return verifieddomain.ErrDomainClaimed
+		}
 		return fmt.Errorf("update verified domain: %w", err)
 	}
 	rows, err := result.RowsAffected()
@@ -126,6 +136,23 @@ func (r *VerifiedDomainRepository) ListDueForRecheck(ctx context.Context, checke
 	return r.scanRows(rows)
 }
 
+// ListSSOClaims returns every organization's SSO-purpose rows for a domain.
+// Cross-tenant by design (a claim is platform-wide); see the interface.
+func (r *VerifiedDomainRepository) ListSSOClaims(ctx context.Context, domain string) ([]*verifieddomain.VerifiedDomain, error) {
+	query := fmt.Sprintf(`
+		SELECT %s FROM verified_domains
+		WHERE domain = $1 AND purpose = $2
+		ORDER BY created_at ASC
+		LIMIT 100
+	`, vdSelectFields)
+	rows, err := r.db.QueryContext(ctx, query, domain, string(verifieddomain.PurposeSSO))
+	if err != nil {
+		return nil, fmt.Errorf("list sso claims: %w", err)
+	}
+	defer rows.Close()
+	return r.scanRows(rows)
+}
+
 func (r *VerifiedDomainRepository) scanRows(rows *sql.Rows) ([]*verifieddomain.VerifiedDomain, error) {
 	var result []*verifieddomain.VerifiedDomain
 	for rows.Next() {
@@ -147,10 +174,13 @@ func (r *VerifiedDomainRepository) scanVD(scanner rowScanner) (*verifieddomain.V
 		verifiedAt, checkedAt sql.NullTime
 		createdAt, updatedAt  time.Time
 		purpose               string
+		lapsedAt              sql.NullTime
+		claimConflict         bool
 	)
 	err := scanner.Scan(
 		&id, &tenantID, &domain, &token, &status,
 		&verifiedAt, &checkedAt, &createdAt, &updatedAt, &purpose,
+		&lapsedAt, &claimConflict,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -172,5 +202,6 @@ func (r *VerifiedDomainRepository) scanVD(scanner rowScanner) (*verifieddomain.V
 		vid, tid, domain, token, verifieddomain.Status(status),
 		nullTimeValue(verifiedAt), nullTimeValue(checkedAt),
 		createdAt, updatedAt,
-	).WithPurpose(verifieddomain.Purpose(purpose)), nil
+	).WithPurpose(verifieddomain.Purpose(purpose)).
+		WithClaimState(nullTimeValue(lapsedAt), claimConflict), nil
 }

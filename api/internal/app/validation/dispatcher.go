@@ -76,6 +76,10 @@ type ValidateCommandPayload struct {
 	// RequiredCapabilities lets the platform route the job only to sensors that
 	// advertise the validation capability (mirrors the scan command payload).
 	RequiredCapabilities []string `json:"required_capabilities"`
+	// ScanRunID is the run that holds the command (its tasks and logs).
+	// The sensor ignores it; it is not a step key, so the scan run service
+	// does not drive the run from the command result.
+	ScanRunID string `json:"scan_run_id,omitempty"`
 }
 
 // ValidateResultPayload is what a sensor reports back in the command result for
@@ -162,6 +166,7 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 		CVEID:                job.CVEID,
 		RetestID:             retestID,
 		RequiredCapabilities: []string{requiredCap},
+		ScanRunID:            idString(job.ScanRunID),
 	}
 
 	// The active-probe gate: exclusions, the private-range policy, the
@@ -190,6 +195,9 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 		// Only the zone's sensors may claim the probe (zoneClaimPredicate).
 		cmd.SetScanZone(zone.ID)
 	}
+	if !job.ScanRunStepID.IsZero() {
+		cmd.SetStepRunID(job.ScanRunStepID)
+	}
 
 	if err := d.commands.Create(ctx, cmd); err != nil {
 		return shared.ID{}, fmt.Errorf("enqueue validate command: %w", err)
@@ -203,4 +211,12 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 		"technique", string(job.Technique),
 	)
 	return cmd.ID, nil
+}
+
+// idString is the id's string form, or "" for a zero id (omitted in JSON).
+func idString(id shared.ID) string {
+	if id.IsZero() {
+		return ""
+	}
+	return id.String()
 }

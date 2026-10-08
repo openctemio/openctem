@@ -49,8 +49,10 @@ type FindingRetestResponse struct {
 	Target       string `json:"target"`
 	// RunKind is "retest": an attempt is a run linked to the finding, the
 	// command that carried it (check_command_id) and the sensor that ran it.
-	RunKind        string     `json:"run_kind"`
-	CheckCommandID string     `json:"check_command_id,omitempty"`
+	RunKind        string `json:"run_kind"`
+	CheckCommandID string `json:"check_command_id,omitempty"`
+	// RunID is the scan run (kind retest) with the commands, logs and outcome.
+	RunID          string     `json:"run_id,omitempty"`
 	ReachCommandID string     `json:"reach_command_id,omitempty"`
 	SensorID       string     `json:"sensor_id,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -75,6 +77,9 @@ func toFindingRetestResponse(rt *retestdom.Retest) FindingRetestResponse {
 		out.RequestedBy = rt.RequestedBy.String()
 	}
 	out.RunKind = "retest"
+	if rt.RunID != nil {
+		out.RunID = rt.RunID.String()
+	}
 	if rt.CheckCommandID != nil {
 		out.CheckCommandID = rt.CheckCommandID.String()
 	}
