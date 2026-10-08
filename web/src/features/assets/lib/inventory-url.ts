@@ -12,6 +12,7 @@
  */
 
 import type { SortingState } from '@tanstack/react-table'
+import { isPropertyKey } from '@/features/asset-types/lib/property-schema'
 import type { AssetSearchFilters } from '../hooks/use-assets'
 import type { AssetType, Criticality, ExposureLevel, AssetScope } from '../types/asset.types'
 
@@ -20,6 +21,8 @@ export type InventoryFilters = Pick<
   AssetSearchFilters,
   | 'search'
   | 'types'
+  | 'subType'
+  | 'propertiesFilter'
   | 'criticalities'
   | 'statuses'
   | 'scopes'
@@ -69,6 +72,7 @@ const BOOL_PARAMS = {
 // String-valued filter keys and their URL param names.
 const STRING_PARAMS = {
   search: 'q',
+  subType: 'sub_type',
   sort: 'sort',
   lastSeenBefore: 'last_seen_before',
   lastSeenAfter: 'last_seen_after',
@@ -108,6 +112,9 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
     if (raw) out[key] = raw
   }
 
+  const props = parsePropertiesParam(sp.get(PROPERTIES_PARAM))
+  if (props) out.propertiesFilter = props
+
   const page = Number(sp.get('page'))
   if (Number.isFinite(page) && page > 0) out.page = page
   const perPage = Number(sp.get('per_page'))
@@ -132,10 +139,61 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
     const v = f[key]
     if (v) sp.set(STRING_PARAMS[key], v)
   }
+  const props = serializePropertiesParam(f.propertiesFilter)
+  if (props) sp.set(PROPERTIES_PARAM, props)
   if (f.page && f.page > 1) sp.set('page', String(f.page))
   if (f.pageSize && f.pageSize !== DEFAULT_PAGE_SIZE) sp.set('per_page', String(f.pageSize))
 
   return sp
+}
+
+/**
+ * Attribute filters, as the API takes them: `properties=key:value,key:value`
+ * (repeat a key for OR). Only schema keys are kept: a key outside the
+ * registry can never match and is dropped from the URL.
+ */
+export const PROPERTIES_PARAM = 'properties'
+
+function parsePropertiesParam(raw: string | null): Record<string, string[]> | undefined {
+  if (!raw) return undefined
+  const out: Record<string, string[]> = {}
+  for (const pair of raw.split(',')) {
+    const i = pair.indexOf(':')
+    if (i <= 0) continue
+    const key = pair.slice(0, i).trim()
+    const value = pair.slice(i + 1).trim()
+    if (!value || !isPropertyKey(key)) continue
+    const list = (out[key] ??= [])
+    if (!list.includes(value)) list.push(value)
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function serializePropertiesParam(p: Record<string, string[]> | undefined): string | undefined {
+  if (!p) return undefined
+  const parts: string[] = []
+  for (const key of Object.keys(p).sort()) {
+    for (const v of p[key] ?? []) parts.push(`${key}:${v}`)
+  }
+  return parts.length > 0 ? parts.join(',') : undefined
+}
+
+/** The filter with one attribute value toggled (a key with no value left is removed). */
+export function togglePropertyFilter(
+  f: InventoryFilters,
+  key: string,
+  value: string
+): InventoryFilters {
+  const current = { ...(f.propertiesFilter ?? {}) }
+  const values = current[key] ?? []
+  const next = values.includes(value) ? values.filter((v) => v !== value) : [...values, value]
+  if (next.length > 0) current[key] = next
+  else delete current[key]
+  return {
+    ...f,
+    propertiesFilter: Object.keys(current).length > 0 ? current : undefined,
+    page: 1,
+  }
 }
 
 /**
@@ -172,7 +230,15 @@ export function isInventoryFilterEmpty(f: InventoryFilters): boolean {
     (k) => !(f[k] as string[] | undefined)?.length
   )
   const boolsEmpty = (Object.keys(BOOL_PARAMS) as BoolKey[]).every((k) => f[k] === undefined)
-  return arraysEmpty && boolsEmpty && !f.search && !f.lastSeenBefore && !f.lastSeenAfter
+  return (
+    arraysEmpty &&
+    boolsEmpty &&
+    !f.search &&
+    !f.subType &&
+    !f.propertiesFilter &&
+    !f.lastSeenBefore &&
+    !f.lastSeenAfter
+  )
 }
 
 /** Count of active filter dimensions (for the "N filters" affordance). */
@@ -185,6 +251,8 @@ export function countActiveFilters(f: InventoryFilters): number {
     if (f[k] !== undefined) n += 1
   }
   if (f.search) n += 1
+  if (f.subType) n += 1
+  for (const values of Object.values(f.propertiesFilter ?? {})) n += values.length
   if (f.lastSeenBefore || f.lastSeenAfter) n += 1
   return n
 }

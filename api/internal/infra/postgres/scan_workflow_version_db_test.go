@@ -88,6 +88,33 @@ func TestScanWorkflowVersions(t *testing.T) {
 		t.Fatalf("run pin = %d %q", got.ScanWorkflowVersion, got.SpecDigest)
 	}
 
+	// A starter (system) workflow is run by every tenant: each can pin a
+	// version of it and read it back, and the version is shared (the
+	// template's), while another tenant's private workflow stays out of reach.
+	starter := shared.NewID()
+	if _, err := db.ExecContext(ctx, `INSERT INTO scan_workflows (id, tenant_id, name, is_system_template)
+		VALUES ($1, '00000000-0000-0000-0000-000000000000', $2, TRUE)`, starter.String(), "starter "+starter.String()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM scan_workflows WHERE id = $1`, starter.String())
+	})
+	starterSpec := scanworkflow.SpecOf(&scanworkflow.Workflow{ID: starter, Settings: scanworkflow.DefaultSettings(),
+		Steps: []*scanworkflow.Step{{ID: shared.NewID(), StepKey: "subs", StepOrder: 1, Tool: "subfinder", Condition: scanworkflow.AlwaysCondition()}}})
+	va, _, err := repo.PinVersion(ctx, tenant, starter, starterSpec)
+	if err != nil || va != 1 {
+		t.Fatalf("tenant pins a starter workflow: %d %v", va, err)
+	}
+	vb, _, err := repo.PinVersion(ctx, other, starter, starterSpec)
+	if err != nil || vb != 1 {
+		t.Fatalf("another tenant pins the same starter: %d %v, want the shared version 1", vb, err)
+	}
+	for _, tn := range []shared.ID{tenant, other} {
+		if got, err := repo.GetVersion(ctx, tn, starter, 1); err != nil || got.Steps[0].Tool != "subfinder" {
+			t.Fatalf("tenant %s reads the starter version: %+v %v", tn, got, err)
+		}
+	}
+
 	// Removing the workflow removes its versions.
 	if _, err := db.ExecContext(ctx, `DELETE FROM scan_runs WHERE id = $1`, run.ID.String()); err != nil {
 		t.Fatal(err)

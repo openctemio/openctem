@@ -33,6 +33,7 @@ export type ChannelType =
   | 'user' // user:{tenant_id}:{user_id} - The signed-in user's own notifications
   | 'triage' // triage:{finding_id} - AI triage progress
   | 'group' // group:{id} - Group membership/scope rule changes
+  | 'run' // run:{id} - A scan run changed (the live run map refreshes)
 
 /**
  * Create a channel string from type and ID

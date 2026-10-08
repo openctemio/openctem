@@ -54,8 +54,8 @@ describe('property schema', () => {
   it('groups a domain: schema keys in order, synonyms folded once, the rest under Other', () => {
     const { known, other } = groupProperties(
       {
-        ip: '202.160.124.20',
-        ip_addresses: ['202.160.124.20'],
+        ip: '198.51.100.20',
+        ip_addresses: ['198.51.100.20'],
         registrar: 'Example Registrar',
         aliases: ['old.example.com'],
         x_vendor: 'kept',
@@ -64,7 +64,7 @@ describe('property schema', () => {
       'domain'
     )
     expect(known.map((e) => e.key)).toEqual(['ip_addresses', 'registrar'])
-    expect(known[0]).toEqual({ key: 'ip_addresses', value: ['202.160.124.20'], format: 'ip' })
+    expect(known[0]).toEqual({ key: 'ip_addresses', value: ['198.51.100.20'], format: 'ip' })
     expect(other.map((e) => e.key)).toEqual(['port', 'x_vendor'])
   })
 

@@ -90,13 +90,13 @@ func testScan(scanner string, targets ...string) *scan.Scan {
 }
 
 func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{
-			{ID: shared.NewID(), Name: "10.0.0.5"},
+			{ID: shared.NewID(), Name: "198.51.100.5"},
 			{ID: shared.NewID(), Name: "app.example.com"},
 		}},
 		logger: logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei", "app.example.com", " 203.0.113.9 ")
 	sc.AssetGroupID = shared.NewID()
 
@@ -104,7 +104,7 @@ func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"app.example.com", "203.0.113.9", "10.0.0.5"} // deduped, direct first
+	want := []string{"app.example.com", "203.0.113.9", "198.51.100.5"} // deduped, direct first
 	if !reflect.DeepEqual(got.Targets, want) {
 		t.Fatalf("targets = %v, want %v", got.Targets, want)
 	}
@@ -115,13 +115,13 @@ func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
 
 // Exclusions are enforced server-side for direct targets and group members.
 func TestResolveScanTargets_RemovesExcluded(t *testing.T) {
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{
 			{ID: shared.NewID(), Name: "prod-db.internal.example.com"},
 		}},
 		scopeExclusions: &stubExclusions{values: map[string]bool{"prod-db.internal.example.com": true, "203.0.113.9": true}},
 		logger:          logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei", "203.0.113.9", "app.example.com")
 	sc.AssetGroupID = shared.NewID()
 
@@ -136,10 +136,10 @@ func TestResolveScanTargets_RemovesExcluded(t *testing.T) {
 
 // A failed exclusion lookup must stop the dispatch, never scan everything.
 func TestResolveScanTargets_ExclusionErrorFailsClosed(t *testing.T) {
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		scopeExclusions: &stubExclusions{err: errors.New("db down")},
 		logger:          logger.NewNop(),
-	}
+	})
 	if _, err := svc.resolveScanTargets(context.Background(), testScan("nuclei", "app.example.com")); err == nil {
 		t.Fatal("exclusion lookup failure must fail the dispatch")
 	}
@@ -160,7 +160,7 @@ func TestRecordResolvedTargets_AllExcludedRefused(t *testing.T) {
 // so the old "only the first target is scanned" warning is gone; the per-run
 // job cap is enforced here instead.
 func TestResolveScanTargets_SingleTargetScanner(t *testing.T) {
-	svc := &Service{logger: logger.NewNop()}
+	svc := allowAllChecks(&Service{logger: logger.NewNop()})
 	got, err := svc.resolveScanTargets(context.Background(), testScan("semgrep", "a", "b", "c"))
 	if err != nil {
 		t.Fatal(err)
@@ -315,11 +315,11 @@ func TestResolveScanTargets_AllAssetGroups(t *testing.T) {
 		g2: {groupAsset("b.example.com"), {ID: shared1.ID, Name: shared1.Name}, groupAsset("excluded.example.com")},
 		g3: {},
 	}}
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo:  repo,
 		scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}},
 		logger:          logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei")
 	sc.SetAssetGroupIDs([]shared.ID{g1, g2, g3, g2})
 
@@ -355,10 +355,10 @@ func TestResolveScanTargets_CapAcrossGroups(t *testing.T) {
 		return out
 	}
 	half := maxResolvedTargets/2 + 1
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &stubGroupsRepo{byGroup: map[shared.ID][]*assetgroup.GroupAsset{g1: mk("a", half), g2: mk("b", half)}},
 		logger:         logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei")
 	sc.SetAssetGroupIDs([]shared.ID{g1, g2})
 	if _, err := svc.resolveScanTargets(context.Background(), sc); !errors.Is(err, shared.ErrValidation) {
@@ -461,7 +461,7 @@ func TestResolveScanTargets_GroupLargerThanOnePage(t *testing.T) {
 	for i := range members {
 		members[i] = &assetgroup.GroupAsset{ID: shared.NewID(), Name: fmt.Sprintf("h%03d.example.com", i)}
 	}
-	svc := &Service{assetGroupRepo: &pagedGroupAssetsRepo{assets: members}, logger: logger.NewNop()}
+	svc := allowAllChecks(&Service{assetGroupRepo: &pagedGroupAssetsRepo{assets: members}, logger: logger.NewNop()})
 	sc := testScan("nuclei")
 	sc.AssetGroupID = shared.NewID()
 
@@ -538,11 +538,11 @@ func TestResolveScanTargets_SkipsUnconfirmedGroupMembers(t *testing.T) {
 		review.ID.String(): attribution.StateNeedsReview,
 		typed.ID.String():  attribution.StateNeedsReview,
 	}}
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo:  &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{confirmed, review, typed}},
 		attributionGate: gate,
 		logger:          logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei", "api.listed.com")
 	sc.AssetGroupID = shared.NewID()
 
@@ -588,11 +588,11 @@ func TestResolveScanTargets_GroupMemberAddressesAndArchived(t *testing.T) {
 	groupAssetProps[db.ID] = map[string]any{"ip": "10.9.9.11"}
 	t.Cleanup(func() { delete(groupAssetProps, web.ID); delete(groupAssetProps, db.ID) })
 
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo:  &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{web, db, app, old}},
 		scopeExclusions: &stubExclusions{values: map[string]bool{"10.9.9.10": true, "10.9.9.11": true}},
 		logger:          logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei", "web.example.com")
 	sc.AssetGroupID = shared.NewID()
 
@@ -616,4 +616,20 @@ func TestResolveScanTargets_GroupMemberAddressesAndArchived(t *testing.T) {
 	if !found {
 		t.Fatalf("want a warning about the skipped archived asset, got %v", got.Warnings)
 	}
+}
+
+// allowAllChecks wires the checks a test does not exercise: no exclusion, no
+// ownership refusal, an actor who may scan everything. resolveScanTargets
+// fails closed without them.
+func allowAllChecks(s *Service) *Service {
+	if s.scopeExclusions == nil {
+		s.scopeExclusions = &stubExclusions{}
+	}
+	if s.attributionGate == nil {
+		s.attributionGate = &stubGate{}
+	}
+	if s.actScope == nil {
+		s.actScope = &stubActScope{}
+	}
+	return s
 }

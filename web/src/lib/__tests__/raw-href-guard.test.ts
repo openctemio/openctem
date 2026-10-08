@@ -75,8 +75,15 @@ const REVIEWED = new Set([
   'components/layout/org-card.tsx|Link|href={membersLink.url}',
   'components/layout/org-card.tsx|Link|href={apiKeysLink.url}',
   'features/shared/components/section-tabs.tsx|Link|href={tab.href}',
-  'features/assets/components/overview/asset-categories-view.tsx|Link|href={item.url}',
-  'features/assets/components/overview/asset-categories-view.tsx|Link|href={baseUrl}',
+  // Inventory overview: same-origin /assets?... paths built by buildOverview
+  // (serializeInventoryFilters) and the fixed per-lens hint routes.
+  'features/assets/components/overview/asset-categories-view.tsx|Link|href={href}',
+  'features/assets/components/overview/asset-categories-view.tsx|Link|href={lens.href}',
+  'features/assets/components/overview/asset-categories-view.tsx|Link|href={hint.href}',
+  'features/assets/components/overview/asset-categories-view.tsx|Link|href={t.href}',
+  'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.unownedHref}',
+  'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.highRiskHref}',
+  'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.reviewHref}',
   'features/dashboard/components/ctem/ctem-loop.tsx|Link|href={stage.href}',
   'features/scoping/components/scoping-overview.tsx|Link|href={r.href}',
   'app/(dashboard)/(validation)/validation/page.tsx|Link|href={a.href}',
@@ -89,7 +96,6 @@ const REVIEWED = new Set([
   // Same-origin paths built in the component from route builders/literals.
   'app/(dashboard)/(discovery)/components/page.tsx|Link|href={href}',
   'features/assets/components/linked-assets-panel.tsx|Link|href={viewAllHref}',
-  'features/assets/components/asset-page.tsx|Link|href={pathname}',
   'features/attack-surface/components/path-graph.tsx|Link|href={node.href}',
   'features/dashboard/components/ctem/fix-next-queue.tsx|Link|href={it.href}',
   'features/auth/components/password-token-form.tsx|Link|href={copy.newLink.href}',

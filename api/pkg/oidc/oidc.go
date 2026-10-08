@@ -29,6 +29,7 @@ import (
 	"time"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // Token endpoint client authentication methods (OIDC Core 9).
@@ -217,7 +218,7 @@ func (c *Client) Exchange(ctx context.Context, r ExchangeRequest) (string, error
 		return "", fmt.Errorf("token request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	body, err := httpsec.ReadLimited(resp.Body, maxBody)
 	if err != nil {
 		return "", fmt.Errorf("token response: %w", err)
 	}
@@ -381,7 +382,7 @@ func (c *Client) get(ctx context.Context, rawURL string) ([]byte, error) {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxBody))
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	return httpsec.ReadLimited(resp.Body, maxBody)
 }
 
 // NewPKCE returns an RFC 7636 verifier and its S256 challenge.

@@ -506,6 +506,17 @@ add:
 
 Details: `docs/architecture/plans-and-limits.md`.
 
+## Revision 12: idle Free workspaces
+
+A Free organization nobody signs in to is reminded at 60 days, read-only at
+90 (changes refused, reads and exports kept), warned again at 113 and due for
+deletion at 120; a sign-in by any member undoes it at once. The platform
+administrators are alerted at deletion_due and delete from the console;
+nothing is deleted automatically. Organizations > an organization shows the
+stage and lets an ops_admin+ exempt it with a reason (audited).
+
+Details: `docs/architecture/idle-workspaces.md`.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/

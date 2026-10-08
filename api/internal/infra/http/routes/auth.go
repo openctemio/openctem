@@ -32,7 +32,8 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 	oauthRoutesLive := h.OAuth != nil
 	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, oauthRoutesLive, log).
 		WithTenantCreationMode(cfg.Auth.TenantCreationMode).
-		WithRegistrationEnabled(cfg.Auth.SelfServiceTenantCreation())
+		WithRegistrationEnabled(cfg.Auth.SelfServiceTenantCreation()).
+		WithPasswordPolicy(cfg.Auth)
 	if h.SignupPolicy != nil {
 		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
 	}

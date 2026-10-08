@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
@@ -200,6 +201,8 @@ func (h *UserDashboardHandler) handleError(w http.ResponseWriter, err error) {
 		apierror.NotFound("Dashboard").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict(strings.TrimPrefix(err.Error(), shared.ErrConflict.Error()+": ")).WriteJSON(w)
 	default:
 		h.logger.Error("user dashboard error", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)

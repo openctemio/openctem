@@ -38,19 +38,19 @@ func TestFindingVEXDocument_DB(t *testing.T) {
 			VALUES ($1, $2, $3, $4, $5, 'trivy', 'm', 'high', $6, $7, $8)`, id, tenant, asset, component, source, "fp-"+id.String(), status, cve)
 		return id
 	}
-	onHost := insert(f.tenant, f.host, lodash20, "CVE-2024-0001", "open", "sca")
+	onHost := insert(f.tenant, f.host, lodash20, "CVE-2024-0001", "new", "sca")
 	onOther := insert(f.tenant, f.otherHost, lodash20, "CVE-2024-0001", "new", "sca")
-	pentest := insert(f.tenant, f.host, lodash20, "CVE-2024-0001", "open", "pentest")
+	pentest := insert(f.tenant, f.host, lodash20, "CVE-2024-0001", "new", "pentest")
 	resolved := insert(f.tenant, f.host, lodash20, "CVE-2024-0001", "resolved", "sca")
-	otherCVE := insert(f.tenant, f.host, lodash20, "CVE-2024-9999", "open", "sca")
-	otherPkg := insert(f.tenant, f.host, other, "CVE-2024-0001", "open", "sca")
+	otherCVE := insert(f.tenant, f.host, lodash20, "CVE-2024-9999", "new", "sca")
+	otherPkg := insert(f.tenant, f.host, other, "CVE-2024-0001", "new", "sca")
 
 	otherTenant := shared.NewID()
 	f.exec(t, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, otherTenant, "vexdoc-o-"+otherTenant.String())
 	t.Cleanup(func() { _, _ = f.db.ExecContext(ctx, "DELETE FROM tenants WHERE id = $1", otherTenant.String()) })
 	otherAsset := shared.NewID()
 	f.exec(t, `INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, 'h-o', 'host')`, otherAsset, otherTenant)
-	foreign := insert(otherTenant, otherAsset, lodash20, "CVE-2024-0001", "open", "sca")
+	foreign := insert(otherTenant, otherAsset, lodash20, "CVE-2024-0001", "new", "sca")
 
 	ids := func(cs []vulnerability.VEXCandidate) map[shared.ID]bool {
 		m := map[shared.ID]bool{}
@@ -121,10 +121,10 @@ func TestFindingVEXDocument_DB(t *testing.T) {
 	if status != "false_positive" || method != "vex_not_affected" || vexStatus == nil || *vexStatus != "not_affected" {
 		t.Errorf("closed finding = %s %s %v", status, method, vexStatus)
 	}
-	if err := f.db.QueryRowContext(ctx, `SELECT status FROM findings WHERE id = $1`, pentest.String()).Scan(&status); err != nil || status != "open" {
+	if err := f.db.QueryRowContext(ctx, `SELECT status FROM findings WHERE id = $1`, pentest.String()).Scan(&status); err != nil || status != "new" {
 		t.Errorf("pentest finding = %s %v", status, err)
 	}
-	if err := f.db.QueryRowContext(ctx, `SELECT status, vex_status FROM findings WHERE id = $1`, foreign.String()).Scan(&status, &vexStatus); err != nil || status != "open" || vexStatus != nil {
+	if err := f.db.QueryRowContext(ctx, `SELECT status, vex_status FROM findings WHERE id = $1`, foreign.String()).Scan(&status, &vexStatus); err != nil || status != "new" || vexStatus != nil {
 		t.Errorf("another tenant's finding changed: %s %v %v", status, vexStatus, err)
 	}
 
