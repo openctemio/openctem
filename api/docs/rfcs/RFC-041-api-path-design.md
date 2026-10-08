@@ -1,7 +1,8 @@
 # RFC-041: API path design, plane separation and a route style guard
 
-> Status: **Accepted** (owner decisions 2026-10-03: D1–D12 approved as
-> recommended, §8). Design PR #871. P0 merged; P1 in progress (§10).
+> Status: **Accepted** (decisions D1–D12 approved 2026-10-03 as
+> recommended, §8). Design PR #871. P0 implemented; P1 in progress (§10);
+> the `/hooks/{provider}` move (D5) is not built yet.
 > Scope: `api/` (routes, OpenAPI, edge gateway), `web/` (API call sites,
 > generated types), sdk-go and the sensor (only through the protocol v2
 > feature negotiation of RFC-029), helm charts (edge rules).
@@ -11,8 +12,8 @@
 > Companion: [`docs/architecture/api-conventions.md`](../architecture/api-conventions.md),
 > the short style guide new routes follow.
 >
-> Owner's question (2026-10-03): should the API paths be redesigned to be the
-> best they can be? Research deeply, propose the best option.
+> Question (2026-10-03): should the API paths be redesigned to be the
+> best they can be? This RFC evaluates the options and proposes one.
 
 ## 1. Answer in short
 
@@ -524,7 +525,7 @@ Changes:
 | Security benefit | closes P4 and the most direct P1 gap; does nothing for plane separation (P2) or the second tenant model; RFC-040 keeps a hand-maintained route list |
 | Verdict | necessary but not sufficient; it is the first step of B′ |
 
-### Option B: new top-level prefix per plane (the owner's example)
+### Option B: new top-level prefix per plane
 
 Prefixes:
 - `/admin/api/v1/...` for platform admin;
@@ -551,7 +552,7 @@ The plane table, in code (`routes/plane`) and checked by CI:
 | self | `/api/v1/me/` | app host | session | — |
 | auth | `/api/v1/auth/` | app host | none / rate-limited | strict per-IP limits |
 | admin | `/api/v1/admin/` | `OPENCTEM_ADMIN_HOSTNAME` (new) | admin session / `X-Admin-API-Key` | IP allowlist, MFA, can be dropped at the edge |
-| sensor | `/api/v2/sensor/` (+ `/api/v1/agent/` until v1 removal) | `OPENCTEM_SENSOR_HOSTNAME` (RFC-040) | sensor key / RFC 9421 | sensor gateway, body limits per route |
+| sensor | `/api/v2/sensor/` (`/api/v1/agent/` removed 2026-10-05) | `OPENCTEM_SENSOR_HOSTNAME` (RFC-040) | sensor key / RFC 9421 | sensor gateway, body limits per route |
 | inbound | `/hooks/` (new; legacy `/api/v1/webhooks/incoming/`) | app or sensor host | HMAC per tenant | small bodies, per-provider limits |
 | scim | `/scim/v2/` | app host | SCIM bearer | — |
 | mcp | `/api/v1/mcp` | app host | `oct_` | per-key limits |
@@ -623,7 +624,7 @@ by side, and migrate the web, MCP, integrations, docs, SDK and sensors.
 | | |
 |---|---|
 | Cost | 947 operations; 1,159 web call sites; regenerating every type; rewriting the API docs; MCP tool surface; a dual-stack period of at least 6–12 months during which every security fix lands twice |
-| Risk | high. Two live versions double the surface (OWASP API9). AIP-180 counts a rename as remove plus add, so every documented caller breaks at removal. The owner's EASM priority (RFC-036) would wait behind it |
+| Risk | high. Two live versions double the surface (OWASP API9). AIP-180 counts a rename as remove plus add, so every documented caller breaks at removal. The EASM work (RFC-036) would wait behind it |
 | Security benefit | the same as B′, and it arrives later |
 | Verdict | not recommended. A v2 is justified when **semantics** change (resource model, auth model), not spelling. Spelling converges under the lint at near-zero cost |
 
@@ -684,7 +685,7 @@ The release train runs every other Monday (RFC-037), and dates are
 | P1 | trains of 2026-10-26 and 2026-11-09 | invitation token to body (aliases, `Deprecation` now); SSO gate decision for the URL-tenant chain (fix if the test confirms the gap); Caddy routes by plane table; stale `/platform/*` rule removed; optional admin hostname; fix the live phantom web calls | web, gateway |
 | P2 | 2026-11 → 2026-12 | `/api/v1/organization/*` and `/api/v1/me/*` added, web moved in the same release, old paths aliased with `Deprecation`; sdk-go `evidence` and `credentials` v2 features; `/hooks/{provider}` (if D5) | web, SDK (optional), webhook docs |
 | P3 | 2027-01-15 | **removal** of the URL-tenant, `/users/me` and invitation-path aliases (web-only; one quarter after deprecation, telemetry at zero) | none if telemetry is zero |
-| P4 | 2027-04-01 + telemetry | protocol v1 removal per RFC-029 §5.4 (`/api/v1/agent/*`, the `/agents` 308s, `/api/v1/validation/evidence`); `/api/v1/webhooks/incoming/*` removed after 6 months of `Sunset` **and** 30 days of zero calls (customers re-point their Jira/GitHub webhooks) | sensors on v1 only (by then RFC-032 enrollment and protocol v2 are the norm), webhook owners. **Precondition:** v1 ingest routes without a v2 successor (`ingest/sarif`, `ingest/recon`, `ingest/scan`, `scans`, `telemetry-events`), which CI pipelines and the docs use, must first gain v2 features (RFC-029 results media types), or they stay outside the v1 removal. **Done early, 2026-10-05** (owner decision, zero v1 calls on live): all of `/api/v1/agent/*`, including the routes without a successor, and the `/agents` 308s were removed; `/api/v1/validation/evidence` stays |
+| P4 | 2027-04-01 + telemetry | protocol v1 removal per RFC-029 §5.4 (`/api/v1/agent/*`, the `/agents` 308s, `/api/v1/validation/evidence`); `/api/v1/webhooks/incoming/*` removed after 6 months of `Sunset` **and** 30 days of zero calls (customers re-point their Jira/GitHub webhooks) | sensors on v1 only (by then RFC-032 enrollment and protocol v2 are the norm), webhook owners. **Precondition:** v1 ingest routes without a v2 successor (`ingest/sarif`, `ingest/recon`, `ingest/scan`, `scans`, `telemetry-events`), which CI pipelines and the docs use, must first gain v2 features (RFC-029 results media types), or they stay outside the v1 removal. **Done early, 2026-10-05** (decided once telemetry showed zero v1 calls): all of `/api/v1/agent/*`, including the routes without a successor, and the `/agents` 308s were removed; `/api/v1/validation/evidence` stays |
 
 Parameter-name normalisation (P6) can happen in any release, area by area,
 because it does not change the wire. Each batch regenerates the spec and the
@@ -746,9 +747,9 @@ spec, plus the sensor and SCIM documents. This closes P3's phantom calls.
 the spec's parameter names equal the router's. Unlike checks A/B/C, it does
 not normalise names.
 
-## 8. Decisions for the owner
+## 8. Decisions
 
-**Approved by the owner on 2026-10-03: every decision as recommended below.**
+**Approved 2026-10-03: every decision as recommended below.**
 Two notes from the approval:
 
 - D5: the old `/api/v1/webhooks/incoming/*` aliases stay until the

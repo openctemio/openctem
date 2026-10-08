@@ -65,3 +65,32 @@ func TestMapKeepsPaging(t *testing.T) {
 		t.Fatalf("Map = %+v", got)
 	}
 }
+
+// A top-N list reads limit with the same validation: default when missing,
+// capped above the maximum, refused when not a positive whole number.
+func TestLimitFromRequest(t *testing.T) {
+	for _, c := range []struct {
+		query   string
+		want    int
+		invalid bool
+	}{
+		{"", 50, false},
+		{"limit=10", 10, false},
+		{"limit=5000", 100, false},
+		{"limit=0", 0, true},
+		{"limit=-1", 0, true},
+		{"limit=ten", 0, true},
+	} {
+		q, _ := url.ParseQuery(c.query)
+		n, err := LimitFromRequest(q, 50, 100)
+		if c.invalid {
+			if !errors.Is(err, ErrInvalid) {
+				t.Errorf("%q: err = %v, want ErrInvalid", c.query, err)
+			}
+			continue
+		}
+		if err != nil || n != c.want {
+			t.Errorf("%q: %d %v, want %d", c.query, n, err, c.want)
+		}
+	}
+}

@@ -20,17 +20,17 @@ func TestEffectiveRole(t *testing.T) {
 		groups []string
 		want   string
 	}{
-		{"no groups → member default", nil, "member"},
-		{"non-role groups → member default", []string{"Engineering", "All Staff"}, "member"},
+		{"no groups → no role (current kept)", nil, ""},
+		{"non-role groups → no role", []string{"Engineering", "All Staff"}, ""},
 		{"viewer only", []string{"viewer"}, "viewer"},
 		{"member only", []string{"member"}, "member"},
 		// No name default for admin: a group named "admin" grants nothing
 		// unless the owner maps it (23b S-H1).
-		{"admin name alone grants nothing", []string{"admin"}, "member"},
+		{"admin name alone grants nothing", []string{"admin"}, ""},
 		{"admin name does not beat viewer", []string{"viewer", "admin"}, "viewer"},
 		{"member wins over viewer", []string{"viewer", "member"}, "member"},
 		{"case-insensitive", []string{"VIEWER"}, "viewer"},
-		{"owner is never mapped", []string{"owner"}, "member"},
+		{"owner is never mapped", []string{"owner"}, ""},
 		{"role group mixed with custom", []string{"Engineering", "viewer"}, "viewer"},
 	}
 	for _, tc := range tests {
@@ -59,10 +59,10 @@ func TestEffectiveRole_WithMappings(t *testing.T) {
 		{"custom name mapped to viewer", []string{"Acme-OpenCTEM-Readers"}, "viewer"},
 		{"case-insensitive custom mapping", []string{"ACME-OPENCTEM-ADMINS"}, "admin"},
 		{"mapping wins highest across groups", []string{"Acme-OpenCTEM-Readers", "Acme-OpenCTEM-Admins"}, "admin"},
-		{"admin mapping not set by the owner grants nothing", []string{"Legacy-Admins"}, "member"},
+		{"admin mapping not set by the owner grants nothing", []string{"Legacy-Admins"}, ""},
 		{"non-owner admin mapping does not beat viewer", []string{"Legacy-Admins", "Acme-OpenCTEM-Readers"}, "viewer"},
 		{"unmapped falls back to name-match", []string{"viewer"}, "viewer"},
-		{"unmapped custom group → member default", []string{"Engineering"}, "member"},
+		{"unmapped custom group → no role", []string{"Engineering"}, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -419,5 +419,16 @@ func TestSetRoleMappings_RequiresActor(t *testing.T) {
 	err := f.svc.SetRoleMappings(context.Background(), f.tenant, map[string]string{"x": "viewer"}, auditapp.AuditContext{})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("no actor: err = %v, want validation error", err)
+	}
+}
+
+// Least privilege (RFC-058): a group change without a role group never
+// raises anyone; a viewer stays a viewer.
+func TestReconcile_NoRoleGroupNeverRaises(t *testing.T) {
+	f := newGroupFixture(t)
+	u := f.member(tenantdom.RoleViewer)
+	f.group("Engineering", u)
+	if f.roleOf(u) != tenantdom.RoleViewer || len(f.roles.calls) != 0 {
+		t.Errorf("role %s calls %+v, want the viewer left alone", f.roleOf(u), f.roles.calls)
 	}
 }

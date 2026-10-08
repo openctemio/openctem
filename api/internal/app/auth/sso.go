@@ -18,8 +18,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
@@ -50,7 +52,7 @@ var (
 	// auto-provisioning (FIX 2). The caller surfaces a generic "contact your
 	// admin" outcome.
 	ErrSSONotAMember = errors.New("not a member of this organization")
-	// ErrSSORegistrationDisabled is returned when AUTH_ALLOW_REGISTRATION is
+	// ErrSSORegistrationDisabled is returned when the sign-up policy is
 	// false and an SSO/social login would create a brand-new user (FIX 4).
 	ErrSSORegistrationDisabled = errors.New("registration is disabled")
 	// ErrAccountLinkRequiresVerification is the proof-before-link refusal: a
@@ -107,6 +109,8 @@ type SSOService struct {
 	// the account by it first (federated_identity.go). Required: a login that
 	// carries an identity is refused when it is not wired.
 	identities useridentity.Repository
+	// jitApprovals tells administrators about newcomers waiting for approval.
+	jitApprovals JITApprovalNotifier
 }
 
 // SetIdentityRepo wires the federated identity store.
@@ -785,6 +789,9 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 	// An offboarded tombstone is not a membership: only JIT may re-admit the
 	// person (from zero), under the same rules as a newcomer.
 	if m, err := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); err == nil && m != nil && !m.IsOffboarded() {
+		if m.AwaitsApproval() {
+			return ErrSSOAwaitingApproval
+		}
 		return nil
 	}
 
@@ -799,18 +806,30 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 	if err != nil {
 		return fmt.Errorf("build membership: %w", err)
 	}
+	held, err := holdIfApprovalRequired(t, membership)
+	if err != nil {
+		return err
+	}
 	if err := s.tenantMemberRepo.CreateMembership(ctx, membership); err != nil {
 		// A concurrent login may have created the membership between our lookup
 		// and here — re-check before failing (fail-closed on genuine failure).
 		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && !m.IsOffboarded() {
 			return nil
 		}
+		// No free seat on the organization's plan: say so.
+		if lim := (*plan.ErrLimitReached)(nil); errors.As(err, &lim) {
+			return err
+		}
 		s.logger.Warn("SSO auto-provision membership failed",
 			"user_id", u.ID().String(), "tenant_id", t.ID().String(), "error", err)
 		return ErrSSONotAMember
 	}
 	s.logger.Info("SSO auto-provisioned tenant membership",
-		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", membership.Role().String())
+		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", membership.Role().String(), "held", held)
+	if held {
+		s.notifyAwaitingApproval(ctx, t, email)
+		return ErrSSOAwaitingApproval
+	}
 	return nil
 }
 
@@ -1367,11 +1386,16 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 
 	// No account yet. The organization's SSO is what admits new people,
 	// independent of public self-registration
-	// (AUTH_ALLOW_REGISTRATION): the account is created only when this login
+	// (the sign-up policy): the account is created only when this login
 	// would be just-in-time provisioned into the organization (auto-provision
 	// on, DNS-verified email domain, allowed domains). Checking BEFORE creating
 	// the account means a refused login leaves no orphan account behind.
-	if !s.jitProvisioningAllowed(ctx, t, rp, userInfo.Email) {
+	// The one admission rule (signup.Admit): only an organization's SSO admits
+	// a new person here, in either sign-up mode.
+	if !signupdom.Admit(signupdom.Default(), signupdom.Identity{
+		Intent:      signupdom.IntentAccount,
+		JITEligible: s.jitProvisioningAllowed(ctx, t, rp, userInfo.Email),
+	}).Admitted() {
 		s.logger.Warn("SSO login refused: no account and just-in-time provisioning not permitted",
 			"provider", provider, "source", rp.source)
 		return nil, ErrSSONotAMember
@@ -1840,7 +1864,11 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 	}
 
 	if newUser && s.tenantMemberRepo != nil {
+		held := false
 		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), s.jitRoleFor(ctx, t, email, defaultRole), nil)
+		if memErr == nil {
+			held, memErr = holdIfApprovalRequired(t, membership)
+		}
 		if memErr == nil {
 			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
 		}
@@ -1849,8 +1877,20 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 			// rather than issue a session with no membership.
 			if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr != nil || m == nil {
 				s.logger.Warn("federated auto-provision membership failed", "user_id", u.ID().String(), "error", memErr)
+				if lim := (*plan.ErrLimitReached)(nil); errors.As(memErr, &lim) {
+					return nil, memErr
+				}
 				return nil, ErrSSONotAMember
 			}
+		} else if held {
+			s.notifyAwaitingApproval(ctx, t, email)
+		}
+	}
+	// A membership that waits for an administrator's approval gets no
+	// session in the organization (RFC-058).
+	if s.tenantMemberRepo != nil {
+		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && m.AwaitsApproval() {
+			return nil, ErrSSOAwaitingApproval
 		}
 	}
 

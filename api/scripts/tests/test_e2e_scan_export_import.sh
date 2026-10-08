@@ -9,7 +9,7 @@
 #   -> Auth Check -> Docker Log Check
 #
 # Prerequisites:
-#   - API running at localhost:8080 with AUTH_ALLOW_REGISTRATION=true
+#   - API running at localhost:8080 with the sign-up policy in self_service (TENANT_CREATION_MODE=self_service on a fresh database)
 #   - jq and curl installed
 #   - Docker running (for log check, optional)
 #

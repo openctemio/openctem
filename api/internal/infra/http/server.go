@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/config"
@@ -21,6 +22,34 @@ type Server struct {
 	config       *config.Config
 	logger       *logger.Logger
 	cleanupFuncs []func() // cleanup functions to call on shutdown
+	// prefixes are handlers served ahead of the router (MountPrefix).
+	prefixes []prefixHandler
+}
+
+type prefixHandler struct {
+	prefix  string
+	handler http.Handler
+}
+
+// MountPrefix serves every request whose path starts with prefix+"/" with h,
+// ahead of the router and its global middleware. It is for a surface that
+// carries its own guards and cannot run behind the global request timeout
+// and buffered writers: the sensor protocol v3 HTTPS binding, whose control
+// stream lives for minutes (docs/rfcs/RFC-059-sensor-transport-v3.md). Call
+// it before Start.
+func (s *Server) MountPrefix(prefix string, h http.Handler) {
+	s.prefixes = append(s.prefixes, prefixHandler{prefix: strings.TrimSuffix(prefix, "/") + "/", handler: h})
+	router := s.router.Handler()
+	prefixes := append([]prefixHandler(nil), s.prefixes...)
+	s.httpServer.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, p := range prefixes {
+			if strings.HasPrefix(r.URL.Path, p.prefix) {
+				p.handler.ServeHTTP(w, r)
+				return
+			}
+		}
+		router.ServeHTTP(w, r)
+	})
 }
 
 // ServerOption is a function that configures the server.

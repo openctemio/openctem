@@ -13,6 +13,7 @@ import useSWRMutation from 'swr/mutation'
 import { adminFetch, AdminApiError } from '@/features/admin-console/api/admin-client'
 import type {
   CreateVerifiedDomainRequest,
+  UpdateDomainJITRequest,
   VerifiedDomain,
   VerifiedDomainListResponse,
 } from '../types/verified-domain.types'
@@ -60,5 +61,35 @@ export function useDeleteVerifiedDomain(tenantId: string | null) {
     tenantId ? base(tenantId) : null,
     async (p: string, { arg }: { arg: string }) =>
       adminFetch<void>(`${p}/${arg}`, { method: 'DELETE' })
+  )
+}
+
+/**
+ * A change that waits for an owner of the organization (202): raising a
+ * domain's provisioning is approved by an owner (RFC-058).
+ */
+export interface PendingSSOChange {
+  id: string
+  kind: string
+  status: string
+  expires_at?: string
+}
+
+/** True for a 202 answer that waits for an owner's approval. */
+export function isPendingChange(r: unknown): r is PendingSSOChange {
+  return (
+    !!r && typeof r === 'object' && (r as { status?: unknown }).status === 'pending' && 'kind' in r
+  )
+}
+
+/** Change a domain's just-in-time provisioning (RFC-058). */
+export function useUpdateDomainJIT(tenantId: string | null) {
+  return useSWRMutation(
+    tenantId ? base(tenantId) : null,
+    async (p: string, { arg }: { arg: { id: string } & UpdateDomainJITRequest }) =>
+      adminFetch<VerifiedDomain | PendingSSOChange>(`${p}/${arg.id}`, {
+        method: 'PATCH',
+        body: { jit_enabled: arg.jit_enabled, jit_role: arg.jit_role },
+      })
   )
 }

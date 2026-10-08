@@ -97,10 +97,13 @@ func (s *ProvisioningService) SetDomainVerifier(v DomainVerifier) {
 // NewProvisioningService wires the service.
 func NewProvisioningService(users UserStore, members MembershipReader, manager MembershipManager, log *logger.Logger) *ProvisioningService {
 	return &ProvisioningService{
-		users:       users,
-		members:     members,
-		manager:     manager,
-		defaultRole: string(tenantdom.RoleMember),
+		users:   users,
+		members: members,
+		manager: manager,
+		// Least privilege: a provisioned person is a viewer (with no data
+		// until a team includes them) unless an identity-provider group maps
+		// them higher.
+		defaultRole: string(tenantdom.RoleViewer),
 		logger:      log.With("service", "scim-provisioning"),
 	}
 }

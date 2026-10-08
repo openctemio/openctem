@@ -265,7 +265,7 @@ func TestFix3_EntraUnverifiedEmail_NeverProducesUserInfo(t *testing.T) {
 }
 
 // =============================================================================
-// FIX 4 — federated login respects AUTH_ALLOW_REGISTRATION
+// FIX 4 — federated login respects the sign-up policy
 // =============================================================================
 
 // SSO admits people for its organization regardless of public self-registration
@@ -273,7 +273,7 @@ func TestFix3_EntraUnverifiedEmail_NeverProducesUserInfo(t *testing.T) {
 // brand-new user on a verified domain is created by JIT ...
 func TestSSO_RegistrationDisabled_JITStillAdmitsVerifiedDomain(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: nil} // no existing user
-	svc := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false},
+	svc := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: config.AuthConfig{},
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}}}
 
 	got, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
@@ -287,7 +287,7 @@ func TestSSO_RegistrationDisabled_JITStillAdmitsVerifiedDomain(t *testing.T) {
 // ... and without auto-provisioning the same login is refused with nothing created.
 func TestSSO_RegistrationDisabled_NoAutoProvision_Refused(t *testing.T) {
 	repo := &ssoFakeUserRepo{byEmail: nil}
-	svc := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false},
+	svc := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: config.AuthConfig{},
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}}}
 
 	_, err := svc.findOrCreateUser(context.Background(), ssoTn(t),
@@ -303,7 +303,7 @@ func TestSSO_RegistrationDisabled_NoAutoProvision_Refused(t *testing.T) {
 
 // SSO: registration disabled STILL binds a pre-invited (passwordless local)
 // account — provided proof-before-link is satisfied (IdP-verified email AND a
-// DNS-verified tenant domain). The AllowRegistration gate must not block the
+// DNS-verified tenant domain). The sign-up policy must not block the
 // claim of an existing seat once ownership is proven.
 func TestFix4_SSO_RegistrationDisabled_BindsExisting(t *testing.T) {
 	invited, err := userdom.New("invited@corp.com", "Invited") // local, no password
@@ -318,7 +318,7 @@ func TestFix4_SSO_RegistrationDisabled_BindsExisting(t *testing.T) {
 		userRepo:       repo,
 		identities:     newMemIdentities(),
 		logger:         logger.NewNop(),
-		authConfig:     config.AuthConfig{AllowRegistration: false},
+		authConfig:     config.AuthConfig{},
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"corp.com": true}},
 	}
 
@@ -336,11 +336,11 @@ func TestFix4_SSO_RegistrationDisabled_BindsExisting(t *testing.T) {
 // OAuth: registration disabled ⇒ a brand-new social user is refused.
 func TestFix4_OAuth_RegistrationDisabled_BlocksNewUser(t *testing.T) {
 	repo := &fakeUserRepo{byEmail: nil}
-	svc := &OAuthService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false}}
+	svc := &OAuthService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{}}
 
 	_, err := svc.findOrCreateUser(context.Background(),
 		&OAuthUserInfo{Email: "new@corp.com", Name: "New"}, OAuthProviderGoogle)
-	if !errors.Is(err, ErrRegistrationDisabled) {
+	if !errors.Is(err, ErrSignupNotAvailable) {
 		t.Fatalf("registration disabled must block new OAuth user, got %v", err)
 	}
 	if repo.created != nil {
@@ -358,7 +358,7 @@ func TestFix4_OAuth_RegistrationDisabled_BindsExisting(t *testing.T) {
 		t.Skip("userdom.New unexpectedly set a password")
 	}
 	repo := &fakeUserRepo{byEmail: invited}
-	svc := &OAuthService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{AllowRegistration: false}}
+	svc := &OAuthService{userRepo: repo, logger: logger.NewNop(), authConfig: config.AuthConfig{}}
 
 	got, err := svc.findOrCreateUser(context.Background(),
 		&OAuthUserInfo{Email: "invited@corp.com"}, OAuthProviderGoogle)

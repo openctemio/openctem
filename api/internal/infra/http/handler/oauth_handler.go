@@ -240,6 +240,8 @@ func (h *OAuthHandler) handleOAuthError(w http.ResponseWriter, err error) {
 		apierror.BadRequest("Invalid or expired state token").WriteJSON(w)
 	case errors.Is(err, auth.ErrOAuthExchangeFailed):
 		apierror.BadRequest("Failed to exchange authorization code").WriteJSON(w)
+	case errors.Is(err, auth.ErrSignupNotAvailable):
+		writeSignupNotAvailable(w)
 	case errors.Is(err, auth.ErrOAuthUserInfoFailed):
 		apierror.BadRequest("Failed to get user information from provider").WriteJSON(w)
 	default:

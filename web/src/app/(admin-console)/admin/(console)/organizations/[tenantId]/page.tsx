@@ -18,6 +18,7 @@ import {
 import { useOrganization } from '@/features/admin-console/api/use-admin-organizations'
 import { useAdmin } from '@/features/admin-console/components/admin-console-shell'
 import { OrganizationAuditChainPanel } from '@/features/admin-console/components/organization-audit-chain-panel'
+import { OrganizationPlanPanel } from '@/features/admin-console/components/organization-plan-panel'
 import { OrganizationUsersSection } from '@/features/admin-console/components/organization-users-section'
 import { SSOEnforcementCard } from '@/features/admin-console/components/sso-enforcement-card'
 import { SSOPostureBadges } from '@/features/admin-console/components/sso-posture-badges'
@@ -106,6 +107,7 @@ export default function AdminOrganizationPage({
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="users">Users</TabsTrigger>
+              <TabsTrigger value="plan">Plan</TabsTrigger>
               <TabsTrigger value="sso">Single sign-on</TabsTrigger>
               <TabsTrigger value="audit-chain">Audit chain</TabsTrigger>
             </TabsList>
@@ -138,6 +140,10 @@ export default function AdminOrganizationPage({
                 canManage={canManageUsers}
                 onChanged={refresh}
               />
+            </TabsContent>
+
+            <TabsContent value="plan" className="mt-4">
+              <OrganizationPlanPanel tenantId={org.id} canManage={canManageUsers} />
             </TabsContent>
 
             <TabsContent value="sso" className="mt-4 space-y-5">

@@ -55,6 +55,32 @@ export interface MemberWithUser extends Member {
   rbac_roles?: MemberRBACRole[]
   /** Account created by an admin whose password has not been set yet. */
   pending_setup?: boolean
+  /**
+   * External members (api RFC-058): someone whose email domain the
+   * organization does not hold. They join by invitation only, as viewers
+   * with no data scope, and (when no organization manages their address)
+   * with an end date.
+   */
+  kind?: MemberKind
+  /** The organization that manages an external member's address. */
+  home_organization?: string
+  /** Owners and admins only. */
+  access_expires_at?: string
+  /** Why the membership is disabled: expired, home_access_ended, ... */
+  suspended_reason?: string
+  /** The member's email domain lost its verified SSO proof here. */
+  domain_lapsed?: boolean
+  /** External, with a consumer address (gmail.com, ...) nobody manages. */
+  personal?: boolean
+}
+
+export type MemberKind = 'internal' | 'external'
+
+/** PATCH /api/v1/organization/members/{member_id}/access */
+export interface UpdateMemberAccessInput {
+  /** RFC 3339; at most 365 days ahead. Omit only for a managed address. */
+  expires_at?: string
+  reason?: string
 }
 
 export interface MemberStats {
@@ -80,11 +106,21 @@ export interface Invitation {
   expires_at: string
   created_at: string
   pending: boolean
+  /** When an external invitee's access will end. */
+  access_expires_at?: string
+  /** Members whose address reaches the same mailbox (a warning, create only). */
+  lookalike_of?: string[]
 }
 
 export interface CreateInvitationInput {
   email: string
   role_ids: string[] // RBAC roles to assign when user accepts invitation (required)
+  /**
+   * End of access for an invitee outside the organization (RFC 3339). The
+   * API proposes 90 days when omitted and ignores it for an internal invitee.
+   */
+  access_expires_at?: string
+  access_reason?: string
 }
 
 // ============================================

@@ -4,6 +4,11 @@
 > Scope: api + ui. Builds on RFC-022 (platform admin console) and the SSO
 > verified-domain work (`docs/architecture/sso-authentication.md`).
 > Operator guide: `docs/architecture/user-onboarding.md`.
+> **Update 2026-10-08:** `AUTH_ALLOW_REGISTRATION` is retired. Who may sign up
+> is the console sign-up policy (RFC-022 revision 10), and every path that
+> creates an account or an organization applies one admission rule
+> (`signup.Admit`; user-onboarding.md, "Admission"). The default is unchanged:
+> no self-registration.
 
 ## Decision
 

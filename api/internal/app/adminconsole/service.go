@@ -613,11 +613,6 @@ func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, 
 	return nil
 }
 
-// PurgeExpiredSessions deletes sessions past their absolute expiry.
-func (s *Service) PurgeExpiredSessions(ctx context.Context) (int64, error) {
-	return s.console.DeleteExpiredSessions(ctx, s.now())
-}
-
 func (s *Service) newSession(ctx context.Context, adminID shared.ID, verified bool, ttl time.Duration, authMethod string, client ClientInfo) (string, error) {
 	token, hash, err := newToken()
 	if err != nil {

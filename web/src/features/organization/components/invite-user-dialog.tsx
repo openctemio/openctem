@@ -23,7 +23,8 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { invitationLink } from '@/features/auth/lib/invitation-token'
 
 import { createTenantInvitation } from '../api/use-members'
-import { RoleChecklist } from './role-checklist'
+import { MAX_EXTERNAL_ACCESS_DAYS, dateInputDaysFromNow, endOfDayISO } from '../lib/external-access'
+import { RoleChecklist, defaultViewerRoleId } from './role-checklist'
 
 /**
  * `${origin}/invitations#token=<token>`: the page the invitee opens to join.
@@ -59,18 +60,35 @@ export function InviteUserDialog({
 }: InviteUserDialogProps) {
   const [email, setEmail] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
+  // Least privilege: start from the viewer role once the roles load.
+  const [seeded, setSeeded] = useState(false)
+  // End of access for someone from outside the organization (api RFC-058);
+  // empty lets the API propose 90 days. Ignored for an internal invitee.
+  const [accessEnds, setAccessEnds] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Held only in this component's state; dropped when the dialog closes.
-  const [link, setLink] = useState<{ email: string; url: string | null } | null>(null)
+  const [link, setLink] = useState<{
+    email: string
+    url: string | null
+    lookalikeOf?: string[]
+    accessExpiresAt?: string
+  } | null>(null)
   const [copied, setCopied] = useState(false)
 
   const { roles, isLoading: rolesLoading } = useRoles({ skip: !open })
+  const viewerId = defaultViewerRoleId(roles)
+  if (open && !seeded && viewerId) {
+    setSeeded(true)
+    setRoleIds([viewerId])
+  }
 
   const close = () => {
     onOpenChange(false)
     setEmail('')
     setRoleIds([])
+    setSeeded(false)
+    setAccessEnds('')
     setError(null)
     setLink(null)
     setCopied(false)
@@ -89,10 +107,13 @@ export function InviteUserDialog({
       const invitation = await createTenantInvitation(tenantSlug, {
         email: email.trim(),
         role_ids: roleIds,
+        access_expires_at: accessEnds ? endOfDayISO(accessEnds) : undefined,
       })
       setLink({
         email: invitation.email || email.trim(),
         url: invitation.token ? buildInvitationLink(invitation.token) : null,
+        lookalikeOf: invitation.lookalike_of,
+        accessExpiresAt: invitation.access_expires_at,
       })
       toast.success(`Invitation created for ${invitation.email || email.trim()}`)
       onInvited?.()
@@ -115,6 +136,28 @@ export function InviteUserDialog({
                 also receive it by email.
               </DialogDescription>
             </DialogHeader>
+            {link.lookalikeOf && link.lookalikeOf.length > 0 && (
+              <Alert className="border-warning/40 bg-warning/10" data-testid="invite-lookalike">
+                <ShieldAlert className="size-4 text-warning" />
+                <AlertTitle>Looks like an existing member</AlertTitle>
+                <AlertDescription>
+                  {link.email} reaches the same mailbox as {link.lookalikeOf.join(', ')}. Check that
+                  this is not the same person with a second account.
+                </AlertDescription>
+              </Alert>
+            )}
+            {link.accessExpiresAt && (
+              <p className="text-sm text-muted-foreground" data-testid="invite-access-ends">
+                {link.email} is from outside the organization: they join as a viewer with no data
+                until you add them to a team, and their access ends{' '}
+                {new Date(link.accessExpiresAt).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                })}
+                .
+              </p>
+            )}
             {link.url ? (
               <div className="space-y-3 py-2">
                 <div className="space-y-1.5">
@@ -208,6 +251,25 @@ export function InviteUserDialog({
                   loading={rolesLoading}
                   disabled={busy}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="invite-access-ends">
+                  Access ends (people outside the organization)
+                </Label>
+                <Input
+                  id="invite-access-ends"
+                  type="date"
+                  min={dateInputDaysFromNow(1)}
+                  max={dateInputDaysFromNow(MAX_EXTERNAL_ACCESS_DAYS)}
+                  value={accessEnds}
+                  onChange={(e) => setAccessEnds(e.target.value)}
+                  disabled={busy}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Someone whose email domain your organization does not hold joins as a viewer with
+                  no data, and their access ends: in 90 days unless you choose a date.
+                </p>
               </div>
 
               {error && (
