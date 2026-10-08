@@ -10,9 +10,9 @@ describe('ScopeChangePreview', () => {
           {
             key: '1',
             mark: 'add',
-            pattern: '*.example.com',
+            pattern: '*.example.com.au',
             summary: 'Domain',
-            impact: [{ title: 'Newly in scope', names: ['a.example.com'] }],
+            impact: [{ title: 'Newly in scope', names: ['a.example.com.au'] }],
           },
           { key: '2', mark: 'refused', pattern: '*.com.vn', message: 'A public suffix.' },
         ]}
