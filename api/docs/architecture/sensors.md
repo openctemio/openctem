@@ -774,6 +774,13 @@ Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239
 and `ingest_v2_reports_total{state,auto_resolve}`. Every label comes from a
 closed set.
 
+## Protocol v3 (gRPC + mTLS, Connect/HTTPS fallback)
+
+[RFC-059](../rfcs/RFC-059-sensor-transport-v3.md); state and how to work on
+it: [sensor-transport-v3.md](sensor-transport-v3.md). One proto
+(`openctem.sensor.v3.SensorService`) whose RPCs map one to one onto the v2
+resources below and are served through the same v2 handler chain; v2 stays.
+
 ## Protocol v2 control plane
 
 [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md). Every
