@@ -1,17 +1,17 @@
 # RFC-026 — Sensor results ingest (protocol v2)
 
-> Status: **Accepted; api iteration 1 implemented** (2026-10-01). The open
+> Status: **Accepted; API iteration 1 implemented** (2026-10-01). The open
 > questions of §10 are decided in §10.1; what shipped is in §7.6. The api
-> serves v2 results (WP-A1…A7: api#635, #636, #638, #639, #640, #642 and the
+> serves v2 results (WP-A1…A7: #635, #636, #638, #639, #640, #642 and the
 > WP-A7 PR). sdk-go (WP-S1…S3), sensor (WP-G1) and the import API (WP-A8)
 > follow. Operator view: `docs/architecture/sensors.md`.
-> Scope: api + sdk-go + sensor (the `agent` repo), with a later import API
+> Scope: api + sdk-go + sensor (`openctemio/sensor`), with a later import API
 > in api + ui.
 > Builds on: [RFC-023](RFC-023-scan-zones-and-scanners.md) (sensors, protocol
 > v2, §4b P2/P9, §9.2 C1–C8, §10 C-2/C-3/C-4/C-6), and
 > [RFC-005](RFC-005-asynchronous-ingest.md) (the async ingest queue this
 > design reuses).
-> Question from the product owner: *"Do we need separate APIs like
+> Question: *"Do we need separate APIs like
 > /ingest/sarif, or one /ingest endpoint with the format (SARIF or anything
 > else) set by a parameter in the body?"*
 
@@ -706,7 +706,7 @@ proven by `compat-v1`. v2 shares the ingest core but not the wire.
 | `ingest_jobs` grows with per-segment rows | 10k-finding segments, the existing retention, and `report-level` pruning on completion |
 | The digest without a signature is mistaken for authentication | stated in §4 and in the operator docs; signing is iteration 2 |
 
-## 10. Open questions for the product owner
+## 10. Open questions
 
 1. **Raw-file import timing.** Ship the import API (WP-A8) in the same
    release as v2 results, or after? It decides when the v1 per-format
@@ -724,8 +724,7 @@ proven by `compat-v1`. v2 shares the ingest core but not the wire.
 
 ### 10.1 Decisions taken (2026-10-01)
 
-The product owner asked for the best option to be researched and
-implemented. Each question takes the answer this RFC already recommends;
+Each question takes the answer this RFC already recommends;
 where it recommends none, the safest default is chosen.
 
 | # | Decision | Basis |

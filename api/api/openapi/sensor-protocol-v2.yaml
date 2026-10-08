@@ -802,6 +802,14 @@ components:
             properties:
               deprecated_at: { type: string, format: date-time }
               sunset_at: { type: string, format: date-time }
+        transport_v3:
+          type: object
+          description: >-
+            Where this platform serves sensor protocol v3 (RFC-059); absent
+            when it does not.
+          properties:
+            https_path: { type: string, description: The HTTPS binding on this host (/api/v3/sensor). }
+            grpc_endpoint: { type: string, description: host:port of the gRPC (mTLS) binding; absent when only HTTPS is served. }
     HeartbeatRequest:
       type: object
       properties:

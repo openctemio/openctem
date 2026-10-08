@@ -1,16 +1,15 @@
 # RFC-033 — Sensor manifest: register what a sensor is once, heartbeat a digest
 
-> Status: **Accepted** (2026-10-02; owner decisions in §10.2). Proposed
+> Status: **Implemented** (accepted 2026-10-02; decisions in §10.2). Proposed
 > 2026-10-02 in api#718.
-> - Phase 0 (defect fixes) is live: api#714, sdk-go#106, openctemio/ui#589, sensor v0.6.3.
-> - Phase 1 is merged: api#718 (migration 000258, live) and sdk-go#108.
-> - Phase 2 is designed in §6.12 and in implementation.
-> - Config report (§11, research/26 "sensor config doctor" P0, owner
->   decisions F1–F14 adopted as recommended 2026-10-05): API implemented
+> - Phase 0 (defect fixes): api#714, sdk-go#106, openctemio/ui#589, sensor v0.6.3.
+> - Phase 1: api#718 (migration 000258) and sdk-go#108.
+> - Phase 2 (§6.12): policy echo on `PUT`/`GET /api/v2/sensor/manifest`.
+> - Config report (§11, decisions F1–F14, 2026-10-05): API implemented
 >   (migration 001061, `PUT /api/v2/sensor/config-report`, heartbeat
 >   `config_report` + `send_config_report`, `GET /api/v1/sensors/{id}/config-report`);
 >   sdk-go, sensor and web companions built in parallel.
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
+> Scope: api + sdk-go + sensor (`openctemio/sensor`) + ui.
 > Builds on [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md) (protocol
 > v2, hello, §4.3.1 sensor-reported capabilities), [RFC-030](RFC-030-scan-work-distribution.md)
 > (load report, slots, routing), [RFC-031](RFC-031-managed-sensor-updates.md)
@@ -19,9 +18,8 @@
 > what a sensor may do: the sensor claims, policy narrows (RFC-029 §4.3.1,
 > RFC-032 §6.6).
 >
-> Owner's question (2026-10-02): "When a sensor first connects to the
-> platform, shouldn't it register which capabilities it has? Research deeply
-> and give the best design."
+> Question (2026-10-02): when a sensor first connects to the platform,
+> should it register which capabilities it has, and what is the best design?
 
 ## 1. Answer in short
 
@@ -55,12 +53,12 @@ sensor (RFC-032 E3). Routing reads it to pick the tool that can run a job
 | M6 | **Change is history.** The diff between two versions is written to the activity timeline with the existing types (`tools_changed`, `version_changed`, `sdk_version_changed`, `capacity_changed`, `content_updated`). Each event carries both digests. No new event category. |
 | M7 | **Backward compatible both ways.** For a sensor that sends no manifest (protocol v1, older v2 SDKs), the platform derives one from its heartbeat (`source = heartbeat`), with the same digest, storage and events. A sensor on a platform without the `manifest` feature keeps sending the full heartbeat. Phase 1 keeps the inventory on every heartbeat. Phase 2 drops it only once the platform has acknowledged the digest. |
 | M8 | **Capacity is two numbers** (`capacity` vs `allocatable`). The manifest carries the operator's **ceiling** (`SENSOR_MAX_JOBS`; none when unset) and the model (`dynamic`: the SDK sizes slots from CPU, memory and learned tool cost). The heartbeat carries `capacity.slots_total`, what it can run now. Dispatch capacity is the smallest of ceiling, slots and the administrator's limit (§6.1, implemented in Phase 0). |
-| M9 | **The sensorkit owns the manifest.** A sensor only registers tools (`ToolRegistry.Register`, `Kit.AddScanner`). The SDK builds the manifest from the registry, the build information and the host, computes the digest, sends it and reacts to `send_manifest`. Platform connection code lives in the SDK (owner principle). |
+| M9 | **The sensorkit owns the manifest.** A sensor only registers tools (`ToolRegistry.Register`, `Kit.AddScanner`). The SDK builds the manifest from the registry, the build information and the host, computes the digest, sends it and reacts to `send_manifest`. Platform connection code lives in the SDK (design principle). |
 | M10 | **Defense in depth (Phase 2).** The manifest answer, and a `GET` that re-reads it when `config_version` changes, carry the policy: the tools and capabilities the platform allows this sensor. The SDK refuses (fails with a typed reason) any command for a tool outside it, even if a platform bug dispatched it. |
 | M11 | **Routing by tool (Phase 3, RFC-030).** A job needs a capability and a target type. The platform picks a sensor whose effective manifest has a tool that provides both, and names that tool in the command. The flat capability list stays only as the compatibility path. |
 | M12 | **Integrity comes from the request.** RFC-032 Phase 1 signs every v2 request (RFC 9421, Ed25519 key bound to the sensor), so the `PUT` that carries a manifest is signed and attributable. No separate document signature is added, and the stored version keeps the key fingerprint that signed it. At enrollment (RFC-032 §6.3) the enroll request carries the first manifest, and approval shows it. |
 
-## 3. Current state (verified 2026-10-02: api `develop` bf003bb9, sdk-go `main` 46525ff, sensor `main` 83db392; live sensor-docker-01: sensor v0.6.1, sdk v0.11.0)
+## 3. Current state (verified 2026-10-02: api `develop` bf003bb9, sdk-go `main` 46525ff, sensor `main` 83db392; a deployed sensor v0.6.1 with SDK v0.11.0)
 
 ### 3.1 How a sensor says what it has today
 
@@ -90,7 +88,7 @@ sensor (RFC-032 E3). Routing reads it to pick the tool that can run a job
 
 ### 3.2 Defects found while answering (fixed in Phase 0)
 
-| # | Defect (live) | Root cause | Fix |
+| # | Defect (observed in a deployment) | Root cause | Fix |
 |---|---|---|---|
 | D1 | `reported_max_jobs` 64 next to `reported_capacity.slots_total` 4 on a 4-core sensor; `effective_max_jobs` = LEAST(64, admin 5) = **5**, more than it runs; UI "sensor reports 64 · limit 5". | With no `SENSOR_MAX_JOBS`, sensorkit sizes the poller to `resource.Manager.MaxSlots()`, which is `HardMax` (64) when no cap is set (`pkg/resource/manager.go`). `BaseSensor.withCapabilities` then reported the poller's `MaxJobs()` as `max_concurrent_jobs` (`pkg/core/base_sensor.go:128`). The platform's rule ignored the slots. | sdk-go#106: `max_concurrent_jobs` is only the operator's cap (`Manager.Cap`). api#714: migration 000257, `effective_max_jobs` = the smallest of admin, ceiling and `slots_total`. openctemio/ui#589: "Runs 4 at once now · operator cap 64 · your limit 5". |
 | D2 | Every reported tool had `capabilities: null`, `kind: null`; the flat list said `dast`, `sast`, … with no tool behind them. | The registry knew each tool's capabilities (`ToolSpec.Capabilities`), but `core.ToolInfo` had no field for them. The SDK did send `kind` (sdk-go#99), but the API's `HeartbeatTool` and `ReportedTool` had no `kind` either, so ingest dropped it. | sdk-go#106 `ToolInfo.Capabilities`; api#714 parses, sanitizes and stores `kind` and `capabilities` per tool; openctemio/ui#589 shows them on the tool chips and in the first-heartbeat review. |
@@ -462,7 +460,7 @@ The Activity timeline renders `manifest_changed` with its diff.
   because the token's tool ceiling and the administrator's limits still
   narrow it. It is shown as "installed but not allowed" (openctemio/ui#583 already
   does) and raises a `tools_changed` event. Whether it should also need
-  re-approval is owner decision O1.
+  re-approval is decision O1.
 
 ### 6.10 SDK and sensor
 
@@ -534,9 +532,9 @@ nothing else.
 | sensor | SDK bump only. Verified end to end: a sensor built with the SDK branch registered against this API (`source = sensor`, ceiling 0, model dynamic, 4 tools); a second version followed when its content manager installed nuclei templates and the trivy DB |
 | ui | Phase 2 (manifest section) |
 
-Phase 0 and Phase 1 are live (2026-10-02): sensor v0.6.3 shows nuclei
+Phase 0 and Phase 1 were verified on a deployment (2026-10-02): sensor v0.6.3 shows nuclei
 v3.11.1 with per-tool capabilities, effective capacity is 4, and a
-heartbeat-derived manifest exists for sensor-docker-01.
+heartbeat-derived manifest exists for the sensor.
 
 ## 9. Alternatives considered
 
@@ -565,10 +563,10 @@ heartbeat-derived manifest exists for sensor-docker-01.
 
 ## 10. Decisions
 
-### 10.1 Technical decisions taken (no owner input needed)
+### 10.1 Technical decisions taken
 
 M1–M9 and M12 (§2) are protocol and implementation choices inside the model
-the owner already accepted in RFC-029 §4.3.1 and RFC-032 §6.6: the sensor
+already accepted in RFC-029 §4.3.1 and RFC-032 §6.6: the sensor
 claims, policy narrows. They change no permission, no data-scope rule and no
 user-visible policy. Phase 1 implements M1–M9 except the parts marked
 Phase 2+.
@@ -582,9 +580,9 @@ Also decided here:
 - `ignored` items are visible to administrators in the API and, from Phase 2,
   in the UI.
 
-### 10.2 Owner decisions (2026-10-02)
+### 10.2 Decisions (2026-10-02)
 
-The owner accepted each recommendation below as written. §6.12 is the
+Each recommendation below was accepted as written. §6.12 is the
 resulting Phase 2 design.
 
 | # | Decision |
@@ -603,14 +601,14 @@ The questions as they were put, with the recommendation:
 | O3 | **Slim heartbeats** (Phase 2): drop the inventory from heartbeats once the manifest is acknowledged? It saves the inventory's bytes (measured later: about 20 % of a heartbeat). | **Yes**, gated per sensor on an answer that says so (a platform from before Phase 2 never does), with a server kill switch. |
 | O4 | Should the manifest's `resources` (cores, memory) be **shown to tenant users** with `sensors:read`, or only to administrators? It is host sizing information, comparable to the hostname and IP already shown. | Show to `sensors:read`, as hostname and IP are today. |
 
-## 11. Config report (research/26 P0)
+## 11. Config report
 
 The manifest says what a sensor *is*. The config report says whether it is
 *set up correctly*: the results of preflight checks the sensor runs on itself
 (state volume, key renewal, tools, TLS trust, proxy inheritance, local policy,
 settings it does not know) that used to reach only its stderr. It is a
 separate document from the manifest because check results change more often
-than the manifest (owner decision F2).
+than the manifest (decision F2).
 
 **Wire.**
 - Hello feature `config_report` (`protov2.FeatureConfigReport`). A sensor sends
@@ -674,7 +672,7 @@ list and detail carry `config_health`.
 **Explanations come from the platform.** Titles, the "why" text and fix
 snippets (env, compose, helm) come only from the catalog in
 `internal/app/sensor/config_check_catalog.go`, keyed by check id and code
-(owner decision F12). Parameters go into the why as plain text and into the
+(decision F12). Parameters go into the why as plain text and into the
 snippets escaped per format: shell-quoted for env (a value with a control
 character drops the env snippet), YAML-quoted for compose and helm. A drift
 test fails when a contract id or code has no entry. A check id the catalog
@@ -691,10 +689,10 @@ a checklist derived from its heartbeat: each reported tool's install state
 `derived_note` asking for an upgrade.
 
 **What a report cannot do.** It only informs: P0 changes no dispatch (that
-is P1, owner decision F7), adds no route on the sensor, and carries no
+is P1, decision F7), adds no route on the sensor, and carries no
 secret values.
 
-**Threat model** (research/26 §4.9):
+**Threat model**:
 
 | # | Threat | Control |
 |---|---|---|
@@ -720,7 +718,7 @@ the manifest digest; no cross-tenant table), diffs it, shows it on the
 Manifest tab and uses `produces` to narrow the output-type binding of the
 tool's command-bound reports (it can only narrow). Sensors without contracts
 are unchanged. Details: [architecture/sensors.md](../architecture/sensors.md#tool-contracts),
-[architecture/scan-stages.md §4](../architecture/scan-stages.md#4-report-output-type-binding-owner-decision-g12).
+[architecture/scan-stages.md §4](../architecture/scan-stages.md).
 
 ## 13. Sources
 

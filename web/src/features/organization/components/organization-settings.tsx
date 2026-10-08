@@ -372,6 +372,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
   const [ipAllowlistError, setIpAllowlistError] = useState<string | null>(null)
   const [securityForm, setSecurityForm] = useState({
     mfa_required: false,
+    mfa_required_for_admins: false,
     session_timeout_min: 60,
     ip_whitelist: '',
     allowed_domains: '',
@@ -414,6 +415,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
       })
       setSecurityForm({
         mfa_required: settings.security?.mfa_required || false,
+        mfa_required_for_admins: settings.security?.mfa_required_for_admins || false,
         session_timeout_min: settings.security?.session_timeout_min || 60,
         ip_whitelist: (settings.security?.ip_whitelist || []).join('\n'),
         allowed_domains: (settings.security?.allowed_domains || []).join('\n'),
@@ -528,6 +530,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
 
       const result = await updateSecuritySettings({
         mfa_required: securityForm.mfa_required,
+        mfa_required_for_admins: securityForm.mfa_required_for_admins,
         ip_whitelist: ipWhitelist,
         allowed_domains: allowedDomains,
         email_verification_mode: securityForm.email_verification_mode,
@@ -648,6 +651,27 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                       setSecurityForm({ ...securityForm, mfa_required: checked })
                     }
                     disabled={!canManageSecurityAndAPI}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="tenant-mfa-admins">
+                      Require two-factor authentication for owners and admins
+                    </Label>
+                    <p className="text-sm text-muted-foreground" id="tenant-mfa-admins-desc">
+                      Owners and administrators can change the organization, so they must use an
+                      authenticator app even when other members do not. On for new organizations.
+                    </p>
+                  </div>
+                  <Switch
+                    id="tenant-mfa-admins"
+                    aria-describedby="tenant-mfa-admins-desc"
+                    checked={securityForm.mfa_required || securityForm.mfa_required_for_admins}
+                    onCheckedChange={(checked) =>
+                      setSecurityForm({ ...securityForm, mfa_required_for_admins: checked })
+                    }
+                    disabled={!canManageSecurityAndAPI || securityForm.mfa_required}
                   />
                 </div>
 

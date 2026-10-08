@@ -1,20 +1,19 @@
 # RFC-029 — Sensor protocol v2 for the whole sensor surface, and a stable SDK
 
-> Status: **Accepted** (product owner, 2026-10-02: "move sensors fully to v2
-> now, so we can start phasing out agent"; one release, one announcement).
-> **Protocol v1 retired 2026-10-05** (owner: young product, minimal back-compat):
-> the live API served 3,303 `/api/v2/sensor/*` and 0 `/api/v1/agent/*` requests
-> in the preceding 24 hours, so the v1 routes, the `/api/v1/agents` redirect and
-> `pkg/sensorproto/legacyv1` were removed ahead of the 2027-04-01 sunset.
-> Sensors older than v0.9.0 must be upgraded.
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`).
+> Status: **Implemented** (accepted 2026-10-02: move sensors fully to v2 in
+> one release, with one announcement).
+> **Protocol v1 retired 2026-10-05** (young product, minimal back-compat): no
+> `/api/v1/agent/*` traffic was observed, so the v1 routes, the `/api/v1/agents`
+> redirect and `pkg/sensorproto/legacyv1` were removed ahead of the 2027-04-01
+> sunset. Sensors older than v0.9.0 must be upgraded.
+> Scope: api + sdk-go + sensor (`openctemio/sensor`).
 > Builds on: [RFC-023](RFC-023-scan-zones-and-scanners.md) (sensors, §9.2
 > C1–C8 compatibility contract, §9.2a doorbell, §9.2b suppressions, D20/D24),
 > [RFC-023 rename contract](RFC-023-sensor-rename-contract.md) and
 > [RFC-026](RFC-026-sensor-results-ingest.md) (v2 results, which this RFC
 > does not change). Operator view: [architecture/sensors.md](../architecture/sensors.md).
 >
-> Owner's questions:
+> Questions this RFC answers:
 > - **A.** "Why does sdk-go still use `/api/v1/agent/ingest` and the
 >   `X-Agent-ID` header? I thought it moved to sensor."
 > - **B.** "When the SDK updates later, sensors that already implemented it
@@ -509,9 +508,8 @@ shows no v1 heartbeat for 30 days, or after the operator raises the minimum
 sensor protocol (RFC-023 C7/D24; collectors below it keep pushing until
 removal). Self-hosted operators decide with their own telemetry.
 
-**Amended 2026-10-05 (owner decision):** protocol v1 was removed ahead of the
-sunset date. The live API had served 0 `/api/v1/agent/*` requests (and 3,303
-`/api/v2/sensor/*`) in the preceding 24 hours, and every sensor from v0.9.0 on
+**Amended 2026-10-05:** protocol v1 was removed ahead of the
+sunset date. No `/api/v1/agent/*` traffic was observed, and every sensor from v0.9.0 on
 speaks v2 for the whole surface. Removed: every route under `/api/v1/agent`
 (including the ones without a v2 successor: `ingest/sarif`, `ingest/recon`,
 `ingest/scan`, `ingest/scanners`, `scans`, `telemetry-events`,
@@ -775,12 +773,12 @@ PR (5) → tag api v0.9.0 and sensor v0.5.0 → publish the notice.
 
 ## 12. Decisions taken and open points
 
-Taken by the owner (2026-10-02): one release moves the whole surface; v1
+Decided (2026-10-02): one release moves the whole surface; v1
 stays served and deprecated with headers and per-sensor telemetry until old
 sensors upgrade; the SDK negotiates and never sends `X-Agent-ID` on v2; a
 new sensor release; an implementation-ready spec.
 
-Taken in this RFC (owner may revisit): path names of §4 (`claim` for v1
+Taken in this RFC (open to revision): path names of §4 (`claim` for v1
 `acknowledge`, `fingerprints/*`, `keys`); the 2026-10-01 / 2027-04-01 dates
 shared with the management-path deprecation; no command `ETag`s and no
 leases in this release; the facade in v0.10.0, v1.0.0 after the criteria of
