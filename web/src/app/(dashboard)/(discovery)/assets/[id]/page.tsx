@@ -10,7 +10,7 @@
  *  - Repository assets have a rich dedicated page at /assets/repositories/{id};
  *    redirect there.
  *  - Other asset types: render a minimal detail layout (header + key fields)
- *    plus a CTA back to the typed listing.
+ *    plus a link to the inventory filtered to the asset's type.
  */
 
 'use client'
@@ -29,38 +29,6 @@ import { cn } from '@/lib/utils'
 import { CRITICALITY_TEXT_COLORS } from '@/lib/criticality-colors'
 
 const CRITICALITY_COLOR: Record<string, string> = CRITICALITY_TEXT_COLORS
-
-// Map asset_type → category route slug used in /assets/<slug>/ listings.
-// Matches the directory structure in app/(dashboard)/(discovery)/assets/.
-const TYPE_TO_LISTING_SLUG: Record<string, string> = {
-  repository: 'repositories',
-  web_application: 'web-applications',
-  website: 'websites',
-  api: 'apis',
-  mobile_app: 'mobile',
-  domain: 'domains',
-  subdomain: 'domains',
-  certificate: 'certificates',
-  ip_address: 'ip-addresses',
-  host: 'hosts',
-  server: 'hosts',
-  container: 'containers',
-  kubernetes_cluster: 'cloud-resources',
-  kubernetes_namespace: 'cloud-resources',
-  database: 'databases',
-  data_store: 'databases',
-  s3_bucket: 'storage',
-  storage: 'storage',
-  cloud_account: 'cloud-accounts',
-  compute: 'cloud-resources',
-  serverless: 'serverless',
-  service: 'services',
-  network: 'networks',
-  vpc: 'vpcs',
-  iam_user: 'iam-users',
-  iam_role: 'iam-roles',
-  service_account: 'service-accounts',
-}
 
 export default function AssetDetailPage() {
   const router = useRouter()
@@ -109,7 +77,9 @@ export default function AssetDetailPage() {
     )
   }
 
-  const listingSlug = TYPE_TO_LISTING_SLUG[asset.type] ?? null
+  // The inventory filtered to this asset's type (and alias sub-type).
+  const listingQuery = new URLSearchParams({ types: asset.type })
+  if (asset.subType) listingQuery.set('sub_type', asset.subType)
   const typeLabel = asset.type.replace(/_/g, ' ')
 
   return (
@@ -243,22 +213,20 @@ export default function AssetDetailPage() {
         </CardContent>
       </Card>
 
-      {/* CTA to richer typed listing */}
-      {listingSlug && (
-        <Card className="mt-4 bg-muted/30">
-          <CardContent className="flex items-center justify-between py-4">
-            <div>
-              <p className="text-sm font-medium">Looking for richer details?</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                The {typeLabel} listing page has full filters, scans, and findings context.
-              </p>
-            </div>
-            <Button variant="outline" onClick={() => router.push(`/assets/${listingSlug}`)}>
-              Open {typeLabel} list
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      {/* The inventory filtered to this type */}
+      <Card className="mt-4 bg-muted/30">
+        <CardContent className="flex items-center justify-between py-4">
+          <div>
+            <p className="text-sm font-medium">Looking for richer details?</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              The inventory lists every {typeLabel} with its filters, columns and actions.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => router.push(`/assets?${listingQuery}`)}>
+            Open {typeLabel} list
+          </Button>
+        </CardContent>
+      </Card>
     </Main>
   )
 }

@@ -117,7 +117,7 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	respBody, err := httpsec.ReadLimited(resp.Body, maxResponseSize)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -163,7 +163,7 @@ func (c *Client) GetIssueStatus(ctx context.Context, issueKey string) (string, e
 			} `json:"status"`
 		} `json:"fields"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &issue); err != nil {
 		return "", fmt.Errorf("parse response: %w", err)
 	}
 
@@ -196,7 +196,7 @@ func (c *Client) GetTransitions(ctx context.Context, issueKey string) ([]Transit
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	respBody, err := httpsec.ReadLimited(resp.Body, maxResponseSize)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -344,7 +344,7 @@ func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 		if err != nil {
 			return nil, fmt.Errorf("jira api call: %w", err)
 		}
-		body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		body, err := httpsec.ReadLimited(resp.Body, maxResponseSize)
 		_ = resp.Body.Close()
 		if err != nil {
 			return nil, fmt.Errorf("read response: %w", err)

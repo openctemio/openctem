@@ -102,7 +102,11 @@ describe('ExposureSection', () => {
     const { unmount } = render(<ExposureSection asset={makeAsset({ isCrownJewel: true })} />)
     expect(screen.getByText('Crown jewel').nextSibling).toHaveTextContent('Yes')
     unmount()
-    render(<ExposureSection asset={makeAsset({ metadata: { is_crown_jewel: true } })} />)
+    render(
+      <ExposureSection
+        asset={makeAsset({ metadata: { is_crown_jewel: true } as unknown as Asset['metadata'] })}
+      />
+    )
     expect(screen.queryByText('Crown jewel')).not.toBeInTheDocument()
   })
 })

@@ -209,9 +209,8 @@ func (r *IntegrationClientResolver) resolveCredentials(intg *integration.Integra
 
 	dec, derr := r.decrypt(raw)
 	if derr != nil {
-		// Decryption failed — assume the value was stored plaintext (backward
-		// compatible with pre-encryption integrations, matching IntegrationService).
-		dec = raw
+		// Fail closed: never send an undecryptable value upstream.
+		return "", "", fmt.Errorf("integration %s: stored credentials cannot be decrypted with the configured key", intg.ID())
 	}
 	dec = strings.TrimSpace(dec)
 

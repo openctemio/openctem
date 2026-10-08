@@ -3,6 +3,7 @@ package asset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -101,8 +103,11 @@ func (s *SBOMImportService) ImportSBOM(ctx context.Context, tenantID, assetID st
 		}
 	}
 
-	// Read body (max 50MB)
-	data, err := io.ReadAll(io.LimitReader(reader, 50*1024*1024))
+	// Read body (max 50MB; larger is refused, never parsed truncated)
+	data, err := httpsec.ReadLimited(reader, 50<<20)
+	if errors.Is(err, httpsec.ErrBodyTooLarge) {
+		return nil, fmt.Errorf("%w: SBOM exceeds 50 MB", shared.ErrValidation)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read SBOM data: %w", err)
 	}

@@ -224,6 +224,11 @@ type Handlers struct {
 	// Plan: plans and limits (console plan defaults, organization plans and
 	// overrides, the organization's own usage).
 	Plan *handler.PlanHandler
+	// IdleWorkspace: an organization's idle lifecycle in the console.
+	IdleWorkspace *handler.IdleWorkspaceHandler
+	// IdleReadOnly refuses changes to an idle Free organization (read-only
+	// after 90 days without a sign-in).
+	IdleReadOnly middleware.IdleReadOnlyChecker
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
@@ -428,6 +433,13 @@ func Register(
 		ssoEnforcementMiddleware = middleware.NewSSOEnforcementGate(
 			tenantSSOEnforcedAdapter{repo: tenantRepo}, 60*time.Second, log,
 		).Enforce
+	}
+
+	// Idle Free organizations are read-only after 90 days without a sign-in
+	// (docs/architecture/idle-workspaces.md). Appended to
+	// buildBaseMiddlewares; reads always pass.
+	if h.IdleReadOnly != nil {
+		idleReadOnlyMiddleware = middleware.IdleReadOnly(h.IdleReadOnly)
 	}
 
 	// Organization IP allowlist (Security.IPWhitelist) on user sessions.
@@ -966,6 +978,10 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	if ipAllowlistMiddleware != nil {
 		middlewares = append(middlewares, ipAllowlistMiddleware)
 	}
+	// Idle Free organization: changes refused until someone signs in.
+	if idleReadOnlyMiddleware != nil {
+		middlewares = append(middlewares, idleReadOnlyMiddleware)
+	}
 	return middlewares
 }
 
@@ -1031,6 +1047,9 @@ var dataScopeGuardMiddleware Middleware //nolint:gochecknoglobals // set once du
 // the tenant turns enforcement on. Set once during Register once tenantRepo is
 // available; nil leaves only the mint-time gate.
 var ssoEnforcementMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// idleReadOnlyMiddleware refuses changes to an idle Free organization.
+var idleReadOnlyMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
 // ipAllowlistMiddleware enforces each organization's Security.IPWhitelist on
 // user sessions. Set once during Register; nil disables it (tests).

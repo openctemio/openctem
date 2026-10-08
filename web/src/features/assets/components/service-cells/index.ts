@@ -33,4 +33,9 @@ export {
   missingSurfaceFacts,
   hasSurfaceFacts,
 } from './surface-facts'
-export { cellsForType, SURFACE_CELLS, type SurfaceCell } from './cells-for-type'
+export {
+  cellsForType,
+  surfaceCellsCovered,
+  SURFACE_CELLS,
+  type SurfaceCell,
+} from './cells-for-type'

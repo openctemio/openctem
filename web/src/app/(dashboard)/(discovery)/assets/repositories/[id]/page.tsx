@@ -2242,7 +2242,7 @@ export default function RepositoryDetailPage() {
     // Refused when the repository has findings: the toast offers Archive.
     const result = await deleteAssetSafely(repository.id, repository.name, () => mutateRepo())
     if (result === 'deleted') {
-      router.push('/assets/repositories')
+      router.push('/assets?types=repository')
       return
     }
     setIsDeleting(false)
@@ -2268,7 +2268,7 @@ export default function RepositoryDetailPage() {
               <RefreshCw className="me-2 h-4 w-4" />
               Retry
             </Button>
-            <Button onClick={() => router.push('/assets/repositories')}>
+            <Button onClick={() => router.push('/assets?types=repository')}>
               <ArrowLeft className="me-2 h-4 w-4" />
               Back to Repositories
             </Button>
@@ -2287,7 +2287,7 @@ export default function RepositoryDetailPage() {
           <p className="text-muted-foreground mb-4">
             The repository you&apos;re looking for doesn&apos;t exist.
           </p>
-          <Button onClick={() => router.push('/assets/repositories')}>
+          <Button onClick={() => router.push('/assets?types=repository')}>
             <ArrowLeft className="me-2 h-4 w-4" />
             Back to Repositories
           </Button>

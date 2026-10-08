@@ -9,6 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { localLogoutAction } from '@/features/auth/actions/local-auth-actions'
+import { usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
+import { PasswordPolicyHint } from '@/features/auth/components/password-policy-hint'
+import { passwordPolicyIssue } from '@/features/auth/lib/password-policy'
 import { adminChangePassword } from '../api/use-admin-session'
 import { adminErrorMessage } from './totp-step-form'
 import type { AdminIdentity } from '../types'
@@ -25,6 +28,7 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const passwordPolicy = usePasswordPolicy()
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -35,6 +39,11 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
     }
     if (next === current) {
       setError('Choose a password different from the temporary one.')
+      return
+    }
+    const issue = passwordPolicy && passwordPolicyIssue(next, passwordPolicy)
+    if (issue) {
+      setError(issue)
       return
     }
     setBusy(true)
@@ -86,10 +95,11 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
                 type="password"
                 autoComplete="new-password"
                 required
-                minLength={8}
+                aria-describedby="pw-new-policy"
                 value={next}
                 onChange={(e) => setNext(e.target.value)}
               />
+              <PasswordPolicyHint id="pw-new-policy" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="pw-confirm">Confirm new password</Label>
