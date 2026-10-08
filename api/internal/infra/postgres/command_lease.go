@@ -112,6 +112,11 @@ func (r *CommandRepository) CancelIfOpen(ctx context.Context, cmd *command.Comma
 	if err != nil {
 		return false, fmt.Errorf("failed to read rows affected: %w", err)
 	}
+	if n > 0 {
+		// The holder (if any) is told to stop; the sensor is not known
+		// here, so the tenant's streams re-check.
+		r.changedTenant(cmd.TenantID)
+	}
 	return n > 0, nil
 }
 
@@ -169,6 +174,13 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate re-queued commands: %w", err)
 	}
+	woken := map[shared.ID]bool{}
+	for _, rq := range out {
+		if !woken[rq.TenantID] {
+			woken[rq.TenantID] = true
+			r.changedTenant(rq.TenantID)
+		}
+	}
 	return out, nil
 }
 
@@ -224,6 +236,9 @@ func (r *CommandRepository) ReleaseHeldBySensor(ctx context.Context, tenantID, s
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to iterate released commands: %w", err)
 	}
+	if len(out) > 0 {
+		r.changedTenant(tenantID)
+	}
 	return out, nil
 }
 
@@ -253,6 +268,9 @@ func (r *CommandRepository) FencedUpdate(ctx context.Context, cmd *command.Comma
 	n, err := res.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	if n > 0 {
+		r.changed(cmd)
 	}
 	return n > 0, nil
 }

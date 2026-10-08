@@ -1,8 +1,8 @@
 # RFC-021 — Customizable dashboards (widgets)
 
-- Status: **Proposed** — design for review; to be built in phased PRs that reference this RFC.
+- Status: **Phase 1 implemented** — `/api/v1/me/dashboards` CRUD + set-default, the widget registry and starter templates (`web/src/features/dashboards`); per-widget config (rest of Phase 2), tenant-published templates (Phase 3) and the custom-query widget (Phase 4) not built.
 - Area: UI dashboards + a small per-user persistence surface in `api`.
-- Related: the existing CTEM/Classic dashboards (`ui/src/features/dashboard`), the per-user notification/preferences pattern, RFC-017 (CTEM prioritization surfacing — the signals widgets show), and the "custom field query" idea (a future widget data-source — see §7).
+- Related: the existing CTEM/Classic dashboards (`web/src/features/dashboard`), the per-user notification/preferences pattern, RFC-017 (CTEM prioritization surfacing — the signals widgets show), and the "custom field query" idea (a future widget data-source — see §7).
 
 ## 1. Goal
 

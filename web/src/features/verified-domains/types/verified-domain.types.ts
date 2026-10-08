@@ -37,6 +37,19 @@ export interface VerifiedDomain {
    * working until a platform administrator removes one of the claims.
    */
   claim_conflict?: boolean
+  /** SSO admits new people on this domain (just-in-time provisioning, RFC-058). */
+  jit_enabled?: boolean
+  /** Their role: viewer or member; absent = the identity provider default. */
+  jit_role?: DomainJITRole
+}
+
+export type DomainJITRole = 'viewer' | 'member'
+
+/** PATCH .../sso/verified-domains/{id} */
+export interface UpdateDomainJITRequest {
+  jit_enabled: boolean
+  /** '' = the identity provider default. */
+  jit_role: DomainJITRole | ''
 }
 
 /** GET list response is wrapped in a `verified_domains` envelope. */

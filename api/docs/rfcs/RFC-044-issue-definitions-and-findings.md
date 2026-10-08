@@ -1,6 +1,6 @@
 # RFC-044 — Issue definitions and findings
 
-> Status: **Accepted** (2026-10-03; owner approved decisions D1–D9 as recommended, §12; #895).
+> Status: **Accepted** (2026-10-03; decisions D1–D9 approved as recommended, §12; #895).
 > P0 shipped (#907, #914, #917, #918, #921). **P1 implemented** (#1101 schema
 > and backfill, migrations 000820–000827; #1102 domain package and
 > repositories; #1103 docs): see §8.1. P2 next.
@@ -8,14 +8,13 @@
 > web (Issues view, finding identifiers), ctis + sdk-go (identifiers on the
 > wire; separate repos, separate PRs).
 >
-> Owner question: "Our vulnerabilities only record CVEs; research how other
-> systems classify a vulnerability versus a finding."
+> Question: vulnerabilities only record CVEs; how should a vulnerability be
+> classified versus a finding?
 >
-> Current state with evidence and live numbers:
+> Current state with evidence:
 > [architecture/vulnerability-model.md](../architecture/vulnerability-model.md).
-> Research: `research/11-vuln-vs-finding-taxonomy.md` (OSV schema, GitHub
-> Advisory Database, the finding shape of the scanners we ingest, OCSF finding
-> classes).
+> Sources: OSV schema, GitHub Advisory Database, the finding shape of the
+> scanners we ingest, OCSF finding classes (§13).
 >
 > Builds on and must stay consistent with:
 > - [RFC-043](RFC-043-deduplication-and-identity.md) (PR #892) — finding identity, fingerprints, and the
@@ -177,7 +176,7 @@ Uniqueness: `UNIQUE (namespace, external_id) WHERE tenant_id IS NULL` and
 
 Removed in P6: `aliases TEXT[]` (moved to identifiers), `status`
 (open/patched/… is tenant state on findings, not a property of a global
-definition; on live it is `open` on every row and nothing reads it).
+definition; it is `open` on every row and nothing reads it).
 
 ### 5.2 `definition_identifiers` — "the same issue"
 
@@ -225,8 +224,8 @@ fingerprint alias table, not here.
 ### 5.4 Taxonomies are links, not definitions
 
 CWE, CAPEC, OWASP Top 10, ASVS, MITRE ATT&CK, CIS/NIST/ISO controls classify
-definitions; they are not the issue. Research 11 lists "storing CWE as a
-vulnerability id" under *avoid*.
+definitions; they are not the issue. Storing CWE as a
+vulnerability id is a pattern to avoid.
 
 ```
 taxonomy_entries(namespace, external_id, title, parent)     -- global, seeded from MITRE/OWASP/CIS lists
@@ -281,8 +280,7 @@ finding_definitions(
 - `primary` (ord 0, exactly one): the issue. CVE when present (after alias
   resolution), else the rule/template/check/secret rule/pentest definition.
 - `detected_by`: the scanner rule (nuclei template, Tenable plugin) when the
-  primary is an advisory. This is the "vuln_id_from_tool" grouping key the
-  research recommends keeping.
+  primary is an advisory. This is the "vuln_id_from_tool" grouping key worth keeping.
 - `additional`: other CVEs of the same finding when RFC-043 D3 keeps them on one
   finding (if D3 = one finding per CVE, network VA findings have one CVE primary
   and the plugin as `detected_by`; nuclei templates with several CVEs still need
@@ -390,9 +388,9 @@ No id changes at any step. Migration numbers are taken at implementation time
    `:486-511`).
 2. betterleaks/gitleaks findings typed `secret` (ingest type decision,
    `processor_findings.go:1114-1154`); one-off reclassification of existing rows
-   is an owner-approved data change.
+   is an approved data change.
 3. Widen `findings.cve_id` to 30, upper-case on write; back-link findings whose
-   CVE is catalogued (5 on live); periodic back-link for v2-ingested CVEs.
+   CVE is catalogued; periodic back-link for v2-ingested CVEs.
 4. KEV propagation clears `cisa_kev_*` / `exploit_available` for CVEs that
    left the catalog.
 5. `findings/groups?group_by=rule_id` (+ web option, "View group") — the cheap
@@ -418,7 +416,7 @@ No id changes at any step. Migration numbers are taken at implementation time
   §5.5, writes `finding_definitions`, sets `definition_id`, keeps writing
   `vulnerability_id`/`cve_id`.
 - Backfill rule definitions from existing findings (`rule_id` + normalized
-  tool → namespace; 48 findings on live), tenant-scoped.
+  tool → namespace), tenant-scoped.
 - Pentest templates → definitions.
 
 **P3 — trusted sources**
@@ -544,12 +542,12 @@ Web:
 | Keep the CVE table, add a separate `rule_definitions` table | Two catalogs, two FKs per finding, every Issues/dashboard query a UNION; Tenable plugins and nuclei CVE templates sit in both |
 | Only add `group_by=rule_id` | Cheap and included in P0, but gives no shared text, no aliasing, no cross-scanner view, no per-kind priority |
 | New `issue_definitions` table, copy the CVEs, map old→new ids | Rewrites every `findings.vulnerability_id`; extending in place keeps ids (D1) |
-| Flat `aliases TEXT[]` including upstream/related | Over-merges; distro advisories would swallow library CVEs (research 11 §3) |
-| CWE as a definition | A weakness class is not an issue instance definition (research 11 §9); kept as taxonomy |
+| Flat `aliases TEXT[]` including upstream/related | Over-merges; distro advisories would swallow library CVEs |
+| CWE as a definition | A weakness class is not an issue instance definition; kept as taxonomy |
 | Store definitions nested per finding (OCSF-style) | No catalog lifecycle, no aggregation key |
-| Per-tenant copy of the global catalog | Duplication; feeds would write N copies; research 11 lists it under *avoid* |
+| Per-tenant copy of the global catalog | Duplication; feeds would write N copies |
 
-## 12. Owner decisions (approved 2026-10-03, all as recommended)
+## 12. Decisions (approved 2026-10-03, all as recommended)
 
 | # | Decision | Recommendation |
 |---|---|---|
@@ -565,12 +563,12 @@ Web:
 
 ## 13. Research
 
-`research/11-vuln-vs-finding-taxonomy.md` (2026-10-03, adversarially verified,
-24 of 25 claims confirmed). Primary sources: OSV schema (ids, `x_` local
+Reviewed 2026-10-03, each claim checked against its source (24 of 25
+confirmed). Primary sources: OSV schema (ids, `x_` local
 prefix, `aliases`/`upstream`/`related` semantics), GitHub Advisory Database
 (GHSA independent of CVE; malware advisories), the finding shape of the
 network scanners we ingest (asset + plugin + port + protocol), OCSF 1.3–1.9
 finding classes and the `vulnerability` object (CWE-only and advisory-only
-entries). Caveats carried from the research: the misconfiguration →
+entries). Caveats: the misconfiguration →
 Compliance Finding mapping passed 2–1; the CVE lifecycle states and the
 per-kind prioritization model (§6) are design choices, not external facts.

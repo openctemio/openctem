@@ -615,7 +615,8 @@ func (r *TenantRepository) ListMembersByTenant(ctx context.Context, tenantID sha
 func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.ID) ([]*tenant.TenantWithRole, error) {
 	query := `
 		SELECT t.id, t.name, t.slug, t.description, t.logo_url, t.settings, t.created_by, t.created_at, t.updated_at,
-		       COALESCE(ver.role, 'member') as role, m.joined_at
+		       COALESCE(ver.role, 'member') as role, m.joined_at,
+		       m.status, m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.suspended_reason
 		FROM tenants t
 		INNER JOIN tenant_members m ON t.id = m.tenant_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -639,11 +640,18 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 			createdAt, updatedAt time.Time
 			roleStr              string
 			joinedAt             time.Time
+			memberStatus         string
+			kind                 sql.NullString
+			homeTenantID         sql.NullString
+			homeDomain           sql.NullString
+			expiresAt            sql.NullTime
+			suspendedReason      sql.NullString
 		)
 
 		err := rows.Scan(
 			&idStr, &name, &slug, &description, &logoURL, &settingsJSON, &createdBy, &createdAt, &updatedAt,
 			&roleStr, &joinedAt,
+			&memberStatus, &kind, &homeTenantID, &homeDomain, &expiresAt, &suspendedReason,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan tenant with role: %w", err)
@@ -662,10 +670,22 @@ func (r *TenantRepository) ListTenantsByUser(ctx context.Context, userID shared.
 			settings, createdBy.String, createdAt, updatedAt,
 		)
 
+		var homeID *shared.ID
+		if homeTenantID.Valid {
+			if hid, perr := shared.IDFromString(homeTenantID.String); perr == nil {
+				homeID = &hid
+			}
+		}
 		tenants = append(tenants, &tenant.TenantWithRole{
-			Tenant:   t,
-			Role:     role,
-			JoinedAt: joinedAt,
+			Tenant:          t,
+			Role:            role,
+			JoinedAt:        joinedAt,
+			MemberStatus:    tenant.MemberStatus(memberStatus),
+			Kind:            tenant.MemberKind(kind.String),
+			HomeTenantID:    homeID,
+			HomeDomain:      homeDomain.String,
+			ExpiresAt:       nullTimeValue(expiresAt),
+			SuspendedReason: suspendedReason.String,
 		})
 	}
 
@@ -817,6 +837,11 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 	if filters.Role != "" {
 		whereClause += fmt.Sprintf(" AND COALESCE(ver.role, 'member') = $%d", argIndex)
 		args = append(args, filters.Role)
+		argIndex++
+	}
+	if filters.Kind != "" {
+		whereClause += fmt.Sprintf(" AND COALESCE(m.kind, 'internal') = $%d", argIndex)
+		args = append(args, filters.Kind)
 		argIndex++
 	}
 
@@ -1380,6 +1405,23 @@ func (r *TenantRepository) GetPendingInvitationByEmail(ctx context.Context, tena
 	`
 
 	return r.scanInvitation(r.db.QueryRowContext(ctx, query, tenantID.String(), email))
+}
+
+// HasPendingInvitationForEmail reports whether any organization has a
+// pending, unexpired invitation for email. It answers a yes/no for the
+// sign-up policy (an invited person may sign up with a social account) and
+// returns nothing about the organization.
+func (r *TenantRepository) HasPendingInvitationForEmail(ctx context.Context, email string) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM tenant_invitations
+			 WHERE lower(email) = lower($1) AND accepted_at IS NULL AND expires_at > NOW()
+		)`, email).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("check pending invitation: %w", err)
+	}
+	return ok, nil
 }
 
 // DeleteExpiredInvitations removes all expired invitations.
