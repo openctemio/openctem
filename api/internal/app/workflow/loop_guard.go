@@ -49,6 +49,9 @@ const (
 type AutomationCause struct {
 	RunID      shared.ID
 	WorkflowID shared.ID
+	// NodeKey is the step (node) of the run that caused the event: a scan
+	// run started by an automation names the node that started it.
+	NodeKey    string
 	ChainDepth int
 }
 
@@ -71,6 +74,7 @@ func (c AutomationCause) data() map[string]any {
 	return map[string]any{
 		"run_id":      c.RunID.String(),
 		"workflow_id": c.WorkflowID.String(),
+		"node_key":    c.NodeKey,
 		"chain_depth": c.ChainDepth,
 	}
 }
@@ -89,6 +93,7 @@ func automationCauseFromData(m map[string]any) (AutomationCause, bool) {
 	if s, ok := raw["workflow_id"].(string); ok {
 		c.WorkflowID, _ = shared.IDFromString(s)
 	}
+	c.NodeKey, _ = raw["node_key"].(string)
 	switch d := raw["chain_depth"].(type) {
 	case int:
 		c.ChainDepth = d
@@ -112,9 +117,9 @@ func runChainDepth(run *workflowdom.Run) int {
 	return 0
 }
 
-// stepCause is the cause of the events a step of run produces.
-func stepCause(run *workflowdom.Run) AutomationCause {
-	return AutomationCause{RunID: run.ID, WorkflowID: run.WorkflowID, ChainDepth: runChainDepth(run) + 1}
+// stepCause is the cause of the events the step nodeKey of run produces.
+func stepCause(run *workflowdom.Run, nodeKey string) AutomationCause {
+	return AutomationCause{RunID: run.ID, WorkflowID: run.WorkflowID, NodeKey: nodeKey, ChainDepth: runChainDepth(run) + 1}
 }
 
 // loopBlocked reports why an automation-caused event must not start wf ("" when
