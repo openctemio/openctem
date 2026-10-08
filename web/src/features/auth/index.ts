@@ -94,7 +94,6 @@ export {
 
   // Helper functions
   isValidEmail,
-  isValidPassword,
   getPasswordStrength,
   getPasswordStrengthLabel,
 } from './schemas'

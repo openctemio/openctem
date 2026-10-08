@@ -34,6 +34,7 @@ import {
   StackedCell,
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
+import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -175,7 +176,7 @@ function Overview({ p }: { p: CIPipelineDetail }) {
           )}
           <DetailField label="Repository" full>
             <Link
-              href={`/assets/repositories/${encodeURIComponent(p.repository_asset_id ?? '')}`}
+              href={assetDetailHref(p.repository_asset_id ?? '')}
               className="text-primary hover:underline"
             >
               {p.repository}
