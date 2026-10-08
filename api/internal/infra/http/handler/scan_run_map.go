@@ -254,22 +254,27 @@ type RunStepOutputsResponse struct {
 	PreviousRunID string          `json:"previous_run_id,omitempty"`
 }
 
-// ListRunStepOutputs handles GET /api/v1/scan-runs/{id}/steps/{step_key}/outputs
+// ListRunStepOutputs handles GET /api/v1/scan-runs/{id}/outputs?step_key=
 // @Summary      What a step of a run produced
 // @Description  Up to `limit` (default 20, at most 50) live assets one step of the run produced, new ones (not produced by the same step of the previous finished run of the scan) first, with how many there are. Only assets in the caller's data scope are listed and counted. A run of another organization, or a run about a finding outside the caller's scope, is not found.
 // @Tags         Scan workflows
 // @Produce      json
 // @Param        id        path      string  true   "Run ID"
-// @Param        step_key  path      string  true   "Step key"
+// @Param        step_key  query     string  true   "Step key"
 // @Param        limit     query     int     false  "At most this many (1-50, default 20)"
 // @Success      200  {object}  RunStepOutputsResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /scan-runs/{id}/steps/{step_key}/outputs [get]
+// @Router       /scan-runs/{id}/outputs [get]
 func (h *ScanWorkflowHandler) ListRunStepOutputs(w http.ResponseWriter, r *http.Request) {
 	limit, ok := listLimit(w, r, 20, scanrunapp.MaxStepOutputPreview)
 	if !ok {
+		return
+	}
+	stepKey := r.URL.Query().Get("step_key")
+	if stepKey == "" {
+		apierror.BadRequest("step_key is required").WriteJSON(w)
 		return
 	}
 	if !h.guardRun(w, r) {
@@ -289,7 +294,7 @@ func (h *ScanWorkflowHandler) ListRunStepOutputs(w http.ResponseWriter, r *http.
 			return
 		}
 	}
-	p, err := h.service.PreviewStepOutputs(r.Context(), tenant, chi.URLParam(r, "id"), chi.URLParam(r, "step_key"), scope, limit)
+	p, err := h.service.PreviewStepOutputs(r.Context(), tenant, chi.URLParam(r, "id"), stepKey, scope, limit)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

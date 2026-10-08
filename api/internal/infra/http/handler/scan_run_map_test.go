@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -144,5 +146,19 @@ func TestRunMap_ComparesWithThePreviousRun(t *testing.T) {
 	got = toRunMapResponse(m)
 	if got.PreviousRunID != "" || got.Nodes[0].Outputs.Previous != nil {
 		t.Fatalf("without a previous run the comparison must be absent: %+v", got.Nodes[0].Outputs)
+	}
+}
+
+// The step whose outputs are listed is required, and the limit must be a
+// positive number,
+// before the run is even looked up.
+func TestListRunStepOutputs_ValidatesTheQuery(t *testing.T) {
+	h := &ScanWorkflowHandler{}
+	for _, q := range []string{"", "?limit=5", "?step_key=ports&limit=0"} {
+		rec := httptest.NewRecorder()
+		h.ListRunStepOutputs(rec, httptest.NewRequest(http.MethodGet, "/api/v1/scan-runs/r1/outputs"+q, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%q: code %d, want 400", q, rec.Code)
+		}
 	}
 }

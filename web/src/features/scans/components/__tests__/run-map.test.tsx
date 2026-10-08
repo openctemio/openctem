@@ -174,7 +174,7 @@ describe('RunMap', () => {
     }
     get.mockImplementation((url: string) =>
       Promise.resolve(
-        url.includes('/steps/subdomains/outputs')
+        url.includes('/outputs?step_key=subdomains')
           ? {
               total: 312,
               previous_run_id: 'r0',
@@ -197,7 +197,7 @@ describe('RunMap', () => {
     act(() => select('subdomains'))
     const panel = await screen.findByRole('region', { name: 'Step Subdomains' })
     const list = await within(panel).findByRole('list', { name: 'Outputs' })
-    expect(get).toHaveBeenCalledWith('/api/v1/scan-runs/r1/steps/subdomains/outputs?limit=20')
+    expect(get).toHaveBeenCalledWith('/api/v1/scan-runs/r1/outputs?step_key=subdomains&limit=20')
     expect(within(list).getByText('new.acme.test')).toBeInTheDocument()
     expect(within(list).getAllByText('New')).toHaveLength(1)
     expect(within(list).getByText('and 310 more')).toBeInTheDocument()
