@@ -386,8 +386,7 @@ function ChoiceCard({
             id={`${id}-readiness`}
             className={cn('block text-[11px]', off ? 'text-muted-foreground' : 'text-warning')}
           >
-            {label}
-            {problem?.reason && `: ${problem.reason}`}
+            {problem?.reason ?? label}
             {problem?.fix && fixHref && (
               <>
                 {' '}
