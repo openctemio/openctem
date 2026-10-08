@@ -120,6 +120,7 @@ type Handlers struct {
 	// CTEM Discovery handlers
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
+	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
 	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
@@ -475,6 +476,9 @@ func Register(
 	// Web surface: endpoints under their origin asset (RFC-056)
 	if h.WebEndpoint != nil {
 		registerWebEndpointRoutes(router, h.WebEndpoint, authMiddleware, userSync)
+	}
+	if h.APISpec != nil {
+		registerAPISpecRoutes(router, h.APISpec, authMiddleware, userSync)
 	}
 
 	// Asset State History routes (CTEM Discovery - shadow IT detection, audit)
