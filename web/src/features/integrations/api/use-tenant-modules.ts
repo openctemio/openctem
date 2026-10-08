@@ -55,7 +55,7 @@ export interface LicensingModule {
   display_order: number
   is_active: boolean
   release_status: ReleaseStatus
-  /** Parent module ID for sub-modules (e.g., "assets" for "assets.domains") */
+  /** Parent module ID for sub-modules (e.g., "integrations" for "integrations.scm") */
   parent_module_id?: string
   /** Permissions that belong to this module - used for access control */
   permissions?: ModulePermission[]
