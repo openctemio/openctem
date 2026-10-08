@@ -573,8 +573,9 @@ export interface NotificationEventEntry {
 export interface NotificationEventsResponse {
   data: NotificationEventEntry[]
   total: number
-  limit: number
-  offset: number
+  page: number
+  per_page: number
+  total_pages: number
 }
 
 /**

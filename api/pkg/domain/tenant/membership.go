@@ -83,6 +83,16 @@ type Membership struct {
 	status      MemberStatus
 	suspendedAt *time.Time
 	suspendedBy *shared.ID
+	// suspendedReason says why (SuspendedReasonExpired, or empty).
+	suspendedReason string
+
+	// External members (external.go). Zero values: an internal member with
+	// no expiry.
+	kind         MemberKind
+	homeTenantID *shared.ID
+	homeDomain   string
+	expiresAt    *time.Time
+	expiryReason string
 }
 
 // NewMembership creates a new Membership.
@@ -272,6 +282,7 @@ func (m *Membership) Suspend(by shared.ID) error {
 	now := time.Now().UTC()
 	m.status = MemberStatusSuspended
 	m.suspendedAt = &now
+	m.suspendedReason = ""
 	// A zero actor denotes a system-initiated suspension (e.g. SCIM
 	// deprovisioning) with no human suspender → leave suspended_by NULL.
 	if by.IsZero() {
@@ -291,6 +302,7 @@ func (m *Membership) Reactivate() error {
 	m.status = MemberStatusActive
 	m.suspendedAt = nil
 	m.suspendedBy = nil
+	m.suspendedReason = ""
 	return nil
 }
 
