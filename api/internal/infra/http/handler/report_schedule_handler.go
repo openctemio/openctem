@@ -14,7 +14,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/reportschedule"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ReportScheduleHandler handles report schedule HTTP requests.
@@ -89,17 +88,10 @@ func toReportScheduleResponse(s *reportschedule.ReportSchedule) reportScheduleRe
 // List handles GET /api/v1/reports/schedules
 func (h *ReportScheduleHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if perPage < 1 {
-		perPage = 1
-	}
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		perPage,
-	)
 
 	result, err := h.service.ListSchedules(r.Context(), tenantID, page)
 	if err != nil {

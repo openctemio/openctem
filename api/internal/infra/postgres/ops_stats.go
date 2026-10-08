@@ -56,8 +56,16 @@ type OpsSnapshot struct {
 	SchemaKnown   bool
 }
 
+// opsQuerier is a *sql.DB or a *sql.Tx: the snapshot reads within one
+// transaction when given one (its tests read before and after their own
+// writes, isolated from other tests).
+type opsQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // ReadOpsSnapshot reads the platform-wide counts.
-func ReadOpsSnapshot(ctx context.Context, db *sql.DB) (OpsSnapshot, error) {
+func ReadOpsSnapshot(ctx context.Context, db opsQuerier) (OpsSnapshot, error) {
 	var s OpsSnapshot
 
 	sensors, err := readOpsSensors(ctx, db)
@@ -112,7 +120,7 @@ func ReadOpsSnapshot(ctx context.Context, db *sql.DB) (OpsSnapshot, error) {
 	return s, nil
 }
 
-func readOpsSensors(ctx context.Context, db *sql.DB) ([]OpsSensorCount, error) {
+func readOpsSensors(ctx context.Context, db opsQuerier) ([]OpsSensorCount, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT is_platform_sensor, COALESCE(health, 'unknown'), COALESCE(config_health, ''),
 		       COALESCE(sdk_version, ''), count(*)

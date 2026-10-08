@@ -24,8 +24,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	moduleTypes "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -49,6 +51,9 @@ type TenantHandler struct {
 	// self_service). Off by default: organizations are then created by the
 	// platform administrator only.
 	selfServiceCreation bool
+	// signupPolicy, when wired, replaces selfServiceCreation: the console
+	// sign-up setting, read on each request.
+	signupPolicy signupdom.PolicySource
 	// provisioning creates accounts on behalf of organization administrators.
 	// Nil disables POST /tenants/{tenant}/users.
 	provisioning *tenantapp.UserProvisioningService
@@ -71,6 +76,19 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 // (TENANT_CREATION_MODE=self_service). Without it POST /tenants is refused.
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
+}
+
+// SetSignupPolicy makes POST /tenants follow the console sign-up policy.
+func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
+	h.signupPolicy = p
+}
+
+// selfServiceAllowed reports whether a signed-in user may create an organization.
+func (h *TenantHandler) selfServiceAllowed(r *http.Request) bool {
+	if h.signupPolicy != nil {
+		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
+	}
+	return h.selfServiceCreation
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -486,7 +504,7 @@ func writeToggleErrorJSON(w http.ResponseWriter, e *module.ToggleError) {
 
 // Create handles POST /api/v1/tenants
 func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
-	if !h.selfServiceCreation {
+	if !h.selfServiceAllowed(r) {
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 		return
 	}
@@ -672,8 +690,8 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // the assignee and owner pickers need.
 //   - status: active | suspended (membership status); empty = any
 //   - role: owner | admin | member | viewer (effective system role); empty = any
-//   - limit: max results (default 100, max 100)
-//   - offset: pagination offset
+//   - page: 1-based page (default 1)
+//   - per_page: page size (default 100, max 500)
 //   - status: active | suspended | offboarded | all. Default: active and
 //     suspended (offboarded tombstones are left out, so pickers never offer
 //     a person who left; pickers pass status=active to leave out disabled
@@ -702,15 +720,12 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	callerRole := middleware.GetTeamRole(r.Context())
 	showDirectory := callerRole == tenant.RoleOwner || callerRole == tenant.RoleAdmin
 
-	// Parse search/pagination parameters. We always go through the
-	// paginated SearchMembersWithUserInfo path when include=user is
-	// set, even if the client did not pass an explicit limit — the
-	// default cap protects the API from accidentally returning every
-	// member of a 50k-tenant in one response. Clients that want more
-	// results must opt in by passing limit=N (capped server-side).
+	// The list is always paged (page, per_page): the default page protects
+	// the API from returning every member of a 50k-member organization in
+	// one response. per_page goes up to 500 (pickers of the whole set).
 	const (
-		defaultMemberLimit = 100
-		maxMemberLimit     = 500
+		defaultMemberPage = 100
+		maxMemberPage     = 500
 	)
 	search := r.URL.Query().Get("search")
 	statusFilter := r.URL.Query().Get("status")
@@ -721,21 +736,11 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("status must be active, suspended, offboarded or all").WriteJSON(w)
 		return
 	}
-	limit := defaultMemberLimit
-	offset := 0
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			if parsed > maxMemberLimit {
-				parsed = maxMemberLimit
-			}
-			limit = parsed
-		}
+	paging, ok := listPageMax(w, r, defaultMemberPage, maxMemberPage)
+	if !ok {
+		return
 	}
-	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-		if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	if includeUser {
 		// Always paginate when include=user. The legacy unpaginated
@@ -793,12 +798,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data":   response,
-			"total":  total,
-			"limit":  limit,
-			"offset": offset,
-		})
+		_ = json.NewEncoder(w).Encode(pagination.NewResult(response, int64(total), paging))
 		return
 	}
 
@@ -827,12 +827,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data":   response,
-		"total":  result.Total,
-		"limit":  limit,
-		"offset": offset,
-	})
+	_ = json.NewEncoder(w).Encode(pagination.NewResult(response, int64(result.Total), paging))
 }
 
 // enrichMembersWithRoles fetches RBAC roles for all members in ONE

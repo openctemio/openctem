@@ -25,6 +25,13 @@ var ErrInvalid = errors.New("invalid pagination")
 // Lists that stream (logs, events) page with an opaque `cursor` instead and
 // never mix the two in one endpoint.
 func FromRequest(q url.Values, defaultPerPage int) (Pagination, error) {
+	return FromRequestMax(q, defaultPerPage, MaxPerPage)
+}
+
+// FromRequestMax is FromRequest with a list's own cap on per_page. Only a
+// list that feeds a picker of the whole set may cap above MaxPerPage (the
+// organization members, 500); every other list uses FromRequest.
+func FromRequestMax(q url.Values, defaultPerPage, maxPerPage int) (Pagination, error) {
 	page, err := positiveInt(q.Get("page"), 1, "page")
 	if err != nil {
 		return Pagination{}, err
@@ -33,10 +40,9 @@ func FromRequest(q url.Values, defaultPerPage int) (Pagination, error) {
 	if err != nil {
 		return Pagination{}, err
 	}
-	if perPage > MaxPerPage {
-		perPage = MaxPerPage
-	}
-	return New(page, perPage), nil
+	p := New(page, 1) // bounds page
+	p.PerPage = min(perPage, maxPerPage)
+	return p, nil
 }
 
 func positiveInt(raw string, fallback int, name string) (int, error) {
