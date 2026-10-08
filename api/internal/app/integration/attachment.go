@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	attachmentdom "github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -170,8 +172,12 @@ func (s *AttachmentService) Upload(ctx context.Context, input UploadInput) (*att
 		return nil, fmt.Errorf("%w: invalid uploaded_by", shared.ErrValidation)
 	}
 
-	// Read file into buffer for hashing + upload (file ≤ 10MB so safe in memory)
-	buf, err := io.ReadAll(input.Reader)
+	// Read file into buffer for hashing + upload. input.Size is the client's
+	// claim; the read itself is capped too.
+	buf, err := httpsec.ReadLimited(input.Reader, attachmentdom.MaxFileSize)
+	if errors.Is(err, httpsec.ErrBodyTooLarge) {
+		return nil, fmt.Errorf("%w: file exceeds %dMB limit", attachmentdom.ErrTooLarge, attachmentdom.MaxFileSize/1024/1024)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
