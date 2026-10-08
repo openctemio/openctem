@@ -20,7 +20,7 @@ PentestService.buildReportInput(...)  ──►  report.ReportInput
 
 ## Endpoint
 
-`GET /api/v1/pentest/campaigns/{id}/report/download` (JWT, campaign membership)
+`GET /api/v1/pentest/campaigns/{id}/reports/download` (JWT, campaign membership)
 
 | Query param | Values | Default |
 |-------------|--------|---------|

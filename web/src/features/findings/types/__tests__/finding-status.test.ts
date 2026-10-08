@@ -19,7 +19,7 @@ import en from '@/lib/i18n/dictionaries/en.json'
 import vi from '@/lib/i18n/dictionaries/vi.json'
 
 // The Go list (vulnerability.AllFindingStatuses) and the DB CHECK
-// (migration 001377). Change all three together.
+// (migration 001378). Change all three together.
 const CANONICAL: FindingStatus[] = [
   'new',
   'confirmed',

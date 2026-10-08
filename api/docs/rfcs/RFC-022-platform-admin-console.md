@@ -393,6 +393,11 @@ which is the takeover revision 5 set out to prevent. Owner decision
     severity with `owner_recovery: true`, by actor `platform-admin:<email>`.
 - The suspended owners are left as they are. The new owner (or an
   administrator they appoint) decides whether to reactivate or remove them.
+- **Reason and step-up** (revision 14). The request also needs a `reason`
+  (10 to 500 characters, kept in the admin audit row) and a fresh console
+  authenticator code (`totp_code`). Organizations > an organization >
+  Members offers "Recover ownership" to a super admin when every owner is
+  suspended.
 
 Still not provided: ownership transfer, or recovery for an organization whose
 owner is active but unreachable. Those need the owner's own action.
@@ -539,6 +544,22 @@ them:
   role can open, and organizations by name or slug, searched on the server.
 - **Admin activity** filters by result (`?outcome=failure`), so the overview
   links straight to refused actions or to break-glass sign-ins.
+
+## Revision 14: organization 360
+
+Organizations > an organization opens on a summary: owners and active
+members, the plan with an over-limit badge and the limits that are over,
+sign-in (SSO posture and verified domains), identifiers, and the latest
+administrator actions on it. Each card leads to its tab. The tab is in the
+URL (`?tab=overview|users|plan|sso|activity|audit-chain`), so a support link
+can point at one. Activity lists every admin audit row about the
+organization (`GET /admin/audit-logs?resource_id=<id>`).
+
+The organization list shows each organization's plan and filters by owner
+(`owner=none` lists those with no active owner, which the overview links
+to) and by plan. Owner recovery gained a reason and step-up (revision 7).
+Nothing from inside an organization (findings, assets) is shown: the console
+never reads it.
 
 ## Later phases
 
