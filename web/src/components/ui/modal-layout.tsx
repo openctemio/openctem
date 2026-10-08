@@ -312,6 +312,8 @@ function ModalBody({
       tabIndex={-1}
       className={cn(
         'min-h-0 flex-1 overflow-y-auto overscroll-contain py-2 outline-none',
+        // Last part (no footer): the bottom padding a footer would have had.
+        'last:pb-[max(1rem,env(safe-area-inset-bottom))] sm:last:pb-6',
         // Dividers only while content is hidden behind the header / footer.
         'border-y border-transparent data-[overflow-top]:border-t-border data-[overflow-bottom]:border-b-border',
         SECTION_X,
