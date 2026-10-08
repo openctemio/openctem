@@ -1213,6 +1213,17 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, fmt.Sprintf("a.id IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
+	// Names equal to or below DNS names: exact, or ending in ".<name>".
+	if len(filter.UnderDomains) > 0 {
+		parts := make([]string, 0, len(filter.UnderDomains))
+		for _, d := range filter.UnderDomains {
+			parts = append(parts, fmt.Sprintf("(a.name = $%d OR a.name ILIKE $%d ESCAPE '\\')", argIndex, argIndex+1))
+			args = append(args, d, "%."+escapeLikePattern(d))
+			argIndex += 2
+		}
+		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+	}
+
 	// Business unit membership filter (business_unit_assets join).
 	if len(filter.BusinessUnitIDs) > 0 {
 		placeholders := make([]string, len(filter.BusinessUnitIDs))
