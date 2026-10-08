@@ -68,6 +68,7 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/scim/v2", "SCIM per-tenant bearer token auth (routes live at /scim/v2, not /api/v1)"},
 	{"/api/v1/scim", "SCIM per-tenant bearer token auth"},
 	{"/api/v1/mcp", "MCP oct_ API-key auth"},
+	{"/.well-known/oauth-protected-resource", "public OAuth Protected Resource Metadata of the MCP endpoint (RFC 9728, RFC-062): static, no tenant data"},
 	{"/api/v1/webhooks/incoming", "inbound webhook HMAC per-tenant"},
 	{"/api/v1/tenants", "base-auth + RequireMembership/RequireTeam* (role-gated, not permission-gated)"},
 	{"/api/v1/module-presets", "auth-only catalog read (public preset list)"},

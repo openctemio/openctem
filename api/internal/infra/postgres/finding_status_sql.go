@@ -34,8 +34,7 @@ var (
 	// A scan that reports a finding again.
 	regressionReopenFromSQL = platformFromSQL(vulnerability.FindingStatusConfirmed, vulnerability.RegressionReopenFromStatuses()...)
 	// AutoReopenByFingerprint reopens only findings closed as fixed.
-	fixedReopenFromSQL = platformFromSQL(vulnerability.FindingStatusConfirmed,
-		vulnerability.FindingStatusResolved, vulnerability.FindingStatusVerified)
+	fixedReopenFromSQL = platformFromSQL(vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusResolved)
 
 	// A suppression rule lifted (the finding returns to new) or re-linked to
 	// another rule (the finding takes that rule's disposition).

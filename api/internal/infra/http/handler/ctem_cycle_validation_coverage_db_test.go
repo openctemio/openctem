@@ -61,7 +61,7 @@ func TestComputeValidationCoverage_CountsValidationEvidence(t *testing.T) {
 
 	seedFinding(tenantID, "P0", "resolved", true)
 	seedFinding(tenantID, "P0", "resolved", false)
-	seedFinding(tenantID, "P1", "verified", true)
+	seedFinding(tenantID, "P1", "resolved", true)
 	seedFinding(tenantID, "P1", "new", true) // not terminal: not counted
 	seedFinding(otherTenant, "P0", "resolved", true)
 

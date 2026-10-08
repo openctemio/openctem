@@ -196,24 +196,28 @@ All images are signed with cosign (keyless) and have SBOMs on the release.
 The two v0.8.0 repositories are now `api/` and `web/` of
 `openctemio/openctem`. You have two options.
 
-**Option A — keep your layout (two Compose projects).** Use
-`api/docker-compose.yml` + `api/docker-compose.prod.yml` and
-`web/docker-compose.prod.yml` from the `v0.9.0` tag. Changes against the
-v0.8.0 files:
+**Option A — keep your layout (two Compose projects).** Keep the Compose files
+your v0.8.0 installation runs: v0.9.0 no longer ships API-only or web-only
+Compose files (`api/docker-compose.prod.yml`, `web/docker-compose.prod.yml` and
+`web/docker-compose.prod-simple.yml` are removed), so plan to move to Option B
+afterwards. Change your files as follows:
 
-- The API no longer publishes ports 8080 and 9090 (`expose: 8080` only). If
-  your web container or proxy reached the API through the host port, add an
-  override (`ports: ["127.0.0.1:8080:8080"]`) or join both projects to one
-  network. Port 9090 (gRPC, metrics) must never be public.
-- New volume `api-data:/app/data`: attachments and finding evidence. The root
-  filesystem is read-only; without it every upload fails. Back it up with the
+- Set the images to the v0.9.0 names and tag ([3.1](#31-images)), the
+  `migrations` image included: the API refuses to start on an older schema.
+- Do not publish the API's ports 8080 and 9090 on all interfaces. If your web
+  container or proxy reaches the API through the host port, publish it on
+  `127.0.0.1` only (`ports: ["127.0.0.1:8080:8080"]`) or join both projects to
+  one network. Port 9090 (gRPC, metrics) must never be public.
+- Add a volume `api-data:/app/data`: attachments and finding evidence. With a
+  read-only root filesystem every upload fails without it. Back it up with the
   database. (v0.8.0 kept uploads in the container filesystem; they were lost on
   every restart, so there is nothing to copy.)
-- New one-shot service `db-roles` (least-privilege database roles). It does
-  nothing unless you set `DB_MIGRATE_USER` ([database roles](../deployment/database-roles.md)).
-- The web container runs `node server-with-ws.mjs` (WebSocket forwarding), with
-  a read-only root filesystem and tmpfs `/tmp` and `/app/.next/cache`. A custom
-  `command:` override loses the WebSocket forwarding.
+- Optional: least-privilege database roles, set up as in
+  [database roles](../deployment/database-roles.md).
+- Run the web container with the image's default command,
+  `node server-with-ws.mjs` (WebSocket forwarding), with a read-only root
+  filesystem and tmpfs `/tmp` and `/app/.next/cache`. A custom `command:`
+  override loses the WebSocket forwarding.
 - **Keep the same Compose project name**, so the existing volumes are reused:
   Compose prefixes volumes with the project name (the directory name by
   default). Check with `docker volume ls | grep postgres-data` and pass
@@ -221,8 +225,7 @@ v0.8.0 files:
 - Keep `postgres:17-alpine` for an existing data directory. Do not switch an
   existing volume to the Debian-based `postgres:17` image: the text collation
   changes with the C library (musl → glibc) and text indexes would no longer
-  match. `api/docker-compose.prod.yml` defaults to `17-alpine`
-  (`POSTGRES_VERSION`).
+  match.
 
 **Option B — the single HTTPS port stack (`api/deploy/docker-compose.yml`).**
 Gateway (Caddy) on one HTTPS port, web, API, migrations, PostgreSQL and Redis
@@ -250,6 +253,11 @@ and `APP_ENCRYPTION_KEY` (same value as before)
 | `SENSOR_KEY_PEPPER` | New, optional; at least 32 characters when set | Leave empty (derived from `APP_ENCRYPTION_KEY`). |
 | `KEYCLOAK_BASE_URL` + `KEYCLOAK_REALM` | With `AUTH_PROVIDER=oidc` or `hybrid` they must form an issuer URL | Check both are set. |
 | `STORAGE_PROVIDER` | Only `local`, `s3`, `minio`; `s3`/`minio` need `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` | Check if you set it. |
+| Secrets (`APP_ENCRYPTION_KEY`, `AUTH_JWT_SECRET`, `DB_PASSWORD`, `REDIS_PASSWORD`, `OAUTH_STATE_SECRET`, `METRICS_TOKEN`, ...) | A value that still holds example-file text (`openssl rand ...`, `<CHANGE_ME...>`, `changeme`, `your-super-secret...`) fails startup in every `APP_ENV` | Replace it with a generated secret. |
+
+Check the result before the window with `server -check-config` (exit `0` =
+valid; it connects to nothing), for example
+`docker run --rm --env-file api.env ghcr.io/openctemio/openctem-api:v0.9.0 -check-config`.
 
 Unchanged and still enforced in production: `DB_SSLMODE` not `disable`,
 `AUTH_JWT_SECRET` of 64+ characters, `APP_ENCRYPTION_KEY` set, Redis password
@@ -265,13 +273,15 @@ limiting on, debug off.
 | `SENSOR_KEY_TTL` (was `AGENT_KEY_TTL`) | `0` (never expires) | `2160h`: renewed sensor keys expire after 90 days; sensors renew them on their own |
 | `WORKER_HEALTH_CHECK_ENABLED` | `true` | `false` (sensor liveness has its own controller) |
 | `CORS_ALLOWED_HEADERS` | included `X-Admin-API-Key` | no longer does (admin API keys are gone) |
+| `APP_ENV` | `development` | `production`: an unset value runs every production check, so a development setup must set `APP_ENV=development` |
+| `AUTH_PROVIDER` | `oidc` | `local`: an installation that relied on the old default must set `AUTH_PROVIDER=oidc` |
 
 **New, optional** (safe defaults; set them when you need them):
 `SERVER_TRUSTED_PROXIES` (the web container's address or network: needed for
 correct client IPs, login rate limits and IP allowlists), `SCOPE_DENY_EXTRA`
 (your own names and ranges that must never be scanned),
 `SCOPE_MAX_PUBLIC_CIDR_V4`/`_V6` (16/32), `SENSOR_LATEST_VERSION` /
-`SENSOR_MIN_VERSION` (set `v0.11.0` / `v0.9.0` after the sensor upgrade),
+`SENSOR_MIN_VERSION` (default `v0.11.0` / `v0.9.0`, from `versions.yaml`),
 `AUDIT_RETENTION_DAYS` (365) and `AUDIT_ARCHIVE_DIR` (unset: nothing pruned),
 `INGEST_VEX` (`dry_run`), `INGEST_COVERAGE_AUTO_RESOLVE` / `INGEST_SOURCE_RESOLVE`
 (`dry_run`), `EASM_DNS_CHECKS_*`, `CERT_MONITOR_*`, the `SENSOR_HEARTBEAT_*` and
@@ -392,8 +402,10 @@ docker compose exec postgres psql -U openctem -d openctem -c \
 ```
 
 With Option A ([3.2](#32-docker-compose)), hop 2 can also be the `migrate`
-service of `api/docker-compose.prod.yml` (`docker compose run --rm migrate`)
-once `MIGRATIONS_VERSION=v0.9.0` is set.
+service of your API Compose project (`docker compose run --rm migrate`) once its
+image is `ghcr.io/openctemio/migrations:v0.9.0`. In the Option B stack the
+`migrate` service applies the migrations on every `docker compose up`, with the
+tag set by `OPENCTEM_VERSION`.
 
 ### 4.3 Kubernetes
 
@@ -836,17 +848,19 @@ authenticator. Store the break-glass credentials offline.
 
 ### 10.1 Docker Compose
 
-Assumes Option A ([3.2](#32-docker-compose)), the API project in `api/` and
-the web project in `web/` of a `v0.9.0` checkout, and your env files updated as
-in [3.3](#33-api-environment-variables) and [3.4](#34-web-environment-variables).
+Assumes Option A ([3.2](#32-docker-compose)): your v0.8.0 API and web Compose
+projects, their files changed as in [3.2](#32-docker-compose) and your env files
+updated as in [3.3](#33-api-environment-variables) and
+[3.4](#34-web-environment-variables). The service names below (`migrate`, `app`,
+`redis`) are those of the v0.8.0 files.
 
 ```bash
-API="docker compose -p <api project> -f docker-compose.yml -f docker-compose.prod.yml"   # in api/
-WEB="docker compose -p <web project> -f docker-compose.prod.yml"                         # in web/
+API="docker compose -p <api project> -f <your API Compose files>"
+WEB="docker compose -p <web project> -f <your web Compose files>"
 
-# 1. Before the window: pull the images (no downtime)
-#    API_VERSION=v0.9.0 MIGRATIONS_VERSION=v0.9.0 UI_VERSION=v0.9.0
-#    API_IMAGE=ghcr.io/openctemio/openctem-api UI_IMAGE=ghcr.io/openctemio/openctem-web
+# 1. Before the window: pull the images (no downtime). The image lines name
+#    ghcr.io/openctemio/openctem-api:v0.9.0, ghcr.io/openctemio/migrations:v0.9.0
+#    and ghcr.io/openctemio/openctem-web:v0.9.0
 $API pull migrate app && $WEB pull
 
 # 2. Stop web and API (keep postgres and redis; v0.9.1 sensors may keep running)
