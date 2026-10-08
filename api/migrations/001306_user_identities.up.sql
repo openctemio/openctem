@@ -40,4 +40,8 @@ WHERE federated_issuer IS NOT NULL AND federated_issuer <> ''
   AND erased_at IS NULL
 ON CONFLICT DO NOTHING;
 
-ALTER TABLE users DROP COLUMN federated_issuer, DROP COLUMN federated_subject;
+-- Expand step: users.federated_issuer/federated_subject stay (old pods still
+-- read them during a rolling deploy) but nothing writes them any more; a
+-- later migration drops them.
+COMMENT ON COLUMN users.federated_issuer IS 'Deprecated: moved to user_identities (migration 001306); dropped in a later release.';
+COMMENT ON COLUMN users.federated_subject IS 'Deprecated: moved to user_identities (migration 001306); dropped in a later release.';
