@@ -227,6 +227,8 @@ type Handlers struct {
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
 	AdminConsole            *handler.AdminConsoleHandler
 	AdminAuditChain         *handler.AdminAuditChainHandler
+	// AccessRequest: the request-access queue (public form + console).
+	AccessRequest *handler.AccessRequestHandler
 	// Plan: plans and limits (console plan defaults, organization plans and
 	// overrides, the organization's own usage).
 	Plan *handler.PlanHandler

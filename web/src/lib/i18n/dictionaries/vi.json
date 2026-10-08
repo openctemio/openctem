@@ -782,5 +782,19 @@
   "admin.users.session.started": "Bắt đầu",
   "admin.users.sessions": "Phiên đang hoạt động",
   "admin.users.startHint": "Nhập ít nhất 3 ký tự của email, tên hoặc id người dùng. Tài khoản được tra cứu, không liệt kê.",
-  "admin.users.startTitle": "Tìm một tài khoản"
+  "admin.users.startTitle": "Tìm một tài khoản",
+  "auth.requestAccess.cta": "Yêu cầu quyền truy cập",
+  "auth.requestAccess.title": "Yêu cầu quyền truy cập",
+  "auth.requestAccess.description": "Hãy cho chúng tôi biết về tổ chức của bạn. Quản trị viên sẽ xem xét từng yêu cầu.",
+  "auth.requestAccess.company": "Công ty",
+  "auth.requestAccess.email": "Email công việc",
+  "auth.requestAccess.note": "Bạn muốn dùng để làm gì? (không bắt buộc)",
+  "auth.requestAccess.submit": "Gửi yêu cầu",
+  "auth.requestAccess.sent": "Cảm ơn bạn. Nếu yêu cầu được chấp thuận, bạn sẽ nhận được email tại địa chỉ đã nhập.",
+  "auth.requestAccess.checkEmail": "Nếu hệ thống đã cấu hình email, chúng tôi đã gửi cho bạn một liên kết để xác nhận yêu cầu.",
+  "auth.requestAccess.closed": "Hiện không nhận yêu cầu.",
+  "auth.requestAccess.confirming": "Đang xác nhận yêu cầu...",
+  "auth.requestAccess.confirmed": "Yêu cầu của bạn đã được xác nhận và đang chờ quản trị viên.",
+  "auth.requestAccess.confirmFailed": "Liên kết này không hợp lệ hoặc đã hết hạn.",
+  "admin.nav.access-requests": "Yêu cầu truy cập"
 }
