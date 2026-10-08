@@ -164,6 +164,13 @@ export interface AdminCreatedOrganizationUser extends SetupLinkOutcome {
   role: string
 }
 
+/** English names of the console roles (i18n keys admin.role.<role>). */
+export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
+  super_admin: 'Super admin',
+  ops_admin: 'Operations admin',
+  readonly: 'Read-only admin',
+}
+
 /** super_admin > ops_admin > readonly. */
 export function adminCan(role: AdminRole | undefined, needed: AdminRole): boolean {
   const rank: Record<AdminRole, number> = { readonly: 0, ops_admin: 1, super_admin: 2 }
@@ -328,3 +335,23 @@ export interface PlatformUserDetail extends PlatformUser {
 
 export type PlatformUserAction =
   'revoke-sessions' | 'unlock' | 'password-reset' | 'resend-verification'
+
+/** GET /admin/sessions: one open console session (super admin). */
+export interface AdminConsoleSession {
+  id: string
+  admin_id: string
+  admin_email: string
+  admin_name: string
+  admin_role: AdminRole
+  break_glass: boolean
+  /** password | idp */
+  auth_method: string
+  mfa_verified: boolean
+  ip_address?: string
+  user_agent?: string
+  created_at: string
+  last_seen_at: string
+  expires_at: string
+  /** The session making the request. */
+  current: boolean
+}

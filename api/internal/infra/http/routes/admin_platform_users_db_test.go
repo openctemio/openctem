@@ -24,6 +24,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/platformuser"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -34,7 +36,7 @@ import (
 )
 
 func newPlatformUsersHarness(t *testing.T) *chainHarness {
-	return newChainHarness(t, func(h *Handlers, db *postgres.DB) {
+	return newChainHarness(t, func(h *Handlers, db *postgres.DB, _ *adminconsole.Service) {
 		log := logger.NewNop()
 		sessions := auth.NewSessionService(postgres.NewSessionRepository(db.DB), postgres.NewRefreshTokenRepository(db.DB), log)
 		dir := postgres.NewPlatformUserDirectory(db)

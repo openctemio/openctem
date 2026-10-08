@@ -90,7 +90,7 @@ type chainHarness struct {
 
 // newChainHarness builds the console over a migrated database. extra adds
 // more console handlers (other console route tests reuse the harness).
-func newChainHarness(t *testing.T, extra ...func(h *Handlers, db *postgres.DB)) *chainHarness {
+func newChainHarness(t *testing.T, extra ...func(h *Handlers, db *postgres.DB, console *adminconsole.Service)) *chainHarness {
 	t.Helper()
 	dbURL := testdb.URL()
 	if dbURL == "" {
@@ -149,7 +149,7 @@ func newChainHarness(t *testing.T, extra ...func(h *Handlers, db *postgres.DB)) 
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(console, log),
 	}
 	for _, f := range extra {
-		f(&handlers, db)
+		f(&handlers, db, console)
 	}
 	Register(router, handlers, cfg, log, authCfg, tenantRepo, tenant.NewUserService(userRepo, log), nil, nil, nil)
 
