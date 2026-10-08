@@ -169,6 +169,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Continuous retest (RFC-039): a retest check's evidence is recorded
 	// advisory-only and its retest settled when the sensor completes or fails it.
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
+	if svc.ScanRun != nil {
+		commandHandler.SetValidationRuns(svc.ScanRun)
+	}
 	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
 	commandLogs := commandlog.NewService(repos.CommandLog)
 	commandHandler.SetCommandLogs(commandLogs)
