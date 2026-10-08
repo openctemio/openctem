@@ -348,7 +348,7 @@ func registerVulnerabilityRoutes(
 
 	// Approval management routes - tenant from JWT token
 	router.Group("/api/v1/approvals", func(r Router) {
-		r.GET("/", h.ListPendingApprovals, middleware.Require(permission.FindingsRead))
+		r.GET("/", h.ListApprovals, middleware.Require(permission.FindingsRead))
 		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/reject", h.RejectApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/cancel", h.CancelApproval, middleware.Require(permission.FindingsWrite))
