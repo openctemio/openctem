@@ -549,12 +549,8 @@ type AuthConfig struct {
 	LockoutDuration   time.Duration // Account lockout duration (default: 15m)
 	MaxActiveSessions int           // Max concurrent sessions per user (default: 10)
 
-	// Registration settings
-	// AllowRegistration lets anyone create an account on /auth/register
-	// (AUTH_ALLOW_REGISTRATION, default false). Off by default: accounts come
-	// from an administrator, an invitation, or the organization SSO.
-	// An invited person can still register with their invitation token.
-	AllowRegistration        bool
+	// Registration settings. Who may create an account is the sign-up policy
+	// (internal/app/signup), not a config flag.
 	RequireEmailVerification bool // Require email verification (default: true)
 
 	// Email verification/reset token settings
@@ -1146,7 +1142,6 @@ func Load() (*Config, error) {
 			MaxLoginAttempts:          getEnvInt("AUTH_MAX_LOGIN_ATTEMPTS", 5),
 			LockoutDuration:           getEnvDuration("AUTH_LOCKOUT_DURATION", 15*time.Minute),
 			MaxActiveSessions:         getEnvInt("AUTH_MAX_ACTIVE_SESSIONS", 10),
-			AllowRegistration:         getEnvBool("AUTH_ALLOW_REGISTRATION", false),
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),

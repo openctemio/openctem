@@ -15,8 +15,10 @@ import (
 )
 
 // regEnabled is the auth config used by findOrCreateUser tests that exercise the
-// create path; production defaults AUTH_ALLOW_REGISTRATION to true.
-func regEnabled() config.AuthConfig { return config.AuthConfig{AllowRegistration: true} }
+// create path (the self_service sign-up mode).
+func regEnabled() config.AuthConfig {
+	return config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService}
+}
 
 // ssoTn builds a throwaway tenant for the findOrCreateUser call signature. Same-
 // provider / create paths never read it; the Case 2 proof-before-link gate does.

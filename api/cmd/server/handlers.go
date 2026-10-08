@@ -690,6 +690,9 @@ func InitLocalAuthHandler(
 			log,
 		)
 		log.Info("local auth handler initialized")
+		if svc.Signup != nil {
+			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
+		}
 		// Widening a sensor's grant needs a recent sign-in or step-up.
 		if svc.SensorGrant != nil {
 			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{

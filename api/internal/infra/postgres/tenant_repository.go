@@ -1382,6 +1382,23 @@ func (r *TenantRepository) GetPendingInvitationByEmail(ctx context.Context, tena
 	return r.scanInvitation(r.db.QueryRowContext(ctx, query, tenantID.String(), email))
 }
 
+// HasPendingInvitationForEmail reports whether any organization has a
+// pending, unexpired invitation for email. It answers a yes/no for the
+// sign-up policy (an invited person may sign up with a social account) and
+// returns nothing about the organization.
+func (r *TenantRepository) HasPendingInvitationForEmail(ctx context.Context, email string) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM tenant_invitations
+			 WHERE lower(email) = lower($1) AND accepted_at IS NULL AND expires_at > NOW()
+		)`, email).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("check pending invitation: %w", err)
+	}
+	return ok, nil
+}
+
 // DeleteExpiredInvitations removes all expired invitations.
 func (r *TenantRepository) DeleteExpiredInvitations(ctx context.Context) (int64, error) {
 	query := `DELETE FROM tenant_invitations WHERE expires_at < NOW() AND accepted_at IS NULL`
