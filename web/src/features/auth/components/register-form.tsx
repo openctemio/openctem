@@ -38,6 +38,7 @@ import { registerAction } from '../actions/local-auth-actions'
 import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth-actions'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { invitationTokenFromReturnTo } from '../lib/self-register'
+import { identityProviderLabel } from '@/lib/identity-provider-label'
 
 // ============================================
 // TYPES
@@ -190,7 +191,7 @@ export function RegisterForm({
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)
-      toast.error(`Failed to sign up with ${provider}. Please try again.`)
+      toast.error(`Failed to sign up with ${identityProviderLabel(provider)}. Please try again.`)
     }
   }
 
