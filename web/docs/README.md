@@ -14,7 +14,6 @@ Complete documentation for the Next.js 16 application with local-JWT / OAuth soc
 web/docs/
 ├── README.md                        # This file
 ├── ARCHITECTURE.md                  # System architecture
-├── ROADMAP.md                       # Future plans
 │
 ├── guides/                          # Development Guides
 │   ├── README.md
