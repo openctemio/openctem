@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable, ErrorState, RelativeTime } from '@/features/shared'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useListParams } from '@/hooks/use-list-params'
 import type { EASMReviewItem } from '@/lib/api/generated'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
@@ -82,7 +83,7 @@ export function EASMReviewQueue() {
   const setView = setTabParam
   const [searchInput, setSearchInput] = useState('')
   const search = useDebounce(searchInput, 300)
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: PAGE_SIZE })
+  const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: PAGE_SIZE })
   const [selected, setSelected] = useState<EASMReviewItem[]>([])
   const [resetKey, setResetKey] = useState(0)
   // Filter by the rule that queued the names (RFC-054 §6.6), in the URL.
@@ -292,7 +293,7 @@ export function EASMReviewQueue() {
         value={view}
         onValueChange={(v) => {
           setView(v)
-          setPagination((p) => ({ ...p, pageIndex: 0 }))
+          setPage(1)
           clearSelection()
         }}
       >
@@ -367,7 +368,7 @@ export function EASMReviewQueue() {
                 value={searchInput}
                 onChange={(e) => {
                   setSearchInput(e.target.value)
-                  setPagination((p) => ({ ...p, pageIndex: 0 }))
+                  setPage(1)
                 }}
                 placeholder="Search names"
                 aria-label="Search names"
@@ -379,7 +380,7 @@ export function EASMReviewQueue() {
                 value={reason ?? 'all'}
                 onValueChange={(v) => {
                   setReasonParam(v)
-                  setPagination((p) => ({ ...p, pageIndex: 0 }))
+                  setPage(1)
                 }}
               >
                 <SelectTrigger className="h-9 w-auto min-w-44" aria-label="Filter by reason">

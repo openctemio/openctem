@@ -71,6 +71,10 @@ const ALLOWED: { path: RegExp; why: string }[] = [
     why: 'asserts the old /pipelines routes are gone',
   },
   { path: /^src\/config\/__tests__\/pipeline-vocabulary\.test\.ts$/, why: 'this guard' },
+  {
+    path: /^src\/hooks\/__tests__\/list-params-guard\.test\.ts$/,
+    why: 'names the CI pipelines view',
+  },
 ]
 
 function walk(path: string, out: string[]) {
