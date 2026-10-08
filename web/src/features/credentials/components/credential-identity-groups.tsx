@@ -34,7 +34,7 @@ const PAGE_SIZES = [10, 20, 50, 100]
 
 /** The leaks of one identity (all states), first `limit` of them. */
 export async function fetchIdentityLeaks(identity: string, limit: number) {
-  const url = `/api/v1/credentials/identities/${encodeURIComponent(identity)}/exposures?page=1&page_size=${limit}`
+  const url = `/api/v1/credentials/identities/${encodeURIComponent(identity)}/exposures?page=1&per_page=${limit}`
   const res = await get<ApiCredentialListResponse>(url)
   const items = (res.items ?? []) as ApiCredential[]
   return { rows: items, total: res.total ?? items.length }
