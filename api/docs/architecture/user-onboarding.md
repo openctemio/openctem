@@ -148,6 +148,13 @@ has an account or an organization exists:
 
 Tests: `tests/unit/auth_anti_enumeration_test.go`.
 
+### Plan of a self-service organization
+
+An organization a person creates themselves starts on the **Free** plan, and
+one person owns at most the Free plan's `free_teams_per_user` (1 by default):
+another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
+`docs/architecture/plans-and-limits.md`.
+
 ## Organization access policy (Settings → Organization → Security, owner only)
 
 ### Allowed email domains (`security.allowed_domains`)

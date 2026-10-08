@@ -53,6 +53,7 @@ import (
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
+	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
@@ -791,6 +792,8 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// Plans and limits.
+	Entitlement *entitlementapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -2272,6 +2275,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	// Plans and limits: self-service organizations are Free.
+	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
+	s.Auth.SetFreePlan(s.Entitlement)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.

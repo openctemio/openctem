@@ -94,7 +94,7 @@ func TestRemovedRoutes_TenantMemberDeleteIsGone(t *testing.T) {
 		})
 	}
 	router := infrahttp.NewChiRouter()
-	registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil)
+	registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil, nil)
 	mux := router.(interface{ Handler() http.Handler }).Handler()
 
 	serve := func(method, path string) (code int) {
@@ -196,7 +196,7 @@ func TestRemovedRoutes_TombstonesAndDeadRoutesAreGone(t *testing.T) {
 	registerVulnerabilityRoutes(router, &handler.VulnerabilityHandler{}, &handler.FindingActionsHandler{},
 		&handler.JiraWebhookHandler{}, nil, auth, nil)
 	registerThreatIntelRoutes(router, &handler.ThreatIntelHandler{}, auth, nil)
-	registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil)
+	registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil, nil)
 	mux := router.(interface{ Handler() http.Handler }).Handler()
 
 	serve := func(method, path string) (code int) {

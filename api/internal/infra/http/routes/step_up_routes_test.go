@@ -133,7 +133,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSCIMRoutes(router, nil, &handler.SCIMTokenHandler{}, nil, auth, nil)
 			registerAuditRoutes(router, &handler.AuditHandler{}, auth, nil)
 			registerCIRoutes(router, &handler.CIAdminHandler{}, nil, auth, nil, chain(), nil, logger.NewNop())
-			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
+			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{}, nil)
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
