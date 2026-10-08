@@ -14,9 +14,21 @@ import (
 // field; anything longer is not a report.
 const clientErrorMaxBody = 1024
 
-// clientErrorKinds are the kinds a browser may report; anything else counts
-// as "other". The label set is fixed: a caller cannot add series.
-var clientErrorKinds = map[string]bool{"chunk_load": true, "render": true, "unhandled": true, "other": true}
+// clientErrorKind maps a reported kind to one of the fixed kinds; anything
+// else is "other". It returns a constant, never the caller's string, so the
+// label set is fixed and nothing the caller sent reaches the log.
+func clientErrorKind(reported string) string {
+	switch reported {
+	case "chunk_load":
+		return "chunk_load"
+	case "render":
+		return "render"
+	case "unhandled":
+		return "unhandled"
+	default:
+		return "other"
+	}
+}
 
 // ClientErrorReport is what the web console sends when it hits an error.
 // Only the kind is accepted: no message, stack, URL or user detail, so a
@@ -55,10 +67,7 @@ func (h *ClientErrorHandler) Report(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Invalid report").WriteJSON(w)
 		return
 	}
-	kind := req.Kind
-	if !clientErrorKinds[kind] {
-		kind = "other"
-	}
+	kind := clientErrorKind(req.Kind)
 	metrics.WebClientErrorsTotal.WithLabelValues(kind).Inc()
 	h.logger.Warn("web client error reported", "kind", kind)
 	w.WriteHeader(http.StatusNoContent)
