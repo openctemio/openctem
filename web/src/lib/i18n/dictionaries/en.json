@@ -801,7 +801,7 @@
   "admin.sessions.endWhat": "{email} is signed out of the console at once (signed in from {ip}). The other administrators can see this in the audit log.",
   "admin.sessions.ended": "Session ended.",
   "admin.sessions.idp": "Identity provider",
-  "admin.sessions.password": "Password + authenticator",
+  "admin.sessions.methodLocal": "Password + authenticator",
   "admin.sessions.superOnly": "Only a super admin can see console sessions.",
   "admin.attention.inspect": "Inspect",
   "admin.nav.group.operations": "Operations",
