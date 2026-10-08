@@ -3,7 +3,7 @@
 import { use, useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUrlParams } from '@/hooks/use-url-param'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   PageHeader,
@@ -135,6 +135,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
 
   // Data fetching with hooks
   const { data: group, isLoading: groupLoading, mutate: refreshGroup } = useAssetGroup(id)
+  useBreadcrumbTitle(group?.name)
   const { data: assets, isLoading: assetsLoading, mutate: mutateAssets } = useGroupAssets(id)
   const { data: findings, isLoading: findingsLoading } = useGroupFindings(id)
 
