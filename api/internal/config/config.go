@@ -751,8 +751,22 @@ type SensorTransportV3Config struct {
 	Enabled bool
 	// PublicHost is host[:port] sensors dial for the gRPC binding
 	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443). Empty: the
-	// platform advertises only the HTTPS binding.
+	// platform serves only the HTTPS binding (no mTLS listener).
 	PublicHost string
+	// MTLSListenAddr is the gRPC binding's TLS 1.3 listener
+	// (SENSOR_MTLS_LISTEN_ADDR, default :8443). The gateway passes the
+	// PublicHost name through to it at layer 4.
+	MTLSListenAddr string
+	// CACertFile and CAKeyFile are the sensor CA (SENSOR_MTLS_CA_CERT_FILE,
+	// SENSOR_MTLS_CA_KEY_FILE, PEM). Its key is not the job signer's.
+	CACertFile string
+	CAKeyFile  string
+	// CADir is where the sensor CA is created once when the two files are
+	// not set (SENSOR_MTLS_CA_DIR, default data/sensor-ca).
+	CADir string
+	// CertTTL is the client certificate lifetime (SENSOR_MTLS_CERT_TTL,
+	// default 168h, clamped to 1h..720h).
+	CertTTL time.Duration
 }
 
 // SensorConfig holds sensor management configuration.
@@ -1035,8 +1049,13 @@ func Load() (*Config, error) {
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
-				Enabled:    getEnvBool("SENSOR_TRANSPORT_V3_ENABLED", false),
-				PublicHost: getEnv("SENSOR_PUBLIC_HOST", ""),
+				Enabled:        getEnvBool("SENSOR_TRANSPORT_V3_ENABLED", false),
+				PublicHost:     getEnv("SENSOR_PUBLIC_HOST", ""),
+				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":8443"),
+				CACertFile:     getEnv("SENSOR_MTLS_CA_CERT_FILE", ""),
+				CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
+				CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),
+				CertTTL:        getEnvDuration("SENSOR_MTLS_CERT_TTL", 7*24*time.Hour),
 			},
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),

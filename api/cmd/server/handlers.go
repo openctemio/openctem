@@ -614,14 +614,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
 		handlers.SignupPolicy = svc.Signup
 	}
-	handlers.SensorV3 = newSensorV3Server(cfg, repos, handlers.SensorResultsV2, log)
+	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, handlers.SensorResultsV2, log)
 	return handlers
 }
 
 // newSensorV3Server builds the sensor protocol v3 server (RFC-059) when
 // SENSOR_TRANSPORT_V3_ENABLED is on and protocol v2 is served (v3 runs every
 // call through the v2 routes). Command writes wake its control streams.
-func newSensorV3Server(cfg *config.Config, repos *Repositories, v2 *handler.SensorResultsV2Handler, log *logger.Logger) *sensortransport.Server {
+func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, v2 *handler.SensorResultsV2Handler,
+	log *logger.Logger,
+) *sensortransport.Server {
 	tc := cfg.SensorConfig.TransportV3
 	if !tc.Enabled {
 		return nil
@@ -630,13 +632,30 @@ func newSensorV3Server(cfg *config.Config, repos *Repositories, v2 *handler.Sens
 		log.Warn("SENSOR_TRANSPORT_V3_ENABLED is set but protocol v2 results are off; protocol v3 is not served")
 		return nil
 	}
-	srv := sensortransport.NewServer(sensortransport.Config{
-		GRPCEndpoint:    tc.PublicHost,
-		MaxContentBytes: v2.Limits().MaxContentBytes,
-	}, nil, log)
+	srv := sensortransport.NewServer(sensortransport.Config{MaxContentBytes: v2.Limits().MaxContentBytes}, nil, log)
 	repos.Command.SetChangeNotifier(srv.Hub())
-	v2.SetTransportV3(&protov2.TransportV3{HTTPSPath: sensortransport.PathPrefix, GRPCEndpoint: tc.PublicHost})
-	log.Info("sensor protocol v3 enabled", "https_path", sensortransport.PathPrefix, "grpc_endpoint", tc.PublicHost)
+	svc.Sensor.SetStatusNotifier(srv.Hub().Wake)
+
+	// The sensor CA: certificates for the gRPC binding. Without it the
+	// HTTPS binding still serves (IssueCertificate answers Unimplemented).
+	grpcEndpoint := ""
+	ca, err := sensortransport.LoadCA(tc.CACertFile, tc.CAKeyFile, tc.CADir)
+	if err != nil {
+		log.Error("sensor CA not loaded: protocol v3 serves the HTTPS binding only", "error", err)
+	} else {
+		srv.SetCertificateIssuer(sensortransport.NewIssuer(ca, svc.Sensor, svc.Sensor, tc.CertTTL, tc.PublicHost, log))
+		if tc.PublicHost != "" {
+			if err := srv.EnableMTLS(sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: tc.PublicHost}, ca, svc.Sensor); err != nil {
+				log.Error("sensor protocol v3 gRPC binding not served", "error", err)
+			} else {
+				grpcEndpoint = tc.PublicHost
+			}
+		}
+		log.Info("sensor CA loaded", "fingerprint", ca.Fingerprint())
+	}
+	srv.SetGRPCEndpoint(grpcEndpoint)
+	v2.SetTransportV3(&protov2.TransportV3{HTTPSPath: sensortransport.PathPrefix, GRPCEndpoint: grpcEndpoint})
+	log.Info("sensor protocol v3 enabled", "https_path", sensortransport.PathPrefix, "grpc_endpoint", grpcEndpoint)
 	return srv
 }
 

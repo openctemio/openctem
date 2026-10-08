@@ -413,6 +413,11 @@ func run() int {
 			log.Error("server error", "error", err)
 		}
 	}()
+	if handlers.SensorV3 != nil {
+		if err := handlers.SensorV3.ListenMTLS(); err != nil {
+			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
+		}
+	}
 	log.Info("application started", "http_addr", cfg.Server.Addr())
 
 	// ==========================================================================
@@ -441,6 +446,11 @@ func run() int {
 	}
 
 	// Then stop server
+	if handlers.SensorV3 != nil {
+		if err := handlers.SensorV3.Shutdown(shutdownCtx); err != nil {
+			log.Error("sensor protocol v3 gRPC binding shutdown", "error", err)
+		}
+	}
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error("shutdown error", "error", err)
 		return 1

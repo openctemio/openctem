@@ -106,6 +106,12 @@ type Server struct {
 	log    *logger.Logger
 	hub    *Hub
 	issuer CertificateIssuer
+	// mtls is the gRPC binding's server (EnableMTLS); nil when not served.
+	mtls *http.Server
+	// done is closed by Shutdown: control streams end so the listeners
+	// can drain (a stream lives for minutes).
+	done     chan struct{}
+	doneOnce sync.Once
 
 	mu    sync.RWMutex
 	v2    http.Handler
@@ -130,7 +136,7 @@ func NewServer(cfg Config, hub *Hub, log *logger.Logger) *Server {
 	}
 	cfg = cfg.withDefaults()
 	hub.maxPerSensor = cfg.MaxStreamsPerSensor
-	return &Server{cfg: cfg, hub: hub, log: log.With("component", "sensor-v3")}
+	return &Server{cfg: cfg, hub: hub, log: log.With("component", "sensor-v3"), done: make(chan struct{})}
 }
 
 // Attach wires the in-process v2 route group, the doorbell and the
