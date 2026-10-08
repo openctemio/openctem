@@ -241,7 +241,7 @@ and then folds synonyms:
 
 A flat value already on the asset wins over the block's. A block's fields
 describe assets of its own class: an IP block's `version` never becomes an
-application's version. Migration `001337` promoted the blocks of rows
+application's version. Migration `001340` promoted the blocks of rows
 written before; no reader looks inside a block any more.
 
 ## Three layers: source record, link, canonical row
