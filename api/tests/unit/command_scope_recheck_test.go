@@ -268,7 +268,7 @@ func TestScopeRecheck_GatesWithTheRecordedInputs(t *testing.T) {
 		t.Fatalf("gate calls = %d", f.gate.callCount())
 	}
 	in := f.gate.calls[0]
-	if in.TenantID != f.tenant || in.SensorID == nil || *in.SensorID != f.sensor || !in.Recheck ||
+	if in.TenantID != f.tenant || in.SensorID == nil || *in.SensorID != f.sensor || !in.AllowNonNetworkTargets ||
 		!in.PassiveOnly || !in.ActScope || in.FallbackUser == nil || *in.FallbackUser != actor ||
 		in.Tier == nil || *in.Tier != scopedom.TierPassive || in.DryRun {
 		t.Fatalf("gate input %+v", in)
@@ -448,7 +448,7 @@ func TestScopeRecheck_ScanWithoutRecordUsesTheBaseline(t *testing.T) {
 		t.Fatalf("gate calls %d", f.gate.callCount())
 	}
 	in := f.gate.calls[0]
-	if !in.PassiveOnly || in.ActScope || in.Tier == nil || *in.Tier != scopedom.TierPassive || !in.Recheck {
+	if !in.PassiveOnly || in.ActScope || in.Tier == nil || *in.Tier != scopedom.TierPassive || !in.AllowNonNetworkTargets {
 		t.Fatalf("baseline input %+v", in)
 	}
 }

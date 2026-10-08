@@ -56,7 +56,7 @@ func TestRefuseUnownedTargets(t *testing.T) {
 // asset id. A run left with nothing is refused.
 func TestResolveScanTargets_SkipsUnownedDirectTargets(t *testing.T) {
 	gate := &stubGate{blockedTyped: map[string]attribution.State{"www.rejected.com": attribution.StateRejected}}
-	svc := &Service{attributionGate: gate, logger: logger.NewNop()}
+	svc := allowAllChecks(&Service{attributionGate: gate, logger: logger.NewNop()})
 	sc := testScan("nuclei", "www.rejected.com", "ok.example.com")
 	got, err := svc.resolveScanTargets(context.Background(), sc)
 	if err != nil {

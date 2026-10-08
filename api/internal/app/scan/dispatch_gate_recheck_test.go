@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// The claim-time re-check (Recheck) re-applies the gate to targets a
+// The claim-time re-check (AllowNonNetworkTargets) re-applies the gate to targets a
 // dispatch already let through: a repository dispatched by its asset name is
 // not refused for its form, but every check that can turn on a change still
 // runs (exclusions; internal addresses need a zone).
@@ -28,7 +28,7 @@ func TestResolveDispatchTargets_Recheck(t *testing.T) {
 		t.Fatalf("a dispatch refuses a repository path as a typed target: refused = %v", refusedTargets(plain))
 	}
 
-	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{TenantID: shared.NewID(), Targets: targets, Recheck: true})
+	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{TenantID: shared.NewID(), Targets: targets, AllowNonNetworkTargets: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestResolveDispatchTargets_RecheckZoneShrunk(t *testing.T) {
 	tenant, sensor := shared.NewID(), shared.NewID()
 	before := mustGateZone(t, tenant, "dc-a", []shared.ID{sensor}, "10.1.0.0/16")
 	after := mustGateZone(t, tenant, "dc-a", []shared.ID{sensor}, "10.1.0.0/24")
-	in := DispatchTargetsInput{TenantID: tenant, SensorID: &sensor, Targets: []string{"10.1.0.5", "10.1.7.5"}, Recheck: true}
+	in := DispatchTargetsInput{TenantID: tenant, SensorID: &sensor, Targets: []string{"10.1.0.5", "10.1.7.5"}, AllowNonNetworkTargets: true}
 	for name, tc := range map[string]struct {
 		zones []*scanzone.Zone
 		want  []string

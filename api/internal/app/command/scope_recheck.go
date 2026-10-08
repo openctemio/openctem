@@ -203,7 +203,7 @@ func (s *Service) recheckBatch(ctx context.Context, tenantID shared.ID, sensorID
 	g := jobs[0].gate
 	tier := scopedom.Tier(g.Tier)
 	in := scanapp.DispatchTargetsInput{
-		TenantID: tenantID, SensorID: sensorID, Recheck: true,
+		TenantID: tenantID, SensorID: sensorID, AllowNonNetworkTargets: true, Path: "claim_recheck",
 		Tier: &tier, PassiveOnly: g.Passive, ActScope: g.ActScope,
 	}
 	if g.ActScope && g.Actor != "" {

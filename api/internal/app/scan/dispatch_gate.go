@@ -1,8 +1,10 @@
 package scan
 
-// One target gate for the paths that send traffic at a target outside a scan
-// trigger: POST /scan-workflows/runs, the coverage dispatcher, and every validate
-// command (finding re-checks, retests, attack-simulation safe-checks). Design:
+// One target gate for every path that sends traffic at a target: the scan
+// trigger (resolveScanTargets), POST /scan-workflows/runs and its hops, the
+// coverage dispatcher, connector scans, the quick-scan dry run, and every
+// validate command (finding re-checks, retests, attack-simulation
+// safe-checks); POST /commands goes through GateCommandPayload. Design:
 // docs/rfcs/RFC-042-asset-inventory-v2.md (§3.3 F16, §6.11, §6.13);
 // architecture: docs/architecture/active-probe-gate.md.
 
@@ -39,6 +41,11 @@ type DispatchAsset struct {
 	AlsoMatch []string
 }
 
+// typed reports whether the entry names no asset id and only adds names for
+// the exclusion match: the target is then checked by name, as one with no
+// entry. An entry with neither ids nor names is malformed (refused).
+func (a DispatchAsset) typed() bool { return len(a.IDs) == 0 && len(a.AlsoMatch) > 0 }
+
 // DispatchTargetsInput is a target list about to be dispatched.
 type DispatchTargetsInput struct {
 	TenantID shared.ID
@@ -71,13 +78,55 @@ type DispatchTargetsInput struct {
 	// the safe active probe every path sends unless it says otherwise;
 	// PassiveOnly dispatches are not tier-checked.
 	Tier *scopedom.Tier
-	// Recheck re-applies the gate to targets that passed a gate when their
-	// command was created (the claim-time re-check, command.Service). Their
-	// form cannot have changed since, and a scan dispatches some targets
-	// the validator's form rules refuse (a repository by its asset name),
-	// so only the validator's address rules apply again (an internal
-	// address needs a scan zone); every other check runs as usual.
-	Recheck bool
+
+	// The options below are for the scan trigger (resolveScanTargets), which
+	// builds its own candidate list (asset groups, the scanner type gate,
+	// archived members) and plans zones itself. Their zero value is the
+	// strict behavior every other path gets.
+
+	// AllowNonNetworkTargets replaces the scan target validator with the
+	// private-range rule alone, applied after the act scope: an internal
+	// address (private, loopback, link-local, unspecified, carrier-grade
+	// NAT; literal, range, URL or host:port) is refused while the tenant has
+	// no scan zone; with zones, zone routing (or the caller's own zone
+	// planning) refuses what no zone covers. For target lists naming
+	// inventory assets the validator refuses as not network targets
+	// (repositories, container images): a scan's asset-group members, and
+	// its direct targets, validated when the scan was saved.
+	AllowNonNetworkTargets bool
+	// SkipZoneRouting leaves zone routing to the caller: Allowed is every
+	// target the other checks kept, ZoneOf stays nil. Only for a caller that
+	// routes, batches and pins per zone itself and refuses what no zone
+	// covers (the scan trigger's planZoneDispatch).
+	SkipZoneRouting bool
+	// TakeoverOnly applies the takeover exception (research/22 E13) to the
+	// ownership check: a dependency asset with an open dangling_cname is
+	// admitted. IsTakeoverOnlyProbe decides which scans qualify.
+	TakeoverOnly bool
+	// ActScopeAssetsByID checks a target that has asset ids in Assets
+	// against the act scope by those ids only. Off, its name is also
+	// checked as free text (a scope entry must cover it). For a scan's
+	// asset-group members: the member is the asset, its name is not
+	// something the actor typed.
+	ActScopeAssetsByID bool
+	// MaxTargets bounds the input list (0 = maxResolvedTargets). The scan
+	// trigger passes its own pre-check bound and caps what is left after
+	// the checks itself.
+	MaxTargets int
+	// Path names the dispatch path in refusal logs ("" = dispatch_gate).
+	Path string
+}
+
+// ReasonInternalOutsideZones is the reason an internal address is refused
+// while the tenant has no scan zone (AllowNonNetworkTargets).
+const ReasonInternalOutsideZones = "internal addresses are scanned only inside a scan zone of this organization"
+
+// gatePath is the dispatch path named in refusal logs.
+func (in DispatchTargetsInput) gatePath() string {
+	if in.Path == "" {
+		return "dispatch_gate"
+	}
+	return in.Path
 }
 
 // RefusedTarget is a target the gate will not dispatch, with the reason and
@@ -152,22 +201,30 @@ func NewTargetGate(exclusions ScopeExclusionFilter, attr AttributionGate, zones 
 		logger: log.With("service", "scan-target-gate")}
 }
 
-// ResolveDispatchTargets applies the checks of a scan trigger to a target
-// list that is dispatched some other way:
+// ResolveDispatchTargets is the one target gate of every dispatch path. In
+// order, each check on what the previous ones kept:
 //
 //   - the scan target validator with the private-range policy of scan
 //     create (private addresses only inside a scan zone of the tenant);
+//     AllowNonNetworkTargets keeps only the private-range rule, applied
+//     after the act scope;
 //   - active scope exclusions, matched as on a scan run (URL and host:port
-//     forms included); a failed lookup returns an error (fail closed);
+//     forms included); a failed or unwired lookup returns an error (fail
+//     closed);
 //   - ownership (AttributionGate): the inventory asset behind a target
 //     (in.Assets, or the asset a typed target names) must be authorized for
 //     active checks, and no target may be or sit under a rejected name; a
 //     failed or unwired lookup returns an error (fail closed);
-//   - scan-zone routing: uncovered targets, zones without sensors and a
-//     pinned sensor outside the target's zone are refused.
+//   - the act scope (ActScope): what the actor may scan;
+//   - the tier ceiling (Tier): the scope entries covering a target must
+//     allow the probe's tier;
+//   - scan-zone routing (unless SkipZoneRouting): uncovered targets, zones
+//     without sensors and a pinned sensor outside the target's zone are
+//     refused.
 //
 // It returns an error only when the checks themselves cannot run; a refused
-// or excluded target is reported in the result.
+// or excluded target is reported in the result, once, under the first check
+// that refused it.
 func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargetsInput) (*DispatchTargets, error) {
 	if s.scopeExclusions == nil {
 		return nil, ErrDispatchGateUnavailable
@@ -177,20 +234,27 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	if len(targets) == 0 {
 		return out, nil
 	}
-	if len(targets) > maxResolvedTargets {
+	limit := maxResolvedTargets
+	if in.MaxTargets > 0 {
+		limit = in.MaxTargets
+	}
+	if len(targets) > limit {
 		return nil, fmt.Errorf("%w: %d targets, more than the %d allowed per run",
-			shared.ErrValidation, len(targets), maxResolvedTargets)
+			shared.ErrValidation, len(targets), limit)
 	}
+	in.Assets = foldAssets(in.Assets)
 
-	accepted, rejected, err := s.validateTargetsEach(ctx, in.TenantID.String(), targets, maxResolvedTargets)
-	if err != nil {
-		return nil, err
-	}
-	if in.Recheck {
-		accepted, rejected = keepFormRejected(accepted, rejected)
-	}
-	for _, r := range rejected {
-		out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: r.Reason, Code: scopedom.RefusalInvalidTarget})
+	accepted := targets
+	if !in.AllowNonNetworkTargets {
+		var rejected []rejectedTarget
+		var err error
+		accepted, rejected, err = s.validateTargetsEach(ctx, in.TenantID.String(), targets, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rejected {
+			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: r.Reason, Code: scopedom.RefusalInvalidTarget})
+		}
 	}
 	ok := make(map[string]bool, len(accepted))
 	for _, a := range accepted {
@@ -217,6 +281,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	}
 	excluded := map[shared.ID]bool{}
 	if len(candidates) > 0 {
+		var err error
 		excluded, err = s.scopeExclusions.ExcludedTargets(ctx, in.TenantID.String(), candidates)
 		if err != nil {
 			return nil, fmt.Errorf("scope exclusion check failed, nothing dispatched: %w", err)
@@ -231,41 +296,73 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		kept = append(kept, byID[c.ID])
 	}
 
-	kept, err = s.refuseUnconfirmed(ctx, in, kept, out)
-	if err != nil {
-		return nil, err
+	for _, check := range []func(context.Context, DispatchTargetsInput, []string, *DispatchTargets) ([]string, error){
+		s.refuseUnconfirmed,
+		s.refuseOutOfActScopeTargets,
+		s.refuseInternalOutsideZones,
+		s.refuseOverTier,
+	} {
+		var err error
+		if kept, err = check(ctx, in, kept, out); err != nil {
+			return nil, err
+		}
 	}
 
-	kept, err = s.refuseOverTier(ctx, in, kept, out)
-	if err != nil {
-		return nil, err
+	if in.SkipZoneRouting {
+		out.Allowed = kept
+		return out, nil
 	}
-
-	kept, err = s.refuseOutOfActScopeTargets(ctx, in, kept, out)
-	if err != nil {
-		return nil, err
-	}
-
 	if err := s.routeDispatchTargets(ctx, in, kept, out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// keepFormRejected moves back to accepted every rejected target that is not
-// an internal address (Recheck): the claim re-checks what a dispatch already
-// let through, and only the address rules can turn on a change (a scan zone
-// deleted or shrunk).
-func keepFormRejected(accepted []string, rejected []rejectedTarget) ([]string, []rejectedTarget) {
-	still := rejected[:0:0]
-	for _, r := range rejected {
-		if isInternalTarget(r.Target) {
-			still = append(still, r)
+// refuseInternalOutsideZones applies the private-range policy of scan create
+// when the validator is off (AllowNonNetworkTargets): an internal address
+// (private, loopback, link-local, unspecified, carrier-grade NAT; a literal
+// address, a range, a URL or a host:port with one) is refused while the
+// tenant has no scan zone. A tenant with zones gets the rule from zone
+// routing, which refuses every target no zone covers.
+//
+// A scan run is built later and from more than the saved direct targets:
+// asset-group members were never validated, and a zone that admitted a
+// private target may have been deleted since. Hostnames are not resolved
+// here, as on create: the zone router and the sensor's local policy route
+// them.
+func (s *Service) refuseInternalOutsideZones(ctx context.Context, in DispatchTargetsInput, kept []string, out *DispatchTargets) ([]string, error) {
+	if !in.AllowNonNetworkTargets || len(kept) == 0 {
+		return kept, nil
+	}
+	internal := map[string]bool{}
+	for _, t := range kept {
+		if pt := scanzone.ParseTarget(t); pt.IsAddr && isInternalAddr(pt.Prefix.Addr()) {
+			internal[t] = true
+		}
+	}
+	if len(internal) == 0 {
+		return kept, nil
+	}
+	zones, err := s.loadZones(ctx, in.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if len(zones) > 0 {
+		return kept, nil
+	}
+	allowed := make([]string, 0, len(kept)-len(internal))
+	for _, t := range kept {
+		if internal[t] {
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: ReasonInternalOutsideZones, Code: scopedom.RefusalZoneNone})
 			continue
 		}
-		accepted = append(accepted, r.Target)
+		allowed = append(allowed, t)
 	}
-	return accepted, still
+	if !in.DryRun && s.logger != nil {
+		s.logger.Warn("SECURITY: internal targets outside every scan zone refused",
+			"tenant_id", in.TenantID.String(), "path", in.gatePath(), "count", len(internal))
+	}
+	return allowed, nil
 }
 
 // refuseUnconfirmed moves every kept target the ownership gate refuses to
@@ -281,7 +378,7 @@ func (s *Service) refuseUnconfirmed(ctx context.Context, in DispatchTargetsInput
 	var typed []string
 	for _, t := range kept {
 		a, ok := assetOf(in.Assets, t)
-		if !ok {
+		if !ok || a.typed() {
 			typed = append(typed, t)
 			continue
 		}
@@ -301,14 +398,22 @@ func (s *Service) refuseUnconfirmed(ctx context.Context, in DispatchTargetsInput
 	blocked := map[string]attribution.State{}
 	if len(ids) > 0 {
 		var err error
-		if blocked, err = s.attributionGate.ActiveCheckBlocked(ctx, in.TenantID, ids); err != nil {
+		blocked, err = s.attributionGate.ActiveCheckBlocked(ctx, in.TenantID, ids)
+		if err == nil && in.TakeoverOnly {
+			err = s.admitTakeoverTargets(ctx, in.TenantID, blocked, true)
+		}
+		if err != nil {
 			return nil, fmt.Errorf("attribution check failed, nothing dispatched: %w", err)
 		}
 	}
 	blockedTyped := map[string]attribution.State{}
 	if len(typed) > 0 {
 		var err error
-		if blockedTyped, err = s.attributionGate.BlockedTargets(ctx, in.TenantID, typed); err != nil {
+		blockedTyped, err = s.attributionGate.BlockedTargets(ctx, in.TenantID, typed)
+		if err == nil && in.TakeoverOnly {
+			err = s.admitTakeoverTargets(ctx, in.TenantID, blockedTyped, false)
+		}
+		if err != nil {
 			return nil, fmt.Errorf("attribution check failed, nothing dispatched: %w", err)
 		}
 	}
@@ -329,7 +434,7 @@ func (s *Service) refuseUnconfirmed(ctx context.Context, in DispatchTargetsInput
 		}
 		if no {
 			if !in.DryRun {
-				s.logRefusedTarget(ctx, in.TenantID, "dispatch_gate", t, state)
+				s.logRefusedTarget(ctx, in.TenantID, in.gatePath(), t, state)
 			}
 			out.Refused = append(out.Refused, RefusedTarget{Target: t, Reason: ReasonOwnershipNotConfirmed, Code: RefusalCodeForState(state)})
 			continue
@@ -408,13 +513,15 @@ func (s *Service) refuseOutOfActScopeTargets(ctx context.Context, in DispatchTar
 	if s.actScope == nil {
 		return nil, ErrActScopeUnavailable
 	}
-	check := actscope.Input{TenantID: in.TenantID, FallbackUser: in.FallbackUser, Targets: kept}
+	check := actscope.Input{TenantID: in.TenantID, FallbackUser: in.FallbackUser}
 	for _, t := range kept {
-		if a, ok := assetOf(in.Assets, t); ok {
-			for _, id := range a.IDs {
-				if pid, err := shared.IDFromString(id); err == nil {
-					check.AssetIDs = append(check.AssetIDs, pid)
-				}
+		a, ok := assetOf(in.Assets, t)
+		if !ok || len(a.IDs) == 0 || !in.ActScopeAssetsByID {
+			check.Targets = append(check.Targets, t)
+		}
+		for _, id := range a.IDs {
+			if pid, err := shared.IDFromString(id); err == nil {
+				check.AssetIDs = append(check.AssetIDs, pid)
 			}
 		}
 	}
@@ -446,21 +553,39 @@ func anyRefused(ids []string, refused map[shared.ID]bool) bool {
 	return false
 }
 
-// assetOf finds the inventory asset behind a target (case-insensitive).
+// assetKey is a target's key in folded Assets.
+func assetKey(target string) string { return strings.ToLower(strings.TrimSpace(target)) }
+
+// foldAssets keys Assets case-insensitively, once per gate call, so a lookup
+// is one map read on a list of thousands. Keys that differ only in case name
+// the same target: their ids and names are merged, so every asset behind it
+// is checked.
+func foldAssets(assets map[string]DispatchAsset) map[string]DispatchAsset {
+	if len(assets) == 0 {
+		return nil
+	}
+	out := make(map[string]DispatchAsset, len(assets))
+	for k, a := range assets {
+		key := assetKey(k)
+		if prev, dup := out[key]; dup {
+			a = DispatchAsset{
+				IDs:       append(append([]string(nil), prev.IDs...), a.IDs...),
+				AlsoMatch: append(append([]string(nil), prev.AlsoMatch...), a.AlsoMatch...),
+			}
+		}
+		out[key] = a
+	}
+	return out
+}
+
+// assetOf finds the inventory asset behind a target in folded Assets
+// (case-insensitive).
 func assetOf(assets map[string]DispatchAsset, target string) (DispatchAsset, bool) {
 	if len(assets) == 0 {
 		return DispatchAsset{}, false
 	}
-	if a, ok := assets[target]; ok {
-		return a, true
-	}
-	want := strings.ToLower(strings.TrimSpace(target))
-	for k, a := range assets {
-		if strings.ToLower(strings.TrimSpace(k)) == want {
-			return a, true
-		}
-	}
-	return DispatchAsset{}, false
+	a, ok := assets[assetKey(target)]
+	return a, ok
 }
 
 // routeDispatchTargets routes the kept targets over the tenant's zones and
