@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -215,6 +216,7 @@ func RecoveryWithConfig(log *logger.Logger, isProduction bool) func(http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if err := recover(); err != nil {
+					metrics.RecordPanic("http")
 					if isProduction {
 						// SECURITY: Don't log stack traces in production
 						log.Error("panic recovered",
