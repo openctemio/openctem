@@ -81,6 +81,11 @@ type GraphIssue struct {
 	To   string `json:"to,omitempty"`
 	// Adapter is the capability that would connect an incompatible edge.
 	Adapter Key `json:"adapter,omitempty"`
+	// Field is the step field the issue is about (tool, capabilities,
+	// config, step_key), for an inline message in the editor.
+	Field string `json:"field,omitempty"`
+	// Fix says how to resolve the issue, in words.
+	Fix string `json:"fix,omitempty"`
 }
 
 // GraphReport is the outcome of ValidateGraph. Errors refuse a save;
