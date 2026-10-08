@@ -13,10 +13,12 @@ import (
 // tenant identity into every metrics consumer and blow up cardinality.
 // Every metric definition file of the API is checked.
 func TestNoIdentifierLabels(t *testing.T) {
-	forbidden := []string{"tenant_id", "sensor_id", "scan_workflow_id", "run_id", "scan_id", "user_id"}
+	forbidden := []string{"tenant_id", "sensor_id", "scan_workflow_id", "run_id", "scan_id", "user_id", "workflow_id", "email"}
 	files := []string{
 		"metrics.go",
 		"security_defenses.go",
+		"operations.go",
+		filepath.Join("..", "infra", "opsmetrics", "collector.go"),
 		filepath.Join("..", "infra", "telemetry", "ctem_metrics.go"),
 	}
 	labels := regexp.MustCompile(`\[\]string\{([^}]*)\}`)
