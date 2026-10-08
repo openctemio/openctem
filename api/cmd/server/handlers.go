@@ -281,6 +281,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handler.WithDatabase(deps.DB),
 			handler.WithRedis(deps.RedisClient),
 		),
+		ClientErrors: handler.NewClientErrorHandler(log),
 
 		// Auth
 		Auth: handler.NewAuthHandler(&cfg.Keycloak, log),
