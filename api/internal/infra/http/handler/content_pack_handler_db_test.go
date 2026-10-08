@@ -27,7 +27,7 @@ import (
 )
 
 // The content pack API end to end: HTTP, service, Postgres (migration
-// 001380) and file storage. Requires DATABASE_URL (a migrated _test
+// 001384) and file storage. Requires DATABASE_URL (a migrated _test
 // database).
 
 func contentPackTar(t *testing.T, files map[string]string) []byte {

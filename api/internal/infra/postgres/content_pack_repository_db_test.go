@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Content packs against a real schema (migration 001380): tenant isolation
+// Content packs against a real schema (migration 001384): tenant isolation
 // of packs and blobs, the composite blob key, uniqueness and revocation.
 // Requires DATABASE_URL (CI applies every migration first).
 
