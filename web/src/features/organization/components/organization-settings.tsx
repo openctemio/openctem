@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useAppHost } from '@/hooks/use-app-origin'
 import { Main } from '@/components/layout'
 import { PageHeader } from '@/features/shared'
 import { Button } from '@/components/ui/button'
@@ -297,6 +298,7 @@ function HeaderSaveButton({
  */
 export function OrganizationSettings({ view }: { view: OrganizationSettingsView }) {
   const { title: PAGE_TITLE, description: PAGE_DESCRIPTION } = VIEW_HEADER[view]
+  const appHost = useAppHost()
   const [tabParam, setTabParam] = useUrlFilter('tab', 'general')
   const activeTab =
     view === 'authentication'
@@ -992,8 +994,11 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                         <div className="space-y-2">
                           <Label htmlFor="slug">URL slug</Label>
                           <div className="flex">
-                            <span className="inline-flex items-center px-3 text-sm text-muted-foreground bg-muted border border-r-0 rounded-l-md">
-                              app.openctem.io/
+                            <span
+                              data-testid="slug-host-prefix"
+                              className="inline-flex items-center px-3 text-sm text-muted-foreground bg-muted border border-r-0 rounded-l-md"
+                            >
+                              {appHost}/
                             </span>
                             <Input
                               id="slug"
