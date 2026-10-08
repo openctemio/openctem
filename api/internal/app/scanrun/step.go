@@ -107,7 +107,7 @@ func (s *Service) DeactivateScanWorkflowsByTool(ctx context.Context, tenantID sh
 	// Find the tenant's active scan workflows using this tool
 	scanWorkflowIDs, err := s.stepRepo.FindScanWorkflowIDsByToolName(ctx, tenantID, toolName)
 	if err != nil {
-		return 0, nil, fmt.Errorf("failed to find pipelines by tool: %w", err)
+		return 0, nil, fmt.Errorf("failed to find scan workflows by tool: %w", err)
 	}
 
 	if len(scanWorkflowIDs) == 0 {
@@ -119,7 +119,7 @@ func (s *Service) DeactivateScanWorkflowsByTool(ctx context.Context, tenantID sh
 	for _, id := range scanWorkflowIDs {
 		template, err := s.templateRepo.GetByID(ctx, id)
 		if err != nil {
-			s.logger.Warn("failed to get pipeline for deactivation",
+			s.logger.Warn("failed to get scan workflow for deactivation",
 				"scan_workflow_id", id.String(),
 				"tool_name", toolName,
 				"error", err)
@@ -134,7 +134,7 @@ func (s *Service) DeactivateScanWorkflowsByTool(ctx context.Context, tenantID sh
 		// Deactivate
 		template.Deactivate()
 		if err := s.templateRepo.Update(ctx, template); err != nil {
-			s.logger.Warn("failed to deactivate pipeline",
+			s.logger.Warn("failed to deactivate scan workflow",
 				"scan_workflow_id", id.String(),
 				"tool_name", toolName,
 				"error", err)
@@ -145,17 +145,17 @@ func (s *Service) DeactivateScanWorkflowsByTool(ctx context.Context, tenantID sh
 		if s.scanDeactivator != nil {
 			scanCount, err := s.scanDeactivator.DeactivateScansByScanWorkflow(ctx, id)
 			if err != nil {
-				s.logger.Warn("failed to deactivate scans for pipeline",
+				s.logger.Warn("failed to deactivate scans for scan workflow",
 					"scan_workflow_id", id.String(),
 					"error", err)
 			} else if scanCount > 0 {
-				s.logger.Info("cascade deactivated scans for pipeline",
+				s.logger.Info("cascade deactivated scans for scan workflow",
 					"scan_workflow_id", id.String(),
 					"deactivated_scans", scanCount)
 			}
 		}
 
-		s.logger.Info("pipeline deactivated due to tool change",
+		s.logger.Info("scan workflow deactivated due to tool change",
 			"scan_workflow_id", id.String(),
 			"scan_workflow_name", template.Name,
 			"tool_name", toolName)

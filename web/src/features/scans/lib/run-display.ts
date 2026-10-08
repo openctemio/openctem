@@ -125,6 +125,20 @@ export function runRefreshInterval(run?: { status: string } | null): number {
   return run && isRunInProgress(run) ? LIVE_RUN_REFRESH_MS : 0
 }
 
+/**
+ * How often a list of runs refreshes: `liveMs` while one of them is in
+ * progress, the slow `idleMs` otherwise (it only has to notice a run that a
+ * schedule or another person starts). A function of the data, for SWR's
+ * `refreshInterval`.
+ */
+export function runListRefreshInterval(liveMs: number, idleMs: number) {
+  return (page?: { data?: Array<{ status: string }> } | null): number =>
+    page?.data?.some(isRunInProgress) ? liveMs : idleMs
+}
+
+/** A list idle for this long refreshes at most this often. */
+export const IDLE_RUN_LIST_REFRESH_MS = 120_000
+
 /** The run kinds a person filters by (system runs are housekeeping: hidden). */
 export const RUN_KIND_FILTERS = [
   { value: 'all', label: 'All kinds' },

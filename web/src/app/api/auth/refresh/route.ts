@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
-import { csrfRejection, ensureCsrfCookie, rotatedRefreshToken } from '@/lib/server-auth-cookies'
+import { csrfRejection, rotatedRefreshToken } from '@/lib/server-auth-cookies'
 
 // Frontend cookie names (from env config)
 const ACCESS_TOKEN_COOKIE = env.auth.cookieName
@@ -45,7 +45,7 @@ interface TenantInfo {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   devLog.log('[Refresh] Token refresh request received')
-  // Cookie-authenticated, state-changing: require the double-submit pair.
+  // Cookie-authenticated, state-changing: same origin and the double-submit pair.
   const csrf = csrfRejection(request)
   if (csrf) return csrf
   try {
@@ -226,7 +226,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     )
     // NOTE: Permissions NOT stored in cookie - frontend fetches via /api/v1/me/permissions
-    ensureCsrfCookie(request, clientResponse)
 
     return clientResponse
   } catch (error) {

@@ -9,6 +9,7 @@
 import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { fetcher, fetcherWithOptions } from '@/lib/api/client'
+import { SWR_REFERENCE } from '@/lib/swr-config'
 import type {
   Group,
   GroupWithDetails,
@@ -88,13 +89,16 @@ export function useGroups(filters?: GroupFilters) {
 /**
  * Fetch groups the current user is a member of
  */
-export function useMyGroups() {
+export function useMyGroups(enabled = true) {
+  // Group membership is reference data: cached for the session, refreshed by
+  // the group mutations that change it. `enabled` lets a caller load it only
+  // when the UI that needs it opens (the saved-view "share with" picker).
   const { data, error, isLoading, mutate } = useSWR<{ groups: Group[] } | Group[]>(
-    MY_GROUPS_URL,
+    enabled ? MY_GROUPS_URL : null,
     fetcher,
     {
+      ...SWR_REFERENCE,
       revalidateOnFocus: false,
-      dedupingInterval: 30000,
     }
   )
 

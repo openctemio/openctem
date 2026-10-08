@@ -52,7 +52,7 @@ func (s RunStatus) IsTerminal() bool {
 // run is final: a late sensor result, a cancel racing a completion, or a stale
 // in-memory copy must not reopen it or record its outcome a second time.
 var ErrRunAlreadyFinished = shared.NewDomainError("RUN_ALREADY_FINISHED",
-	"pipeline run has already finished", shared.ErrConflict)
+	"scan run has already finished", shared.ErrConflict)
 
 // ErrScanRunActive is returned when a scheduled run is created while the
 // scan already has an active run (overlap policy skip, RFC-046 D4). The check

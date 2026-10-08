@@ -89,10 +89,10 @@ those outcomes: each finding a path-target retest resolved, and that nothing
 changed since, returns to its prior status and the retest reads `unknown`
 with a `voided:` reason.
 
-## Template digest drift (research/18 O6)
+## Template digest drift
 
 A retest proves something only when it re-ran the template content the
-finding was last seen with. The sensor (sensor#134) reports, per nuclei
+finding was last seen with. The sensor reports, per nuclei
 finding, `properties.template_digest` (sha256 of the matching template file)
 and `template_path`, and per report the template release in
 `tool.properties.content` (`nuclei-templates`: version, archive digest).
@@ -152,7 +152,7 @@ keeps `previous_status`, `previous_resolution`, `previous_resolution_method`,
 person who resolved it is never lost. Deliberate dispositions are never
 reopened.
 
-## Phase 2: what follows a status change (owner decisions D2–D4)
+## Phase 2: what follows a status change (decisions D2–D4)
 
 - **Fresh SLA on a regression (D2).** A finding closed as fixed that a scan or
   a retest sees again gets a new SLA deadline computed by the tenant's policy

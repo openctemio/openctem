@@ -64,6 +64,10 @@ func TestNewScanCommand(t *testing.T) {
 	if want := e.now.Add(time.Hour + scanImportGrace); cmd.ExpiresAt == nil || !cmd.ExpiresAt.Equal(want) {
 		t.Fatalf("expiry %v, want %v", cmd.ExpiresAt, want)
 	}
+	// The claim re-checks the targets: full gate at t1, outside every zone.
+	if g := cmd.DispatchGate; g == nil || *g != (command.DispatchGate{Tier: 1, Validated: true, NoZoneRouting: true}) {
+		t.Fatalf("dispatch gate %+v", g)
+	}
 	var p ScanPayload
 	_ = json.Unmarshal(cmd.Payload, &p)
 	if p.Scanner != ToolName || p.ZoneID != 2 || p.MaxScanSeconds != 3600 || len(p.Targets) != 2 ||

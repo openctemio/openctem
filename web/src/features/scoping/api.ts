@@ -44,8 +44,8 @@ export function useScopingSummary(enabled = true) {
   const { can } = usePermissions()
   const ready = enabled && !!currentTenant && can(Permission.AssetsRead)
   return useSWR<ScopingSummary>(
-    ready ? [SCOPING_SUMMARY_URL, currentTenant!.id] : null,
-    ([url]: [string]) => get<ScopingSummary>(url),
+    ready ? SCOPING_SUMMARY_URL : null,
+    (url: string) => get<ScopingSummary>(url),
     { revalidateOnFocus: false, dedupingInterval: 30000 }
   )
 }

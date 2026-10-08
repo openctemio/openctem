@@ -3,8 +3,8 @@
 > Audit of 2026-10-03 against `develop` at `8422b7b8` (api), sdk-go `main`,
 > sensor `main` and ctis `22afe545d848` (the commit the API pins).
 > Design and phase plan (with the verified research folded in): [RFC-043](../rfcs/RFC-043-deduplication-and-identity.md).
-> Asset identity *design* belongs to [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md)
-> (PR #878); this page audits the asset dedup that runs **today**.
+> Asset identity *design* belongs to [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md);
+> this page audits the asset dedup as it ran at the date above.
 > Finding provenance: [ADR-004](decisions/004-finding-provenance.md).
 > Source-native ids, scores, VEX and identity hints (CTIS 1.4): [finding-source-interop.md](finding-source-interop.md).
 
@@ -111,8 +111,7 @@ snippets split across report chunks can swap; the secret HMAC is over the
 masked value the sensor sends (CTIS carries no raw value), so two secrets that
 mask alike in one file are one finding.
 
-CTIS producer fields and identity (coordinated with the CTIS review,
-`research/16-ctis-review-2026-10-04.md` G5, Q1, Q2, Q8, P4, P5):
+CTIS producer fields and identity (coordinated with the CTIS review):
 
 - **Producer fingerprints (Q8, D1):** a finding with a version-2 recipe never
   takes its identity from `Finding.Fingerprint`; the value is kept as the
@@ -310,8 +309,7 @@ Read from the PR diffs on 2026-10-03; line numbers are the PRs' new-file lines.
 
 ## 3a. Against verified practice
 
-From the adversarially verified report `research/10-dedup-best-practices.md`
-(R-numbers as in RFC-043 §16). Areas the research does not cover (asset
+Against the verified practices listed in RFC-043 §16 (R-numbers as there). Areas the research does not cover (asset
 normalization, certificates, secrets, concurrency, lifecycle, tickets, testing)
 are judged against the probes above only.
 
