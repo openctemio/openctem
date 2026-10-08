@@ -196,7 +196,7 @@ export default function ScanWorkflowsPage() {
     data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest
   ) => {
     try {
-      await createWorkflow({ ...data, name: data.name ?? '', steps: data.steps ?? [] })
+      await createWorkflow(data as CreateScanWorkflowRequest)
       toast.success('Workflow created successfully')
       await invalidateAllScanWorkflowCaches()
       setIsFormOpen(false)
@@ -205,7 +205,9 @@ export default function ScanWorkflowsPage() {
     }
   }
 
-  const handleUpdateWorkflow = async (data: UpdateScanWorkflowRequest) => {
+  const handleUpdateWorkflow = async (
+    data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest
+  ) => {
     if (!editingWorkflow) return
     setUpdatingWorkflow(true)
     try {
@@ -521,7 +523,7 @@ export default function ScanWorkflowsPage() {
             <SheetDescription>
               {editingWorkflow
                 ? 'Modify the workflow configuration'
-                : 'Configure a new scan workflow and its steps'}
+                : 'Name the workflow and choose what each step does'}
             </SheetDescription>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4">

@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	moduleTypes "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -47,6 +48,9 @@ type TenantHandler struct {
 	// self_service). Off by default: organizations are then created by the
 	// platform administrator only.
 	selfServiceCreation bool
+	// signupPolicy, when wired, replaces selfServiceCreation: the console
+	// sign-up setting, read on each request.
+	signupPolicy signupdom.PolicySource
 	// provisioning creates accounts on behalf of organization administrators.
 	// Nil disables POST /tenants/{tenant}/users.
 	provisioning *tenantapp.UserProvisioningService
@@ -69,6 +73,19 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 // (TENANT_CREATION_MODE=self_service). Without it POST /tenants is refused.
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
+}
+
+// SetSignupPolicy makes POST /tenants follow the console sign-up policy.
+func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
+	h.signupPolicy = p
+}
+
+// selfServiceAllowed reports whether a signed-in user may create an organization.
+func (h *TenantHandler) selfServiceAllowed(r *http.Request) bool {
+	if h.signupPolicy != nil {
+		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
+	}
+	return h.selfServiceCreation
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -446,7 +463,7 @@ func writeToggleErrorJSON(w http.ResponseWriter, e *module.ToggleError) {
 
 // Create handles POST /api/v1/tenants
 func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
-	if !h.selfServiceCreation {
+	if !h.selfServiceAllowed(r) {
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 		return
 	}

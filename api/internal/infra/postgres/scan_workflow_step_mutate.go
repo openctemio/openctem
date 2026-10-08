@@ -169,8 +169,17 @@ func (r *ScanWorkflowStepRepository) MutateSteps(
 		existing[s.ID] = true
 	}
 
+	// The keys as stored: mutate may change the current steps in place.
+	storedKeys := make(map[shared.ID]string, len(current))
+	for _, s := range current {
+		storedKeys[s.ID] = s.StepKey
+	}
+
 	desired, err := mutate(current)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseKeyChangeAfterRuns(ctx, tx, tenantID, scanWorkflowID, storedKeys, desired); err != nil {
 		return nil, err
 	}
 
@@ -215,6 +224,34 @@ func (r *ScanWorkflowStepRepository) MutateSteps(
 		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 	return desired, nil
+}
+
+// refuseKeyChangeAfterRuns refuses a save that changes a kept step's key
+// when the scan workflow has any run (finished ones too): their step runs
+// and step outputs name the step by its key. It runs under the scan
+// workflow's row lock, so a run cannot be created between the check and the
+// write.
+func refuseKeyChangeAfterRuns(ctx context.Context, tx *sql.Tx, tenantID, scanWorkflowID shared.ID, keyOf map[shared.ID]string, desired []*scanworkflow.Step) error {
+	var oldKey, newKey string
+	for _, s := range desired {
+		if k, ok := keyOf[s.ID]; ok && k != s.StepKey {
+			oldKey, newKey = k, s.StepKey
+			break
+		}
+	}
+	if oldKey == "" {
+		return nil
+	}
+	var hasRuns bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM scan_runs WHERE scan_workflow_id = $1 AND tenant_id = $2)`,
+		scanWorkflowID.String(), tenantID.String()).Scan(&hasRuns); err != nil {
+		return fmt.Errorf("failed to check runs: %w", err)
+	}
+	if hasRuns {
+		return scanworkflow.StepKeyHasRunsError(oldKey, newKey)
+	}
+	return nil
 }
 
 func (r *ScanWorkflowStepRepository) stepsInTx(ctx context.Context, tx *sql.Tx, scanWorkflowID shared.ID) ([]*scanworkflow.Step, error) {
