@@ -207,6 +207,16 @@ func (s *Server) mtlsHandler(res *certResolver) http.Handler {
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		release, ok := s.admitUnary(w, r)
+		defer release()
+		if !ok {
+			return
+		}
+		if !isStream(r) {
+			// The listener has no ReadTimeout (it would cut the control
+			// stream); a unary call must deliver its message in time.
+			_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(s.cfg.UnaryTimeout))
+		}
 		ctx := handler.WithSensorIdentity(r.Context(), id)
 		ctx = handler.WithSensorPeer(ctx, handler.SensorPeer{IP: ip, UserAgent: r.UserAgent()})
 		ctx = WithBinding(ctx, sensorv3.Binding_BINDING_GRPC)
