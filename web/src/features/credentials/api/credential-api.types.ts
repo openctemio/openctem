@@ -76,7 +76,7 @@ export interface ApiCredentialEnums {
 /** Query filters — a UI concern, not part of any response body. */
 export interface CredentialApiFilters {
   page?: number
-  page_size?: number
+  per_page?: number
   severity?: string[]
   state?: string[]
   source?: string[]

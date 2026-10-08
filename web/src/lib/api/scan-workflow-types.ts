@@ -267,15 +267,26 @@ export interface StepRun {
  * Scan runs are workflow runs: this is the one run type of the web (scan-types
  * re-exports it). List rows carry no step runs or tasks; the run read does.
  */
+/**
+ * What a run is (API scan_runs.kind). A run that executes no scan workflow
+ * (a retest) has no scan_workflow_id and names what it is about in subject.
+ */
+export type ScanRunKind =
+  'scan' | 'quick' | 'retest' | 'validation' | 'test' | 'connector' | 'system'
+
 export interface ScanRun {
   id: string
   tenant_id: string
-  scan_workflow_id: string
+  /** Empty for a run that executes no scan workflow (kind retest, ...). */
+  scan_workflow_id?: string
+  kind?: ScanRunKind
+  /** What a run without a workflow is about, e.g. { finding_id, retest_id }. */
+  subject?: Record<string, unknown>
   asset_id?: string
   scan_id?: string
   /** The run's scan, named by the server on list rows (empty when deleted). */
   scan_name?: string
-  trigger_type: ScanWorkflowTriggerType
+  trigger_type: ScanWorkflowTriggerType | 'system'
   triggered_by?: string
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
   triggered_by_name?: string
@@ -404,6 +415,8 @@ export interface ScanRunListFilters {
   asset_id?: string
   /** The scan the runs belong to (a scan's "View all runs"). */
   scan_id?: string
+  /** Run kinds, comma-separated; system runs are hidden unless named. */
+  kind?: string
   status?: ScanRunStatus
   trigger_type?: ScanWorkflowTriggerType
   /** One sort key, `-` for descending (created_at, started_at, completed_at, total_findings). */
