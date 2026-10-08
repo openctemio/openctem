@@ -763,6 +763,10 @@ type SensorTransportV3Config struct {
 	// CertTTL is the client certificate lifetime (SENSOR_MTLS_CERT_TTL,
 	// default 168h, clamped to 1h..720h).
 	CertTTL time.Duration
+	// MTLSTrustedProxies are the CIDRs (comma-separated
+	// SENSOR_MTLS_TRUSTED_PROXIES) whose PROXY protocol v2 header the mTLS
+	// listener believes: the gateway that passes the sensor host through.
+	MTLSTrustedProxies []string
 }
 
 // SensorConfig holds sensor management configuration.
@@ -1083,6 +1087,8 @@ func Load() (*Config, error) {
 				CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
 				CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),
 				CertTTL:        getEnvDuration("SENSOR_MTLS_CERT_TTL", 7*24*time.Hour),
+
+				MTLSTrustedProxies: getEnvSlice("SENSOR_MTLS_TRUSTED_PROXIES", nil),
 			},
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),

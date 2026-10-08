@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -20,6 +21,7 @@ type VerifiedDomainHandler struct {
 	service *domainverify.Service
 	audit   *auditsvc.AuditService
 	logger  *logger.Logger
+	changes *auth.SSOChangeService
 }
 
 // SetAuditService records verified-domain changes in the organization's audit
@@ -315,6 +317,7 @@ type UpdateDomainJITRequest struct {
 // @Param id path string true "Domain ID"
 // @Param body body UpdateDomainJITRequest true "JIT settings"
 // @Success 200 {object} VerifiedDomainResponse
+// @Success 202 {object} SSOChangeResponse "Raising provisioning waits for an owner's approval"
 // @Security BearerAuth
 // @Router /admin/tenants/{tenantId}/sso/verified-domains/{id} [patch]
 func (h *VerifiedDomainHandler) UpdateJIT(w http.ResponseWriter, r *http.Request) {
@@ -331,9 +334,21 @@ func (h *VerifiedDomainHandler) UpdateJIT(w http.ResponseWriter, r *http.Request
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	vd, err := h.service.ChangeJIT(r.Context(), tenantID, id, req.JITEnabled, req.JITRole)
+	// Raising provisioning from the admin console waits for an owner of the
+	// organization (RFC-058); lowering it applies at once. Fail closed when
+	// the approval service is missing.
+	by := ssoChangeRequester(r)
+	if by == nil || h.changes == nil {
+		writeSSOChangeApprovalUnavailable(w)
+		return
+	}
+	res, vd, err := h.changes.SubmitDomainJIT(r.Context(), tenantID, id, req.JITEnabled, req.JITRole, *by)
 	if err != nil {
 		h.handleError(w, err)
+		return
+	}
+	if !res.Applied {
+		writeSSOChangePending(w, r, h.audit, h.logger, res.Change)
 		return
 	}
 	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, domainAuditEvent(audit.ActionSSOVerifiedDomainJITChanged, vd,
@@ -343,3 +358,6 @@ func (h *VerifiedDomainHandler) UpdateJIT(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toVerifiedDomainResponse(vd, txt))
 }
+
+// SetChangeApproval wires the owner approval of provisioning raises (RFC-058).
+func (h *VerifiedDomainHandler) SetChangeApproval(svc *auth.SSOChangeService) { h.changes = svc }

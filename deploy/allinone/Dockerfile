@@ -68,9 +68,12 @@ COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 # Bind :443 (and the optional :80 redirect) as non-root, on Kubernetes too.
 RUN setcap cap_net_bind_service=+ep /usr/bin/caddy
 
-# The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + entrypoint.sh).
+# The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + entrypoint.sh).
+# sensors/ holds the layer-4 sensor routing the Caddyfile imports; this image's
+# Caddy has no layer4 module, so only OPENCTEM_SENSOR_GATEWAY=off applies here.
 COPY --from=gateway Caddyfile planes.caddy entrypoint.sh /etc/caddy/
 COPY --from=gateway modes /etc/caddy/modes
+COPY --from=gateway sensors /etc/caddy/sensors
 COPY supervise.sh /usr/local/bin/openctem-supervise
 COPY healthcheck.sh /usr/local/bin/openctem-healthcheck
 RUN chmod 0755 /usr/local/bin/openctem-supervise /usr/local/bin/openctem-healthcheck /usr/local/bin/openctem-migrate /etc/caddy/entrypoint.sh \

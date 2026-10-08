@@ -93,6 +93,18 @@ values (the item stays, no longer revealable) and items past 365 days.
 Deleting a finding or a tenant deletes its evidence and secrets (foreign
 keys); a finding merge moves the loser's evidence to the survivor.
 
+Stored files (attachments and manual evidence files, under
+`{tenant id}/` on the server storage, `STORAGE_LOCAL_PATH` or the
+`STORAGE_PROVIDER=s3|minio` bucket, and in the organization's own bucket when
+it set one) are deleted when the organization is deleted
+(`DELETE /api/v1/tenants/{tenant}`): the whole `{tenant id}/` namespace on every
+backend first, then the rows, then the namespace once more for an upload that
+raced the delete. If a backend cannot be erased the deletion is refused (503,
+audited as a failed `tenant.deleted` on the organization's own log) and nothing
+else changes; the owner retries. An organization whose own bucket no longer
+accepts its keys fixes the keys, or switches its storage setting back to the
+server storage, before deleting.
+
 ## API
 
 | Route | Gate |

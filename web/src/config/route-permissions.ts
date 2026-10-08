@@ -596,6 +596,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/modules': {
     permission: Permission.TeamUpdate,
   },
+  // Plan & usage: owners and admins (GET /organization/plan needs admin).
+  '/settings/plan': {
+    permission: Permission.TeamUpdate,
+  },
   // The user's own notification settings live at /account/notifications
   // (/settings/notifications 308s there) and carry no entry: /account pages are
   // personal and open to every signed-in user. The org-level channels
