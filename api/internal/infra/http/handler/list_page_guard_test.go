@@ -23,7 +23,8 @@ func TestListHandlersUseTheSharedPageParser(t *testing.T) {
 		"exposure_handler.go", "finding_source_handler.go", "fleet_handler.go", "notification_handler.go",
 		"relationship_suggestion_handler.go", "scanner_template_handler.go", "scanprofile_handler.go",
 		"scope_handler.go", "sensor_handler.go", "sensor_result_handler.go", "tool_handler.go",
-		"toolcategory_handler.go", "vulnerability_handler.go", "workflow_handler.go"} {
+		"toolcategory_handler.go", "vulnerability_handler.go", "workflow_handler.go", "asset_service_handler.go",
+		"asset_state_history_handler.go"} {
 		src, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
