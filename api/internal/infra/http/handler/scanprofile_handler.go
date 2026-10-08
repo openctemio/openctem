@@ -324,11 +324,15 @@ func (h *ScanProfileHandler) List(w http.ResponseWriter, r *http.Request) {
 		includeSystem = false
 	}
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := scan.ListScanProfilesInput{
 		TenantID:      tenantID,
 		Search:        r.URL.Query().Get("search"),
-		Page:          parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:       parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:          paging.Page,
+		PerPage:       paging.PerPage,
 		IncludeSystem: includeSystem,
 	}
 

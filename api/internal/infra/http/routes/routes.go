@@ -214,6 +214,9 @@ type Handlers struct {
 	AdminOrganization *handler.AdminOrganizationHandler
 	AdminConsole      *handler.AdminConsoleHandler
 	AdminAuditChain   *handler.AdminAuditChainHandler
+	// Plan: plans and limits (console plan defaults, organization plans and
+	// overrides, the organization's own usage).
+	Plan *handler.PlanHandler
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
@@ -454,6 +457,7 @@ func Register(
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
 		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange)
+		registerOrganizationPlanRoutes(router, h.Plan, authMiddleware, userSync)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized

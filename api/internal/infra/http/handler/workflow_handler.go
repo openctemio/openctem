@@ -325,13 +325,17 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 		isActive = &active
 	}
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := workflowsvc.ListWorkflowsInput{
 		TenantID: tenantUUID,
 		IsActive: isActive,
 		Tags:     parseQueryArray(r.URL.Query().Get("tags")),
 		Search:   r.URL.Query().Get("search"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:     paging.Page,
+		PerPage:  paging.PerPage,
 	}
 
 	result, err := h.service.ListWorkflows(r.Context(), input)
@@ -948,10 +952,14 @@ func (h *WorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := workflowsvc.ListWorkflowRunsInput{
 		TenantID: tenantUUID,
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:     paging.Page,
+		PerPage:  paging.PerPage,
 	}
 
 	if wfID := r.URL.Query().Get("workflow_id"); wfID != "" {
