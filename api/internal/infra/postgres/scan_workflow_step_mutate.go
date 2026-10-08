@@ -62,7 +62,7 @@ func insertStep(ctx context.Context, ex stepExecer, s *scanworkflow.Step) error 
 		if isUniqueViolation(err) {
 			return shared.NewDomainError("ALREADY_EXISTS", "step already exists", shared.ErrAlreadyExists)
 		}
-		return fmt.Errorf("failed to create pipeline step: %w", err)
+		return fmt.Errorf("failed to create scan workflow step: %w", err)
 	}
 	return nil
 }
@@ -108,7 +108,7 @@ func updateStepInPlace(ctx context.Context, ex stepExecer, s *scanworkflow.Step)
 		if isUniqueViolation(err) {
 			return shared.NewDomainError("ALREADY_EXISTS", "step already exists", shared.ErrAlreadyExists)
 		}
-		return fmt.Errorf("failed to update pipeline step: %w", err)
+		return fmt.Errorf("failed to update scan workflow step: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
 		return shared.ErrNotFound
@@ -144,7 +144,7 @@ func (r *ScanWorkflowStepRepository) MutateSteps(
 		return nil, shared.ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to lock pipeline: %w", err)
+		return nil, fmt.Errorf("failed to lock scan workflow: %w", err)
 	}
 
 	var active bool

@@ -45,6 +45,9 @@ import { roundPosition, toStepRequest } from '@/features/scan-workflows/lib/step
 import {
   capabilityForStep,
   insertAdapterStep,
+  issueMessagesByStep,
+  issuesForStep,
+  warningsForStep,
   type GraphValidation,
 } from '@/features/scan-workflows/lib/capability-graph'
 import { NodeInspector } from '@/features/scan-workflows/components/node-inspector'
@@ -150,15 +153,10 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
     }
   }, [localSteps, workflow])
 
-  const issuesByStep = useMemo(() => {
-    const out: Record<string, string[]> = {}
-    for (const e of graphReport?.errors ?? []) {
-      const key = e.node || e.to
-      if (!key || !e.message) continue
-      ;(out[key] ??= []).push(e.message)
-    }
-    return out
-  }, [graphReport])
+  // Issues of the draft by step: blocking ones (errors) and warnings (a
+  // tool no online sensor offers now), each with its fix.
+  const issuesByStep = useMemo(() => issueMessagesByStep(graphReport?.errors), [graphReport])
+  const warningsByStep = useMemo(() => issueMessagesByStep(graphReport?.warnings), [graphReport])
   const graphErrors = graphReport?.errors ?? []
 
   // Insert the adapter step a refused connection needs
@@ -489,6 +487,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 onAddNode={isReadOnly ? undefined : handleAddNode}
                 capabilityTable={capabilityTable}
                 issuesByStep={issuesByStep}
+                warningsByStep={warningsByStep}
                 onInsertAdapter={isReadOnly ? undefined : handleInsertAdapter}
                 onSelectionChange={setSelectedStepId}
                 readOnly={isReadOnly}
@@ -501,6 +500,10 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 key={selectedStep.id}
                 step={selectedStep}
                 capability={capabilityForStep(capabilityTable, selectedStep)}
+                issues={[
+                  ...issuesForStep(graphReport, selectedStep.step_key),
+                  ...warningsForStep(graphReport, selectedStep.step_key),
+                ]}
                 readOnly={isReadOnly}
                 onChange={handleInspectorChange}
                 onClose={() => setSelectedStepId(null)}
