@@ -1036,7 +1036,7 @@ func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		PerPage:        page.PerPage,
 	}
 	if tid, perr := shared.IDFromString(tenantID); perr == nil && h.listHidesFindingRuns(r.Context(), tid) {
-		input.ExcludeKinds = []string{string(scanrundom.RunKindRetest)}
+		input.ExcludeKinds = []string{string(scanrundom.RunKindRetest), string(scanrundom.RunKindValidation)}
 	}
 
 	result, err := h.service.ListRuns(r.Context(), input)

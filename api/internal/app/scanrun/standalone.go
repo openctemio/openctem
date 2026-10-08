@@ -143,6 +143,33 @@ func (s *Service) StartRetestRun(ctx context.Context, rt *retestdom.Retest) (sha
 	return run.ID, step.ID, nil
 }
 
+// StartValidationRun records a finding re-verification as a run of kind
+// validation (validation.RunRecorder). requestedBy is the user who asked, or
+// "" when the platform did (auto-validation, a ticket rescan).
+func (s *Service) StartValidationRun(ctx context.Context, tenantID, findingID shared.ID, requestedBy string) (shared.ID, shared.ID, error) {
+	trigger := scanworkflow.TriggerTypeSystem
+	if requestedBy != "" {
+		trigger = scanworkflow.TriggerTypeManual
+	}
+	run, step, err := s.StartStandaloneRun(ctx, StandaloneRunInput{
+		TenantID:    tenantID,
+		Kind:        scanrun.RunKindValidation,
+		Subject:     map[string]any{"finding_id": findingID.String()},
+		StepName:    "Validation",
+		TriggerType: trigger,
+		TriggeredBy: requestedBy,
+	})
+	if err != nil {
+		return shared.ID{}, shared.ID{}, err
+	}
+	return run.ID, step.ID, nil
+}
+
+// FinishValidationRun settles a validation's run.
+func (s *Service) FinishValidationRun(ctx context.Context, tenantID, runID shared.ID, succeeded bool, message, code string) error {
+	return s.FinishStandaloneRun(ctx, tenantID, runID, StandaloneOutcome{Succeeded: succeeded, Message: message, Code: code})
+}
+
 // FinishRetestRun settles a retest's run (retest.RunRecorder).
 func (s *Service) FinishRetestRun(ctx context.Context, tenantID, runID shared.ID, succeeded bool, message, code string) error {
 	return s.FinishStandaloneRun(ctx, tenantID, runID, StandaloneOutcome{Succeeded: succeeded, Message: message, Code: code})
