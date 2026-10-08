@@ -272,6 +272,10 @@ type Claims struct {
 	AZP     string   `json:"azp"`
 	// TID is the Entra directory id; EntraIssuer checks it against iss.
 	TID string `json:"tid"`
+	// HD is the Google Workspace (hosted) domain of the account. Google sends
+	// it only for accounts that belong to a Workspace or Cloud organization; a
+	// consumer Google account never carries it, whatever its email address.
+	HD string `json:"hd"`
 	// SID is the provider's session id (OIDC back-channel logout).
 	SID string `json:"sid"`
 	// AuthTime is when the provider last authenticated the user.

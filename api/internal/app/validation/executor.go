@@ -128,6 +128,10 @@ type ValidationJob struct {
 	// evidence is recorded advisory-only and the retest service, not
 	// applyOutcomeToFinding, decides what happens to the finding.
 	RetestID shared.ID
+	// ScanRunID / ScanRunStepID tag the command with the run that holds it
+	// (a retest's run): the run lists it as a task and serves its logs.
+	ScanRunID     shared.ID
+	ScanRunStepID shared.ID
 }
 
 // ValidationDispatcher submits a job for a sensor and returns the
