@@ -137,6 +137,11 @@ type IdPUpdatePayload struct {
 	AutoProvision       *bool    `json:"auto_provision,omitempty"`
 	DefaultRole         *string  `json:"default_role,omitempty"`
 	IsActive            *bool    `json:"is_active,omitempty"`
+	// TargetProvider and TargetName identify the provider being changed in
+	// the change summary (read at proposal time; the name is the one the
+	// change sets when it renames the provider).
+	TargetProvider string `json:"target_provider,omitempty"`
+	TargetName     string `json:"target_name,omitempty"`
 }
 
 // --- submission ---
@@ -216,7 +221,8 @@ func (s *SSOChangeService) SubmitUpdateProvider(ctx context.Context, in UpdatePr
 		return nil, errIdPNotFound
 	}
 	// Validates the fields and that the provider exists in this organization.
-	if _, err := s.sso.BuildProviderUpdate(ctx, in); err != nil {
+	target, err := s.sso.BuildProviderUpdate(ctx, in)
+	if err != nil {
 		return nil, err
 	}
 	pending, err := s.needsApproval(ctx, tenantID)
@@ -239,7 +245,8 @@ func (s *SSOChangeService) SubmitUpdateProvider(ctx context.Context, in UpdatePr
 		DisplayName: in.DisplayName, ClientID: in.ClientID, ClientSecretChanged: secret != "",
 		IssuerURL: in.IssuerURL, TenantIdentifier: in.TenantIdentifier, Scopes: in.Scopes,
 		AllowedDomains: in.AllowedDomains, AutoProvision: in.AutoProvision, DefaultRole: in.DefaultRole,
-		IsActive: in.IsActive,
+		IsActive:       in.IsActive,
+		TargetProvider: string(target.Provider()), TargetName: target.DisplayName(),
 	}
 	return s.store(ctx, tenantID, ssochange.KindIdPUpdate, in.ID, payload, secret, by)
 }
@@ -323,6 +330,16 @@ func (s *SSOChangeService) notifyOwners(ctx context.Context, c *ssochange.Change
 // SSOChangeReviewPath is the web page where an owner reviews pending changes.
 const SSOChangeReviewPath = "/settings/sso-approvals"
 
+// identityProviderNoun names a provider type for a summary: "Google
+// Workspace identity provider", or just "identity provider" for an unknown id
+// (never the raw id).
+func identityProviderNoun(provider string) string {
+	if label := identityproviderdom.Provider(provider).Label(); label != "" {
+		return label + " identity provider"
+	}
+	return "identity provider"
+}
+
 // DescribeSSOChange is a one-line, secret-free description of a change.
 func DescribeSSOChange(c *ssochange.Change) string {
 	switch c.Kind {
@@ -334,8 +351,8 @@ func DescribeSSOChange(c *ssochange.Change) string {
 	case ssochange.KindIdPCreate:
 		var p IdPCreatePayload
 		_ = json.Unmarshal(c.Payload, &p)
-		return fmt.Sprintf("add the %s identity provider %q (client ID %q, auto-provision %s)",
-			p.Provider, p.DisplayName, p.ClientID, onOff(p.AutoProvision))
+		return fmt.Sprintf("add the %s %q (client ID %q, auto-provision %s)",
+			identityProviderNoun(p.Provider), p.DisplayName, p.ClientID, onOff(p.AutoProvision))
 	case ssochange.KindIdPUpdate:
 		var p IdPUpdatePayload
 		_ = json.Unmarshal(c.Payload, &p)
@@ -358,7 +375,12 @@ func DescribeSSOChange(c *ssochange.Change) string {
 		if len(fields) == 0 {
 			fields = []string{"no fields"}
 		}
-		return "change identity provider " + c.TargetID + " (" + strings.Join(fields, ", ") + ")"
+		// Never the provider id: a person approves this text.
+		target := "an identity provider"
+		if p.TargetName != "" {
+			target = fmt.Sprintf("the %s %q", identityProviderNoun(p.TargetProvider), p.TargetName)
+		}
+		return "change " + target + " (" + strings.Join(fields, ", ") + ")"
 	case ssochange.KindDomainJIT:
 		return describeDomainJIT(c)
 	}

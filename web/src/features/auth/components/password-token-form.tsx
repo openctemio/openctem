@@ -33,6 +33,9 @@ import { PasswordInput } from '@/components/password-input'
 
 import { resetPasswordSchema, type ResetPasswordInput } from '../schemas/auth.schema'
 import { resetPasswordAction } from '../actions/local-auth-actions'
+import { usePasswordPolicy } from '../api/use-auth-providers'
+import { passwordPolicyIssue } from '../lib/password-policy'
+import { PasswordPolicyHint } from './password-policy-hint'
 
 export type PasswordTokenMode = 'reset' | 'setup'
 
@@ -120,6 +123,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
   const [isSuccess, setIsSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const passwordPolicy = usePasswordPolicy()
   const form = useForm<ResetPasswordInput>({
     resolver: zodResolver(resetPasswordSchema),
     defaultValues: { password: '', confirmPassword: '', token },
@@ -127,6 +131,11 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
 
   function onSubmit(data: ResetPasswordInput) {
     setError(null)
+    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy)
+    if (issue) {
+      form.setError('password', { message: issue })
+      return
+    }
     startTransition(async () => {
       const result = await resetPasswordAction(data.token, data.password)
       if (result.success) {
@@ -204,6 +213,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
                       {...field}
                     />
                   </FormControl>
+                  <PasswordPolicyHint />
                   <FormMessage />
                 </FormItem>
               )}

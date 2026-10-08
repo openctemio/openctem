@@ -7,8 +7,8 @@
  *
  * Behavior:
  *  - Fetch asset by id.
- *  - Repository assets have a rich dedicated page at /assets/repositories/{id};
- *    redirect there.
+ *  - A repository opens its workspace here (branches, findings by branch,
+ *    scan settings): one URL per asset, whatever its type.
  *  - Other asset types: render a minimal detail layout (header + key fields)
  *    plus a link to the inventory filtered to the asset's type.
  */
@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DetailSections, PageHeader } from '@/features/shared'
 import { AssetAttributionSection, AssetIdentitySections, useAsset } from '@/features/assets'
 import { cn } from '@/lib/utils'
+import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
 import { CRITICALITY_TEXT_COLORS } from '@/lib/criticality-colors'
 
 const CRITICALITY_COLOR: Record<string, string> = CRITICALITY_TEXT_COLORS
@@ -36,13 +37,6 @@ export default function AssetDetailPage() {
   const assetId = params?.id ?? null
 
   const { asset, isLoading, error } = useAsset(assetId)
-
-  // Repository has a rich dedicated page — redirect there.
-  React.useEffect(() => {
-    if (asset && asset.type === 'repository') {
-      router.replace(`/assets/repositories/${asset.id}`)
-    }
-  }, [asset, router])
 
   if (isLoading) {
     return (
@@ -75,6 +69,10 @@ export default function AssetDetailPage() {
         </Card>
       </Main>
     )
+  }
+
+  if (asset.type === 'repository') {
+    return <RepositoryWorkspace repositoryId={asset.id} />
   }
 
   // The inventory filtered to this asset's type (and alias sub-type).
