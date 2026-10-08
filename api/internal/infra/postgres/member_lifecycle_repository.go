@@ -157,9 +157,9 @@ func (r *MemberLifecycleRepository) Disable(ctx context.Context, m *tenant.Membe
 
 	res, err := tx.ExecContext(ctx, `
 		UPDATE tenant_members
-		SET status = 'suspended', suspended_at = $3, suspended_by = $4
+		SET status = 'suspended', suspended_at = $3, suspended_by = $4, suspended_reason = $5
 		WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'`,
-		tid, uid, nullTime(m.SuspendedAt()), nullIDPtr(m.SuspendedBy()))
+		tid, uid, nullTime(m.SuspendedAt()), nullIDPtr(m.SuspendedBy()), nullString(m.SuspendedReason()))
 	if err != nil {
 		return nil, fmt.Errorf("suspend membership: %w", err)
 	}
@@ -238,8 +238,10 @@ func (r *MemberLifecycleRepository) Reenable(ctx context.Context, m *tenant.Memb
 	}()
 	res, err := tx.ExecContext(ctx, `
 		UPDATE tenant_members
-		SET status = 'active', suspended_at = NULL, suspended_by = NULL
-		WHERE tenant_id = $1 AND user_id = $2 AND status = 'suspended'`, tid, uid)
+		SET status = 'active', suspended_at = NULL, suspended_by = NULL, suspended_reason = NULL,
+		    expires_at = $3, expiry_reason = $4
+		WHERE tenant_id = $1 AND user_id = $2 AND status = 'suspended'`,
+		tid, uid, nullTime(m.ExpiresAt()), nullString(m.ExpiryReason()))
 	if err != nil {
 		return fmt.Errorf("reactivate membership: %w", err)
 	}
@@ -493,9 +495,11 @@ func (r *MemberLifecycleRepository) Rejoin(ctx context.Context, m *tenant.Member
 	res, err := tx.ExecContext(ctx, `
 		UPDATE tenant_members
 		SET status = 'active', role = $3, invited_by = $4, joined_at = $5,
-		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = NULL, suspended_by = NULL
+		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = NULL, suspended_by = NULL,
+		    suspended_reason = NULL, kind = $6, home_tenant_id = $7, home_domain = $8,
+		    expires_at = $9, expiry_reason = $10
 		WHERE tenant_id = $1 AND user_id = $2 AND status = 'offboarded'`,
-		tid, uid, m.Role().String(), invitedBy, m.JoinedAt())
+		append([]any{tid, uid, m.Role().String(), invitedBy, m.JoinedAt()}, memberAccessArgs(m)...)...)
 	if err != nil {
 		return fmt.Errorf("rejoin membership: %w", err)
 	}
