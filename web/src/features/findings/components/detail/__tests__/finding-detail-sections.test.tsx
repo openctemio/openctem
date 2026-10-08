@@ -7,6 +7,15 @@ const explain = vi.hoisted(() => vi.fn(() => ({ explanation: null, isLoading: fa
 vi.mock('../../../api/use-finding-priority-explanation', () => ({
   useFindingPriorityExplanation: explain,
 }))
+// SLA windows come from the asset's effective policy on the API.
+const slaPolicy = vi.hoisted(() =>
+  vi.fn((_assetId?: string | null) => ({
+    data: { p0_days: 3, p1_days: 9, p2_days: 20, p3_days: 40 },
+  }))
+)
+vi.mock('@/features/sla/api/use-sla-policies-api', () => ({
+  useEffectiveSlaPolicy: slaPolicy,
+}))
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }))
 
 const { FindingWhyItMatters } = await import('../finding-why-it-matters')
@@ -68,6 +77,9 @@ describe('FindingWhyItMatters', () => {
     render(<FindingWhyItMatters finding={finding()} />)
     const panel = screen.getByRole('region', { name: 'Why it matters' })
     expect(within(panel).getByText('P1')).toBeInTheDocument()
+    // The P1 window of the finding's asset, as the API reports it.
+    expect(within(panel).getByText('fix within 9 days')).toBeInTheDocument()
+    expect(slaPolicy).toHaveBeenCalledWith('a1')
     expect(
       within(panel).getByText('High severity, reachable, no compensating controls.')
     ).toBeInTheDocument()

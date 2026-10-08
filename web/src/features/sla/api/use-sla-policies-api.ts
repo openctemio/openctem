@@ -46,6 +46,12 @@ export interface SlaPolicy {
   warning_threshold_pct: number
   escalation_enabled: boolean
   is_active: boolean
+  /**
+   * True when the organization has configured no policy and these are the
+   * platform default windows (the id is then empty). Only the effective-policy
+   * reads (`/default`, `/assets/{id}/sla-policy`) return it.
+   */
+  is_platform_default?: boolean
   created_at: string
   updated_at: string
 }
@@ -108,32 +114,61 @@ export function useSlaPoliciesApi(config?: SWRConfiguration) {
   })
 }
 
-/** Get the tenant default SLA policy. Returns 404 when none is set. */
+/**
+ * The organization's effective SLA windows: its default policy, else the
+ * platform defaults (`is_platform_default`). The console states remediation
+ * windows only from here or from {@link useAssetSlaPolicyApi}; it keeps no
+ * copy of the numbers.
+ */
 export function useDefaultSlaPolicyApi(config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const key = currentTenant && can(Permission.SLARead) ? `${BASE_URL}/default` : null
   return useSWR<SlaPolicy>(key, (url: string) => get<SlaPolicy>(url), {
     ...defaultConfig,
-    // A missing default is an expected state, not an error to toast.
+    // Windows are supporting text: a failed read hides them, it is not an error to toast.
+    onError: () => {},
+    ...config,
+  })
+}
+
+/**
+ * The policy that governs an asset: its own override, else the tenant default,
+ * else the platform defaults (`is_platform_default`).
+ */
+export function useAssetSlaPolicyApi(assetId: string | null, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && assetId ? assetSlaPolicyUrl(assetId) : null
+  return useSWR<SlaPolicy>(key, (url: string) => get<SlaPolicy>(url), {
+    ...defaultConfig,
     onError: () => {},
     shouldRetryOnError: false,
     ...config,
   })
 }
 
+function assetSlaPolicyUrl(assetId: string): string {
+  return `/api/v1/assets/${encodeURIComponent(assetId)}/sla-policy/`
+}
+
 /**
- * The policy that governs an asset: its own override, else the tenant default.
- * Returns 404 when neither exists (the platform defaults then apply).
+ * The windows that apply: the asset's effective policy when an asset is
+ * given, else the organization's (both fall back to the platform defaults
+ * on the server). One request either way; undefined while loading or when
+ * the caller may not read it.
  */
-export function useAssetSlaPolicyApi(assetId: string | null, config?: SWRConfiguration) {
+export function useEffectiveSlaPolicy(assetId?: string | null) {
   const { currentTenant } = useTenant()
-  const key = currentTenant && assetId ? `/api/v1/assets/${assetId}/sla-policy/` : null
+  const { can } = usePermissions()
+  let key: string | null = null
+  if (currentTenant) {
+    if (assetId) key = assetSlaPolicyUrl(assetId)
+    else if (can(Permission.SLARead)) key = `${BASE_URL}/default`
+  }
   return useSWR<SlaPolicy>(key, (url: string) => get<SlaPolicy>(url), {
     ...defaultConfig,
     onError: () => {},
     shouldRetryOnError: false,
-    ...config,
   })
 }
 
