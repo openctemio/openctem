@@ -1,12 +1,15 @@
 package scanrun
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 func editStep(t *testing.T, pid shared.ID, key, tool string) *scanworkflow.Step {
@@ -95,5 +98,32 @@ func TestSanitizeLogValue(t *testing.T) {
 	long := sanitizeLogValue(strings.Repeat("x", 300))
 	if len(long) != 128 {
 		t.Fatalf("not capped: %d", len(long))
+	}
+}
+
+// A refused step names the step, so a save of a whole workflow says which
+// step to fix.
+func TestValidateSteps_RefusalNamesTheStep(t *testing.T) {
+	v := &SecurityValidatorFunc{
+		ValidateIdentifierFunc: func(string, int, string) *ValidationResult { return &ValidationResult{Valid: true} },
+		ValidateStepConfigFunc: func(context.Context, shared.ID, string, []string, map[string]any) *ValidationResult {
+			return &ValidationResult{Errors: []ValidationError{{
+				Field: "capabilities", Code: "CAPABILITY_TOOL_MISMATCH",
+				Message: `dnsx cannot run "scan". It can run: DNS resolution (resolve.dns), recon.`,
+			}}}
+		},
+	}
+	s := &Service{securityValidator: v, logger: logger.NewNop()}
+	err := s.ValidateSteps(context.Background(), []AddStepInput{{
+		TenantID: shared.NewID().String(), StepKey: "recon", Name: "Recon", Tool: "dnsx", Capabilities: []string{"scan"},
+	}})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("err=%v, want ErrValidation", err)
+	}
+	if !strings.Contains(err.Error(), `step "Recon": dnsx cannot run "scan"`) {
+		t.Fatalf("message does not name the step: %v", err)
+	}
+	if got := stepMessage(AddStepInput{StepKey: "k"}, "m"); got != `step "k": m` {
+		t.Fatalf("unnamed step: %q", got)
 	}
 }

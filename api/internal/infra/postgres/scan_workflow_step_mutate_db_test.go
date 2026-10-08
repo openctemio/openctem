@@ -171,11 +171,55 @@ func TestMutateSteps_SaveKeepsRunHistory(t *testing.T) {
 	}
 }
 
+// A saved step's key is fixed once the workflow has a run (finished ones
+// too): the run's step runs and step outputs refer to it. The name and
+// everything else may still change.
+func TestMutateSteps_KeyIsFixedOnceTheWorkflowHasRuns(t *testing.T) {
+	ctx := context.Background()
+	db := openScanDB(t)
+	f := seedStepHistory(ctx, t, db, true) // one finished run
+	steps := NewScanWorkflowStepRepository(&DB{DB: db})
+
+	_, err := steps.MutateSteps(ctx, f.tenant, f.template, func(cur []*scanworkflow.Step) ([]*scanworkflow.Step, error) {
+		cur[0].StepKey = "discover-renamed"
+		return cur, nil
+	})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("key change after a run: err=%v, want ErrValidation", err)
+	}
+	if a, _ := steps.GetByID(ctx, f.stepA.ID); a.StepKey != "discover" {
+		t.Fatalf("refused save changed the key: %q", a.StepKey)
+	}
+
+	// Renaming the step (not its key) is still allowed.
+	if _, err := steps.MutateSteps(ctx, f.tenant, f.template, func(cur []*scanworkflow.Step) ([]*scanworkflow.Step, error) {
+		cur[0].Name = "Find subdomains"
+		return cur, nil
+	}); err != nil {
+		t.Fatalf("rename a step: %v", err)
+	}
+	if a, _ := steps.GetByID(ctx, f.stepA.ID); a.Name != "Find subdomains" || a.StepKey != "discover" {
+		t.Fatalf("after rename: name=%q key=%q", a.Name, a.StepKey)
+	}
+
+	// Another tenant's run of a workflow with the same id cannot exist, and
+	// another tenant cannot reach this workflow at all.
+	if _, err := steps.MutateSteps(ctx, shared.NewID(), f.template, func(cur []*scanworkflow.Step) ([]*scanworkflow.Step, error) {
+		return cur, nil
+	}); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("other tenant: err=%v, want ErrNotFound", err)
+	}
+}
+
 func TestMutateSteps_KeysCanSwap(t *testing.T) {
 	ctx := context.Background()
 	db := openScanDB(t)
 	f := seedStepHistory(ctx, t, db, true)
 	steps := NewScanWorkflowStepRepository(&DB{DB: db})
+	// Keys move freely only while the workflow has never run.
+	if _, err := db.ExecContext(ctx, `DELETE FROM scan_runs WHERE id = $1`, f.run.ID.String()); err != nil {
+		t.Fatalf("drop the run: %v", err)
+	}
 
 	_, err := steps.MutateSteps(ctx, f.tenant, f.template, func(cur []*scanworkflow.Step) ([]*scanworkflow.Step, error) {
 		cur[0].StepKey, cur[1].StepKey = cur[1].StepKey, cur[0].StepKey
@@ -349,5 +393,30 @@ func TestPipelineStep_NullDescriptionReads(t *testing.T) {
 	got, err := NewScanWorkflowStepRepository(&DB{DB: db}).GetByID(ctx, f.stepA.ID)
 	if err != nil || got.Description != "" {
 		t.Fatalf("read: %+v %v", got, err)
+	}
+}
+
+// A negative fractional canvas position is stored and read back (rounded):
+// the INTEGER columns used to fail the save with 22P02 and a 500.
+func TestMutateSteps_FractionalPositionRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	db := openScanDB(t)
+	f := seedStepHistory(ctx, t, db, true)
+	steps := NewScanWorkflowStepRepository(&DB{DB: db})
+
+	if _, err := steps.MutateSteps(ctx, f.tenant, f.template, func(cur []*scanworkflow.Step) ([]*scanworkflow.Step, error) {
+		if err := cur[0].SetUIPosition(-307.4222108759977, 88.6); err != nil {
+			return nil, err
+		}
+		return cur, nil
+	}); err != nil {
+		t.Fatalf("save a fractional position: %v", err)
+	}
+	got, err := steps.GetByID(ctx, f.stepA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UIPosition.X != -307 || got.UIPosition.Y != 89 {
+		t.Fatalf("position after round trip: %+v", got.UIPosition)
 	}
 }

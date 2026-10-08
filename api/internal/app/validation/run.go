@@ -109,7 +109,32 @@ type RunService struct {
 	// Phase 2b). Nil means the fleet advertises no nuclei executor, so routing
 	// stays safe-check-only — 2b is inert-safe until a nuclei sensor is deployed.
 	nucleiAvailability NucleiAvailability
-	logger             *logger.Logger
+	// runs records each finding validation as a run of kind validation
+	// (research/62 P0-3): its task and logs are in Runs. Nil: no run.
+	runs   RunRecorder
+	logger *logger.Logger
+}
+
+// RunRecorder records a finding validation as a run (scanrun.Service).
+type RunRecorder interface {
+	StartValidationRun(ctx context.Context, tenantID, findingID shared.ID, requestedBy string) (runID, stepRunID shared.ID, err error)
+	FinishValidationRun(ctx context.Context, tenantID, runID shared.ID, succeeded bool, message, code string) error
+}
+
+// SetRunRecorder records every finding validation as a run.
+func (s *RunService) SetRunRecorder(r RunRecorder) { s.runs = r }
+
+type requesterKey struct{}
+
+// WithRequester names the user who asked for a validation (the run's
+// trigger). Without it the platform asked.
+func WithRequester(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, requesterKey{}, userID)
+}
+
+func requesterFrom(ctx context.Context) string {
+	id, _ := ctx.Value(requesterKey{}).(string)
+	return id
 }
 
 // NewRunService wires the run service. available is the set of executor kinds
@@ -271,8 +296,25 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 		CVEID:          cveID,
 	}
 
+	var runID shared.ID
+	if s.runs != nil {
+		rid, stepID, rerr := s.runs.StartValidationRun(ctx, tenantID, findingID, requesterFrom(ctx))
+		if rerr != nil {
+			// The validation still runs; it is just not listed in Runs.
+			s.logger.Warn("failed to record the validation run", "finding_id", findingID.String(), "error", rerr)
+		} else {
+			runID = rid
+			job.ScanRunID, job.ScanRunStepID = rid, stepID
+		}
+	}
+
 	cmdID, err := s.dispatcher.Dispatch(ctx, job)
 	if err != nil {
+		if !runID.IsZero() {
+			if ferr := s.runs.FinishValidationRun(ctx, tenantID, runID, false, "the validation could not be queued", "DISPATCH_FAILED"); ferr != nil {
+				s.logger.Warn("failed to settle the validation run", "run_id", runID.String(), "error", ferr)
+			}
+		}
 		return shared.ID{}, err
 	}
 

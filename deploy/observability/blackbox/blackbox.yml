@@ -1,0 +1,26 @@
+# Synthetic probes (api/docs/operations/monitoring.md). No credentials are
+# sent: the probes read public pages only (/health, /login).
+modules:
+  # Plain HTTP inside the stack, or HTTPS with a certificate from a public CA.
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      follow_redirects: true
+      preferred_ip_protocol: ip4
+
+  # HTTPS through a gateway that uses its internal CA (OPENCTEM_TLS_MODE=internal).
+  # The chain is not verified, but the certificate is still read, so the
+  # TLS expiry alert keeps working.
+  http_2xx_internal_ca:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      follow_redirects: true
+      preferred_ip_protocol: ip4
+      tls_config:
+        insecure_skip_verify: true
