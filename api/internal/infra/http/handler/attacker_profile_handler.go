@@ -67,7 +67,7 @@ func (h *AttackerProfileHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]AttackerProfileResponse, 0, page.PerPage)
+	items := make([]AttackerProfileResponse, 0, pagination.MaxPerPage)
 	for rows.Next() {
 		p, err := scanAttackerProfile(rows)
 		if err != nil {
