@@ -571,6 +571,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Security     BearerAuth
 // @Param        name          query     string  false  "Filter by name (partial match)"
 // @Param        types         query     string  false  "Filter by types (comma-separated)"
+// @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
 // @Param        criticalities query     string  false  "Filter by criticalities (comma-separated)"
 // @Param        statuses      query     string  false  "Filter by statuses (comma-separated)"
 // @Param        scopes        query     string  false  "Filter by scopes (comma-separated)"
@@ -615,6 +616,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		TenantID:         tenantID,
 		Name:             query.Get("name"),
 		Types:            parseQueryArray(query.Get("types")),
+		Lenses:           parseQueryArray(query.Get("lenses")),
 		Criticalities:    parseQueryArray(query.Get("criticalities")),
 		Statuses:         parseQueryArray(query.Get("statuses")),
 		Scopes:           parseQueryArray(query.Get("scopes")),
@@ -1572,6 +1574,7 @@ type AssetStatsResponse struct {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        types         query     string  false  "Filter by types (comma-separated)"
+// @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
 // @Param        tags          query     string  false  "Filter by tags (comma-separated, overlap)"
 // @Success      200  {object}  AssetStatsResponse
 // @Failure      401  {object}  map[string]string
@@ -1582,6 +1585,7 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 	typesFilter := parseQueryArray(query.Get("types"))
+	lensesFilter := parseQueryArray(query.Get("lenses"))
 	tagsFilter := parseQueryArray(query.Get("tags"))
 	subTypeFilter := query.Get("sub_type")
 
@@ -1590,7 +1594,7 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	// Use service method with SQL aggregation for efficient stats
 	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID,
-		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), typesFilter, tagsFilter, subTypeFilter, countByFields...)
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), typesFilter, lensesFilter, tagsFilter, subTypeFilter, countByFields...)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

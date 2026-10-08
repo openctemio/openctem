@@ -15,9 +15,9 @@ root (needs Go and Node; `make generate-docker` needs only Docker). `npm run
 dev/build/type-check/lint/test` stop with that hint when they are missing.
 API and web release together on one `vX.Y.Z` tag.
 
-Next.js 16 dashboard with locale/RTL **direction** support (en/vi/ar locales are
-detected and drive `dir`; a translation layer is NOT yet wired — UI strings are
-currently English), Zustand auth, and shadcn/ui.
+Next.js 16 dashboard with English and Vietnamese catalogs (`useTranslation()`;
+strings without a key render in English), RTL-ready direction handling, Zustand
+auth, and shadcn/ui.
 
 **Status**: Production-ready | TypeScript strict | Turbopack
 (React Compiler is NOT currently enabled — see Tech Stack)
@@ -127,7 +127,8 @@ Create a `src/features/[name]/` folder when: 2+ related components, distinct bus
 
 ### i18n
 
-- Locales: `en`, `vi`, `ar` | RTL: `ar`, `he`, `fa`, `ur`
+- Locales: `en`, `vi` (`supportedLocales`) | RTL (direction only, none shipped): `ar`, `he`, `fa`, `ur`
+- Client: `const { t } = useTranslation()` from `@/context/i18n-provider`
 - Server: `(await headers()).get('x-locale') || 'en'`
 - See [i18n.md](.claude/i18n.md) for complete guide
 
@@ -135,7 +136,7 @@ Create a `src/features/[name]/` folder when: 2+ related components, distinct bus
 
 - Server Components for reads (default), Server Actions for mutations
 - SWR for client-side fetching, `mutate()` to invalidate after mutations
-- Always use pagination params (`page`, `limit`) on list endpoints
+- Always paginate list endpoints (`page` + `per_page` on most lists; check the endpoint)
 
 ### Validation
 
@@ -211,12 +212,12 @@ User → Membership (owner | member) → Roles → Permissions (DO)
 User → Groups + explicit asset access grants → Data Scope (SEE)
 ```
 
-Being an asset owner is not a data-scope grant (owner decision O1); the backend
+Being an asset owner is not a data-scope grant; the backend
 is the only authority (`api/docs/architecture/authorization-matrix.md`, "Data scope").
 
 ```tsx
-const { hasPermission } = useMyPermissions()
-<PermissionGate permission="assets:write"><EditButton /></PermissionGate>
+const { can } = usePermissions()             // from '@/lib/permissions'
+<Can permission={Permission.AssetsWrite}><EditButton /></Can>
 ```
 
 Permissions sync in real-time via `X-Permission-Stale` header. See [access-control.md](.claude/access-control.md).
@@ -252,6 +253,7 @@ npm run validate     # type-check + lint
 - [auth.md](.claude/auth.md) — Authentication & multi-tenant flow
 - [access-control.md](.claude/access-control.md) — RBAC & permissions
 - [account.md](.claude/account.md) — Account settings
+- [style-guide.md](.claude/style-guide.md) — Coding style
 - [patterns.md](.claude/patterns.md) — Code patterns & examples
 - [i18n.md](.claude/i18n.md) — Internationalization
 - [troubleshooting.md](.claude/troubleshooting.md) — Common issues

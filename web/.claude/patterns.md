@@ -2,7 +2,7 @@
 
 > Reusable code patterns for common scenarios in the project.
 
-## 📋 Table of Contents
+## Table of Contents
 
 1. [CRUD Pattern](#crud-pattern)
 2. [Server Component Pattern](#server-component-pattern)
@@ -15,12 +15,12 @@
 9. [Loading State Pattern](#loading-state-pattern)
 10. [API Route Pattern](#api-route-pattern)
 11. [Asset API Pattern](#asset-api-pattern)
-12. [Permission-Gated SWR Hook Pattern](#permission-gated-hook-pattern)
-13. [Permission Guard Component Pattern](#permission-guard-pattern)
+12. [Permission-Gated SWR Hook Pattern](#permission-gated-swr-hook-pattern)
+13. [Permission Guard Component Pattern](#permission-guard-component-pattern)
 
 ---
 
-## 🔄 CRUD Pattern {#crud-pattern}
+## CRUD Pattern
 
 Complete CRUD implementation for a feature.
 
@@ -272,7 +272,7 @@ export default async function UsersPage() {
 
 ---
 
-## 🖥️ Server Component Pattern {#server-component-pattern}
+## Server Component Pattern
 
 ```tsx
 // app/(dashboard)/dashboard/page.tsx
@@ -316,7 +316,7 @@ export default async function DashboardPage() {
 
 ---
 
-## 💻 Client Component Pattern {#client-component-pattern}
+## Client Component Pattern
 
 ```tsx
 // features/users/components/user-list.tsx
@@ -366,7 +366,7 @@ export function UserList({ users }: UserListProps) {
 
 ---
 
-## 📝 Form Pattern {#form-pattern}
+## Form Pattern
 
 ### Simple Form with Server Action
 
@@ -419,7 +419,7 @@ export function ContactForm() {
 
 ---
 
-## 🎭 Dialog Pattern {#dialog-pattern}
+## Dialog Pattern
 
 ```tsx
 // features/users/components/create-user-dialog.tsx
@@ -550,7 +550,7 @@ export function DeleteUserDialog({ userId, userName }: DeleteUserDialogProps) {
 
 ---
 
-## ⚡ Server Action Pattern {#server-action-pattern}
+## Server Action Pattern
 
 ```tsx
 // features/posts/actions/post-actions.ts
@@ -618,7 +618,7 @@ export async function createPostAndRedirect(formData: FormData) {
 
 ---
 
-## 🎨 Layout Pattern {#layout-pattern}
+## Layout Pattern
 
 ```tsx
 // app/(dashboard)/layout.tsx
@@ -652,7 +652,7 @@ export default async function DashboardLayout({
 
 ---
 
-## 🚨 Error Handling Pattern {#error-handling-pattern}
+## Error Handling Pattern
 
 ```tsx
 // app/(dashboard)/users/error.tsx
@@ -708,7 +708,7 @@ export default function UserNotFound() {
 
 ---
 
-## ⏳ Loading State Pattern {#loading-state-pattern}
+## Loading State Pattern
 
 ```tsx
 // app/(dashboard)/users/loading.tsx
@@ -759,7 +759,7 @@ export default function DashboardPage() {
 
 ---
 
-## 🔌 API Route Pattern {#api-route-pattern}
+## API Route Pattern
 
 ```tsx
 // app/api/users/route.ts
@@ -857,7 +857,7 @@ export async function DELETE(
 
 ---
 
-## 🎯 Quick Reference
+## Quick Reference
 
 ### When to use what:
 
@@ -879,7 +879,7 @@ export async function DELETE(
 
 ---
 
-## 🏢 Asset API Pattern {#asset-api-pattern}
+## Asset API Pattern
 
 Pattern for asset pages with real API integration using SWR.
 
@@ -1049,7 +1049,7 @@ export default function HostsPage() {
 
 ---
 
-## 🔐 Permission-Gated SWR Hook Pattern {#permission-gated-hook-pattern}
+## Permission-Gated SWR Hook Pattern
 
 Pattern for API hooks that check permissions before fetching.
 
@@ -1124,7 +1124,7 @@ export function useStats(tenantId: string | null) {
 
 ---
 
-## 🔒 Permission Guard Component Pattern {#permission-guard-pattern}
+## Permission Guard Component Pattern
 
 Pattern for conditionally showing/disabling UI based on permissions.
 
@@ -1207,4 +1207,4 @@ function AssetActions({ asset }) {
 - [architecture.md](architecture.md) - Project structure
 - [access-control.md](access-control.md) - Complete RBAC guide
 - [troubleshooting.md](troubleshooting.md) - Common issues
-- [ASSETS_API_INTEGRATION.md](../docs/ASSETS_API_INTEGRATION.md) - Complete asset API guide
+- [API_INTEGRATION.md](../docs/guides/API_INTEGRATION.md) - Calling the API

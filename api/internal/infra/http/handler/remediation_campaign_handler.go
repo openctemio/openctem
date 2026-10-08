@@ -146,6 +146,38 @@ func (h *RemediationCampaignHandler) Get(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// ListFindings handles GET /api/v1/remediation/campaigns/{id}/findings: the
+// findings the campaign's finding count counts, on the caller's in-scope
+// assets when restricted, so the count and the list always agree.
+// @Summary      List a remediation campaign's findings
+// @Description  The findings the campaign tracks (its finding filter or remediation key, any status), restricted to the caller's data scope. The total equals the campaign's finding_count for the same caller.
+// @Tags         Remediation
+// @Produce      json
+// @Param        id        path   string  true   "Campaign ID"
+// @Param        page      query  int     false  "Page number" default(1)
+// @Param        per_page  query  int     false  "Items per page" default(20)
+// @Success      200  {object}  pagination.Result[FindingResponse]
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /remediation/campaigns/{id}/findings [get]
+func (h *RemediationCampaignHandler) ListFindings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	result, err := h.service.ListCampaignFindings(r.Context(), tenantID, chi.URLParam(r, "id"), page)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	items := make([]FindingResponse, 0, len(result.Data))
+	for _, f := range result.Data {
+		items = append(items, toFindingResponse(f))
+	}
+	writeJSON(w, http.StatusOK, pagination.NewResult(items, result.Total, page))
+}
+
 // UpdateStatus transitions campaign status.
 // Resolve handles POST /api/v1/remediation/campaigns/{id}/resolve — actively
 // resolves the campaign's open findings in one action (RFC-015 Phase 3).

@@ -1,95 +1,51 @@
-# Navigation coverage — what is built, what is scaffolding
+# Navigation coverage: no scaffold pages in the sidebar
 
-Measured against `develop`. Commands to reproduce are at the bottom.
+A page in the sidebar must show data from its own domain. This page explains the
+rule, the test that enforces it and how to check a page by hand.
 
-"Orphan routes" was the top item in several consecutive UI reviews. The finding
-that makes it resolvable is not the count — it is that a page being outside the
-sidebar does not make it broken, and a page importing a data hook does not make it
-real. You have to look at what data source it actually renders.
+## The rule
 
-**The sidebar exposes 46 URLs; there are 154 `page.tsx` files (144 under
-`(dashboard)`).** Most pages outside the sidebar fall into three honest buckets:
-
-|                           | Pages | What it is                                                                                                                                              |
-| ------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/assets/*` type wrappers | ~30   | Thin config-driven wrappers, reached from the `/assets` hub + `?type=`. Fine.                                                                           |
-| Own-domain sub-pages      | many  | Real features reached as tabs/cards from a parent that _is_ in the nav (e.g. `/findings/approvals`, `/components/*`, `/settings/integrations/*`). Fine. |
-| `useDashboardStats` only  | **3** | Genuine scaffolds — nothing of their own behind them.                                                                                                   |
-
----
-
-## The test that matters
-
-**"Imports a data hook" is not the same as "shows its own data."** The usable test
-is: does the page call a hook scoped to its own domain?
+**"Imports a data hook" is not the same as "shows its own data."** A page is real
+when it calls a hook scoped to its own domain:
 
 ```
 useControlTests(...) / useSuppressions(...) / useFindingTypeStats(id, ['secret'])  -> real
 useDashboardStats()  and nothing else                                              -> scaffold
 ```
 
-In a security product a chart labelled "Credential Exposures" that is really showing
-tenant-wide totals is worse than an empty page: it will be read as fact. That is the
-defect this test exists to prevent.
+In a security product, a chart labelled "Credential Exposures" that is really
+showing organization-wide totals is worse than an empty page: it will be read as
+fact. Do not add a page whose only data source is `useDashboardStats`; build the
+feature first.
 
----
+Pages outside the sidebar are not a problem by themselves: asset type pages are
+reached from the `/assets` hub, and many feature pages are tabs or cards of a
+parent that is in the sidebar (for example `/findings/approvals`,
+`/settings/integrations/*`). Retired pages redirect to the real page for the same
+question (`LEGACY_ORPHAN_ROUTE_REDIRECTS` in `src/config/legacy-routes.ts`).
 
-## Shipped, sidebar-linked, real
-
-The pages older revisions flagged as scaffolds are now backed by domain hooks and
-are live in the sidebar. Do not re-flag them:
-
-| Page                                                                                              | Source                                              |
-| ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `/sla`                                                                                            | `useFindingsApi`                                    |
-| `/controls`                                                                                       | `useSWR` (compensating controls)                    |
-| `/control-testing`                                                                                | `useControlTests`, `useControlTestStats`            |
-| `/exceptions`                                                                                     | `useSuppressions` (+ approve/reject/delete)         |
-| `/workflows`                                                                                      | `useWorkflows`, `useWorkflowRuns`                   |
-| `/attack-simulation`                                                                              | `useSimulations`, `useRunSimulation`                |
-| `/exposures/{secrets,code,misconfigurations,vulnerabilities}` (section tabs of the Exposures row) | `useFindingTypeStats(tenantId, [...])`              |
-| `/insights/{program-health,data-quality}`                                                         | delegate to `ProgramHealthView` / `DataQualityView` |
-| `/insights/{executive,ctem-maturity}`                                                             | `useSWR` / `useCtemMaturity`                        |
-
-## Genuine scaffolds — none left
-
-The last three (`/progress`, `/trending`, `/insights/analytics/mttr`) and
-`/simulation/scenarios` were deleted (owner decision D-31). Each redirects to the
-real page for the same question (`LEGACY_ORPHAN_ROUTE_REDIRECTS` in
-`src/config/legacy-routes.ts`). Do not add a page whose only data source is
-`useDashboardStats`; build the feature first.
-
-The wide scaffold clusters older drafts listed (`/controls/*`, `/workflows/*`,
-`/threats/*`, `/identity/*`, `/collaboration/*`, `/exceptions/*` children,
-`/response/*`, `/overview`, `/scoring`, `/attack-path-visualization`) **no longer
-exist** — those route folders were deleted, not wired.
-
-### Wiring a scaffold is blocked by a test
+## The test
 
 `src/config/__tests__/sidebar-no-scaffolds.test.ts` walks every sidebar leaf to the
 page file it resolves to and fails if that page's only data source is
-`useDashboardStats`, or if it renders `ComingSoonPage` without a badge. Green today:
-no sidebar entry points at a scaffold. It exists because the danger in a list like
-this is not that it stays unresolved — it is someone resolving it the fast way.
+`useDashboardStats`, or if it renders `ComingSoonPage` without a badge.
 
----
-
-## Reproducing this
+## Checking by hand
 
 ```bash
-# routes and nav URLs
+# routes and sidebar URLs
 find src/app -name page.tsx | sed -E 's#^src/app/##; s#/page\.tsx$##; s#\([^)]*\)/##g; s#^#/#' \
-  | sed 's#//*#/#g' | sort -u                                    # routes (some dynamic)
-grep -oE "url: '[^']+'" src/config/sidebar-data.ts | sed "s/url: '//; s/'//" | sort -u   # 46
+  | sed 's#//*#/#g' | sort -u
+grep -oE "url: '[^']+'" src/config/sidebar-data.ts | sed "s/url: '//; s/'//" | sort -u
 
 # real vs scaffold, per page
 grep -oE "\buse[A-Z][A-Za-z0-9]*[(<]" "$page" | sed 's/[(<]$//' | sort -u \
   | grep -vE "useState|useEffect|useMemo|useRouter|useCallback|useSearchParams|useRef|useParams|usePathname|useTenant|useDashboardStats|usePermissions|useHasPermission|useToast|useForm"
 # imports useDashboardStats AND no domain hook => scaffold
-# note the [(<] — useSWR<T>( is a real data source and a `\(`-only pattern misses it
+# note the [(<]: useSWR<T>( is a real data source and a `\(`-only pattern misses it
 ```
 
-**Do not try to find orphans by grepping for hrefs.** Navigation goes through config
-objects and template literals — `router.push(category.href)`,
-``router.push(`/assets/${slug}`)`` — so no static pass answers "is this reachable".
-Sidebar membership is the only figure exact without reading code.
+Do not look for unreachable pages by grepping for `href`s: navigation goes through
+config objects and template literals (`router.push(category.href)`,
+``router.push(`/assets/${slug}`)``), so no static pass answers "is this
+reachable". Sidebar membership is the only exact figure.
