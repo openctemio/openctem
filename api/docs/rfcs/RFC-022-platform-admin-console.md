@@ -606,6 +606,27 @@ again, without touching what an organization holds:
 - One step-up check (`confirmAdminStepUp`) serves owner recovery and ending
   a session.
 
+## Revision 17: operations
+
+Operations > Health (`GET /api/v1/admin/operations`, any admin role) shows
+the installation as the API sees it, without Prometheus:
+
+- the build (version, commit, channel) and the applied database schema
+  against the one this release ships (behind, ahead, dirty);
+- the database (ping latency, the API's connection pool) and Redis (ping
+  latency, or "not configured");
+- the work queues: sensor jobs waiting and running and the oldest waiting
+  job, open scan runs and those past their deadline, notifications waiting,
+  retrying and given up;
+- active sensors, platform and customer, by health and SDK version, with
+  versions below the configured minimum flagged;
+- background jobs: each controller's last run, its errors since start, and
+  whether its loop is started (read from the API's own metrics registry).
+
+Platform-wide counts and infrastructure facts only. The overview's
+platform items (schema, sensors, runs, notifications, waiting jobs) link to
+it.
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/

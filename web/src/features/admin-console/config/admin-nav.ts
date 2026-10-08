@@ -1,5 +1,6 @@
 import {
   Building2,
+  Activity,
   Gauge,
   History,
   MonitorSmartphone,
@@ -138,6 +139,19 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/plans',
         icon: Gauge,
         keywords: ['limits', 'free', 'pro', 'enterprise', 'quotas'],
+      },
+    ],
+  },
+  {
+    title: 'Operations',
+    i18nKey: 'admin.nav.group.operations',
+    items: [
+      {
+        title: 'Health',
+        i18nKey: 'admin.nav.operations',
+        url: '/admin/operations',
+        icon: Activity,
+        keywords: ['status', 'database', 'redis', 'queues', 'version', 'migrations', 'jobs'],
       },
     ],
   },
