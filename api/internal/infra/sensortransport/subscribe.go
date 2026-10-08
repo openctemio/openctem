@@ -2,8 +2,9 @@ package sensortransport
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
-	"math/rand/v2"
+	"math/big"
 	"slices"
 	"sync"
 	"time"
@@ -130,7 +131,7 @@ func (s *Server) Subscribe(ctx context.Context, _ *connect.Request[sensorv3.Subs
 
 	// A jittered maximum age: the sensor reconnects, the identity is
 	// resolved from scratch and streams rebalance across replicas.
-	age := s.cfg.MaxStreamAge - time.Duration(rand.Int64N(int64(s.cfg.MaxStreamAge/5)+1)) //nolint:gosec // jitter
+	age := s.cfg.MaxStreamAge - jitter(s.cfg.MaxStreamAge/5)
 	deadline := time.NewTimer(age)
 	defer deadline.Stop()
 	keepalive := time.NewTicker(s.cfg.Keepalive)
@@ -180,7 +181,7 @@ func (s *Server) Subscribe(ctx context.Context, _ *connect.Request[sensorv3.Subs
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(time.Duration(rand.Int64N(int64(wakeJitter)))): //nolint:gosec // jitter
+			case <-time.After(jitter(wakeJitter)):
 			}
 			if err := refresh(true); err != nil {
 				return err
@@ -205,4 +206,16 @@ func sameEvent(a, b *sensorv3.SubscribeResponse) bool {
 	return a.GetStatus() == b.GetStatus() && a.GetPendingJobs() == b.GetPendingJobs() &&
 		a.GetConfigVersion() == b.GetConfigVersion() &&
 		slices.Equal(a.GetActions(), b.GetActions()) && slices.Equal(a.GetCancelCommandIds(), b.GetCancelCommandIds())
+}
+
+// jitter is a random duration in [0, max).
+func jitter(maxDur time.Duration) time.Duration {
+	if maxDur <= 0 {
+		return 0
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(maxDur)))
+	if err != nil {
+		return 0
+	}
+	return time.Duration(n.Int64())
 }
