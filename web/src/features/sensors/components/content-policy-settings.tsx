@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { TagInput } from '@/components/ui/tag-input'
 import { ErrorState, PageHeader, RelativeTime } from '@/features/shared'
+import { DOCS } from '@/lib/docs-links'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { updateContentPolicy, useContentPolicy } from '@/lib/api/sensor-content-hooks'
 import type { ContentPolicy, ContentPolicyResponse } from '@/lib/api/sensor-types'
@@ -28,8 +29,6 @@ import {
 } from '../lib/content-policy'
 
 const FORM_ID = 'content-policy-form'
-export const SENSOR_CONTENT_DOCS_URL =
-  'https://github.com/openctemio/sensor#scanner-content-updates'
 
 const PIN_HELP: Record<string, string> = {
   digest: 'Pin a database by its OCI digest (sha256:…). Empty: the newest the mirror has.',
@@ -242,7 +241,7 @@ export function ContentPolicySettings() {
               is configured on each sensor host, never here, so the platform cannot point sensors at
               other content.{' '}
               <a
-                href={SENSOR_CONTENT_DOCS_URL}
+                href={DOCS.scanning.scannerContent}
                 target="_blank"
                 rel="noreferrer"
                 className="underline underline-offset-2"

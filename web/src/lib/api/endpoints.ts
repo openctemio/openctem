@@ -92,7 +92,7 @@ export const authEndpoints = {
   /**
    * Verify email with token
    */
-  verifyEmail: (token: string) => `${API_BASE.AUTH}/verify-email?token=${token}`,
+  verifyEmail: () => `${API_BASE.AUTH}/verify-email`,
 
   /**
    * Request password reset

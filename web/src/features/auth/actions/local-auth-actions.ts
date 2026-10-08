@@ -1022,8 +1022,9 @@ export async function verifyEmailAction(
   token: string
 ): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
   try {
-    await backendFetch<{ message: string }>(authEndpoints.verifyEmail(token), {
+    await backendFetch<{ message: string }>(authEndpoints.verifyEmail(), {
       method: 'POST',
+      body: JSON.stringify({ token }),
     })
 
     return {

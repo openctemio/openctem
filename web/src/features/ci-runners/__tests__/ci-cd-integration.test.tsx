@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CICDIntegration, cicdTab } from '../components/ci-cd-integration'
 import { CICDLinkCard } from '../components/ci-cd-link-card'
-import { CI_GITHUB_GUIDE_URL, CI_GITLAB_GUIDE_URL } from '@/config/help-links'
+import { DOCS } from '@/lib/docs-links'
 
 vi.mock('../components/ci-pipelines-panel', () => ({
   CIPipelinesPanel: () => <div data-testid="pipelines-panel" />,
@@ -33,11 +33,11 @@ describe('CI/CD integration page', () => {
     expect(screen.queryByTestId('trust-settings')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /github actions guide/i })).toHaveAttribute(
       'href',
-      CI_GITHUB_GUIDE_URL
+      DOCS.ci.githubActions
     )
     expect(screen.getByRole('link', { name: /gitlab ci guide/i })).toHaveAttribute(
       'href',
-      CI_GITLAB_GUIDE_URL
+      DOCS.ci.gitlabCi
     )
   })
 
