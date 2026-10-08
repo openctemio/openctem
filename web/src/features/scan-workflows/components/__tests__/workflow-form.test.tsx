@@ -71,8 +71,10 @@ async function pick(trigger: HTMLElement, option: RegExp) {
   await userEvent.click(await screen.findByRole('option', { name: option }))
 }
 
-async function toSettingsAndSave() {
+async function toSettingsAndSave(onSubmit?: ReturnType<typeof vi.fn>) {
   await userEvent.click(screen.getByRole('button', { name: /next/i }))
+  // Reaching the last tab never submits: the user still sees the settings.
+  if (onSubmit) expect(onSubmit).not.toHaveBeenCalled()
   await userEvent.click(screen.getByRole('button', { name: /create workflow|update workflow/i }))
 }
 
@@ -89,7 +91,7 @@ describe('ScanWorkflowForm: create', () => {
     expect(screen.getByLabelText('Name *')).toHaveValue('recon')
     expect(screen.getByLabelText('Step key')).toHaveValue('resolve-dns')
 
-    await toSettingsAndSave()
+    await toSettingsAndSave(onSubmit)
     const data = onSubmit.mock.calls[0][0] as CreateScanWorkflowRequest
     expect(data.steps).toHaveLength(1)
     expect(data.steps[0]).toMatchObject({

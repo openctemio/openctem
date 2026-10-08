@@ -787,7 +787,9 @@ export function ScanWorkflowForm({
           </Button>
 
           {isLastStep ? (
-            <Button type="submit" disabled={isSubmitting}>
+            // Distinct keys: reusing one DOM button would turn the click on
+            // "Next" into a submit of the form when it becomes the last tab.
+            <Button key="submit" type="submit" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
                   <Loader2 className="me-2 h-4 w-4 animate-spin" />
@@ -800,7 +802,7 @@ export function ScanWorkflowForm({
               )}
             </Button>
           ) : (
-            <Button type="button" onClick={handleNext}>
+            <Button key="next" type="button" onClick={handleNext}>
               Next
               <ChevronRight className="ms-1 h-4 w-4" />
             </Button>
