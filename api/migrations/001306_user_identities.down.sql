@@ -1,4 +1,5 @@
-ALTER TABLE users ADD COLUMN federated_issuer text, ADD COLUMN federated_subject text;
+COMMENT ON COLUMN users.federated_issuer IS NULL;
+COMMENT ON COLUMN users.federated_subject IS NULL;
 
 -- users holds one binding: keep the most recently used platform-wide identity.
 UPDATE users u
