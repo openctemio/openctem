@@ -140,7 +140,7 @@ func (r *AccessRequestRepository) List(ctx context.Context, f accessrequest.Filt
 		return nil, 0, fmt.Errorf("list access requests: %w", err)
 	}
 	defer rows.Close()
-	out := make([]*accessrequest.Request, 0, limit)
+	out := []*accessrequest.Request{}
 	for rows.Next() {
 		a, err := r.scan(rows)
 		if err != nil {
