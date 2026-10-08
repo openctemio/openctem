@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -300,7 +299,7 @@ func (h *SecretStoreHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Param        credential_type  query     string  false  "Filter by credential type"
 // @Param        page             query     int     false  "Page number"
-// @Param        page_size        query     int     false  "Page size"
+// @Param        per_page         query     int     false  "Page size (max 100)"
 // @Success      200  {object}  ListCredentialsResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
@@ -324,16 +323,11 @@ func (h *SecretStoreHandler) List(w http.ResponseWriter, r *http.Request) {
 	if credType := r.URL.Query().Get("credential_type"); credType != "" {
 		input.CredentialType = &credType
 	}
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
-			input.Page = page
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if pageSizeStr := r.URL.Query().Get("page_size"); pageSizeStr != "" {
-		if pageSize, err := strconv.Atoi(pageSizeStr); err == nil && pageSize > 0 && pageSize <= 100 {
-			input.PageSize = pageSize
-		}
-	}
+	input.Page, input.PageSize = paging.Page, paging.PerPage
 
 	result, err := h.service.ListCredentials(r.Context(), input)
 	if err != nil {
