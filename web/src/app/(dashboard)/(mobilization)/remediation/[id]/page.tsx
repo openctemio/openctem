@@ -6,7 +6,7 @@ import { useSWRConfig } from 'swr'
 import { useMembers } from '@/features/organization/api/use-members'
 import { memberDisplayName } from '@/features/organization/lib/member-lifecycle'
 import { useTenant } from '@/context/tenant-provider'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Can, Permission } from '@/lib/permissions'
 import { ResolveCampaignDialog } from '@/features/remediation/components/resolve-campaign-dialog'
@@ -190,6 +190,7 @@ export default function CampaignDetailPage() {
   }, [members])
 
   const { data: campaign, error, isLoading, mutate: mutateCampaign } = useRemediationCampaign(id)
+  useBreadcrumbTitle(campaign?.name)
   const { trigger: updateCampaign, isMutating: isUpdating } = useUpdateRemediationCampaign(id)
   const { trigger: updateStatus, isMutating: isStatusUpdating } = useUpdateCampaignStatus(id)
   // Completing with findings still open asks first and says how many.
