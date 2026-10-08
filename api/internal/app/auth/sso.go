@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -799,6 +800,10 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		// and here — re-check before failing (fail-closed on genuine failure).
 		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && !m.IsOffboarded() {
 			return nil
+		}
+		// No free seat on the organization's plan: say so.
+		if lim := (*plan.ErrLimitReached)(nil); errors.As(err, &lim) {
+			return err
 		}
 		s.logger.Warn("SSO auto-provision membership failed",
 			"user_id", u.ID().String(), "tenant_id", t.ID().String(), "error", err)
@@ -1802,6 +1807,9 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 			// rather than issue a session with no membership.
 			if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr != nil || m == nil {
 				s.logger.Warn("federated auto-provision membership failed", "user_id", u.ID().String(), "error", memErr)
+				if lim := (*plan.ErrLimitReached)(nil); errors.As(memErr, &lim) {
+					return nil, memErr
+				}
 				return nil, ErrSSONotAMember
 			}
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -209,7 +210,12 @@ func (h *SSOHandler) BackChannelLogout(w http.ResponseWriter, r *http.Request) {
 
 // handlePublicError handles errors for public SSO endpoints with generic messages.
 func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
+	var lim *plan.ErrLimitReached
 	switch {
+	case errors.As(err, &lim):
+		// Just-in-time sign-up into an organization with no free seat. No
+		// usage numbers: the person is not a member yet.
+		apierror.New(http.StatusForbidden, "PLAN_LIMIT", "This organization has no free seat for you. Contact your administrator.").WriteJSON(w)
 	// Anti-enumeration: an unknown organization answers exactly like an
 	// organization without that provider.
 	case errors.Is(err, auth.ErrSSOTenantNotFound),
