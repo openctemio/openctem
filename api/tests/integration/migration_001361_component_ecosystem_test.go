@@ -4,7 +4,7 @@ package integration
 // package URL names an ecosystem (trivy fs reports carry only a PURL) get
 // the ecosystem the PURL type names, on the shared component and on each
 // asset's copy. Types outside our ecosystems stay 'other'; a component
-// labelled already keeps its label. Runs as the schema owner in a
+// labeled already keeps its label. Runs as the schema owner in a
 // rolled-back transaction.
 
 import (
@@ -59,7 +59,7 @@ func TestMigration001361ClassifiesComponentsFromPURL(t *testing.T) {
 	npm := component("pkg:npm/left-pad-"+suffix+"@1.3.0", "other")
 	golang := component("pkg:golang/github.com/example/m-"+suffix+"@v1.0.0", "other")
 	deb := component("pkg:deb/debian/openssl-"+suffix+"@3.0.11", "other")
-	labelled := component("pkg:npm/already-"+suffix+"@1.0.0", "pypi")
+	labeled := component("pkg:npm/already-"+suffix+"@1.0.0", "pypi")
 
 	if _, err := tx.ExecContext(ctx, string(up)); err != nil {
 		t.Fatalf("up: %v", err)
@@ -69,7 +69,7 @@ func TestMigration001361ClassifiesComponentsFromPURL(t *testing.T) {
 		t.Fatalf("up again: %v", err)
 	}
 
-	for id, want := range map[string]string{npm: "npm", golang: "go", deb: "other", labelled: "pypi"} {
+	for id, want := range map[string]string{npm: "npm", golang: "go", deb: "other", labeled: "pypi"} {
 		var got, gotAsset string
 		if err := tx.QueryRowContext(ctx, `SELECT c.ecosystem, ac.ecosystem FROM components c
 			JOIN asset_components ac ON ac.component_id = c.id WHERE c.id = $1`, id).Scan(&got, &gotAsset); err != nil {
