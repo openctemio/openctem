@@ -3,6 +3,7 @@ package routes
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -32,6 +33,31 @@ func registerHealthRoutes(router Router, h *handler.HealthHandler, metricsAuth M
 	} else {
 		router.GET("/metrics", metricsHandler)
 	}
+}
+
+// Rate limits of POST /api/v1/client-errors: per client address, and for
+// all callers together, so an anonymous flood can neither grow memory nor
+// push the error count far (labels are a fixed set either way).
+const (
+	clientErrorPerIPPerSecond = 0.2 // 12 a minute
+	clientErrorPerIPBurst     = 10
+	clientErrorPerSecond      = 5.0
+	clientErrorBurst          = 50
+)
+
+// registerClientErrorRoute registers POST /api/v1/client-errors: the web
+// console reports an error kind there for the operator's alerting. Public,
+// because the worst web failures (a broken deploy) happen before sign-in;
+// it accepts only a kind from a fixed set and stores nothing.
+func registerClientErrorRoute(router Router, h *handler.ClientErrorHandler, log *logger.Logger) {
+	if h == nil {
+		return
+	}
+	perIP := middleware.NewTelemetryRateLimiter(clientErrorPerIPPerSecond, clientErrorPerIPBurst, time.Hour, log).
+		MiddlewareKeyed(middleware.ClientIPKey, "Too many error reports")
+	overall := middleware.NewTelemetryRateLimiter(clientErrorPerSecond, clientErrorBurst, time.Hour, log).
+		MiddlewareKeyed(func(*http.Request) string { return "all" }, "Too many error reports")
+	router.POST("/api/v1/client-errors", h.Report, perIP, overall)
 }
 
 // registerVersionRoute registers GET /api/v1/version: the running build, for
