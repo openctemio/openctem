@@ -438,7 +438,10 @@ func (c *checker) segment(r Route, pl plane.Plane, s []string, i int) {
 	if pl == plane.SCIM {
 		return // RFC 7644 fixes these names
 	}
-	if !segmentRe.MatchString(seg) && seg != "openapi.yaml" {
+	// RFC 8615 fixes the name of the well-known prefix (OAuth metadata of
+	// the MCP endpoint, RFC-062).
+	wellKnown := i == 0 && seg == ".well-known"
+	if !segmentRe.MatchString(seg) && seg != "openapi.yaml" && !wellKnown {
 		c.add(r, "R2", "segment %q is not lowercase kebab-case", seg)
 	}
 	// Auth-plane paths follow the protocols they implement (OAuth, SAML,

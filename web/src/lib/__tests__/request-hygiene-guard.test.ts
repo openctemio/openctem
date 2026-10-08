@@ -35,7 +35,6 @@ const RAW_FETCH_EXEMPT_DIRS = ['lib/api/', 'app/api/']
 
 /** Reviewed raw `fetch('/api/v1/…')` call sites, file → count. */
 const RAW_FETCH_BASELINE: Record<string, number> = {
-  'features/repositories/components/repository-workspace.tsx': 1,
   'context/tenant-provider.tsx': 1,
   'features/findings/components/detail/evidence-tab.tsx': 1,
   'features/pentest/components/attachment-upload.tsx': 2,

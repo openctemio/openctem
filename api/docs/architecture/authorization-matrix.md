@@ -752,6 +752,9 @@ Authorization is enforced at the **route layer** in
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
+| `GET /api/v1/admin/platform-users?q=` | any admin (3+ characters; account-level facts only) |
+| `GET /api/v1/admin/platform-users/{user_id}` | any admin (audited `platform_user.view`) |
+| `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
 | `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
@@ -763,6 +766,8 @@ Authorization is enforced at the **route layer** in
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |
 | `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** (audited high) |
 | `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
+| `GET /api/v1/admin/access-requests` | any admin |
+| `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner |
 | `GET /api/v1/admin/settings/plans` | any admin |
 | `PUT /api/v1/admin/settings/plans` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/tenants/{tenantId}/plan` | any admin (limits, usage, over-limit flag) |
@@ -1270,7 +1275,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
 | `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
-| `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list filtered per page |
+| `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
@@ -1399,7 +1404,6 @@ that aggregates follow the viewer's scope, with org-wide totals only through
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
-| `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
 
 **Not covered by data scope** (separate access models): pentest findings and
 attachments (campaign membership), remediation campaigns,
@@ -1612,7 +1616,7 @@ viewer (1) ┴─ Can only view resources
    (the web console's server, scripts) are not affected. Browsers normally
    reach these routes through the web console, which checks the
    same-origin rule and the double-submit pair on every write itself
-   (`web/SECURITY.md`, section 6). The IdP's own cross-site posts (SAML ACS,
+   (`web/docs/security-architecture.md`, section 6). The IdP's own cross-site posts (SAML ACS,
    back-channel logout) are authenticated by their signed payload instead.
 
 ## API Routes Summary

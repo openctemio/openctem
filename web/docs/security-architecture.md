@@ -77,18 +77,18 @@ path: '/'
 
 **Complete cookie inventory:**
 
-| Cookie                | httpOnly | Sensitive | Purpose                                          |
-| --------------------- | -------- | --------- | ------------------------------------------------ |
-| `auth_token`          | Yes      | Yes       | JWT access token                                 |
-| `refresh_token`       | Yes      | Yes       | Refresh token                                    |
-| `oauth_state`         | Yes      | Yes       | OAuth CSRF state parameter                       |
-| `oauth_redirect`      | Yes      | No        | Post-OAuth redirect URL                          |
-| `csrf_token`          | No       | No        | CSRF double-submit token (JS-readable by design) |
-| `app_tenant`          | No       | No        | Current tenant info (display only)               |
-| `app_user_info`       | No       | No        | User info for onboarding (5-min TTL)             |
-| `app_pending_tenants` | No       | No        | Multi-tenant selection (5-min TTL)               |
-| `locale`              | No       | No        | Language preference                              |
-| `theme`               | No       | No        | Theme preference                                 |
+| Cookie                | httpOnly | Sensitive | Purpose                                                             |
+| --------------------- | -------- | --------- | ------------------------------------------------------------------- |
+| `auth_token`          | Yes      | Yes       | JWT access token                                                    |
+| `refresh_token`       | Yes      | Yes       | Refresh token                                                       |
+| `oauth_state`         | Yes      | Yes       | OAuth CSRF state parameter                                          |
+| `oauth_redirect`      | Yes      | No        | Post-OAuth redirect URL                                             |
+| `csrf_token`          | No       | No        | CSRF double-submit token, set on every page (JS-readable by design) |
+| `app_tenant`          | No       | No        | Current tenant info (display only)                                  |
+| `app_user_info`       | No       | No        | User info for onboarding (5-min TTL)                                |
+| `app_pending_tenants` | No       | No        | Multi-tenant selection (5-min TTL)                                  |
+| `locale`              | No       | No        | Language preference                                                 |
+| `theme`               | No       | No        | Theme preference                                                    |
 
 ### 1.5 Login Flow
 
@@ -313,10 +313,38 @@ script on the origin; it was removed. Server-Sent Events are not used.
 
 ## 6. CSRF Protection
 
-- **OAuth flows**: Protected via random `state` parameter stored in httpOnly cookie.
-- **API mutations**: Protected by same-origin proxy pattern. All API calls go through `/api/v1/*` (same-origin), so browsers enforce same-origin policy automatically.
-- **CSRF token (double-submit)**: The **backend** sets a `csrf_token` cookie at login with **`HttpOnly=false` on purpose** so client JS can read it (`document.cookie` in `src/lib/api/client.ts`). On every state-changing method the client re-sends that value as the `X-CSRF-Token` header; the backend rejects a missing/mismatched header with `403 csrf_token_missing_header`. Making this cookie httpOnly would break double-submit, since JS could no longer read it.
-- **Note:** `generateCsrfToken()` / `setCsrfToken()` in `src/lib/cookies-server.ts` (which set an httpOnly `csrf_token`) exist but are **not wired** — they are not the client-visible double-submit token described above and have no callers.
+Every state-changing request (POST, PUT, PATCH, DELETE) the web server
+answers, signed in or not, passes `csrfRejection`
+(`src/lib/server-auth-cookies.ts`); a failure is `403 CSRF_INVALID` and
+nothing runs:
+
+- **Same origin.** `Sec-Fetch-Site`, when sent, must be `same-origin` (or
+  `none`). `Origin` (else `Referer`) must name the host the request was sent
+  to (`X-Forwarded-Host` from the gateway, or `Host`). A request with neither
+  header, or with `Origin: null`, is refused.
+- **Double submit.** The JS-readable `csrf_token` cookie must be present and
+  the `X-CSRF-Token` header must equal it (constant-time compare). A missing
+  cookie is a refusal, not a pass.
+- **Before sign-in (login CSRF).** `src/proxy.ts` sets `csrf_token` on every
+  page response that lacks one (SameSite=Lax, Secure unless
+  `SECURE_COOKIES=false`, not HttpOnly) and checks every Server Action, so
+  sign-in, registration, forgot/reset/set password, invitation acceptance,
+  second-factor steps, team selection and SSO/OAuth start are covered. The
+  `/api/v1` and `/api/v1/admin` proxies and the `/api/auth/*` routes check
+  the same; `csrf-route-guard.test.ts` fails on a route handler that does
+  not. The admin proxy also accepts the console's `admin_csrf` cookie, which
+  the API checks again on console sessions.
+- **Browser side.** `src/instrumentation-client.ts` wraps `fetch`
+  (`src/lib/csrf-client.ts`): every same-origin write, Next's Server Action
+  requests included, carries `X-CSRF-Token`. Cross-origin requests never get
+  the token.
+- **OAuth / SSO callbacks** are GET pages. They set session cookies only when
+  the `state` returned by the provider equals the httpOnly `oauth_state` /
+  `sso_state` cookie set when this browser started the flow, so a callback
+  URL from another browser's flow is refused.
+- **API.** The `/api/v1` proxy forwards the pair, and the API's own
+  double-submit check (`api/internal/infra/http/middleware/csrf.go`) runs on
+  every cookie-authenticated write.
 
 ---
 
@@ -369,7 +397,6 @@ Never exposed to the browser:
 | ----------------------------- | ----------------------- | -------------------------------------------------------------------------------- |
 | `BACKEND_API_URL`             | `http://localhost:8080` | Backend API URL                                                                  |
 | `SECURE_COOKIES`              | `false`                 | Secure flag on cookies (overridden to `true` in production via `NODE_ENV` check) |
-| `CSRF_SECRET`                 | (empty)                 | CSRF token signing key                                                           |
 | `COOKIE_MAX_AGE`              | `604800` (7 days)       | Refresh token cookie lifetime                                                    |
 | `ENABLE_TOKEN_REFRESH`        | `true`                  | Enable auto token refresh                                                        |
 | `TOKEN_REFRESH_BEFORE_EXPIRY` | `300` (5 min)           | Refresh trigger threshold                                                        |

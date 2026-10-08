@@ -123,7 +123,7 @@ const mttrValidatedQuery = `
 		SELECT EXTRACT(EPOCH FROM (f.resolved_at - v.validated_at)) / 3600.0 AS hours
 		FROM validated v
 		JOIN findings f ON f.id = v.finding_id AND f.tenant_id = $1 AND NOT f.branch_only
-		WHERE f.status IN ('resolved', 'verified')
+		WHERE f.status = 'resolved'
 			AND f.resolved_at IS NOT NULL
 			AND f.resolved_at >= NOW() - make_interval(days => $2::int)
 			AND f.resolved_at >= v.validated_at

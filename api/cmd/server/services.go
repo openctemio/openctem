@@ -47,6 +47,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	"github.com/openctemio/openctem/api/internal/app/attack"
@@ -799,6 +800,8 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// The request-access queue (sign-up closed, requests allowed).
+	AccessRequest *accessrequestapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
