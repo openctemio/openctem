@@ -755,6 +755,8 @@ Authorization is enforced at the **route layer** in
 | `GET /api/v1/admin/platform-users?q=` | any admin (3+ characters; account-level facts only) |
 | `GET /api/v1/admin/platform-users/{userId}` | any admin (audited `platform_user.view`) |
 | `POST /api/v1/admin/platform-users/{userId}/revoke-sessions`, `/unlock`, `/password-reset`, `/resend-verification` | **ops_admin+**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
+| `GET /api/v1/admin/sessions` | **super_admin** (every administrator's open console session) |
+| `DELETE /api/v1/admin/sessions/{sessionId}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
 | `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |

@@ -220,6 +220,7 @@ type Handlers struct {
 	AdminOrganization *handler.AdminOrganizationHandler
 	AdminOverview     *handler.AdminOverviewHandler
 	AdminPlatformUser *handler.AdminPlatformUserHandler
+	AdminSession      *handler.AdminSessionHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
 	AdminConsole            *handler.AdminConsoleHandler
