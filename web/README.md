@@ -80,8 +80,8 @@ NEXT_PUBLIC_APP_NAME=OpenCTEM
 TRUST_PROXY_HEADERS=false
 ```
 
-[`.env.example`](.env.example) is the authoritative list (`CSRF_SECRET`,
-`SECURE_COOKIES`, cookie names, Sentry, sidebar badges, ...). Variable details:
+[`.env.example`](.env.example) is the authoritative list
+(`SECURE_COOKIES`, cookie names, Sentry, sidebar badges, ...). Variable details:
 [docs/ops/ENVIRONMENT_VARIABLES.md](docs/ops/ENVIRONMENT_VARIABLES.md).
 
 ## Commands
