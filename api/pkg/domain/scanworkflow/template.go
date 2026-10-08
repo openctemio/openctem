@@ -21,14 +21,6 @@ const (
 	TriggerTypeSystem TriggerType = "system"
 )
 
-// Trigger represents a scan workflow trigger configuration.
-type Trigger struct {
-	Type     TriggerType    `json:"type"`
-	Schedule string         `json:"schedule,omitempty"` // Cron expression
-	Webhook  string         `json:"webhook,omitempty"`  // Webhook name/path
-	Filters  map[string]any `json:"filters,omitempty"`  // Asset filters
-}
-
 // SensorPreference determines which sensors can execute the scan workflow.
 type SensorPreference string
 
@@ -43,14 +35,10 @@ const (
 
 // Settings represents scan workflow execution settings.
 type Settings struct {
-	MaxParallelSteps     int              `json:"max_parallel_steps,omitempty"`
-	FailFast             bool             `json:"fail_fast,omitempty"`
-	RetryFailedSteps     int              `json:"retry_failed_steps,omitempty"`
-	TimeoutSeconds       int              `json:"timeout_seconds,omitempty"`
-	NotifyOnComplete     bool             `json:"notify_on_complete,omitempty"`
-	NotifyOnFailure      bool             `json:"notify_on_failure,omitempty"`
-	NotificationChannels []string         `json:"notification_channels,omitempty"`
-	SensorPreference     SensorPreference `json:"sensor_preference,omitempty"` // Sensor selection mode: auto, tenant, platform
+	MaxParallelSteps int              `json:"max_parallel_steps,omitempty"`
+	FailFast         bool             `json:"fail_fast,omitempty"`
+	TimeoutSeconds   int              `json:"timeout_seconds,omitempty"`
+	SensorPreference SensorPreference `json:"sensor_preference,omitempty"` // Sensor selection mode: auto, tenant, platform
 }
 
 // DefaultSettings returns default scan workflow settings.
@@ -58,10 +46,7 @@ func DefaultSettings() Settings {
 	return Settings{
 		MaxParallelSteps: 3,
 		FailFast:         false,
-		RetryFailedSteps: 0,
 		TimeoutSeconds:   7200, // 2 hours
-		NotifyOnComplete: false,
-		NotifyOnFailure:  true,
 		SensorPreference: SensorPreferenceAuto,
 	}
 }
@@ -75,7 +60,6 @@ type Workflow struct {
 	Version     int
 
 	// Configuration
-	Triggers []Trigger
 	Settings Settings
 
 	// Status
@@ -114,7 +98,6 @@ func NewWorkflow(tenantID shared.ID, name, description string) (*Workflow, error
 		Name:        name,
 		Description: description,
 		Version:     1,
-		Triggers:    []Trigger{{Type: TriggerTypeManual}},
 		Settings:    DefaultSettings(),
 		IsActive:    true,
 		Tags:        []string{},
@@ -138,12 +121,6 @@ func (t *Workflow) SetUIStartPosition(pos *UIPosition) {
 // SetUIEndPosition sets the visual builder End node position.
 func (t *Workflow) SetUIEndPosition(pos *UIPosition) {
 	t.UIEndPosition = pos
-	t.UpdatedAt = time.Now()
-}
-
-// AddTrigger adds a trigger to the template.
-func (t *Workflow) AddTrigger(trigger Trigger) {
-	t.Triggers = append(t.Triggers, trigger)
 	t.UpdatedAt = time.Now()
 }
 
@@ -335,7 +312,6 @@ func (t *Workflow) Clone(newName string) *Workflow {
 		Name:             newName,
 		Description:      t.Description,
 		Version:          1,
-		Triggers:         make([]Trigger, len(t.Triggers)),
 		Settings:         t.Settings,
 		IsActive:         true,
 		IsSystemTemplate: false,
@@ -344,7 +320,6 @@ func (t *Workflow) Clone(newName string) *Workflow {
 		UpdatedAt:        now,
 	}
 
-	copy(clone.Triggers, t.Triggers)
 	copy(clone.Tags, t.Tags)
 
 	// Clone UI positions
