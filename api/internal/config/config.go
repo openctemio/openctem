@@ -986,9 +986,18 @@ func (c *AITriageConfig) IsConfigured() bool {
 	return c.AnthropicAPIKey != "" || c.OpenAIAPIKey != "" || c.GeminiAPIKey != ""
 }
 
-// Load loads configuration from environment variables.
 // envDevelopment is the APP_ENV value of a developer machine.
 const envDevelopment = "development"
+
+// defaultAppEnv is APP_ENV when it is not set. An unset APP_ENV is treated as
+// production, so an image or binary started without configuration gets every
+// production check (secrets, TLS to Postgres and Redis, Secure cookies,
+// rate limits) instead of silently running in development mode. Developer
+// setups (.env.example, docker-compose.dev.yml) set APP_ENV=development.
+const defaultAppEnv = EnvProduction
+
+// appEnv is the APP_ENV value Load uses, with the default applied.
+func appEnv() string { return getEnv("APP_ENV", defaultAppEnv) }
 
 // defaultLogLevel is LOG_LEVEL when it is not set.
 func defaultLogLevel(appEnv string) string {
@@ -1006,6 +1015,7 @@ func defaultLogFormat(appEnv string) string {
 	return "json"
 }
 
+// Load loads configuration from environment variables and validates it.
 func Load() (*Config, error) {
 	if err := rejectRetiredEnv(os.LookupEnv); err != nil {
 		return nil, err
@@ -1014,7 +1024,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		App: AppConfig{
 			Name:  getEnv("APP_NAME", "openctem"),
-			Env:   getEnv("APP_ENV", "development"),
+			Env:   appEnv(),
 			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
 			URL:   getEnv("APP_URL", ""),
 		},
@@ -1103,8 +1113,8 @@ func Load() (*Config, error) {
 			// Unset: debug/text for APP_ENV=development (readable while
 			// developing), info/json everywhere else. Set, they apply in every
 			// environment.
-			Level:              getEnv("LOG_LEVEL", defaultLogLevel(getEnv("APP_ENV", envDevelopment))),
-			Format:             getEnv("LOG_FORMAT", defaultLogFormat(getEnv("APP_ENV", envDevelopment))),
+			Level:              getEnv("LOG_LEVEL", defaultLogLevel(appEnv())),
+			Format:             getEnv("LOG_FORMAT", defaultLogFormat(appEnv())),
 			SamplingEnabled:    getEnvBool("LOG_SAMPLING_ENABLED", false),   // Enable via env for production
 			SamplingThreshold:  getEnvInt("LOG_SAMPLING_THRESHOLD", 100),    // First 100 identical logs/sec
 			SamplingRate:       getEnvFloat("LOG_SAMPLING_RATE", 0.1),       // Then 10%
@@ -1113,7 +1123,7 @@ func Load() (*Config, error) {
 			SlowRequestSeconds: getEnvInt("LOG_SLOW_REQUEST_SECONDS", 5),    // Warn on slow requests
 		},
 		Auth: AuthConfig{
-			Provider:                  AuthProvider(getEnv("AUTH_PROVIDER", "oidc")), // Default to OIDC for backward compatibility
+			Provider:                  AuthProvider(getEnv("AUTH_PROVIDER", string(AuthProviderLocal))),
 			JWTSecret:                 getEnv("AUTH_JWT_SECRET", ""),
 			JWTIssuer:                 getEnv("AUTH_JWT_ISSUER", "api"),
 			AccessTokenDuration:       getEnvDuration("AUTH_ACCESS_TOKEN_DURATION", 15*time.Minute),
@@ -1131,7 +1141,7 @@ func Load() (*Config, error) {
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
-			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(getEnv("APP_ENV", "development"))),
+			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(appEnv())),
 			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),                          // Empty = current host
 			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"),                     // "strict", "lax", or "none"
 			AccessTokenCookieName:     getEnv("AUTH_ACCESS_TOKEN_COOKIE_NAME", "auth_token"),     // Cookie name for access token
@@ -1393,6 +1403,9 @@ func (c *Config) validateBasic() error {
 	if c.Database.Host == "" {
 		return fmt.Errorf("database host is required")
 	}
+	if err := c.validatePlaceholders(); err != nil {
+		return err
+	}
 	if err := c.validateAuth(); err != nil {
 		return err
 	}
@@ -1621,6 +1634,55 @@ func (c *Config) validateAuth() error {
 	}
 
 	return nil
+}
+
+// validatePlaceholders refuses secrets that still hold the placeholder text of
+// an example file ("openssl rand -hex 32", "<CHANGE_ME...>",
+// "your-super-secret-..."), in every environment. Without it such a value
+// either fails later with a length error that does not say what is wrong, or,
+// worse, is long enough to be accepted as a real secret.
+func (c *Config) validatePlaceholders() error {
+	secrets := []struct{ name, value string }{
+		{"APP_ENCRYPTION_KEY", c.Encryption.Key},
+		{"APP_TEMPLATE_SIGNING_KEY", c.Encryption.TemplateSigningKey},
+		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
+		{"DB_PASSWORD", c.Database.Password},
+		{"REDIS_PASSWORD", c.Redis.Password},
+		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
+		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
+		{"METRICS_TOKEN", c.Metrics.Token},
+	}
+	for i, prev := range c.Encryption.PreviousKeys {
+		secrets = append(secrets, struct{ name, value string }{fmt.Sprintf("APP_ENCRYPTION_KEY_PREVIOUS entry %d", i+1), prev})
+	}
+	for _, s := range secrets {
+		if isPlaceholderSecret(s.value) {
+			// The value is example text, not a secret, but it is still not echoed.
+			return fmt.Errorf("%s holds placeholder text from an example file, not a secret: "+
+				"replace it with the output of `openssl rand -hex 32`", s.name)
+		}
+	}
+	return nil
+}
+
+// placeholderMarkers are substrings only example files put in a secret.
+var placeholderMarkers = []string{"openssl rand", "change_me", "changeme", "your-super-secret", "replace-me", "replace_me"}
+
+func isPlaceholderSecret(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return false
+	}
+	if strings.HasPrefix(v, "<") && strings.HasSuffix(v, ">") {
+		return true
+	}
+	lv := strings.ToLower(v)
+	for _, m := range placeholderMarkers {
+		if strings.Contains(lv, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // devDefaultJWTSecrets is the closed set of "dev-quickstart" JWT secret
