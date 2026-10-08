@@ -181,16 +181,13 @@ func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID sha
 		}
 	}
 
-	// 3. If tool is selected, validate capabilities must match tool's capabilities
-	// (a catalog capability key matches when the tool implements it).
+	// 3. A pinned tool must be able to run every capability of the step. A
+	// capability is a catalog key ("resolve.dns") or a pre-catalog word
+	// ("dns"); stage.ToolCanRun maps the two onto each other.
 	if toolName != "" && len(toolCapabilities) > 0 && len(capabilities) > 0 {
-		// Check that all provided capabilities are in the tool's capabilities
 		for _, cap := range capabilities {
-			if st, ok := stage.Lookup(stage.Key(strings.ToLower(cap))); ok && st.Implements(toolName) {
-				continue
-			}
-			if !slices.Contains(toolCapabilities, strings.ToLower(cap)) {
-				addValidationError(result, "capabilities", fmt.Sprintf("capability '%s' is not supported by tool '%s' (allowed: %v)", cap, toolName, toolCapabilities), "CAPABILITY_TOOL_MISMATCH")
+			if !stage.ToolCanRun(toolName, toolCapabilities, cap) {
+				addValidationError(result, "capabilities", capabilityMismatchMessage(toolName, toolCapabilities, cap), "CAPABILITY_TOOL_MISMATCH")
 			}
 		}
 	}
@@ -223,6 +220,28 @@ func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID sha
 	}
 
 	return result
+}
+
+// capabilityMismatchMessage says, in words, why a tool cannot run a step's
+// capability: what the tool can run instead, and how to fix the step.
+func capabilityMismatchMessage(toolName string, toolCaps []string, capability string) string {
+	can := make([]string, 0, len(toolCaps))
+	named := map[string]bool{}
+	for _, st := range stage.ForTool(toolName) {
+		can = append(can, fmt.Sprintf("%s (%s)", st.Name, st.Key))
+		named[string(st.Key)] = true
+		for _, l := range st.Legacy {
+			named[l] = true
+		}
+	}
+	for _, c := range toolCaps {
+		if !named[c] {
+			can = append(can, c)
+		}
+	}
+	capability = strings.ToLower(strings.TrimSpace(capability))
+	return fmt.Sprintf("%s cannot run %q. It can run: %s. Choose one of these for the step, or pick a tool that runs %q.",
+		toolName, capability, strings.Join(can, ", "), capability)
 }
 
 // ValidateScannerConfig validates a scan configuration's scanner settings.
@@ -341,6 +360,10 @@ func (v *SecurityValidator) isValidCapability(cap string) bool {
 	// A routed catalog capability key ("scan.ports") names a capability
 	// node; planned keys are not runnable and stay refused.
 	if _, ok := stage.Lookup(stage.Key(cap)); ok {
+		return true
+	}
+	// A pre-catalog word that names one catalog capability ("dns").
+	if _, ok := stage.ForWord(cap); ok {
 		return true
 	}
 	return slices.Contains(v.getCapabilities(), cap)

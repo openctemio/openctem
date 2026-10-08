@@ -46,6 +46,9 @@ type CachedMembership struct {
 	Role     string    `json:"role"`
 	Status   string    `json:"status"`
 	JoinedAt time.Time `json:"joined_at"`
+	// Kind is internal or external (RFC-058); empty in entries written
+	// before it existed, which means internal.
+	Kind string `json:"kind,omitempty"`
 }
 
 const (
@@ -108,6 +111,7 @@ func (s *MembershipCacheService) GetMembership(
 		Role:     m.Role().String(),
 		Status:   string(m.Status()),
 		JoinedAt: m.JoinedAt(),
+		Kind:     string(m.Kind()),
 	}
 	if cacheErr := s.cache.Set(ctx, key, val); cacheErr != nil {
 		s.log.Warn("failed to cache membership",
@@ -176,7 +180,7 @@ func (s *MembershipCacheService) reconstructFromCache(
 		id = shared.ID{}
 	}
 	role, _ := tenant.ParseRole(v.Role)
-	return tenant.ReconstituteMembershipWithStatus(
+	m := tenant.ReconstituteMembershipWithStatus(
 		id, userID, tenantID, role,
 		nil,        // invitedBy — not in cache
 		v.JoinedAt, // joinedAt
@@ -184,6 +188,11 @@ func (s *MembershipCacheService) reconstructFromCache(
 		nil, // suspendedAt — not in cache, never read by middleware
 		nil, // suspendedBy — not in cache, never read by middleware
 	)
+	kind := tenant.MemberKind(v.Kind)
+	if !kind.IsValid() {
+		kind = tenant.MemberKindInternal
+	}
+	return m.WithAccessState(kind, nil, "", nil, "", "")
 }
 
 // MembershipCacheServiceErrorIsTransient is exposed for tests that

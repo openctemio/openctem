@@ -16,7 +16,8 @@ import {
   wouldCreateCycle,
 } from '@/components/flow/connection-rules'
 import type { ScanWorkflowStep } from '@/lib/api'
-import { generateStepKey, generateTempStepId } from '@/lib/utils'
+import { generateTempStepId } from '@/lib/utils'
+import { stepKeyBase, uniqueStepKey } from './step-keys'
 
 type S = components['schemas']
 export type ScanStageList = S['internal_infra_http_handler.ScanStageListResponse']
@@ -224,8 +225,10 @@ export function insertAdapterStep(
   const source = steps.find((s) => s.id === sourceId)
   const target = steps.find((s) => s.id === targetId)
   if (!cap || !source || !target) return steps
-  // generateStepKey adds a random suffix, so the key is new in this workflow.
-  const key = generateStepKey(cap.defaultTool || cap.key)
+  const key = uniqueStepKey(
+    stepKeyBase(cap.key),
+    steps.map((s) => s.step_key)
+  )
   const sp = source.ui_position ?? { x: 0, y: 0 }
   const tp = target.ui_position ?? { x: sp.x + 400, y: sp.y }
   const adapter: ScanWorkflowStep = {
@@ -235,9 +238,11 @@ export function insertAdapterStep(
     description: '',
     order: steps.length + 1,
     node_type: 'scanner',
-    tool: cap.defaultTool,
-    // The tool is pinned: the server derives its capabilities from it.
-    capabilities: [],
+    // Any tool that implements the capability (the default first): an
+    // adapter never pins a tool that may not be installed.
+    tool: '',
+    capabilities: [cap.key],
+    prefer_tools: [],
     timeout_seconds: 3600,
     depends_on: [source.step_key],
     ui_position: { x: (sp.x + tp.x) / 2, y: (sp.y + tp.y) / 2 + 120 },
