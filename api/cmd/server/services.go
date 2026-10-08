@@ -475,6 +475,7 @@ type wsChannelAccess struct {
 	roles  *accesscontrol.RoleService
 	groups *postgres.GroupRepository
 	scope  *datascope.Enforcer
+	runs   runReader // run:{id} channels (CanSeeRun); nil refuses them
 }
 
 // CanSeeFinding applies the Layer 2 data scope to finding and triage
@@ -2198,7 +2199,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
-	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group, scope: s.DataScope})
+	s.WebSocketHub.SetChannelAccessChecker(wsChannelAccess{roles: s.Role, groups: repos.Group, scope: s.DataScope, runs: s.ScanRun})
+	// The live run map: a run that changes tells its run:{id} watchers,
+	// at most once a second per run.
+	s.ScanRun.SetRunNotifier(newRunChangeThrottle(s.WebSocketHub, time.Second))
 	// A role assigned, removed or redefined, or a membership removed or
 	// suspended, closes the user's live sockets in that tenant; the client
 	// reconnects through every upgrade gate again (RFC-045).
