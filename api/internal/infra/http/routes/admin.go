@@ -218,6 +218,13 @@ func registerAdminRoutes(
 			// Plan and limits of one organization: any admin reads (with
 			// the over-limit flag); ops_admin+ changes the plan or sets a
 			// per-organization limit (audited by the service).
+			// Idle lifecycle of a Free organization: any admin reads;
+			// ops_admin+ exempts it (audited by the service).
+			if h.IdleWorkspace != nil {
+				r.GET("/{tenantId}/idle", h.IdleWorkspace.Get, read...)
+				r.PUT("/{tenantId}/idle/exemption", h.IdleWorkspace.SetExemption, with([]Middleware{opsWrite, scope})...)
+			}
+
 			if h.Plan != nil {
 				r.GET("/{tenantId}/plan", h.Plan.GetTenantPlan, read...)
 				r.PUT("/{tenantId}/plan", h.Plan.SetTenantPlan, with([]Middleware{opsWrite, scope})...)
