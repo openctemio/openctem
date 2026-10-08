@@ -1,12 +1,16 @@
 'use client'
 
 import { createContext, useContext, useEffect, type ReactNode } from 'react'
+import dynamic from 'next/dynamic'
 import { Siren } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { Search } from '@/components/search'
+import { SearchProvider } from '@/context/search-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AdminConsoleSidebar } from './admin-console-sidebar'
 import { ChangePasswordGate } from './change-password-gate'
@@ -15,6 +19,12 @@ import { adminLogout, useAdminSession } from '../api/use-admin-session'
 import type { AdminIdentity } from '../types'
 
 const AdminContext = createContext<AdminIdentity | null>(null)
+
+// Loaded the first time the palette opens, not with every console page.
+const AdminCommandMenu = dynamic(
+  () => import('./admin-command-menu').then((m) => m.AdminCommandMenu),
+  { ssr: false }
+)
 
 /** The signed-in platform admin. Only valid inside AdminConsoleShell. */
 export function useAdmin(): AdminIdentity {
@@ -34,6 +44,7 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
   const { admin, isLoading, error } = useAdminSession()
   const pathname = usePathname()
   const router = useRouter()
+  const { t } = useTranslation()
 
   useEffect(() => {
     if (!isLoading && !error && admin === null) {
@@ -80,37 +91,41 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
 
   return (
     <AdminContext.Provider value={admin}>
-      <SidebarProvider>
-        <AdminConsoleSidebar admin={admin} onSignOut={signOut} />
-        <SidebarInset>
-          <header className="flex h-14 shrink-0 items-center gap-2 px-4 md:hidden">
-            <SidebarTrigger variant="outline" />
-            <span className="text-sm font-medium">Platform administration</span>
-            <div className="ms-auto">
-              <ThemeSwitch />
-            </div>
-          </header>
-          <header className="hidden h-14 shrink-0 items-center justify-end px-4 md:flex">
-            <ThemeSwitch />
-          </header>
-          {/* A div, not <main>: every page renders <Main>, which is the landmark. */}
-          <div id="content" className="min-h-0 flex-1 overflow-y-auto">
-            {admin.is_break_glass && (
-              <div className="px-4 pt-2">
-                <Alert variant="destructive">
-                  <Siren className="size-4" />
-                  <AlertTitle>Break-glass session</AlertTitle>
-                  <AlertDescription>
-                    You signed in with an emergency-access account. Every other administrator was
-                    alerted. Use it only to restore normal access, then sign out.
-                  </AlertDescription>
-                </Alert>
+      <SearchProvider menu={AdminCommandMenu}>
+        <SidebarProvider>
+          <AdminConsoleSidebar admin={admin} onSignOut={signOut} />
+          <SidebarInset>
+            {/* One header for every width: the sidebar trigger only on small
+              screens, then the console search (Cmd/Ctrl+K) and the theme. */}
+            <header className="flex h-14 shrink-0 items-center gap-2 px-4">
+              <SidebarTrigger variant="outline" className="md:hidden" />
+              <span className="text-sm font-medium md:hidden">
+                {t('admin.shell.title', 'Platform administration')}
+              </span>
+              <div className="ms-auto flex items-center gap-2">
+                <Search placeholder={t('admin.shell.search', 'Search the console')} />
+                <ThemeSwitch />
               </div>
-            )}
-            {children}
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+            </header>
+            {/* A div, not <main>: every page renders <Main>, which is the landmark. */}
+            <div id="content" className="min-h-0 flex-1 overflow-y-auto">
+              {admin.is_break_glass && (
+                <div className="px-4 pt-2">
+                  <Alert variant="destructive">
+                    <Siren className="size-4" />
+                    <AlertTitle>Break-glass session</AlertTitle>
+                    <AlertDescription>
+                      You signed in with an emergency-access account. Every other administrator was
+                      alerted. Use it only to restore normal access, then sign out.
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              )}
+              {children}
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
+      </SearchProvider>
     </AdminContext.Provider>
   )
 }

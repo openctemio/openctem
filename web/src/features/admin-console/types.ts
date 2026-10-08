@@ -240,3 +240,31 @@ export interface UpdateTargetMappingInput {
   is_active?: boolean
   description?: string
 }
+
+/** GET /admin/overview: the console's attention counts (any admin role). */
+export interface AdminOverview {
+  organizations: {
+    total: number
+    without_owner: number
+    without_owner_sample: { id: string; name: string }[]
+  }
+  security: {
+    break_glass_sign_ins_7d: number
+    failed_admin_actions_24h: number
+    break_glass_tests_overdue: number
+  }
+  platform: {
+    schema_version: number
+    /** Newest migration the running API ships; 0 when unknown. */
+    schema_shipped: number
+    schema_dirty: boolean
+    schema_known: boolean
+    platform_sensors: { total: number; online: number; offline: number }
+    commands_pending: number
+    command_oldest_pending_seconds: number
+    scan_runs_past_deadline: number
+    outbox_failed: number
+    outbox_dead: number
+  }
+  generated_at: string
+}

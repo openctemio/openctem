@@ -121,6 +121,9 @@ func (d *CommandDispatcher) DispatchToolRetest(ctx context.Context, job ToolRete
 	if err != nil {
 		return shared.ID{}, fmt.Errorf("build retest command: %w", err)
 	}
+	// What CheckTarget checked: the claim re-checks it.
+	rec := commanddom.ProbeDispatchGate
+	cmd.DispatchGate = &rec
 	if zone != nil {
 		cmd.SetScanZone(zone.ID)
 	}

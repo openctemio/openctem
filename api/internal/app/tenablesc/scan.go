@@ -195,6 +195,10 @@ func (s *Service) NewScanCommand(ctx context.Context, tenantID shared.ID, cfg ma
 	}
 	cmd.SetSensorID(sn.ID)
 	cmd.SetExpiration(s.now().UTC().Add(time.Duration(sc.MaxScanSeconds)*time.Second + scanImportGrace))
+	// The targets passed the full gate at t1 and run outside every scan
+	// zone on the pinned connector sensor; the claim re-checks them so. A
+	// scan run adds its actor's act scope (scan.triggerConnectorScan).
+	cmd.DispatchGate = &command.DispatchGate{Tier: 1, Validated: true, NoZoneRouting: true}
 	return cmd, nil
 }
 

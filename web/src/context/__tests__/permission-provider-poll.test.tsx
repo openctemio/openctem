@@ -18,6 +18,11 @@ vi.mock('../bootstrap-provider', () => ({
   }),
 }))
 
+let socketConnected = false
+vi.mock('../websocket-provider', () => ({
+  useWebSocket: () => ({ state: 'connected', isConnected: socketConnected, reconnect: () => {} }),
+}))
+
 const POLL_MS = 2 * 60 * 1000
 let hidden = false
 
@@ -25,6 +30,7 @@ describe('PermissionProvider polling', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     hidden = false
+    socketConnected = false
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
     vi.stubGlobal(
       'fetch',
@@ -46,6 +52,16 @@ describe('PermissionProvider polling', () => {
       vi.advanceTimersByTime(POLL_MS * 2)
     })
     expect(syncCalls() - before).toBe(2)
+  })
+
+  it('does not poll while the WebSocket is connected (research/81)', async () => {
+    socketConnected = true
+    render(<PermissionProvider>ok</PermissionProvider>)
+    const before = syncCalls()
+    await act(async () => {
+      vi.advanceTimersByTime(POLL_MS * 5)
+    })
+    expect(syncCalls() - before).toBe(0)
   })
 
   it('does not sync while the tab is hidden', async () => {
