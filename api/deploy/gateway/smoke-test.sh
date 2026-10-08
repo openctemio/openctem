@@ -9,7 +9,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 image="caddy:${CADDY_VERSION:-2.11.4-alpine}"
-run="gwsmoke-$$"
+run="${SMOKE_PREFIX:-gwsmoke}-$$"
 net="$run-net"
 fail=0
 
@@ -111,6 +111,7 @@ done
 # from the API's plane table).
 probe api GET /api/v1/agent/heartbeat
 probe api PUT /api/v2/sensor/results/r1/segments/0
+probe api POST /api/v3/sensor/openctem.sensor.v3.SensorService/Heartbeat
 probe api POST /api/v1/validation/evidence
 probe api GET /scim/v2/Users
 probe api POST /api/v1/mcp

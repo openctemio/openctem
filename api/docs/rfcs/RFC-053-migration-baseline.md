@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Implemented (draft PR, merges in a quiet merge-queue window) |
+| Status | Implemented |
 | Scope | api (`migrations/`, `scripts/`, `cmd/server`, `cmd/gen-asset-types`, tests), CI (`.github/scripts/check-migration-versions.sh`), images (migrations, all-in-one) |
 | Guide | [development/migrations.md](../development/migrations.md#migration-baseline), [deployment/safe-deploy-and-migrations.md](../deployment/safe-deploy-and-migrations.md#migration-baseline-upgrading-an-older-database) |
 
@@ -139,9 +139,9 @@ lp — chain vs chain
 Both sides: 229 tables, 56 functions, 84 triggers, 92 policies (0 tables
 with RLS enabled), 424 comments, 368 grants to the app role.
 
-## 5. Rehearsal on the live backup
+## 5. Rehearsal on a production backup
 
-A restore of `openctem-pre-deploy-20261005T155102Z.dump` (version 1046) into a
+A restore of a pre-deploy production backup (version 1046) into a
 scratch PostgreSQL 17:
 
 1. the new tree through the migrations image's entrypoint: refused, version
@@ -203,7 +203,7 @@ RFC-044 definition-catalog replay.
 ## 8. Numbering and open PRs
 
 - New migrations continue above the highest number on `develop` (`001147`
-  after this change). `agent-ops/queueall.sh` takes the maximum over develop
+  after this change). The merge-queue tooling takes the maximum over develop
   and every open PR and renumbers a PR whose migration is at or below it; that
   keeps working unchanged (develop's maximum is 001147 after the squash).
 - An open PR that **adds** a migration above the baseline: nothing to do.
@@ -228,7 +228,7 @@ RFC-044 definition-catalog replay.
   no query changes.
 - **No data leaves.** The baseline holds only rows a fresh install creates
   (catalogues, the system tenant); no secret, no customer row. The rehearsal
-  restored live data only into a local scratch container, removed afterwards.
+  restored production data only into a local scratch container, removed afterwards.
 - **Safe failure.** An older database is refused before any change; the
   baseline refuses a database that already has the schema; its down migration
   refuses instead of dropping every table.
