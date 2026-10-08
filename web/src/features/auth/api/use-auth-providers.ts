@@ -11,6 +11,8 @@ import useSWR, { type SWRConfiguration } from 'swr'
 
 import { get } from '@/lib/api/client'
 
+import type { PasswordPolicy } from '../lib/password-policy'
+
 // ============================================
 // TYPES
 // ============================================
@@ -32,6 +34,8 @@ export interface AuthProvidersResponse {
   registration_enabled?: boolean
   /** Who may create organizations (server policy). */
   tenant_creation_mode?: string
+  /** The password rules the server enforces and the reset-link lifetime. */
+  password_policy?: PasswordPolicy
 }
 
 // ============================================
@@ -68,4 +72,12 @@ export function useAuthProviders(config?: SWRConfiguration) {
     ...defaultConfig,
     ...config,
   })
+}
+
+/**
+ * The password policy the server enforces (undefined until it is loaded).
+ * Forms state and pre-check it from here, never from their own constants.
+ */
+export function usePasswordPolicy(): PasswordPolicy | undefined {
+  return useAuthProviders().data?.password_policy
 }
