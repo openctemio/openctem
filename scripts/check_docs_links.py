@@ -156,7 +156,10 @@ class Repos:
 
     def root(self, repo, ref):
         """A directory with the repository at ref, '' if it does not exist, None if unchecked."""
-        if repo == self.self_name:
+        if repo == self.self_name and (ref in {"main", "develop", self.self_branch} or not self.fetch):
+            # A link to a branch of this repository is checked against the
+            # change being tested; a tag or commit is fetched like another
+            # repository.
             return self.self_root
         key = (repo, ref)
         if key not in self.clones:
@@ -223,10 +226,7 @@ def check_repo_file(repos, repo, ref, fpath, anchor, prefix):
         return None, f"skipped (not fetched): github.com/openctemio/{repo}@{ref}"
     if root == "":
         return f"ref {ref} of openctemio/{repo} not found", None
-    if repo == repos.self_name and repos.self_branch not in ("", "HEAD", ref):
-        note = f"checked against the working tree ({repos.self_branch}), not {ref}"
-    else:
-        note = None
+    note = None
     target = os.path.join(root, fpath)
     if prefix:
         return None, note
