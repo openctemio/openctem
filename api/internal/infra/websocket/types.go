@@ -111,6 +111,7 @@ const (
 	ChannelTypeUser    ChannelType = "user"    // user:{tenant_id}:{user_id} - one user's in-app notifications
 	ChannelTypeTriage  ChannelType = "triage"  // triage:{finding_id} - AI triage progress updates
 	ChannelTypeGroup   ChannelType = "group"   // group:{id} - group scope rule changes
+	ChannelTypeRun     ChannelType = "run"     // run:{id} - a scan run changed (the live run map refreshes)
 )
 
 // ParseChannel extracts the channel type and ID from a channel string.

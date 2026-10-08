@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -92,6 +94,13 @@ func run() int {
 
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
+	if httpsec.AllowPrivate() {
+		log.Warn("outbound requests may reach every private network range (" + httpsec.EnvAllowPrivate + "=1, development only)")
+	}
+	if cidrs := httpsec.AllowedPrivateCIDRs(); len(cidrs) > 0 {
+		log.Warn("outbound requests may reach these private ranges for every tenant ("+httpsec.EnvAllowPrivateCIDRs+")",
+			"cidrs", strings.Join(cidrs, ","))
+	}
 
 	// ==========================================================================
 	// Infrastructure

@@ -68,7 +68,7 @@ describe('Discovery > Assets', () => {
 
   it.each([
     '/assets',
-    '/assets/hosts',
+    '/assets/abc',
     '/assets/changes',
     '/assets/groups',
     '/assets/groups/abc',
@@ -161,7 +161,7 @@ describe('Asset groups live under /assets/groups', () => {
 
   // Reserved /assets/* page segments: no asset type, class or lens may take
   // these names (api/cmd/gen-asset-types rejects them; RFC-042 §6.3.6).
-  it.each(['all', 'changes', 'duplicates', 'groups', 'services', 'suggestions'])(
+  it.each(['changes', 'duplicates', 'groups', 'suggestions', 'web'])(
     '/assets/%s is a reserved static page',
     (segment) => {
       expect(existsSync(join(ASSETS_DIR, segment, 'page.tsx'))).toBe(true)

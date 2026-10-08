@@ -29,9 +29,10 @@ kubectl create secret generic {{$slug}}-key \
 #    This needs a sensor release later than v0.8.0; v0.8.0 and older ignore
 #    the policy and scan without one.
 
-# 3. Turn the bundled sensor on (release "openctem"; use yours). Chart 0.11.0
-#    or later: the sensor runs hardened (non-root, read-only root filesystem,
-#    no capabilities, seccomp RuntimeDefault) and mounts the policy read-only.
+# 3. Turn the bundled sensor on (release "openctem"; use yours). Use chart
+#    0.15.0 or later: the sensor runs hardened (non-root, read-only root
+#    filesystem, no capabilities, seccomp RuntimeDefault), mounts the policy
+#    read-only, and keeps the nuclei-templates baked into its image.
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \

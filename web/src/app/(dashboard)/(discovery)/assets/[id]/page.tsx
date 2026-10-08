@@ -7,10 +7,10 @@
  *
  * Behavior:
  *  - Fetch asset by id.
- *  - Repository assets have a rich dedicated page at /assets/repositories/{id};
- *    redirect there.
+ *  - A repository opens its workspace here (branches, findings by branch,
+ *    scan settings): one URL per asset, whatever its type.
  *  - Other asset types: render a minimal detail layout (header + key fields)
- *    plus a CTA back to the typed listing.
+ *    plus a link to the inventory filtered to the asset's type.
  */
 
 'use client'
@@ -26,41 +26,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DetailSections, PageHeader } from '@/features/shared'
 import { AssetAttributionSection, AssetIdentitySections, useAsset } from '@/features/assets'
 import { cn } from '@/lib/utils'
+import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
 import { CRITICALITY_TEXT_COLORS } from '@/lib/criticality-colors'
 
 const CRITICALITY_COLOR: Record<string, string> = CRITICALITY_TEXT_COLORS
-
-// Map asset_type → category route slug used in /assets/<slug>/ listings.
-// Matches the directory structure in app/(dashboard)/(discovery)/assets/.
-const TYPE_TO_LISTING_SLUG: Record<string, string> = {
-  repository: 'repositories',
-  web_application: 'web-applications',
-  website: 'websites',
-  api: 'apis',
-  mobile_app: 'mobile',
-  domain: 'domains',
-  subdomain: 'domains',
-  certificate: 'certificates',
-  ip_address: 'ip-addresses',
-  host: 'hosts',
-  server: 'hosts',
-  container: 'containers',
-  kubernetes_cluster: 'cloud-resources',
-  kubernetes_namespace: 'cloud-resources',
-  database: 'databases',
-  data_store: 'databases',
-  s3_bucket: 'storage',
-  storage: 'storage',
-  cloud_account: 'cloud-accounts',
-  compute: 'cloud-resources',
-  serverless: 'serverless',
-  service: 'services',
-  network: 'networks',
-  vpc: 'vpcs',
-  iam_user: 'iam-users',
-  iam_role: 'iam-roles',
-  service_account: 'service-accounts',
-}
 
 export default function AssetDetailPage() {
   const router = useRouter()
@@ -68,13 +37,6 @@ export default function AssetDetailPage() {
   const assetId = params?.id ?? null
 
   const { asset, isLoading, error } = useAsset(assetId)
-
-  // Repository has a rich dedicated page — redirect there.
-  React.useEffect(() => {
-    if (asset && asset.type === 'repository') {
-      router.replace(`/assets/repositories/${asset.id}`)
-    }
-  }, [asset, router])
 
   if (isLoading) {
     return (
@@ -109,7 +71,13 @@ export default function AssetDetailPage() {
     )
   }
 
-  const listingSlug = TYPE_TO_LISTING_SLUG[asset.type] ?? null
+  if (asset.type === 'repository') {
+    return <RepositoryWorkspace repositoryId={asset.id} />
+  }
+
+  // The inventory filtered to this asset's type (and alias sub-type).
+  const listingQuery = new URLSearchParams({ types: asset.type })
+  if (asset.subType) listingQuery.set('sub_type', asset.subType)
   const typeLabel = asset.type.replace(/_/g, ' ')
 
   return (
@@ -243,22 +211,20 @@ export default function AssetDetailPage() {
         </CardContent>
       </Card>
 
-      {/* CTA to richer typed listing */}
-      {listingSlug && (
-        <Card className="mt-4 bg-muted/30">
-          <CardContent className="flex items-center justify-between py-4">
-            <div>
-              <p className="text-sm font-medium">Looking for richer details?</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                The {typeLabel} listing page has full filters, scans, and findings context.
-              </p>
-            </div>
-            <Button variant="outline" onClick={() => router.push(`/assets/${listingSlug}`)}>
-              Open {typeLabel} list
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      {/* The inventory filtered to this type */}
+      <Card className="mt-4 bg-muted/30">
+        <CardContent className="flex items-center justify-between py-4">
+          <div>
+            <p className="text-sm font-medium">Looking for richer details?</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              The inventory lists every {typeLabel} with its filters, columns and actions.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => router.push(`/assets?${listingQuery}`)}>
+            Open {typeLabel} list
+          </Button>
+        </CardContent>
+      </Card>
     </Main>
   )
 }

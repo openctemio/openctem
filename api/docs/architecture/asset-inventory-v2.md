@@ -29,7 +29,7 @@ are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
 ## Classes, the type registry and lenses
 
 OpenCTEM has 37 asset types. Each type belongs to exactly one fixed
-**class**, JupiterOne's `_class` above `_type`. Each class belongs to
+**class**, an abstract kind above the type. Each class belongs to
 exactly one **lens**, which is a UI tab. The source-native type
 (`aws_instance`, `github_repo`) stays on the source record for
 provenance.
@@ -225,9 +225,44 @@ mechanical ones.
 8. **Custom and third-party keys** use the `x_` prefix, show under "Other"
    and are never read by name in platform code.
 
-The CTIS technical blocks (`domain`, `ip_address`, `service`, `certificate`)
-are objects under common keys; their field names are the CTIS ones and they
-are read only by the facts helpers next to the flat keys.
+**CTIS technical blocks are promoted, not stored.** A CTIS report carries a
+domain's, an IP address's, a service's or a certificate's facts in a
+technical block (`technical.domain`, …). Every write path (ingest, REST,
+import) calls `asset.NormalizeAssetProperties`, which first moves each
+block's fields to the stored type's flat keys (`asset.PromoteTechnicalBlocks`)
+and then folds synonyms:
+
+| Block | Fills | Renamed fields | Not kept |
+|---|---|---|---|
+| `certificate` (certificate assets) | `subject_cn`, `sans`, `issuer_cn`, `issuer_org`, `serial_number`, `not_before`, `not_after`, `signature_algorithm`, `key_algorithm`, `key_size` | `fingerprint` → `fingerprint_sha256`, `self_signed` → `is_self_signed`, `expired` → `is_expired` | — |
+| `domain` (domains, subdomains) | `registrar`, `registered_at`, `expires_at`, `nameservers`, `whois`, `dns_records`, and from the records `dns_record_types`, the first CNAME as `cname_target`, A/AAAA values in `ip_addresses` | — | registration keys on a subdomain (it has none) |
+| `ip_address` (IP assets) | `version`, `hostname`, `asn`, `asn_org`, `country`, `city`, `geolocation`, `ports` (the port summary) | — | on other classes only `address` (→ `ip_addresses`) and a host's `hostname` apply |
+| `service` (services, applications) | `port`, `protocol`, `transport`, `product`, `version`, `banner`, `cpe`, `state`, `tls_version` | `name` → `service` (open port) or `server` (HTTP); `tls` → `has_tls` (recorded only when seen); `auth_required` → `is_auth_required` | `tls_cert_*` (the served certificate is a certificate asset), `extra_info`, `auth_methods` |
+
+A flat value already on the asset wins over the block's. A block's fields
+describe assets of its own class: an IP block's `version` never becomes an
+application's version. Migration `001340` promoted the blocks of rows
+written before; no reader looks inside a block any more.
+
+## One inventory, typed by the registry
+
+Every asset type is a filter of `/assets`, never a page of its own:
+`/assets?types=host`, or `&sub_type=iam_user` for an alias. With one type
+selected the list renders from the registry (`GET /api/v1/asset-types`): the
+type's `columns` by attribute kind and property format, its facet
+attributes as server-side filters (`properties=key:value`), a count per
+yes/no attribute (stats `count_by`, schema keys only, at most 10), the
+create/edit form from its attributes (schema keys only), and its row
+actions. Only API operations a single type supports (repository scan and
+sync) are listed by type, in one web module.
+
+The category view is the inventory overview: one card per registry lens
+with its types and what needs attention. `GET /api/v1/assets/overview`
+counts the caller's assets per (lens, type, sub_type) in one GROUP BY over
+the data-scoped rows: the in-inventory total (attribution confirmed,
+dependency, monitor only or none, so a card equals the list it opens), the
+unowned, high-risk and first-seen-this-week ones, and the names in the
+review queue.
 
 ## Three layers: source record, link, canonical row
 

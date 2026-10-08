@@ -117,7 +117,7 @@ func (c *GitHubClient) GetUser(ctx context.Context) (*User, error) {
 		AvatarURL string `json:"avatar_url"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&ghUser); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &ghUser); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -157,7 +157,7 @@ func (c *GitHubClient) ListOrganizations(ctx context.Context, opts ListOptions) 
 		AvatarURL   string `json:"avatar_url"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&ghOrgs); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &ghOrgs); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -236,20 +236,20 @@ func (c *GitHubClient) ListRepositories(ctx context.Context, opts ListOptions) (
 		// which the handler can still recognise by substring match.
 		switch resp.StatusCode {
 		case http.StatusUnauthorized:
-			return nil, ErrAuthFailed.Wrap(fmt.Errorf("github rejected credentials: %s", string(body)))
+			return nil, ErrAuthFailed.Wrap(httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body))
 		case http.StatusForbidden:
 			// GitHub returns 403 for both rate-limit AND insufficient
 			// scope. Inspect body to disambiguate.
 			if strings.Contains(strings.ToLower(string(body)), "rate limit") {
-				return nil, ErrRateLimited.Wrap(fmt.Errorf("github rate limit: %s", string(body)))
+				return nil, ErrRateLimited.Wrap(httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body))
 			}
-			return nil, ErrAuthFailed.Wrap(fmt.Errorf("github forbidden (check token scopes): %s", string(body)))
+			return nil, ErrAuthFailed.Wrap(fmt.Errorf("github forbidden (check token scopes): %w", httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body)))
 		case http.StatusNotFound:
-			return nil, ErrNotFound.Wrap(fmt.Errorf("github org/user not found: %s", string(body)))
+			return nil, ErrNotFound.Wrap(fmt.Errorf("github organization or user not found: %w", httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body)))
 		case http.StatusTooManyRequests:
-			return nil, ErrRateLimited.Wrap(fmt.Errorf("github rate limit: %s", string(body)))
+			return nil, ErrRateLimited.Wrap(httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body))
 		}
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body)
 	}
 
 	// Parse response based on endpoint
@@ -262,7 +262,7 @@ func (c *GitHubClient) ListRepositories(ctx context.Context, opts ListOptions) (
 			TotalCount int `json:"total_count"`
 			Items      []ghRepo
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&searchResult); err != nil {
+		if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &searchResult); err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 		total = searchResult.TotalCount
@@ -270,7 +270,7 @@ func (c *GitHubClient) ListRepositories(ctx context.Context, opts ListOptions) (
 	} else {
 		// Regular list API
 		var ghRepos []ghRepo
-		if err := json.NewDecoder(resp.Body).Decode(&ghRepos); err != nil {
+		if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &ghRepos); err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 		repos = convertGHRepos(ghRepos)
@@ -317,7 +317,7 @@ func (c *GitHubClient) GetRepository(ctx context.Context, fullName string) (*Rep
 	}
 
 	var repoData ghRepo
-	if err := json.NewDecoder(resp.Body).Decode(&repoData); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &repoData); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -370,7 +370,7 @@ func (c *GitHubClient) ListBranches(ctx context.Context, fullName string, opts L
 				SHA string `json:"sha"`
 			} `json:"commit"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&page1); err != nil {
+		if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &page1); err != nil {
 			resp.Body.Close()
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
@@ -426,7 +426,7 @@ func (c *GitHubClient) CreateIssue(ctx context.Context, owner, repo, title, body
 		Number  int    `json:"number"`
 		HTMLURL string `json:"html_url"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &created); err != nil {
 		return 0, "", fmt.Errorf("failed to decode issue response: %w", err)
 	}
 
@@ -477,7 +477,7 @@ func (c *GitHubClient) getRepositoryLanguages(ctx context.Context, fullName stri
 	// GitHub returns languages as {"Go": 12345, "JavaScript": 6789}
 	// where the value is bytes of code
 	var languages map[string]int
-	if err := json.NewDecoder(resp.Body).Decode(&languages); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &languages); err != nil {
 		return nil, fmt.Errorf("failed to decode languages: %w", err)
 	}
 
@@ -555,7 +555,7 @@ func (c *GitHubClient) getOrganization(ctx context.Context, name string) (*Organ
 		TotalPrivateRepos int    `json:"total_private_repos"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&ghOrg); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &ghOrg); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -594,7 +594,7 @@ func (c *GitHubClient) getUserByUsername(ctx context.Context, username string) (
 		PublicRepos int    `json:"public_repos"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&ghUser); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &ghUser); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -628,7 +628,7 @@ func (c *GitHubClient) getRateLimit(ctx context.Context) (*RateLimit, error) {
 		} `json:"resources"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&rateLimit); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &rateLimit); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 

@@ -10,7 +10,7 @@ import (
 
 // Service names. The inventory stores a service (open port) as
 // "host:port:proto" (normalizePortIdentifier), for example
-// "vndirect.com.vn:443:tcp", "203.0.113.5:443:tcp" or, for IPv6,
+// "example.co.uk:443:tcp", "203.0.113.5:443:tcp" or, for IPv6,
 // "2001:db8::1:443:tcp". Reports and older code write "host:port/proto" and
 // "[2001:db8::1]:443/tcp". SplitServiceName reads all of them, and HostOf is
 // the one answer to "which host does this asset name point at?" for scope,

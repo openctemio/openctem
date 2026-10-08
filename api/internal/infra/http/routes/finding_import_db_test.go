@@ -162,7 +162,7 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	finding := func(tenant string, assetID shared.ID) shared.ID {
 		id := shared.NewID()
 		if _, err := ih.db.ExecContext(ctx, `INSERT INTO findings (id, tenant_id, asset_id, component_id, source, tool_name, message, severity, fingerprint, status, cve_id)
-			VALUES ($1, $2, $3, $4, 'sca', 'trivy', 'm', 'high', $5, 'open', 'CVE-2025-1111')`, id, tenant, assetID, compID, "fp-"+id.String()); err != nil {
+			VALUES ($1, $2, $3, $4, 'sca', 'trivy', 'm', 'high', $5, 'new', 'CVE-2025-1111')`, id, tenant, assetID, compID, "fp-"+id.String()); err != nil {
 			t.Fatal(err)
 		}
 		return id
@@ -199,7 +199,7 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	if rec.Code != http.StatusOK || resp.Files[0].VEX == nil || resp.Files[0].VEX.Matched != 1 || resp.Files[0].VEX.WouldClose != 1 {
 		t.Fatalf("preview: %s", rec.Body.String())
 	}
-	if s, v := status(web); s != "open" || v != "" {
+	if s, v := status(web); s != "new" || v != "" {
 		t.Fatalf("a preview changed the finding: %s %s", s, v)
 	}
 
@@ -208,7 +208,7 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	if rec.Code != http.StatusOK || resp.Files[0].VEX.Closed != 0 || resp.Files[0].VEX.Stored != 1 {
 		t.Fatalf("no-approve import: %s", rec.Body.String())
 	}
-	if s, v := status(web); s != "open" || v != "not_affected" {
+	if s, v := status(web); s != "new" || v != "not_affected" {
 		t.Fatalf("no-approve: %s %s", s, v)
 	}
 
@@ -219,10 +219,10 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	if s, _ := status(web); s != "false_positive" {
 		t.Fatalf("the image's finding = %s, want false_positive", s)
 	}
-	if s, v := status(other); s != "open" || v != "" {
+	if s, v := status(other); s != "new" || v != "" {
 		t.Fatalf("the same package on another image changed: %s %s", s, v)
 	}
-	if s, v := status(foreign); s != "open" || v != "" {
+	if s, v := status(foreign); s != "new" || v != "" {
 		t.Fatalf("another tenant's finding changed: %s %s", s, v)
 	}
 }

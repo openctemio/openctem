@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = '9bd18ccb56c650ec'
+export const ASSET_REGISTRY_VERSION = '2532dc2f6acb4051'
 
 export type AssetLens =
   | 'external_surface'
@@ -948,6 +948,7 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'ip_addresses',
     'cname_target',
     'dns_record_types',
+    'dns_records',
     'discovery_source',
     'is_wildcard',
   ],

@@ -1,0 +1,2510 @@
+'use client'
+
+import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
+import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
+import { useState, useMemo, useCallback } from 'react'
+import { csrfFetch } from '@/lib/api/client'
+import { useFindingsApi } from '@/features/findings/api/use-findings-api'
+import type { ApiFinding } from '@/features/findings/api/finding-api.types'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Main } from '@/components/layout'
+import {
+  RiskScoreBadge,
+  DataTableRowActions,
+  EmptyState,
+  DangerZone,
+  DangerZoneItem,
+} from '@/features/shared'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
+import { EntityActivity } from '@/features/activity/components/entity-activity'
+import { AssetSlaPolicyCard } from '@/features/sla/components/sla-windows'
+import type { ActivityItem } from '@/features/activity/types'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { useDebounce } from '@/hooks/use-debounce'
+import { Skeleton } from '@/components/ui/skeleton'
+import { toast } from 'sonner'
+import {
+  ArrowLeft,
+  GitBranch,
+  Search as SearchIcon,
+  MoreHorizontal,
+  Eye,
+  Trash2,
+  Shield,
+  AlertTriangle,
+  CheckCircle,
+  Copy,
+  RefreshCw,
+  Lock,
+  Globe,
+  ExternalLink,
+  Github,
+  GitlabIcon,
+  Cloud,
+  XCircle,
+  Clock,
+  Package,
+  FileCode,
+  Activity,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Settings,
+  Play,
+  GitMerge,
+  MessageSquare,
+  ChevronRight,
+  History,
+  Layers,
+  Timer,
+  Loader2,
+} from 'lucide-react'
+import {
+  useRepository,
+  useRepositoryBranches,
+  type RepositoryView,
+  type SCMProvider,
+  type Severity,
+  type BranchStatus,
+  type SLAStatus,
+  type ScannerType,
+  SCM_PROVIDER_LABELS,
+  SEVERITY_LABELS,
+  SEVERITY_COLORS,
+  BRANCH_STATUS_LABELS,
+  BRANCH_STATUS_COLORS,
+  SLA_STATUS_LABELS,
+  SLA_STATUS_COLORS,
+  SCANNER_TYPE_LABELS,
+} from '@/features/repositories'
+
+// Additional types for detail page
+type Repository = RepositoryView
+type FindingStatus =
+  'open' | 'confirmed' | 'in_progress' | 'resolved' | 'false_positive' | 'accepted_risk'
+type TriageStatus = 'needs_triage' | 'triaged' | 'escalated'
+type ActivityAction =
+  | 'scan_started'
+  | 'scan_completed'
+  | 'scan_failed'
+  | 'finding_created'
+  | 'finding_resolved'
+  | 'finding_regressed'
+  | 'finding_status_changed'
+  | 'finding_assigned'
+  | 'finding_triaged'
+  | 'finding_commented'
+  | 'branch_created'
+  | 'branch_added'
+  | 'branch_deleted'
+  | 'pr_opened'
+  | 'pr_merged'
+  | 'pr_closed'
+  | 'repository_synced'
+  | 'settings_changed'
+  | 'config_updated'
+  | 'notification_sent'
+  | 'issue_created'
+type DetailTab = 'overview' | 'branches' | 'findings' | 'components' | 'activity' | 'settings'
+
+// Labels
+const STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  archived: 'Archived',
+  pending: 'Pending',
+  completed: 'Completed',
+  failed: 'Failed',
+}
+
+const FINDING_STATUS_LABELS: Record<FindingStatus, string> = {
+  open: 'Open',
+  confirmed: 'Confirmed',
+  in_progress: 'In Progress',
+  resolved: 'Resolved',
+  false_positive: 'False Positive',
+  accepted_risk: 'Accepted Risk',
+}
+
+const FINDING_STATUS_COLORS: Record<FindingStatus, { bg: string; text: string }> = {
+  open: { bg: 'bg-red-500/15', text: 'text-red-600' },
+  confirmed: { bg: 'bg-orange-500/15', text: 'text-orange-600' },
+  in_progress: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
+  resolved: { bg: 'bg-green-500/15', text: 'text-green-600' },
+  false_positive: { bg: 'bg-gray-500/15', text: 'text-gray-600' },
+  accepted_risk: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
+}
+
+const TRIAGE_STATUS_LABELS: Record<TriageStatus, string> = {
+  needs_triage: 'Needs Triage',
+  triaged: 'Triaged',
+  escalated: 'Escalated',
+}
+
+const TRIAGE_STATUS_COLORS: Record<TriageStatus, { bg: string; text: string }> = {
+  needs_triage: { bg: 'bg-yellow-500/15', text: 'text-yellow-600' },
+  triaged: { bg: 'bg-blue-500/15', text: 'text-blue-600' },
+  escalated: { bg: 'bg-red-500/15', text: 'text-red-600' },
+}
+
+const SCM_PROVIDER_COLORS: Record<SCMProvider, string> = {
+  github: 'bg-gray-900 text-white',
+  gitlab: 'bg-orange-600 text-white',
+  bitbucket: 'bg-blue-600 text-white',
+  azure_devops: 'bg-blue-500 text-white',
+  codecommit: 'bg-yellow-600 text-white',
+  local: 'bg-gray-500 text-white',
+}
+
+// Branch detail type — maps from API Branch type
+interface BranchDetail {
+  id: string
+  name: string
+  type: 'main' | 'develop' | 'feature' | 'release' | 'hotfix' | 'other'
+  is_default: boolean
+  is_protected: boolean
+  scan_status: BranchStatus
+  last_commit_sha: string
+  last_commit_message: string
+  last_commit_author: string
+  last_commit_author_avatar?: string
+  last_commit_at: string
+  findings_summary: {
+    total: number
+    by_severity: { critical: number; high: number; medium: number; low: number; info: number }
+  }
+  compared_to_default?: {
+    new_findings: number
+    resolved_findings: number
+  }
+  last_scanned_at?: string
+}
+
+interface FindingDetail {
+  id: string
+  title: string
+  description: string
+  severity: Severity
+  status: FindingStatus
+  triage_status: TriageStatus
+  scanner_type: ScannerType
+  file_path?: string
+  line_start?: number
+  branches: string[]
+  sla_status: SLAStatus
+  sla_days_remaining?: number
+  first_detected_at: string
+  assigned_to_name?: string
+  assigned_to_avatar?: string
+  comments_count: number
+  cwe_ids?: string[]
+}
+
+interface ActivityLog {
+  id: string
+  action: ActivityAction
+  actor_type: 'user' | 'system'
+  actor_name: string
+  actor_avatar?: string
+  entity_name?: string
+  comment?: string
+  timestamp: string
+  changes?: Array<{
+    field: string
+    old_value?: string | number | boolean
+    new_value: string | number | boolean
+  }>
+  scan_summary?: {
+    branch: string
+    findings_total: number
+    findings_new: number
+    findings_resolved: number
+    duration_seconds: number
+    quality_gate_passed: boolean
+  }
+  pr_info?: {
+    number: number
+    title: string
+    url: string
+    source_branch: string
+    target_branch: string
+  }
+}
+
+/** Map API Branch to local BranchDetail shape */
+function mapBranchToDetail(b: import('@/features/repositories').Branch): BranchDetail {
+  return {
+    id: b.id,
+    name: b.name,
+    type: b.type as BranchDetail['type'],
+    is_default: b.isDefault,
+    is_protected: b.isProtected,
+    scan_status: b.scanStatus || 'not_scanned',
+    last_commit_sha: b.lastCommitSha || '',
+    last_commit_message: b.lastCommitMessage || '',
+    last_commit_author: b.lastCommitAuthor || '',
+    last_commit_at: b.lastCommitAt || '',
+    findings_summary: {
+      total: b.findingsSummary?.total ?? 0,
+      by_severity: {
+        critical: b.findingsSummary?.bySeverity?.critical ?? 0,
+        high: b.findingsSummary?.bySeverity?.high ?? 0,
+        medium: b.findingsSummary?.bySeverity?.medium ?? 0,
+        low: b.findingsSummary?.bySeverity?.low ?? 0,
+        info: b.findingsSummary?.bySeverity?.info ?? 0,
+      },
+    },
+    compared_to_default: b.comparedToDefault
+      ? {
+          new_findings: b.comparedToDefault.newFindings,
+          resolved_findings: b.comparedToDefault.resolvedFindings,
+        }
+      : undefined,
+    last_scanned_at: b.lastScannedAt,
+  }
+}
+
+/** Map API finding response to the local FindingDetail shape used by the UI */
+function mapApiFindingToDetail(f: ApiFinding): FindingDetail {
+  return {
+    id: f.id,
+    title: f.title || f.message,
+    description: f.description || f.message,
+    severity: f.severity as Severity,
+    status: (f.status === 'new' ? 'open' : f.status) as FindingStatus,
+    triage_status: f.is_triaged ? 'triaged' : 'needs_triage',
+    scanner_type: f.source as ScannerType,
+    file_path: f.file_path,
+    line_start: f.start_line,
+    branches: [
+      ...new Set(
+        [f.first_detected_branch, f.last_seen_branch].filter((b): b is string => !!b && b !== '')
+      ),
+    ],
+    sla_status: (f.sla_status as SLAStatus) || 'not_applicable',
+    sla_days_remaining: undefined,
+    first_detected_at: f.first_detected_at || f.created_at,
+    assigned_to_name: f.assigned_to_user?.name,
+    assigned_to_avatar: '',
+    comments_count: f.comments_count || 0,
+    cwe_ids: f.cwe_ids,
+  }
+}
+
+/** Derive activity logs from findings (real data, no mock) */
+function deriveActivitiesFromFindings(findingsList: FindingDetail[]): ActivityLog[] {
+  return findingsList.slice(0, 20).map((f) => ({
+    id: `finding-${f.id}`,
+    action:
+      f.status === 'resolved'
+        ? ('finding_resolved' as ActivityAction)
+        : ('finding_created' as ActivityAction),
+    actor_type: 'system' as const,
+    actor_name: f.assigned_to_name || 'Scanner',
+    entity_name: f.title,
+    timestamp: f.first_detected_at,
+  }))
+}
+
+/** The derived activity as the shared ActivityPanel's events (text only). */
+function repositoryActivityItems(logs: ActivityLog[]): ActivityItem[] {
+  return logs.map((a) => {
+    const resolved = a.action === 'finding_resolved'
+    return {
+      kind: 'event',
+      id: a.id,
+      at: a.timestamp,
+      actor: { name: a.actor_name, kind: a.actor_type === 'user' ? 'user' : 'system' },
+      icon: resolved ? CheckCircle : AlertTriangle,
+      tone: resolved ? 'success' : 'warning',
+      summary: `${resolved ? 'resolved' : 'found'} ${a.entity_name ? `“${a.entity_name}”` : 'a finding'}`,
+      detail: a.comment,
+    }
+  })
+}
+
+const getOverdueFindingsCount = (findings: FindingDetail[]) =>
+  findings.filter((f) => f.sla_status === 'overdue' || f.sla_status === 'exceeded').length
+
+const getSLAWarningsCount = (findings: FindingDetail[]) =>
+  findings.filter((f) => f.sla_status === 'warning').length
+
+// ============================================
+// API Response Types & Transformation
+// ============================================
+
+interface ApiAssetResponse {
+  id: string
+  tenant_id?: string
+  name: string
+  type: string
+  criticality: string
+  status: string
+  scope: string
+  exposure: string
+  risk_score: number
+  finding_count: number
+  description?: string
+  tags?: string[]
+  metadata?: Record<string, unknown>
+  first_seen: string
+  last_seen: string
+  created_at: string
+  updated_at: string
+  repository?: {
+    asset_id: string
+    repo_id?: string
+    full_name: string
+    scm_connection_id?: string
+    scm_provider: string
+    scm_organization?: string
+    visibility?: string
+    default_branch?: string
+    primary_language?: string
+    languages?: string[]
+    topics?: string[]
+    description?: string
+    web_url?: string
+    clone_url?: string
+    created_at_source?: string
+    updated_at_source?: string
+    pushed_at_source?: string
+    branch_count?: number
+    commit_count?: number
+    contributor_count?: number
+    open_pr_count?: number
+    size_kb?: number
+    is_fork?: boolean
+    is_archived?: boolean
+    is_disabled?: boolean
+    is_template?: boolean
+    has_issues?: boolean
+    has_wiki?: boolean
+    security_features?: {
+      advanced_security?: boolean
+      secret_scanning?: boolean
+      secret_scanning_push_protection?: boolean
+      dependabot_alerts?: boolean
+      dependabot_updates?: boolean
+      code_scanning?: boolean
+    }
+    scan_settings?: {
+      enabled_scanners: string[]
+      auto_scan: boolean
+      scan_on_push: boolean
+      scan_on_pr: boolean
+      schedule?: string
+      branch_patterns?: string[]
+    }
+    sync_status?: string
+    last_synced_at?: string
+    last_scanned_at?: string
+    findings_summary?: {
+      total: number
+      by_severity: {
+        critical: number
+        high: number
+        medium: number
+        low: number
+        info: number
+      }
+      by_status?: {
+        open: number
+        in_progress: number
+        resolved: number
+        false_positive: number
+        accepted_risk: number
+      }
+    }
+    components_summary?: {
+      total: number
+      vulnerable: number
+      outdated: number
+    }
+    quality_gate_status?: string
+    compliance_status?: string
+    created_at?: string
+    updated_at?: string
+  }
+}
+
+function transformToRepositoryView(asset: ApiAssetResponse): RepositoryView {
+  const repo = asset.repository
+
+  // Map API scope to AssetScope type
+  const scopeMap: Record<string, string> = {
+    in_scope: 'internal',
+    out_of_scope: 'external',
+    pending_review: 'unknown',
+    internal: 'internal',
+    external: 'external',
+    cloud: 'cloud',
+    partner: 'partner',
+    vendor: 'vendor',
+    shadow: 'shadow',
+  }
+
+  // Map API exposure to ExposureLevel type
+  const exposureMap: Record<string, string> = {
+    external: 'public',
+    internal: 'private',
+    unknown: 'unknown',
+    public: 'public',
+    restricted: 'restricted',
+    private: 'private',
+    isolated: 'isolated',
+  }
+
+  // Build findings summary with all required fields
+  const baseFindingsSummary = repo?.findings_summary || {
+    total: asset.finding_count,
+    by_severity: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
+  }
+
+  // Ensure by_status has all required fields including 'confirmed'
+  const apiByStatus = baseFindingsSummary.by_status || {}
+  const findingsSummary = {
+    total: baseFindingsSummary.total,
+    by_severity: baseFindingsSummary.by_severity,
+    by_status: {
+      open: (apiByStatus as Record<string, number>).open || 0,
+      confirmed: (apiByStatus as Record<string, number>).confirmed || 0,
+      in_progress: (apiByStatus as Record<string, number>).in_progress || 0,
+      resolved: (apiByStatus as Record<string, number>).resolved || 0,
+      false_positive: (apiByStatus as Record<string, number>).false_positive || 0,
+      accepted_risk: (apiByStatus as Record<string, number>).accepted_risk || 0,
+    },
+    by_type: {
+      sast: 0,
+      sca: 0,
+      secret: 0,
+      iac: 0,
+      container: 0,
+      dast: 0,
+    },
+  }
+
+  // Build scan settings with typed enabled_scanners
+  const scanSettings = {
+    enabled_scanners: (repo?.scan_settings?.enabled_scanners || []) as ScannerType[],
+    auto_scan: repo?.scan_settings?.auto_scan ?? false,
+    scan_on_push: repo?.scan_settings?.scan_on_push ?? false,
+    scan_on_pr: repo?.scan_settings?.scan_on_pr,
+    branch_patterns: repo?.scan_settings?.branch_patterns,
+  }
+
+  return {
+    // Base Asset fields
+    id: asset.id,
+    type: 'repository',
+    name: asset.name,
+    description: asset.description || repo?.description || '',
+    criticality: asset.criticality as CriticalityLevel,
+    status: asset.status as 'active' | 'inactive' | 'archived' | 'pending',
+    scope: (scopeMap[asset.scope] || 'internal') as
+      'internal' | 'external' | 'cloud' | 'partner' | 'vendor' | 'shadow',
+    exposure: (exposureMap[asset.exposure] || 'unknown') as
+      'public' | 'restricted' | 'private' | 'isolated' | 'unknown',
+    riskScore: asset.risk_score,
+    findingCount: asset.finding_count,
+    tags: asset.tags || [],
+    firstSeen: asset.first_seen,
+    lastSeen: asset.last_seen,
+    createdAt: asset.created_at,
+    updatedAt: asset.updated_at,
+    metadata: asset.metadata || {},
+    // UI-friendly snake_case fields
+    scm_provider: (repo?.scm_provider || 'github') as SCMProvider,
+    scm_organization: repo?.scm_organization,
+    default_branch: repo?.default_branch || 'main',
+    visibility: (repo?.visibility || 'private') as 'public' | 'private' | 'internal',
+    primary_language: repo?.primary_language,
+    risk_score: asset.risk_score,
+    sync_status: (repo?.sync_status || 'synced') as 'synced' | 'syncing' | 'pending' | 'error',
+    compliance_status: (repo?.compliance_status || 'not_assessed') as
+      'compliant' | 'non_compliant' | 'partial' | 'not_assessed',
+    quality_gate_status: (repo?.quality_gate_status || 'not_computed') as
+      'passed' | 'failed' | 'warning' | 'not_computed',
+    findings_summary: findingsSummary,
+    components_summary: repo?.components_summary,
+    scan_settings: scanSettings,
+    security_features: repo?.security_features,
+    last_scanned_at: repo?.last_scanned_at,
+    // Repository extension for UI (all required fields with defaults)
+    repository: repo
+      ? {
+          assetId: asset.id,
+          repoId: repo.repo_id,
+          fullName: repo.full_name,
+          scmOrganization: repo.scm_organization,
+          cloneUrl: repo.clone_url,
+          webUrl: repo.web_url,
+          defaultBranch: repo.default_branch,
+          visibility: (repo.visibility || 'private') as 'public' | 'private' | 'internal',
+          language: repo.primary_language,
+          languages: repo.languages as Record<string, number> | undefined,
+          topics: repo.topics,
+          // Required stats with defaults
+          stars: 0,
+          forks: 0,
+          watchers: 0,
+          openIssues: 0,
+          contributorsCount: repo.contributor_count || 0,
+          sizeKb: repo.size_kb || 0,
+          branchCount: repo.branch_count || 0,
+          protectedBranchCount:
+            ((repo as Record<string, unknown>).protected_branch_count as number) || 0,
+          componentCount: ((repo as Record<string, unknown>).component_count as number) || 0,
+          vulnerableComponentCount:
+            ((repo as Record<string, unknown>).vulnerable_component_count as number) || 0,
+          findingCount: asset.finding_count,
+          scanEnabled: scanSettings.auto_scan,
+          lastScannedAt: repo.last_scanned_at,
+        }
+      : undefined,
+  }
+}
+
+import { cn, sanitizeExternalUrl } from '@/lib/utils'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
+import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
+import { copyToClipboard } from '@/lib/clipboard'
+import { Can, Permission } from '@/lib/permissions'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { safeImageSrc } from '@/lib/safe-href'
+import { SEVERITY_LEVELS, compareSeverity } from '@/lib/severity'
+import type { CriticalityLevel } from '@/lib/criticality'
+
+// ============================================
+// Helper Components
+// ============================================
+
+function ProviderIcon({ provider, className }: { provider: SCMProvider; className?: string }) {
+  switch (provider) {
+    case 'github':
+      return <Github className={cn('h-4 w-4', className)} />
+    case 'gitlab':
+      return <GitlabIcon className={cn('h-4 w-4', className)} />
+    case 'bitbucket':
+    case 'azure_devops':
+      return <Cloud className={cn('h-4 w-4', className)} />
+    default:
+      return <GitBranch className={cn('h-4 w-4', className)} />
+  }
+}
+
+function BranchStatusBadge({ status }: { status: BranchStatus }) {
+  const config: Record<BranchStatus, { icon: React.ReactNode }> = {
+    passed: { icon: <CheckCircle className="h-3 w-3" /> },
+    failed: { icon: <XCircle className="h-3 w-3" /> },
+    warning: { icon: <AlertTriangle className="h-3 w-3" /> },
+    scanning: { icon: <RefreshCw className="h-3 w-3 animate-spin" /> },
+    not_scanned: { icon: <Minus className="h-3 w-3" /> },
+  }
+  return (
+    <Badge variant="outline" className={cn('gap-1', BRANCH_STATUS_COLORS[status])}>
+      {config[status].icon}
+      {BRANCH_STATUS_LABELS[status]}
+    </Badge>
+  )
+}
+
+function SeverityBadge({ severity, count }: { severity: Severity; count?: number }) {
+  const colors = SEVERITY_COLORS[severity]
+  return (
+    <Badge className={cn('gap-1 border-0 font-medium', colors?.bg, colors?.text)}>
+      {count !== undefined ? `${count} ${SEVERITY_LABELS[severity]}` : SEVERITY_LABELS[severity]}
+    </Badge>
+  )
+}
+
+function FindingStatusBadge({ status }: { status: FindingStatus }) {
+  return (
+    <Badge variant="outline" className={cn('gap-1 text-xs', FINDING_STATUS_COLORS[status])}>
+      {FINDING_STATUS_LABELS[status]}
+    </Badge>
+  )
+}
+
+function TriageStatusBadge({ status }: { status: TriageStatus }) {
+  return (
+    <Badge variant="outline" className={cn('gap-1 text-xs', TRIAGE_STATUS_COLORS[status])}>
+      {TRIAGE_STATUS_LABELS[status]}
+    </Badge>
+  )
+}
+
+function SLAStatusBadge({ status, daysRemaining }: { status: SLAStatus; daysRemaining?: number }) {
+  if (status === 'not_applicable') return null
+  return (
+    <span className={cn('flex items-center gap-1 text-xs font-medium', SLA_STATUS_COLORS[status])}>
+      <Timer className="h-3 w-3" />
+      {daysRemaining !== undefined && daysRemaining >= 0
+        ? `${daysRemaining}d left`
+        : daysRemaining !== undefined
+          ? `${Math.abs(daysRemaining)}d overdue`
+          : SLA_STATUS_LABELS[status]}
+    </span>
+  )
+}
+
+function formatTimeAgo(dateString: string | undefined | null): string {
+  if (!dateString) return 'Never'
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return 'Never'
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMins / 60)
+  const diffDays = Math.floor(diffHours / 24)
+
+  if (diffMins < 1) return 'just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  if (diffHours < 24) return `${diffHours}h ago`
+  if (diffDays < 7) return `${diffDays}d ago`
+  return date.toLocaleDateString()
+}
+
+// ============================================
+// Tab Components
+// ============================================
+
+// Overview Tab
+function OverviewTab({
+  repository,
+  branches,
+  findings,
+  activities,
+  onScan,
+}: {
+  repository: Repository
+  branches: BranchDetail[]
+  findings: FindingDetail[]
+  activities: ActivityLog[]
+  onScan?: () => void
+}) {
+  const router = useRouter()
+  const overdueFindingsCount = getOverdueFindingsCount(findings)
+  const slaWarningsCount = getSLAWarningsCount(findings)
+  const defaultBranch = branches.find((b) => b.is_default)
+
+  // Compute severity from actual findings data (not from repo extension which may be stale)
+  const sevCounts: Record<Severity, number> = {
+    critical: findings.filter((f) => f.severity === 'critical').length,
+    high: findings.filter((f) => f.severity === 'high').length,
+    medium: findings.filter((f) => f.severity === 'medium').length,
+    low: findings.filter((f) => f.severity === 'low').length,
+    info: findings.filter((f) => f.severity === 'info').length,
+  }
+  const criticalCount = sevCounts.critical
+  const highCount = sevCounts.high
+  // The repo carries ingested findings but OpenCTEM hasn't mapped its branches yet.
+  const neverScanned = !repository.last_scanned_at && branches.length === 0
+  // Real security posture always available from findings — used to fill the
+  // left card even before any branch is scanned (no more empty dead-space).
+  const topFindings = [...findings]
+    .sort((a, b) => compareSeverity(a.severity, b.severity))
+    .slice(0, 5)
+
+  return (
+    <div className="space-y-6">
+      {neverScanned && (
+        <div className="flex items-center gap-3 rounded-xl border border-primary/30 border-l-4 border-l-primary bg-primary/[0.03] p-4">
+          <div className="bg-primary/10 text-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+            <Play className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">
+              This repo has findings from ingest, but OpenCTEM hasn’t scanned it yet.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Run a scan to map its branches, build the SBOM (components), and enable per-branch
+              drift &amp; SLA tracking.
+            </p>
+          </div>
+          {onScan && (
+            <Button size="sm" onClick={onScan} className="shrink-0">
+              <Play className="me-2 h-4 w-4" />
+              Run first scan
+            </Button>
+          )}
+        </div>
+      )}
+      {/* Key Metrics */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-500" />
+              Critical/High
+            </CardDescription>
+            <CardTitle className="text-3xl text-red-500">{criticalCount + highCount}</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted-foreground">{findings.length} total findings</p>
+          </CardContent>
+        </Card>
+
+        <Card className={overdueFindingsCount > 0 ? 'border-red-500/50' : ''}>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <Timer className="h-4 w-4 text-orange-500" />
+              SLA Overdue
+            </CardDescription>
+            <CardTitle
+              className={cn(
+                'text-3xl',
+                overdueFindingsCount > 0 ? 'text-red-500' : 'text-green-500'
+              )}
+            >
+              {overdueFindingsCount}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted-foreground">{slaWarningsCount} warnings</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <GitBranch className="h-4 w-4 text-blue-500" />
+              Branches
+            </CardDescription>
+            <CardTitle
+              className={cn(
+                'text-3xl',
+                neverScanned ? 'text-muted-foreground/50' : 'text-blue-500'
+              )}
+            >
+              {neverScanned ? '—' : branches.length}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted-foreground">
+              {neverScanned
+                ? 'scan to map branches'
+                : `${branches.filter((b) => b.scan_status === 'passed').length} passing`}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <Package className="h-4 w-4 text-purple-500" />
+              Components
+            </CardDescription>
+            <CardTitle
+              className={cn(
+                'text-3xl',
+                !repository.components_summary?.total
+                  ? 'text-muted-foreground/50'
+                  : 'text-purple-500'
+              )}
+            >
+              {repository.components_summary?.total ? repository.components_summary.total : '—'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted-foreground">
+              {repository.components_summary?.total
+                ? `${repository.components_summary?.vulnerable || 0} vulnerable`
+                : 'scan to build SBOM'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-indigo-500" />
+              Risk Score
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <RiskScoreBadge score={repository.risk_score} size="lg" />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Two column layout */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Default Branch Status — falls back to overall security posture when
+            no branch has been scanned yet, so the card is never empty. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <GitBranch className="h-4 w-4" />
+              {defaultBranch ? 'Default Branch' : 'Security posture'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {defaultBranch ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm bg-muted px-2 py-1 rounded">{defaultBranch.name}</code>
+                    <BranchStatusBadge status={defaultBranch.scan_status} />
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    Last scan: {formatTimeAgo(defaultBranch.last_scanned_at || '')}
+                  </span>
+                </div>
+
+                {/* Findings bar */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Findings by Severity</span>
+                    <span className="text-muted-foreground">
+                      {defaultBranch.findings_summary.total} total
+                    </span>
+                  </div>
+                  <div className="flex h-3 rounded-full overflow-hidden bg-muted">
+                    {SEVERITY_LEVELS.map((severity) => {
+                      const count = defaultBranch.findings_summary.by_severity[severity]
+                      const total = defaultBranch.findings_summary.total || 1
+                      const width = (count / total) * 100
+                      const colors: Record<Severity, string> = SEVERITY_DOT_COLORS
+                      if (count === 0) return null
+                      return (
+                        <TooltipProvider key={severity}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={cn(colors[severity])}
+                                style={{ width: `${width}%` }}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {SEVERITY_LABELS[severity]}: {count}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )
+                    })}
+                  </div>
+                  <div className="flex gap-4 text-xs">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-red-500" />
+                      Critical: {defaultBranch.findings_summary.by_severity.critical}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-orange-500" />
+                      High: {defaultBranch.findings_summary.by_severity.high}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                      Medium: {defaultBranch.findings_summary.by_severity.medium}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Last commit */}
+                {defaultBranch.last_commit_sha && (
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={safeImageSrc(defaultBranch.last_commit_author_avatar)} />
+                      <AvatarFallback>
+                        {defaultBranch.last_commit_author?.[0] || '?'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">{defaultBranch.last_commit_message}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {defaultBranch.last_commit_author} committed{' '}
+                        {formatTimeAgo(defaultBranch.last_commit_at || '')}
+                      </p>
+                    </div>
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                      {defaultBranch.last_commit_sha.slice(0, 7)}
+                    </code>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Severity breakdown from real findings — available even before a scan */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Findings by severity</span>
+                    <span className="text-muted-foreground">{findings.length} total</span>
+                  </div>
+                  <div className="flex h-3 overflow-hidden rounded-full bg-muted">
+                    {SEVERITY_LEVELS.map((severity) => {
+                      const count = sevCounts[severity]
+                      if (count === 0) return null
+                      const colors: Record<Severity, string> = SEVERITY_DOT_COLORS
+                      return (
+                        <div
+                          key={severity}
+                          className={cn(colors[severity])}
+                          style={{ width: `${(count / (findings.length || 1)) * 100}%` }}
+                        />
+                      )
+                    })}
+                  </div>
+                  <div className="flex flex-wrap gap-4 text-xs">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-red-500" />
+                      Critical: {sevCounts.critical}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-orange-500" />
+                      High: {sevCounts.high}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                      Medium: {sevCounts.medium}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Top findings — replaces the previously-empty branch panel */}
+                {topFindings.length > 0 && (
+                  <div className="divide-y rounded-lg border">
+                    {topFindings.map((f) => {
+                      const dot: Record<Severity, string> = SEVERITY_DOT_COLORS
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => router.push(`/findings/${f.id}`)}
+                          className="hover:bg-muted/50 flex w-full items-center gap-2.5 px-3 py-2 text-start"
+                        >
+                          <span className={cn('h-2 w-2 shrink-0 rounded-full', dot[f.severity])} />
+                          <span className="flex-1 truncate text-sm">{f.title}</span>
+                          <span className="text-muted-foreground shrink-0 text-xs capitalize">
+                            {f.severity}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
+                <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <GitBranch className="h-3.5 w-3.5" />
+                  No branches scanned yet — run a scan to see per-branch drift &amp; SLA.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Activity: the shared trigger + panel (?activity=open; old ?tab=activity links open it). */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <History className="h-4 w-4" />
+              Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EntityActivity
+              entityKey={`repository:${repository.id}`}
+              subject={repository.name}
+              items={repositoryActivityItems(activities)}
+              triggerVariant="plain"
+              emptyTitle="No activity yet"
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Critical Findings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <AlertTriangle className="h-4 w-4 text-red-500" />
+            Critical & High Severity Findings
+          </CardTitle>
+          <CardDescription>Findings requiring immediate attention</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {findings
+              .filter(
+                (f) =>
+                  (f.severity === 'critical' || f.severity === 'high') && f.status !== 'resolved'
+              )
+              .slice(0, 5)
+              .map((finding) => (
+                <div
+                  key={finding.id}
+                  className="flex items-center gap-4 p-3 rounded-lg border hover:bg-muted/50 cursor-pointer"
+                  onClick={() => router.push(`/findings/${finding.id}`)}
+                >
+                  <SeverityBadge severity={finding.severity} />
+                  <div className="flex-1 min-w-0">
+                    <span className="block truncate text-sm font-medium">{finding.title}</span>
+                    {finding.file_path && (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {finding.file_path}
+                        {finding.line_start ? `:${finding.line_start}` : ''}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <FindingStatusBadge status={finding.status} />
+                    <SLAStatusBadge
+                      status={finding.sla_status}
+                      daysRemaining={finding.sla_days_remaining}
+                    />
+                  </div>
+                  {finding.assigned_to_name && (
+                    <Avatar className="h-6 w-6">
+                      <AvatarImage src={safeImageSrc(finding.assigned_to_avatar)} />
+                      <AvatarFallback>{finding.assigned_to_name[0]}</AvatarFallback>
+                    </Avatar>
+                  )}
+                </div>
+              ))}
+            {findings.filter(
+              (f) => (f.severity === 'critical' || f.severity === 'high') && f.status !== 'resolved'
+            ).length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                <p>No critical or high severity findings!</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// Branches Tab
+interface ComparisonResult {
+  base_branch: string
+  compare_branch: string
+  new_findings: number
+  resolved_findings: number
+  common_findings: number
+  new_by_severity: Record<string, number>
+  new_items?: Array<{
+    id: string
+    title: string
+    severity: string
+    file_path?: string
+    source: string
+  }>
+}
+
+function BranchesTab({
+  branches,
+  repositoryName,
+  repositoryId,
+  onViewBranchFindings,
+}: {
+  branches: BranchDetail[]
+  repositoryName: string
+  repositoryId: string
+  onViewBranchFindings?: (branchName: string) => void
+}) {
+  const [_selectedBranch, setSelectedBranch] = useState<string | null>(null)
+  const defaultBranch = branches.find((b) => b.is_default)
+  const defaultBranchName = defaultBranch?.name || 'main'
+  const defaultTotal = defaultBranch?.findings_summary?.total ?? 0
+  const [baseBranch, setBaseBranch] = useState<string>(defaultBranchName)
+  const [compareBranch, setCompareBranch] = useState<string>('')
+  const [comparison, setComparison] = useState<ComparisonResult | null>(null)
+  const [isComparing, setIsComparing] = useState(false)
+
+  const handleCompare = async () => {
+    if (!baseBranch || !compareBranch) {
+      toast.error('Select both branches to compare')
+      return
+    }
+    setIsComparing(true)
+    try {
+      const params = new URLSearchParams({ base: baseBranch, compare: compareBranch })
+      const response = await fetch(
+        `/api/v1/repositories/${repositoryId}/branches/compare?${params}`,
+        {
+          credentials: 'include',
+        }
+      )
+      if (!response.ok) throw new Error('Comparison failed')
+      const data = await response.json()
+      setComparison(data)
+    } catch {
+      toast.error('Failed to compare branches')
+    } finally {
+      setIsComparing(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Branch comparison */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <GitMerge className="h-4 w-4" />
+            Compare Branches
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <Select value={baseBranch} onValueChange={setBaseBranch}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Base branch" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((branch) => (
+                  <SelectItem key={branch.id} value={branch.name}>
+                    {branch.name} {branch.is_default && '(default)'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <Select value={compareBranch} onValueChange={setCompareBranch}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Compare branch" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches
+                  .filter((b) => b.name !== baseBranch)
+                  .map((branch) => (
+                    <SelectItem key={branch.id} value={branch.name}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={handleCompare}
+              disabled={isComparing || !compareBranch}
+            >
+              {isComparing ? <Loader2 className="h-4 w-4 animate-spin me-1" /> : null}
+              Compare
+            </Button>
+          </div>
+
+          {comparison && (
+            <div className="border rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-6 text-sm">
+                <div className="flex items-center gap-2">
+                  <Badge variant="destructive">{comparison.new_findings}</Badge>
+                  <span>
+                    New findings in{' '}
+                    <code className="text-xs bg-muted px-1 rounded">
+                      {comparison.compare_branch}
+                    </code>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-green-500">{comparison.resolved_findings}</Badge>
+                  <span>
+                    Resolved (not in{' '}
+                    <code className="text-xs bg-muted px-1 rounded">
+                      {comparison.compare_branch}
+                    </code>
+                    )
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">{comparison.common_findings}</Badge>
+                  <span>Common</span>
+                </div>
+              </div>
+
+              {comparison.new_items && comparison.new_items.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">
+                    New findings introduced:
+                  </p>
+                  <div className="space-y-1">
+                    {comparison.new_items.slice(0, 10).map((item) => (
+                      <div key={item.id} className="flex items-center gap-2 text-xs">
+                        <Badge
+                          variant={item.severity === 'critical' ? 'destructive' : 'outline'}
+                          className="text-[10px] px-1.5"
+                        >
+                          {item.severity}
+                        </Badge>
+                        <span className="truncate">{item.title}</span>
+                        {item.file_path && (
+                          <span className="text-muted-foreground truncate max-w-[200px]">
+                            {item.file_path}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Branches list */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <GitBranch className="h-4 w-4" />
+            All Branches
+          </CardTitle>
+          <CardDescription>
+            {branches.length} branches in {repositoryName}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Branch</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Findings</TableHead>
+                <TableHead>vs Default</TableHead>
+                <TableHead>Last Scan</TableHead>
+                <TableHead>Last Commit</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {branches.map((branch) => (
+                <TableRow
+                  key={branch.id}
+                  className="cursor-pointer"
+                  onClick={() => {
+                    setSelectedBranch(branch.id)
+                    onViewBranchFindings?.(branch.name)
+                  }}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <code className="text-sm bg-muted px-2 py-1 rounded">{branch.name}</code>
+                      {branch.is_default && (
+                        <Badge variant="secondary" className="text-xs">
+                          default
+                        </Badge>
+                      )}
+                      {branch.is_protected && <Lock className="h-3 w-3 text-muted-foreground" />}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <BranchStatusBadge status={branch.scan_status} />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      {branch.findings_summary.by_severity.critical > 0 && (
+                        <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+                          {branch.findings_summary.by_severity.critical}C
+                        </Badge>
+                      )}
+                      {branch.findings_summary.by_severity.high > 0 && (
+                        <Badge className="h-5 px-1.5 text-xs bg-orange-500">
+                          {branch.findings_summary.by_severity.high}H
+                        </Badge>
+                      )}
+                      <span className="text-sm text-muted-foreground ms-1">
+                        ({branch.findings_summary.total} total)
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {branch.is_default ? (
+                      <span className="text-muted-foreground text-xs">base</span>
+                    ) : (
+                      (() => {
+                        const diff = branch.findings_summary.total - defaultTotal
+                        if (diff > 0)
+                          return (
+                            <span className="flex items-center gap-1 text-sm text-red-500">
+                              <TrendingUp className="h-3 w-3" />+{diff}
+                            </span>
+                          )
+                        if (diff < 0)
+                          return (
+                            <span className="flex items-center gap-1 text-sm text-green-500">
+                              <TrendingDown className="h-3 w-3" />
+                              {diff}
+                            </span>
+                          )
+                        return (
+                          <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Minus className="h-3 w-3" />
+                            same
+                          </span>
+                        )
+                      })()
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm text-muted-foreground">
+                      {formatTimeAgo(branch.last_scanned_at || '')}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <code className="text-xs bg-muted px-1 rounded font-mono">
+                          {branch.last_commit_sha?.slice(0, 7) || '-'}
+                        </code>
+                        <span
+                          className="text-xs text-muted-foreground truncate max-w-[150px]"
+                          title={branch.last_commit_message}
+                        >
+                          {branch.last_commit_message || ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <span>{branch.last_commit_author || 'unknown'}</span>
+                        {branch.last_commit_at && (
+                          <>
+                            <span>·</span>
+                            <span>{formatTimeAgo(branch.last_commit_at)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <DataTableRowActions
+                      actions={[
+                        {
+                          label: 'View Findings',
+                          icon: Eye,
+                          onClick: () => onViewBranchFindings?.(branch.name),
+                        },
+                      ]}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// Findings Tab
+function FindingsTab({
+  repositoryId,
+  branches,
+  branchFromUrl,
+}: {
+  repositoryId: string
+  branches: BranchDetail[]
+  branchFromUrl?: string
+}) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Read filters from URL (shareable)
+  const [searchInput, setSearchInput] = useState(searchParams.get('q') || '')
+  const debouncedSearch = useDebounce(searchInput, 300)
+  const [severityFilter, setSeverityFilter] = useState<string>(
+    searchParams.get('severity') || 'all'
+  )
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'all')
+  const [scannerFilter, setScannerFilter] = useState<string>(searchParams.get('scanner') || 'all')
+  const [branchFilter, setBranchFilter] = useState<string>(
+    branchFromUrl || searchParams.get('branch') || 'all'
+  )
+  // Per-branch occurrence state: all | open | fixed (only applies when a specific
+  // branch is selected). 'open' = present on the branch, 'fixed' = resolved there.
+  const [branchStatusFilter, setBranchStatusFilter] = useState<string>(
+    searchParams.get('branch_status') || 'all'
+  )
+  const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
+  const pageSize = 20
+
+  // Sync branch from URL when it changes externally (e.g. click branch in Branches tab)
+  if (branchFromUrl && branchFromUrl !== branchFilter && branchFromUrl !== 'all') {
+    setBranchFilter(branchFromUrl)
+  }
+
+  // Update URL when filters change
+  const handleFilterChange = useCallback(
+    (setter: (v: string) => void, key: string, value: string) => {
+      setter(value)
+      setPage(1)
+      // Sync immediately
+      const p = new URLSearchParams(window.location.search)
+      p.set('tab', 'findings')
+      if (value && value !== 'all') p.set(key, value)
+      else p.delete(key)
+      p.delete('page')
+      router.replace(`?${p.toString()}`, { scroll: false })
+    },
+    [router]
+  )
+
+  // Fetch findings from API with server-side filters
+  const apiFilters = useMemo(() => {
+    const f: Parameters<typeof useFindingsApi>[0] = {
+      asset_id: repositoryId,
+      page,
+      per_page: pageSize,
+    }
+    // Branch filter is applied server-side by branch_id. The selector value is a
+    // branch name (shareable URL); map it to the branch's id for the API so the
+    // results AND the total/pagination reflect the selected branch.
+    if (branchFilter !== 'all') {
+      const selected = branches.find((b) => b.name === branchFilter)
+      if (selected) {
+        f.branch_id = selected.id
+        if (branchStatusFilter === 'open' || branchStatusFilter === 'fixed') {
+          f.branch_status = branchStatusFilter
+        }
+      }
+    }
+    if (severityFilter !== 'all')
+      f.severities = [severityFilter as 'critical' | 'high' | 'medium' | 'low' | 'info']
+    if (statusFilter !== 'all')
+      f.statuses = [
+        statusFilter as
+          | 'confirmed'
+          | 'in_progress'
+          | 'fix_applied'
+          | 'not_observed'
+          | 'resolved'
+          | 'false_positive'
+          | 'accepted_risk',
+      ]
+    if (scannerFilter !== 'all')
+      f.sources = [scannerFilter as 'sast' | 'sca' | 'secret' | 'dast' | 'iac' | 'container']
+    if (debouncedSearch) f.search = debouncedSearch
+    return f
+  }, [
+    repositoryId,
+    page,
+    pageSize,
+    branchFilter,
+    branchStatusFilter,
+    branches,
+    severityFilter,
+    statusFilter,
+    scannerFilter,
+    debouncedSearch,
+  ])
+
+  const { data: findingsData, isLoading: findingsLoading } = useFindingsApi(apiFilters)
+
+  const findings: FindingDetail[] = useMemo(() => {
+    if (!findingsData?.data) return []
+    return findingsData.data.map(mapApiFindingToDetail)
+  }, [findingsData])
+
+  const total = findingsData?.total ?? 0
+  const totalPages = findingsData?.total_pages ?? 0
+
+  // Findings are already filtered server-side (including by branch_id), so the
+  // table renders them directly — no client-side branch filter that would only
+  // see the current page and desync from `total`.
+  const filteredFindings = findings
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-base shrink-0">
+              <Shield className="h-4 w-4" />
+              Findings
+              <Badge variant="secondary" className="ms-1">
+                {total}
+              </Badge>
+            </CardTitle>
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              <div className="relative min-w-[140px]">
+                <SearchIcon className="absolute left-2 top-[7px] h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="ps-7 h-7 text-xs w-[140px]"
+                />
+              </div>
+              <Select
+                value={severityFilter}
+                onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
+              >
+                <SelectTrigger className="w-[110px] h-7 text-xs">
+                  <SelectValue placeholder="Severity" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Severities</SelectItem>
+                  {SEVERITY_LEVELS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {SEVERITY_LABELS[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={statusFilter}
+                onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
+              >
+                <SelectTrigger className="w-[110px] h-7 text-xs">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="new">New</SelectItem>
+                  <SelectItem value="confirmed">Confirmed</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="fix_applied">Fix Applied</SelectItem>
+                  <SelectItem value="not_observed">Not Observed</SelectItem>
+                  <SelectItem value="resolved">Resolved</SelectItem>
+                  <SelectItem value="false_positive">False Positive</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={scannerFilter}
+                onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
+              >
+                <SelectTrigger className="w-[120px] h-8 text-xs">
+                  <SelectValue placeholder="Scanner" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Scanners</SelectItem>
+                  <SelectItem value="sast">SAST</SelectItem>
+                  <SelectItem value="sca">SCA</SelectItem>
+                  <SelectItem value="secret">Secret</SelectItem>
+                  <SelectItem value="iac">IaC</SelectItem>
+                  <SelectItem value="container">Container</SelectItem>
+                </SelectContent>
+              </Select>
+              {branches.length > 0 && (
+                <Select
+                  value={branchFilter}
+                  onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
+                >
+                  <SelectTrigger className="w-[160px] h-8 text-xs">
+                    <SelectValue placeholder="Branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Branches</SelectItem>
+                    {branches.map((b) => (
+                      <SelectItem key={b.id} value={b.name}>
+                        <span className="flex items-center gap-1">
+                          <GitBranch className="h-3 w-3" />
+                          {b.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {branchFilter !== 'all' && (
+                <Select
+                  value={branchStatusFilter}
+                  onValueChange={(v) =>
+                    handleFilterChange(setBranchStatusFilter, 'branch_status', v)
+                  }
+                >
+                  <SelectTrigger className="w-[130px] h-8 text-xs">
+                    <SelectValue placeholder="On branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All on branch</SelectItem>
+                    <SelectItem value="open">Open on branch</SelectItem>
+                    <SelectItem value="fixed">Fixed on branch</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {filteredFindings.map((finding) => (
+              <div
+                key={finding.id}
+                className="p-4 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"
+                onClick={() => router.push(`/findings/${finding.id}`)}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 mt-1">
+                    <SeverityBadge severity={finding.severity} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {/* Title leads; the raw UUID is dropped from the row (it's
+                        machine noise — the row is clickable to the detail page). */}
+                    <h4 className="font-medium leading-snug">{finding.title}</h4>
+                    {finding.description && finding.description !== finding.title && (
+                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                        {finding.description}
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <Badge variant="outline" className="text-xs">
+                        {SCANNER_TYPE_LABELS[finding.scanner_type]}
+                      </Badge>
+                      {/* Only surface triage when it needs action; "Triaged" is
+                          the normal state and just adds noise on every row. */}
+                      {finding.triage_status !== 'triaged' && (
+                        <TriageStatusBadge status={finding.triage_status} />
+                      )}
+                      {finding.file_path && (
+                        <span className="flex items-center gap-1">
+                          <FileCode className="h-3 w-3" />
+                          {finding.file_path}
+                          {finding.line_start ? `:${finding.line_start}` : ''}
+                        </span>
+                      )}
+                      {finding.branches.length > 0 && (
+                        <span
+                          className="flex items-center gap-1"
+                          title={finding.branches.join(', ')}
+                        >
+                          <GitBranch className="h-3 w-3" />
+                          {finding.branches.map((b) => (
+                            <code key={b} className="bg-muted px-1 rounded text-[10px]">
+                              {b}
+                            </code>
+                          ))}
+                        </span>
+                      )}
+                      {finding.cwe_ids && finding.cwe_ids.length > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Shield className="h-3 w-3" />
+                          {finding.cwe_ids[0]}
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        First seen: {formatTimeAgo(finding.first_detected_at)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <FindingStatusBadge status={finding.status} />
+                    <SLAStatusBadge
+                      status={finding.sla_status}
+                      daysRemaining={finding.sla_days_remaining}
+                    />
+                    {finding.assigned_to_name && (
+                      <div className="flex items-center gap-1.5">
+                        <Avatar className="h-5 w-5">
+                          <AvatarImage src={safeImageSrc(finding.assigned_to_avatar)} />
+                          <AvatarFallback className="text-xs">
+                            {finding.assigned_to_name[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-xs text-muted-foreground">
+                          {finding.assigned_to_name}
+                        </span>
+                      </div>
+                    )}
+                    {finding.comments_count > 0 && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <MessageSquare className="h-3 w-3" />
+                        {finding.comments_count}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {filteredFindings.length === 0 && !findingsLoading && (
+              <EmptyState card={false} icon={Shield} title="No findings match your filters" />
+            )}
+            {findingsLoading && (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-24 w-full rounded-lg" />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t pt-4 mt-4">
+              <span className="text-xs text-muted-foreground">
+                Page {page} of {totalPages} ({total} total)
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// Settings Tab
+function SettingsTab({ repository, onDelete }: { repository: Repository; onDelete?: () => void }) {
+  const [autoScan, setAutoScan] = useState(repository.scan_settings?.auto_scan ?? false)
+  const [scanOnPush, setScanOnPush] = useState(repository.scan_settings?.scan_on_push ?? false)
+  const [scanOnPR, setScanOnPR] = useState(repository.scan_settings?.scan_on_pr ?? false)
+  const [branchPatternInput, setBranchPatternInput] = useState('')
+  const [branchPatterns, setBranchPatterns] = useState<string[]>(
+    repository.scan_settings?.branch_patterns ?? ['main', 'develop', 'release/*']
+  )
+
+  const handleAddPattern = () => {
+    const pattern = branchPatternInput.trim()
+    if (pattern && !branchPatterns.includes(pattern)) {
+      setBranchPatterns([...branchPatterns, pattern])
+      setBranchPatternInput('')
+    }
+  }
+
+  const handleRemovePattern = (pattern: string) => {
+    setBranchPatterns(branchPatterns.filter((p) => p !== pattern))
+  }
+
+  // NOTE: scan-automation settings are not yet persisted to the backend, so we
+  // only update local state here. We deliberately do NOT toast "enabled/saved"
+  // — that would falsely imply the setting took effect. A persistence endpoint
+  // is tracked as a follow-up; until then the section is preview-only.
+  const handleToggle = (_name: string, value: boolean, setter: (v: boolean) => void) => {
+    setter(value)
+  }
+
+  // Security features from repo data or defaults
+  const securityFeatures = [
+    {
+      key: 'branch_protection',
+      label: 'Branch Protection',
+      enabled: (repository.repository?.protectedBranchCount ?? 0) > 0,
+    },
+    {
+      key: 'secret_scanning',
+      label: 'Secret Scanning',
+      enabled: repository.security_features?.secret_scanning ?? false,
+    },
+    {
+      key: 'dependabot',
+      label: 'Dependency Scanning',
+      enabled: repository.security_features?.dependabot ?? false,
+    },
+    {
+      key: 'code_scanning',
+      label: 'Code Scanning (SAST)',
+      enabled:
+        repository.security_features?.code_scanning ?? repository.scan_settings?.auto_scan ?? false,
+    },
+    {
+      key: 'security_policy',
+      label: 'Security Policy',
+      enabled: repository.security_features?.security_policy ?? false,
+    },
+    {
+      key: 'signed_commits',
+      label: 'Signed Commits',
+      enabled: repository.security_features?.signed_commits ?? false,
+    },
+  ]
+
+  const enabledScanners = repository.scan_settings?.enabled_scanners ?? ['sast', 'sca', 'secret']
+
+  return (
+    <div className="space-y-6">
+      {/* Scan Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Play className="h-4 w-4" />
+            Scan Configuration
+          </CardTitle>
+          <CardDescription>Configure automated scanning for this repository</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div>
+            <h4 className="text-sm font-medium mb-3">Enabled Scanners</h4>
+            <div className="flex flex-wrap gap-2">
+              {enabledScanners.length > 0 ? (
+                enabledScanners.map((scanner) => (
+                  <Badge key={scanner} variant="outline" className="uppercase text-xs">
+                    {SCANNER_TYPE_LABELS[scanner as ScannerType] || scanner}
+                  </Badge>
+                ))
+              ) : (
+                <span className="text-sm text-muted-foreground">No scanners configured</span>
+              )}
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground rounded-md border border-dashed px-3 py-2">
+              Preview only — scan automation settings below are not yet persisted to the backend.
+            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">Auto Scan</p>
+                <p className="text-xs text-muted-foreground">Automatically scan on schedule</p>
+              </div>
+              <Switch
+                aria-label="Auto Scan"
+                checked={autoScan}
+                onCheckedChange={(v) => handleToggle('Auto Scan', v, setAutoScan)}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">Scan on Push</p>
+                <p className="text-xs text-muted-foreground">Trigger scan when code is pushed</p>
+              </div>
+              <Switch
+                aria-label="Scan on Push"
+                checked={scanOnPush}
+                onCheckedChange={(v) => handleToggle('Scan on Push', v, setScanOnPush)}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">Scan on Pull Request</p>
+                <p className="text-xs text-muted-foreground">
+                  Trigger scan when PR is opened/updated
+                </p>
+              </div>
+              <Switch
+                aria-label="Scan on Pull Request"
+                checked={scanOnPR}
+                onCheckedChange={(v) => handleToggle('Scan on PR', v, setScanOnPR)}
+              />
+            </div>
+          </div>
+
+          <Separator />
+
+          <div>
+            <h4 className="text-sm font-medium mb-3">Branch Patterns</h4>
+            <p className="text-xs text-muted-foreground mb-3">
+              Only branches matching these patterns will be scanned. Use * for wildcards.
+            </p>
+            <div className="flex gap-2 mb-3">
+              <Input
+                placeholder="e.g. main, develop, release/*"
+                value={branchPatternInput}
+                onChange={(e) => setBranchPatternInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddPattern()}
+                className="h-8 text-sm"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAddPattern}
+                className="h-8 shrink-0"
+              >
+                Add
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {branchPatterns.map((pattern) => (
+                <Badge key={pattern} variant="secondary" className="gap-1 text-xs">
+                  <GitBranch className="h-3 w-3" />
+                  {pattern}
+                  <button
+                    className="ms-1 hover:text-destructive"
+                    onClick={() => handleRemovePattern(pattern)}
+                  >
+                    <XCircle className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+              {branchPatterns.length === 0 && (
+                <span className="text-xs text-muted-foreground">All branches will be scanned</span>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* SLA policy in force for this repository (read from the API, not a mock) */}
+      <AssetSlaPolicyCard assetId={repository.id} />
+
+      {/* Security Features */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Shield className="h-4 w-4" />
+            Security Features
+          </CardTitle>
+          <CardDescription>Repository security configuration from SCM provider</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {securityFeatures.map(({ key, label, enabled }) => (
+              <div
+                key={key}
+                className={cn(
+                  'flex items-center gap-3 p-3 rounded-lg border',
+                  enabled ? 'bg-green-500/5 border-green-500/20' : 'bg-muted/30'
+                )}
+              >
+                {enabled ? (
+                  <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-muted-foreground shrink-0" />
+                )}
+                <span className={cn('text-sm', !enabled && 'text-muted-foreground')}>{label}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Can permission={[Permission.AssetsWrite, Permission.AssetsDelete]}>
+        <DangerZone>
+          <Can permission={Permission.AssetsWrite}>
+            <DangerZoneItem
+              title="Archive repository"
+              description="Archive this repository. It can be restored later."
+              action={
+                <Button variant="outline" size="sm" disabled title="Archiving is not yet available">
+                  Archive
+                </Button>
+              }
+            />
+          </Can>
+          <Can permission={Permission.AssetsDelete}>
+            <DangerZoneItem
+              title="Delete repository"
+              description="Permanently delete this repository and all associated data."
+              action={
+                <Button variant="destructive" size="sm" onClick={onDelete} disabled={!onDelete}>
+                  Delete
+                </Button>
+              }
+            />
+          </Can>
+        </DangerZone>
+      </Can>
+    </div>
+  )
+}
+
+// ============================================
+// Loading Skeleton Component
+// ============================================
+
+function DetailPageSkeleton() {
+  return (
+    <>
+      <Main>
+        <div className="mb-6">
+          <Skeleton className="h-9 w-40 mb-4" />
+          <div className="flex items-start gap-4">
+            <Skeleton className="h-14 w-14 rounded-xl" />
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <Skeleton className="h-8 w-64" />
+                <Skeleton className="h-5 w-16" />
+                <Skeleton className="h-5 w-16" />
+              </div>
+              <Skeleton className="h-4 w-96 mb-2" />
+              <div className="flex gap-4">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Skeleton className="h-9 w-24" />
+              <Skeleton className="h-9 w-20" />
+              <Skeleton className="h-9 w-24" />
+            </div>
+          </div>
+        </div>
+
+        <Skeleton className="h-10 w-[500px] mb-6" />
+
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5 mb-6">
+          {[...Array(5)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-9 w-16 mt-2" />
+              </CardHeader>
+              <CardContent className="pt-0">
+                <Skeleton className="h-3 w-20" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-32" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-32 w-full" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-32" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-32 w-full" />
+            </CardContent>
+          </Card>
+        </div>
+      </Main>
+    </>
+  )
+}
+
+// ============================================
+// Main Page Component
+// ============================================
+
+/**
+ * The repository workspace, shown at /assets/{id} for a repository asset:
+ * overview, branches (compare), findings by branch and scanner, and scan
+ * settings.
+ */
+export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) {
+  const router = useRouter()
+
+  // Reactive URL params for shareable links
+  const searchParams = useSearchParams()
+  const urlTab = searchParams.get('tab') as DetailTab | null
+  const urlBranch = searchParams.get('branch')
+
+  // The Branches tab belongs to the `branches` module (Phase-3 gated). When the
+  // tenant has it disabled its endpoint 403s, so we must not show the tab nor
+  // fetch it. Fail-open when the platform reports no modules (OSS edition).
+  const branchesEnabled = useModuleEnabled('branches')
+  const isTabEnabled = useCallback(
+    // Activity is not a tab any more: `?tab=activity` lands on Overview and
+    // opens the activity panel there.
+    (tab: DetailTab) => tab !== 'activity' && (tab !== 'branches' || branchesEnabled),
+    [branchesEnabled]
+  )
+
+  const [activeTab, setActiveTabState] = useState<DetailTab>(
+    urlTab && urlTab !== 'activity' ? urlTab : 'overview'
+  )
+  // Sync tab state when URL changes (e.g. from branch click), ignoring tabs
+  // whose module is disabled.
+  if (urlTab && urlTab !== activeTab && isTabEnabled(urlTab)) {
+    setActiveTabState(urlTab)
+  }
+  // If the active tab's module got disabled, fall back to a safe default tab.
+  if (!isTabEnabled(activeTab)) {
+    setActiveTabState('overview')
+  }
+  const setActiveTab = useCallback(
+    (tab: DetailTab) => {
+      setActiveTabState(tab)
+      const p = new URLSearchParams(searchParams.toString())
+      p.set('tab', tab)
+      router.replace(`?${p.toString()}`, { scroll: false })
+    },
+    [searchParams, router]
+  )
+
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [isScanning, setIsScanning] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+
+  // Fetch repository data from API
+  const {
+    data: repositoryData,
+    error: repoError,
+    isLoading: repoLoading,
+    mutate: mutateRepo,
+  } = useRepository(repositoryId)
+
+  // Fetch branches from API — skipped entirely when the `branches` module is
+  // disabled (endpoint would 403 MODULE_NOT_ENABLED).
+  const { data: branchesData, isLoading: _branchesLoading } = useRepositoryBranches(
+    repositoryData && branchesEnabled ? repositoryId : null
+  )
+
+  // Transform API response to RepositoryView
+  const repository = useMemo(() => {
+    if (!repositoryData) return null
+    return transformToRepositoryView(repositoryData as unknown as ApiAssetResponse)
+  }, [repositoryData])
+
+  // This repository's findings, once the repository has loaded. (Passing no
+  // filters instead would fetch the tenant's unfiltered first page.)
+  const { data: findingsData } = useFindingsApi(
+    { asset_id: repositoryId, per_page: 20 },
+    { enabled: !!repositoryData }
+  )
+
+  const findings: FindingDetail[] = useMemo(() => {
+    if (!findingsData?.data) return []
+    return findingsData.data.map(mapApiFindingToDetail)
+  }, [findingsData])
+
+  // Map API branches to local BranchDetail shape
+  const branches: BranchDetail[] = useMemo(() => {
+    if (!branchesData || !Array.isArray(branchesData)) return []
+    return branchesData.map(mapBranchToDetail)
+  }, [branchesData])
+
+  // Derive activity from findings (real data)
+  const activities: ActivityLog[] = useMemo(() => {
+    return deriveActivitiesFromFindings(findings)
+  }, [findings])
+
+  // Action handlers
+  const handleSync = useCallback(async () => {
+    if (!repository) return
+    setIsSyncing(true)
+    try {
+      const response = await csrfFetch(`/api/v1/assets/${repository.id}/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!response.ok) {
+        throw new Error('Failed to sync repository')
+      }
+      toast.success('Repository sync initiated')
+      mutateRepo()
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to sync repository'))
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [repository, mutateRepo])
+
+  const handleScan = useCallback(async () => {
+    if (!repository) return
+    setIsScanning(true)
+    try {
+      const response = await csrfFetch(`/api/v1/assets/${repository.id}/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scanMode: 'full' }),
+      })
+      if (!response.ok) {
+        throw new Error('Failed to trigger scan')
+      }
+      toast.success('Scan initiated successfully')
+      mutateRepo()
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to trigger scan'))
+    } finally {
+      setIsScanning(false)
+    }
+  }, [repository, mutateRepo])
+
+  const handleDelete = useCallback(async () => {
+    if (!repository) return
+    setShowDeleteDialog(false)
+    setIsDeleting(true)
+    // Refused when the repository has findings: the toast offers Archive.
+    const result = await deleteAssetSafely(repository.id, repository.name, () => mutateRepo())
+    if (result === 'deleted') {
+      router.push('/assets?types=repository')
+      return
+    }
+    setIsDeleting(false)
+  }, [repository, router, mutateRepo])
+
+  // Loading state
+  if (repoLoading) {
+    return <DetailPageSkeleton />
+  }
+
+  // Error state
+  if (repoError) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-center">
+          <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+          <h2 className="text-xl font-semibold mb-2">Error Loading Repository</h2>
+          <p className="text-muted-foreground mb-4">
+            {repoError.message || 'Failed to load repository data. Please try again.'}
+          </p>
+          <div className="flex gap-2 justify-center">
+            <Button variant="outline" onClick={() => mutateRepo()}>
+              <RefreshCw className="me-2 h-4 w-4" />
+              Retry
+            </Button>
+            <Button onClick={() => router.push('/assets?types=repository')}>
+              <ArrowLeft className="me-2 h-4 w-4" />
+              Back to Repositories
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Not found state
+  if (!repository) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">Repository Not Found</h2>
+          <p className="text-muted-foreground mb-4">
+            The repository you&apos;re looking for doesn&apos;t exist.
+          </p>
+          <Button onClick={() => router.push('/assets?types=repository')}>
+            <ArrowLeft className="me-2 h-4 w-4" />
+            Back to Repositories
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <Main>
+        {/* Repository Header */}
+        <div className="mb-6">
+          {/* Repository Header: wraps like PageHeader, so the actions move to
+              their own row on narrow screens instead of running off it. */}
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+            <div className="flex min-w-0 flex-1 basis-72 items-start gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent border">
+                <ProviderIcon provider={repository.scm_provider} className="h-7 w-7" />
+              </div>
+              <div className="min-w-0">
+                <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <h1 className="min-w-0 text-2xl font-bold break-words">{repository.name}</h1>
+                  <Badge
+                    variant="outline"
+                    className={cn(SCM_PROVIDER_COLORS[repository.scm_provider])}
+                  >
+                    {SCM_PROVIDER_LABELS[repository.scm_provider]}
+                  </Badge>
+                  <Badge variant={repository.status === 'active' ? 'default' : 'secondary'}>
+                    {STATUS_LABELS[repository.status]}
+                  </Badge>
+                </div>
+                <p className="text-muted-foreground mb-2">
+                  {repository.description || 'No description'}
+                </p>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    {repository.visibility === 'private' ? (
+                      <Lock className="h-3.5 w-3.5" />
+                    ) : (
+                      <Globe className="h-3.5 w-3.5" />
+                    )}
+                    {repository.visibility}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <GitBranch className="h-3.5 w-3.5" />
+                    {repository.default_branch}
+                  </span>
+                  {repository.primary_language && (
+                    <Badge variant="secondary" className="text-xs">
+                      {repository.primary_language}
+                    </Badge>
+                  )}
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3.5 w-3.5" />
+                    Last scan:{' '}
+                    {repository.last_scanned_at
+                      ? formatTimeAgo(repository.last_scanned_at)
+                      : 'Never'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex max-w-full flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  window.open(
+                    sanitizeExternalUrl(repository.repository?.webUrl ?? ''),
+                    '_blank',
+                    'noopener,noreferrer'
+                  )
+                }
+              >
+                <ExternalLink className="me-2 h-4 w-4" />
+                Open in {SCM_PROVIDER_LABELS[repository.scm_provider]}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleSync} disabled={isSyncing}>
+                {isSyncing ? (
+                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="me-2 h-4 w-4" />
+                )}
+                {isSyncing ? 'Syncing...' : 'Sync'}
+              </Button>
+              <Button size="sm" onClick={handleScan} disabled={isScanning}>
+                {isScanning ? (
+                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="me-2 h-4 w-4" />
+                )}
+                {isScanning ? 'Scanning...' : 'Scan Now'}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" disabled={isDeleting}>
+                    {isDeleting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <MoreHorizontal className="h-4 w-4" />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      const url = repository.repository?.webUrl || window.location.href
+                      const ok = await copyToClipboard(url)
+                      if (ok) toast.success('URL copied')
+                      else toast.error('Failed to copy')
+                    }}
+                  >
+                    <Copy className="me-2 h-4 w-4" />
+                    Copy URL
+                  </DropdownMenuItem>
+                  <Can permission={Permission.AssetsDelete}>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-red-500"
+                      onClick={() => setShowDeleteDialog(true)}
+                    >
+                      <Trash2 className="me-2 h-4 w-4" />
+                      Delete Repository
+                    </DropdownMenuItem>
+                  </Can>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <AssetDeleteDialogShared
+                open={showDeleteDialog}
+                onOpenChange={setShowDeleteDialog}
+                assetName={repository.name}
+                typeName="Repository"
+                onConfirm={handleDelete}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => {
+            setActiveTab(v as DetailTab)
+          }}
+        >
+          <TabsList className="mb-6">
+            <TabsTrigger value="overview" className="gap-2">
+              <Layers className="h-4 w-4" />
+              Overview
+            </TabsTrigger>
+            {branchesEnabled && (
+              <TabsTrigger value="branches" className="gap-2">
+                <GitBranch className="h-4 w-4" />
+                Branches
+                <TabsCount value={branches.length} />
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="findings" className="gap-2">
+              <Shield className="h-4 w-4" />
+              Findings
+              <TabsCount value={findings.length} />
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="gap-2">
+              <Settings className="h-4 w-4" />
+              Settings
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview">
+            <OverviewTab
+              repository={repository}
+              branches={branches}
+              findings={findings}
+              activities={activities}
+              onScan={handleScan}
+            />
+          </TabsContent>
+
+          <TabsContent value="branches">
+            {branchesEnabled && (
+              <BranchesTab
+                branches={branches}
+                repositoryName={repository.name}
+                repositoryId={repositoryId}
+                onViewBranchFindings={(branchName) => {
+                  setActiveTab('findings')
+                  // Branch filter will be picked up by FindingsTab
+                  const params = new URLSearchParams(window.location.search)
+                  params.set('tab', 'findings')
+                  params.set('branch', branchName)
+                  router.replace(`?${params.toString()}`, { scroll: false })
+                }}
+              />
+            )}
+          </TabsContent>
+
+          <TabsContent value="findings">
+            <FindingsTab
+              repositoryId={repositoryId}
+              branches={branches}
+              branchFromUrl={urlBranch || undefined}
+            />
+          </TabsContent>
+
+          <TabsContent value="settings">
+            <SettingsTab repository={repository} onDelete={() => setShowDeleteDialog(true)} />
+          </TabsContent>
+        </Tabs>
+      </Main>
+    </>
+  )
+}

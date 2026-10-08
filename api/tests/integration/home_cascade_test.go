@@ -41,7 +41,7 @@ func TestHomeCascade(t *testing.T) {
 	home := createTestTenant(t, db, "cascade-home")
 	hostA := createTestTenant(t, db, "cascade-host-a")
 	hostB := createTestTenant(t, db, "cascade-host-b")
-	domain := "ipas-" + shared.NewID().String()[:8] + ".example"
+	domain := "partner-" + shared.NewID().String()[:8] + ".example"
 	userRepo := postgres.NewUserRepository(pdb)
 	userSvc := tenant.NewUserService(userRepo, logger.NewNop())
 	svc.SetUserService(userSvc)

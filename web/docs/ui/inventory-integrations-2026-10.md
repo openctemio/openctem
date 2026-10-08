@@ -350,7 +350,7 @@ Effort: XS < 1 day, S ≈ 2–3 days, M ≈ 1 week, L ≥ 2 weeks. Value is for 
 6. **Screenshots are a view, not a tab.**
    - No separate Screenshots tab. We put a `ViewSwitcher` (list | gallery) on Inventory instead, so filters and selection carry over.
    - The Assets tabs stay Inventory | Groups | What changed | Suggestions, plus **Policies** when that feature ships (inventory v2 RFC).
-   - Domains are our `/assets/domains`, reachable as a type filter, not a tab.
+   - Domains are the inventory filtered to `types=domain,subdomain`, a type filter, not a tab.
 
 ---
 
@@ -366,7 +366,7 @@ Each phase ships alone and changes no URL.
    - no value is defaulted.
 2. **Extract shared cells** into `features/assets/components/service-cells/`:
    - `HttpStatusChip`, `OverflowChips`, `TechChips` (parses `Name:ver` into name + version; "No technologies" chip), `TlsSummary` (driven by `certificate-facts`), `IssuesChip`, `LabelChips` (inline "+ Add label" popover, gated on `assets:write`) and `ServiceIdentity` (favicon slot + mono `host:port`).
-   - Use them on `/assets` (for `service` rows), `/assets/websites`, `/assets/services` and `/attack-surface/external`. **Sync rule:** no page keeps its own copy.
+   - Use them on `/assets` (for `service` rows), the typed inventory (`/assets?types=service`, `/assets?types=application&sub_type=website`) and `/attack-surface/external`. **Sync rule:** no page keeps its own copy.
 3. **"Start scan" in the `/assets` bulk bar.**
    - Reuse `ScanAssetsDialog`, which `/attack-surface/external` already uses, so there is one scan entry point.
    - Hidden without `scans:write`.

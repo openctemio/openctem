@@ -49,6 +49,7 @@ import {
 import { copyToClipboard } from '@/lib/clipboard'
 import { toast } from 'sonner'
 import { canonicalAuditMetadataKey, canonicalAuditResourceType } from '@/lib/api/audit-types'
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -213,7 +214,7 @@ export default function AuditLogPage() {
               {row.original.resource_name || row.original.resource_id}
             </span>
             <span className="text-xs text-muted-foreground">
-              {canonicalAuditResourceType(row.original.resource_type)}
+              {humanizeIdentifier(canonicalAuditResourceType(row.original.resource_type))}
             </span>
           </div>
         ),
@@ -512,7 +513,7 @@ export default function AuditLogPage() {
             <DetailSection title="Resource">
               <DetailFieldGrid>
                 <DetailField label="Type">
-                  {canonicalAuditResourceType(selectedLog.resource_type)}
+                  {humanizeIdentifier(canonicalAuditResourceType(selectedLog.resource_type))}
                 </DetailField>
                 <DetailField label="Name">
                   <span className="break-words">{selectedLog.resource_name || '-'}</span>

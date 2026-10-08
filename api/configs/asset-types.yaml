@@ -32,7 +32,7 @@
 #
 # Classes and lenses are fixed in code, not tenant-editable (RFC-042 D18).
 # Lens, class and type ids must not be a reserved /assets/ page segment
-# (all, changes, duplicates, groups, services, suggestions); the generator
+# (changes, duplicates, groups, suggestions, web); the generator
 # rejects them.
 # Tenants organise with groups and labels.
 # =============================================================================
@@ -80,76 +80,59 @@ lenses:
     row: table
     default_group_by: type
 
-# Classes: the abstract kind above the type (JupiterOne `_class`).
+# Classes: the abstract kind above the type.
 # Exactly one lens per class, except `other`, which only shows under All assets.
 classes:
   - id: domain
     label: Domain
     lens: external_surface
-    jupiterone: Domain / DomainRecord
   - id: ip_address
     label: IP address
     lens: external_surface
-    jupiterone: IpAddress
   - id: certificate
     label: Certificate
     lens: external_surface
-    jupiterone: Certificate
   - id: service
     label: Service
     lens: external_surface
-    jupiterone: Port / NetworkEndpoint
   - id: web_endpoint
     label: Web endpoint
     lens: external_surface
-    jupiterone: ApplicationEndpoint
   - id: application
     label: Application
     lens: applications
-    jupiterone: Application
   - id: host
     label: Host
     lens: cloud_infra
-    jupiterone: Host / Device
   - id: function
     label: Function
     lens: cloud_infra
-    jupiterone: Function
   - id: cloud_account
     label: Cloud account
     lens: cloud_infra
-    jupiterone: Account
   - id: container
     label: Container
     lens: containers_k8s
-    jupiterone: Container / Workload
   - id: cluster
     label: Cluster
     lens: containers_k8s
-    jupiterone: Cluster
   - id: artifact_registry
     label: Artifact registry
     lens: containers_k8s
-    jupiterone: Repository (artifact)
   - id: code_repo
     label: Code repository
     lens: code
-    jupiterone: CodeRepo
   - id: identity
     label: Identity
     lens: identities
-    jupiterone: User / AccessRole / NHI
   - id: data_store
     label: Data store
     lens: data
-    jupiterone: DataStore / Database
   - id: network
     label: Network
     lens: network
-    jupiterone: Network / Firewall / Gateway
   - id: other
     label: Other
-    jupiterone: Entity
 
 # Legacy categories (formerly hand-written in pkg/domain/asset/category.go).
 # Kept so the `category` field of asset responses does not change. New code
@@ -524,6 +507,7 @@ types:
       - { name: ip_addresses, type: list }
       - { name: cname_target, type: string }
       - { name: dns_record_types, type: string }
+      - { name: dns_records, type: object }
       - { name: discovery_source, type: string, facet: true }
       - { name: is_wildcard, type: bool, facet: true }
     columns: [name, parent_domain, findings.open, last_seen, owner]

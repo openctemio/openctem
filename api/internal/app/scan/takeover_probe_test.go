@@ -120,7 +120,7 @@ func TestResolveScanTargets_TakeoverException(t *testing.T) {
 		stubGate: stubGate{blockedTyped: map[string]attribution.State{"saas.example.com": attribution.StateDependency}},
 		admitted: map[string]bool{"saas.example.com": true},
 	}
-	svc := &Service{attributionGate: gate, logger: logger.NewNop()}
+	svc := allowAllChecks(&Service{attributionGate: gate, logger: logger.NewNop()})
 
 	takeover := testScan("nuclei", "saas.example.com")
 	takeover.ScannerConfig = map[string]any{"tags": []any{"takeover"}}

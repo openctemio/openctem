@@ -241,7 +241,7 @@ var presetVMEssentials = ModulePreset{
 	ID:            "vm_essentials",
 	Name:          "Vulnerability Management Essentials",
 	Description:   "Asset-aware vuln workflow: discover → scan → triage → remediate → report. Replaces traditional VM tools.",
-	TargetPersona: "Security analyst at SMB/mid-market — replacing Tenable/Qualys",
+	TargetPersona: "Security analyst at SMB/mid-market running routine vulnerability management",
 	Icon:          "ShieldAlert",
 	RecommendedFor: []string{
 		"SMB",

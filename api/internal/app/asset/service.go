@@ -376,6 +376,10 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		return nil, err
 	}
 	assetType, subType := resolved.Type, resolved.SubType
+	// Flat properties (RFC-042 §6.3.10): a CTIS technical block a collector
+	// sends (domain.dns_records, certificate.not_after, ...) fills the
+	// stored type's keys, and the block goes.
+	input.Properties = assetdom.NormalizeAssetProperties(assetType, subType, input.Properties)
 	if err := rejectMisplacedProperties(assetType, subType, input.Properties); err != nil {
 		return nil, err
 	}
@@ -607,49 +611,6 @@ func PromoteKnownProperties(input CreateAssetInput) CreateAssetInput {
 	// nameserver, technology, san, ...) fold into their canonical key.
 	input.Properties = assetdom.NormalizeProperties(normalizedProps)
 
-	// Extract DNS fields from nested domain.dns_records → flat properties
-	// Collector sends: {"domain": {"dns_records": [{"type":"A","value":"1.2.3.4","ttl":300}]}}
-	// UI reads flat: record_type, cname_target, ttl, dns_record_types, and the
-	// A/AAAA values in ip_addresses
-	if domainObj, ok := input.Properties["domain"].(map[string]any); ok {
-		if records, ok := domainObj["dns_records"].([]any); ok && len(records) > 0 {
-			var recordTypes []string
-			for _, r := range records {
-				rec, ok := r.(map[string]any)
-				if !ok {
-					continue
-				}
-				recType, _ := rec["type"].(string)
-				recValue, _ := rec["value"].(string)
-				if recType != "" {
-					recordTypes = append(recordTypes, recType)
-				}
-				if recValue != "" && (recType == "A" || recType == "AAAA") {
-					assetdom.AddIPAddress(input.Properties, recValue)
-				}
-			}
-			// First record as primary
-			if first, ok := records[0].(map[string]any); ok {
-				if rt, _ := first["type"].(string); rt != "" {
-					input.Properties["record_type"] = rt
-				}
-				if rv, _ := first["value"].(string); rv != "" {
-					if rt, _ := first["type"].(string); rt == "CNAME" {
-						input.Properties["cname_target"] = rv
-					}
-				}
-				if ttl, ok := first["ttl"]; ok {
-					input.Properties["ttl"] = ttl
-				}
-			}
-			// Aggregates
-			if len(recordTypes) > 0 {
-				input.Properties["dns_record_types"] = strings.Join(unique(recordTypes), ", ")
-			}
-			input.Properties["dns_record_count"] = len(records)
-		}
-	}
-
 	// Normalize root_domain (strip trailing dot)
 	if rd, ok := input.Properties["root_domain"].(string); ok && strings.HasSuffix(rd, ".") {
 		input.Properties["root_domain"] = strings.TrimSuffix(rd, ".")
@@ -710,19 +671,6 @@ func camelToSnakeCase(s string) string {
 		}
 	}
 	return string(result)
-}
-
-// unique returns a deduplicated copy of a string slice, preserving order.
-func unique(ss []string) []string {
-	seen := make(map[string]bool, len(ss))
-	out := make([]string, 0, len(ss))
-	for _, s := range ss {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // isLikelySubdomain checks if a domain name has more labels than a typical root domain.
@@ -1106,7 +1054,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		for k, v := range input.Properties {
 			merged[k] = v
 		}
-		a.SetProperties(assetdom.NormalizeProperties(merged))
+		a.SetProperties(assetdom.NormalizeAssetProperties(a.Type(), a.SubType(), merged))
 	}
 
 	// Recalculate risk score after updates using the asset's effective
@@ -1537,6 +1485,20 @@ func (s *AssetService) GetPropertyFacets(ctx context.Context, tenantID, actingUs
 		return nil, err
 	}
 	return s.repo.GetPropertyFacets(ctx, parsedTenantID, access, types, subType)
+}
+
+// GetInventoryOverview returns the inventory overview counts, over the
+// assets the acting user may list only.
+func (s *AssetService) GetInventoryOverview(ctx context.Context, tenantID, actingUserID string, isAdmin bool) ([]assetdom.InventoryOverviewRow, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetInventoryOverview(ctx, parsedTenantID, access)
 }
 
 // GetAssetStats returns aggregated asset statistics using SQL aggregation,

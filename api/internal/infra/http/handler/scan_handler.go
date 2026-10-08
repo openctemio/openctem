@@ -1441,6 +1441,10 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, scanworkflow.ErrScanWorkflowRetired):
 		// The workflow of the scan was deleted (kept for its run history).
 		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRetired.Code), scanworkflow.ErrScanWorkflowRetired.Message).WriteJSON(w)
+	case errors.Is(err, scanworkflow.ErrScanWorkflowNotFound):
+		// The scan's workflow, not the scan, is missing (or another
+		// organization's): say so.
+		apierror.New(http.StatusNotFound, apierror.Code(scanworkflow.ErrScanWorkflowNotFound.Code), "Scan workflow not found").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scan").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
