@@ -311,7 +311,9 @@ describe('cellsForType', () => {
   it('OpenPortChips hides "not scanned" and shows "none open"', () => {
     const { container, rerender } = render(<OpenPortChips asset={bareService} />)
     expect(container).toBeEmptyDOMElement()
-    rerender(<OpenPortChips asset={{ ...bareService, metadata: { open_ports: [] } } as Asset} />)
+    rerender(
+      <OpenPortChips asset={{ ...bareService, metadata: { ip_address: { ports: [] } } } as Asset} />
+    )
     expect(screen.getByText('No open ports')).toBeInTheDocument()
   })
 })
