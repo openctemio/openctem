@@ -1135,6 +1135,13 @@ func (s *SensorService) RegenerateAPIKey(ctx context.Context, tenantID, sensorID
 	if err != nil {
 		return "", err
 	}
+	// An organization that requires key-bound identity mints no bearer keys,
+	// regenerated ones included (as CreateSensor): the sensor pairs instead.
+	if allowed, err := s.BearerKeysAllowed(ctx, shared.MustIDFromString(tenantID)); err != nil {
+		return "", err
+	} else if !allowed {
+		return "", sensordom.ErrBearerKeysDisabled
+	}
 
 	apiKey, hash, prefix, err := s.generateSensorAPIKey()
 	if err != nil {
