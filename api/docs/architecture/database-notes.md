@@ -30,8 +30,8 @@ FROM assets a
 4. When you read an asset, the finding count is always fresh from the database
 
 **Related code:**
-- `internal/domain/asset/entity.go` - `UpdateFindingCount()` method (in-memory only)
-- `internal/domain/asset/entity.go` - `CalculateRiskScore()` uses findingCount for risk calculation
+- `pkg/domain/asset/entity.go` - `UpdateFindingCount()` method (in-memory only)
+- `pkg/domain/asset/entity.go` - `CalculateRiskScore()` uses findingCount for risk calculation
 - `internal/infra/postgres/asset_repository.go` - `selectQuery()` calculates it dynamically
 
 ### Repository Identifier Normalization

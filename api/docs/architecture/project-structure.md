@@ -152,7 +152,7 @@ internal/
     │   │   ├── auth.go     # Authentication routes
     │   │   ├── tenant.go   # Tenant management routes
     │   │   ├── assets.go   # Asset, Component, AssetGroup, Scope routes
-    │   │   ├── scanning.go # Agent, Command, Scan, Pipeline, Tool routes
+    │   │   ├── scanning.go # Sensor, Command, Scan, scan workflow, Tool routes
     │   │   ├── exposure.go # Exposure, ThreatIntel, Credential routes
     │   │   ├── access_control.go # Group, Role, Permission routes
     │   │   ├── platform.go # Platform agent/job routes (tenant-facing)
@@ -339,7 +339,7 @@ deploy/
                     │
                     ▼
 ┌─────────────────────────────────────────┐
-│           internal/domain                │
+│              pkg/domain                 │
 │   (Entities, Value Objects, Interfaces)  │
 │         NO EXTERNAL DEPENDENCIES         │
 └─────────────────────────────────────────┘

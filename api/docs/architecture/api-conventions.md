@@ -4,7 +4,7 @@ This is the short style guide every new or changed HTTP route follows.
 
 - The reasoning, the inventory behind it and the migration plan are in
   [RFC-041](../rfcs/RFC-041-api-path-design.md).
-- Status: **Accepted** with RFC-041 (owner decisions 2026-10-03). Existing
+- Status: **Accepted** with RFC-041. Existing
   routes that differ are recorded in a baseline and converge over time.
 - Rules marked **(lint)** are enforced by `tools/lint/routestyle` (RFC-041
   §7). The plane table is `internal/infra/http/routes/plane`.
@@ -79,7 +79,7 @@ Rules:
   - The OpenAPI spec uses the same name as the router. **(lint)**
 - **Nesting:** at most two parent collections and six segments after the
   version. When a child has its own identity, also give it a top-level
-  collection, e.g. `/scan-runs` beside `/pipelines/{scan_workflow_id}/runs`.
+  collection, e.g. `/scan-runs` beside `/scan-workflows/{id}/runs`.
   **(lint)**
 - **Alternate keys are filters or `GET` lookups, not path segments.**
   - Use `GET /vulnerabilities?cve_id=CVE-2024-1234`, not

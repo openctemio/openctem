@@ -4,7 +4,7 @@
 
 ```
 # Unit tests (inline)
-internal/domain/asset/entity_test.go
+pkg/domain/asset/entity_test.go
 internal/app/asset_service_test.go
 
 # Integration tests
@@ -54,7 +54,7 @@ make generate-mocks
 
 Uses [mockgen](https://github.com/golang/mock):
 ```bash
-mockgen -source=internal/domain/asset/repository.go \
+mockgen -source=pkg/domain/asset/repository.go \
         -destination=internal/mocks/asset_repository.go
 ```
 

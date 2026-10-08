@@ -29,7 +29,7 @@ are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
 ## Classes, the type registry and lenses
 
 OpenCTEM has 37 asset types. Each type belongs to exactly one fixed
-**class**, JupiterOne's `_class` above `_type`. Each class belongs to
+**class** above the type. Each class belongs to
 exactly one **lens**, which is a UI tab. The source-native type
 (`aws_instance`, `github_repo`) stays on the source record for
 provenance.
@@ -298,7 +298,7 @@ It runs at:
 
 - scan trigger;
 - RFC-030 claim;
-- every pipeline hop;
+- every processing hop;
 - `POST /scan-workflows/runs` with targets;
 - the scan-coverage dispatcher;
 - quick scans;
@@ -451,7 +451,7 @@ hold these targets.
 ## Related
 
 - [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md): the design and the
-  owner decisions.
+  decisions.
 - [RFC-036](../rfcs/RFC-036-easm.md) and [easm.md](easm.md): seeds,
   attribution, candidates and the review queue.
 - [change-detection.md](change-detection.md): state history and the

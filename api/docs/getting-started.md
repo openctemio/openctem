@@ -89,10 +89,12 @@ Operator-facing configuration (TLS, SSO, SMTP, scaling) is documented at
 api/
 ├── cmd/server/          # API entry point (also bootstrap-admin, rekey, seed, ... in cmd/)
 ├── internal/
-│   ├── domain/          # Entities, value objects, repository interfaces (no external deps)
-│   ├── app/             # Application services
+│   ├── app/             # Application services, one package per bounded context
+│   ├── config/          # Environment configuration
 │   └── infra/           # Adapters: http (handlers, routes, middleware), postgres, redis, ...
-├── pkg/                 # Reusable packages
+├── pkg/
+│   ├── domain/          # Entities, value objects, repository interfaces (no external deps)
+│   └── ...              # Shared packages (logger, apierror, pagination, ...)
 ├── migrations/          # SQL migrations (golang-migrate)
 └── tests/               # Integration and end-to-end tests
 ```

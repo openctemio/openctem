@@ -1,6 +1,6 @@
-# Shift-Left CI/CD Code Scanning (agent-first)
+# Shift-Left CI/CD Code Scanning
 
-> Self-contained SAST/SCA/secret scanning in the pipeline → CTIS ingest →
+> Self-contained SAST/SCA/secret scanning in the CI pipeline → CTIS ingest →
 > branch-aware findings → **risk-aware gate** + **PR/MR decoration**. Design:
 > [RFC-008](../rfcs/RFC-008-native-shift-left-ci-scanning.md). Complements
 > [Scan Orchestration](scan-orchestration.md) (platform-run scanners) — this doc
@@ -8,8 +8,8 @@
 > no stored key) and gets a central pass/fail verdict:
 > [CI runner identity and the CI gate](ci-runner-identity.md) (RFC-051).
 
-OpenCTEM runs its **own** agent in the customer's CI (no third-party tool, no
-bridge). The agent detects the CI environment, runs scanners on the checked-out
+OpenCTEM runs its **own** sensor (runner role) in the customer's CI (no
+third-party tool, no bridge). The sensor detects the CI environment, runs scanners on the checked-out
 code, pushes CTIS, then gates the build by **real risk** (EPSS/KEV/VPR), not just
 severity — and comments findings inline on the PR/MR.
 
@@ -19,7 +19,7 @@ severity — and comments findings inline on the PR/MR.
 graph TD
   subgraph CI["CI runner (customer pipeline)"]
     SRC["Checked-out repo + git env<br/>(GITHUB_*/GITLAB_* )"]
-    AG["openctem-agent (one-shot)"]
+    AG["openctem sensor (one-shot)"]
     subgraph SDK["sdk-go libraries"]
       GE["gitenv<br/>detect provider, branch, MR,<br/>TargetBranchSha (baseline)"]
       HD["handler.RemoteHandler<br/>OnStart / HandleFindings / OnCompleted"]
@@ -57,7 +57,7 @@ graph TD
 ```mermaid
 sequenceDiagram
   participant CI as CI runner
-  participant AG as openctem-agent
+  participant AG as openctem sensor
   participant SCAN as scanner (semgrep/…)
   participant API as OpenCTEM API
   participant SCM as GitHub/GitLab
@@ -141,7 +141,7 @@ product decision tracked separately; see `scan-coverage.md`.
 | `sdk-go/pkg/gitenv` | Detect CI provider + repo/commit/branch/MR/baseline; post MR comments |
 | `sdk-go/pkg/handler` | Scan lifecycle (OnStart/HandleFindings/OnCompleted); push CTIS; orchestrate comments |
 | `sdk-go/pkg/scanners` | Run + parse each scanner → CTIS |
-| `agent/internal/gate` | **Risk-aware** CI gate: severity threshold + KEV/exploit override + suppressions → exit code |
+| sensor repository, `internal/gate` | **Risk-aware** CI gate: severity threshold + KEV/exploit override + suppressions → exit code |
 | api ingest | Dedup, branch-aware occurrence write, scoped auto-resolve |
 | api prioritization | EPSS/KEV/VPR enrichment (feeds risk-aware gate + views) |
 | api SCM clients | Repo/branch read; (Phase 4) platform-side PR decoration |
@@ -151,20 +151,20 @@ product decision tracked separately; see `scan-coverage.md`.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Risk-aware gate (KEV/exploit below threshold) | **Done** — agent #27 |
+| 1 | Risk-aware gate (KEV/exploit below threshold) | **Done** |
 | 2 | Per-branch occurrence lifecycle (auto_fixed on non-default) | **Already present** — ingest Step 3b |
-| 3 | MR new-vs-target suppression | **Done (full)** — api #160 + sdk-go v0.4.0 (#35) + agent #28 |
+| 3 | MR new-vs-target suppression | **Done (full)** — API, sdk-go v0.4.0 and the sensor |
 | 4 | PR comment idempotency + sticky summary | **Done** — sdk-go #33/#34 |
 | 5 | Per-branch read surface | **Already present** — findings API branch filters + occurrence_count |
 | 6 | Reporting export (PDF/Excel) + weekly digest | Partial (HTML summary exists) |
-| 7 | DX: GitHub Action / GitLab CI recipes | **Already present** — `agent/ci/{github,gitlab}/` |
+| 7 | DX: GitHub Action / GitLab CI recipes | **Already present** — CI recipes in the sensor repository |
 
-**`POST /api/v2/sensor/fingerprints/baseline-diff`** (sensor key auth; the v1 `/api/v1/agent/ingest/baseline-diff` was retired 2026-10-05) — body
+**`POST /api/v2/sensor/fingerprints/baseline-diff`** (sensor key auth) — body
 `{repository, base_branch, fingerprints[]}` → `{new_fingerprints, pre_existing_fingerprints, base_branch_scanned}`.
 A finding already **open on the base branch** is pre-existing tech debt, so the
-agent gates / comments only on `new_fingerprints` (`gate.FilterNewFindings` +
+sensor gates / comments only on `new_fingerprints` (`gate.FilterNewFindings` +
 handler `NewFingerprints`). Computed from `finding_branch_occurrences` (source vs
-base). Unknown repo/branch → all new. The agent **fails safe**: if the diff call
+base). Unknown repo/branch → all new. The sensor **fails safe**: if the diff call
 errors, findings are treated as new so nothing is hidden from the gate/comments.
 
 ## 6. Code map
@@ -172,8 +172,8 @@ errors, findings are treated as new so nothing is hidden from the gate/comments.
 sdk-go/pkg/gitenv/                          CI env detect + MR comment
 sdk-go/pkg/handler/{handler,remote}.go      scan lifecycle + push + comments
 sdk-go/pkg/scanners/{semgrep,betterleaks,...}  run + parse → CTIS
-agent/main.go runOnce                        CI one-shot flow + baselineNewSet (Phase 3)
-agent/internal/gate/security.go              risk-aware gate (Phase 1) + FilterNewFindings (Phase 3)
+sensor: main.go runOnce                      CI one-shot flow + baselineNewSet (Phase 3)
+sensor: internal/gate/security.go            risk-aware gate (Phase 1) + FilterNewFindings (Phase 3)
 sdk-go/pkg/client/client.go                  BaselineDiff (Phase 3)
 api internal/app/ingest/service.go BaselineDiff  new-vs-base partition (Phase 3)
 api internal/app/ingest/processor_findings.go  occurrence write (Step 6)

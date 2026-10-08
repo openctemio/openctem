@@ -1,9 +1,9 @@
 # Sensor result binding and the results quarantine
 
 > RFC: RFC-040 §5.3 and §6.1 group (C) (mutual distrust between the platform
-> and sensors; owner decision Q6 (a), 2026-10-03). Protocols:
+> and sensors; decision Q6 (a)). Protocols:
 > [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (v2 results),
-> [sensors.md](sensors.md) (v1 and v2). Migration: `000287_sensor_result_quarantine`.
+> [sensors.md](sensors.md). Migration: `000287_sensor_result_quarantine`.
 
 A sensor key used to be enough to write and change any asset and finding of
 its tenant, with no job behind it. Since RFC-040 group (C) every sensor report
@@ -58,7 +58,7 @@ Also part of group (C):
 | v2 `PUT /api/v2/sensor/commands/{command_id}/results/{report_id}` | yes, in the path | every sensor on sdk-go ≥ v0.10.0 (sensor ≥ v0.6.0, so all deployed v0.6.x and v0.7.0 sensors) for results produced while running a command (`core.WithCommandID` on the executor context, kept by the outbox) |
 | v2 `PUT /api/v2/sensor/results/{report_id}` | no | sdk-go when the command is no longer open (it re-sends unbound after `command-not-found`), and pushes outside a command |
 
-So scheduled scans, pipeline steps and quick scans run by current sensors are
+So scheduled scans, scan workflow steps and quick scans run by current sensors are
 bound and apply as before. A v1 report bound with the header is processed
 synchronously even when `INGEST_MODE=async` (the queue keeps no binding).
 
