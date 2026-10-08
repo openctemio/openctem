@@ -561,7 +561,7 @@ to) and by plan. Owner recovery gained a reason and step-up (revision 7).
 Nothing from inside an organization (findings, assets) is shown: the console
 never reads it.
 
-## Revision 14: Users (cross-organization account support)
+## Revision 15: Users (cross-organization account support)
 
 Customers > Users finds an account in any organization and helps it sign in
 again, without touching what an organization holds:

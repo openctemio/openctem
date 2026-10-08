@@ -33,7 +33,7 @@ type PlatformUserDirectoryReader interface {
 	Get(ctx context.Context, id shared.ID) (*postgres.PlatformUserDetail, error)
 }
 
-// AdminPlatformUserHandler serves Console > Users (RFC-022 revision 14): find
+// AdminPlatformUserHandler serves Console > Users (RFC-022): find
 // an account across organizations and run a support action on it.
 type AdminPlatformUserHandler struct {
 	dir     PlatformUserDirectoryReader

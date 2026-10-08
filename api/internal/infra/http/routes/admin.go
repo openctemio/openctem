@@ -251,7 +251,7 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
-	// Console > Users (RFC-022 revision 14): find an account across
+	// Console > Users (RFC-022): find an account across
 	// organizations (any admin; viewing one is audited) and run a support
 	// action on it (ops_admin+, reason required, rate-limited, audited).
 	// Account-level facts only, never organization data.
