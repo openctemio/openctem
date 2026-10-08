@@ -121,16 +121,6 @@ export function NodeInspector({
               Run
             </h3>
             <NumberField
-              id={`${step.id}-retries`}
-              label="Retries"
-              help="Retries after a timeout or a lost sensor (0 to 10)."
-              value={step.max_retries}
-              min={0}
-              max={10}
-              readOnly={readOnly}
-              onChange={(n) => onChange({ ...step, max_retries: n ?? 0 })}
-            />
-            <NumberField
               id={`${step.id}-timeout`}
               label="Timeout (seconds)"
               help="60 to 86400."

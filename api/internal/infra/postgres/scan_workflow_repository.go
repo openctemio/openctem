@@ -28,11 +28,6 @@ func NewScanWorkflowRepository(db *DB) *ScanWorkflowRepository {
 
 // Create persists a new scan workflow.
 func (r *ScanWorkflowRepository) Create(ctx context.Context, t *scanworkflow.Workflow) error {
-	triggers, err := json.Marshal(t.Triggers)
-	if err != nil {
-		return fmt.Errorf("failed to marshal triggers: %w", err)
-	}
-
 	settings, err := json.Marshal(t.Settings)
 	if err != nil {
 		return fmt.Errorf("failed to marshal settings: %w", err)
@@ -49,11 +44,11 @@ func (r *ScanWorkflowRepository) Create(ctx context.Context, t *scanworkflow.Wor
 	query := `
 		INSERT INTO scan_workflows (
 			id, tenant_id, name, description, version,
-			triggers, settings, is_active, is_system_template,
+			settings, is_active, is_system_template,
 			tags, ui_start_position, ui_end_position,
 			created_by, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -62,7 +57,6 @@ func (r *ScanWorkflowRepository) Create(ctx context.Context, t *scanworkflow.Wor
 		t.Name,
 		t.Description,
 		t.Version,
-		triggers,
 		settings,
 		t.IsActive,
 		t.IsSystemTemplate,
@@ -194,11 +188,6 @@ func (r *ScanWorkflowRepository) List(ctx context.Context, filter scanworkflow.F
 
 // Update updates a template.
 func (r *ScanWorkflowRepository) Update(ctx context.Context, t *scanworkflow.Workflow) error {
-	triggers, err := json.Marshal(t.Triggers)
-	if err != nil {
-		return fmt.Errorf("failed to marshal triggers: %w", err)
-	}
-
 	settings, err := json.Marshal(t.Settings)
 	if err != nil {
 		return fmt.Errorf("failed to marshal settings: %w", err)
@@ -215,9 +204,9 @@ func (r *ScanWorkflowRepository) Update(ctx context.Context, t *scanworkflow.Wor
 	query := `
 		UPDATE scan_workflows
 		SET name = $2, description = $3, version = $4,
-		    triggers = $5, settings = $6, is_active = $7,
-		    tags = $8, ui_start_position = $9, ui_end_position = $10,
-		    updated_at = $11
+		    settings = $5, is_active = $6,
+		    tags = $7, ui_start_position = $8, ui_end_position = $9,
+		    updated_at = $10
 		WHERE id = $1
 	`
 
@@ -226,7 +215,6 @@ func (r *ScanWorkflowRepository) Update(ctx context.Context, t *scanworkflow.Wor
 		t.Name,
 		t.Description,
 		t.Version,
-		triggers,
 		settings,
 		t.IsActive,
 		pq.Array(t.Tags),
@@ -484,7 +472,7 @@ func (r *ScanWorkflowRepository) ListWithSystemTemplates(ctx context.Context, te
 func (r *ScanWorkflowRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, name, description, version,
-		       triggers, settings, is_active, is_system_template,
+		       settings, is_active, is_system_template,
 		       tags, ui_start_position, ui_end_position,
 		       created_by, created_at, updated_at, retired_at
 		FROM scan_workflows
@@ -528,7 +516,6 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 	var (
 		id         string
 		tenantID   string
-		triggers   []byte
 		settings   []byte
 		tags       pq.StringArray
 		uiStartPos []byte
@@ -543,7 +530,6 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 		&t.Name,
 		&t.Description,
 		&t.Version,
-		&triggers,
 		&settings,
 		&t.IsActive,
 		&t.IsSystemTemplate,
@@ -575,9 +561,6 @@ func (r *ScanWorkflowRepository) scanTemplate(row *sql.Row) (*scanworkflow.Workf
 		t.CreatedBy = &createdByID
 	}
 
-	if len(triggers) > 0 {
-		_ = json.Unmarshal(triggers, &t.Triggers)
-	}
 	if len(settings) > 0 {
 		_ = json.Unmarshal(settings, &t.Settings)
 	}
@@ -602,7 +585,6 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 	var (
 		id         string
 		tenantID   string
-		triggers   []byte
 		settings   []byte
 		tags       pq.StringArray
 		uiStartPos []byte
@@ -617,7 +599,6 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 		&t.Name,
 		&t.Description,
 		&t.Version,
-		&triggers,
 		&settings,
 		&t.IsActive,
 		&t.IsSystemTemplate,
@@ -646,9 +627,6 @@ func (r *ScanWorkflowRepository) scanTemplateFromRows(rows *sql.Rows) (*scanwork
 		t.CreatedBy = &createdByID
 	}
 
-	if len(triggers) > 0 {
-		_ = json.Unmarshal(triggers, &t.Triggers)
-	}
 	if len(settings) > 0 {
 		_ = json.Unmarshal(settings, &t.Settings)
 	}
