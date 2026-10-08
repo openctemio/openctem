@@ -24,12 +24,23 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
+import { Input } from '@/components/ui/input'
+import { blockedReasonText, formatShortDate } from '@/features/organization/lib/external-access'
 
 export interface OrgCardOrganization {
   id: string
   name: string
   role?: string
+  /** The user is an external member there (api RFC-058). */
+  external?: boolean
+  /** When the user's access there ends. */
+  accessExpiresAt?: string
+  /** Why it cannot be opened now (blocked_reason); the row is disabled. */
+  blockedReason?: string
 }
+
+/** Above this many organizations the list gets a search box. */
+export const ORG_SEARCH_THRESHOLD = 7
 
 export interface OrgCardLink {
   label: string
@@ -184,6 +195,12 @@ export function OrgCard({
   const { t } = useTranslation()
   const labels = useOrgLabels()
   const others = organizations.length > 1
+  const [query, setQuery] = React.useState('')
+  const searchable = organizations.length > ORG_SEARCH_THRESHOLD
+  const shown = React.useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return q ? organizations.filter((o) => o.name.toLowerCase().includes(q)) : organizations
+  }, [organizations, query])
   const plan = labels.plan(current.plan)
   const role = labels.role(current.role)
 
@@ -275,21 +292,81 @@ export function OrgCard({
             <p id="org-card-switch" className="px-2 pt-1.5 pb-1 text-xs text-muted-foreground">
               {t('org.switch', 'Switch organization')}
             </p>
-            <ul aria-labelledby="org-card-switch" onKeyDown={focusSibling}>
-              {organizations.map((org) => {
+            {searchable && (
+              <div className="px-1 pb-1">
+                <Input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t('org.search', 'Find an organization')}
+                  aria-label={t('org.search', 'Find an organization')}
+                  className="h-8 text-sm"
+                  data-testid="org-card-search"
+                />
+              </div>
+            )}
+            {shown.length === 0 && (
+              <p className="px-2 py-2 text-xs text-muted-foreground">
+                {t('org.noMatch', 'No organization matches')}
+              </p>
+            )}
+            <ul
+              aria-labelledby="org-card-switch"
+              onKeyDown={focusSibling}
+              className={cn(searchable && 'max-h-72 overflow-y-auto')}
+            >
+              {shown.map((org) => {
                 const active = org.id === current.id
+                const blocked = !active && !!org.blockedReason
+                const reason = blocked ? blockedReasonText(org.blockedReason) : ''
+                const ends =
+                  org.accessExpiresAt && !blocked
+                    ? t('org.accessEnds', 'Access ends {date}', {
+                        date: formatShortDate(org.accessExpiresAt),
+                      })
+                    : ''
                 return (
                   <li key={org.id}>
                     <button
                       type="button"
-                      className={cn(ROW_LINK_CLASS, 'h-9', active && 'bg-accent/60')}
+                      className={cn(
+                        ROW_LINK_CLASS,
+                        'h-auto min-h-9 py-1',
+                        active && 'bg-accent/60'
+                      )}
                       aria-current={active ? 'true' : undefined}
-                      disabled={isSwitching}
-                      onClick={() => (active ? undefined : onSwitch(org.id))}
+                      aria-disabled={blocked || undefined}
+                      aria-describedby={reason || ends ? `org-row-note-${org.id}` : undefined}
+                      disabled={isSwitching || blocked}
+                      onClick={() => (active || blocked ? undefined : onSwitch(org.id))}
                       data-testid="org-card-switch-item"
+                      data-blocked={blocked || undefined}
                     >
                       <OrgAvatar name={org.name} size="sm" />
-                      <span className="min-w-0 flex-1 truncate text-start">{org.name}</span>
+                      <span className="flex min-w-0 flex-1 flex-col text-start">
+                        <span className="truncate">{org.name}</span>
+                        {(reason || ends) && (
+                          <span
+                            id={`org-row-note-${org.id}`}
+                            className={cn(
+                              'truncate text-[11px]',
+                              blocked ? 'text-destructive' : 'text-muted-foreground'
+                            )}
+                            data-testid="org-card-row-note"
+                          >
+                            {reason || ends}
+                          </span>
+                        )}
+                      </span>
+                      {org.external && (
+                        <Badge
+                          variant="outline"
+                          className="h-5 shrink-0 px-1.5 text-[10px] font-normal"
+                          data-testid="org-card-external"
+                        >
+                          {t('org.external', 'External')}
+                        </Badge>
+                      )}
                       {org.role && (
                         <span className="shrink-0 text-xs text-muted-foreground">
                           {labels.role(org.role)}

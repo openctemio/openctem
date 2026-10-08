@@ -18,10 +18,22 @@ import Link from 'next/link'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-href'
+import {
+  byReadiness,
+  firstProblem,
+  isRunnable,
+  readinessFixHref,
+  readinessLabel,
+  type WorkflowReadiness,
+} from '@/features/scan-workflows/lib/readiness'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Radar,
@@ -61,10 +73,16 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
   // The workflows are needed to offer the starters, unless the mode is
   // locked to a single scan (Edit).
   const { data: workflowsData, isLoading: isLoadingWorkflows } = useScanWorkflows(
-    lockMode && data.mode === 'single' ? undefined : { is_active: true, per_page: 100 },
+    lockMode && data.mode === 'single'
+      ? undefined
+      : { is_active: true, per_page: 100, include: 'readiness' },
     { revalidateOnFocus: false }
   )
-  const workflows = useMemo(() => workflowsData?.data ?? [], [workflowsData?.data])
+  // Workflows that can run here come first; the others stay visible, off,
+  // with why (a hidden card would hide what the product can do).
+  const workflows = useMemo(() => byReadiness(workflowsData?.data ?? []), [workflowsData?.data])
+  const runnable = useMemo(() => workflows.filter((w) => isRunnable(w.readiness)), [workflows])
+  const notAvailable = useMemo(() => workflows.filter((w) => !isRunnable(w.readiness)), [workflows])
   const starters = useMemo(
     () => workflows.filter((p) => p.is_system_template && (p.tags ?? []).includes('starter')),
     [workflows]
@@ -125,6 +143,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                 description={s.description ?? ''}
                 icon={<GitBranch className="h-4 w-4" />}
                 steps={(s.steps ?? []).map((st) => st.name)}
+                readiness={s.readiness}
               />
             ))}
             <ChoiceCard
@@ -190,7 +209,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
               {data.workflowId && !selectedWorkflow && !isLoadingWorkflows && (
                 <SelectItem value={data.workflowId}>Current workflow (not active)</SelectItem>
               )}
-              {workflows.map((workflow) => (
+              {runnable.map((workflow) => (
                 <SelectItem key={workflow.id} value={workflow.id}>
                   <div className="flex items-center gap-2">
                     <span>{workflow.name}</span>
@@ -199,9 +218,35 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                         System
                       </Badge>
                     )}
+                    {readinessLabel(workflow.readiness) && (
+                      <span className="text-[10px] text-warning">
+                        {readinessLabel(workflow.readiness)}
+                      </span>
+                    )}
                   </div>
                 </SelectItem>
               ))}
+              {notAvailable.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel className="text-xs text-muted-foreground">Not available</SelectLabel>
+                  {notAvailable.map((workflow) => (
+                    <SelectItem
+                      key={workflow.id}
+                      value={workflow.id}
+                      disabled
+                      title={firstProblem(workflow.readiness)?.reason}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>{workflow.name}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {firstProblem(workflow.readiness)?.reason ??
+                            readinessLabel(workflow.readiness)}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
             </SelectContent>
           </Select>
           {!isLoadingWorkflows && workflows.length === 0 && (
@@ -301,26 +346,58 @@ function ChoiceCard({
   description,
   icon,
   steps,
+  readiness,
 }: {
   value: string
   title: string
   description: string
   icon: React.ReactNode
   steps?: string[]
+  readiness?: WorkflowReadiness
 }) {
   const id = `run-choice-${value}`
+  const off = !isRunnable(readiness)
+  const label = readinessLabel(readiness)
+  const problem = firstProblem(readiness)
+  const fixHref = readinessFixHref(readiness)
   return (
     <Label
       htmlFor={id}
-      className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 font-normal hover:bg-muted/50 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+      className={cn(
+        'flex items-start gap-3 rounded-lg border p-3 font-normal has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5',
+        off ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-muted/50'
+      )}
     >
-      <RadioGroupItem value={value} id={id} className="mt-0.5" aria-label={title} />
+      <RadioGroupItem
+        value={value}
+        id={id}
+        className="mt-0.5"
+        aria-label={title}
+        disabled={off}
+        aria-describedby={label ? `${id}-readiness` : undefined}
+      />
       <span className="min-w-0 space-y-1">
         <span className="flex items-center gap-1.5 text-sm font-medium">
           {icon}
           {title}
         </span>
         <span className="text-xs text-muted-foreground line-clamp-2">{description}</span>
+        {label && (
+          <span
+            id={`${id}-readiness`}
+            className={cn('block text-[11px]', off ? 'text-muted-foreground' : 'text-warning')}
+          >
+            {problem?.reason ?? label}
+            {problem?.fix && fixHref && (
+              <>
+                {' '}
+                <Link href={safeHref(fixHref) ?? '#'} className="underline">
+                  {problem.fix}
+                </Link>
+              </>
+            )}
+          </span>
+        )}
         {steps && steps.length > 0 && (
           <span className="flex flex-wrap items-center gap-0.5 text-[10px] text-muted-foreground">
             {steps.map((st, i) => (

@@ -7,6 +7,8 @@ import {
   mapStatus,
   mapSteps,
   nodeBadgeLines,
+  outputsByType,
+  stepTasks,
 } from '../run-map'
 
 function node(over: Partial<RunMapNode>): RunMapNode {
@@ -119,5 +121,26 @@ describe('run map', () => {
       '12k',
       '2.5M',
     ])
+  })
+})
+
+describe('run map step panel helpers', () => {
+  it('keeps the tasks of one step', () => {
+    const tasks = [
+      { id: '1', step_key: 'probe' },
+      { id: '2', step_key: 'vulns' },
+      { id: '3', step_key: 'probe' },
+    ]
+    expect(stepTasks(tasks, 'probe').map((t) => t.id)).toEqual(['1', '3'])
+    expect(stepTasks(undefined, 'probe')).toEqual([])
+  })
+
+  it('lists outputs by type, most first, without empty types', () => {
+    const n = node({ outputs: { total: 15, by_type: { ip_address: 3, domain: 12, port: 0 } } })
+    expect(outputsByType(n)).toEqual([
+      ['domain', 12],
+      ['ip_address', 3],
+    ])
+    expect(outputsByType(undefined)).toEqual([])
   })
 })

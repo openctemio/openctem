@@ -872,6 +872,10 @@ func TestMFA_OrganizationPolicy(t *testing.T) {
 	t.Run("token exchange and refresh refuse a password session without 2FA", func(t *testing.T) {
 		h := newMFAHarness(t)
 		tn := newPolicyTenant(t, h.tenants, "later", false)
+		// An organization created before owners/admins needed 2FA.
+		pre := tn.TypedSettings()
+		pre.Security.MFARequiredForAdmins = false
+		_ = tn.UpdateSettings(pre)
 		h.tenants.userMemberships = []tenant.UserMembership{{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "admin"}}
 		h.seedUser(t, "late@example.com")
 		res := h.login(t, "late@example.com") // policy off: plain session
@@ -907,6 +911,47 @@ func TestMFA_OrganizationPolicy(t *testing.T) {
 		_ = tn.UpdateSettings(st)
 		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: tn.ID().String()}); err != nil {
 			t.Fatalf("federated session blocked by 2FA policy: %v", err)
+		}
+	})
+
+	// New organizations require 2FA for owners and administrators.
+	t.Run("new org: an unenrolled owner or admin is sent to enrollment, a member is not", func(t *testing.T) {
+		for role, wantEnroll := range map[string]bool{"owner": true, "admin": true, "member": false, "viewer": false} {
+			h := newMFAHarness(t)
+			tn := newPolicyTenant(t, h.tenants, "new-"+role, false)
+			if !tn.TypedSettings().Security.MFARequiredForAdmins {
+				t.Fatal("a new organization must require 2FA for owners and admins")
+			}
+			h.tenants.userMemberships = []tenant.UserMembership{{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: role}}
+			h.seedUser(t, role+"@example.com")
+			res := h.login(t, role+"@example.com")
+			gotEnroll := res.MFAChallenge != nil && res.MFAChallenge.Purpose == mfa.PurposeEnroll
+			if gotEnroll != wantEnroll {
+				t.Fatalf("%s: enrollment challenge = %v, want %v", role, gotEnroll, wantEnroll)
+			}
+		}
+	})
+
+	t.Run("turning the admin rule on refuses an admin's existing password session at refresh", func(t *testing.T) {
+		h := newMFAHarness(t)
+		tn := newPolicyTenant(t, h.tenants, "turn-on", false)
+		off := tn.TypedSettings()
+		off.Security.MFARequiredForAdmins = false
+		_ = tn.UpdateSettings(off)
+		h.tenants.userMemberships = []tenant.UserMembership{{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "admin"}}
+		uid := h.seedUser(t, "adm@example.com")
+		ms, _ := tenant.NewMembership(uid, tn.ID(), tenant.RoleAdmin, nil)
+		h.tenants.memberships = append(h.tenants.memberships, ms)
+		res := h.login(t, "adm@example.com")
+		ex, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: tn.ID().String()})
+		if err != nil {
+			t.Fatalf("exchange before the rule: %v", err)
+		}
+		on := tn.TypedSettings()
+		on.Security.MFARequiredForAdmins = true
+		_ = tn.UpdateSettings(on)
+		if _, err := h.svc.RefreshToken(context.Background(), auth.RefreshTokenInput{RefreshToken: ex.RefreshToken, TenantID: tn.ID().String()}); !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
+			t.Fatalf("an admin without 2FA must be refused, got %v", err)
 		}
 	})
 

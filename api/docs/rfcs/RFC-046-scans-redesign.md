@@ -1,18 +1,17 @@
 # RFC-046 — Scans redesign: Scan → Run → Task, engines, schedules and automations
 
-> Status: **Accepted.** Product decisions D1–D13 approved by the owner on
-> 2026-10-02; backend decisions B1–B12 approved on 2026-10-03. P0 shipped
-> (§2.3); P1 in progress (§16): merged P1.1 (#940), P1.2 `partial` (#946)
-> and the P1.5 occurrence key `UNIQUE(scan_id, scheduled_for)` (#949; the
-> rrule part of P1.5 is open); P1.3 deadline → `partial` + rollover
-> (migration 000674; trigger type `rollover` waits for P1.4).
-> P2 chaining (research/27 P0, owner decisions G1–G12, 2026-10-05): the stage
+> Status: **Accepted.** Product decisions D1–D13 accepted on
+> 2026-10-02; backend decisions B1–B12 on 2026-10-03. P0 implemented
+> (§2.3); P1 largely implemented (per-item state in §16): P1.1 (#940), P1.2 `partial` (#946),
+> P1.3 deadline → `partial` + rollover (migration 000674), the P1.5 occurrence key
+> `UNIQUE(scan_id, scheduled_for)` (#949) and `rrule` schedules.
+> P2 chaining (decisions G1–G12, 2026-10-05) implemented: the stage
 > catalogue with typed inputs and outputs (`pkg/domain/stage`, migration
-> 001040 `tools.output_types`, `GET /api/v1/scans/stages`) and the one
+> 001040 `tools.output_types`, `GET /api/v1/scans/stages`), the one
 > planner (capability → tool at plan time, one payload builder and one step
 > dispatcher; fixes F1 and F2) and the hop router (per-hop gate, stage
-> barrier, provenance in `scan_run_targets`, migrations 001048-001049) are in
-> review; report output-type binding and run-drawer stage lanes follow. State:
+> barrier, provenance in `scan_run_targets`, migrations 001048-001049,
+> `internal/app/scanrun`). State:
 > [architecture/scan-stages.md](../architecture/scan-stages.md).
 > Scope: api + web, with sdk-go and sensor changes where a phase says so.
 > Builds on and does not duplicate:
@@ -31,8 +30,6 @@
 > Current-state and target architecture:
 > [architecture/scan-lifecycle.md](../architecture/scan-lifecycle.md).
 >
-> Owner (2026-10-03): "earlier there was the research on /scans; now start
-> implementing it well."
 
 ## 1. Answer in short
 
@@ -67,13 +64,13 @@ broker until more than 1,000 sensors.
 
 ## 2. Problem
 
-### 2.1 Live numbers (2026-10-02)
+### 2.1 Observed symptoms (2026-10-02)
 
-- 40 runs ever on the live deployment, **4 completed (10 %)**.
-- 10 scans, all single-tool; all 40 runs on the system Quick Scan template.
-- 6 multi-step pipeline presets with 0 runs (they used tools no sensor
-  shipped); 1 automation ("workflow"), 0 runs.
-- The scan list showed "87 %" success next to 4 failed runs.
+- Only a small share of runs completed (about one in ten).
+- Scans were all single-tool, and all runs used the system Quick Scan template.
+- Multi-step pipeline presets never ran (they used tools no sensor
+  shipped); automations ("workflows") never ran either.
+- The scan list showed a high success rate next to failed runs.
 
 ### 2.2 Root cause
 
@@ -90,7 +87,7 @@ nobody owning **definition → coverage**:
 | Workflow | `workflows`, `workflow_*` | Event automation, in-memory goroutines |
 | Scope schedule | `scan_schedules` | Inert by decision (§6.6); removed since (API gone, table dropped by migration 001069) |
 
-33 verified bugs followed from that split (research 2026-10-02). The
+33 verified bugs followed from that split (review of 2026-10-02). The
 **dispatch core is sound**: pull, compare-and-set claim, epoch-fenced leases
 and server-side capacity (RFC-030 Phase 0/1) were proven with two replicas
 (106 claims, 0 conflicts). What broke is everything around it: what a run
@@ -110,7 +107,7 @@ be switched on, and no chaining between stages.
 
 ## 3. Decisions (approved)
 
-### 3.1 Product decisions D1–D13 (owner, 2026-10-02)
+### 3.1 Product decisions D1–D13 (2026-10-02)
 
 | # | Decision |
 |---|---|
@@ -128,7 +125,7 @@ be switched on, and no chaining between stages.
 | D12 | Cancelling a run needs **`scans:write`**. |
 | D13 | Recon extras (screenshots, OSINT, dorks, …) ship with EASM P3–P4. |
 
-### 3.2 Backend decisions B1–B12 (owner, 2026-10-03)
+### 3.2 Backend decisions B1–B12 (2026-10-03)
 
 | # | Decision |
 |---|---|
@@ -154,7 +151,7 @@ be switched on, and no chaining between stages.
   same run failed; a failed, canceled, expired, timed-out or partially covered
   task never resolves anything. This is what `coverage_autoresolve.go` does
   today and is the only reading under which a 200,000-target run with one
-  failed chunk still closes anything. If the owner prefers the strict reading
+  failed chunk still closes anything. If the strict reading is preferred
   (no resolution at all from a run that ends `partial`), resolution moves from
   task completion to run settlement; the data needed for both is the same.
 - **Scope schedules** (`scan_schedules`, Scoping › Schedules) are
@@ -411,17 +408,15 @@ Plan:
 2. Review: sample false positives by tool; publish the counts in the run's
    coverage summary.
 3. ~~Switch `INGEST_COVERAGE_AUTO_RESOLVE=enforce` after the review window
-   (~2026-10-16).~~ **Postponed (owner decision D-22 / O1, 2026-10-04,
-   research 18).** The mode stays `dry_run`. This path proves coverage per
+   (~2026-10-16).~~ **Postponed (decision D-22 / O1, 2026-10-04).** The mode stays `dry_run`. This path proves coverage per
    tool, profile and asset, but not per check, port or authentication, so a
    template-pack update or a removed template would read as "fixed".
-   Enforcement waits for the **closure evaluator** (research 18 P2: per-check
+   Enforcement waits for the **closure evaluator** (per-check
    coverage records, a detector-set digest, `metadata.execution`), and at
    minimum for an explicit `coverage_type` (absent is not full) and the nuclei
-   exit-code fix. P2-4 (the owner reviews the evaluator's dry-run counts, then
+   exit-code fix. A later step (an administrator reviews the evaluator's dry-run counts, then
    enforces per tenant) replaces this step. No code, config or schedule
-   switches it; `INGEST_COVERAGE_AUTO_RESOLVE` defaults to `dry_run` and is
-   unset on live.
+   switches it; `INGEST_COVERAGE_AUTO_RESOLVE` defaults to `dry_run`.
 4. Key on `last_seen_tool` (RFC-043 sightings later) instead of `tool_name`.
 5. With `partial` (P1.2): a test proves a partial run's failed tasks never
    resolve and its completed tasks resolve only their own targets (§3.3).

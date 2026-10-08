@@ -20,6 +20,8 @@ export const PUBLIC_ROUTES = [
   // the public preview endpoint until they act.
   '/invitations',
   '/verify-email',
+  // Where a refused sign-up lands (no session): the same page for everyone.
+  '/not-set-up',
   // OAuth / SSO provider callbacks: the session cookie is set by these pages.
   '/auth/callback',
   '/auth/sso/callback',

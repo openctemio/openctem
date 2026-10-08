@@ -20,6 +20,7 @@
  * move (each move ships with a 308 in src/config/legacy-routes.ts).
  */
 import {
+  Handshake,
   Activity,
   Bell,
   Bot,
@@ -161,6 +162,17 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Boxes,
         permission: Permission.TeamUpdate,
         keywords: ['features', 'plan', 'license', 'enable', 'disable'],
+      },
+      {
+        // Two-sided trusts with partner organizations (api RFC-058): read by
+        // owners and admins, changed by owners only.
+        id: 'trusted-organizations',
+        title: 'Trusted organizations',
+        description: 'Partner organizations whose people sign in here with their own SSO.',
+        url: '/settings/trusted-organizations',
+        icon: Handshake,
+        permission: Permission.TeamUpdate,
+        keywords: ['trust', 'partner', 'sister company', 'external', 'home realm', 'sso'],
       },
       {
         id: 'audit-log',

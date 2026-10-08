@@ -71,7 +71,6 @@ services:
       AUTH_PROVIDER: local
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?set AUTH_JWT_SECRET}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY (64 hex characters)}
-      AUTH_ALLOW_REGISTRATION: 'true'
       AUTH_REQUIRE_EMAIL_VERIFICATION: 'false'
       TENANT_CREATION_MODE: self_service
       # One account drives every test; at the default 120 reads a minute per

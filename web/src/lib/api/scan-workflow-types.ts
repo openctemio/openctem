@@ -1,3 +1,4 @@
+import type { WorkflowReadiness } from '@/features/scan-workflows/lib/readiness'
 /**
  * Workflow API Types
  *
@@ -200,6 +201,8 @@ export interface ScanWorkflowStep {
 // ============================================
 
 export interface ScanWorkflow {
+  /** With ?include=readiness: whether it can run for this organization now. */
+  readiness?: WorkflowReadiness
   id: string
   tenant_id: string
   name: string
@@ -401,6 +404,8 @@ export interface QuickScanResponse {
 // ============================================
 
 export interface ScanWorkflowListFilters {
+  /** "readiness" adds each workflow's readiness for this organization. */
+  include?: string
   search?: string
   is_active?: boolean
   tags?: string

@@ -63,6 +63,9 @@ const (
 	// EventPushRefusedByGrant: the platform refused results without a job
 	// because the sensor's grant does not allow push ingest.
 	EventPushRefusedByGrant EventType = "push_refused_grant"
+	// EventCertificateIssued: the platform issued the sensor a client
+	// certificate for protocol v3 (RFC-059).
+	EventCertificateIssued EventType = "certificate_issued"
 )
 
 // ActivityCategory groups timeline items for the filter chips.
@@ -90,7 +93,7 @@ func (c ActivityCategory) IsValid() bool {
 func (t EventType) Category() ActivityCategory {
 	switch t {
 	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned, EventHeartbeatRecovered,
-		EventPairingCompleted:
+		EventPairingCompleted, EventCertificateIssued:
 		return CategoryStatus
 	case EventJobRefusedByLocalPolicy, EventJobRefusedByGrant, EventPushRefusedByGrant:
 		return CategoryJobs
@@ -105,7 +108,7 @@ func EventTypesIn(cats []ActivityCategory) []EventType {
 		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed,
 		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged, EventHeartbeatRecovered,
 		EventLocalPolicyChanged, EventJobRefusedByLocalPolicy, EventPairingCompleted, EventJobRefusedByGrant,
-		EventPushRefusedByGrant}
+		EventPushRefusedByGrant, EventCertificateIssued}
 	var out []EventType
 	for _, t := range all {
 		if slices.Contains(cats, t.Category()) {

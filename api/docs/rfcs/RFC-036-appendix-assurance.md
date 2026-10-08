@@ -5,7 +5,7 @@
 > when the named test exists on `develop`. Rows marked *planned* describe the
 > acceptance test the implementing PR must add.
 
-The owner's quality bar (2026-10-02): cover the realistic use cases and edge
+The quality bar (2026-10-02): cover the realistic use cases and edge
 cases, and give every security control of the EASM feature its own test.
 EASM here means **authorized, in-scope monitoring of the tenant's own
 internet-facing assets**. Nothing in this appendix describes probing anyone
@@ -14,7 +14,7 @@ else's infrastructure.
 Test locations: `internal/app/certmonitor` (unit, fake HTTP sources),
 `internal/infra/postgres/*_db_test.go` (real schema, `DATABASE_URL`), and the
 scratch-stack e2e described under each phase (real API binary, scratch
-Postgres/Redis, fake data sources on a private address, never live, never a
+Postgres/Redis, fake data sources on a private address, never production, never a
 real third-party target).
 
 ## 1. Use cases

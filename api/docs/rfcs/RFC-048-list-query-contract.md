@@ -1,10 +1,10 @@
 # RFC-048: List query contract (one filter model, two encodings, one compiler)
 
-> Status: **Accepted** (owner decisions 2026-10-04, §9). Implementation in
-> progress (§8): P0 `pkg/filterspec` shipped (#1016); P1 findings list shipped
-> (#1027); stats/groups, research 17 filters, search, generated params, export,
-> web URL codec, scanner details (R2), family filter, related CVEs and saved
-> views in review.
+> Status: **Accepted** (decisions 2026-10-04, §9). Implementation in
+> progress (§8): P0 `pkg/filterspec` (#1016), P1 findings list (#1027), the
+> findings stats/groups, extended finding filters, `POST /findings/search`,
+> export and P2 saved views are implemented; P3 (assets, MCP) and the long tail
+> are not built yet.
 > Scope: `api/` (`pkg/filterspec`, list/stats/groups/export handlers and
 > repositories, OpenAPI generation, `openapicontract`), `web/` (URL codec,
 > `buildQueryString`), the gateway access log.
@@ -13,10 +13,9 @@
 > [RFC-044](RFC-044-issue-definitions-and-findings.md) (future
 > `definition_id` keys),
 > [architecture/list-query-contract.md](../architecture/list-query-contract.md)
-> (how to use it), research 15 (data scope), research 17 (findings analysis
-> gaps), research 19 (the full evidence and industry survey behind this RFC).
+> (how to use it).
 >
-> Owner's question (2026-10-04): should list APIs keep flat query params such
+> Question (2026-10-04): should list APIs keep flat query params such
 > as `/assets?types=host`, or put every parameter into one filter variable such
 > as `/assets?filters={types:[]}`?
 
@@ -49,7 +48,7 @@
 
 ## 2. Problem (evidence)
 
-The full inventory is research 19 §1. The points that drive the design:
+The points that drive the design:
 
 | Problem | Evidence (develop @ `86ef984c`) |
 |---|---|
@@ -58,9 +57,9 @@ The full inventory is research 19 §1. The points that drive the design:
 | Findings: list (S1), groups (S2, a second SQL builder), stats (S3, two params), bulk body (S4), campaign JSONB (S5), plus three client vocabularies | `vulnerability_handler.go`, `finding_actions_handler.go`, `finding_group_repository.go`, `remediation_campaign.go`, `web/.../findings/page.tsx`, `use-findings-api.ts`, `mcp_tools.go` |
 | `asset_tags` works in groups, ignored by the list; `finding_ids` validates `max=500` after the parser cut it to 100 | `finding_repository.go buildWhereClause` vs `finding_group_repository.go buildFilterWhere` |
 | Stats ignore the list filter (findings and assets) | `vulnerability_handler.go` stats, `asset_handler.go` stats |
-| One concept, many names: KEV (3), EPSS (2), free text (`search`, `q`, `name`, `filter`), plural vs singular | research 19 §1.3 |
+| One concept, many names: KEV (3), EPSS (2), free text (`search`, `q`, `name`, `filter`), plural vs singular | handler query parsing across `api/internal/infra/http/handler/` |
 | Spec under-documents handlers (`/findings` documents 12 of ~27 params); nothing checks query-param drift | `api/api/openapi/swagger.yaml` |
-| Scope applied per service method where someone remembered it; nothing forces a new aggregate to be scoped | research 15 §1.3 |
+| Scope applied per service method where someone remembered it; nothing forces a new aggregate to be scoped | service methods in `api/internal/app/` |
 | The gateway logs the full query string, so `?q=<email>` reaches the access log | RFC-041 §3.2 P4 |
 
 ## 3. Design
@@ -94,8 +93,8 @@ export / report / alert / MCP tool input                   ──┘            
   only way to skip the scope predicate is `SystemActor(tenant, reason)`, and a
   lint allowlists its call sites. The tenant predicate is never skipped.
 - **Stored filters run as their viewer or owner.** A saved view runs as the
-  viewer; a report, alert or campaign progress count as its owner (closes
-  research 15 L-18).
+  viewer; a report, alert or campaign progress count as its owner (closes a
+  data-scope gap where a stored filter ran with no actor).
 
 ### 3.2 Naming
 
@@ -302,7 +301,7 @@ capped at 64 characters.
 | P0 | `pkg/filterspec` | registry, both parsers, AST, `Compile` with mandatory actor, limits, `INVALID_FILTER`, unknown-param warn/strict, fuzz and injection tests. No endpoint uses it yet |
 | P1 | findings list | `GET /findings` on the parser; old names as aliases with deprecation headers and a metric; `asset_tags` read |
 | P1 | findings stats and groups | same `Spec`; one WHERE builder; cross-scope contract test (list = stats = groups = export) |
-| P1 | research 17 filters | CVSS range, first/last seen, port/protocol, plugin family, assignee, asset criticality, exploit available, asset tag; indexes where needed |
+| P1 | extended finding filters | CVSS range, first/last seen, port/protocol, plugin family, assignee, asset criticality, exploit available, asset tag; indexes where needed |
 | P1 | `POST /findings/search` | document parser on the wire; `GET /meta/filters/findings` |
 | P1 | OpenAPI | params generated from the registry; `openapicontract` check E |
 | P2 | export | `POST /findings/export`: scoped, audit-logged, formula-injection-safe CSV, streamed by keyset, rate-limited |
@@ -312,7 +311,7 @@ capped at 64 characters.
 | P4+ | long tail | one resource per PR |
 | P5 | removal | aliases removed per RFC-041 D10 |
 
-## 9. Owner decisions (2026-10-04)
+## 9. Decisions (2026-10-04)
 
 | # | Decision | Chosen |
 |---|---|---|

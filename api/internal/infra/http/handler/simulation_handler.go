@@ -186,10 +186,10 @@ func (h *SimulationHandler) ListSimulationRuns(w http.ResponseWriter, r *http.Re
 	tenantID := middleware.MustGetTenantID(r.Context())
 	simID := chi.URLParam(r, "id")
 
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
-	)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	result, err := h.service.ListSimulationRuns(r.Context(), tenantID, simID, page)
 	if err != nil {
