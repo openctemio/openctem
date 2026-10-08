@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
@@ -12,14 +13,18 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// countingResolver records every name it was asked to resolve.
+// countingResolver records every name it was asked to resolve (routing
+// resolves concurrently).
 type countingResolver struct {
 	tableResolver
+	mu    sync.Mutex
 	asked []string
 }
 
 func (r *countingResolver) LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error) {
+	r.mu.Lock()
 	r.asked = append(r.asked, host)
+	r.mu.Unlock()
 	return r.tableResolver.LookupNetIP(ctx, network, host)
 }
 
@@ -58,7 +63,10 @@ func TestScanZonePreview_NoInternalDNSRecon(t *testing.T) {
 		ScannerName: "nuclei",
 		Targets:     []string{"db.internal.example", "app.example.com", "in-zone.example.com", "public.example.com"},
 	})
-	for _, h := range res.asked {
+	res.mu.Lock()
+	asked := append([]string(nil), res.asked...)
+	res.mu.Unlock()
+	for _, h := range asked {
 		if h == "db.internal.example" {
 			t.Fatal("a target outside the caller's scope was resolved")
 		}
