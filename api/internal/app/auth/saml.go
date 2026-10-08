@@ -125,13 +125,15 @@ func (s *SAMLService) DeleteConfig(ctx context.Context, tenantID shared.ID) erro
 
 // Metadata returns the SP metadata XML for a tenant (org slug), which the admin
 // registers with their IdP. baseURL is the deployment origin (scheme://host).
-func (s *SAMLService) Metadata(ctx context.Context, orgSlug, baseURL string) (string, error) {
-	t, err := s.tenantRepo.GetBySlug(ctx, orgSlug)
-	if err != nil {
+//
+// The metadata is built from the slug and the deployment URL only, so it is
+// served for any well-formed slug, known or not: answering 404 for an unknown
+// organization would tell an unauthenticated caller which organizations exist.
+func (s *SAMLService) Metadata(_ context.Context, orgSlug, baseURL string) (string, error) {
+	if !tenantdom.IsValidSlug(orgSlug) {
 		return "", ErrSAMLTenantNotFound
 	}
 	sp := s.baseServiceProvider(orgSlug, baseURL)
-	_ = t
 	md := sp.Metadata()
 	out, err := xml.MarshalIndent(md, "", "  ")
 	if err != nil {
