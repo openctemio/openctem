@@ -75,7 +75,7 @@ func fullData(t *testing.T) SensorTemplateData {
 	return SensorTemplateData{
 		Sensor:  daemonSensor("nuclei", "trivy"),
 		APIKey:  "rda_4b1e0123456789abcdef",
-		BaseURL: "https://192.168.8.204",
+		BaseURL: "https://192.0.2.204",
 		Image:   "ghcr.io/openctemio/sensor:v0.4.2",
 		CACert:  string(testCAPEM(t)),
 	}
@@ -120,7 +120,7 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 		continuationLinesOK(t, dir+" docker", d)
 		for _, want := range []string{
 			"ghcr.io/openctemio/sensor:v0.4.2",
-			"-e API_URL='https://192.168.8.204'",
+			"-e API_URL='https://192.0.2.204'",
 			"-e API_KEY='rda_4b1e0123456789abcdef'",
 			"-e SENSOR_TOOLS=nuclei,trivy",
 			"-e SSL_CERT_DIR=/etc/openctem/certs",
@@ -226,7 +226,7 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 		if s.Image != "ghcr.io/openctemio/sensor:v0.4.2" || s.Restart != "unless-stopped" {
 			t.Errorf("[%s] image=%q restart=%q", dir, s.Image, s.Restart)
 		}
-		if s.Environment["API_URL"] != "https://192.168.8.204" || s.Environment["SENSOR_TOOLS"] != "nuclei,trivy" ||
+		if s.Environment["API_URL"] != "https://192.0.2.204" || s.Environment["SENSOR_TOOLS"] != "nuclei,trivy" ||
 			s.Environment["SSL_CERT_DIR"] != "/etc/openctem/certs" {
 			t.Errorf("[%s] environment = %v", dir, s.Environment)
 		}
@@ -334,7 +334,7 @@ func TestTemplates_YAMLEnvCLIUseTheCurrentSensorSettings(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(out.YAML), &cfg); err != nil {
 			t.Fatalf("[%s] yaml: %v\n%s", dir, err, out.YAML)
 		}
-		if cfg.Sensor["name"] != "DMZ Scanner 01" || cfg.Server.BaseURL != "https://192.168.8.204" ||
+		if cfg.Sensor["name"] != "DMZ Scanner 01" || cfg.Server.BaseURL != "https://192.0.2.204" ||
 			cfg.Server.APIKey != "rda_4b1e0123456789abcdef" || cfg.Server.SensorID == "" || cfg.Outbox["dir"] == nil {
 			t.Errorf("[%s] yaml = %+v\n%s", dir, cfg, out.YAML)
 		}
