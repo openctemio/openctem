@@ -23,6 +23,7 @@ import (
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/password"
@@ -36,6 +37,10 @@ var (
 	ErrAccountSuspended     = errors.New("account is suspended")
 	ErrEmailNotVerified     = errors.New("email is not verified")
 	ErrRegistrationDisabled = errors.New("registration is disabled")
+	// ErrSignupNotAvailable is the one refusal of every sign-up path the
+	// sign-up policy does not admit (signup.Admit). The caller has written
+	// nothing; the answer is the same whatever the reason.
+	ErrSignupNotAvailable = errors.New("sign-up is not available")
 	// ErrTenantCreationDisabled: TENANT_CREATION_MODE=admin_only, so only the
 	// platform administrator creates organizations (RFC-022).
 	ErrTenantCreationDisabled   = errors.New("organization creation is reserved for the application administrator")
@@ -420,8 +425,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// an unknown, expired or mismatched token, gets the same generic refusal so
 	// the response says nothing about the token.
 	invitationTenantID, invited := s.pendingInvitationFor(ctx, input.InvitationToken, email)
-	if !s.config.AllowRegistration && !invited {
-		return nil, ErrRegistrationDisabled
+	if !signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{
+		Intent: signupdom.IntentAccount, InvitedPending: invited, DisposableEmail: disposableEmail(email),
+	}).Admitted() {
+		return nil, ErrSignupNotAvailable
 	}
 
 	// SECURITY (anti-enumeration): everything that shapes the answer is
@@ -1712,13 +1719,28 @@ func (s *AuthService) SetFreePlan(p FreePlan) { s.freePlan = p }
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
-// selfServiceTenantCreation reports whether people may create their own
-// organization: the console sign-up policy when wired, else the config.
-func (s *AuthService) selfServiceTenantCreation(ctx context.Context) bool {
-	if s.signupPolicy != nil {
-		return s.signupPolicy.Current(ctx).AllowsSelfService()
+// signupPolicyNow is the sign-up policy in force: the console setting when
+// wired, else TENANT_CREATION_MODE from the config (admin_only unless
+// self_service).
+func (s *AuthService) signupPolicyNow(ctx context.Context) signupdom.Policy {
+	return policyOrConfig(ctx, s.signupPolicy, s.config)
+}
+
+// policyOrConfig is shared by the services that admit sign-ups.
+func policyOrConfig(ctx context.Context, src signupdom.PolicySource, cfg config.AuthConfig) signupdom.Policy {
+	if src != nil {
+		return src.Current(ctx)
 	}
-	return s.config.SelfServiceTenantCreation()
+	if cfg.SelfServiceTenantCreation() {
+		return signupdom.Policy{Mode: signupdom.ModeSelfService}
+	}
+	return signupdom.Default()
+}
+
+// selfServiceTenantCreation reports whether people may create their own
+// organization (signup.Admit for an organization).
+func (s *AuthService) selfServiceTenantCreation(ctx context.Context) bool {
+	return signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{Intent: signupdom.IntentOrganization}).Admitted()
 }
 
 // CreateFirstTeam creates the first team for a user who has no tenants.
@@ -1829,6 +1851,13 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		WithResourceName(newTenant.Name()).
 		WithMessage(fmt.Sprintf("Team '%s' created", newTenant.Name())).
 		WithMetadata("via", "create_first_team"))
+
+	// The new organization requires two-factor authentication for its owner:
+	// without it, no access token is minted. The organization exists; the
+	// owner signs in again, enrolls a second factor, then selects it.
+	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), newTenant.ID().String()); err != nil {
+		return nil, err
+	}
 
 	// Mark old refresh token as used (token rotation)
 	if err := storedToken.MarkUsed(); err != nil {
@@ -2214,6 +2243,12 @@ func (s *AuthService) dummyPasswordHash() string {
 		}
 	})
 	return s.dummyHash
+}
+
+// disposableEmail reports whether email is on a disposable-address service.
+func disposableEmail(email string) bool {
+	at := strings.LastIndex(email, "@")
+	return at >= 0 && emaildomain.IsDisposable(email[at+1:])
 }
 
 // recordLoginFailure counts a refused password sign-in by reason, for the

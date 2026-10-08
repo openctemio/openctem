@@ -45,7 +45,7 @@ DNS-verified domain of the organization (no verifier or a lookup error
 refuses), the provider's allowed domains (if any) contain it, and the
 organization's `Security.AllowedDomains` (if any) contains it. This is checked
 before an account is created; a refused login gets a generic 403 and leaves no
-account behind. It does not depend on `AUTH_ALLOW_REGISTRATION` (which still
+account behind. It does not depend on the sign-up policy's mode (which still
 governs the global social sign-in buttons). JIT members get the provider's
 `default_role` (`admin|member|viewer`, default **viewer**, set by the platform
 administrator); only the display name is re-synced on later logins.

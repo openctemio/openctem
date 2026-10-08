@@ -62,7 +62,7 @@
 	# Plane sensor: straight to the API.
 	#   /api/v1/agent: deprecated, successor /api/v2/sensor
 	#   /api/v1/validation/evidence: deprecated, successor /api/v2/sensor/evidence
-	@plane_sensor path /api/v2/sensor /api/v2/sensor/* /api/v1/agent /api/v1/agent/* /api/v1/validation/evidence /api/v1/validation/evidence/*
+	@plane_sensor path /api/v2/sensor /api/v2/sensor/* /api/v3/sensor /api/v3/sensor/* /api/v1/agent /api/v1/agent/* /api/v1/validation/evidence /api/v1/validation/evidence/*
 	handle @plane_sensor {
 		import to_api
 	}

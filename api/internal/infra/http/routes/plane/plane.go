@@ -58,6 +58,7 @@ var Rules = []Rule{
 	{Plane: Ops, Prefix: "/docs"},
 
 	{Plane: Sensor, Prefix: "/api/v2/sensor"},
+	{Plane: Sensor, Prefix: "/api/v3/sensor"},
 	{Plane: Sensor, Prefix: "/api/v1/agent", Closed: true, Successor: "/api/v2/sensor"},
 	{Plane: Sensor, Prefix: "/api/v1/validation/evidence", Closed: true, Successor: "/api/v2/sensor/evidence"},
 

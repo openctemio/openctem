@@ -314,12 +314,17 @@ func (m *mockAuthTenantRepo) CreateMembership(_ context.Context, membership *ten
 	return nil
 }
 
-func (m *mockAuthTenantRepo) GetMembership(_ context.Context, _ shared.ID, tenantID shared.ID) (*tenant.Membership, error) {
+func (m *mockAuthTenantRepo) GetMembership(_ context.Context, userID shared.ID, tenantID shared.ID) (*tenant.Membership, error) {
 	if m.getMembershipErr != nil {
 		return nil, m.getMembershipErr
 	}
 	if ms, ok := m.membershipByTenant[tenantID.String()]; ok {
 		return ms, nil
+	}
+	for _, ms := range m.memberships {
+		if ms.UserID() == userID && ms.TenantID() == tenantID {
+			return ms, nil
+		}
 	}
 	return nil, shared.ErrNotFound
 }
@@ -775,7 +780,7 @@ func defaultAuthTestConfig() config.AuthConfig {
 		MaxLoginAttempts:          5,
 		LockoutDuration:           15 * time.Minute,
 		MaxActiveSessions:         10,
-		AllowRegistration:         true,
+		TenantCreationMode:        config.TenantCreationSelfService,
 		RequireEmailVerification:  false,
 		EmailVerificationDuration: 24 * time.Hour,
 		PasswordResetDuration:     1 * time.Hour,
@@ -1149,7 +1154,7 @@ func TestAuthService_Register(t *testing.T) {
 
 	t.Run("registration disabled", func(t *testing.T) {
 		cfg := defaultAuthTestConfig()
-		cfg.AllowRegistration = false
+		cfg.TenantCreationMode = config.TenantCreationAdminOnly
 		svc, _ := newTestAuthServiceWithConfig(cfg)
 
 		_, err := svc.Register(context.Background(), auth.RegisterInput{
@@ -1158,8 +1163,8 @@ func TestAuthService_Register(t *testing.T) {
 			Name:     "User",
 		})
 
-		if !errors.Is(err, auth.ErrRegistrationDisabled) {
-			t.Errorf("expected ErrRegistrationDisabled, got %v", err)
+		if !errors.Is(err, auth.ErrSignupNotAvailable) {
+			t.Errorf("expected ErrSignupNotAvailable, got %v", err)
 		}
 	})
 
@@ -2842,7 +2847,7 @@ func (m *mockAuthAuditRepo) ApplyChainRebaseline(_ context.Context, _ audit.Chai
 func registrationOffWithInvitation(t *testing.T, invitedEmail string, allowedDomains ...string) (*auth.AuthService, *authTestDeps, *tenant.Invitation) {
 	t.Helper()
 	cfg := defaultAuthTestConfig()
-	cfg.AllowRegistration = false
+	cfg.TenantCreationMode = config.TenantCreationAdminOnly
 	cfg.RequireEmailVerification = true
 	svc, deps := newTestAuthServiceWithConfig(cfg)
 
@@ -2901,8 +2906,8 @@ func TestAuthService_Register_RegistrationOff_Refusals(t *testing.T) {
 				deps.tenantRepo.invitations = nil
 			}
 			_, err := svc.Register(context.Background(), build(inv))
-			if !errors.Is(err, auth.ErrRegistrationDisabled) {
-				t.Fatalf("expected the generic ErrRegistrationDisabled, got %v", err)
+			if !errors.Is(err, auth.ErrSignupNotAvailable) {
+				t.Fatalf("expected the generic ErrSignupNotAvailable, got %v", err)
 			}
 			if deps.userRepo.createCalls != 0 {
 				t.Fatal("no account may be created")
@@ -2920,7 +2925,7 @@ func TestAuthService_Register_RegistrationOff_ExpiredInvitationRefused(t *testin
 	_, err := svc.Register(context.Background(), auth.RegisterInput{
 		Email: "invitee@corp.com", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
 	})
-	if !errors.Is(err, auth.ErrRegistrationDisabled) {
+	if !errors.Is(err, auth.ErrSignupNotAvailable) {
 		t.Fatalf("an expired invitation must not open registration, got %v", err)
 	}
 }
@@ -2931,7 +2936,7 @@ func TestAuthService_Register_RegistrationOff_AllowedDomainsEnforced(t *testing.
 	_, err := svc.Register(context.Background(), auth.RegisterInput{
 		Email: "invitee@other.com", Password: "Password123!", Name: "X", InvitationToken: inv.Token(),
 	})
-	if !errors.Is(err, auth.ErrRegistrationDisabled) {
+	if !errors.Is(err, auth.ErrSignupNotAvailable) {
 		t.Fatalf("an invitation outside the organization's allowed domains must not open registration, got %v", err)
 	}
 	if deps.userRepo.createCalls != 0 {

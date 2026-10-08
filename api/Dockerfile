@@ -57,6 +57,25 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # -----------------------------------------------------------------------------
+# OpenAPI spec stage
+# -----------------------------------------------------------------------------
+# The spec is generated from the handler annotations and is not committed
+# (#1300), so the image generates it: GET /openapi.yaml and /docs serve
+# /app/api/openapi/swagger.yaml. It is the same on every architecture, so it
+# runs on the build platform (no emulation). Same swag version and flags as
+# `make swagger` (SWAG_VERSION there and in scripts/check-openapi.sh).
+FROM --platform=$BUILDPLATFORM golang:1.26.8-alpine AS openapi
+ARG SWAG_VERSION=v1.16.4
+WORKDIR /app
+ENV GOWORK=off
+RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
+ && test -s api/openapi/swagger.yaml
+
+# -----------------------------------------------------------------------------
 # Builder stage
 # -----------------------------------------------------------------------------
 FROM base AS builder
@@ -121,6 +140,10 @@ RUN addgroup -g 1000 -S openctem && \
 COPY --from=builder /app/bin/server .
 COPY --from=builder /app/bin/bootstrap-admin .
 COPY --from=builder /app/bin/refingerprint .
+
+# The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
+# cmd/server/handlers.go NewDocsHandler).
+COPY --from=openapi /app/api/openapi/swagger.yaml ./api/openapi/swagger.yaml
 
 # Copy migrations if exist
 COPY --from=builder /app/migrations ./migrations

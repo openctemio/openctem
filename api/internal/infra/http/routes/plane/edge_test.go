@@ -66,6 +66,7 @@ func TestEdgeOf(t *testing.T) {
 		want Edge
 	}{
 		{"/api/v2/sensor/results", EdgeAPI},
+		{"/api/v3/sensor/openctem.sensor.v3.SensorService/Hello", EdgeAPI},
 		{"/api/v1/agent/heartbeat", EdgeAPI},
 		{"/api/v1/validation/evidence", EdgeAPI},
 		{"/api/v1/validation/coverage", EdgeWeb},
@@ -101,7 +102,7 @@ func TestGatewayPlanesFileShape(t *testing.T) {
 	for _, want := range []string{
 		"(planes) {",
 		"@edge_internal path /ready /ready/* /metrics /metrics/*",
-		"@plane_sensor path /api/v2/sensor /api/v2/sensor/* /api/v1/agent /api/v1/agent/*",
+		"@plane_sensor path /api/v2/sensor /api/v2/sensor/* /api/v3/sensor /api/v3/sensor/* /api/v1/agent /api/v1/agent/*",
 		"/api/v1/auth/saml /api/v1/auth/saml/*",
 	} {
 		if !strings.Contains(out, want) {

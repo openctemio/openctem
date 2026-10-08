@@ -33,8 +33,8 @@ type AuthProvidersHandler struct {
 	// signupPolicy, when wired, replaces tenantCreationMode (the console
 	// sign-up setting).
 	signupPolicy signupdom.PolicySource
-	// registrationEnabled mirrors AUTH_ALLOW_REGISTRATION so the UI can hide
-	// sign-up when self-registration is off.
+	// registrationEnabled is reported when no sign-up policy is wired (the
+	// self_service seed), so the UI can hide sign-up.
 	registrationEnabled bool
 	logger              *logger.Logger
 }
@@ -95,9 +95,9 @@ type AuthProvidersResponse struct {
 	// TenantCreationMode is "self_service" or "admin_only": the console
 	// sign-up policy (seeded from TENANT_CREATION_MODE).
 	TenantCreationMode string `json:"tenant_creation_mode"`
-	// RegistrationEnabled reports whether anyone may self-register
-	// (AUTH_ALLOW_REGISTRATION, default false). When false the UI hides
-	// sign-up; an invited person can still register with their invitation.
+	// RegistrationEnabled reports whether anyone may self-register: true in
+	// the self_service sign-up mode. When false the UI hides sign-up; an
+	// invited person can still register with their invitation.
 	RegistrationEnabled bool `json:"registration_enabled"`
 }
 
@@ -120,7 +120,11 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Reque
 		RegistrationEnabled: h.registrationEnabled,
 	}
 	if h.signupPolicy != nil {
-		resp.TenantCreationMode = string(h.signupPolicy.Current(r.Context()).Mode)
+		p := h.signupPolicy.Current(r.Context())
+		resp.TenantCreationMode = string(p.Mode)
+		// Anyone may create an account exactly when anyone may create an
+		// organization (one policy); an invited person registers either way.
+		resp.RegistrationEnabled = p.AllowsSelfService()
 	}
 	// Report what the server enforces: anything but an explicit self_service
 	// is admin-only.
