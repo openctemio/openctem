@@ -12,7 +12,7 @@ Design: research/71 (SaaS readiness), section 7.1 and the owner decisions of
 
 | Key | What it counts | Free default |
 |-----|----------------|--------------|
-| `seats` | active members | 5 |
+| `seats` | members who are not offboarded (a suspended member, or a sign-up awaiting approval, holds a seat) | 5 |
 | `assets` | assets not deleted and not archived | 500 |
 | `sensors` | the organization's own sensors that are not revoked (platform sensors never count) | 2 |
 | `api_keys` | active API keys | 5 |
@@ -86,7 +86,7 @@ refusal increments `openctem_plan_limit_refusals_total{key}`.
 | `GET /api/v1/admin/tenants/{id}/plan` | any administrator (limits, usage, over-limit flag) |
 | `PUT /api/v1/admin/tenants/{id}/plan` | **ops_admin+**, audited high |
 | `PUT/DELETE /api/v1/admin/tenants/{id}/plan/overrides/{key}` | **ops_admin+**, audited high (value, reason, expiry) |
-| `GET /api/v1/tenants/{tenant}/plan` | the organization's owners and admins (Settings > Plan & usage) |
+| `GET /api/v1/organization/plan` | the organization's owners and admins (Settings > Plan & usage) |
 
 The defaults are stored in `platform_settings` under `plan_limits`; until an
 administrator saves them the built-in defaults above apply.

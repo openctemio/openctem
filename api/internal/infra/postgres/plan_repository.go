@@ -156,12 +156,13 @@ func (r *PlanRepository) DeleteOverride(ctx context.Context, tenantID shared.ID,
 }
 
 // Usage counts what the organization uses, one query, every count scoped
-// by tenant_id.
+// by tenant_id. A seat is every member who is not offboarded: a suspended
+// member, or a sign-up awaiting approval, still holds one.
 func (r *PlanRepository) Usage(ctx context.Context, tenantID shared.ID) (map[plan.Key]int, error) {
 	var seats, assets, sensors, keys, trusts, invites int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
-		  (SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND status = 'active'),
+		  (SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND status <> 'offboarded'),
 		  (SELECT count(*) FROM assets WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'archived'),
 		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND is_platform_sensor = false AND status <> 'revoked'),
 		  (SELECT count(*) FROM api_keys WHERE tenant_id = $1 AND status = 'active'),

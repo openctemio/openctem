@@ -57,7 +57,7 @@ func TestTenantRoutes_GetTenantIsRouted(t *testing.T) {
 	}
 
 	router := infrahttp.NewChiRouter()
-	registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil, nil)
+	registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil)
 	mux := router.(interface{ Handler() http.Handler }).Handler()
 
 	serve := func(method, path string) (code int) {
@@ -121,7 +121,7 @@ func TestTenantRoutes_SSOChangeDecisionsAreOwnerOnly(t *testing.T) {
 		}
 		withStepUpChecker(t, alwaysSteppedUp{})
 		router := infrahttp.NewChiRouter()
-		registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{}, nil)
+		registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 		mux := router.(interface{ Handler() http.Handler }).Handler()
 
 		for _, path := range []string{
