@@ -91,10 +91,14 @@ func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
 
 // selfServiceAllowed reports whether a signed-in user may create an organization.
 func (h *TenantHandler) selfServiceAllowed(r *http.Request) bool {
-	if h.signupPolicy != nil {
-		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
+	p := signupdom.Default()
+	switch {
+	case h.signupPolicy != nil:
+		p = h.signupPolicy.Current(r.Context())
+	case h.selfServiceCreation:
+		p = signupdom.Policy{Mode: signupdom.ModeSelfService}
 	}
-	return h.selfServiceCreation
+	return signupdom.Admit(p, signupdom.Identity{Intent: signupdom.IntentOrganization}).Admitted()
 }
 
 // NewTenantHandler creates a new tenant handler.
