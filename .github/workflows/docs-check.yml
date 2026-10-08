@@ -1,0 +1,26 @@
+name: Docs check
+
+# Markdown in this repository must be English, must not carry private
+# addresses or internal host names, and its relative links must resolve.
+# Runs on every PR with no path filter so it can be a required check.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+jobs:
+  docs-check:
+    name: Docs check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Links, language and private addresses
+        run: python3 scripts/docs_check.py .
