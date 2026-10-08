@@ -1,6 +1,6 @@
 # RFC-058: External members and trusted organizations
 
-- **Status:** Accepted (owner delegated GA1–GA28, 2026-10-08). Part 1 (external membership model) in implementation.
+- **Status:** Accepted (owner delegated GA1–GA28, 2026-10-08). Part 1 (external membership model) and part 2 (trusted organizations, home-realm sign-in) in implementation.
 - **Related:**
   - RFC-050 (member lifecycle, data scope);
   - RFC-022 (platform admin console);
@@ -63,30 +63,39 @@ Every existing membership stays `internal`, so nothing changes for existing memb
 | One organization signs a person out of their other organizations | Tenant-scoped revocation (separate change) |
 | Information about other organizations leaks to a host | The host learns only the home organization's name; nothing else about other memberships |
 
-## 6. Parts still to build
+## 6. Trusted organizations and home-realm sign-in (part 2, implemented)
 
-1. **Trusted organizations and home-realm sign-in:**
-   - `tenant_trusts` (host owner requests with step-up, home owner accepts);
-   - the assurance decision at token mint and per request:
-     - only the home IdP;
-     - never weaker than the host;
-     - MFA evidence from `amr`/`acr`/AuthnContext, or the home's attestation;
-   - role ceiling per trust (admin only if the trust allows it and the owner grants it with step-up);
-   - API keys for externals off unless the trust allows them.
-   - Plan entitlement: the host needs SSO (Pro/Enterprise).
-2. **Policy:**
+| Rule | Where |
+|---|---|
+| **Two-sided.** A host owner asks to trust the organization that holds a domain verified for SSO (`POST /api/v1/organization/trusts {home_domain, ...}`). That organization's owner accepts (`POST .../{trust_id}/approve {attest_idp_mfa}`). Either owner ends it (`DELETE .../{trust_id}`). All three need owner plus step-up. Only the host changes the settings (`PATCH .../{trust_id}`). A third organization neither sees nor acts on a trust (404). | `orgtrust.Service`, `tenant_trusts` (migration 001315) |
+| **A requested trust grants nothing.** A trust never admits anyone by itself: the person still needs an invitation to the host. | `orgtrust.Trust.IsActive` |
+| **Home-realm sign-in.** A session counts as an SSO sign-in of the host for an external member when all of these hold: the session was issued by the member's home organization's identity provider; the trust is active and accepts home sign-in; the home still holds the member's email domain; and, if the trust requires it, the provider proved a second factor. This applies at token exchange and refresh. The token's `auth_method` is then `sso`, so the per-request SSO gate agrees. | `AuthService.assuranceAt`, `authMethodAt` |
+| **Never weaker than the host.** These never count: a password session, social login, a third organization's identity provider, or a trust that is not accepted. When the host requires 2FA, the home sign-in passes only with MFA evidence on the session or the home owner's attestation that its IdP enforces MFA. | `enforceSSOPolicy`, `enforceMFAPolicy` |
+| **MFA evidence** is recorded on the session (`sessions.mfa_evidence`), only from the verified id_token (`amr` contains `mfa`) or assertion (multi-factor `AuthnContextClassRef`). | `oidcMFAEvidence`, `samlMFAEvidence` |
+| **Role ceiling.** The trust caps the home's people at `viewer` or `member` (default member). Admin and owner are never possible: a CHECK, plus the grant guard. | `RoleService.capExternalTarget`, `UpdateMemberRole` |
+| **API keys.** An external member may create an API key only when the trust allows keys. The key may not outlive the member's access. Unmanaged externals never get keys. | `apikey.Service` + `orgtrust.Policy.APIKeyAllowance` |
+| **Default end of access.** The trust may propose one for new members from the home. | `orgtrust.Policy.DefaultExpiryFor` |
+| **Ending a trust** suspends, in the host only, every external member homed there (`suspended_reason = trust_revoked`). | `TenantService.SuspendExternalMembersFromHome` |
+| **Audit and notices.** Every change is audited at critical severity in both organizations' logs, and both sides' owners and administrators are told. Neither learns anything about the other beyond its name. | `sso.trust_*` audit actions |
+| **Plan.** Trusts need single sign-on on the host's plan. The check is wired as an optional entitlement; without the entitlement layer every plan may trust. | `orgtrust.SSOEntitlement` |
+
+Step-up inside the host re-authenticates at the session's identity provider, which is the home's (existing behaviour); the host accepts it like the sign-in.
+
+## 7. Parts still to build
+
+1. **Policy:**
    - `Security.ExternalMembers` (off / invite-only / trusted-only);
    - personal-account policy (allowed / allowed with MFA, the new-org default / blocked);
    - enforce-SSO exception list;
    - look-alike Gmail warning only.
-3. **Home cascade:**
+2. **Home cascade:**
    - home SCIM delete, suspend, offboard, domain lapse, trust revoke or home tenant suspension → external memberships suspended;
    - host notified, audit on both sides;
    - automatic reactivation only for reversible causes.
-4. **Domains:**
+3. **Domains:**
    - several domains per organization with a per-domain JIT role;
    - lapsed-domain handling: stop JIT, flag members, block email password reset for local accounts on a lapsed domain.
-5. **UI:**
+4. **UI:**
    - org switcher (recent, search, external chip, blocked rows with the reason);
    - External members view;
    - Trusted organizations setting;

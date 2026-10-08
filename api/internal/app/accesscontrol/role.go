@@ -38,7 +38,9 @@ type RoleService struct {
 	// someone is made an administrator or an owner. nil (a service built
 	// outside the HTTP server, such as the bootstrap CLI) skips the check.
 	stepUp shared.RecentAuthGate
-	logger *logger.Logger
+	// externalCeiling is the trust ceiling for external members (RFC-058).
+	externalCeiling func(ctx context.Context, host, home shared.ID) (string, error)
+	logger          *logger.Logger
 }
 
 // SetStepUpGate wires step-up re-authentication for granting the
