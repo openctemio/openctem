@@ -56,7 +56,8 @@ import {
   useCancelApproval,
 } from '@/features/findings/api/use-findings-api'
 import type { ApiApproval, ApprovalStatus } from '@/features/findings/types'
-import { FINDING_STATUS_CONFIG } from '@/features/findings/types'
+import { APPROVAL_STATUSES, FINDING_STATUS_CONFIG } from '@/features/findings/types'
+import { useListParams } from '@/hooks/use-list-params'
 import {
   approvalTabCounts,
   canCancelApproval,
@@ -83,7 +84,7 @@ const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
   expired: 'Expired',
 }
 
-const PAGE_SIZE = 20
+const APPROVAL_TABS: readonly string[] = ['all', ...APPROVAL_STATUSES]
 
 // ============================================
 // HELPERS
@@ -142,8 +143,11 @@ function ApprovalsLoadingSkeleton() {
 // ============================================
 
 export default function ApprovalsPage() {
-  const [activeTab, setActiveTab] = useState<ApprovalTab>('all')
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: PAGE_SIZE })
+  // Tab (status) and page live in the URL, like every list.
+  const list = useListParams({ filters: { status: '' } })
+  const activeTab: ApprovalTab = APPROVAL_TABS.includes(list.filters.status)
+    ? (list.filters.status as ApprovalTab)
+    : 'all'
   const currentUserId = useDisplayUser()?.id
 
   // Action state
@@ -156,8 +160,8 @@ export default function ApprovalsPage() {
 
   // One server page of the active tab; the counts cover every status.
   const { data, isLoading, error, mutate } = useApprovals(
-    pagination.pageIndex + 1,
-    pagination.pageSize,
+    list.page,
+    list.perPage,
     activeTab === 'all' ? undefined : activeTab
   )
 
@@ -174,12 +178,13 @@ export default function ApprovalsPage() {
 
   const approvals = useMemo(() => data?.data ?? [], [data?.data])
   const counts = useMemo(() => approvalTabCounts(data?.status_counts), [data?.status_counts])
-  const pageCount = data ? Math.max(1, Math.ceil(data.total / pagination.pageSize)) : 1
+  const pageCount = data ? Math.max(1, Math.ceil(data.total / list.perPage)) : 1
 
-  const changeTab = useCallback((tab: string) => {
-    setActiveTab(tab as ApprovalTab)
-    setPagination((p) => ({ ...p, pageIndex: 0 }))
-  }, [])
+  const { setFilter } = list
+  const changeTab = useCallback(
+    (tab: string) => setFilter('status', tab === 'all' ? '' : tab),
+    [setFilter]
+  )
 
   const isInitialLoading = isLoading && !data
 
@@ -542,8 +547,8 @@ export default function ApprovalsPage() {
                     manualPagination
                     pageCount={pageCount}
                     rowCount={data?.total ?? 0}
-                    pagination={pagination}
-                    onPaginationChange={setPagination}
+                    pagination={list.pagination}
+                    onPaginationChange={list.setPagination}
                     getRowId={(row) => row.id}
                     showColumnToggle={false}
                     emptyMessage="No approval requests"
