@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -544,11 +545,11 @@ func (h *AssetServiceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // @Param        is_public query boolean false "Filter by public exposure"
 // @Param        port query int false "Filter by port number"
 // @Param        product query string false "Filter by product name"
-// @Param        limit query int false "Maximum results (max 1000)" default(50)
-// @Param        offset query int false "Pagination offset" default(0)
+// @Param        page query int false "Page (1-based)" default(1)
+// @Param        per_page query int false "Page size (max 100)" default(50)
 // @Param        sort_by query string false "Sort field"
 // @Param        sort_order query string false "Sort order (asc, desc)"
-// @Success      200  {object}  object{data=[]AssetServiceResponse,total=int,limit=int,offset=int}
+// @Success      200  {object}  object{data=[]AssetServiceResponse,total=int,page=int,per_page=int,total_pages=int}
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
@@ -585,21 +586,11 @@ func (h *AssetServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("product"); v != "" {
 		opts.Product = &v
 	}
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
-			opts.Limit = limit
-		}
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	// Security: Enforce max limit to prevent DoS via large queries
-	const maxLimit = 1000
-	if opts.Limit > maxLimit {
-		opts.Limit = maxLimit
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if offset, err := strconv.Atoi(v); err == nil && offset >= 0 {
-			opts.Offset = offset
-		}
-	}
+	opts.Limit, opts.Offset = paging.Limit(), paging.Offset()
 	if v := r.URL.Query().Get("sort_by"); v != "" {
 		opts.SortBy = v
 	}
@@ -627,12 +618,7 @@ func (h *AssetServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":   response,
-		"total":  total,
-		"limit":  opts.Limit,
-		"offset": opts.Offset,
-	})
+	_ = json.NewEncoder(w).Encode(pagination.NewResult(response, int64(total), paging))
 }
 
 // ListPublic handles GET /api/v1/services/public
@@ -643,9 +629,9 @@ func (h *AssetServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        limit query int false "Maximum results (max 1000)" default(50)
-// @Param        offset query int false "Pagination offset" default(0)
-// @Success      200  {object}  object{data=[]AssetServiceResponse,total=int,limit=int,offset=int}
+// @Param        page query int false "Page (1-based)" default(1)
+// @Param        per_page query int false "Page size (max 100)" default(50)
+// @Success      200  {object}  object{data=[]AssetServiceResponse,total=int,page=int,per_page=int,total_pages=int}
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Router       /services/public [get]
@@ -672,21 +658,11 @@ func (h *AssetServiceHandler) ListPublic(w http.ResponseWriter, r *http.Request)
 		opts.IsPublic = &isPublicDefault
 	}
 
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if l, err := strconv.Atoi(v); err == nil && l > 0 {
-			opts.Limit = l
-		}
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if o, err := strconv.Atoi(v); err == nil && o >= 0 {
-			opts.Offset = o
-		}
-	}
-	// Security: Enforce max limit to prevent DoS via large queries
-	const maxLimit = 1000
-	if opts.Limit > maxLimit {
-		opts.Limit = maxLimit
-	}
+	opts.Limit, opts.Offset = paging.Limit(), paging.Offset()
 
 	opts.Scope, err = resolveDataScope(ctx, h.dataScope, tenantID)
 	if err != nil {
@@ -708,12 +684,7 @@ func (h *AssetServiceHandler) ListPublic(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":   response,
-		"total":  total,
-		"limit":  opts.Limit,
-		"offset": opts.Offset,
-	})
+	_ = json.NewEncoder(w).Encode(pagination.NewResult(response, int64(total), paging))
 }
 
 // Stats handles GET /api/v1/services/stats

@@ -32,6 +32,14 @@ type ScanTimeoutController struct {
 	runRepo scanrun.RunRepository
 	config  *ScanTimeoutControllerConfig
 	logger  *logger.Logger
+	// onReaped hears about every run a pass ended, so a timed-out or
+	// unclaimed run fires the run-finished event too (nil: nobody listens).
+	onReaped func(ctx context.Context, runs []scanrun.ReapedRun)
+}
+
+// SetReapedRunListener tells fn about every run a pass ends.
+func (c *ScanTimeoutController) SetReapedRunListener(fn func(ctx context.Context, runs []scanrun.ReapedRun)) {
+	c.onReaped = fn
 }
 
 // NewScanTimeoutController creates a new ScanTimeoutController.
@@ -76,6 +84,9 @@ const (
 func (c *ScanTimeoutController) Reconcile(ctx context.Context) (int, error) {
 	// First, so an unclaimed run ends with the reason instead of as a
 	// generic timeout (and is not retried: no sensor is a permanent class).
+	if rep, ok := c.runRepo.(scanrun.ReapedRunReporter); ok && c.onReaped != nil {
+		return c.reconcileReporting(ctx, rep)
+	}
 	aborted := int64(0)
 	if a, ok := c.runRepo.(scanrun.UnclaimedRunAborter); ok {
 		n, err := a.AbortUnclaimedRuns(ctx, UnclaimedScheduledRunAfter, UnclaimedInteractiveRunAfter)
@@ -100,4 +111,28 @@ func (c *ScanTimeoutController) Reconcile(ctx context.Context) (int, error) {
 	}
 
 	return int(count + aborted), nil
+}
+
+// reconcileReporting is Reconcile with a repository that reports the runs it
+// ends, each of which is handed to the listener.
+func (c *ScanTimeoutController) reconcileReporting(ctx context.Context, rep scanrun.ReapedRunReporter) (int, error) {
+	unclaimed, err := rep.AbortUnclaimedRunsReporting(ctx, UnclaimedScheduledRunAfter, UnclaimedInteractiveRunAfter)
+	if err != nil {
+		c.logger.Error("failed to abort unclaimed scan runs", "error", err)
+	} else if len(unclaimed) > 0 {
+		c.logger.Info("ended scan runs no sensor picked up", "count", len(unclaimed))
+		metrics.ScanRunsReapedTotal.WithLabelValues("unclaimed").Add(float64(len(unclaimed)))
+		c.onReaped(ctx, unclaimed)
+	}
+	timedOut, err := rep.MarkTimedOutRunsReporting(ctx)
+	if err != nil {
+		c.logger.Error("failed to mark timed out scan runs", "error", err)
+		return len(unclaimed), err
+	}
+	if len(timedOut) > 0 {
+		c.logger.Info("ended scan runs past their deadline (partial when some work finished, else timeout)", "count", len(timedOut))
+		metrics.ScanRunsReapedTotal.WithLabelValues("deadline").Add(float64(len(timedOut)))
+		c.onReaped(ctx, timedOut)
+	}
+	return len(unclaimed) + len(timedOut), nil
 }

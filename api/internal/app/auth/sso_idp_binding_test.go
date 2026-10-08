@@ -37,18 +37,37 @@ type ssoFakeUserRepo struct {
 	byEmail *userdom.User
 	created *userdom.User
 	updated *userdom.User
+	// others are further accounts, found by their exact email.
+	others []*userdom.User
 }
 
-func (r *ssoFakeUserRepo) GetByEmail(_ context.Context, _ string) (*userdom.User, error) {
+func (r *ssoFakeUserRepo) GetByEmail(_ context.Context, email string) (*userdom.User, error) {
+	for _, u := range r.others {
+		if u.Email() == email {
+			return u, nil
+		}
+	}
 	return r.byEmail, nil
+}
+func (r *ssoFakeUserRepo) GetByID(_ context.Context, id shared.ID) (*userdom.User, error) {
+	for _, u := range append([]*userdom.User{r.byEmail, r.created}, r.others...) {
+		if u != nil && u.ID() == id {
+			return u, nil
+		}
+	}
+	return nil, userdom.NotFoundError(id)
 }
 func (r *ssoFakeUserRepo) Update(_ context.Context, u *userdom.User) error { r.updated = u; return nil }
 func (r *ssoFakeUserRepo) Create(_ context.Context, u *userdom.User) error { r.created = u; return nil }
 
 func newSSOSvc(existing *userdom.User) (*SSOService, *ssoFakeUserRepo) {
 	repo := &ssoFakeUserRepo{byEmail: existing}
-	return &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled(), domainVerifier: corpVerified()}, repo
+	return &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(),
+		authConfig: regEnabled(), domainVerifier: corpVerified()}, repo
 }
+
+// idsOf is the in-memory identity store of a service built by the helpers.
+func idsOf(s *SSOService) *memIdentities { return s.identities.(*memIdentities) }
 
 const (
 	corpOkta   = "https://corp.okta.com"
@@ -62,8 +81,8 @@ const (
 // AuthProviderOIDC and the provider-match check passes.
 func TestSSOFindOrCreate_BlocksCrossIdPSameEnum(t *testing.T) {
 	victim, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim") // AuthProviderOIDC
-	victim.BindFederatedIdentity(corpOkta, "corp-sub")
 	s, repo := newSSOSvc(victim)
+	idsOf(s).bindTo(victim, corpOkta, "corp-sub")
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: evilOkta, Subject: "evil-sub"},
@@ -79,16 +98,16 @@ func TestSSOFindOrCreate_BlocksCrossIdPSameEnum(t *testing.T) {
 		t.Fatal("blocked login must not persist any change")
 	}
 	// The binding must be unchanged (still corp).
-	if iss := victim.FederatedIssuer(); iss == nil || *iss != corpOkta {
-		t.Fatalf("victim issuer must stay %q, got %v", corpOkta, iss)
+	if keys := idsOf(s).keysOf(victim.ID()); len(keys) != 1 || keys[0].Issuer != corpOkta {
+		t.Fatalf("victim binding must stay %q only, got %+v", corpOkta, keys)
 	}
 }
 
 // Re-login from the SAME issuer is fine.
 func TestSSOFindOrCreate_SameIssuerOK(t *testing.T) {
 	u, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
-	u.BindFederatedIdentity(corpOkta, "corp-sub")
 	s, _ := newSSOSvc(u)
+	idsOf(s).bindTo(u, corpOkta, "corp-sub")
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub"},
@@ -104,10 +123,7 @@ func TestSSOFindOrCreate_SameIssuerOK(t *testing.T) {
 // A pre-tracking federated account (no recorded issuer) is bound on first use
 // (trust-on-first-use) and adopted; subsequent logins are then enforced.
 func TestSSOFindOrCreate_LegacyTrustOnFirstUseBinds(t *testing.T) {
-	legacy, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim") // no federated issuer
-	if legacy.FederatedIssuer() != nil {
-		t.Fatal("precondition: legacy user must start unbound")
-	}
+	legacy, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim") // no federated identity
 	s, repo := newSSOSvc(legacy)
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
@@ -119,11 +135,11 @@ func TestSSOFindOrCreate_LegacyTrustOnFirstUseBinds(t *testing.T) {
 	if got == nil {
 		t.Fatal("expected the existing user back")
 	}
-	if iss := got.FederatedIssuer(); iss == nil || *iss != corpOkta {
-		t.Fatalf("expected issuer bound to %q on first use, got %v", corpOkta, iss)
+	if keys := idsOf(s).keysOf(got.ID()); len(keys) != 1 || keys[0].Issuer != corpOkta || keys[0].Subject != "corp-sub" {
+		t.Fatalf("expected (corp, corp-sub) bound on first use, got %+v", keys)
 	}
 	if repo.updated == nil {
-		t.Fatal("the newly-bound identity must be persisted via Update")
+		t.Fatal("the login must be persisted via Update")
 	}
 }
 
@@ -132,8 +148,8 @@ func TestSSOFindOrCreate_LegacyTrustOnFirstUseBinds(t *testing.T) {
 // provider-match guard.
 func TestSSOFindOrCreate_NoIssuerNoRegression(t *testing.T) {
 	u, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
-	u.BindFederatedIdentity(corpOkta, "corp-sub")
 	s, _ := newSSOSvc(u)
+	idsOf(s).bindTo(u, corpOkta, "corp-sub")
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: "", Subject: ""},
@@ -167,6 +183,12 @@ func (r *raceUserRepo) Create(_ context.Context, _ *userdom.User) error {
 	return errTestCreateConflict
 }
 func (r *raceUserRepo) Update(_ context.Context, u *userdom.User) error { r.updated = u; return nil }
+func (r *raceUserRepo) GetByID(_ context.Context, id shared.ID) (*userdom.User, error) {
+	if r.onRetry != nil && r.onRetry.ID() == id {
+		return r.onRetry, nil
+	}
+	return nil, userdom.NotFoundError(id)
+}
 
 var errTestCreateConflict = fmt.Errorf("duplicate key value violates unique constraint")
 
@@ -176,7 +198,7 @@ var errTestCreateConflict = fmt.Errorf("duplicate key value violates unique cons
 func TestSSOFindOrCreate_RetryPathBlocksPasswordLocalTakeover(t *testing.T) {
 	victim, _ := userdom.NewLocalUser(victimMail, "Victim", "hashed-password")
 	repo := &raceUserRepo{onRetry: victim}
-	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled(), domainVerifier: corpVerified()}
+	s := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: regEnabled(), domainVerifier: corpVerified()}
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: evilOkta, Subject: "evil"},
@@ -196,9 +218,13 @@ func TestSSOFindOrCreate_RetryPathBlocksPasswordLocalTakeover(t *testing.T) {
 // same federated identity (same issuer).
 func TestSSOFindOrCreate_RetryPathAdoptsSameIssuer(t *testing.T) {
 	concurrent, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
-	concurrent.BindFederatedIdentity(corpOkta, "corp-sub")
 	repo := &raceUserRepo{onRetry: concurrent}
-	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled(), domainVerifier: corpVerified()}
+	ids := newMemIdentities()
+	s := &SSOService{userRepo: repo, identities: ids, logger: logger.NewNop(), authConfig: regEnabled(), domainVerifier: corpVerified()}
+	// The concurrent login created the account; its identity is bound the
+	// moment our own lookup has already missed.
+	ids.bindTo(concurrent, corpOkta, "corp-sub")
+	ids.hideOnce = 1
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub"},
@@ -228,8 +254,8 @@ func TestSSOFindOrCreate_NewOktaUserCreated(t *testing.T) {
 	if repo.created.AuthProvider() != userdom.AuthProviderOIDC {
 		t.Fatalf("expected AuthProviderOIDC, got %s", repo.created.AuthProvider())
 	}
-	if iss := repo.created.FederatedIssuer(); iss == nil || *iss != corpOkta {
-		t.Fatalf("new Okta user must be bound to %q, got %v", corpOkta, iss)
+	if keys := idsOf(s).keysOf(repo.created.ID()); len(keys) != 1 || keys[0].Issuer != corpOkta {
+		t.Fatalf("new Okta user must be bound to %q, got %+v", corpOkta, keys)
 	}
 }
 
@@ -248,8 +274,8 @@ func TestSSOFindOrCreate_NewUserBindsIssuer(t *testing.T) {
 	if got == nil || repo.created == nil {
 		t.Fatal("expected a created user")
 	}
-	if iss := repo.created.FederatedIssuer(); iss == nil || *iss != entraIss {
-		t.Fatalf("new user must be bound to %q, got %v", entraIss, iss)
+	if keys := idsOf(s).keysOf(repo.created.ID()); len(keys) != 1 || keys[0].Issuer != entraIss {
+		t.Fatalf("new user must be bound to %q, got %+v", entraIss, keys)
 	}
 }
 
@@ -271,9 +297,9 @@ func corpVerified() *fakeDomainVerifier {
 // the type match proves nothing. An organization that has not DNS-verified the
 // email domain must not get to adopt (and bind) the account with its own IdP.
 func TestSSOFindOrCreate_UnboundAccountUnverifiedDomainRefused(t *testing.T) {
-	legacy, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim") // no federated issuer
+	legacy, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim") // no federated identity
 	repo := &ssoFakeUserRepo{byEmail: legacy}
-	s := &SSOService{userRepo: repo, logger: logger.NewNop(), authConfig: regEnabled(),
+	s := &SSOService{userRepo: repo, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: regEnabled(),
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{"attacker.io": true}}}
 
 	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
@@ -285,8 +311,8 @@ func TestSSOFindOrCreate_UnboundAccountUnverifiedDomainRefused(t *testing.T) {
 	if got != nil || repo.updated != nil {
 		t.Fatal("a refused login must not return or bind the account")
 	}
-	if legacy.FederatedIssuer() != nil {
-		t.Fatal("the attacker's issuer must not be bound")
+	if keys := idsOf(s).keysOf(legacy.ID()); len(keys) != 0 {
+		t.Fatalf("the attacker's identity must not be bound, got %+v", keys)
 	}
 }
 
@@ -294,9 +320,9 @@ func TestSSOFindOrCreate_UnboundAccountUnverifiedDomainRefused(t *testing.T) {
 // IdP, so it also needs the organization's DNS-verified domain.
 func TestSSOFindOrCreate_NoIssuerUnverifiedDomainRefused(t *testing.T) {
 	u, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
-	u.BindFederatedIdentity(corpOkta, "corp-sub")
-	s := &SSOService{userRepo: &ssoFakeUserRepo{byEmail: u}, logger: logger.NewNop(), authConfig: regEnabled(),
+	s := &SSOService{userRepo: &ssoFakeUserRepo{byEmail: u}, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: regEnabled(),
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{}}}
+	idsOf(s).bindTo(u, corpOkta, "corp-sub")
 
 	_, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, EmailVerified: true},
@@ -309,13 +335,128 @@ func TestSSOFindOrCreate_NoIssuerUnverifiedDomainRefused(t *testing.T) {
 // A login that matches the bound issuer needs no domain proof.
 func TestSSOFindOrCreate_BoundIssuerMatchNeedsNoDomainProof(t *testing.T) {
 	u, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
-	u.BindFederatedIdentity(corpOkta, "corp-sub")
-	s := &SSOService{userRepo: &ssoFakeUserRepo{byEmail: u}, logger: logger.NewNop(), authConfig: regEnabled(),
+	s := &SSOService{userRepo: &ssoFakeUserRepo{byEmail: u}, identities: newMemIdentities(), logger: logger.NewNop(), authConfig: regEnabled(),
 		domainVerifier: &fakeDomainVerifier{verified: map[string]bool{}}}
+	idsOf(s).bindTo(u, corpOkta, "corp-sub")
 
 	if _, err := s.findOrCreateUser(context.Background(), ssoTn(t),
 		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub", EmailVerified: true},
 		jitRP(identityproviderdom.ProviderOkta)); err != nil {
 		t.Fatalf("bound-issuer login should succeed without domain proof, got %v", err)
+	}
+}
+
+// R16: the organization SSO path checked only the issuer, so another person in
+// the same directory (same issuer, different subject) presenting the victim's
+// email was let in. The subject must match too.
+func TestSSOFindOrCreate_SameIssuerOtherSubjectRefused(t *testing.T) {
+	victim, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
+	s, repo := newSSOSvc(victim)
+	idsOf(s).bindTo(victim, corpOkta, "corp-sub")
+
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "other-sub", EmailVerified: true},
+		jitRP(identityproviderdom.ProviderOkta))
+	if !errors.Is(err, ErrFederatedIdentityConflict) {
+		t.Fatalf("expected ErrFederatedIdentityConflict, got %v", err)
+	}
+	if got != nil || repo.updated != nil || repo.created != nil {
+		t.Fatal("a refused login must not return, change or create an account")
+	}
+	if keys := idsOf(s).keysOf(victim.ID()); len(keys) != 1 || keys[0].Subject != "corp-sub" {
+		t.Fatalf("binding must stay corp-sub, got %+v", keys)
+	}
+}
+
+// The returning account is found by (issuer, subject) even when the IdP now
+// sends another email: no duplicate account, no refusal, and the email moves
+// to the new address because the organization DNS-verified its domain.
+func TestSSOFindOrCreate_EmailChangedAtIdP_Updated(t *testing.T) {
+	u, _ := userdom.NewFromKeycloak("kc-1", "old@corp.com", "Person")
+	s, repo := newSSOSvc(nil) // the new address names no account
+	repo.others = []*userdom.User{u}
+	idsOf(s).bindTo(u, corpOkta, "corp-sub")
+
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: "new@corp.com", Issuer: corpOkta, Subject: "corp-sub", EmailVerified: true},
+		jitRP(identityproviderdom.ProviderOkta))
+	if err != nil {
+		t.Fatalf("returning identity must sign in, got %v", err)
+	}
+	if got == nil || got.ID() != u.ID() || repo.created != nil {
+		t.Fatal("the same account must be returned, never a new one")
+	}
+	if got.Email() != "new@corp.com" {
+		t.Fatalf("email = %q, want new@corp.com", got.Email())
+	}
+	if repo.updated == nil || repo.updated.Email() != "new@corp.com" {
+		t.Fatal("the email change must be persisted")
+	}
+}
+
+// The new address is on a domain this organization has not DNS-verified: the
+// IdP cannot vouch for it. The person still signs in; the email is kept.
+func TestSSOFindOrCreate_EmailChangedAtIdP_UnverifiedDomainKept(t *testing.T) {
+	u, _ := userdom.NewFromKeycloak("kc-1", "old@corp.com", "Person")
+	s, repo := newSSOSvc(nil)
+	repo.others = []*userdom.User{u}
+	idsOf(s).bindTo(u, corpOkta, "corp-sub")
+
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: "ceo@victim.example", Issuer: corpOkta, Subject: "corp-sub", EmailVerified: true},
+		jitRP(identityproviderdom.ProviderOkta))
+	if err != nil || got == nil || got.ID() != u.ID() {
+		t.Fatalf("returning identity must sign in, got %v", err)
+	}
+	if got.Email() != "old@corp.com" {
+		t.Fatalf("email must stay old@corp.com, got %q", got.Email())
+	}
+}
+
+// The new address belongs to another account: never taken from it.
+func TestSSOFindOrCreate_EmailChangedAtIdP_HeldByOtherAccountKept(t *testing.T) {
+	u, _ := userdom.NewFromKeycloak("kc-1", "old@corp.com", "Person")
+	other, _ := userdom.NewFromKeycloak("kc-2", "boss@corp.com", "Boss")
+	s, repo := newSSOSvc(nil)
+	repo.others = []*userdom.User{u, other}
+	idsOf(s).bindTo(u, corpOkta, "corp-sub")
+
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: "boss@corp.com", Issuer: corpOkta, Subject: "corp-sub", EmailVerified: true},
+		jitRP(identityproviderdom.ProviderOkta))
+	if err != nil || got == nil || got.ID() != u.ID() {
+		t.Fatalf("returning identity must sign in as itself, got %v", err)
+	}
+	if got.Email() != "old@corp.com" || other.Email() != "boss@corp.com" {
+		t.Fatalf("no address may move: got %q / %q", got.Email(), other.Email())
+	}
+}
+
+// An identity bound to account A never lets a login reach account B, even
+// when the IdP sends B's email.
+func TestSSOFindOrCreate_IdentityWinsOverEmail(t *testing.T) {
+	a, _ := userdom.NewFromKeycloak("kc-1", "a@corp.com", "A")
+	b, _ := userdom.NewFromKeycloak("kc-2", "b@corp.com", "B")
+	s, repo := newSSOSvc(nil)
+	repo.others = []*userdom.User{a, b}
+	idsOf(s).bindTo(a, corpOkta, "sub-a")
+
+	got, err := s.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: "b@corp.com", Issuer: corpOkta, Subject: "sub-a", EmailVerified: true},
+		jitRP(identityproviderdom.ProviderOkta))
+	if err != nil || got == nil || got.ID() != a.ID() {
+		t.Fatalf("the identity must resolve account A, got %v / %v", got, err)
+	}
+}
+
+// Without the identity store wired, a login carrying an identity fails
+// closed rather than falling back to email matching.
+func TestSSOFindOrCreate_IdentityStoreMissing_FailsClosed(t *testing.T) {
+	u, _ := userdom.NewFromKeycloak("kc-1", victimMail, "Victim")
+	s := &SSOService{userRepo: &ssoFakeUserRepo{byEmail: u}, logger: logger.NewNop(), authConfig: regEnabled(), domainVerifier: corpVerified()}
+	if _, err := s.findOrCreateUser(context.Background(), ssoTn(t),
+		&SSOUserInfo{Email: victimMail, Issuer: corpOkta, Subject: "corp-sub", EmailVerified: true},
+		jitRP(identityproviderdom.ProviderOkta)); err == nil {
+		t.Fatal("expected a refusal without the identity store")
 	}
 }
