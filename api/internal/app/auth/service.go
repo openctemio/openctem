@@ -86,6 +86,10 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
+	// freePlan assigns the Free plan to self-service organizations. Nil: no
+	// plans (organizations unlimited).
+	freePlan FreePlan
+
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -1661,6 +1665,17 @@ type CreateFirstTeamResult struct {
 	Tenant       TenantMembershipInfo `json:"tenant"`
 }
 
+// FreePlan is the slice of the entitlement service self-service creation uses.
+// create-first-team only assigns the plan: it serves people with no
+// organization, who own no Free one; POST /tenants checks the per-person cap.
+type FreePlan interface {
+	CheckFreeTeam(ctx context.Context, userID shared.ID) error
+	AssignFree(ctx context.Context, tenantID shared.ID) error
+}
+
+// SetFreePlan wires the Free plan for self-service organizations.
+func (s *AuthService) SetFreePlan(p FreePlan) { s.freePlan = p }
+
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
@@ -1757,6 +1772,13 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 	}
 	if err := s.tenantRepo.CreateWithOwner(ctx, newTenant, membership); err != nil {
 		return nil, fmt.Errorf("failed to create team: %w", err)
+	}
+
+	// A self-service organization starts on the Free plan.
+	if s.freePlan != nil {
+		if err := s.freePlan.AssignFree(ctx, newTenant.ID()); err != nil {
+			s.logger.Error("assign the Free plan to a new organization", "tenant_id", newTenant.ID().String(), "error", err)
+		}
 	}
 
 	s.logger.Info("first team created",
