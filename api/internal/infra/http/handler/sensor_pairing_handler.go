@@ -219,9 +219,18 @@ func (h *SensorPairingHandler) Confirm(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// PairingKey is the sensor-plane key a pairing route is limited by (the
-// pairing id in the path).
-func PairingKey(r *http.Request) string { return chi.URLParam(r, "pairing_id") }
+// PairingKey is the sensor-plane key a pairing route is limited by: the
+// pairing id in the path, in canonical form, or "" when it is not an id.
+// The raw path segment is never a key: it is chosen by an unauthenticated
+// caller and may be up to the URL limit long, and every key is kept by the
+// limiter for its idle window.
+func PairingKey(r *http.Request) string {
+	id, err := shared.IDFromString(chi.URLParam(r, "pairing_id"))
+	if err != nil {
+		return ""
+	}
+	return id.String()
+}
 
 // ---------------------------------------------------------------------------
 // User plane

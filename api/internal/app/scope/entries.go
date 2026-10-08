@@ -402,7 +402,7 @@ func (s *Service) NotifyAdmins(ctx context.Context, tenantID shared.ID, title, b
 		if err := s.inApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
 			NotificationType: notificationdom.TypeScopeChange, Title: title, Body: body, Severity: "high",
-			ResourceType: "scope", URL: "/scope-config",
+			ResourceType: "scope", URL: "/scope",
 		}); err != nil {
 			s.logger.Warn("scope notice: in-app notification", "error", logger.SanitizeError(err))
 		}

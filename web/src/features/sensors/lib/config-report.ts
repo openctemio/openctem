@@ -18,6 +18,7 @@ import type {
 } from '@/lib/api/sensor-types'
 import type { DetailCheckStatus } from '@/features/shared'
 import { safeHref } from '@/lib/safe-href'
+import { DOCS_ORIGIN } from '@/lib/docs-links'
 
 type Tone = 'muted' | 'info' | 'warning' | 'destructive' | 'success'
 
@@ -159,9 +160,6 @@ export function defaultFixFormat(formats: string[], runtimeKind?: string): strin
   }
   return formats[0]
 }
-
-/** Where documentation may link to. */
-export const DOCS_ORIGIN = 'https://docs.openctem.io'
 
 /**
  * The docs link as an href, or null when it is not one we link to: only an

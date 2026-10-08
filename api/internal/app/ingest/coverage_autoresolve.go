@@ -323,6 +323,16 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	if d.eligible() && !s.sensorsDeclareTool(ctx, cov, d.query.ToolName) {
 		out.Reason = coverageToolMismatch
 	}
+	if out.Reason == coverageEligible {
+		// A report "touches" every existing asset it names, also the ones its
+		// command does not cover (they are only marked seen). Absence of a
+		// finding proves something only on the assets the command was sent to
+		// scan, so a sensor cannot close findings elsewhere by naming them.
+		d.query.AssetIDs = s.coveredByCommand(ctx, tenantID, &commandID, d.query.AssetIDs)
+		if len(d.query.AssetIDs) == 0 {
+			out.Reason = coverageNoCoveredAssets
+		}
+	}
 	metrics.CoverageAutoResolveEvaluations.WithLabelValues(string(mode), out.Reason).Inc()
 	if out.Reason != coverageEligible {
 		s.logger.Debug("coverage auto-resolve: not eligible", "command_id", commandID.String(), "reason", out.Reason)

@@ -7,6 +7,8 @@ import (
 
 	"github.com/openctemio/ctis"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -166,16 +168,80 @@ func (r *coverageFindingRepo) ResolveCoverageStale(_ context.Context, _ shared.I
 	return ids, nil
 }
 
-func coverageService(t *testing.T, mode CoverageAutoResolveMode, declared []string) (*Service, *coverageFindingRepo) {
+// coverageAssetRepo serves GetByID for the assets a coverage test knows.
+type coverageAssetRepo struct {
+	asset.Repository
+	byID map[shared.ID]*asset.Asset
+}
+
+func (r *coverageAssetRepo) GetByID(_ context.Context, _ shared.ID, id shared.ID) (*asset.Asset, error) {
+	if a, ok := r.byID[id]; ok {
+		return a, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
+// coverageCommands serves the one command a coverage test evaluates.
+type coverageCommands struct{ cmd *command.Command }
+
+func (c coverageCommands) GetByTenantAndID(context.Context, shared.ID, shared.ID) (*command.Command, error) {
+	return c.cmd, nil
+}
+
+// coverageService is a service whose one run is a nuclei scan of
+// a.example.com that touched the asset a.example.com (covered by the
+// command). touched adds more touched assets by name.
+func coverageService(t *testing.T, mode CoverageAutoResolveMode, declared []string, touched ...string) (*Service, *coverageFindingRepo) {
 	t.Helper()
-	tid, sensorID, assetID := shared.NewID(), shared.NewID(), shared.NewID()
-	repo := &coverageFindingRepo{cov: completedRun(t, sensorID, assetID), stale: []shared.ID{shared.NewID()}, open: 4}
+	tid, sensorID := shared.NewID(), shared.NewID()
+	assets := &coverageAssetRepo{byID: map[shared.ID]*asset.Asset{}}
+	names := append([]string{"a.example.com"}, touched...)
+	ids := make([]shared.ID, 0, len(names))
+	for _, name := range names {
+		a, err := asset.NewAssetWithTenant(tid, name, asset.AssetTypeDomain, asset.CriticalityMedium)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assets.byID[a.ID()] = a
+		ids = append(ids, a.ID())
+	}
+	cov := completedRun(t, sensorID, ids[0])
+	cov.Reports[0].TouchedAssetIDs = ids
+	repo := &coverageFindingRepo{cov: cov, stale: []shared.ID{shared.NewID()}, open: 4}
 	sensors := &sensorRowRepo{rows: map[shared.ID]*sensor.Sensor{
 		sensorID: {ID: sensorID, TenantID: &tid, Reported: sensor.ReportOf(declared...)},
 	}}
-	svc := &Service{logger: logger.NewNop(), findingRepo: repo, sensorRepo: sensors}
+	svc := &Service{logger: logger.NewNop(), findingRepo: repo, sensorRepo: sensors, assetRepo: assets}
+	svc.SetCommandReader(coverageCommands{cmd: &command.Command{
+		ID: shared.NewID(), TenantID: tid, Type: command.CommandTypeScan,
+		Payload: json.RawMessage(`{"scanner":"nuclei","targets":["a.example.com"]}`),
+	}})
 	svc.SetCoverageAutoResolve(mode, DefaultBlindingGuard())
 	return svc, repo
+}
+
+// A report may name any existing asset of its tenant; only the assets its
+// command was sent to scan count as covered (RFC-040 §5.3). A hostile sensor
+// that names another asset must not close that asset's findings.
+func TestEvaluateCommandCoverage_OnlyCommandCoveredAssets(t *testing.T) {
+	t.Run("an asset outside the command is left out of the candidate query", func(t *testing.T) {
+		svc, repo := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"}, "victim.example.org")
+		out := svc.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID())
+		if out.Reason != coverageEligible {
+			t.Fatalf("outcome = %+v", out)
+		}
+		if len(repo.query.AssetIDs) != 1 || repo.query.AssetIDs[0] != repo.cov.Reports[0].TouchedAssetIDs[0] {
+			t.Fatalf("candidate assets = %v, want only the covered one", repo.query.AssetIDs)
+		}
+	})
+	t.Run("a report that touched only uncovered assets closes nothing", func(t *testing.T) {
+		svc, repo := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"}, "victim.example.org")
+		repo.cov.Reports[0].TouchedAssetIDs = repo.cov.Reports[0].TouchedAssetIDs[1:]
+		out := svc.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID())
+		if out.Reason != coverageNoCoveredAssets || len(repo.resolved) != 0 || repo.query.ToolName != "" {
+			t.Fatalf("outcome = %+v, resolved %v, query %+v", out, repo.resolved, repo.query)
+		}
+	})
 }
 
 // The default is a dry run: the would-be resolution is reported, nothing is

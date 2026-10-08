@@ -37,15 +37,74 @@ var (
 	ErrJSONTrailingData    = errors.New("data after the top-level value")
 	ErrJSONNumberRange     = errors.New("number out of range")
 	ErrJSONNotObject       = errors.New("top-level value is not an object")
-	ErrJSONSyntax          = errors.New("syntax error")
+	// ErrJSONTooManyItems: an array, or the whole document, holds more
+	// values than its bound (JSONBounds). Maps to report-too-large: the
+	// sensor splits the report into smaller segments.
+	ErrJSONTooManyItems = errors.New("more items than the limit")
+	ErrJSONSyntax       = errors.New("syntax error")
 )
+
+// JSONBounds caps how many values a document may hold, checked by the
+// streaming pre-pass before anything is decoded. Decoding allocates per value
+// far more than the value's bytes on the wire (an empty object "{}" in the
+// findings array becomes an 840-byte ctis.Finding), so a body within the
+// byte limits could otherwise make one request allocate gigabytes. Zero
+// fields are not checked.
+type JSONBounds struct {
+	// TopArrays caps the element count of a member array of the top-level
+	// object, by member name ("findings", "assets").
+	TopArrays map[string]int
+	// MaxArrayLen caps every other array.
+	MaxArrayLen int
+	// MaxContainers caps the objects and arrays of the whole document.
+	MaxContainers int
+	// MaxValues caps every value of the whole document (containers
+	// included).
+	MaxValues int
+}
+
+// Bounds of a v2 report segment beyond the per-segment item limits: any
+// other array, the containers per segment item and the values per segment
+// item. A legitimate segment that exceeds them is refused as
+// report-too-large, and the sensor splits it further.
+const (
+	reportMaxArrayLen         = 100_000
+	reportContainersPerItem   = 10
+	reportValuesPerItem       = 100
+	reportMinItemsForPerItems = 1_000
+)
+
+// ReportBounds are the decode bounds of a report segment under limits.
+func ReportBounds(limits protov2.Limits) JSONBounds {
+	items := max(limits.MaxFindingsPerSegment+limits.MaxAssetsPerSegment, reportMinItemsForPerItems)
+	return JSONBounds{
+		TopArrays:     map[string]int{"findings": limits.MaxFindingsPerSegment, "assets": limits.MaxAssetsPerSegment},
+		MaxArrayLen:   reportMaxArrayLen,
+		MaxContainers: items * reportContainersPerItem,
+		MaxValues:     items * reportValuesPerItem,
+	}
+}
+
+// CIReportBounds are the decode bounds of a CI run upload (one report per
+// request, up to MaxFindingsPerReport findings, no segments).
+var CIReportBounds = JSONBounds{
+	MaxArrayLen:   MaxFindingsPerReport,
+	MaxContainers: 1_000_000,
+	MaxValues:     5_000_000,
+}
 
 // CheckIJSON is the pre-pass: valid UTF-8, no lone surrogate escape, no
 // duplicate member name in any object, nesting at most maxDepth, numbers
 // representable as float64, one top-level object and nothing after it.
-//
-//nolint:cyclop,gocognit // one tokenizer loop; splitting it hides the state machine
 func CheckIJSON(data []byte, maxDepth int) error {
+	return CheckIJSONBounded(data, maxDepth, JSONBounds{})
+}
+
+// CheckIJSONBounded is CheckIJSON that also enforces b, so that the decode
+// that follows allocates in proportion to the limits, not to the body.
+//
+//nolint:cyclop,gocognit,gocyclo // one tokenizer loop; splitting it hides the state machine
+func CheckIJSONBounded(data []byte, maxDepth int, b JSONBounds) error {
 	if !utf8.Valid(data) {
 		return ErrJSONInvalidUTF8
 	}
@@ -54,6 +113,7 @@ func CheckIJSON(data []byte, maxDepth int) error {
 	}
 
 	var stack []jsonFrame
+	containers, values := 0, 0
 
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
@@ -96,7 +156,15 @@ func CheckIJSON(data []byte, maxDepth int) error {
 			}
 			stack[n-1].keys[key] = struct{}{}
 			stack[n-1].expectKey = false
+			stack[n-1].lastKey = key
 			continue
+		}
+
+		// tok starts a value unless it closes an array.
+		if d, ok := tok.(json.Delim); !ok || d != ']' {
+			if err := countValue(stack, d == '{' || d == '[', &containers, &values, b); err != nil {
+				return err
+			}
 		}
 
 		switch v := tok.(type) {
@@ -111,7 +179,7 @@ func CheckIJSON(data []byte, maxDepth int) error {
 				if len(stack) >= maxDepth {
 					return ErrJSONTooDeep
 				}
-				stack = append(stack, jsonFrame{})
+				stack = append(stack, jsonFrame{limit: arrayLimit(stack, b)})
 			case ']':
 				if len(stack) == 0 || stack[len(stack)-1].object {
 					return ErrJSONSyntax
@@ -137,6 +205,44 @@ type jsonFrame struct {
 	object    bool
 	expectKey bool
 	keys      map[string]struct{}
+	// lastKey is the member whose value is being read (objects).
+	lastKey string
+	// count and limit are the elements so far and the bound (arrays; a
+	// zero limit is unbounded).
+	count, limit int
+}
+
+// arrayLimit is the element bound of an array opened inside stack: the
+// top-level member's own bound, else MaxArrayLen.
+func arrayLimit(stack []jsonFrame, b JSONBounds) int {
+	if len(stack) == 1 && stack[0].object {
+		if n, ok := b.TopArrays[stack[0].lastKey]; ok {
+			return n
+		}
+	}
+	return b.MaxArrayLen
+}
+
+// countValue counts one value that starts inside stack against the
+// enclosing array's bound and the document's bounds.
+func countValue(stack []jsonFrame, container bool, containers, values *int, b JSONBounds) error {
+	*values++
+	if b.MaxValues > 0 && *values > b.MaxValues {
+		return ErrJSONTooManyItems
+	}
+	if container {
+		*containers++
+		if b.MaxContainers > 0 && *containers > b.MaxContainers {
+			return ErrJSONTooManyItems
+		}
+	}
+	if n := len(stack); n > 0 && !stack[n-1].object {
+		stack[n-1].count++
+		if stack[n-1].limit > 0 && stack[n-1].count > stack[n-1].limit {
+			return ErrJSONTooManyItems
+		}
+	}
+	return nil
 }
 
 // markValueDone records that the value of the current object member was read,
@@ -223,10 +329,11 @@ var ErrUnknownField = errors.New("unknown field")
 // string where a number is expected, an unparsable timestamp).
 var ErrSchemaType = errors.New("member has the wrong type")
 
-// DecodeStrictReport runs the I-JSON pre-pass, then decodes the flat CTIS
-// report (no {"report": …} wrapper on v2) rejecting unknown fields.
-func DecodeStrictReport(data []byte, maxDepth int) (*ctis.Report, error) {
-	if err := CheckIJSON(data, maxDepth); err != nil {
+// DecodeStrictReport runs the I-JSON pre-pass with bounds b, then decodes
+// the flat CTIS report (no {"report": …} wrapper on v2) rejecting unknown
+// fields. Nothing is decoded before the bounds hold.
+func DecodeStrictReport(data []byte, maxDepth int, b JSONBounds) (*ctis.Report, error) {
+	if err := CheckIJSONBounded(data, maxDepth, b); err != nil {
 		return nil, err
 	}
 	var report ctis.Report
@@ -256,8 +363,11 @@ func (e *V2ReportError) Error() string {
 // error means the segment is a complete, independently valid CTIS document
 // for this report; a *V2ReportError names the problem otherwise.
 func ParseV2Report(data []byte, reportID string, limits protov2.Limits) (*ctis.Report, error) {
-	report, err := DecodeStrictReport(data, limits.MaxJSONDepth)
+	report, err := DecodeStrictReport(data, limits.MaxJSONDepth, ReportBounds(limits))
 	switch {
+	case errors.Is(err, ErrJSONTooManyItems):
+		return nil, &V2ReportError{Problem: protov2.ProblemReportTooLarge, Errors: []protov2.ItemError{
+			item("", protov2.CodeTooMany, protov2.DetailTooMany)}}
 	case errors.Is(err, ErrUnknownField):
 		return nil, &V2ReportError{Problem: protov2.ProblemSchemaInvalid, Errors: []protov2.ItemError{{
 			Pointer: "", Code: protov2.CodeUnknownField, Detail: protov2.DetailUnknownField}}}
