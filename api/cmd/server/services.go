@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -53,6 +54,7 @@ import (
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
+	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
@@ -89,6 +91,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
@@ -794,6 +797,8 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// Plans and limits.
+	Entitlement *entitlementapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -880,6 +885,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
+
+	// Plans and limits: every creation path checks the organization limits
+	// (docs/architecture/plans-and-limits.md). Seats and invitations are
+	// checked where the rows are inserted.
+	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
+	for _, r := range []interface{ SetPlanLimits(plan.Checker) }{
+		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing,
+	} {
+		r.SetPlanLimits(s.Entitlement)
+	}
 
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)
@@ -1818,6 +1833,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A tool no online sensor may run refuses the trigger with the
 		// reason (docs/architecture/tool-availability.md).
 		scan.WithToolAvailability(s.Tool),
+		// Workflow readiness: the New Scan picker, the workflow list and
+		// the refusal of a workflow no sensor here can run.
+		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor)),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
@@ -1893,6 +1911,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithToolRepo(repos.Tool),
 		// A draft check warns about steps no online sensor can run now.
 		scanrun.WithRunnableTools(s.Tool),
+		// The builder saves drafts; a publish makes them the steps runs use.
+		scanrun.WithDraftStore(repos.ScanWorkflow),
 		scanrun.WithQualityGate(repos.ScanProfile, repos.Finding),
 		scanrun.WithScanDeactivator(s.Scan),     // Cascade pause scans when scan workflow is deactivated
 		scanrun.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
@@ -2280,6 +2300,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	if os.Getenv("AUTH_ALLOW_REGISTRATION") != "" {
+		log.Warn("AUTH_ALLOW_REGISTRATION is retired and ignored: who may sign up is the sign-up policy (Console > System > Sign-up)")
+	}
+	// Plans and limits: self-service organizations are Free.
+	s.Auth.SetFreePlan(s.Entitlement)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2354,6 +2379,13 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		}
 	}
 	s.SSO.SetDomainVerifier(s.DomainVerify)
+	// Email-first sign-in asks which organization holds an email's SSO
+	// domain (domainverify.Service.OwnerOfDomain).
+	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
+		s.SSO.SetDomainOwnerLookup(owners)
+	} else {
+		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
+	}
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
 	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)
@@ -2367,6 +2399,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// A domain the home organization stops holding suspends the members it
 	// managed elsewhere; proving it again restores them (RFC-058).
 	s.DomainVerify.SetClaimListener(s.Tenant)
+	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
 	s.Auth.SetInviteeClassifier(s.Tenant)
 
 	// Trusted organizations (RFC-058): home-realm sign-in for external
@@ -2400,6 +2433,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.
+		// A social sign-in creates an account only when the sign-up policy
+		// admits it (self-service, or a pending invitation for the email).
+		if s.Signup != nil {
+			s.OAuth.SetSignupPolicy(s.Signup)
+		}
+		s.OAuth.SetInvitationLookup(repos.Tenant)
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)

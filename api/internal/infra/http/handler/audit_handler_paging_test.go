@@ -78,7 +78,6 @@ func TestAuditHandler_PagesAreOneBased(t *testing.T) {
 		{"?page=1&per_page=20", 1, 20, 0, 3},
 		{"?page=2&per_page=20", 2, 20, 20, 3},
 		{"?page=3&per_page=20", 3, 20, 40, 3},
-		{"?page=0&per_page=10", 1, 10, 0, 5},
 		{"?page=1&per_page=500", 1, 100, 0, 1},
 	}
 
@@ -112,6 +111,26 @@ func TestAuditHandler_PagesAreOneBased(t *testing.T) {
 				if body.Page != tc.wantPage || body.PerPage != tc.wantPer || body.TotalPages != tc.wantTotalPages {
 					t.Errorf("response page=%d per_page=%d total_pages=%d, want %d/%d/%d",
 						body.Page, body.PerPage, body.TotalPages, tc.wantPage, tc.wantPer, tc.wantTotalPages)
+				}
+			})
+		}
+		// The shared page parser refuses a page that is not 1-based
+		// (page=0, page=abc) instead of reading it as page 1.
+		for _, bad := range []string{"?page=0&per_page=10", "?page=abc"} {
+			t.Run(c.name+bad, func(t *testing.T) {
+				repo := &pagingAuditRepo{}
+				h := NewAuditHandler(audit.NewAuditService(repo, logger.NewNop()), nil, logger.NewNop())
+				req := httptest.NewRequest(http.MethodGet, c.target+bad, nil)
+				ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+				ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
+				req = req.WithContext(ctx)
+				if c.setup != nil {
+					c.setup(req)
+				}
+				rec := httptest.NewRecorder()
+				c.serve(h, rec, req)
+				if rec.Code != http.StatusBadRequest || len(repo.got) != 0 {
+					t.Fatalf("status = %d after %d queries, want 400 before any query", rec.Code, len(repo.got))
 				}
 			})
 		}

@@ -222,7 +222,10 @@ func TestResolve_RejectsInvalidRegistries(t *testing.T) {
 		{"unknown format", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp, format: html }", "", "unknown format"},
 		{"unused property", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp }\n  orphan: { label: Orphan, label_vi: Mồ côi }", "", "no type declares it"},
 		{"synonym that is an attribute", "synonyms: [tool]", "synonyms: [provider]", "", "is an attribute of a type"},
-		{"synonyms on a non-list attribute", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp, synonyms: [tool] }", "", "a property with synonyms is a list"},
+		// Property names (docs/architecture/asset-inventory-v2.md, "Property names").
+		{"boolean without is_ or has_", "{ name: provider, type: enum, values: [github], facet: true }", "{ name: provider, type: bool, facet: true }", "", "is_<state> or has_<thing>"},
+		{"timestamp without _at", "{ name: provider, type: enum, values: [github], facet: true }", "{ name: provider, type: time }", "", "<event>_at"},
+		{"singular list", "{ name: provider, type: enum, values: [github], facet: true }", "{ name: provider, type: list }", "", "plural name"},
 		{"class restriction a type breaks", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp, classes: [other] }", "", "restricted to classes"},
 		{"common property restricted to classes", "synonyms: [tool]", "synonyms: [tool], classes: [other]", "", "common property cannot be restricted"},
 		{"common property missing from properties", "common_properties: [discovery_tool]", "common_properties: [discovery_tool, aliases]", "", "not in properties"},

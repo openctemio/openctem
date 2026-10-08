@@ -1,6 +1,6 @@
 # RFC-039 — Continuous retest with regression reopen
 
-> Status: **Proposed — decisions approved** (owner, 2026-10-03; #866; Phase 1 implementation #867). Tool retest (§12): any tool with a retest handler on a tenant sensor.
+> Status: **Implemented**: P1 (#867), P2a (#881) and tool retest (§12: any tool with a retest handler on a tenant sensor); decisions approved 2026-10-03 (#866). P2b and P3 are planned.
 > Scope: api (retest service, scheduler, ingest regression path, routes) + web
 > (Retest now, last-retest status). No sensor or sdk-go change in Phase 1.
 > Builds on [RFC-011](RFC-011-validation-engine-dispatch.md) /
@@ -71,7 +71,7 @@ resolved/verified → open move. What is still wrong:
   issue is exactly the evidence that refutes a validation downgrade.
 - **`fix_applied` is never moved back** although `RequestVerificationScan` and the
   Jira rescan hook both promise "back to in_progress via the normal ingest
-  pipeline". (Left for the owner: §10 D5 — a scan that *started* before the fix
+  pipeline". (Left open: §10 D5 — a scan that *started* before the fix
   was claimed can legitimately still see it.)
 - **No side effects on reopen:** no notification, no workflow event, no ticket
   comment, and the SLA clock is not restarted (the escalation job then marks a
@@ -332,7 +332,7 @@ coverage `partial` so it can never auto-resolve other findings.
 ### 7.1 Suppressions, accepted risk, false positives
 
 Never retested, never reopened: `false_positive`, `accepted`, `accepted_risk`,
-`duplicate` and findings a suppression rule matched (since research 18 F7 they
+`duplicate` and findings a suppression rule matched (these now
 are `false_positive` / `accepted` with `resolution = suppressed`; older rows may
 still be `resolved` with it) are outside the
 eligible set and excluded by the reopen SQL. An expired acceptance re-enters the
@@ -364,7 +364,7 @@ target. See [architecture/active-probe-gate.md](../architecture/active-probe-gat
 
 - **fixed** → `resolved`: the SLA stops like any resolve.
 - **regression** reopen (scan or retest): **a fresh deadline from the reopen**
-  (owner decision D2, Phase 2a), computed by the tenant's SLA policy, with an
+  (decision D2, Phase 2a), computed by the tenant's SLA policy, with an
   `sla_restarted` activity carrying the reason and the previous deadline. Phase 1
   kept the original deadline, so a regression was overdue the moment it came
   back.
@@ -419,7 +419,7 @@ many findings announces at most 50 of them (the SLA restart still covers all).
 ### 8.2 Default off
 
 `settings.retest.auto_enabled` defaults to **false** for every tenant until the
-scans redesign P1 (HA scheduler claims, leases) lands, per the owner's ordering.
+scans redesign P1 (HA scheduler claims, leases) lands (decision D6).
 Manual Retest now is available whenever a `validate:nuclei` sensor is online.
 
 ### 8.3 Authorization summary
@@ -435,11 +435,11 @@ Manual Retest now is available whenever a `validate:nuclei` sensor is online.
 | Phase | Content |
 |---|---|
 | **P1 (#867)** | `finding_retests` + cursors (migration 000327); domain decision/transition; retest service (eligibility, gates, limits, dispatch, settle, sweep); Retest now + list routes; settings `retest` (default off) + endpoint; `RetestScheduler` with claim-once; advisory ingest of retest evidence; scan regression reopen keeps the previous resolver and reopens `validated_fixed`; web: Retest now button and last-retest status on the finding page and drawer |
-| **P2a (#881, owner decisions D2–D4)** | fresh SLA on every regression, scan or retest, with an `sla_restarted` activity (reason, previous deadline; migration 000336); `/validate` verdict rule acts only on exploitability-grade evidence (safe-check never moves a finding, a nuclei miss needs `reachable`); proof of fix on `fix_applied` (and on Jira "Done") is a `proof_of_fix` retest, else the validation re-check; "Request verification scan" retired (route, service, adapter, web); ticket comment (opt-in Jira outbound) + `finding_fixed` / `finding_reopened` notification on a fix, regression or rejected fix, capped at 50 per scan |
+| **P2a (#881, decisions D2–D4)** | fresh SLA on every regression, scan or retest, with an `sla_restarted` activity (reason, previous deadline; migration 000336); `/validate` verdict rule acts only on exploitability-grade evidence (safe-check never moves a finding, a nuclei miss needs `reachable`); proof of fix on `fix_applied` (and on Jira "Done") is a `proof_of_fix` retest, else the validation re-check; "Request verification scan" retired (route, service, adapter, web); ticket comment (opt-in Jira outbound) + `finding_fixed` / `finding_reopened` notification on a fix, regression or rejected fix, capped at 50 per scan |
 | P2b | port/service, TLS and DNS check kinds; web settings page for auto-retest and an auto-retest column/filter |
 | P3 | retests as `pipeline_runs(kind = retest)` with scan-zone routing and coverage `partial`, once RFC-038 typed settings and scans P1 land; CVE→template resolver; asset-group-scoped auto-retest policies |
 
-## 10. Owner decisions — approved 2026-10-03
+## 10. Decisions (approved 2026-10-03)
 
 | # | Question | Decision |
 |---|---|---|

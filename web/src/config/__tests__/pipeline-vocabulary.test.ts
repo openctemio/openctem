@@ -21,6 +21,14 @@ const EXT = /\.(ts|tsx|json|css)$/
 /** Paths where "pipeline" is a CI pipeline or another non-scan meaning. */
 const ALLOWED: { path: RegExp; why: string }[] = [
   { path: /^src\/features\/ci-runners\//, why: 'CI pipelines (RFC-051)' },
+  {
+    path: /^src\/features\/scan-workflows\/lib\/readiness(\.test)?\.ts$/,
+    why: 'a workflow that runs in the customer CI pipeline',
+  },
+  {
+    path: /^src\/features\/scans\/components\/__tests__\/basic-info-step\.test\.tsx$/,
+    why: 'asserts the CI pipeline readiness note',
+  },
   { path: /^src\/app\/\(dashboard\)\/\(discovery\)\/ci-cd\//, why: 'CI pipelines page' },
   { path: /^src\/app\/\(dashboard\)\/settings\/scanning\/ci\//, why: 'CI pipeline settings page' },
   { path: /^src\/lib\/api\/generated\//, why: 'generated from the API spec (CI routes)' },

@@ -13,7 +13,7 @@ import { Mail, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DataTable, SeverityBadge, type DataTableRowGroups } from '@/features/shared'
 import type { Severity } from '@/features/shared/types'
-import type { Asset } from '@/features/assets'
+import type { CredentialLeakRow } from '@/features/credentials/lib'
 import { useLazyGroupRows } from '@/hooks/use-lazy-group-rows'
 import { get } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
@@ -97,8 +97,8 @@ interface CredentialIdentityGroupsProps {
   /** Every identity matching the page's search and status (the API returns them all). */
   identities: ApiIdentityExposure[]
   isLoading?: boolean
-  columns: ColumnDef<Asset>[]
-  onRowClick?: (row: Asset) => void
+  columns: ColumnDef<CredentialLeakRow>[]
+  onRowClick?: (row: CredentialLeakRow) => void
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
   /** Drops loaded leaks when the search or status changes. */
@@ -174,7 +174,7 @@ export function CredentialIdentityGroups({
     return { rows: mapCredentialsToAssets(leaks), keyOf }
   }, [keys, lazy.groups])
 
-  const rowGroups = React.useMemo<DataTableRowGroups<Asset>>(
+  const rowGroups = React.useMemo<DataTableRowGroups<CredentialLeakRow>>(
     () => ({
       groups: keys,
       getKey: (r) => keyOf.get(r.id) ?? '',

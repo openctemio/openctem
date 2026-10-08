@@ -23,6 +23,7 @@ import (
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/password"
@@ -36,6 +37,10 @@ var (
 	ErrAccountSuspended     = errors.New("account is suspended")
 	ErrEmailNotVerified     = errors.New("email is not verified")
 	ErrRegistrationDisabled = errors.New("registration is disabled")
+	// ErrSignupNotAvailable is the one refusal of every sign-up path the
+	// sign-up policy does not admit (signup.Admit). The caller has written
+	// nothing; the answer is the same whatever the reason.
+	ErrSignupNotAvailable = errors.New("sign-up is not available")
 	// ErrTenantCreationDisabled: TENANT_CREATION_MODE=admin_only, so only the
 	// platform administrator creates organizations (RFC-022).
 	ErrTenantCreationDisabled   = errors.New("organization creation is reserved for the application administrator")
@@ -86,6 +91,10 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
+	// freePlan assigns the Free plan to self-service organizations. Nil: no
+	// plans (organizations unlimited).
+	freePlan FreePlan
+
 	// signupPolicy decides who may create an organization (the console
 	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
 	signupPolicy signupdom.PolicySource
@@ -126,7 +135,19 @@ type AuthService struct {
 	// Home-realm sign-in for external members (home_realm.go, RFC-058).
 	homeTrusts TrustLookup
 	homeOwners HomeDomainOwnerLookup
+	// lapsedDomains refuses email-only password resets on a domain whose
+	// verified owner lost it (RFC-058).
+	lapsedDomains LapsedDomainChecker
 }
+
+// LapsedDomainChecker reports whether an email domain was verified for SSO by
+// an organization that lost it and nobody holds it now.
+type LapsedDomainChecker interface {
+	IsLapsedSSODomain(ctx context.Context, domain string) (bool, error)
+}
+
+// SetLapsedDomainChecker wires the lapsed-domain rule for password resets.
+func (s *AuthService) SetLapsedDomainChecker(c LapsedDomainChecker) { s.lapsedDomains = c }
 
 // InviteeClassifier classifies an invitee at acceptance and applies the outcome
 // to the new membership (TenantService.ClassifyAcceptedInvitation).
@@ -404,8 +425,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// an unknown, expired or mismatched token, gets the same generic refusal so
 	// the response says nothing about the token.
 	invitationTenantID, invited := s.pendingInvitationFor(ctx, input.InvitationToken, email)
-	if !s.config.AllowRegistration && !invited {
-		return nil, ErrRegistrationDisabled
+	if !signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{
+		Intent: signupdom.IntentAccount, InvitedPending: invited, DisposableEmail: disposableEmail(email),
+	}).Admitted() {
+		return nil, ErrSignupNotAvailable
 	}
 
 	// SECURITY (anti-enumeration): everything that shapes the answer is
@@ -848,7 +871,8 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 		// Fail closed: an unreadable security section never admits a session.
 		return fmt.Errorf("failed to read SSO enforcement policy: %w", err)
 	}
-	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) {
+	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) &&
+		!s.ssoExceptionAllows(ctx, sess, sec) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
@@ -1071,6 +1095,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// Per-tenant 2FA requirement: a password session whose user has not
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 
@@ -1323,6 +1350,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
 
 	// Generate new GLOBAL refresh token (token rotation)
 	newRefreshTokenStr, refreshExpiresAt, err := s.tokenGenerator.GenerateGlobalRefreshToken(
@@ -1453,6 +1483,20 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 	// Only allow password reset for local users
 	if u.AuthProvider() != userdom.AuthProviderLocal {
 		return &ForgotPasswordResult{}, nil
+	}
+	// A mailbox on a domain whose verified owner lost it (lapsed or
+	// re-registered) proves nothing (RFC-058): no reset link by email. The
+	// person recovers through an administrator-issued setup link. The answer
+	// is the same as for an unknown address.
+	if s.lapsedDomains != nil {
+		if at := strings.LastIndex(email, "@"); at >= 0 {
+			lapsed, lerr := s.lapsedDomains.IsLapsedSSODomain(ctx, email[at+1:])
+			if lerr != nil || lapsed {
+				s.logger.Warn("password reset by email refused: the email domain lost its verified owner",
+					"user_id", u.ID().String(), "lookup_failed", lerr != nil)
+				return &ForgotPasswordResult{}, nil //nolint:nilerr // fail closed, same answer as an unknown address
+			}
+		}
 	}
 
 	// Generate reset token
@@ -1661,16 +1705,42 @@ type CreateFirstTeamResult struct {
 	Tenant       TenantMembershipInfo `json:"tenant"`
 }
 
+// FreePlan is the slice of the entitlement service self-service creation uses.
+// create-first-team only assigns the plan: it serves people with no
+// organization, who own no Free one; POST /tenants checks the per-person cap.
+type FreePlan interface {
+	CheckFreeTeam(ctx context.Context, userID shared.ID) error
+	AssignFree(ctx context.Context, tenantID shared.ID) error
+}
+
+// SetFreePlan wires the Free plan for self-service organizations.
+func (s *AuthService) SetFreePlan(p FreePlan) { s.freePlan = p }
+
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
 func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
-// selfServiceTenantCreation reports whether people may create their own
-// organization: the console sign-up policy when wired, else the config.
-func (s *AuthService) selfServiceTenantCreation(ctx context.Context) bool {
-	if s.signupPolicy != nil {
-		return s.signupPolicy.Current(ctx).AllowsSelfService()
+// signupPolicyNow is the sign-up policy in force: the console setting when
+// wired, else TENANT_CREATION_MODE from the config (admin_only unless
+// self_service).
+func (s *AuthService) signupPolicyNow(ctx context.Context) signupdom.Policy {
+	return policyOrConfig(ctx, s.signupPolicy, s.config)
+}
+
+// policyOrConfig is shared by the services that admit sign-ups.
+func policyOrConfig(ctx context.Context, src signupdom.PolicySource, cfg config.AuthConfig) signupdom.Policy {
+	if src != nil {
+		return src.Current(ctx)
 	}
-	return s.config.SelfServiceTenantCreation()
+	if cfg.SelfServiceTenantCreation() {
+		return signupdom.Policy{Mode: signupdom.ModeSelfService}
+	}
+	return signupdom.Default()
+}
+
+// selfServiceTenantCreation reports whether people may create their own
+// organization (signup.Admit for an organization).
+func (s *AuthService) selfServiceTenantCreation(ctx context.Context) bool {
+	return signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{Intent: signupdom.IntentOrganization}).Admitted()
 }
 
 // CreateFirstTeam creates the first team for a user who has no tenants.
@@ -1759,6 +1829,13 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		return nil, fmt.Errorf("failed to create team: %w", err)
 	}
 
+	// A self-service organization starts on the Free plan.
+	if s.freePlan != nil {
+		if err := s.freePlan.AssignFree(ctx, newTenant.ID()); err != nil {
+			s.logger.Error("assign the Free plan to a new organization", "tenant_id", newTenant.ID().String(), "error", err)
+		}
+	}
+
 	s.logger.Info("first team created",
 		"user_id", u.ID().String(),
 		"tenant_id", newTenant.ID().String(),
@@ -1774,6 +1851,13 @@ func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeam
 		WithResourceName(newTenant.Name()).
 		WithMessage(fmt.Sprintf("Team '%s' created", newTenant.Name())).
 		WithMetadata("via", "create_first_team"))
+
+	// The new organization requires two-factor authentication for its owner:
+	// without it, no access token is minted. The organization exists; the
+	// owner signs in again, enrolls a second factor, then selects it.
+	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), newTenant.ID().String()); err != nil {
+		return nil, err
+	}
 
 	// Mark old refresh token as used (token rotation)
 	if err := storedToken.MarkUsed(); err != nil {
@@ -2159,6 +2243,12 @@ func (s *AuthService) dummyPasswordHash() string {
 		}
 	})
 	return s.dummyHash
+}
+
+// disposableEmail reports whether email is on a disposable-address service.
+func disposableEmail(email string) bool {
+	at := strings.LastIndex(email, "@")
+	return at >= 0 && emaildomain.IsDisposable(email[at+1:])
 }
 
 // recordLoginFailure counts a refused password sign-in by reason, for the

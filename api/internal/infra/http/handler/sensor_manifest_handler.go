@@ -96,7 +96,10 @@ func (h *SensorHandler) Manifests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tenantID := middleware.GetTenantID(r.Context())
-	limit := parseQueryIntBounded(r.URL.Query().Get("limit"), sensor.ManifestVersionsKept, 1, sensor.ManifestVersionsKept)
+	limit, ok := listLimit(w, r, sensor.ManifestVersionsKept, sensor.ManifestVersionsKept)
+	if !ok {
+		return
+	}
 	versions, err := h.service.ListManifests(r.Context(), tenantID, sensorID, limit)
 	if err != nil {
 		h.handleServiceError(w, err)

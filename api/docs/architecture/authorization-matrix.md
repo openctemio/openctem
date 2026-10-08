@@ -138,7 +138,7 @@ test-enforced (`stepUpRoutes` in `routes/step_up_routes_test.go`).
 |----------|-------------|
 | `GET /health` | Health check |
 | `GET /ready` | Readiness check |
-| `POST /api/v1/auth/register` | User registration (403 unless `AUTH_ALLOW_REGISTRATION=true` or a matching invitation token) |
+| `POST /api/v1/auth/register` | User registration (403 `SIGNUP_NOT_AVAILABLE` unless the sign-up policy is `self_service` or a matching invitation token) |
 | `POST /api/v1/auth/login` | User login |
 | `POST /api/v1/auth/token` | Token exchange |
 | `POST /api/v1/auth/refresh` | Token refresh |
@@ -617,6 +617,7 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
 | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
+| `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
 
 > **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
@@ -761,6 +762,10 @@ Authorization is enforced at the **route layer** in
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |
 | `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** (audited high) |
 | `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
+| `GET /api/v1/admin/settings/plans` | any admin |
+| `PUT /api/v1/admin/settings/plans` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
+| `GET /api/v1/admin/tenants/{tenantId}/plan` | any admin (limits, usage, over-limit flag) |
+| `PUT /api/v1/admin/tenants/{tenantId}/plan`, `PUT/DELETE .../plan/overrides/{key}` | **ops_admin+** (audited high; an override needs a reason, an expiry is optional) |
 | `GET /api/v1/admin/settings/signup` | any admin |
 | `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
@@ -955,9 +960,9 @@ owner-managed) are enforced, not just stored. See
   every tenant `oct_` API-key request on the REST API. Not applied to sensor
   keys, the MCP endpoint, the admin console, or public routes. 403 `IP_NOT_ALLOWED`; lookup errors fail closed; client IP from
   `httpsec.ClientIP` (trusted proxies only).
-- **Self-registration** (`POST /auth/register`) is off unless
-  `AUTH_ALLOW_REGISTRATION=true`; a pending invitation for the same email opens
-  it for that person only.
+- **Self-registration** (`POST /auth/register`, a first social sign-in) is off
+  unless the sign-up policy is `self_service`; a pending invitation for the same
+  email opens it for that person only (`signup.Admit`, user-onboarding.md).
 
 ## Data scope (Layer 2: access groups)
 

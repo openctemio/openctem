@@ -169,6 +169,9 @@ check_dev_default_secrets() {
         'docker-compose.yml'
         'docker-compose.monitoring.yml'
         'docker-compose.dev.yml'
+        # The development env template (APP_ENV=development); the API
+        # refuses both values whenever APP_ENV is not development.
+        'api/.env.example'
         # Expected: config validator explicitly lists these as the
         # forbidden values — it MUST hold the exact literal.
         'api/internal/config/config.go'

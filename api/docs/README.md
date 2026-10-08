@@ -3,7 +3,7 @@
 ## Quick Links
 
 - [Getting Started](getting-started.md) - Start here!
-- [**User Guide**](user-guide/README.md) — end-user product guide (analysts/operators): the CTEM loop, sign-in, scoping → discovery → prioritization → validation → mobilization, insights, settings
+- [**User Guide**](https://docs.openctem.io/user-guide/) — end-user product guide on docs.openctem.io (analysts/operators): the CTEM loop, sign-in, scoping → discovery → prioritization → validation → mobilization, insights, settings
 - [Architecture Overview](architecture/overview.md)
 - [Development Setup](development/setup.md)
 
@@ -30,6 +30,7 @@
 - [Sensor ↔ Platform Trust](architecture/sensor-platform-trust.md) - Mutual-distrust gap analysis: every control (gateway split, per-sensor identity, object authorization, hostile results, signed jobs, local policy, credentials by reference, host hardening, audit, detections) with status, file:line evidence and the attack each gap allows today ([RFC-040](rfcs/RFC-040-platform-sensor-mutual-distrust.md))
 - [Scan Zones](architecture/scan-zones.md) - Tenant address ranges → zone sensors: narrowest-zone routing and batching at trigger time, the zone claim predicate, run completion over batches, coverage view, UI contract (RFC-023 Phase 1)
 - [Sensor Result Binding](architecture/sensor-result-binding.md) - Which sensor reports may change existing assets and findings: bound to an assigned command (v2 path, v1 `X-OpenCTEM-Command-ID`), unsolicited limits, collector/CI roles, tenant mode warn/quarantine, the results quarantine and its review API (RFC-040 group C, Q6 (a))
+- [Plans and Limits](architecture/plans-and-limits.md) - Free/Pro/Enterprise limits, console defaults and per-organization overrides, over-limit without removal, the fail-closed check and 403 PLAN_LIMIT
 - [Step-up Re-authentication](architecture/step-up-reauth.md) - Sensitive routes need a sign-in or step-up (TOTP, else password) in the same session within 10 minutes: sessions.step_up_at, RequireRecentAuth, STEP_UP_REQUIRED, the protected routes and the threat model
 - [Organization Settings](architecture/organization-settings.md) - How tenants.settings is stored and written: one section per write with a compare-and-swap, ETag/If-Match and 409 SETTINGS_CONFLICT, a corrupt section fails closed
 - [Audit Hash Chain](architecture/audit-hash-chain.md) - Tamper-evident per-tenant SHA-256 chain over audit_logs: append, verify, the hourly verifier, and rebaselining (when it is allowed, what is archived in the same transaction, how to review overwritten hashes)
@@ -53,7 +54,6 @@
 - [User Two-Factor Authentication](architecture/user-two-factor-authentication.md) - TOTP 2FA for organization users (RFC-024): login challenge → `/auth/mfa/verify`, forced enrollment under "Require MFA", token-mint policy gate, recovery codes, immediate session revocation, My account API
 - [Permission Real-time Sync](architecture/permission-realtime-sync.md) - Effective-permission cache, per-user version bump, 0-second revocation, 409-on-stale-write
 - [Tenant API Keys (`oct_`)](architecture/api-keys.md) - What a key carries, read-only REST access next to MCP, scopes narrowed to what the key's user holds now, refused routes, CSRF, rate limit, audit attribution, and the open write-access decision
-- [Authorization Audit (2026-09)](authz-audit.md) - Historical snapshot of the review that produced the standardization (AUTHZ-01..17, endpoint inventory), with a status table of each finding on `develop`; the current model is the authorization matrix
 
 ### Architecture Decision Records (ADR)
 - [ADR-001: Use Standard net/http](architecture/decisions/001-use-stdlib-http.md)

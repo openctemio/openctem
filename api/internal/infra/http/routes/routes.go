@@ -14,6 +14,7 @@ import (
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -80,6 +81,11 @@ type Handlers struct {
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
+	// SensorV3 serves sensor protocol v3 (RFC-059); nil unless
+	// SENSOR_TRANSPORT_V3_ENABLED. Register attaches the in-process v2 route
+	// group it serves through; the HTTPS binding is mounted by the caller
+	// (Server.MountPrefix).
+	SensorV3 *sensortransport.Server
 	// SensorPairing serves interactive pairing (RFC-052); nil when disabled.
 	SensorPairing *handler.SensorPairingHandler
 	IOC           *handler.IOCHandler        // nil if not initialized - IOC catalog (feeds B6 correlator)
@@ -214,6 +220,9 @@ type Handlers struct {
 	AdminOrganization *handler.AdminOrganizationHandler
 	AdminConsole      *handler.AdminConsoleHandler
 	AdminAuditChain   *handler.AdminAuditChainHandler
+	// Plan: plans and limits (console plan defaults, organization plans and
+	// overrides, the organization's own usage).
+	Plan *handler.PlanHandler
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
@@ -454,6 +463,7 @@ func Register(
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
 		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange)
+		registerOrganizationPlanRoutes(router, h.Plan, authMiddleware, userSync)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized
@@ -748,7 +758,12 @@ func Register(
 	// Sensor protocol v2 results (RFC-026): its own route group and
 	// authenticator, only when enabled.
 	if h.SensorResultsV2 != nil {
-		registerSensorV2Routes(router, h.SensorResultsV2, sensorControlV2Handler(h, log), ingestRateLimiter, log)
+		ctl := sensorControlV2Handler(h, log)
+		budgets := newSensorV2Budgets(ingestRateLimiter, log)
+		mountSensorV2(router, h.SensorResultsV2, ctl, budgets, h.SensorResultsV2.Authenticate)
+		if h.SensorV3 != nil && ctl != nil {
+			h.SensorV3.Attach(sensorV2InProcess(h.SensorResultsV2, ctl, budgets), ctl, h.SensorResultsV2)
+		}
 	}
 
 	// Sensor pairing (RFC-052): sensor plane (signed by the key being
@@ -1076,6 +1091,24 @@ func (a tenantSSOEnforcedAdapter) IsSSOEnforced(ctx context.Context, tenantID st
 		return false, err
 	}
 	return sec.SSOEnforced, nil
+}
+
+// HasSSOException reports whether the member has an unexpired SSO exception
+// (RFC-058), read fresh from the tenant settings.
+func (a tenantSSOEnforcedAdapter) HasSSOException(ctx context.Context, tenantID, userID string) (bool, error) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, err
+	}
+	t, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return false, err
+	}
+	return sec.HasSSOException(userID, time.Now().UTC()), nil
 }
 
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.

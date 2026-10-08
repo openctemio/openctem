@@ -45,10 +45,30 @@ DNS-verified domain of the organization (no verifier or a lookup error
 refuses), the provider's allowed domains (if any) contain it, and the
 organization's `Security.AllowedDomains` (if any) contains it. This is checked
 before an account is created; a refused login gets a generic 403 and leaves no
-account behind. It does not depend on `AUTH_ALLOW_REGISTRATION` (which still
+account behind. It does not depend on the sign-up policy's mode (which still
 governs the global social sign-in buttons). JIT members get the provider's
 `default_role` (`admin|member|viewer`, default **viewer**, set by the platform
 administrator); only the display name is re-synced on later logins.
+
+### Email-first sign-in
+
+The sign-in page does not need `?org=`: once the typed email looks complete,
+it asks `POST /api/v1/auth/discover {"email"}` (public, its own 20/min budget,
+the email in the body). The answer always has the same two fields:
+
+- `{"next":"sso","org":"<slug>"}` when the email's domain is claimed (DNS
+  proof, exclusive; see below) by an organization that has an active SSO
+  provider. The page then shows that organization's SSO buttons, exactly as
+  `?org=` does.
+- `{"next":"password","org":""}` for everything else: an unclaimed, consumer
+  or invalid domain, a claimed domain without SSO, a claim conflict, or any
+  error.
+
+It says nothing about the email itself (account or not); the organization is
+shown only for a domain that organization proved it owns, which is what lets
+its SSO speak for the domain. The lookup runs the same queries whether or not
+the domain is claimed. The domain owner comes from
+`domainverify.Service.OwnerOfDomain`.
 
 ### Domain claims are exclusive
 

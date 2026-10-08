@@ -577,7 +577,7 @@ func (s *AuthService) mfaRequiredByAnyOrganization(ctx context.Context, userID s
 			continue
 		}
 		sec, serr := t.SecuritySettingsStrict()
-		if serr != nil || sec.MFARequired {
+		if serr != nil || sec.MFARequiredFor(m.Role) {
 			// An unreadable security section counts as "2FA required".
 			return true
 		}
@@ -615,7 +615,17 @@ func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Ses
 		return fmt.Errorf("failed to read 2FA policy: %w", err)
 	}
 	if !sec.MFARequired {
-		return nil
+		if !sec.MFARequiredForAdmins {
+			return nil
+		}
+		// Owners and administrators only: look the role up (fail closed).
+		m, merr := s.tenantRepo.GetMembership(ctx, userID, tid)
+		if merr != nil || m == nil {
+			return fmt.Errorf("failed to load membership for 2FA policy: %w", merr)
+		}
+		if !sec.MFARequiredFor(m.Role().String()) {
+			return nil
+		}
 	}
 	// An external member signed in at their trusted home organization
 	// passes only with a proven or attested second factor (RFC-058).

@@ -71,6 +71,16 @@ export interface TenantMembership {
   role: TenantRole
   joined_at: string
   created_at: string
+  /** The user's own membership (api RFC-058). */
+  kind?: 'internal' | 'external'
+  /** When an external membership ends. */
+  access_expires_at?: string
+  /**
+   * Why the organization cannot be opened now: suspended, expired,
+   * home_access_ended, home_domain_lapsed, trust_revoked or
+   * personal_accounts_blocked.
+   */
+  blocked_reason?: string
 }
 
 /**

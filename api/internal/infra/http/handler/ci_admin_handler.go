@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -283,6 +282,9 @@ func pathID(w http.ResponseWriter, r *http.Request, what string) (shared.ID, boo
 }
 
 func (h *CIAdminHandler) writeErr(w http.ResponseWriter, err error, what, notFound string) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(ciErrMessage(err)).WriteJSON(w)
@@ -509,14 +511,11 @@ func (h *CIAdminHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		f.PipelineID = &id
 	}
-	f.Page, _ = strconv.Atoi(q.Get("page"))
-	f.PerPage, _ = strconv.Atoi(q.Get("per_page"))
-	if f.Page < 1 {
-		f.Page = 1
+	paging, ok := listPage(w, r, 25)
+	if !ok {
+		return
 	}
-	if f.PerPage < 1 || f.PerPage > 100 {
-		f.PerPage = 25
-	}
+	f.Page, f.PerPage = paging.Page, min(paging.PerPage, 100)
 	scope, err := resolveDataScope(r.Context(), h.dataScope, tenantID)
 	if err != nil {
 		h.writeErr(w, err, "resolve data scope", "CI run")
