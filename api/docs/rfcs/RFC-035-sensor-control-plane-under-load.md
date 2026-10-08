@@ -1,10 +1,13 @@
 # RFC-035 — Sensor control plane under load: heartbeats that survive the scans they supervise
 
-> Status: **Accepted** (owner decisions 2026-10-02, §6.1; proposed in api#727).
+> Status: **Accepted** (decisions 2026-10-02, §6.1; proposed in api#727).
 > - Phase 1 (SDK, no decision needed) is merged: sdk-go#113.
 > - D2 (the B1 fix) is in api#746.
-> - D1, D3, D5 and D6 are in implementation; D4 was declined and D7 deferred (§6.1).
-> Scope: sdk-go + api + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
+> - Phase 2 on the platform is implemented: D1 (late → stale → offline ladder,
+>   `pkg/domain/sensor/liveness.go`), D3 and D6 (`heartbeat_due_at`, lease
+>   epochs). D5 is a sensor option (`SENSOR_PROTECT_FROM_OOM`). D4 was declined
+>   and D7 deferred (§6.1).
+> Scope: sdk-go + api + sensor (`openctemio/sensor`) + ui.
 > Builds on [RFC-023](RFC-023-scan-zones-and-scanners.md) §9.2a (heartbeat
 > doorbell), [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md)
 > (protocol v2), [RFC-030](RFC-030-scan-work-distribution.md) (load report,
@@ -13,9 +16,8 @@
 > heartbeat's own HTTP client takes its proxy from the same place as every
 > other platform request.
 >
-> Owner's question (2026-10-02): "When a sensor scans, it usually eats
-> resources, but meanwhile it must still heartbeat and talk to the platform.
-> Think this mechanism through, research deeply, use many sources."
+> Problem (2026-10-02): when a sensor scans, it usually eats resources, but
+> meanwhile it must still heartbeat and talk to the platform.
 
 ## 1. Answer in short
 
@@ -43,7 +45,7 @@ The fix has four layers:
 | **Control channel** (SDK) | Heartbeats share the data plane's HTTP client. 3 retries × 30 s on failure. Version probes and the manifest exchange run inline. | Own HTTP client and connection pool. 15 s timeout, at most 1 retry, the next heartbeat after ~10 s. Probes refresh in the background; the manifest exchange is bounded. **Phase 1.** |
 | **Headroom and isolation** (sensor host) | Slots use all the memory the sensor sees. Scanners run at the sensor's own CPU, I/O and OOM priority. | Slots leave memory for the sensor (like kubelet `system-reserved`). Scanners run at nice +10, best-effort I/O 7, `oom_score_adj` 500: the kernel kills a scanner, not the sensor. **Phase 1.** A per-job cgroup with `memory.high` when delegation exists: **Phase 3.** |
 | **Observability** | The platform sees only the arrival time. | Every heartbeat carries `control`: interval, gap, lag (CPU wait), build time, RTT, failures. **SDK in Phase 1**; stored, shown and alerted on in **Phase 2**. |
-| **Platform tolerance** (api) | Fixed 90 s → `offline`, with `stale` effectively unused (B2). The 120 s "loaded" advice exceeds it (B1). | A per-sensor deadline from the interval the platform itself advised. A suspicion ladder: online → late → stale → offline. Advice never above the deadline. No conviction while the platform itself is slow (Lifeguard). Leases (RFC-030 D6) re-queue only after the sensor is past the deadline. **Owner decisions D1–D6.** |
+| **Platform tolerance** (api) | Fixed 90 s → `offline`, with `stale` effectively unused (B2). The 120 s "loaded" advice exceeds it (B1). | A per-sensor deadline from the interval the platform itself advised. A suspicion ladder: online → late → stale → offline. Advice never above the deadline. No conviction while the platform itself is slow (Lifeguard). Leases (RFC-030 D6) re-queue only after the sensor is past the deadline. **Decisions D1–D6.** |
 
 ## 2. Current state (verified on api `develop` d832bae84, sdk-go `main` 8324670, sensor `main` 679e974)
 
@@ -136,7 +138,7 @@ heartbeat's `running` list, with expiry re-queueing the chunk.
 
 ### 3.1 Method
 
-**Live (read only).** `sensor-docker-01` runs v0.6.4 with SDK v0.14.0 on a
+**A deployed sensor (read only).** It runs v0.6.4 with SDK v0.14.0 on a
 4-core host with no container limits. Over 45 minutes the platform received
 92 heartbeats:
 
@@ -144,13 +146,13 @@ heartbeat's `running` list, with expiry re-queueing the chunk.
 - server handling p50 9.7 ms;
 - `sensor_events` has no offline transition for it.
 
-Live never came near the threshold, but it was mostly idle in that window.
-The 94 % CPU reading the owner saw was during a scan.
+The deployed sensor never came near the threshold, but it was mostly idle in that window.
+The 94 % CPU reading that prompted this RFC was taken during a scan.
 
-**Scratch platform.** Everything ran on one host, with nothing touching live
+**Scratch platform.** Everything ran on one host, with nothing touching production
 data:
 
-- **API**: the binary live runs (api `5e93ef27e`) with its migrations, on its
+- **API**: the deployed API binary (api `5e93ef27e`) with its migrations, on its
   own Postgres 17 and Redis containers.
 - **Sensor**: a load-test sensor built twice from the same code, against
   sdk-go `main` (**before**) and against the RFC-035 branch (**after**). It is
@@ -159,8 +161,8 @@ data:
 - **Load**: the hog's child processes burn CPU (`cpu-N-S`: N busy processes)
   or memory. They are started by the sensor exactly like a scanner, through
   `core.ExecuteScanner`.
-- **Container**: each run is pinned to 2 cores (`--cpuset-cpus=2,3`) so live
-  keeps the other two.
+- **Container**: each run is pinned to 2 cores (`--cpuset-cpus=2,3`) so the
+  deployed services keep the other two.
 - **What was recorded**:
   - every heartbeat's arrival time at the API (server-side gaps);
   - the sensor's `health` in the DB every 3 s;
@@ -195,7 +197,7 @@ Process priorities seen inside the after container:
      at 1 core, delayed a heartbeat by at most 54 ms.
    - Why: CFS/EEVDF schedule a sleeping, rarely runnable goroutine almost at
      once, and Go's GOMAXPROCS follows the cgroup quota.
-   - The owner's 94 % CPU reading is normal and harmless for the control
+   - The 94 % CPU reading that prompted this RFC is normal and harmless for the control
      plane.
 2. **What delays heartbeats is work done on the heartbeat path**: inline
    probes (+4 s here, up to 30 s per tool), retries with long timeouts
@@ -377,7 +379,7 @@ Phase 2 (api):
 The UI sensor detail gets a "Control channel" card with interval, gap, lag,
 RTT and failures, plus a 24 h sparkline of gaps.
 
-### 5.6 Platform tolerance (api, Phase 2: owner decisions D1–D3)
+### 5.6 Platform tolerance (api, Phase 2: decisions D1–D3)
 
 1. **The platform knows what it asked for.** Each heartbeat stores
    `heartbeat_due_at = now + advised interval`, the advice it just gave,
@@ -448,7 +450,7 @@ RTT and failures, plus a 24 h sparkline of gaps.
 - **Sensor watchdog process.** See §5.1: reopen only if `lag_ms` shows the
   sensor process itself starving.
 
-## 6. Decisions for the owner
+## 6. Decisions
 
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
@@ -460,7 +462,7 @@ RTT and failures, plus a 24 h sparkline of gaps.
 | D6 | Lease renewal channel | (a) the heartbeat's `running` list plus any command request; (b) a separate lightweight lease endpoint (KEP-589 style) | **(a)**. RFC-033's slim heartbeat already is the cheap lease. Revisit if heartbeats grow again. |
 | D7 | Per-job cgroups (Phase 3) | (a) opt-in when the sensor detects a delegated cgroup; (b) not at all | **(a)**, documented for systemd (`Delegate=yes`) and Kubernetes. |
 
-### 6.1 Owner decisions (2026-10-02)
+### 6.1 Decisions (2026-10-02)
 
 | # | Decision | Outcome |
 |---|---|---|

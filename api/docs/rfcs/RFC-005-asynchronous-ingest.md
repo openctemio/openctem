@@ -1,6 +1,6 @@
 # RFC-005: Asynchronous Ingest — Decouple Accept from Process
 
-- **Status**: Proposed
+- **Status**: Implemented — `ingest_jobs` queue with per-tenant weighted-fair claiming (`internal/infra/postgres/ingest_job_repository.go`), the ingest worker controller (`internal/infra/controller/ingest_worker.go`) and `ingest_jobs_*` metrics; sensor protocol v2 (RFC-029) ingests through it.
 - **Created**: 2026-06-04
 - **Owner**: Platform / Ingest
 - **Problem**: Agents push large scan reports (up to 100k findings / 100k assets, 50 MB compressed). Today the API parses, correlates, and writes the **entire** report inside the HTTP request — the agent connection and a DB connection are held for the whole write. Under many concurrent agents this saturates API workers and the DB connection pool and degrades user-facing latency. We need ingest to absorb large bursts without blocking agents or starving interactive traffic.
@@ -217,4 +217,4 @@ Phased, behind a config flag, so we never break running agents:
 - Payload storage threshold for moving from `BYTEA` to object store — measure table/WAL growth in Phase 1.
 - Retention/TTL for completed `ingest_jobs` rows (archive vs delete; keep `result` counts for how long?).
 - Does any caller depend on the synchronous counts beyond CI ergonomics? Audit SDK + CI snippets before flipping the default.
-- Chunk endpoint interaction: chunked uploads should assemble into a single `ingest_jobs` row once complete (verify chunk store is shared/Redis, not per-instance memory — flagged in the ingest analysis).
+- Chunk endpoint interaction: chunked uploads should assemble into a single `ingest_jobs` row once complete (verify chunk store is shared/Redis, not per-instance memory).

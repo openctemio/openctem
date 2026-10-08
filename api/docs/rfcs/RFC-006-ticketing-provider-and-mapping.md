@@ -101,7 +101,7 @@ Keep `WorkItemURIs` for back-compat; optionally add a `finding_tickets` associat
 
 - **Keep Jira-only, just make maps configurable** — solves the workflow-divergence pain with less work, but locks out ServiceNow/GitHub and leaves outbound sync unbuilt. The interface is cheap; do it.
 - **Generic webhook/automation rules instead of a provider interface** — more flexible but pushes mapping complexity onto users; a typed provider + config is more usable for the common case.
-- **External iPaaS (Workato/Tray)** — out of scope; the platform should own first-class ticketing.
+- **External iPaaS (a third-party integration platform)** — out of scope; the platform should own first-class ticketing.
 
 ## 6. Open questions
 
