@@ -3,9 +3,10 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
-import { FileText, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, FileText, RefreshCw, Trash2 } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -144,7 +145,20 @@ export function VerifiedDomainsList({
     {
       accessorKey: 'domain',
       header: 'Domain',
-      cell: ({ row }) => <span className="font-medium">{row.original.domain}</span>,
+      cell: ({ row }) => (
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">{row.original.domain}</span>
+          {row.original.claim_conflict && (
+            <Badge
+              variant="destructive"
+              title="Another organization also verified this domain for SSO before domain claims became exclusive. Both keep working until you remove one of the claims."
+            >
+              <AlertTriangle />
+              Claim conflict
+            </Badge>
+          )}
+        </span>
+      ),
     },
     {
       accessorKey: 'status',
