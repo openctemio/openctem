@@ -190,7 +190,24 @@ request (a token of a blocked application stops working; scopes the policy no
 longer allows stop counting). Another organization's registered application
 is never usable. A policy that cannot be read refuses the request.
 
+## Connected applications (shipped)
+
+| Who | Where | API |
+|---|---|---|
+| Everyone | My account, Connected applications (`/account/connected-apps`) | `GET /api/v1/mcp-access/my-connections`, `DELETE /api/v1/mcp-access/my-connections/{id}` |
+| Owners and administrators | Settings, AI access (MCP) (`/settings/mcp`): policy and every connection of the organization, with the person | `GET /api/v1/mcp-access/connections`, `DELETE /api/v1/mcp-access/connections/{id}` (`RequireAdmin`) |
+| Platform administrators | Console, System, AI applications (`/admin/system/ai-applications`): every client with active connections and organization counts (no tenant data); block or unblock (ops_admin+, audited `mcp_client.blocked` / `mcp_client.unblocked`) | `GET /api/v1/admin/mcp-clients`, `POST /api/v1/admin/mcp-clients/{id}/block`, `…/unblock` |
+
+A row shows the application, where it is published (or that the
+organization registered it, or that it is unverified), the access, when it
+was connected, when and from where it was last used, and when it ends.
+Disconnecting revokes the grant and deletes its tokens at once (audited
+`mcp_grant.revoked` with reason `user` or `admin`). Someone else's
+connection, or another organization's, answers 404. A blocked client cannot
+be authorized and its tokens stop working everywhere until it is unblocked.
+API keys are refused on all of `/api/v1/mcp-access`.
+
 ## Planned
 
-Connected applications, organization-registered clients and optional dynamic
-registration, DPoP, write-tool confirmation: see RFC-062 §14.
+Organization-registered clients and optional dynamic registration, DPoP,
+write-tool confirmation: see RFC-062 §14.

@@ -125,9 +125,10 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h.cfg = mcpoauth.Config{
-		Repository: postgres.NewMCPOAuthRepository(db),
-		Endpoints:  e,
-		Pepper:     "mcp-oauth-test-pepper",
+		Repository:  postgres.NewMCPOAuthRepository(db),
+		Connections: postgres.NewMCPOAuthRepository(db),
+		Endpoints:   e,
+		Pepper:      "mcp-oauth-test-pepper",
 		Fetcher: fakeFetcher{
 			clientID:  {ClientID: clientID, Kind: mcpoauthdom.ClientKindMetadataDocument, Name: "Desk Assistant", RedirectURIs: []string{redirect}},
 			otherCIMD: {ClientID: otherCIMD, Kind: mcpoauthdom.ClientKindMetadataDocument, Name: "Other", RedirectURIs: []string{otherRedir}},
