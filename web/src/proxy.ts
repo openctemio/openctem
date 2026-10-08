@@ -60,10 +60,11 @@ export const config = {
   matcher: [
     {
       // Documents only: API routes (JSON, the /api/v1 BFF and its WebSocket
-      // upgrade, /api/health), Next.js assets, and static files carry no
-      // inline script, need no nonce and handle their own auth.
+      // upgrade, /api/health), the API's OAuth metadata (/.well-known/oauth-*,
+      // RFC-062), Next.js assets, and static files carry no inline script,
+      // need no nonce and handle their own auth.
       source:
-        '/((?!api/|_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|json|webmanifest|js|css|map|woff2?)$).*)',
+        '/((?!api/|\\.well-known/oauth-|_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|json|webmanifest|js|css|map|woff2?)$).*)',
       missing: [
         { type: 'header', key: 'next-router-prefetch' },
         { type: 'header', key: 'purpose', value: 'prefetch' },
