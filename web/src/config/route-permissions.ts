@@ -10,7 +10,7 @@
  *
  * Pattern matching:
  * - Exact match: '/settings/audit-log' matches only that path
- * - Wildcard: '/assets/*' matches '/assets/domains', '/assets/cloud', etc.
+ * - Wildcard: '/assets/*' matches '/assets/changes', '/assets/web', etc.
  * - Double wildcard: '/settings/**' matches all nested paths
  *
  * Priority:

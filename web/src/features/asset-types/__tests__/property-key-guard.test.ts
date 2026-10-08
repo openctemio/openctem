@@ -32,30 +32,6 @@ const ASSET_DIRS = [
   'app/(dashboard)/(scoping)',
 ]
 
-/**
- * The per-type list pages, which predate the schema and are being replaced by
- * the registry-driven inventory (research/77). Remove each entry with its page.
- */
-const LEGACY_PAGES = new Set([
-  'app/(dashboard)/(discovery)/assets/apis/config.tsx',
-  'app/(dashboard)/(discovery)/assets/certificates/config.tsx',
-  'app/(dashboard)/(discovery)/assets/cloud-accounts/config.tsx',
-  'app/(dashboard)/(discovery)/assets/cloud-resources/config.tsx',
-  'app/(dashboard)/(discovery)/assets/containers/config.tsx',
-  'app/(dashboard)/(discovery)/assets/databases/config.tsx',
-  'app/(dashboard)/(discovery)/assets/domains/config.tsx',
-  'app/(dashboard)/(discovery)/assets/hosts/config.tsx',
-  'app/(dashboard)/(discovery)/assets/identity/config.tsx',
-  'app/(dashboard)/(discovery)/assets/ip-addresses/config.tsx',
-  'app/(dashboard)/(discovery)/assets/mobile/config.tsx',
-  'app/(dashboard)/(discovery)/assets/networks/config.tsx',
-  'app/(dashboard)/(discovery)/assets/repositories/config.tsx',
-  'app/(dashboard)/(discovery)/assets/serverless/config.tsx',
-  'app/(dashboard)/(discovery)/assets/services/config.tsx',
-  'app/(dashboard)/(discovery)/assets/storage/config.tsx',
-  'app/(dashboard)/(discovery)/assets/websites/config.tsx',
-])
-
 /** A member read/write (`.metadata.os`, `.metadata?.os`) or a literal index (`.metadata['os']`). */
 const RAW_ACCESS = /\.metadata\??\.(?:[A-Za-z_$][\w$]*|\[\s*['"`])|\.metadata\[\s*['"`]/
 
@@ -77,8 +53,7 @@ describe('asset property keys', () => {
     const bad: string[] = []
     for (const file of files) {
       const rel = path.relative(SRC_ROOT, file).split(path.sep).join('/')
-      if (LEGACY_PAGES.has(rel) || rel.includes('/__tests__/') || rel.includes('/__fixtures__/'))
-        continue
+      if (rel.includes('/__tests__/') || rel.includes('/__fixtures__/')) continue
       fs.readFileSync(file, 'utf8')
         .split('\n')
         .forEach((line, i) => {
@@ -86,10 +61,6 @@ describe('asset property keys', () => {
         })
     }
     expect(bad, 'read properties through propertyValue / propertyStrings').toEqual([])
-  })
-
-  it('the legacy list stays honest: every entry still exists', () => {
-    for (const rel of LEGACY_PAGES) expect(fs.existsSync(path.join(SRC_ROOT, rel)), rel).toBe(true)
   })
 
   it('every schema key follows the naming convention', () => {

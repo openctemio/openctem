@@ -493,7 +493,7 @@ func dup(kind string, items []string) error {
 // these segments would read as, or later collide with, a page such as
 // /assets/groups. Keep in sync with the folders in
 // web/src/app/(dashboard)/(discovery)/assets/ and RFC-042 §6.3.6 URLs.
-var reservedSlugs = set([]string{"all", "changes", "duplicates", "groups", "services", "suggestions"})
+var reservedSlugs = set([]string{"changes", "duplicates", "groups", "suggestions", "web"})
 
 var attrKinds = set([]string{"string", "int", "number", "bool", "time", "enum", "list", "object"})
 var facetKinds = set([]string{"string", "int", "enum", "bool"})

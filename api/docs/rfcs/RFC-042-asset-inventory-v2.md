@@ -772,15 +772,17 @@ Every lens keeps the same machinery:
 - saved views (`saved_filters` gains `lens`);
 - dynamic groups.
 
-**URLs.** The 25 typed pages become lens presets
-(`/assets/hosts` → `/assets?lens=cloud_infra&q=type:host`). The old URLs
-keep working through 308 redirects, following the
-`web/src/config/legacy-routes.ts` pattern.
+**URLs.** The 25 typed pages become filters of the one inventory
+(`/assets?types=host`, `/assets?types=identity&sub_type=iam_user` for an
+alias), rendered from the registry: columns, attribute facets, yes/no
+counts, the create/edit form, row actions. *Amended 2026-10-08:* the old
+per-type routes are deleted, not redirected (owner rule: no aliases for
+renamed pages); every internal link points at the filtered inventory.
 
 **Reserved `/assets/*` page segments.** These static pages sit next to
-`/assets/[id]` and are not lenses: `all`, `changes`, `duplicates`,
-`groups` (asset groups, static and dynamic, §6.12), `services` and
-`suggestions` (relationship suggestions). No lens, class or type id may
+`/assets/[id]` and are not lenses: `changes`, `duplicates`, `groups`
+(asset groups, static and dynamic, §6.12), `suggestions` (relationship
+suggestions) and `web` (the web surface). No lens, class or type id may
 take one of these names; `cmd/gen-asset-types` rejects the registry if
 one does. The Assets tabs (§6.19) all live in the web under `/assets`
 (`/assets/groups`, `/assets/changes`, `/assets/suggestions`), because a
