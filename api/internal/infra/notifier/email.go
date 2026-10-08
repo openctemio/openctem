@@ -32,7 +32,6 @@ type EmailConfig struct {
 	ToEmails     []string // Recipient email addresses
 	UseTLS       bool     // Use direct TLS (port 465)
 	UseSTARTTLS  bool     // Use STARTTLS (port 587)
-	SkipVerify   bool     // Skip TLS certificate verification (dev only)
 	ReplyTo      string   // Optional reply-to address
 	TemplateName string   // Optional custom template name
 }
@@ -156,8 +155,10 @@ func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
 	}
 	addr := net.JoinHostPort(safeIP.String(), strconv.Itoa(c.config.SMTPPort))
 
-	// Create TLS config
-	tlsConfig := emailpkg.TLSConfig(c.config.SMTPHost, c.config.SkipVerify)
+	// The relay's certificate is always verified: this client sends a
+	// tenant's SMTP password, and a tenant cannot turn verification off
+	// (RFC-049 F-5). A stored legacy skip_verify flag is ignored.
+	tlsConfig := emailpkg.TLSConfig(c.config.SMTPHost, false)
 
 	var conn net.Conn
 

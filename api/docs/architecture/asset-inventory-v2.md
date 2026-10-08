@@ -29,7 +29,7 @@ are in [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md).
 ## Classes, the type registry and lenses
 
 OpenCTEM has 37 asset types. Each type belongs to exactly one fixed
-**class** above the type. Each class belongs to
+**class**, an abstract kind above the type. Each class belongs to
 exactly one **lens**, which is a UI tab. The source-native type
 (`aws_instance`, `github_repo`) stays on the source record for
 provenance.
