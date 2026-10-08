@@ -191,6 +191,10 @@ func (d *CommandDispatcher) Dispatch(ctx context.Context, job ValidationJob) (sh
 	if err != nil {
 		return shared.ID{}, fmt.Errorf("build validate command: %w", err)
 	}
+	// What CheckTarget checked: the claim re-checks it (claim-time scope
+	// re-check).
+	rec := commanddom.ProbeDispatchGate
+	cmd.DispatchGate = &rec
 	if zone != nil {
 		// Only the zone's sensors may claim the probe (zoneClaimPredicate).
 		cmd.SetScanZone(zone.ID)

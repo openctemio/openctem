@@ -179,6 +179,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
+	// A job the claim-time scope re-check fails settles what waits on it
+	// (scan step, validation run, retest) as a sensor's failure would.
+	svc.Command.SetFailureObserver(commandHandler)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
@@ -492,8 +495,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Docs: handler.NewDocsHandler("api/openapi/swagger.yaml"),
 
 		// Admin Auth (API Key authentication for Admin UI)
-		AdminAuth:           handler.NewAdminAuthHandler(log),
-		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
+		AdminAuth:         handler.NewAdminAuthHandler(log),
+		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
+		AdminOverview: handler.NewAdminOverviewHandler(
+			func(ctx context.Context, now time.Time) (postgres.AdminOverviewCounts, error) {
+				return postgres.ReadAdminOverview(ctx, deps.DB.DB, now)
+			},
+			func(ctx context.Context) (postgres.OpsSnapshot, error) {
+				return postgres.ReadOpsSnapshot(ctx, deps.DB.DB)
+			},
+			repos.Admin, shippedSchemaVersion(log), log),
 		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
 		AdminAuditChain:     handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
@@ -641,6 +652,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SignupPolicy = svc.Signup
 	}
 	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
+	handlers.Bootstrap.WithSession(bootstrapSession(cfg, svc, handlers))
 	return handlers
 }
 
@@ -1110,4 +1122,30 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 		return nil
 	}
 	return handler.NewSensorPairingHandler(svc.SensorPairing, svc.Sensor, log)
+}
+
+// bootstrapSession wires the session parts of GET /me/bootstrap to the same
+// code that serves /users/me, /users/me/tenants, /notifications/unread-count,
+// /easm/candidates and the organization policy of /auth/providers.
+func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
+	s := handler.BootstrapSession{}
+	if h.User != nil {
+		s.Me = h.User.MeResponse
+		s.MyTenants = h.User.MyTenantsResponse
+	}
+	if svc.Notification != nil {
+		s.UnreadCount = svc.Notification.GetUnreadCount
+	}
+	if h.EASM != nil && h.EASM.HasReview() {
+		s.EASMReviewCount = h.EASM.ReviewCount
+	}
+	mode := cfg.Auth.TenantCreationMode
+	signup := svc.Signup
+	s.TenantCreationMode = func(ctx context.Context) string {
+		if signup != nil {
+			return string(signup.Current(ctx).Mode)
+		}
+		return mode
+	}
+	return s
 }

@@ -31,6 +31,24 @@ describe('inventory URL codec', () => {
     expect(parseInventoryFilters(qs)).toEqual(filters)
   })
 
+  it('round-trips the lens and the minimum risk score', () => {
+    const filters: InventoryFilters = { lens: 'code', minRiskScore: 70 }
+    const qs = serializeInventoryFilters(filters)
+    expect(qs.toString()).toBe('lens=code&min_risk_score=70')
+    expect(parseInventoryFilters(qs)).toEqual(filters)
+    expect(countActiveFilters(filters)).toBe(2)
+    expect(isInventoryFilterEmpty(filters)).toBe(false)
+  })
+
+  it('drops an unknown lens and an out-of-range risk score', () => {
+    for (const qs of ['lens=nope', 'min_risk_score=101', 'min_risk_score=-1', 'min_risk_score=x']) {
+      expect(parseInventoryFilters(new URLSearchParams(qs))).toEqual({})
+    }
+    expect(parseInventoryFilters(new URLSearchParams('min_risk_score=0'))).toEqual({
+      minRiskScore: 0,
+    })
+  })
+
   it('omits page 1 and the default page size from the URL', () => {
     const qs = serializeInventoryFilters({ page: 1, pageSize: DEFAULT_PAGE_SIZE })
     expect(qs.toString()).toBe('')
