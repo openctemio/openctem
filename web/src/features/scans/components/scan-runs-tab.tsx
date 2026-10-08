@@ -39,6 +39,7 @@ import {
   elapsedMs,
   runKindLabel,
   runSubjectFindingId,
+  runTriggeredByLabel,
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
 import { replaceUrlSearch } from '@/hooks/use-url-param'
@@ -297,7 +298,7 @@ function ScanRunsTable() {
         enableSorting: false,
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {row.original.triggered_by_name || row.original.trigger_type}
+            {runTriggeredByLabel(row.original) ?? row.original.trigger_type}
           </span>
         ),
       },
