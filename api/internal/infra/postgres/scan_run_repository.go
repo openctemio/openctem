@@ -52,15 +52,15 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, freeze_override, refusal_code
+			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''))
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
 		run.ID.String(),
-		run.ScanWorkflowID.String(),
+		nullIfZeroID(run.ScanWorkflowID),
 		run.TenantID.String(),
 		nullID(run.AssetID),
 		nullID(run.ScanID),
@@ -83,6 +83,8 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 		nullTime(run.ScheduledFor),
 		run.FreezeOverride,
 		run.RefusalCode,
+		string(run.KindOrDefault()),
+		nullJSONObject(run.Subject),
 	)
 
 	if isOccurrenceConflict(err) {
@@ -486,15 +488,15 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, freeze_override, refusal_code
+			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''))
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26)
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
 		run.ID.String(),
-		run.ScanWorkflowID.String(),
+		nullIfZeroID(run.ScanWorkflowID),
 		run.TenantID.String(),
 		nullID(run.AssetID),
 		nullID(run.ScanID),
@@ -517,6 +519,8 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 		nullTime(run.ScheduledFor),
 		run.FreezeOverride,
 		run.RefusalCode,
+		string(run.KindOrDefault()),
+		nullJSONObject(run.Subject),
 	)
 	if isOccurrenceConflict(err) {
 		return scanrun.ErrOccurrenceAlreadyRun
@@ -1058,7 +1062,7 @@ func (r *ScanRunRepository) selectQuery() string {
 		       scan_profile_id, quality_gate_result, retry_attempt,
 		       created_at, scheduled_for,
 		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0), freeze_override,
-		       COALESCE(refusal_code, '')
+		       COALESCE(refusal_code, ''), kind, subject
 		FROM scan_runs
 	`
 }
@@ -1114,6 +1118,25 @@ func (r *ScanRunRepository) buildWhereClause(filter scanrun.RunFilter) (string, 
 		args = append(args, filter.ScanID.String())
 		conditions = append(conditions, fmt.Sprintf("scan_id = $%d", len(args)))
 	}
+	if len(filter.Kinds) > 0 {
+		kinds := make([]string, 0, len(filter.Kinds))
+		for _, k := range filter.Kinds {
+			kinds = append(kinds, string(k))
+		}
+		args = append(args, pq.Array(kinds))
+		conditions = append(conditions, fmt.Sprintf("kind = ANY($%d::text[])", len(args)))
+	}
+	if filter.ExcludeSystem {
+		conditions = append(conditions, "kind <> 'system'")
+	}
+	if len(filter.ExcludeKinds) > 0 {
+		kinds := make([]string, 0, len(filter.ExcludeKinds))
+		for _, k := range filter.ExcludeKinds {
+			kinds = append(kinds, string(k))
+		}
+		args = append(args, pq.Array(kinds))
+		conditions = append(conditions, fmt.Sprintf("NOT (kind = ANY($%d::text[]))", len(args)))
+	}
 
 	if filter.AssetID != nil {
 		args = append(args, filter.AssetID.String())
@@ -1141,7 +1164,9 @@ func (r *ScanRunRepository) scanRun(row *sql.Row) (*scanrun.Run, error) {
 	run := &scanrun.Run{}
 	var (
 		id                string
-		scanWorkflowID    string
+		scanWorkflowID    sql.NullString
+		kind              string
+		subject           []byte
 		tenantID          string
 		assetID           sql.NullString
 		scanID            sql.NullString
@@ -1185,6 +1210,8 @@ func (r *ScanRunRepository) scanRun(row *sql.Row) (*scanrun.Run, error) {
 		&run.UnfinishedTargetCount,
 		&run.FreezeOverride,
 		&run.RefusalCode,
+		&kind,
+		&subject,
 	)
 	_ = retryAttempt // populated below
 
@@ -1196,7 +1223,13 @@ func (r *ScanRunRepository) scanRun(row *sql.Row) (*scanrun.Run, error) {
 	}
 
 	run.ID, _ = shared.IDFromString(id)
-	run.ScanWorkflowID, _ = shared.IDFromString(scanWorkflowID)
+	if scanWorkflowID.Valid {
+		run.ScanWorkflowID, _ = shared.IDFromString(scanWorkflowID.String)
+	}
+	run.Kind = scanrun.RunKind(kind)
+	if len(subject) > 0 {
+		_ = json.Unmarshal(subject, &run.Subject)
+	}
 	run.TenantID, _ = shared.IDFromString(tenantID)
 	run.TriggerType = scanworkflow.TriggerType(triggerType)
 	run.Status = scanrun.RunStatus(status)
@@ -1255,7 +1288,9 @@ func (r *ScanRunRepository) scanRunFromRows(rows *sql.Rows) (*scanrun.Run, error
 	run := &scanrun.Run{}
 	var (
 		id                string
-		scanWorkflowID    string
+		scanWorkflowID    sql.NullString
+		kind              string
+		subject           []byte
 		tenantID          string
 		assetID           sql.NullString
 		scanID            sql.NullString
@@ -1299,6 +1334,8 @@ func (r *ScanRunRepository) scanRunFromRows(rows *sql.Rows) (*scanrun.Run, error
 		&run.UnfinishedTargetCount,
 		&run.FreezeOverride,
 		&run.RefusalCode,
+		&kind,
+		&subject,
 	)
 
 	if err != nil {
@@ -1306,7 +1343,13 @@ func (r *ScanRunRepository) scanRunFromRows(rows *sql.Rows) (*scanrun.Run, error
 	}
 
 	run.ID, _ = shared.IDFromString(id)
-	run.ScanWorkflowID, _ = shared.IDFromString(scanWorkflowID)
+	if scanWorkflowID.Valid {
+		run.ScanWorkflowID, _ = shared.IDFromString(scanWorkflowID.String)
+	}
+	run.Kind = scanrun.RunKind(kind)
+	if len(subject) > 0 {
+		_ = json.Unmarshal(subject, &run.Subject)
+	}
 	run.TenantID, _ = shared.IDFromString(tenantID)
 	run.TriggerType = scanworkflow.TriggerType(triggerType)
 	run.Status = scanrun.RunStatus(status)
@@ -1965,4 +2008,25 @@ func stepRunStepID(id shared.ID) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: id.String(), Valid: true}
+}
+
+// nullIfZeroID stores a zero id as NULL: a run that executes no scan
+// workflow (a retest) has no scan_workflow_id.
+func nullIfZeroID(id shared.ID) any {
+	if id.IsZero() {
+		return nil
+	}
+	return id.String()
+}
+
+// nullJSONObject marshals a non-empty map, else NULL.
+func nullJSONObject(m map[string]any) any {
+	if len(m) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return b
 }
