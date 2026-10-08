@@ -10,7 +10,7 @@
   ops admins approve (the organization is created with the requester as its
   owner) or reject (a neutral email). Both are admin-audited.
 - Unconfirmed requests are deleted after 24 hours and decided ones after 90
-  days (migration 001328, new table `access_requests`).
+  days (migration 001338, new table `access_requests`).
 - **Upgrade note:** `CAPTCHA_TURNSTILE_SECRET` / `CAPTCHA_TURNSTILE_SITE_KEY`
   prepare a CAPTCHA on the form; the web widget is not wired yet, so leave the
   secret unset for now.
