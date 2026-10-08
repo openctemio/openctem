@@ -7,7 +7,13 @@ import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunMap as RunMapData, RunTask } from '@/lib/api/generated'
 import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
 import { useChannel } from '@/hooks/use-websocket'
-import { mapEdgeLabel, mapStatus, mapSteps, nodeBadgeLines } from '../lib/run-map'
+import {
+  mapEdgeLabel,
+  mapStatus,
+  mapSteps,
+  nodeBadgeLines,
+  zeroOutputWarnings,
+} from '../lib/run-map'
 import { RunStepPanel } from './run-step-panel'
 
 /**
@@ -66,6 +72,7 @@ export function RunMap({
   }, [data])
 
   const selectedNode = data?.nodes?.find((n) => n.step_key === selected)
+  const warnings = useMemo(() => zeroOutputWarnings(data), [data])
 
   if (error) {
     return <p className="text-sm text-muted-foreground">The run map could not be loaded.</p>
@@ -79,6 +86,17 @@ export function RunMap({
         <p className="text-xs text-muted-foreground">
           Workflow version {data.scan_workflow_version}, as the run started
         </p>
+      ) : null}
+      {warnings.length > 0 ? (
+        <ul
+          role="status"
+          aria-label="Steps without output"
+          className="space-y-0.5 text-xs text-amber-700 dark:text-amber-400"
+        >
+          {warnings.map((w) => (
+            <li key={w.key}>{w.text}</li>
+          ))}
+        </ul>
       ) : null}
       <WorkflowStagesView
         steps={steps}

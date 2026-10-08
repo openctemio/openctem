@@ -107,6 +107,117 @@ func (r *ScanHopRepository) CountStepOutputs(ctx context.Context, tenantID, runI
 	return out, rows.Err()
 }
 
+// PreviousRun returns the latest completed or partial run of the run's scan
+// created before it (zero id: none, or a run without a scan).
+func (r *ScanHopRepository) PreviousRun(ctx context.Context, tenantID, runID shared.ID) (shared.ID, error) {
+	var id string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT p.id
+		FROM scan_runs r
+		JOIN scan_runs p ON p.tenant_id = r.tenant_id AND p.scan_id = r.scan_id
+			AND p.id <> r.id AND p.created_at < r.created_at
+			AND p.status IN ('completed', 'partial')
+		WHERE r.tenant_id = $1 AND r.id = $2 AND r.scan_id IS NOT NULL
+		ORDER BY p.created_at DESC
+		LIMIT 1`, tenantID.String(), runID.String()).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return shared.ID{}, nil
+	}
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("previous run: %w", err)
+	}
+	return shared.IDFromString(id)
+}
+
+// stepOutputsOfRuns is the live assets two runs of the tenant produced, one
+// row per step key and asset, with which run produced it ($1 tenant, $2
+// run, $3 previous run). The caller appends the scope condition on a.id.
+const stepOutputsOfRuns = `
+		SELECT s.step_key, o.asset_id, a.name, a.asset_type, COALESCE(a.sub_type, '') AS sub_type,
+			bool_or(o.run_id = $2) AS in_run, bool_or(o.run_id = $3) AS in_previous
+		FROM scan_step_outputs o
+		JOIN scan_run_steps s ON s.id = o.scan_run_step_id AND s.scan_run_id = o.run_id
+		JOIN assets a ON a.tenant_id = o.tenant_id AND a.id = o.asset_id AND a.deleted_at IS NULL
+		WHERE o.tenant_id = $1 AND o.run_id IN ($2, $3)`
+
+func (r *ScanHopRepository) CompareStepOutputs(ctx context.Context, tenantID, runID, previousRunID shared.ID, scope *shared.DataScope) ([]scanrun.StepOutputDelta, error) {
+	if previousRunID.IsZero() {
+		return nil, nil
+	}
+	inner := stepOutputsOfRuns
+	args := []any{tenantID.String(), runID.String(), previousRunID.String()}
+	if scope != nil {
+		cond, scopeArgs := dataScopeCondAt("a.id", scope, 4)
+		inner += " AND " + cond
+		args = append(args, scopeArgs...)
+	}
+	inner += " GROUP BY s.step_key, o.asset_id, a.name, a.asset_type, a.sub_type"
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT step_key,
+			COUNT(*) FILTER (WHERE in_previous),
+			COUNT(*) FILTER (WHERE in_run AND NOT in_previous),
+			COUNT(*) FILTER (WHERE in_previous AND NOT in_run)
+		FROM (`+inner+`) x
+		GROUP BY step_key`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("compare step outputs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []scanrun.StepOutputDelta
+	for rows.Next() {
+		var d scanrun.StepOutputDelta
+		if err := rows.Scan(&d.StepKey, &d.Previous, &d.Added, &d.Gone); err != nil {
+			return nil, fmt.Errorf("scan step output delta: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (r *ScanHopRepository) PreviewStepOutputs(ctx context.Context, tenantID, runID, previousRunID shared.ID, stepKey string, scope *shared.DataScope, limit int) ([]scanrun.StepOutput, int, error) {
+	if limit <= 0 {
+		return nil, 0, nil
+	}
+	// The zero id never matches a run: without a previous run nothing is new
+	// (in_previous is false for every row, and New is cleared below).
+	inner := stepOutputsOfRuns + " AND s.step_key = $4"
+	args := []any{tenantID.String(), runID.String(), previousRunID.String(), stepKey}
+	if scope != nil {
+		cond, scopeArgs := dataScopeCondAt("a.id", scope, 5)
+		inner += " AND " + cond
+		args = append(args, scopeArgs...)
+	}
+	inner += " GROUP BY s.step_key, o.asset_id, a.name, a.asset_type, a.sub_type"
+	args = append(args, limit)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT asset_id, name, asset_type, sub_type, NOT in_previous, COUNT(*) OVER ()
+		FROM (%s) x
+		WHERE in_run
+		ORDER BY in_previous, name, asset_id
+		LIMIT $%d`, inner, len(args)), args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("preview step outputs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]scanrun.StepOutput, 0, min(limit, maxStepOutputPreview))
+	total := 0
+	for rows.Next() {
+		var id string
+		var o scanrun.StepOutput
+		if err := rows.Scan(&id, &o.Name, &o.Type, &o.SubType, &o.New, &total); err != nil {
+			return nil, 0, fmt.Errorf("scan step output: %w", err)
+		}
+		o.AssetID, _ = shared.IDFromString(id)
+		o.New = o.New && !previousRunID.IsZero()
+		out = append(out, o)
+	}
+	return out, total, rows.Err()
+}
+
+// maxStepOutputPreview sizes the preview's first allocation (the service
+// caps the limit the same way).
+const maxStepOutputPreview = 50
+
 func (r *ScanHopRepository) ListStepOutputs(ctx context.Context, tenantID, runID shared.ID, stepRunIDs []shared.ID, limit int) ([]scanrun.StepOutput, int, error) {
 	ids := hopIDStrings(stepRunIDs)
 	if len(ids) == 0 || limit <= 0 {

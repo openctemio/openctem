@@ -54,6 +54,7 @@ func TestScanRunRoutes_FollowScanPermissions(t *testing.T) {
 		"/api/v1/scan-runs/" + testRunID + "/tasks",
 		"/api/v1/scan-runs/" + testRunID + "/stages",
 		"/api/v1/scan-runs/" + testRunID + "/map",
+		"/api/v1/scan-runs/" + testRunID + "/steps/ports/outputs",
 	}
 	for _, path := range read {
 		if code, reached := serveScanWorkflowRoutes(t, []string{permission.ScanWorkflowsRead.String(), permission.ScanWorkflowsWrite.String()}, http.MethodGet, path); reached || code != http.StatusForbidden {
