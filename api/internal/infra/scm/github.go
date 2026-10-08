@@ -236,20 +236,20 @@ func (c *GitHubClient) ListRepositories(ctx context.Context, opts ListOptions) (
 		// which the handler can still recognise by substring match.
 		switch resp.StatusCode {
 		case http.StatusUnauthorized:
-			return nil, ErrAuthFailed.Wrap(fmt.Errorf("github rejected credentials: %s", string(body)))
+			return nil, ErrAuthFailed.Wrap(httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body))
 		case http.StatusForbidden:
 			// GitHub returns 403 for both rate-limit AND insufficient
 			// scope. Inspect body to disambiguate.
 			if strings.Contains(strings.ToLower(string(body)), "rate limit") {
-				return nil, ErrRateLimited.Wrap(fmt.Errorf("github rate limit: %s", string(body)))
+				return nil, ErrRateLimited.Wrap(httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body))
 			}
-			return nil, ErrAuthFailed.Wrap(fmt.Errorf("github forbidden (check token scopes): %s", string(body)))
+			return nil, ErrAuthFailed.Wrap(fmt.Errorf("github forbidden (check token scopes): %w", httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body)))
 		case http.StatusNotFound:
-			return nil, ErrNotFound.Wrap(fmt.Errorf("github org/user not found: %s", string(body)))
+			return nil, ErrNotFound.Wrap(fmt.Errorf("github organization or user not found: %w", httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body)))
 		case http.StatusTooManyRequests:
-			return nil, ErrRateLimited.Wrap(fmt.Errorf("github rate limit: %s", string(body)))
+			return nil, ErrRateLimited.Wrap(httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body))
 		}
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "github", resp.StatusCode, body)
 	}
 
 	// Parse response based on endpoint
