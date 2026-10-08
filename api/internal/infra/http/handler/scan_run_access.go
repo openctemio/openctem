@@ -37,7 +37,7 @@ func (h *ScanWorkflowHandler) SetFindingScope(s runFindingScope) { h.findingScop
 
 // runVisible reports whether the caller may see run.
 func (h *ScanWorkflowHandler) runVisible(ctx context.Context, tenantID shared.ID, run *scanrundom.Run) bool {
-	if run.KindOrDefault() != scanrundom.RunKindRetest {
+	if !isFindingRun(run.KindOrDefault()) {
 		return true
 	}
 	if !middleware.HasPermission(ctx, "findings:read") {
@@ -92,6 +92,12 @@ func (h *ScanWorkflowHandler) listHidesFindingRuns(ctx context.Context, tenantID
 	}
 	scope, err := h.findingScope.Resolve(ctx, tenantID)
 	return err != nil || scope != nil
+}
+
+// isFindingRun reports whether runs of kind are about a finding (and so
+// follow the finding's access rules).
+func isFindingRun(kind scanrundom.RunKind) bool {
+	return kind == scanrundom.RunKindRetest || kind == scanrundom.RunKindValidation
 }
 
 func subjectID(subject map[string]any, key string) (shared.ID, bool) {
