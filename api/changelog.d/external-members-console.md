@@ -14,3 +14,4 @@
 - **Settings › Authentication:**
   - the personal-accounts policy;
   - while SSO is enforced, the SSO exception list.
+- **Platform administrator console:** each verified SSO domain of an organization shows and changes how SSO treats newcomers (role, or not admitted).

@@ -129,6 +129,7 @@ Lapsed-domain members keep their access. Their sign-in method (SSO, or password 
 | **Members** | The list filters on `?kind=internal|external` (the External members view). Shared badges: External (managed by a named organization), Personal, Unmanaged, Lapsed domain, SSO exception, end of access. A disabled member shows why (access ended, left their organization, ...). Owners and admins change an external member's end of access (`PATCH /organization/members/{member_id}/access`). |
 | **Invitations** | The invite dialog takes an end of access for people outside the organization (empty: the API proposes 90 days). After creation it shows the look-alike warning and the end of access. |
 | **Trusted organizations** | Settings › Organization › Trusted organizations lists the organizations this one trusts and those that trust it. Owners request a trust (domain, highest role, home SSO, MFA proof, API keys, proposed end of access), change its settings, approve an incoming trust (attesting the identity provider's MFA) or end one. Admins read. |
+| **Platform administrator console** | The verified domains of an organization show how SSO treats newcomers on each domain (role, or not admitted) and change it (per-domain JIT). |
 | **Authentication settings** | Personal accounts policy and, while SSO is enforced, the SSO exception list, saved with the rest of the security settings (owner, step-up). |
 
 ## 11. Parts still to build
@@ -138,7 +139,6 @@ Lapsed-domain members keep their access. Their sign-in method (SSO, or password 
 3. **Personal accounts:** a second factor (TOTP) for social-login accounts.
 4. **Domains:**
    - include-subdomains on a verified domain;
-   - SSO-only suspension of lapsed-domain members after 30 days;
-   - per-domain JIT controls in the platform administrator console (the API is in place).
+   - SSO-only suspension of lapsed-domain members after 30 days.
 
 Invitation-based cross-organization membership, badges, expiry and the home cascade work on every plan. Trusts, home-realm SSO acceptance and trusted-domain JIT need SSO.
