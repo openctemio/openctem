@@ -334,7 +334,7 @@ export interface PlatformUserDetail extends PlatformUser {
 }
 
 export type PlatformUserAction =
-  'revoke-sessions' | 'unlock' | 'password-reset' | 'resend-verification'
+  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails'
 
 /** GET /admin/sessions: one open console session (super admin). */
 export interface AdminConsoleSession {

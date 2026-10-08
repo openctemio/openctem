@@ -64,7 +64,7 @@ const ACTIONS: ActionSpec[] = [
     available: (u) => u.auth_provider === 'local',
   },
   {
-    action: 'resend-verification',
+    action: 'verification-emails',
     icon: MailCheck,
     labelKey: 'admin.users.action.verify',
     label: 'Resend verification',

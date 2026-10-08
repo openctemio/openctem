@@ -103,23 +103,23 @@ func (h *AdminSessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// End handles DELETE /api/v1/admin/sessions/{sessionId}.
+// End handles DELETE /api/v1/admin/sessions/{session_id}.
 //
 // @Summary      End an administrator's console session (platform admin)
 // @Description  Signs that console session out at once. Super admin, a reason and a fresh authenticator code; audited at high severity. Your own current session is ended with sign-out instead.
 // @Tags         Admin
 // @Accept       json
 // @Produce      json
-// @Param        sessionId  path  string                   true  "Session ID"
+// @Param        session_id path  string                   true  "Session ID"
 // @Param        request    body  EndAdminSessionRequest   true  "Reason and code"
 // @Success      204
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
-// @Router       /admin/sessions/{sessionId} [delete]
+// @Router       /admin/sessions/{session_id} [delete]
 func (h *AdminSessionHandler) End(w http.ResponseWriter, r *http.Request) {
 	middleware.SetAuditAction(r.Context(), "console.session_ended", true)
-	id, err := shared.IDFromString(chi.URLParam(r, "sessionId"))
+	id, err := shared.IDFromString(chi.URLParam(r, "session_id"))
 	if err != nil {
 		apierror.BadRequest("invalid session id").WriteJSON(w)
 		return

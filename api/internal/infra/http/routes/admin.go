@@ -265,17 +265,17 @@ func registerAdminRoutes(
 		audited := func(action string, base []Middleware) []Middleware {
 			out := cloneMW(base)
 			if h.AdminAuditMiddleware != nil {
-				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "user", "userId"))
+				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "user", "user_id"))
 			}
 			return out
 		}
 		router.Group("/api/v1/admin/platform-users", func(r Router) {
 			r.GET("/", h.AdminPlatformUser.Search)
-			r.GET("/{userId}", h.AdminPlatformUser.Get, audited("platform_user.view", nil)...)
-			r.POST("/{userId}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
-			r.POST("/{userId}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
-			r.POST("/{userId}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)
-			r.POST("/{userId}/resend-verification", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", opsSupport)...)
+			r.GET("/{user_id}", h.AdminPlatformUser.Get, audited("platform_user.view", nil)...)
+			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
+			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
+			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)
+			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", opsSupport)...)
 		}, adminMiddlewares...)
 	}
 
@@ -287,9 +287,9 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminSession.List)
 			end := []Middleware{}
 			if h.AdminAuditMiddleware != nil {
-				end = append(end, h.AdminAuditMiddleware.AuditLog("console.session_ended", "admin_session", "sessionId"))
+				end = append(end, h.AdminAuditMiddleware.AuditLog("console.session_ended", "admin_session", "session_id"))
 			}
-			r.DELETE("/{sessionId}", h.AdminSession.End, end...)
+			r.DELETE("/{session_id}", h.AdminSession.End, end...)
 		}, superAdminOnly...)
 	}
 
