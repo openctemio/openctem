@@ -83,7 +83,7 @@ func registerSensorV2Routes(router Router, h *handler.SensorResultsV2Handler, ct
 // server put in the context. It is never mounted on a listener.
 func sensorV2InProcess(h *handler.SensorResultsV2Handler, ctl *handler.SensorControlV2Handler, b *sensorV2Budgets) http.Handler {
 	r := infrahttp.NewChiRouter()
-	mountSensorV2(r, h, ctl, b, handler.AuthenticateInProcess)
+	mountSensorV2(r, h, ctl, b, h.AuthenticateInProcessWithPolicies)
 	return r.Handler()
 }
 
