@@ -167,8 +167,30 @@ Migration `001367_mcp_oauth`: `mcp_oauth_clients`, `mcp_oauth_requests`,
 `mcp_oauth_grants`, `mcp_oauth_tokens`; grants and requests cascade on
 organization and user deletion.
 
+## Organization policy (shipped)
+
+`GET /api/v1/mcp-access/settings` (`settings:read`) and `PUT` (`settings:write`
+and a recent sign-in); API keys refused. Stored as the `mcp` section of the
+organization settings (`tenant.MCPSettings`), audited as
+`mcp_settings.updated` (high).
+
+| Field | Default | Effect |
+|---|---|---|
+| `enabled` | on | off: every MCP request of the organization (tokens and `oct_` keys) and every consent is refused |
+| `any_client` | off | off: only verified applications. Verified = registered by this organization (or by the platform operator), or a metadata document whose host is in `client_hosts` or in `MCP_OAUTH_TRUSTED_CLIENT_HOSTS`. On: any application, unverified ones marked |
+| `client_hosts` | none | host names (no scheme, path or wildcard), at most 50 |
+| `scopes` | all read scopes | the scopes members may grant |
+| `api_keys_allowed` | on | off: `oct_` keys are `403` on the MCP endpoint (`middleware.MCPKeyPolicyGate`); still valid on the REST API |
+| `refresh_days` | 90 | a connection ends this many days after the person approved it |
+
+The policy is read on every use: at consent (the page shows why an
+application is blocked), at code redemption, at refresh (a connection older
+than `refresh_days` or now outside the policy is revoked) and on every MCP
+request (a token of a blocked application stops working; scopes the policy no
+longer allows stop counting). Another organization's registered application
+is never usable. A policy that cannot be read refuses the request.
+
 ## Planned
 
-Organization policy, connected applications, organization-registered clients
-and optional dynamic registration, DPoP, write-tool confirmation: see
-RFC-062 §14.
+Connected applications, organization-registered clients and optional dynamic
+registration, DPoP, write-tool confirmation: see RFC-062 §14.

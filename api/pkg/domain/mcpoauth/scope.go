@@ -74,6 +74,16 @@ func ReadScopes() []Scope {
 	return out
 }
 
+// AllScopes returns every scope, read and write, in a fixed order.
+func AllScopes() []Scope {
+	out := make([]Scope, 0, len(catalog))
+	for s := range catalog {
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
 // Known reports whether s is a scope of the MCP resource.
 func Known(s Scope) bool {
 	_, ok := catalog[s]

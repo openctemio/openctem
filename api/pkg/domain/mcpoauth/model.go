@@ -134,6 +134,7 @@ const (
 	RevokedRefreshReuse   = "refresh_reuse"
 	RevokedCodeReuse      = "code_reuse"
 	RevokedMembershipGone = "membership"
+	RevokedByPolicy       = "policy"
 )
 
 // Errors of the repository and the service.

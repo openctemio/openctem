@@ -28,6 +28,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/testdb"
 	mcpoauthdom "github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -70,13 +71,35 @@ func (h heldPerms) HeldPermissions(_ context.Context, _, userID shared.ID) (bool
 	return false, p, nil
 }
 
+// fakePolicies is each organization's MCP policy (defaults when absent).
+type fakePolicies map[string]tenantdom.MCPSettings
+
+func (f fakePolicies) MCPPolicy(_ context.Context, id shared.ID) (tenantdom.MCPSettings, error) {
+	return f[id.String()], nil
+}
+
 type harness struct {
-	t      *testing.T
-	db     *sql.DB
-	svc    *mcpoauth.Service
-	tenant string
-	other  string
-	held   heldPerms
+	t        *testing.T
+	db       *sql.DB
+	svc      *mcpoauth.Service
+	tenant   string
+	other    string
+	held     heldPerms
+	policies fakePolicies
+	cfg      mcpoauth.Config
+}
+
+// withTrustedHosts is the same authorization server with another platform
+// list of trusted client hosts.
+func (h *harness) withTrustedHosts(hosts []string) *mcpoauth.Service {
+	h.t.Helper()
+	cfg := h.cfg
+	cfg.TrustedClientHosts = hosts
+	svc, err := mcpoauth.NewService(cfg)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return svc
 }
 
 func newHarness(t *testing.T) *harness {
@@ -94,14 +117,14 @@ func newHarness(t *testing.T) *harness {
 		t.Skipf("cannot reach DATABASE_URL: %v", err)
 	}
 	db := &postgres.DB{DB: sqldb}
-	h := &harness{t: t, db: sqldb, held: heldPerms{}}
+	h := &harness{t: t, db: sqldb, held: heldPerms{}, policies: fakePolicies{}}
 	h.tenant, h.other = h.newTenant(), h.newTenant()
 
 	e, err := mcpoauthdom.NewEndpoints(issuer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.svc, err = mcpoauth.NewService(mcpoauth.Config{
+	h.cfg = mcpoauth.Config{
 		Repository: postgres.NewMCPOAuthRepository(db),
 		Endpoints:  e,
 		Pepper:     "mcp-oauth-test-pepper",
@@ -111,8 +134,13 @@ func newHarness(t *testing.T) *harness {
 		},
 		Members:     apikey.NewMembershipChecker(postgres.NewTenantRepository(db), postgres.NewUserRepository(db)),
 		Permissions: h.held,
-		Logger:      logger.NewNop(),
-	})
+		Policies:    h.policies,
+		// The default policy admits verified clients only: the platform
+		// vouches for both test hosts.
+		TrustedClientHosts: []string{"assistant.example", "https://other.example"},
+		Logger:             logger.NewNop(),
+	}
+	h.svc, err = mcpoauth.NewService(h.cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
