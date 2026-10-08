@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+
 	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -125,6 +127,14 @@ func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, even
 	if scope != nil {
 		// Runs about a finding (retests) follow the finding's data scope.
 		h.SetFindingScope(scope)
+	}
+	return h
+}
+
+// withReadiness gives the workflow handler ?include=readiness.
+func withReadiness(h *handler.ScanWorkflowHandler, scans *scanapp.Service) *handler.ScanWorkflowHandler {
+	if scans != nil {
+		h.SetReadiness(scans.WorkflowReadiness)
 	}
 	return h
 }
@@ -407,7 +417,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CI:              handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:         ciAdmin,
 		CIRunner:        ciRunner,
-		ScanWorkflow:    newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log),
+		ScanWorkflow:    withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
