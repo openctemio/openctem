@@ -1,0 +1,10 @@
+# Generates the Go code of api/pkg/sensorproto/v3 (committed). Run from api/:
+#   make proto
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: ..
+    opt: module=github.com/openctemio/openctem/api
+  - local: protoc-gen-connect-go
+    out: ..
+    opt: module=github.com/openctemio/openctem/api
