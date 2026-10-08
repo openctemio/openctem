@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -64,7 +65,36 @@ func runTenable(t *testing.T, mode SourceResolveMode, scope *alterScope, report 
 	return out
 }
 
-func boundScope() *alterScope { return newAlterScope(Binding{Kind: BindingCommand}) }
+// boundScope is the scope of a report bound to the tenant's Tenable sync.
+func boundScope() *alterScope {
+	return newAlterScope(Binding{Kind: BindingCommand, Tool: "tenable_sc", CommandType: command.CommandTypeConnectorSync})
+}
+
+// A report may resolve on its source's say-so only for a connector command
+// of the same tool, and a connector scan only on the assets it may change
+// (sensor → platform review, M12).
+func TestSourceResolve_OnlyTheCommandsConnectorTool(t *testing.T) {
+	for name, scope := range map[string]*alterScope{
+		"a command naming no tool (validate)": newAlterScope(Binding{Kind: BindingCommand, CommandType: command.CommandTypeValidate}),
+		"a scan command of the same tool":     newAlterScope(Binding{Kind: BindingCommand, Tool: "tenable_sc", CommandType: command.CommandTypeScan}),
+		"a connector command of another tool": newAlterScope(Binding{Kind: BindingCommand, Tool: "other_connector", CommandType: command.CommandTypeConnectorSync}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := &sourceResolveRepo{match: []shared.ID{shared.NewID()}}
+			out := runTenable(t, SourceResolveEnforce, scope, tenableReport(true), repo)
+			assert.Equal(t, 0, repo.calls)
+			assert.Equal(t, 0, out.FindingsSourceResolved)
+		})
+	}
+
+	// A connector scan resolves only on assets inside its scope: the asset
+	// of this report was neither created by it nor covered by a target.
+	repo := &sourceResolveRepo{match: []shared.ID{shared.NewID()}}
+	scanScope := newAlterScope(Binding{Kind: BindingCommand, Tool: "tenable_sc", CommandType: command.CommandTypeConnectorScan,
+		Targets: []string{"203.0.113.0/24"}})
+	runTenable(t, SourceResolveEnforce, scanScope, tenableReport(true), repo)
+	assert.Equal(t, 0, repo.calls, "an asset outside the connector scan's scope is not resolved")
+}
 
 func TestSourceResolve_MitigatedRowIsNotASighting(t *testing.T) {
 	repo := &sourceResolveRepo{match: []shared.ID{shared.NewID()}}
