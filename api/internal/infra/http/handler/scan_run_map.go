@@ -3,8 +3,9 @@ package handler
 // The live run map (research/62 run page; owner request 2026-10-08): a run
 // drawn on the workflow version it executes, each step with its state,
 // chunks, findings and outputs, each edge with what flowed along it.
-// Counts only: no target or asset name is listed, and output counts cover
-// only the assets the caller may see.
+// The map is counts only (no target or asset is named); a step's outputs
+// are listed by ListRunStepOutputs. Both cover only the assets the caller
+// may see.
 
 import (
 	"encoding/json"
@@ -44,10 +45,15 @@ type RunMapChunks struct {
 }
 
 // RunMapOutputs counts what a step produced, by asset type, in the caller's
-// data scope.
+// data scope. Previous, Added and Gone compare it with the previous run of
+// the scan (absent when there is none): what the previous run's same step
+// produced, what is new this run and what this run no longer produced.
 type RunMapOutputs struct {
-	Total  int            `json:"total"`
-	ByType map[string]int `json:"by_type"`
+	Total    int            `json:"total"`
+	ByType   map[string]int `json:"by_type"`
+	Previous *int           `json:"previous,omitempty"`
+	Added    *int           `json:"added,omitempty"`
+	Gone     *int           `json:"gone,omitempty"`
 }
 
 // RunMapNode is one step of the run on the map.
@@ -92,9 +98,12 @@ type RunMapResponse struct {
 	Status string `json:"status"`
 	// ScanWorkflowVersion is the workflow version drawn (0: the run's step
 	// runs, for a run without a saved version).
-	ScanWorkflowVersion int          `json:"scan_workflow_version,omitempty"`
-	Nodes               []RunMapNode `json:"nodes"`
-	Edges               []RunMapEdge `json:"edges"`
+	ScanWorkflowVersion int `json:"scan_workflow_version,omitempty"`
+	// PreviousRunID is the previous finished run of the same scan the
+	// outputs are compared with (absent: none).
+	PreviousRunID string       `json:"previous_run_id,omitempty"`
+	Nodes         []RunMapNode `json:"nodes"`
+	Edges         []RunMapEdge `json:"edges"`
 }
 
 // GetRunMap handles GET /api/v1/scan-runs/{id}/map
@@ -180,6 +189,20 @@ func toRunMapResponse(m *scanrunapp.RunMap) RunMapResponse {
 		out.Total += o.Count
 		outputs[key] = out
 	}
+	if !m.PreviousRunID.IsZero() {
+		resp.PreviousRunID = m.PreviousRunID.String()
+		deltas := map[string]scanrundom.StepOutputDelta{}
+		for _, d := range m.Deltas {
+			deltas[d.StepKey] = d
+		}
+		// Every step compares, a step without outputs in either run as 0/0/0.
+		for _, sr := range run.StepRuns {
+			d := deltas[sr.StepKey]
+			out := outputs[sr.StepKey]
+			out.Previous, out.Added, out.Gone = intPtr(d.Previous), intPtr(d.Added), intPtr(d.Gone)
+			outputs[sr.StepKey] = out
+		}
+	}
 
 	steps := mapSteps(m.Workflow, run)
 	for _, st := range steps {
@@ -208,6 +231,80 @@ func toRunMapResponse(m *scanrunapp.RunMap) RunMapResponse {
 		}
 	}
 	return resp
+}
+
+func intPtr(n int) *int { return &n }
+
+// RunStepOutput is one asset a step of a run produced.
+type RunStepOutput struct {
+	AssetID string `json:"asset_id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	SubType string `json:"sub_type,omitempty"`
+	// New: the previous run of the scan did not produce it in this step.
+	New bool `json:"new"`
+}
+
+// RunStepOutputsResponse is a sample of what a step of a run produced.
+type RunStepOutputsResponse struct {
+	// Total is how many assets the step produced in the caller's scope;
+	// Outputs lists up to the limit of them, new ones first.
+	Total         int             `json:"total"`
+	Outputs       []RunStepOutput `json:"outputs"`
+	PreviousRunID string          `json:"previous_run_id,omitempty"`
+}
+
+// ListRunStepOutputs handles GET /api/v1/scan-runs/{id}/steps/{step_key}/outputs
+// @Summary      What a step of a run produced
+// @Description  Up to `limit` (default 20, at most 50) live assets one step of the run produced, new ones (not produced by the same step of the previous finished run of the scan) first, with how many there are. Only assets in the caller's data scope are listed and counted. A run of another organization, or a run about a finding outside the caller's scope, is not found.
+// @Tags         Scan workflows
+// @Produce      json
+// @Param        id        path      string  true   "Run ID"
+// @Param        step_key  path      string  true   "Step key"
+// @Param        limit     query     int     false  "At most this many (1-50, default 20)"
+// @Success      200  {object}  RunStepOutputsResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-runs/{id}/steps/{step_key}/outputs [get]
+func (h *ScanWorkflowHandler) ListRunStepOutputs(w http.ResponseWriter, r *http.Request) {
+	limit, ok := listLimit(w, r, 20, scanrunapp.MaxStepOutputPreview)
+	if !ok {
+		return
+	}
+	if !h.guardRun(w, r) {
+		return
+	}
+	tenant := middleware.GetTenantID(r.Context())
+	tenantID, err := shared.IDFromString(tenant)
+	if err != nil {
+		apierror.NotFound("Run").WriteJSON(w)
+		return
+	}
+	var scope *shared.DataScope
+	if h.findingScope != nil {
+		if scope, err = h.findingScope.Resolve(r.Context(), tenantID); err != nil {
+			h.logger.Error("failed to resolve data scope", "error", err)
+			apierror.InternalServerError("failed to read the step outputs").WriteJSON(w)
+			return
+		}
+	}
+	p, err := h.service.PreviewStepOutputs(r.Context(), tenant, chi.URLParam(r, "id"), chi.URLParam(r, "step_key"), scope, limit)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	resp := RunStepOutputsResponse{Total: p.Total, Outputs: make([]RunStepOutput, 0, len(p.Outputs))}
+	if !p.PreviousRunID.IsZero() {
+		resp.PreviousRunID = p.PreviousRunID.String()
+	}
+	for _, o := range p.Outputs {
+		resp.Outputs = append(resp.Outputs, RunStepOutput{
+			AssetID: o.AssetID.String(), Name: o.Name, Type: o.Type, SubType: o.SubType, New: o.New,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // mapSteps is what the map draws: the workflow version's steps, or, for a

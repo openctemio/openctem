@@ -1446,6 +1446,9 @@ export const scanRunEndpoints = {
   events: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/events`,
   /** The run drawn on its workflow version: step states, chunks, outputs. */
   map: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/map`,
+  /** What one step of a run produced, new ones first (in the caller's scope). */
+  stepOutputs: (runId: string, stepKey: string, limit = 20) =>
+    `/api/v1/scan-runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(stepKey)}/outputs?limit=${limit}`,
 
   /**
    * One cursor page of a run's tasks (the run read embeds the first page and

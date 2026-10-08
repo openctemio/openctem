@@ -152,6 +152,60 @@ describe('RunMap', () => {
     )
   })
 
+  it('compares with the previous run, previews outputs and warns about a step without output', async () => {
+    const compared: RunMapData = {
+      ...data,
+      previous_run_id: 'r0',
+      nodes: [
+        {
+          ...data.nodes![0],
+          outputs: { total: 312, by_type: { domain: 312 }, previous: 300, added: 14, gone: 2 },
+        },
+        {
+          step_key: 'ports',
+          name: 'Ports',
+          depends_on: ['subdomains'],
+          state: 'succeeded',
+          findings: 0,
+          chunks: { total: 1, queued: 0, running: 0, completed: 1, failed: 0 },
+          outputs: { total: 0, by_type: {}, previous: 40, added: 0, gone: 40 },
+        },
+      ],
+    }
+    get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes('/steps/subdomains/outputs')
+          ? {
+              total: 312,
+              previous_run_id: 'r0',
+              outputs: [
+                { asset_id: 'a1', name: 'new.acme.test', type: 'domain', new: true },
+                { asset_id: 'a2', name: 'old.acme.test', type: 'domain', new: false },
+              ],
+            }
+          : compared
+      )
+    )
+    renderMap()
+    await screen.findByTestId('stages')
+    expect(
+      screen.getByText('Ports produced nothing, while the previous run produced 40.')
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('+14 new, 2 gone').length).toBeGreaterThan(0)
+
+    const select = seen[seen.length - 1].onSelectStep as (key: string) => void
+    act(() => select('subdomains'))
+    const panel = await screen.findByRole('region', { name: 'Step Subdomains' })
+    const list = await within(panel).findByRole('list', { name: 'Outputs' })
+    expect(get).toHaveBeenCalledWith('/api/v1/scan-runs/r1/steps/subdomains/outputs?limit=20')
+    expect(within(list).getByText('new.acme.test')).toBeInTheDocument()
+    expect(within(list).getAllByText('New')).toHaveLength(1)
+    expect(within(list).getByText('and 310 more')).toBeInTheDocument()
+    expect(
+      within(panel).getByText('Compared with the last run: +14 new, 2 gone')
+    ).toBeInTheDocument()
+  })
+
   it('says when the map cannot be loaded', async () => {
     get.mockRejectedValue(new Error('boom'))
     renderMap()

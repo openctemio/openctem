@@ -275,6 +275,8 @@ func registerScanWorkflowRoutes(
 		r.GET("/{id}/events", h.ListRunEvents, middleware.Require(permission.ScansRead))
 		// The run drawn on its workflow version: step states, chunks, outputs.
 		r.GET("/{id}/map", h.GetRunMap, middleware.Require(permission.ScansRead))
+		// What one step produced, new ones first (in the caller's data scope).
+		r.GET("/{id}/steps/{step_key}/outputs", h.ListRunStepOutputs, middleware.Require(permission.ScansRead))
 
 		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.ScansWrite))
 	}, runMiddlewares...)
