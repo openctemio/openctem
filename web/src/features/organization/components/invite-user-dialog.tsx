@@ -24,7 +24,7 @@ import { invitationLink } from '@/features/auth/lib/invitation-token'
 
 import { createTenantInvitation } from '../api/use-members'
 import { MAX_EXTERNAL_ACCESS_DAYS, dateInputDaysFromNow, endOfDayISO } from '../lib/external-access'
-import { RoleChecklist } from './role-checklist'
+import { RoleChecklist, defaultViewerRoleId } from './role-checklist'
 
 /**
  * `${origin}/invitations#token=<token>`: the page the invitee opens to join.
@@ -60,6 +60,8 @@ export function InviteUserDialog({
 }: InviteUserDialogProps) {
   const [email, setEmail] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
+  // Least privilege: start from the viewer role once the roles load.
+  const [seeded, setSeeded] = useState(false)
   // End of access for someone from outside the organization (api RFC-058);
   // empty lets the API propose 90 days. Ignored for an internal invitee.
   const [accessEnds, setAccessEnds] = useState('')
@@ -75,11 +77,17 @@ export function InviteUserDialog({
   const [copied, setCopied] = useState(false)
 
   const { roles, isLoading: rolesLoading } = useRoles({ skip: !open })
+  const viewerId = defaultViewerRoleId(roles)
+  if (open && !seeded && viewerId) {
+    setSeeded(true)
+    setRoleIds([viewerId])
+  }
 
   const close = () => {
     onOpenChange(false)
     setEmail('')
     setRoleIds([])
+    setSeeded(false)
     setAccessEnds('')
     setError(null)
     setLink(null)

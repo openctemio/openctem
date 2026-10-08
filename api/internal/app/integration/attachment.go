@@ -273,6 +273,51 @@ func (s *AttachmentService) Delete(ctx context.Context, tenantID, attachmentID s
 	return s.repo.Delete(ctx, tid, aid)
 }
 
+// EraseTenant deletes every stored file of the tenant: its whole namespace on
+// the server-wide storage and, when the tenant points attachments at its own
+// S3/MinIO bucket, its namespace there too. Organization deletion calls it
+// before and after removing the tenant's rows. It fails if any backend cannot
+// be erased (or the tenant's storage setting cannot be read), so the caller
+// can refuse the deletion and keep the obligation. Idempotent.
+func (s *AttachmentService) EraseTenant(ctx context.Context, tenantID string) (int, error) {
+	if err := attachmentdom.ValidateTenantNamespace(tenantID); err != nil {
+		return 0, err
+	}
+	// Drop cached providers of this tenant (keys "tenantID" and
+	// "tenantID:provider"), whatever happens next.
+	s.storageCache.Range(func(k, _ any) bool {
+		if key, ok := k.(string); ok && (key == tenantID || strings.HasPrefix(key, tenantID+":")) {
+			s.storageCache.Delete(k)
+		}
+		return true
+	})
+
+	erased, err := s.storage.EraseTenant(ctx, tenantID)
+	if err != nil {
+		return erased, fmt.Errorf("erase server storage: %w", err)
+	}
+	if s.storageResolver == nil || s.storageFactory == nil {
+		return erased, nil
+	}
+	cfg, err := s.storageResolver.GetTenantStorageConfig(ctx, tenantID)
+	if err != nil {
+		return erased, fmt.Errorf("read tenant storage setting: %w", err)
+	}
+	if cfg == nil || cfg.Provider == "" || cfg.Provider == attachmentdom.ProviderLocal {
+		return erased, nil
+	}
+	own, err := s.storageFactory(*cfg)
+	if err != nil {
+		return erased, fmt.Errorf("open tenant storage %s: %w", cfg.Provider, err)
+	}
+	n, err := own.EraseTenant(ctx, tenantID)
+	erased += n
+	if err != nil {
+		return erased, fmt.Errorf("erase tenant storage %s: %w", cfg.Provider, err)
+	}
+	return erased, nil
+}
+
 // ListByContext returns all attachments linked to a specific context.
 func (s *AttachmentService) ListByContext(ctx context.Context, tenantID shared.ID, contextType, contextID string) ([]*attachmentdom.Attachment, error) {
 	return s.repo.ListByContext(ctx, tenantID, contextType, contextID)
