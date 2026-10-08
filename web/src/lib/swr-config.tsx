@@ -77,6 +77,23 @@ export const SWR_REFERENCE: SWRConfiguration = {
   dedupingInterval: 5 * 60 * 1000,
 }
 
+type GlobalMutate = (
+  matcher: (key: unknown) => boolean,
+  data?: undefined,
+  opts?: { revalidate?: boolean }
+) => Promise<unknown>
+
+/**
+ * Drops every cached answer, then refetches what is mounted. For a change of
+ * session identity (organization switch): SWR keys are endpoint URLs, the
+ * identity is in the cookie, so nothing of the previous organization may stay
+ * in the cache or on screen.
+ */
+export async function clearSwrCache(mutate: GlobalMutate): Promise<void> {
+  await mutate(() => true, undefined, { revalidate: false })
+  void mutate(() => true)
+}
+
 interface SWRProviderProps {
   children: ReactNode
   config?: SWRConfiguration

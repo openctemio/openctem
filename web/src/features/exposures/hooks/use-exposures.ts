@@ -29,8 +29,8 @@ export function useExposures(tenantId: string | null, filters?: ExposureListFilt
   const shouldFetch = tenantId && canReadFindings
 
   const { data, error, isLoading, mutate } = useSWR<ExposureListResponse>(
-    shouldFetch ? ['exposures', tenantId, filters] : null,
-    () => get<ExposureListResponse>(exposureEndpoints.list(filters)),
+    shouldFetch ? exposureEndpoints.list(filters) : null,
+    (url: string) => get<ExposureListResponse>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 10000,
@@ -88,8 +88,8 @@ export function useExposureStats(tenantId: string | null) {
   const shouldFetch = tenantId && canReadStats
 
   const { data, error, isLoading, mutate } = useSWR<ExposureStats>(
-    shouldFetch ? ['exposure-stats', tenantId] : null,
-    () => get<ExposureStats>(exposureEndpoints.stats()),
+    shouldFetch ? exposureEndpoints.stats() : null,
+    (url: string) => get<ExposureStats>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30000,
