@@ -198,6 +198,8 @@ type mockAuthTenantRepo struct {
 
 	// User membership results
 	userMemberships []tenant.UserMembership
+	// membershipByTenant answers GetMembership for a tenant id (home-realm tests).
+	membershipByTenant map[string]*tenant.Membership
 
 	// Error overrides
 	createErr               error
@@ -312,9 +314,12 @@ func (m *mockAuthTenantRepo) CreateMembership(_ context.Context, membership *ten
 	return nil
 }
 
-func (m *mockAuthTenantRepo) GetMembership(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Membership, error) {
+func (m *mockAuthTenantRepo) GetMembership(_ context.Context, _ shared.ID, tenantID shared.ID) (*tenant.Membership, error) {
 	if m.getMembershipErr != nil {
 		return nil, m.getMembershipErr
+	}
+	if ms, ok := m.membershipByTenant[tenantID.String()]; ok {
+		return ms, nil
 	}
 	return nil, shared.ErrNotFound
 }

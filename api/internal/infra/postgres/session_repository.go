@@ -14,7 +14,7 @@ import (
 
 const sessionColumns = `id, user_id, access_token_hash, ip_address, user_agent,
 	device_fingerprint, expires_at, last_activity_at, status, auth_method,
-	idp_issuer, idp_sid, idp_sub, idp_tenant_id, created_at, updated_at`
+	idp_issuer, idp_sid, idp_sub, idp_tenant_id, created_at, updated_at, mfa_evidence`
 
 // SessionRepository implements session.Repository using PostgreSQL.
 type SessionRepository struct {
@@ -32,8 +32,8 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 		INSERT INTO sessions (
 			id, user_id, access_token_hash, ip_address, user_agent,
 			device_fingerprint, expires_at, last_activity_at, status, auth_method,
-			idp_issuer, idp_sid, idp_sub, idp_tenant_id, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
+			idp_issuer, idp_sid, idp_sub, idp_tenant_id, created_at, updated_at, mfa_evidence
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		s.ID().String(),
@@ -52,6 +52,7 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 		nullIDValue(s.IDPTenantID()),
 		s.CreatedAt(),
 		s.UpdatedAt(),
+		s.MFAEvidence(),
 	)
 	if err != nil {
 		return err
@@ -301,6 +302,7 @@ func (r *SessionRepository) scanSession(row *sql.Row) (*session.Session, error) 
 		&fields.idpTenantID,
 		&fields.createdAt,
 		&fields.updatedAt,
+		&fields.mfaEvidence,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -332,6 +334,7 @@ func (r *SessionRepository) scanSessionFromRows(rows *sql.Rows) (*session.Sessio
 		&fields.idpTenantID,
 		&fields.createdAt,
 		&fields.updatedAt,
+		&fields.mfaEvidence,
 	)
 	if err != nil {
 		return nil, err
@@ -362,6 +365,7 @@ func (r *SessionRepository) reconstructSession(f sessionScanFields) *session.Ses
 	if f.idpTenantID.Valid {
 		sess.SetIDPTenant(shared.IDFromUUID(f.idpTenantID.UUID))
 	}
+	sess.SetMFAEvidence(f.mfaEvidence)
 	return sess
 }
 
@@ -383,6 +387,7 @@ type sessionScanFields struct {
 	idpTenantID       uuid.NullUUID
 	createdAt         time.Time
 	updatedAt         time.Time
+	mfaEvidence       bool
 }
 
 // MarkStepUp records that userID re-authenticated at `at` inside sessionID
