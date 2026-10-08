@@ -248,6 +248,13 @@ func registerScanWorkflowRoutes(
 		r.POST("/{id}/deactivate", h.DeactivateTemplate, middleware.Require(permission.ScanWorkflowsWrite))
 		r.POST("/{id}/clone", h.CloneTemplate, middleware.Require(permission.ScanWorkflowsWrite))
 
+		// The builder's draft: saved whatever its state, published when it
+		// has no blocking issue.
+		r.GET("/{id}/draft", h.GetDraft, middleware.Require(permission.ScanWorkflowsRead))
+		r.PUT("/{id}/draft", h.SaveDraft, middleware.Require(permission.ScanWorkflowsWrite))
+		r.DELETE("/{id}/draft", h.DiscardDraft, middleware.Require(permission.ScanWorkflowsWrite))
+		r.POST("/{id}/publish", h.PublishDraft, middleware.Require(permission.ScanWorkflowsWrite))
+
 		r.DELETE("/{id}", h.DeleteTemplate, middleware.Require(permission.ScanWorkflowsDelete))
 
 		r.POST("/{id}/steps", h.AddStep, middleware.Require(permission.ScanWorkflowsWrite))
