@@ -20,6 +20,8 @@ export const PUBLIC_ROUTES = [
   // the public preview endpoint until they act.
   '/invitations',
   '/verify-email',
+  // Where a refused sign-up lands (no session): the same page for everyone.
+  '/not-set-up',
   // OAuth / SSO provider callbacks: the session cookie is set by these pages.
   '/auth/callback',
   '/auth/sso/callback',
@@ -31,6 +33,10 @@ export const PUBLIC_ROUTES = [
   // favicon must load without a session.
   '/icon',
   '/apple-icon',
+  // The operator's legal documents (built-in templates when
+  // LEGAL_PAGES_ENABLED=true, 404 otherwise): linked from the sign-in page.
+  '/terms',
+  '/privacy',
 ] as const
 
 export type PublicRoute = (typeof PUBLIC_ROUTES)[number]

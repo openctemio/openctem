@@ -143,7 +143,10 @@ func writeDedupReviewError(w http.ResponseWriter, err error) bool {
 // MergeLog handles GET /api/v1/admin/assets/merge-log
 func (h *AdminDedupHandler) MergeLog(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-	limit := parseQueryInt(r.URL.Query().Get("limit"), 50)
+	limit, ok := listLimit(w, r, 50, 100)
+	if !ok {
+		return
+	}
 
 	scope, ok := h.scope(w, r, tenantID)
 	if !ok {

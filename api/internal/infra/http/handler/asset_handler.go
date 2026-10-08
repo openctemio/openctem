@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -542,6 +544,9 @@ func (h *AssetHandler) handleValidationError(w http.ResponseWriter, err error) {
 
 // handleServiceError converts service errors to API errors and writes response.
 func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Asset").WriteJSON(w)
@@ -602,6 +607,10 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := assetapp.ListAssetsInput{
 		TenantID:         tenantID,
 		Name:             query.Get("name"),
@@ -631,8 +640,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Attribution:          parseQueryArray(query.Get("attribution")),
 		CoveredBy:            query.Get("covered_by"),
 		Sort:                 query.Get("sort"),
-		Page:                 parseQueryInt(query.Get("page"), 1),
-		PerPage:              parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:                 paging.Page,
+		PerPage:              paging.PerPage,
 		ActingUserID:         middleware.GetUserID(r.Context()),
 		IsAdmin:              middleware.IsAdmin(r.Context()),
 	}
@@ -1576,8 +1585,8 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	tagsFilter := parseQueryArray(query.Get("tags"))
 	subTypeFilter := query.Get("sub_type")
 
-	// Parse count_by fields for metadata counting (e.g., ?count_by=is_virtual,os,ssl)
-	countByFields := parseQueryArray(query.Get("count_by"))
+	// Property keys to count values of (e.g. ?count_by=is_virtual,os_name).
+	countByFields := statsCountByFields(parseQueryArray(query.Get("count_by")))
 
 	// Use service method with SQL aggregation for efficient stats
 	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID,
@@ -1614,6 +1623,29 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(stats)
 }
 
+// maxStatsCountBy caps ?count_by: each field adds one GROUP BY over the
+// caller's assets to the stats query.
+const maxStatsCountBy = 10
+
+// statsCountByFields keeps the count_by fields that are property keys of the
+// schema (a synonym counts as its canonical key), without duplicates, up to
+// maxStatsCountBy. Anything else is dropped: it would only ever count keys
+// the schema does not have.
+func statsCountByFields(fields []string) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		key := asset.CanonicalPropertyKey(strings.TrimSpace(f))
+		if _, ok := asset.LookupProperty(key); !ok || slices.Contains(out, key) {
+			continue
+		}
+		out = append(out, key)
+		if len(out) == maxStatsCountBy {
+			break
+		}
+	}
+	return out
+}
+
 // ListTags returns distinct tags across all assets for the tenant.
 // Supports prefix filtering for autocomplete via ?prefix= query parameter.
 func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
@@ -1621,12 +1653,9 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 
 	prefix := r.URL.Query().Get("prefix")
 	types := r.URL.Query()["type"]
-	limitStr := r.URL.Query().Get("limit")
-	limit := 50
-	if limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	limit, ok := listLimit(w, r, 50, 100)
+	if !ok {
+		return
 	}
 
 	tags, err := h.service.ListTags(r.Context(), tenantID, prefix, types, limit)

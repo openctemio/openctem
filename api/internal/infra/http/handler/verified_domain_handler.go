@@ -63,10 +63,15 @@ type VerifiedDomainResponse struct {
 	// platform administrator removes one of the claims.
 	ClaimConflict bool                   `json:"claim_conflict"`
 	Instructions  domainverify.TXTRecord `json:"instructions"`
-	VerifiedAt    *string                `json:"verified_at,omitempty"`
-	LastCheckedAt *string                `json:"last_checked_at,omitempty"`
-	CreatedAt     string                 `json:"created_at"`
-	UpdatedAt     string                 `json:"updated_at"`
+	// JITEnabled: SSO admits new people on this domain (RFC-058).
+	JITEnabled bool `json:"jit_enabled"`
+	// JITRole: the role they get (viewer or member); empty uses the
+	// identity provider's default.
+	JITRole       string  `json:"jit_role,omitempty"`
+	VerifiedAt    *string `json:"verified_at,omitempty"`
+	LastCheckedAt *string `json:"last_checked_at,omitempty"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
 }
 
 // AddDomain adds a domain and returns the DNS TXT record to publish.
@@ -267,6 +272,8 @@ func toVerifiedDomainResponse(vd *verifieddomain.VerifiedDomain, txt domainverif
 		Purpose:       string(vd.Purpose()),
 		ClaimConflict: vd.ClaimConflict(),
 		Instructions:  txt,
+		JITEnabled:    jitOn(vd),
+		JITRole:       jitRoleOf(vd),
 		CreatedAt:     vd.CreatedAt().Format(layout),
 		UpdatedAt:     vd.UpdatedAt().Format(layout),
 	}
@@ -279,4 +286,60 @@ func toVerifiedDomainResponse(vd *verifieddomain.VerifiedDomain, txt domainverif
 		resp.LastCheckedAt = &s
 	}
 	return resp
+}
+
+func jitOn(vd *verifieddomain.VerifiedDomain) bool {
+	on, _ := vd.JIT()
+	return on
+}
+
+func jitRoleOf(vd *verifieddomain.VerifiedDomain) string {
+	_, role := vd.JIT()
+	return role
+}
+
+// UpdateDomainJITRequest sets a domain's just-in-time provisioning.
+type UpdateDomainJITRequest struct {
+	JITEnabled bool   `json:"jit_enabled"`
+	JITRole    string `json:"jit_role"`
+}
+
+// UpdateJIT sets whether SSO admits new people on the domain and with which
+// role (viewer or member; administrators are never provisioned).
+// @Summary Set a verified domain's just-in-time provisioning
+// @Description Platform admin console (RFC-022, RFC-058): per-domain JIT for an organization with several SSO domains.
+// @Tags Admin Organization SSO
+// @Accept json
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Domain ID"
+// @Param body body UpdateDomainJITRequest true "JIT settings"
+// @Success 200 {object} VerifiedDomainResponse
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/verified-domains/{id} [patch]
+func (h *VerifiedDomainHandler) UpdateJIT(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.tenantID(w, r)
+	if !ok {
+		return
+	}
+	id, ok := h.pathID(w, r)
+	if !ok {
+		return
+	}
+	var req UpdateDomainJITRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	vd, err := h.service.ChangeJIT(r.Context(), tenantID, id, req.JITEnabled, req.JITRole)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, domainAuditEvent(audit.ActionSSOVerifiedDomainJITChanged, vd,
+		"Just-in-time provisioning of domain '"+vd.Domain()+"' changed").
+		WithMetadata("jit_enabled", req.JITEnabled).WithMetadata("jit_role", req.JITRole))
+	txt := domainverify.Instructions(vd.Domain(), vd.VerificationToken())
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toVerifiedDomainResponse(vd, txt))
 }

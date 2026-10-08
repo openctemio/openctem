@@ -18,8 +18,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
@@ -50,7 +52,7 @@ var (
 	// auto-provisioning (FIX 2). The caller surfaces a generic "contact your
 	// admin" outcome.
 	ErrSSONotAMember = errors.New("not a member of this organization")
-	// ErrSSORegistrationDisabled is returned when AUTH_ALLOW_REGISTRATION is
+	// ErrSSORegistrationDisabled is returned when the sign-up policy is
 	// false and an SSO/social login would create a brand-new user (FIX 4).
 	ErrSSORegistrationDisabled = errors.New("registration is disabled")
 	// ErrAccountLinkRequiresVerification is the proof-before-link refusal: a
@@ -91,6 +93,11 @@ type SSOService struct {
 	// flow falls back to the P0 config-AllowedDomains gate so nothing breaks
 	// pre-wiring. Fail-closed: an unverified/unknown domain never JIT-provisions.
 	domainVerifier DomainVerifier
+
+	// domainOwner answers which organization holds an email domain verified
+	// for SSO (email-first sign-in, discovery.go). Nil: discovery always
+	// answers "password".
+	domainOwner DomainOwnerLookup
 
 	// revocations records back-channel-logged-out sessions so their access
 	// tokens (and live WebSocket connections) stop at once rather than at
@@ -790,7 +797,7 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		return ErrSSONotAMember
 	}
 
-	membership, err := tenantdom.NewMembership(u.ID(), t.ID(), jitMembershipRole(rp.defaultRole), nil)
+	membership, err := tenantdom.NewMembership(u.ID(), t.ID(), s.jitRoleFor(ctx, t, email, rp.defaultRole), nil)
 	if err != nil {
 		return fmt.Errorf("build membership: %w", err)
 	}
@@ -799,6 +806,10 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		// and here — re-check before failing (fail-closed on genuine failure).
 		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && !m.IsOffboarded() {
 			return nil
+		}
+		// No free seat on the organization's plan: say so.
+		if lim := (*plan.ErrLimitReached)(nil); errors.As(err, &lim) {
+			return err
 		}
 		s.logger.Warn("SSO auto-provision membership failed",
 			"user_id", u.ID().String(), "tenant_id", t.ID().String(), "error", err)
@@ -894,10 +905,48 @@ func (s *SSOService) jitProvisioningAllowed(ctx context.Context, t *tenantdom.Te
 	if !verified {
 		return false
 	}
+	// Per-domain JIT (RFC-058): a domain may admit its people without
+	// provisioning newcomers.
+	if on, _ := s.domainJIT(ctx, t, emailDomain); !on {
+		return false
+	}
 	if len(rp.allowedDomains) > 0 && !rp.isDomainAllowed(emailDomain) {
 		return false
 	}
 	return t.TypedSettings().Security.EmailDomainAllowed(email)
+}
+
+// DomainJITPolicy is the per-domain just-in-time provisioning a domain
+// verifier may offer (domainverify.Service.DomainJITPolicy).
+type DomainJITPolicy interface {
+	DomainJITPolicy(ctx context.Context, tenantID, emailDomain string) (enabled bool, role string, err error)
+}
+
+// domainJIT returns whether the domain provisions newcomers and their role
+// ("" = the provider default). A verifier without per-domain settings keeps
+// the provider default behavior; a lookup error refuses (fail closed).
+func (s *SSOService) domainJIT(ctx context.Context, t *tenantdom.Tenant, emailDomain string) (bool, string) {
+	p, ok := s.domainVerifier.(DomainJITPolicy)
+	if !ok {
+		return true, ""
+	}
+	on, role, err := p.DomainJITPolicy(ctx, t.ID().String(), emailDomain)
+	if err != nil {
+		s.logger.Warn("per-domain JIT lookup failed; refusing JIT (fail-closed)", "tenant_id", t.ID().String(), "error", err)
+		return false, ""
+	}
+	return on, role
+}
+
+// jitRoleFor is the role a newcomer admitted on email's domain gets: the
+// domain's own JIT role when set, otherwise the provider default.
+func (s *SSOService) jitRoleFor(ctx context.Context, t *tenantdom.Tenant, email, providerDefault string) tenantdom.Role {
+	if at := strings.LastIndex(email, "@"); at >= 0 {
+		if _, role := s.domainJIT(ctx, t, strings.ToLower(email[at+1:])); role != "" {
+			return jitMembershipRole(role)
+		}
+	}
+	return jitMembershipRole(providerDefault)
 }
 
 // verifyIDToken validates the provider's id_token against its JWKS, the flow
@@ -1324,11 +1373,16 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 
 	// No account yet. The organization's SSO is what admits new people,
 	// independent of public self-registration
-	// (AUTH_ALLOW_REGISTRATION): the account is created only when this login
+	// (the sign-up policy): the account is created only when this login
 	// would be just-in-time provisioned into the organization (auto-provision
 	// on, DNS-verified email domain, allowed domains). Checking BEFORE creating
 	// the account means a refused login leaves no orphan account behind.
-	if !s.jitProvisioningAllowed(ctx, t, rp, userInfo.Email) {
+	// The one admission rule (signup.Admit): only an organization's SSO admits
+	// a new person here, in either sign-up mode.
+	if !signupdom.Admit(signupdom.Default(), signupdom.Identity{
+		Intent:      signupdom.IntentAccount,
+		JITEligible: s.jitProvisioningAllowed(ctx, t, rp, userInfo.Email),
+	}).Admitted() {
 		s.logger.Warn("SSO login refused: no account and just-in-time provisioning not permitted",
 			"provider", provider, "source", rp.source)
 		return nil, ErrSSONotAMember
@@ -1797,7 +1851,7 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 	}
 
 	if newUser && s.tenantMemberRepo != nil {
-		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), jitMembershipRole(defaultRole), nil)
+		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), s.jitRoleFor(ctx, t, email, defaultRole), nil)
 		if memErr == nil {
 			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
 		}
@@ -1806,6 +1860,9 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 			// rather than issue a session with no membership.
 			if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr != nil || m == nil {
 				s.logger.Warn("federated auto-provision membership failed", "user_id", u.ID().String(), "error", memErr)
+				if lim := (*plan.ErrLimitReached)(nil); errors.As(memErr, &lim) {
+					return nil, memErr
+				}
 				return nil, ErrSSONotAMember
 			}
 		}

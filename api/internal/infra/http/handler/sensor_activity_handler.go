@@ -71,13 +71,17 @@ func (h *SensorHandler) Activity(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	includeAudit := middleware.HasPermission(r.Context(), string(permission.AuditRead))
+	limit, ok := listLimit(w, r, sensorapp.DefaultActivityLimit, sensorapp.MaxActivityLimit)
+	if !ok {
+		return
+	}
 	page, err := h.service.ListActivity(r.Context(), sensorapp.ActivityInput{
 		TenantID:     middleware.GetTenantID(r.Context()),
 		SensorID:     sensorID,
 		Categories:   parseQueryArray(q.Get("types")),
 		IncludeAudit: includeAudit,
 		Cursor:       q.Get("cursor"),
-		Limit:        parseQueryIntBounded(q.Get("limit"), sensorapp.DefaultActivityLimit, 1, sensorapp.MaxActivityLimit),
+		Limit:        limit,
 	})
 	if err != nil {
 		h.handleServiceError(w, err)

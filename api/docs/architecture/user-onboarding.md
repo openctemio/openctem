@@ -16,7 +16,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
-| Self-registration | `POST /api/v1/auth/register` | `AUTH_ALLOW_REGISTRATION=true` only (default false) |
+| Self-registration (email, or the first Google/GitHub/Microsoft sign-in) | `POST /api/v1/auth/register`, `/api/v1/auth/oauth/*` | the sign-up policy is `self_service`, or a pending invitation for the email ([Admission](#admission-one-rule-for-every-path)) |
 
 ## Sign-up policy (Console > System > Sign-up)
 
@@ -50,6 +50,30 @@ organization (the request queue follows in its own change).
 - **No lock-out.** A mode change never touches existing organizations,
   members, invitations or sessions; it decides only who may create a new
   organization from then on.
+
+### Admission: one rule for every path
+
+Every path that would write an account or an organization asks one function,
+`signup.Admit` (`pkg/domain/signup/admit.go`), so the paths cannot drift:
+
+| Creating | Admitted when | Path |
+|----------|---------------|------|
+| an organization | the policy is `self_service` | create-first-team, `POST /tenants` |
+| an account | an organization's SSO admits the identity (JIT: auto-provision, DNS-verified SSO domain, allowed domains), in either mode | OIDC/SAML callbacks |
+| an account | a pending invitation is addressed to the email, in either mode | register with the invitation token; a social sign-in whose verified email has a pending invitation |
+| an account | the policy is `self_service` and the email is not on a disposable-address service (`pkg/emaildomain`) | register, first social sign-in |
+
+Anything else is refused **before anything is written**: no `users`,
+`sessions`, `refresh_tokens` or membership row. Register and the social
+callback answer one refusal, 403 `SIGNUP_NOT_AVAILABLE` ("Your organization
+isn't set up yet"), whatever the reason, and the web sends the person to
+`/not-set-up` (en/vi), which names no organization. An account that already
+exists signs in as before: a mode change never locks anyone out.
+
+`AUTH_ALLOW_REGISTRATION` is retired: it could contradict
+`TENANT_CREATION_MODE` (with `admin_only` and registration on, a social
+sign-in created an account that could never get an organization). Startup
+logs a warning when it is still set.
 
 ### Invitation tokens stay out of URLs
 
@@ -153,9 +177,17 @@ has an account or an organization exists:
 | `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
 | `GET /auth/sso/{provider}/authorize?org=` | 404 "SSO provider not configured" for an unknown organization and a missing provider alike |
 | `GET /auth/saml/{org}/metadata` | SP metadata for any well-formed slug (it is built from the slug and the deployment URL only) |
+| `POST /auth/discover` | `{"next","org"}` for every email; `sso` + the slug only for a domain an organization proved it owns and signs in to by SSO (sso-authentication.md, "Email-first sign-in") |
 | `GET /auth/saml/{org}/login`, `POST …/acs` | every failure redirects to `/login?error=saml` |
 
 Tests: `tests/unit/auth_anti_enumeration_test.go`.
+
+### Plan of a self-service organization
+
+An organization a person creates themselves starts on the **Free** plan, and
+one person owns at most the Free plan's `free_teams_per_user` (1 by default):
+another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
+`docs/architecture/plans-and-limits.md`.
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 
@@ -227,7 +259,6 @@ UPDATE tenants
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `AUTH_ALLOW_REGISTRATION` | `false` | Open self-registration. Invited people can register either way. |
 | `TENANT_CREATION_MODE` | `admin_only` | **Seeds** the sign-up policy on the first start only (see [Sign-up policy](#sign-up-policy-console--system--sign-up)); afterwards the console value applies. Anything but `admin_only`/`self_service` fails startup. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password?token=`). |

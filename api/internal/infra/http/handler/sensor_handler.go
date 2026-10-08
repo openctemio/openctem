@@ -548,6 +548,10 @@ func (h *SensorHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := sensorapp.ListSensorsInput{
 		TenantID:      tenantID,
 		Type:          r.URL.Query().Get("type"),
@@ -555,8 +559,8 @@ func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 		Health:        r.URL.Query().Get("health"),
 		ExecutionMode: r.URL.Query().Get("execution_mode"),
 		Search:        r.URL.Query().Get("search"),
-		Page:          parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:       parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:          paging.Page,
+		PerPage:       paging.PerPage,
 	}
 
 	if caps := r.URL.Query().Get("capabilities"); caps != "" {
@@ -1182,6 +1186,9 @@ func (h *SensorHandler) handleValidationError(w http.ResponseWriter, err error) 
 
 // handleServiceError converts service errors to API errors.
 func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Sensor").WriteJSON(w)

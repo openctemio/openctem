@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -26,6 +27,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -54,6 +56,8 @@ type TenantHandler struct {
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
 	// sign-up setting, read on each request.
 	signupPolicy signupdom.PolicySource
+	// freePlan: self-service organizations are Free, capped per person.
+	freePlan auth.FreePlan
 	// provisioning creates accounts on behalf of organization administrators.
 	// Nil disables POST /tenants/{tenant}/users.
 	provisioning *tenantapp.UserProvisioningService
@@ -78,6 +82,9 @@ func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
 }
 
+// SetFreePlan wires the Free plan for self-service organizations.
+func (h *TenantHandler) SetFreePlan(p auth.FreePlan) { h.freePlan = p }
+
 // SetSignupPolicy makes POST /tenants follow the console sign-up policy.
 func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
 	h.signupPolicy = p
@@ -85,10 +92,14 @@ func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
 
 // selfServiceAllowed reports whether a signed-in user may create an organization.
 func (h *TenantHandler) selfServiceAllowed(r *http.Request) bool {
-	if h.signupPolicy != nil {
-		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
+	p := signupdom.Default()
+	switch {
+	case h.signupPolicy != nil:
+		p = h.signupPolicy.Current(r.Context())
+	case h.selfServiceCreation:
+		p = signupdom.Policy{Mode: signupdom.ModeSelfService}
 	}
-	return h.selfServiceCreation
+	return signupdom.Admit(p, signupdom.Identity{Intent: signupdom.IntentOrganization}).Admitted()
 }
 
 // NewTenantHandler creates a new tenant handler.
@@ -143,6 +154,14 @@ type TenantWithRoleResponse struct {
 	TenantResponse
 	Role     string    `json:"role"`
 	JoinedAt time.Time `json:"joined_at"`
+	// The caller's own membership (RFC-058). Kind is "internal" or
+	// "external"; AccessExpiresAt is when an external membership ends.
+	// BlockedReason, when set, says why the organization cannot be opened:
+	// suspended, expired, home_access_ended, home_domain_lapsed,
+	// trust_revoked or personal_accounts_blocked.
+	Kind            string     `json:"kind"`
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	BlockedReason   string     `json:"blocked_reason,omitempty"`
 }
 
 // MemberResponse represents a tenant member in API responses.
@@ -184,6 +203,12 @@ type MemberWithUserResponse struct {
 	HomeOrganization string     `json:"home_organization,omitempty"`
 	AccessExpiresAt  *time.Time `json:"access_expires_at,omitempty"`
 	SuspendedReason  string     `json:"suspended_reason,omitempty"`
+	// DomainLapsed: the member's email domain lost its verified SSO proof in
+	// this organization (owners and admins only).
+	DomainLapsed bool `json:"domain_lapsed,omitempty"`
+	// Personal: an external member with a consumer address (gmail.com, ...)
+	// that no organization manages (owners and admins only).
+	Personal bool `json:"personal,omitempty"`
 }
 
 // MemberRBACRoleResponse represents a simplified RBAC role in member response.
@@ -216,6 +241,9 @@ type InvitationResponse struct {
 	Pending     bool      `json:"pending"`
 	// AccessExpiresAt is when an external invitee's access will end (RFC-058).
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	// LookalikeOf lists members whose address reaches the same mailbox once
+	// dots and +tags are ignored: a warning, never a merge (create only).
+	LookalikeOf []string `json:"lookalike_of,omitempty"`
 }
 
 // =============================================================================
@@ -306,9 +334,12 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 
 func toTenantWithRoleResponse(twr *tenant.TenantWithRole) TenantWithRoleResponse {
 	return TenantWithRoleResponse{
-		TenantResponse: toTenantResponse(twr.Tenant),
-		Role:           twr.Role.String(),
-		JoinedAt:       twr.JoinedAt,
+		TenantResponse:  toTenantResponse(twr.Tenant),
+		Role:            twr.Role.String(),
+		JoinedAt:        twr.JoinedAt,
+		Kind:            string(memberKindOrInternal(twr.Kind)),
+		AccessExpiresAt: twr.ExpiresAt,
+		BlockedReason:   twr.BlockedReason(),
 	}
 }
 
@@ -424,6 +455,9 @@ func (h *TenantHandler) handleValidationError(w http.ResponseWriter, err error) 
 }
 
 func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	if writeStepUpError(w, err) {
 		return
 	}
@@ -534,11 +568,26 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 	}
 
+	if h.freePlan != nil {
+		if err := h.freePlan.CheckFreeTeam(r.Context(), userID); err != nil {
+			if !WritePlanLimitError(w, err) {
+				h.handleServiceError(w, err)
+			}
+			return
+		}
+	}
+
 	actx := h.buildAuditContext(r)
 	t, err := h.service.CreateTenant(r.Context(), input, userID, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+	// A self-service organization starts on the Free plan.
+	if h.freePlan != nil {
+		if err := h.freePlan.AssignFree(r.Context(), t.ID()); err != nil {
+			h.logger.Error("assign the Free plan to a new organization", "tenant_id", t.ID().String(), "error", err)
+		}
 	}
 
 	// Apply the chosen module preset if one was picked during creation.
@@ -749,6 +798,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 			Offset:         offset,
 			Status:         statusFilter,
 			Role:           r.URL.Query().Get("role"),
+			Kind:           memberKindFilter(r.URL.Query().Get("kind")),
 		}
 		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
 		if err != nil {
@@ -785,6 +835,8 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 				response[i].MFAStatus = m.MFAStatus
 				response[i].AccessExpiresAt = m.ExpiresAt
 				response[i].SuspendedReason = m.SuspendedReason
+				response[i].DomainLapsed = m.DomainLapsed
+				response[i].Personal = m.Kind == tenant.MemberKindExternal && m.HomeTenantName == "" && emaildomain.IsConsumer(m.HomeDomain)
 			}
 		}
 
@@ -1165,9 +1217,13 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	resp := toInvitationResponse(invitation, true) // Include token for creator
+	// Look-alike addresses only warn (RFC-058): j.doe@gmail.com and
+	// jdoe+x@gmail.com reach one mailbox but stay two accounts.
+	resp.LookalikeOf = h.service.Lookalikes(r.Context(), tenantID, req.Email)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(toInvitationResponse(invitation, true)) // Include token for creator
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // canGrantRoles enforces anti-escalation for invitations and administrator-
@@ -1806,6 +1862,7 @@ type SecuritySettingsResponse struct {
 	// SSOEnforced is read-only here: set by the platform administrator.
 	SSOEnforced           bool     `json:"sso_enforced"`
 	MFARequired           bool     `json:"mfa_required"`
+	MFARequiredForAdmins  bool     `json:"mfa_required_for_admins"`
 	SessionTimeoutMin     int      `json:"session_timeout_min"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
@@ -1818,6 +1875,10 @@ type SecuritySettingsResponse struct {
 	// on (research/25 D3; off by default).
 	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates"`
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	PersonalAccounts string `json:"personal_accounts"`
+	// SSOExceptions: members who may sign in without SSO while it is enforced.
+	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
@@ -1843,6 +1904,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 		Security: &SecuritySettingsResponse{
 			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
+			MFARequiredForAdmins:  s.Security.MFARequiredForAdmins,
 			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
@@ -1850,6 +1912,8 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
 			AllowSensorInteractsh:                     s.Security.AllowSensorInteractsh,
 			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
+			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
+			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
@@ -1959,6 +2023,7 @@ type UpdateSecuritySettingsRequest struct {
 	// silently ignored field would look like it saved.
 	SSOEnforced           *bool    `json:"sso_enforced"`
 	MFARequired           *bool    `json:"mfa_required"`
+	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
@@ -1970,6 +2035,11 @@ type UpdateSecuritySettingsRequest struct {
 	// alerted.
 	AllowSensorInteractsh      *bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates *bool `json:"allow_sensor_custom_templates"`
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
+	// SSOExceptions replaces the list of members who may sign in without SSO
+	// (with a second factor) while it is enforced.
+	SSOExceptions *[]tenant.SSOException `json:"sso_exceptions" validate:"omitempty,max=100"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -1998,6 +2068,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	clientIP := getClientIP(r)
 	input := tenantapp.UpdateSecuritySettingsInput{
 		MFARequired:           req.MFARequired,
+		MFARequiredForAdmins:  req.MFARequiredForAdmins,
 		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,
 		AllowedDomains:        req.AllowedDomains,
@@ -2005,6 +2076,8 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		RequireSensorLocalPolicyForPrivateTargets: req.RequireSensorLocalPolicyForPrivateTargets,
 		AllowSensorInteractsh:                     req.AllowSensorInteractsh,
 		AllowSensorCustomTemplates:                req.AllowSensorCustomTemplates,
+		PersonalAccounts:                          req.PersonalAccounts,
+		SSOExceptions:                             req.SSOExceptions,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
 	}
@@ -3031,4 +3104,22 @@ func memberKindOrInternal(k tenant.MemberKind) tenant.MemberKind {
 		return k
 	}
 	return tenant.MemberKindInternal
+}
+
+func nonNilSSOExceptions(in []tenant.SSOException) []tenant.SSOException {
+	if in == nil {
+		return []tenant.SSOException{}
+	}
+	return in
+}
+
+// memberKindFilter accepts ?kind=internal|external (RFC-058); anything else
+// lists every member.
+func memberKindFilter(v string) string {
+	switch v {
+	case string(tenant.MemberKindInternal), string(tenant.MemberKindExternal):
+		return v
+	default:
+		return ""
+	}
 }

@@ -180,7 +180,7 @@ func (r *SensorRepository) ListManifests(ctx context.Context, tenantID *shared.I
 		return nil, fmt.Errorf("failed to list sensor manifests: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]sensor.ManifestVersion, 0, limit)
+	out := make([]sensor.ManifestVersion, 0, sensor.ManifestVersionsKept) // limit is capped at it above
 	for rows.Next() {
 		v, err := scanManifestVersion(rows)
 		if err != nil {

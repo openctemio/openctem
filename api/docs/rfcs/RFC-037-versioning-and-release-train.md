@@ -1,11 +1,14 @@
 # RFC-037 — Versioning rule and release train
 
-> Status: **Accepted** (owner decisions 2026-10-02, §8; design PR #787). Implementation in
-> progress (§9).
+> Status: **Accepted** (decisions 2026-10-02, §8; design PR #787). P0–P2 are
+> implemented in this repository (`versions.yaml`, the Release Train, Release
+> Publish and Release Reminder workflows, the version/commit/channel triple in
+> `pkg/version`); P3 and P4 belong to the sdk-go, sensor and helm-charts
+> repositories (§9).
 > Scope: `openctemio/openctem` (api + web), `openctemio/sdk-go`,
 > `openctemio/sensor`, `openctemio/helm-charts`, `openctemio/docs`.
 >
-> Owner's request (2026-10-02): one versioning rule for the whole project, a
+> Goal (2026-10-02): one versioning rule for the whole project, a
 > fixed release cadence, and version numbers the tooling proposes instead of
 > people remembering them.
 
@@ -25,11 +28,11 @@
   by CI.
 - **A release train every other Monday**, plus immediate patch releases for
   security and critical fixes. A scheduled workflow opens an issue with the
-  proposed version and changelog; the owner presses **Run**; automation cuts
+  proposed version and changelog; a maintainer presses **Run**; automation cuts
   the release branch, merges it, tags, publishes and opens the follow-up PRs.
 - **The version number is proposed from conventional commits** since the last
-  tag (before 1.0.0: breaking or feat → minor, anything else → patch). The
-  owner can override it when pressing Run.
+  tag (before 1.0.0: breaking or feat → minor, anything else → patch). A
+  maintainer can override it when pressing Run.
 - `sdk-go` and `sensor` follow the same rule with their own tags.
 
 ## 2. Current state (verified 2026-10-02 on `develop` f495f373)
@@ -162,7 +165,7 @@ excludes the imported web history once):
 | only other types (`fix`, `perf`, `deps`, `docs`, …, non-conventional) | patch | patch |
 | nothing | no release | no release |
 
-The owner can override the proposal with any version greater than the last
+A maintainer can override the proposal with any version greater than the last
 tag. `v1.0.0` is only ever reached by an explicit override.
 
 ## 4. Release train
@@ -171,7 +174,7 @@ tag. `v1.0.0` is only ever reached by an explicit override.
 
 - **Every other Monday**, counted from the anchor Monday in the repository
   variable `RELEASE_TRAIN_ANCHOR` (default `2026-10-05`). The reminder runs at
-  01:00 UTC (08:00 in Vietnam).
+  01:00 UTC.
 - **Immediately**, as a patch release (hotfix), for a security fix or a
   critical bug (§4.3). It does not move the train.
 - No freeze: `develop` is releasable by policy (every PR passes the merge
@@ -184,7 +187,7 @@ tag. `v1.0.0` is only ever reached by an explicit override.
 Monday 01:00 UTC  Release Reminder (schedule, train weeks only)
                    └─ opens/updates issue "Release train vX.Y.Z": proposed version,
                       why, the green develop SHA, changelog preview, checklist
-Owner              Actions › Release Train › Run  (dry_run: true first, if wanted)
+Maintainer         Actions › Release Train › Run  (dry_run: true first, if wanted)
 Release Train      plan   last tag → proposed version (or the override, validated)
                           newest develop commit with every required check green
                           (or the given SHA, which must be green)
@@ -243,7 +246,7 @@ every non-staging release `latest`, which an rc must not get (P4).
 
 ## 5. Who does what
 
-| Step | Owner | Automation |
+| Step | Maintainer | Automation |
 |---|---|---|
 | Train reminder, proposed version, changelog | reads the issue | Release Reminder |
 | Decide to release, confirm or override the version | presses **Run** | |
@@ -272,27 +275,27 @@ Same rule, own tags, no merge queue (both ship from `main`):
 - Releases already in flight when this lands (sdk-go v0.15.0, sensor v0.7.0)
   finish the manual way.
 
-## 7. Tokens and settings (owner actions)
+## 7. Tokens and settings (maintainer actions)
 
 | Setting | Why |
 |---|---|
 | Secret `RELEASE_TOKEN`: a fine-grained personal access token (or GitHub App token) for `openctemio/openctem`, `helm-charts`, `sensor`, `sdk-go` with **Contents: read/write**, **Pull requests: read/write**, **Workflows: read/write** | Branches, PRs and tags pushed with the built-in `GITHUB_TOKEN` do not start other workflows: the release PR would get no required checks and the tag would not start Docker Publish. It also cannot write to other repositories, and cannot push commits that touch `.github/workflows`. |
 | Without `RELEASE_TOKEN` | The workflows still work, degraded: the release branch is pushed with `GITHUB_TOKEN` when GitHub allows it and the run summary links "open the PR" (one extra click; a PR opened by a person runs CI); the tag is pushed and Docker Publish + Release are started by dispatch; cross-repo follow-ups are skipped with a message. |
 | Variable `RELEASE_TRAIN_ANCHOR` (optional) | The first train Monday, `YYYY-MM-DD`; default `2026-10-05`. |
-| Live dev checkout: `git config remote.origin.tagOpt --tags` | So the dev identity sees new tags. |
+| A development checkout: `git config remote.origin.tagOpt --tags` | So the dev identity sees new tags. |
 
 ## 8. Decisions
 
-### 8.1 Owner decisions (2026-10-02)
+### 8.1 Decisions (2026-10-02)
 
 | # | Decision | Outcome |
 |---|---|---|
 | O1 | Cadence | **Release train every 2 weeks, Monday, every other week**, plus **immediate patch releases** for security and critical fixes. |
-| O2 | Version numbers | **Proposed automatically** from conventional commits since the last tag (before 1.0.0: breaking → minor, feat → minor, fix/perf/others → patch); **the owner confirms by running the workflow**. |
+| O2 | Version numbers | **Proposed automatically** from conventional commits since the last tag (before 1.0.0: breaking → minor, feat → minor, fix/perf/others → patch); **a maintainer confirms by running the workflow**. |
 | O3 | Source of truth | One `vX.Y.Z` monorepo tag for API and web (already decided for the monorepo, kept). |
 | O4 | Compatibility manifest | `versions.yaml` at the repository root, consumed by compose, Helm and API defaults. |
 
-### 8.2 Decisions taken in this RFC (owner may revisit)
+### 8.2 Decisions taken in this RFC (open to revision)
 
 | # | Decision | Choice | Why |
 |---|---|---|---|
@@ -319,7 +322,7 @@ Same rule, own tags, no merge queue (both ship from `main`):
   expire, max one year).
 - **A wrong proposal.** Non-conventional subjects count as patch; a feature
   merged with a `fix:` title ships as a patch. The changelog preview in the
-  reminder issue is where the owner catches it, and the override fixes it.
+  reminder issue is where a maintainer catches it, and the override fixes it.
 - **Imported history.** The first proposal after the monorepo import would
   count the whole web history; excluding `ui/<last tag>` handles it once.
 - **Merging `main` back into `develop`.** For a train the merge is trivial

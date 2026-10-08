@@ -41,9 +41,8 @@ import { RunTimeline } from './run-timeline'
 
 // Lazy: the workflow overlay pulls in the graph library only when a
 // workflow run is opened.
-const RunGraph = dynamic(() => import('./run-graph').then((m) => m.RunGraph), {
+const RunMap = dynamic(() => import('./run-map').then((m) => m.RunMap), {
   ssr: false,
-  loading: () => <Skeleton className="h-80 w-full" />,
 })
 
 interface RunDetailSheetProps {
@@ -187,13 +186,13 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
           </DetailStatGrid>
 
           <DetailSections>
-            {(run.step_runs?.length ?? 0) > 1 && (
-              <DetailSection title="Workflow">
-                <RunGraph
+            {(run.step_runs?.length ?? 0) > 0 && (
+              <DetailSection title="Run map">
+                <RunMap
                   runId={run.id}
-                  workflowId={run.scan_workflow_id}
-                  stepRuns={run.step_runs ?? []}
                   refreshInterval={runRefreshInterval(run)}
+                  tasks={run.tasks}
+                  tasksTruncated={run.tasks_truncated}
                 />
               </DetailSection>
             )}

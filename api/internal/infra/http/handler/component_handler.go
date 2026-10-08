@@ -12,7 +12,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -175,6 +174,10 @@ func (h *ComponentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	hasVulnerabilities := parseQueryBool(query.Get("has_vulnerabilities"))
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := asset.ListComponentsInput{
 		TenantID:           tenantID,
 		AssetID:            query.Get("asset_id"),
@@ -184,8 +187,8 @@ func (h *ComponentHandler) List(w http.ResponseWriter, r *http.Request) {
 		DependencyTypes:    parseQueryArray(query.Get("dependency_types")),
 		HasVulnerabilities: hasVulnerabilities,
 		Licenses:           parseQueryArray(query.Get("licenses")),
-		Page:               parseQueryInt(query.Get("page"), 1),
-		PerPage:            parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:               paging.Page,
+		PerPage:            paging.PerPage,
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -286,11 +289,10 @@ func (h *ComponentHandler) GetEcosystemStats(w http.ResponseWriter, r *http.Requ
 func (h *ComponentHandler) GetVulnerableComponents(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	query := r.URL.Query()
-	page := pagination.New(
-		parseQueryInt(query.Get("page"), 1),
-		parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
-	)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	result, err := h.service.GetVulnerableComponents(r.Context(), tenantID, page)
 	if err != nil {
@@ -687,8 +689,11 @@ func (h *ComponentHandler) ListVulnerabilities(w http.ResponseWriter, r *http.Re
 
 	query := r.URL.Query()
 	includeResolved := parseQueryBool(query.Get("include_resolved"))
-	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.ListVulnerabilitiesByComponent(r.Context(), tenantID, componentID,
 		includeResolved != nil && *includeResolved, page, perPage)
@@ -739,8 +744,11 @@ func (h *ComponentHandler) ListAssets(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 	atRiskOnly := parseQueryBool(query.Get("at_risk_only"))
-	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.ListAssetUsageByComponent(r.Context(), tenantID, componentID,
 		atRiskOnly != nil && *atRiskOnly, page, perPage)
@@ -784,9 +792,11 @@ func (h *ComponentHandler) ListByAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := r.URL.Query()
-	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.ListAssetComponents(r.Context(), tenantID, assetID, page, perPage)
 	if err != nil {
