@@ -144,7 +144,7 @@ func TestSensorV2ScopeRecheck_ClaimNNarrowsAndFails(t *testing.T) {
 	// The recorded gate inputs reached the gate.
 	sawActor := false
 	for _, in := range gate.inputs {
-		if in.FallbackUser != nil && in.FallbackUser.String() == actor && in.ActScope && *in.Tier == scopedom.TierIntrusive && in.Recheck {
+		if in.FallbackUser != nil && in.FallbackUser.String() == actor && in.ActScope && *in.Tier == scopedom.TierIntrusive && in.AllowNonNetworkTargets {
 			sawActor = true
 		}
 	}

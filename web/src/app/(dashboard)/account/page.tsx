@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { useProfile, useUpdateProfile } from '@/features/account'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeImageSrc } from '@/lib/safe-href'
+import { identityProviderLabel } from '@/lib/identity-provider-label'
 
 export default function ProfilePage() {
   const { profile, isLoading, isError, error, mutate } = useProfile()
@@ -148,7 +149,8 @@ export default function ProfilePage() {
                 </div>
                 {profile?.auth_provider && profile.auth_provider !== 'local' && (
                   <p className="text-xs text-muted-foreground">
-                    Managed by your identity provider ({profile.auth_provider})
+                    Managed by your identity provider (
+                    {identityProviderLabel(profile.auth_provider)})
                   </p>
                 )}
               </div>
@@ -198,7 +200,7 @@ export default function ProfilePage() {
             </div>
             <div>
               <dt className="text-sm font-medium text-muted-foreground">Auth Provider</dt>
-              <dd className="text-sm mt-1 capitalize">{profile?.auth_provider || 'local'}</dd>
+              <dd className="text-sm mt-1">{identityProviderLabel(profile?.auth_provider)}</dd>
             </div>
             <div>
               <dt className="text-sm font-medium text-muted-foreground">Created</dt>

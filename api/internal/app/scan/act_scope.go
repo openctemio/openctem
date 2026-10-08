@@ -9,9 +9,6 @@ import (
 	"fmt"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
-	"github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -71,52 +68,4 @@ func userIDPtr(s string) *shared.ID {
 		return nil
 	}
 	return &id
-}
-
-// runActScopeSkips returns the candidates of a run that the actor may not
-// scan: direct targets outside the act scope (or, for an unrestricted actor,
-// free text matching no scope target) and group members outside the data
-// scope. The actor is whoever triggers the run, else the scan owner (a
-// scheduled run). Excluded and unconfirmed candidates are already out and are
-// not looked up. A failed check stops the run (fail closed).
-func (s *Service) runActScopeSkips(ctx context.Context, sc *scan.Scan, candidates []scope.ExclusionCandidate,
-	names map[shared.ID]string, memberIDs map[shared.ID]bool, excluded map[shared.ID]bool, blocked map[string]attribution.State,
-) (map[shared.ID]bool, error) {
-	if s.actScope == nil || len(candidates) == 0 {
-		return nil, nil
-	}
-	in := actscope.Input{TenantID: sc.TenantID, FallbackUser: sc.CreatedBy}
-	for _, c := range candidates {
-		if excluded[c.ID] {
-			continue
-		}
-		if _, no := blocked[c.ID.String()]; no {
-			continue
-		}
-		if memberIDs[c.ID] {
-			in.AssetIDs = append(in.AssetIDs, c.ID)
-			continue
-		}
-		in.Targets = append(in.Targets, names[c.ID])
-	}
-	if len(in.Targets) == 0 && len(in.AssetIDs) == 0 {
-		return nil, nil
-	}
-	d, err := s.actScope.Check(ctx, in)
-	if err != nil {
-		return nil, fmt.Errorf("act-scope check failed, scan not dispatched: %w", err)
-	}
-	out := map[shared.ID]bool{}
-	for _, c := range candidates {
-		if memberIDs[c.ID] {
-			if d.RefusedAssets[c.ID] {
-				out[c.ID] = true
-			}
-			continue
-		}
-		if _, no := d.RefusedTargets[names[c.ID]]; no {
-			out[c.ID] = true
-		}
-	}
-	return out, nil
 }
