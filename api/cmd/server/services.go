@@ -1949,8 +1949,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
 	s.Scan.SetStepQueuer(s.ScanRun)
-	// A job the claim-time scope re-check fails settles its step.
-	s.Command.SetStepFailer(s.ScanRun)
 	s.Scan.SetWorkflowVersions(repos.ScanWorkflow)
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
 	if s.Retest != nil {

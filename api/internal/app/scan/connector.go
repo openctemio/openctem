@@ -71,6 +71,21 @@ func connectorRunUser(sc *scan.Scan) *shared.ID {
 	return sc.CreatedBy
 }
 
+// connectorDispatchGate is the gate record of a connector scan run's command:
+// the full gate at t1 outside every zone, as checked above, with the act
+// scope of the person who triggered it, else the scan's owner.
+func connectorDispatchGate(sc *scan.Scan, triggeredBy string) *command.DispatchGate {
+	g := &command.DispatchGate{Tier: 1, Validated: true, NoZoneRouting: true, ActScope: true}
+	actor := userIDPtr(triggeredBy)
+	if actor == nil {
+		actor = connectorRunUser(sc)
+	}
+	if actor != nil && !actor.IsZero() {
+		g.Actor = actor.String()
+	}
+	return g
+}
+
 // triggerConnectorScan runs a connector scan: its resolved targets (direct
 // targets and group members, minus exclusions, unconfirmed assets and what the
 // actor may not scan) pass the active-probe gate once more (target validator,
@@ -136,6 +151,7 @@ func (s *Service) triggerConnectorScan(ctx context.Context, sc *scan.Scan, resol
 	cmd, err := s.connectorScans.NewScanCommand(ctx, sc.TenantID, sc.ScannerConfig, gated.Allowed, bk)
 	if err == nil {
 		cmd.FreezeOverride = run.FreezeOverride
+		cmd.DispatchGate = connectorDispatchGate(sc, triggeredBy)
 		err = s.commandRepo.Create(ctx, cmd)
 	}
 	if err != nil {
