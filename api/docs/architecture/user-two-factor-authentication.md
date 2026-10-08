@@ -63,6 +63,18 @@ an old password hash. Federated accounts get
 The setting is `tenant.settings.security.mfa_required`. Only the owner can change it,
 through `PATCH /tenants/{t}/settings/security` (Settings → Organization → Security).
 
+**Owners and administrators** (`mfa_required_for_admins`): the same rules apply,
+but only to members whose role in the organization is owner or admin (the people
+who can change it). It is **on for every organization created since it shipped**
+(`tenantdom.NewTenantSettings`, written at creation); organizations created
+before keep it off until an owner turns it on, so nobody is locked out by the
+upgrade. `mfa_required` covers everyone, admins included. The creator of a new
+organization (create-first-team) without 2FA gets the organization but no
+access token: `403 MFA_ENROLLMENT_REQUIRED`, and the web sends them to sign in
+again, which walks through enrollment. A platform-created organization's owner
+enrolls at their first sign-in. The token-mint gate looks the role up in the
+organization and fails closed when it cannot.
+
 - Login: a member of any organization that requires 2FA, who has not enrolled, gets an
   enrollment challenge. They cannot get a session until they enroll.
 - Token mint (`/auth/token`, `/auth/refresh`): a password session of an unenrolled user

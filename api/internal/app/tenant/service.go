@@ -1558,8 +1558,10 @@ type UpdateSecuritySettingsInput struct {
 	// SSOEnforced requires members to sign in via SSO (owner exempt). Set only
 	// by the platform administrator (RFC-022); the tenant-facing handler refuses
 	// it, so an organization cannot turn enforcement on or off for itself.
-	SSOEnforced           *bool    `json:"sso_enforced"`
-	MFARequired           *bool    `json:"mfa_required"`
+	SSOEnforced *bool `json:"sso_enforced"`
+	MFARequired *bool `json:"mfa_required"`
+	// MFARequiredForAdmins: see tenantdom.SecuritySettings.
+	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
@@ -1618,6 +1620,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.MFARequired != nil {
 			security.MFARequired = *input.MFARequired
+		}
+		if input.MFARequiredForAdmins != nil {
+			security.MFARequiredForAdmins = *input.MFARequiredForAdmins
 		}
 		if input.SessionTimeoutMin != nil {
 			security.SessionTimeoutMin = *input.SessionTimeoutMin
