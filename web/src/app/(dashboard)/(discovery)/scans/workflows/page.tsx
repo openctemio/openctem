@@ -193,9 +193,11 @@ export default function ScanWorkflowsPage() {
     }
   }
 
-  const handleCreateWorkflow = async (data: CreateScanWorkflowRequest) => {
+  const handleCreateWorkflow = async (
+    data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest
+  ) => {
     try {
-      await createWorkflow(data)
+      await createWorkflow(data as CreateScanWorkflowRequest)
       toast.success('Workflow created successfully')
       await invalidateAllScanWorkflowCaches()
       setIsFormOpen(false)
@@ -204,14 +206,13 @@ export default function ScanWorkflowsPage() {
     }
   }
 
-  const handleUpdateWorkflow = async (data: CreateScanWorkflowRequest) => {
+  const handleUpdateWorkflow = async (
+    data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest
+  ) => {
     if (!editingWorkflow) return
     setUpdatingWorkflow(true)
     try {
-      await put<ScanWorkflow>(
-        scanWorkflowEndpoints.update(editingWorkflow.id),
-        data as UpdateScanWorkflowRequest
-      )
+      await put<ScanWorkflow>(scanWorkflowEndpoints.update(editingWorkflow.id), data)
       toast.success(`Workflow "${editingWorkflow.name}" updated`)
       await invalidateAllScanWorkflowCaches()
       setEditingWorkflow(null)
