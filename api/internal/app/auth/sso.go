@@ -624,6 +624,18 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		return nil, ErrSSOInvalidIDToken
 	}
 
+	// SECURITY: a Google Workspace login must come from an account of the
+	// organization's Workspace. Only the verified id_token "hd" claim proves
+	// that; the "hd" authorize parameter is a UI hint, and a consumer Google
+	// account registered with a company address still passes email_verified.
+	if rp.provider == identityproviderdom.ProviderGoogleWorkspace {
+		if reason := s.googleWorkspaceDomainRefusal(ctx, t, rp, claims.HD); reason != "" {
+			s.logger.Warn("google_workspace SSO refused", "reason", reason,
+				"tenant_id", t.ID().String(), "subject", claims.Subject)
+			return nil, ErrSSODomainNotAllowed
+		}
+	}
+
 	var userInfo *SSOUserInfo
 	if rp.provider == identityproviderdom.ProviderEntraID {
 		// SECURITY (FIX 3, nOAuth): for Entra ID, identity comes ONLY from the
@@ -771,6 +783,39 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 	s.logger.Info("SSO auto-provisioned tenant membership",
 		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", membership.Role().String())
 	return nil
+}
+
+// googleWorkspaceDomainRefusal decides whether a Google id_token's hosted
+// domain (the "hd" claim) may sign in to the organization. It returns "" when
+// it may, otherwise the reason it may not (for the log). Fail-closed:
+//   - no "hd" claim: a consumer Google account, never admitted;
+//   - the provider narrows domains (AllowedDomains): "hd" must be on that list;
+//   - otherwise "hd" must be DNS-verified for this organization (no verifier
+//     wired or a lookup error refuses).
+func (s *SSOService) googleWorkspaceDomainRefusal(ctx context.Context, t *tenantdom.Tenant, rp *resolvedProvider, hd string) string {
+	hd = strings.ToLower(strings.TrimSpace(hd))
+	if hd == "" {
+		return "id_token has no hd claim (not a Google Workspace account)"
+	}
+	if len(rp.allowedDomains) > 0 {
+		for _, d := range rp.allowedDomains {
+			if strings.EqualFold(strings.TrimSpace(d), hd) {
+				return ""
+			}
+		}
+		return "hd claim is not one of the provider's allowed domains"
+	}
+	if s.domainVerifier == nil {
+		return "no verified-domain checker wired (fail-closed)"
+	}
+	verified, err := s.domainVerifier.IsVerifiedDomain(ctx, t.ID().String(), hd)
+	if err != nil {
+		return "verified-domain lookup failed (fail-closed)"
+	}
+	if !verified {
+		return "hd claim is not a verified domain of the organization"
+	}
+	return ""
 }
 
 // jitMembershipRole is the membership role of a user admitted by SSO

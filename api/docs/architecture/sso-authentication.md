@@ -190,6 +190,25 @@ The `openid` scope is therefore required:
 For Okta and Google the email still comes from the userinfo endpoint (with its
 `email_verified` claim); for Entra it comes from the verified `id_token`.
 
+### Google Workspace: the `hd` claim
+
+A Google Workspace login must come from an account of the organization's
+Workspace. The callback reads the verified `id_token` `hd` (hosted domain)
+claim, which Google sends only for accounts of a Workspace or Cloud
+organization, and refuses the login with `ErrSSODomainNotAllowed` (no user,
+membership or session written) when:
+
+- `hd` is missing: a consumer Google account, even one registered with a
+  company address such as `alice@acme.com` (its `email_verified` is true);
+- the provider narrows domains (`allowed_domains`) and `hd` is not on the list;
+- the provider has no domain list and `hd` is not DNS-verified for the
+  organization (no verifier wired, or a lookup error, also refuses).
+
+The `hd` authorize parameter is only a hint for Google's account chooser; it
+is never the check. Existing members are held to the same rule as JIT
+newcomers, so a consumer account with a member's address cannot sign in as
+that member.
+
 ## One verifier, separate trust
 
 Every signed token the API accepts from an identity provider is verified by
