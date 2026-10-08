@@ -274,7 +274,7 @@ func (m *mockAssetRepo) BulkUpdateStatus(_ context.Context, _ shared.ID, _ []sha
 	return 0, nil
 }
 
-func (m *mockAssetRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ asset.AccessScope, _ []string, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
+func (m *mockAssetRepo) GetAggregateStats(_ context.Context, _ shared.ID, _ asset.AccessScope, _, _, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),

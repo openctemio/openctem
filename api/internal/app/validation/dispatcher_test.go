@@ -188,3 +188,25 @@ func TestCommandDispatcher_Dispatch_PropagatesRepoError(t *testing.T) {
 		t.Fatal("expected error when command repo fails")
 	}
 }
+
+// Validate and retest commands record what CheckTarget checked, so the claim
+// re-checks their target with the same inputs.
+func TestCommandDispatcher_RecordsTheDispatchGate(t *testing.T) {
+	cc := &fakeCommandCreator{}
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
+	target := Target{AssetID: shared.NewID(), Type: "domain", Address: "example.com"}
+	if _, err := d.Dispatch(context.Background(), ValidationJob{JobID: shared.NewID(), TenantID: shared.NewID(),
+		FindingID: shared.NewID(), ExecutorKind: KindSafeCheck, Target: target, TimeoutSeconds: 60}); err != nil {
+		t.Fatal(err)
+	}
+	if g := cc.created.DispatchGate; g == nil || *g != commanddom.ProbeDispatchGate {
+		t.Fatalf("validate command gate %+v", g)
+	}
+	if _, err := d.DispatchToolRetest(context.Background(), ToolRetestJob{TenantID: shared.NewID(), FindingID: shared.NewID(),
+		RetestID: shared.NewID(), Tool: "nuclei", Target: target, RuleID: "r1", TimeoutSeconds: 60}); err != nil {
+		t.Fatal(err)
+	}
+	if cc.created.Type != commanddom.CommandTypeRetest || cc.created.DispatchGate == nil || *cc.created.DispatchGate != commanddom.ProbeDispatchGate {
+		t.Fatalf("retest command %s gate %+v", cc.created.Type, cc.created.DispatchGate)
+	}
+}

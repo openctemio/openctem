@@ -16,7 +16,21 @@ type DispatchGate struct {
 	// the user the job acts for ("" with ActScope is the system).
 	ActScope bool   `json:"act_scope,omitempty"`
 	Actor    string `json:"actor,omitempty"`
+	// Validated: the targets passed the scan target validator at dispatch
+	// (validate, retest and connector commands), so the claim applies it
+	// again. Off, only its private-range rule applies (scan targets include
+	// repositories by asset name, which the validator refuses).
+	Validated bool `json:"validated,omitempty"`
+	// NoZoneRouting: the dispatch did not route the targets over the scan
+	// zones (a connector scan runs outside every zone, on its pinned
+	// sensor), so the claim does not either.
+	NoZoneRouting bool `json:"no_zone_routing,omitempty"`
 }
+
+// ProbeDispatchGate is the record of a validate or retest command: the
+// probe's target passed the full gate at the safe active tier (t1), with no
+// act scope (validation.CheckTarget).
+var ProbeDispatchGate = DispatchGate{Tier: 1, Validated: true}
 
 // BaselineDispatchGate is the gate a scan command created without a record
 // is re-checked with: what every dispatch path applies (exclusions,
