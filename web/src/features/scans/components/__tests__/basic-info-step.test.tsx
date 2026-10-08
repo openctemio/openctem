@@ -29,8 +29,14 @@ vi.mock('@/lib/api/scan-workflow-hooks', () => ({
                 name: 'External discovery',
                 description: 'subfinder then httpx',
                 steps: [
-                  { id: 's1', name: 'Subdomains', tool: 'subfinder' },
-                  { id: 's2', name: 'Probe', tool: 'httpx' },
+                  { id: 's1', step_key: 'subs', name: 'Subdomains', tool: 'subfinder' },
+                  {
+                    id: 's2',
+                    step_key: 'probe',
+                    name: 'Probe',
+                    tool: 'httpx',
+                    depends_on: ['subs'],
+                  },
                 ],
               },
             ],
@@ -47,6 +53,13 @@ vi.mock('@/lib/api/tool-hooks', () => ({
   }),
   // Availability unknown: nothing is disabled.
   useToolAvailability: () => ({ data: undefined }),
+  useToolsWithConfig: () => ({ data: undefined }),
+}))
+vi.mock('@/features/scan-workflows/lib/use-capability-table', () => ({
+  useCapabilityTable: () => ({
+    table: { capabilities: [], adapters: [], portLabels: {} },
+    isLoading: false,
+  }),
 }))
 
 globalThis.ResizeObserver ??= class {
@@ -119,8 +132,11 @@ describe('BasicInfoStep', () => {
     )
     expect(workflowCalls.at(-1)).toMatchObject({ is_active: true })
     expect(screen.getAllByText('External discovery').length).toBeGreaterThan(0)
-    expect(screen.getByText('1. subfinder')).toBeInTheDocument()
-    expect(screen.getByText('2. httpx')).toBeInTheDocument()
+    // The chosen workflow's steps, as stages of its dependency graph.
+    expect(screen.getByRole('heading', { name: 'Stage 1' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Stage 2' })).toBeInTheDocument()
+    expect(screen.getByText('Pinned: subfinder')).toBeInTheDocument()
+    expect(screen.getByText('Pinned: httpx')).toBeInTheDocument()
     expect(screen.queryByText('Full Reconnaissance')).not.toBeInTheDocument()
   })
 

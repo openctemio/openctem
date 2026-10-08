@@ -1,8 +1,6 @@
 package scanrun
 
 import (
-	"context"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -81,26 +79,4 @@ func validateStepsGraph(steps []*scanworkflow.Step) error {
 type ValidateGraphInput struct {
 	TenantID string
 	Steps    []AddStepInput
-}
-
-// ValidateGraph checks a would-be scan workflow (the editor's draft): each step
-// as a save checks it, then the graph. Nothing is stored and no tenant data
-// is read beyond the tenant's tool registry.
-func (s *Service) ValidateGraph(ctx context.Context, input ValidateGraphInput) (stage.GraphReport, error) {
-	tenantID, err := shared.IDFromString(input.TenantID)
-	if err != nil {
-		return stage.GraphReport{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	steps := make([]*scanworkflow.Step, 0, len(input.Steps))
-	for i, in := range input.Steps {
-		if in.Order == 0 {
-			in.Order = i + 1
-		}
-		st, err := s.buildStep(ctx, tenantID, shared.ID{}, in)
-		if err != nil {
-			return stage.GraphReport{}, err
-		}
-		steps = append(steps, st)
-	}
-	return stage.ValidateGraph(StepsGraph(steps)), nil
 }
