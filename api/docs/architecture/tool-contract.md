@@ -121,6 +121,12 @@ classification: built-in → catalogue; certified → signed attestation; otherw
   tier ceiling (RFC-052), and the target to pass the scope authority
   (RFC-054).
 
+### 4.1 Planned: confinement, verified built-ins, overrides and content
+
+- Today a `builtin` origin counts only for the tools a released sensor compiles in (`IsBuiltinTool`, `pkg/domain/sensor/tool_tier.go`); any other tool claiming it is unverified and T2. RFC-060 binds the claim to the signed release's descriptor digests.
+- The sandbox does not yet enforce a task's network class: targets are admitted before the task starts. RFC-060 adds per-task network namespaces and the forwarder, and opens the override surface (User-Agent, headers, TLS options, extra arguments) once invariants are enforced out of process.
+- Templates, rules and other content become declared `content:` slots filled from platform-signed, digest-pinned packs (RFC-061).
+
 ## 5. Run and output path
 
 1. **Plan.** The candidate tools for a capability node are those that:
