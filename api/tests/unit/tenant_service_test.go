@@ -874,6 +874,59 @@ func TestTenantSvc_DeleteTenant_RepoError(t *testing.T) {
 	}
 }
 
+type recordingBlobEraser struct {
+	calls []string
+	err   error
+	// deleted reports, at each call, whether the tenant row was already gone.
+	rowGoneAt []bool
+	repo      *mockTenantRepo
+}
+
+func (e *recordingBlobEraser) EraseTenant(_ context.Context, tenantID string) (int, error) {
+	e.calls = append(e.calls, tenantID)
+	_, exists := e.repo.tenants[tenantID]
+	e.rowGoneAt = append(e.rowGoneAt, !exists)
+	return 1, e.err
+}
+
+// Organization deletion erases the tenant's stored files before its rows
+// (and once more after, for an upload that raced the delete).
+func TestTenantSvc_DeleteTenant_ErasesStoredFilesFirst(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	eraser := &recordingBlobEraser{repo: repo}
+	svc.SetBlobEraser(eraser)
+
+	if err := svc.DeleteTenant(context.Background(), audit.AuditContext{}, existing.ID().String()); err != nil {
+		t.Fatalf("DeleteTenant: %v", err)
+	}
+	if len(eraser.calls) != 2 || eraser.calls[0] != existing.ID().String() {
+		t.Fatalf("erase calls = %v, want two for %s", eraser.calls, existing.ID())
+	}
+	if eraser.rowGoneAt[0] || !eraser.rowGoneAt[1] {
+		t.Errorf("erase order (row gone at each call) = %v, want [false true]: files before rows, then a sweep", eraser.rowGoneAt)
+	}
+}
+
+// When the files cannot be erased the organization is NOT deleted: its rows
+// are the record of what is still stored, and the owner can retry.
+func TestTenantSvc_DeleteTenant_RefusedWhenFilesNotErased(t *testing.T) {
+	svc, repo := newTestTenantService()
+	existing := seedTenant(repo, "Team", "team-slug")
+	svc.SetBlobEraser(&recordingBlobEraser{repo: repo, err: errors.New("storage endpoint unreachable: http://10.0.0.5:9000")})
+
+	err := svc.DeleteTenant(context.Background(), audit.AuditContext{}, existing.ID().String())
+	if !errors.Is(err, tenantapp.ErrStoredFilesNotErased) {
+		t.Fatalf("err = %v, want ErrStoredFilesNotErased", err)
+	}
+	if strings.Contains(err.Error(), "10.0.0.5") {
+		t.Errorf("the storage cause leaked into the returned error: %v", err)
+	}
+	if repo.deleteCalls != 0 {
+		t.Errorf("tenant rows deleted (%d calls) although its files were not erased", repo.deleteCalls)
+	}
+}
+
 // =============================================================================
 // ListUserTenants Tests
 // =============================================================================

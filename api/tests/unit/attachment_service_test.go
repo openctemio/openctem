@@ -84,18 +84,38 @@ func (m *mockAttRepo) LinkToContext(_ context.Context, tid shared.ID, ids []shar
 }
 
 type mockAttStorage struct {
-	files map[string]string // key → content
+	files    map[string]string // key → content
+	tenantOf map[string]string // key → tenant
+	eraseErr error
+	erased   []string
 }
 
 func newMockAttStorage() *mockAttStorage {
-	return &mockAttStorage{files: make(map[string]string)}
+	return &mockAttStorage{files: make(map[string]string), tenantOf: make(map[string]string)}
 }
 
-func (m *mockAttStorage) Upload(_ context.Context, _, filename, _ string, r io.Reader) (string, error) {
+func (m *mockAttStorage) Upload(_ context.Context, tenantID, filename, _ string, r io.Reader) (string, error) {
 	data, _ := io.ReadAll(r)
 	key := shared.NewID().String() + "_" + filename
 	m.files[key] = string(data)
+	m.tenantOf[key] = tenantID
 	return key, nil
+}
+
+func (m *mockAttStorage) EraseTenant(_ context.Context, tenantID string) (int, error) {
+	if m.eraseErr != nil {
+		return 0, m.eraseErr
+	}
+	m.erased = append(m.erased, tenantID)
+	n := 0
+	for k, t := range m.tenantOf {
+		if t == tenantID {
+			delete(m.files, k)
+			delete(m.tenantOf, k)
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (m *mockAttStorage) Download(_ context.Context, _, key string) (io.ReadCloser, string, error) {
@@ -289,4 +309,106 @@ func TestAtt_Entity_MarkdownLink_NonImage(t *testing.T) {
 	att := attachment.NewAttachment(shared.NewID(), "r.pdf", "application/pdf", 100, "k", shared.NewID(), "", "")
 	assert.Contains(t, att.MarkdownLink(), "[r.pdf]")
 	assert.NotContains(t, att.MarkdownLink(), "![")
+}
+
+// =============================================================================
+// EraseTenant (organization deletion)
+// =============================================================================
+
+type stubStorageResolver struct {
+	cfg *attachment.StorageConfig
+	err error
+}
+
+func (r stubStorageResolver) GetTenantStorageConfig(context.Context, string) (*attachment.StorageConfig, error) {
+	return r.cfg, r.err
+}
+
+func uploadFor(t *testing.T, svc *integration.AttachmentService, tenantID string) {
+	t.Helper()
+	_, err := svc.Upload(context.Background(), integration.UploadInput{
+		TenantID: tenantID, Filename: "evidence.txt", ContentType: "text/plain", Size: 5,
+		Reader: strings.NewReader("hello"), UploadedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+}
+
+// Erasing tenant A removes A's files from the server storage and A's own
+// bucket, and never touches tenant B's files.
+func TestAtt_EraseTenant_OnlyThatTenantEveryBackend(t *testing.T) {
+	svc, _, operator := newAttSvc()
+	own := newMockAttStorage()
+	tenantA, tenantB := shared.NewID().String(), shared.NewID().String()
+	uploadFor(t, svc, tenantA)
+	uploadFor(t, svc, tenantB)
+
+	svc.SetTenantStorageResolver(
+		stubStorageResolver{cfg: &attachment.StorageConfig{Provider: attachment.ProviderS3, Bucket: "tenant-bucket"}},
+		func(attachment.StorageConfig) (attachment.FileStorage, error) { return own, nil })
+	// A file of A in its own bucket, and one of B there too.
+	_, _ = own.Upload(context.Background(), tenantA, "a.txt", "text/plain", strings.NewReader("a"))
+	_, _ = own.Upload(context.Background(), tenantB, "b.txt", "text/plain", strings.NewReader("b"))
+
+	n, err := svc.EraseTenant(context.Background(), tenantA)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, []string{tenantA}, operator.erased)
+	assert.Equal(t, []string{tenantA}, own.erased)
+	for _, tid := range operator.tenantOf {
+		assert.Equal(t, tenantB, tid, "a file of tenant A is left on the server storage")
+	}
+	for _, tid := range own.tenantOf {
+		assert.Equal(t, tenantB, tid, "a file of tenant A is left in its own bucket")
+	}
+	assert.Len(t, operator.files, 1, "tenant B's file must survive")
+	assert.Len(t, own.files, 1, "tenant B's file must survive")
+}
+
+// Any backend that cannot be erased fails the erasure, so the organization
+// deletion is refused rather than losing track of the files.
+func TestAtt_EraseTenant_FailsClosed(t *testing.T) {
+	tenantA := shared.NewID().String()
+	local := attachment.StorageConfig{Provider: attachment.ProviderS3, Bucket: "b"}
+
+	t.Run("server storage down", func(t *testing.T) {
+		svc, _, operator := newAttSvc()
+		operator.eraseErr = assert.AnError
+		_, err := svc.EraseTenant(context.Background(), tenantA)
+		require.Error(t, err)
+	})
+	t.Run("storage setting unreadable", func(t *testing.T) {
+		svc, _, _ := newAttSvc()
+		svc.SetTenantStorageResolver(stubStorageResolver{err: assert.AnError},
+			func(attachment.StorageConfig) (attachment.FileStorage, error) { return newMockAttStorage(), nil })
+		_, err := svc.EraseTenant(context.Background(), tenantA)
+		require.Error(t, err)
+	})
+	t.Run("own bucket cannot be opened", func(t *testing.T) {
+		svc, _, _ := newAttSvc()
+		svc.SetTenantStorageResolver(stubStorageResolver{cfg: &local},
+			func(attachment.StorageConfig) (attachment.FileStorage, error) { return nil, assert.AnError })
+		_, err := svc.EraseTenant(context.Background(), tenantA)
+		require.Error(t, err)
+	})
+	t.Run("own bucket refuses", func(t *testing.T) {
+		svc, _, _ := newAttSvc()
+		own := newMockAttStorage()
+		own.eraseErr = assert.AnError
+		svc.SetTenantStorageResolver(stubStorageResolver{cfg: &local},
+			func(attachment.StorageConfig) (attachment.FileStorage, error) { return own, nil })
+		_, err := svc.EraseTenant(context.Background(), tenantA)
+		require.Error(t, err)
+	})
+}
+
+// A value that is not a canonical tenant id is never used as a namespace: an
+// empty one would be the whole store.
+func TestAtt_EraseTenant_RefusesNonTenantNamespace(t *testing.T) {
+	svc, _, operator := newAttSvc()
+	upper := strings.ToUpper(shared.NewID().String())
+	for _, bad := range []string{"", "..", "/", "tenant-1", "00000000-0000-0000-0000-000000000000", upper} {
+		_, err := svc.EraseTenant(context.Background(), bad)
+		assert.Error(t, err, "namespace %q", bad)
+	}
+	assert.Empty(t, operator.erased)
 }

@@ -57,7 +57,11 @@ type heartbeatRunning struct {
 // Heartbeat records a heartbeat (POST /heartbeat).
 func (s *Server) Heartbeat(ctx context.Context, req *connect.Request[sensorv3.HeartbeatRequest]) (*connect.Response[sensorv3.HeartbeatResponse], error) {
 	body := req.Msg.GetHeartbeatJson()
-	a, err := s.serveV2(ctx, v2Call{method: http.MethodPost, path: protov2.HeartbeatPath, header: jsonHeader(), body: body})
+	served := handler.ServedTransport{Binding: "https", FallbackReason: req.Msg.GetTransport().GetFallbackReason()}
+	if BindingFrom(ctx) == sensorv3.Binding_BINDING_GRPC {
+		served.Binding = "grpc"
+	}
+	a, err := s.serveV2(handler.WithServedTransport(ctx, served), v2Call{method: http.MethodPost, path: protov2.HeartbeatPath, header: jsonHeader(), body: body})
 	if err != nil {
 		return nil, err
 	}

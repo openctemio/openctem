@@ -175,6 +175,16 @@ export type AdminAuditChainRebaselineRequest =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineRequest']
 export type AdminAuditChainRebaselineResponse =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineResponse']
+// Plans and limits (console System > Plans and organization plans;
+// the organization Settings > Plan & usage)
+export type PlanDefaultsResponse = Schemas['internal_infra_http_handler.PlanDefaultsResponse']
+export type UpdatePlanDefaultsRequest =
+  Schemas['internal_infra_http_handler.UpdatePlanDefaultsRequest']
+export type PlanSummaryResponse = Schemas['internal_infra_http_handler.PlanSummaryResponse']
+export type PlanEffectiveLimit =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_plan.Effective']
+export type SetTenantPlanRequest = Schemas['internal_infra_http_handler.SetTenantPlanRequest']
+export type SetPlanOverrideRequest = Schemas['internal_infra_http_handler.SetPlanOverrideRequest']
 // Admin console: the sign-up policy (System > Sign-up)
 export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']
 export type UpdateSignupPolicyRequest =
