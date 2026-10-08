@@ -1855,6 +1855,8 @@ type SecuritySettingsResponse struct {
 	PersonalAccounts string `json:"personal_accounts"`
 	// SSOExceptions: members who may sign in without SSO while it is enforced.
 	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
+	// JITRequiresApproval: SSO newcomers wait for an administrator's approval.
+	JITRequiresApproval bool `json:"jit_requires_approval"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
@@ -1889,6 +1891,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
 			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
 			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
+			JITRequiresApproval:                       s.Security.JITRequiresApproval,
 		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
@@ -2014,6 +2017,9 @@ type UpdateSecuritySettingsRequest struct {
 	// SSOExceptions replaces the list of members who may sign in without SSO
 	// (with a second factor) while it is enforced.
 	SSOExceptions *[]tenant.SSOException `json:"sso_exceptions" validate:"omitempty,max=100"`
+	// JITRequiresApproval holds SSO newcomers until an administrator
+	// approves them (RFC-058).
+	JITRequiresApproval *bool `json:"jit_requires_approval"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -2051,6 +2057,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		AllowSensorCustomTemplates:                req.AllowSensorCustomTemplates,
 		PersonalAccounts:                          req.PersonalAccounts,
 		SSOExceptions:                             req.SSOExceptions,
+		JITRequiresApproval:                       req.JITRequiresApproval,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
 	}

@@ -741,6 +741,10 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	s.bumpPermissionVersion(ctx, membership.TenantID().String(), membership.UserID().String())
 
 	s.logger.Info("member role updated", "membership_id", membershipID, "new_role", role)
+	if tenantdom.PrivilegeRank(role) > tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) {
+		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
+			fmt.Sprintf("membership role raised from %s to %s", oldRole, role))
+	}
 
 	// Log audit event
 	actx.TenantID = membership.TenantID().String()
@@ -878,6 +882,8 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	if membership.IsExpired(time.Now().UTC()) || membership.SuspendedReason() == tenantdom.SuspendedReasonExpired {
 		return fmt.Errorf("%w: this member's access has ended; set a new end date to re-enable them", shared.ErrValidation)
 	}
+	// Re-enabling a newcomer SSO held for approval is the approval (RFC-058).
+	approval := membership.AwaitsApproval()
 
 	if err := membership.Reactivate(); err != nil {
 		return err
@@ -917,10 +923,17 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
 
 	actx.TenantID = tenantID
+	msg := "Member reactivated"
+	if approval {
+		msg = "Access approved for a member SSO admitted"
+		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
+			"access approved after their first sign-in through SSO")
+	}
 	event := auditapp.NewSuccessEvent(audit.ActionMemberReactivated, audit.ResourceTypeMembership, membershipID).
 		WithSeverity(audit.SeverityHigh).
-		WithMessage("Member reactivated").
-		WithMetadata("user_id", userID)
+		WithMessage(msg).
+		WithMetadata("user_id", userID).
+		WithMetadata("approval", approval)
 	s.logAudit(ctx, actx, event)
 
 	return nil
@@ -1651,6 +1664,8 @@ type UpdateSecuritySettingsInput struct {
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
 	SSOExceptions    *[]tenantdom.SSOException `json:"sso_exceptions"`
+	// JITRequiresApproval: see tenantdom.SecuritySettings (RFC-058).
+	JITRequiresApproval *bool `json:"jit_requires_approval"`
 	// RequesterIP is the client IP of the tenant user saving the settings, as
 	// the API sees it (trusted-proxy aware). When set, an IP allowlist that
 	// would exclude it is refused (lockout guard). Empty for the platform
@@ -1707,6 +1722,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.AllowedDomains != nil {
 			security.AllowedDomains = input.AllowedDomains
+		}
+		if input.JITRequiresApproval != nil {
+			security.JITRequiresApproval = *input.JITRequiresApproval
 		}
 		if input.EmailVerificationMode != nil {
 			security.EmailVerificationMode = tenantdom.EmailVerificationMode(*input.EmailVerificationMode)

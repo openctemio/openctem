@@ -381,6 +381,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
     allow_sensor_custom_templates: false,
     personal_accounts: 'allowed' as PersonalAccountsPolicy,
     sso_exceptions: [] as SSOException[],
+    jit_requires_approval: false,
   })
 
   const [brandingForm, setBrandingForm] = useState({
@@ -424,6 +425,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
         allow_sensor_custom_templates: settings.security?.allow_sensor_custom_templates || false,
         personal_accounts: settings.security?.personal_accounts ?? 'allowed',
         sso_exceptions: settings.security?.sso_exceptions ?? [],
+        jit_requires_approval: settings.security?.jit_requires_approval ?? false,
       })
       setBrandingForm({
         primary_color: settings.branding.primary_color || '#3B82F6',
@@ -535,6 +537,7 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
         allow_sensor_custom_templates: securityForm.allow_sensor_custom_templates,
         personal_accounts: securityForm.personal_accounts,
         sso_exceptions: securityForm.sso_exceptions,
+        jit_requires_approval: securityForm.jit_requires_approval,
       })
       if (result) {
         mutate(result)
@@ -643,6 +646,27 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                     checked={securityForm.mfa_required}
                     onCheckedChange={(checked) =>
                       setSecurityForm({ ...securityForm, mfa_required: checked })
+                    }
+                    disabled={!canManageSecurityAndAPI}
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="tenant-jit-approval">Approve new SSO members</Label>
+                    <p className="text-sm text-muted-foreground" id="tenant-jit-approval-desc">
+                      People your SSO admits for the first time wait, with no access, until an
+                      administrator approves them in Members.
+                    </p>
+                  </div>
+                  <Switch
+                    id="tenant-jit-approval"
+                    aria-describedby="tenant-jit-approval-desc"
+                    checked={securityForm.jit_requires_approval}
+                    onCheckedChange={(checked) =>
+                      setSecurityForm({ ...securityForm, jit_requires_approval: checked })
                     }
                     disabled={!canManageSecurityAndAPI}
                   />

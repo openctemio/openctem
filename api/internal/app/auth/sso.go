@@ -102,6 +102,8 @@ type SSOService struct {
 	// the account by it first (federated_identity.go). Required: a login that
 	// carries an identity is refused when it is not wired.
 	identities useridentity.Repository
+	// jitApprovals tells administrators about newcomers waiting for approval.
+	jitApprovals JITApprovalNotifier
 }
 
 // SetIdentityRepo wires the federated identity store.
@@ -780,6 +782,9 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 	// An offboarded tombstone is not a membership: only JIT may re-admit the
 	// person (from zero), under the same rules as a newcomer.
 	if m, err := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); err == nil && m != nil && !m.IsOffboarded() {
+		if m.AwaitsApproval() {
+			return ErrSSOAwaitingApproval
+		}
 		return nil
 	}
 
@@ -794,6 +799,10 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 	if err != nil {
 		return fmt.Errorf("build membership: %w", err)
 	}
+	held, err := holdIfApprovalRequired(t, membership)
+	if err != nil {
+		return err
+	}
 	if err := s.tenantMemberRepo.CreateMembership(ctx, membership); err != nil {
 		// A concurrent login may have created the membership between our lookup
 		// and here — re-check before failing (fail-closed on genuine failure).
@@ -805,7 +814,11 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		return ErrSSONotAMember
 	}
 	s.logger.Info("SSO auto-provisioned tenant membership",
-		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", membership.Role().String())
+		"user_id", u.ID().String(), "tenant_id", t.ID().String(), "role", membership.Role().String(), "held", held)
+	if held {
+		s.notifyAwaitingApproval(ctx, t, email)
+		return ErrSSOAwaitingApproval
+	}
 	return nil
 }
 
@@ -1835,7 +1848,11 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 	}
 
 	if newUser && s.tenantMemberRepo != nil {
+		held := false
 		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), s.jitRoleFor(ctx, t, email, defaultRole), nil)
+		if memErr == nil {
+			held, memErr = holdIfApprovalRequired(t, membership)
+		}
 		if memErr == nil {
 			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
 		}
@@ -1846,6 +1863,15 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 				s.logger.Warn("federated auto-provision membership failed", "user_id", u.ID().String(), "error", memErr)
 				return nil, ErrSSONotAMember
 			}
+		} else if held {
+			s.notifyAwaitingApproval(ctx, t, email)
+		}
+	}
+	// A membership that waits for an administrator's approval gets no
+	// session in the organization (RFC-058).
+	if s.tenantMemberRepo != nil {
+		if m, gErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID()); gErr == nil && m != nil && m.AwaitsApproval() {
+			return nil, ErrSSOAwaitingApproval
 		}
 	}
 
