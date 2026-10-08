@@ -119,7 +119,7 @@ included, never the code).
 The tenant API has no rebaseline route. The chain exists to make changes by a
 privileged insider evident, and the organization's owner is the most
 privileged insider, so letting them re-sign it would defeat its purpose, even
-behind step-up. The owner reads the chain state (`GET /api/v1/audit-logs/verify`)
+behind step-up. The organization owner reads the chain state (`GET /api/v1/audit-logs/verify`)
 and asks the platform operator, who rebaselines from the admin console after
 reviewing the classification. `tests/unit/admin_only_actions_test.go` fails
 if a tenant-plane route reaches a rebaseline.
