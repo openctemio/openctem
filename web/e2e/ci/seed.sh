@@ -7,7 +7,7 @@
 #     (enough for the findings picker to scroll), a scan with a run in
 #     progress, a remediation task
 #
-# Requires: docker, curl, jq. Env: ADMIN_IMAGE (api/Dockerfile.admin-cli),
+# Requires: docker (also runs psql from PSQL_IMAGE, default postgres:17-alpine), curl, jq. Env: ADMIN_IMAGE (api/Dockerfile.admin-cli),
 # E2E_OWNER_PASSWORD and E2E_DATABASE_URL (web/e2e/ci/make-env.sh),
 # API (default http://127.0.0.1:8080), COMPOSE_NETWORK (default
 # octe2e-ci_default).
@@ -54,9 +54,27 @@ if [[ -z "$TOKEN" ]]; then
   echo "$setup" >&2
   exit 1
 fi
+# A new organization requires two-factor authentication for its owners and
+# admins (security.mfa_required_for_admins), so a password login answers with
+# an enrollment challenge and no tenants. The specs sign in with a password,
+# so the seed turns that requirement off for its organization, as for
+# organizations that existed before the policy. Done in the database: nobody
+# can sign in to change it before enrolling.
+docker run --rm --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v slug="$SLUG" >/dev/null <<'SQL'
+UPDATE tenants
+   SET settings = settings || jsonb_build_object('security',
+         COALESCE(settings->'security', '{}'::jsonb) || '{"mfa_required_for_admins": false}'::jsonb)
+ WHERE slug = :'slug';
+SQL
 call POST /api/v1/auth/reset-password "{\"token\":\"$TOKEN\",\"new_password\":\"$OWNER_PASSWORD\"}"
 call POST /api/v1/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$OWNER_PASSWORD\"}"
-TENANT_ID=$(jq -r --arg s "$SLUG" '.tenants[] | select(.slug==$s) | .id' <<<"$BODY")
+TENANT_ID=$(jq -r --arg s "$SLUG" '(.tenants // [])[] | select(.slug==$s) | .id' <<<"$BODY")
+if [[ -z "$TENANT_ID" ]]; then
+  # Never print the body: a challenge carries a token.
+  log "login returned no tenant $SLUG (response keys: $(jq -c 'keys' <<<"$BODY"))"
+  exit 1
+fi
 call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}"
 ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
 
