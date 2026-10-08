@@ -44,7 +44,7 @@ describe('Discovery: one row per section', () => {
 
   it('Assets covers its tabs (What changed, Groups, Suggestions)', () => {
     expect(discoveryActive('/assets')).toBe('/assets')
-    expect(discoveryActive('/assets/repositories/abc')).toBe('/assets')
+    expect(discoveryActive('/assets/abc')).toBe('/assets')
     expect(discoveryActive('/assets/changes')).toBe('/assets')
     expect(discoveryActive('/assets/groups/abc')).toBe('/assets')
     expect(discoveryActive('/assets/suggestions')).toBe('/assets')

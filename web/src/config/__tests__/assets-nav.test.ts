@@ -68,7 +68,7 @@ describe('Discovery > Assets', () => {
 
   it.each([
     '/assets',
-    '/assets/repositories/abc',
+    '/assets/abc',
     '/assets/changes',
     '/assets/groups',
     '/assets/groups/abc',
