@@ -218,6 +218,10 @@ func (h *BranchHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := asset.ListBranchesInput{
 		RepositoryID: repositoryID,
 		Name:         query.Get("name"),
@@ -225,8 +229,8 @@ func (h *BranchHandler) List(w http.ResponseWriter, r *http.Request) {
 		IsDefault:    parseQueryBoolPtr(query.Get("is_default")),
 		ScanStatus:   query.Get("scan_status"),
 		Sort:         query.Get("sort"),
-		Page:         parseQueryInt(query.Get("page"), 1),
-		PerPage:      parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:         paging.Page,
+		PerPage:      paging.PerPage,
 	}
 
 	if err := h.validator.Validate(input); err != nil {
