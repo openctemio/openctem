@@ -173,6 +173,8 @@ type SelectSensorResult struct {
 
 // Service handles scan workflow-related business operations.
 type Service struct {
+	// runnableTools: which tools an online sensor may run now (CheckSteps warnings).
+	runnableTools     RunnableTools
 	templateRepo      scanworkflow.Repository
 	stepRepo          scanworkflow.StepRepository
 	runRepo           scanrun.RunRepository
@@ -345,7 +347,7 @@ func NewService(
 		sensorRepo:        sensorRepo,
 		commandRepo:       commandRepo,
 		securityValidator: securityValidator,
-		logger:            log.With("service", "pipeline"),
+		logger:            log.With("service", "scan_workflow"),
 	}
 	for _, opt := range opts {
 		opt(s)

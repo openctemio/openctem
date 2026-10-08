@@ -12,6 +12,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ExternalLink, GitBranch, GitPullRequest, Workflow } from 'lucide-react'
 import { PageHeader, EmptyState, ErrorState } from '@/features/shared'
+import { useListParams } from '@/hooks/use-list-params'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -77,13 +78,21 @@ export interface CIRunsViewProps {
   toolbarStart?: React.ReactNode
 }
 
+const VERDICTS: readonly CIVerdictFilter[] = ['pass', 'fail', 'none']
+
+/** A verdict filter from the URL; anything unknown is no filter. */
+function asVerdict(raw: string): CIVerdictFilter {
+  return VERDICTS.includes(raw as CIVerdictFilter) ? (raw as CIVerdictFilter) : ''
+}
+
 export function CIRunsView({
   embedded = false,
   initialRunId = null,
   toolbarStart,
 }: CIRunsViewProps) {
-  const [verdict, setVerdict] = useState<CIVerdictFilter>('')
-  const [page, setPage] = useState(1)
+  const list = useListParams({ filters: { verdict: '' } })
+  const { page, setPage } = list
+  const verdict = asVerdict(list.filters.verdict)
   const [selected, setSelected] = useState<string | null>(initialRunId)
   const { data, error, isLoading, mutate } = useCIRuns({ verdict, page })
   const runs = data?.data ?? []
@@ -107,8 +116,7 @@ export function CIRunsView({
         <Select
           value={verdict || 'all'}
           onValueChange={(v) => {
-            setVerdict(v === 'all' ? '' : (v as CIVerdictFilter))
-            setPage(1)
+            list.setFilter('verdict', v === 'all' ? '' : asVerdict(v))
           }}
         >
           <SelectTrigger className="w-44" aria-label="Verdict">

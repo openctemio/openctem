@@ -24,6 +24,7 @@ import {
 } from '@/features/shared'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
@@ -150,7 +151,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
   const [filterParam, setFilterParam] = useUrlFilter('coverage', '')
   const filter: CICoverageFilter = isCoverageFilter(filterParam) ? filterParam : ''
   const [q, setQ] = useUrlFilter('q', '')
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
+  const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
   const [pending, setPending] = useState<string | null>(null)
   const { data, error, isLoading, mutate } = useCICoverage({
     filter,
@@ -181,7 +182,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
   const s = data?.summary
   const setFilter = (f: CICoverageFilter) => {
     setFilterParam(filter === f ? '' : f)
-    setPagination((p) => ({ ...p, pageIndex: 0 }))
+    setPage(1)
   }
   const metrics: MetricStripItem[] = [
     {
@@ -265,7 +266,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
                   value={q}
                   onChange={(e) => {
                     setQ(e.target.value)
-                    setPagination((p) => ({ ...p, pageIndex: 0 }))
+                    setPage(1)
                   }}
                   className="h-9 ps-9"
                 />

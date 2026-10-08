@@ -230,7 +230,7 @@ func (h *AdminConsoleHandler) ChangePassword(w http.ResponseWriter, r *http.Requ
 			apierror.BadRequest("Current password is incorrect").WriteJSON(w)
 		case errors.Is(err, password.ErrPasswordTooShort), errors.Is(err, password.ErrPasswordNoUppercase),
 			errors.Is(err, password.ErrPasswordNoLowercase), errors.Is(err, password.ErrPasswordNoNumber),
-			errors.Is(err, password.ErrPasswordNoSpecial):
+			errors.Is(err, password.ErrPasswordNoSpecial), errors.Is(err, password.ErrPasswordCommon):
 			apierror.BadRequest("The new password does not meet the password policy: " + sanitizeLogField(errors.Unwrap(err).Error())).WriteJSON(w)
 		default:
 			h.logger.Error("admin change password", "error", sanitizeLogField(err.Error()))

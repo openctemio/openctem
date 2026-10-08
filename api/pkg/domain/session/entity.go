@@ -32,9 +32,19 @@ type Session struct {
 	// sessions created before it was recorded. Only that organization treats
 	// the session as an SSO sign-in (see AuthMethodFor).
 	idpTenantID shared.ID
+	// mfaEvidence: the identity provider proved a second factor for this
+	// sign-in (OIDC amr/acr, SAML AuthnContext). False when it did not say.
+	mfaEvidence bool
 	createdAt   time.Time
 	updatedAt   time.Time
 }
+
+// MFAEvidence reports whether the identity provider proved a second factor
+// for this federated sign-in.
+func (s *Session) MFAEvidence() bool { return s.mfaEvidence }
+
+// SetMFAEvidence records whether the identity provider proved a second factor.
+func (s *Session) SetMFAEvidence(v bool) { s.mfaEvidence = v }
 
 // New creates a new session.
 func New(

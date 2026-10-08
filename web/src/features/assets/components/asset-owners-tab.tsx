@@ -254,7 +254,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
   // Fetch options for the picker.
   //
   // Server-side search via `?search=` + `?include=user` so the picker scales
-  // to tenants with thousands of members. We fetch a fixed `limit=50` and
+  // to tenants with thousands of members. We fetch a fixed `per_page=50` and
   // let the user narrow down with the search input — there is no infinite
   // scroll because in practice the user always types a few characters of
   // the name/email, and 50 results is enough to cover any reasonable typo.
@@ -274,7 +274,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
     // Owner picker: active members only (never a disabled or offboarded person).
     const params = new URLSearchParams({
       include: 'user',
-      limit: String(PICKER_PAGE_SIZE),
+      per_page: String(PICKER_PAGE_SIZE),
       status: PICKER_MEMBER_STATUS,
     })
     if (debouncedSearch.trim()) {

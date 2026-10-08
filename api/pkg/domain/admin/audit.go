@@ -85,6 +85,9 @@ func NewAuditLog(
 const (
 	SeverityInfo = "info"
 	SeverityHigh = "high"
+	// SeverityCritical marks a change to the whole platform's security
+	// posture (the sign-up policy).
+	SeverityCritical = "critical"
 )
 
 // SetRequest sets the request details.
@@ -163,6 +166,12 @@ func (b *AuditLogBuilder) Error(message string) *AuditLogBuilder {
 // High marks the entry as high severity.
 func (b *AuditLogBuilder) High() *AuditLogBuilder {
 	b.log.Severity = SeverityHigh
+	return b
+}
+
+// Critical marks the entry as critical severity.
+func (b *AuditLogBuilder) Critical() *AuditLogBuilder {
+	b.log.Severity = SeverityCritical
 	return b
 }
 

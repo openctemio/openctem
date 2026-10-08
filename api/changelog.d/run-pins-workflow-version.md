@@ -7,5 +7,5 @@
   up the edited steps and settings halfway through.
 - `GET /scan-runs` and `GET /scan-runs/{id}` return `scan_workflow_version`
   and `spec_digest`.
-- Migration 001308 adds `scan_workflow_versions` and the two run columns.
+- Migration 001321 adds `scan_workflow_versions` and the two run columns.
   Runs started before the upgrade keep reading the live workflow.
