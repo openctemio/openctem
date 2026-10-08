@@ -1,0 +1,47 @@
+{{/*
+  Alert messages for Telegram (HTML) and Slack (mrkdwn).
+
+  Only what the rules put in the alert is shown: the alert name, severity,
+  summary, description, the infrastructure labels (job, instance, component,
+  controller, probe, reason) and the runbook link. Rules never put tenant,
+  user or target data in an alert (api/docs/operations/monitoring.md).
+*/}}
+
+{{ define "openctem.status" }}{{ if eq .Status "firing" }}FIRING{{ else }}RESOLVED{{ end }}{{ end }}
+
+{{ define "openctem.where" -}}
+{{ with .Labels.job }}job={{ . }} {{ end -}}
+{{ with .Labels.instance }}instance={{ . }} {{ end -}}
+{{ with .Labels.component }}component={{ . }} {{ end -}}
+{{ with .Labels.controller }}controller={{ . }} {{ end -}}
+{{ with .Labels.where }}where={{ . }} {{ end -}}
+{{ with .Labels.probe }}probe={{ . }} {{ end -}}
+{{ with .Labels.reason }}reason={{ . }} {{ end -}}
+{{ with .Labels.name }}container={{ . }} {{ end -}}
+{{- end }}
+
+{{ define "openctem.telegram.message" -}}
+<b>[{{ template "openctem.status" . }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.severity | toUpper | html }} {{ .CommonLabels.alertname | html }}</b>
+{{ range .Alerts }}
+{{ if eq .Status "firing" }}&#9679;{{ else }}&#10003;{{ end }} {{ .Annotations.summary | html }}
+{{ with .Annotations.description }}{{ . | html }}
+{{ end }}<code>{{ template "openctem.where" . }}</code>
+{{ with .Annotations.runbook_url }}<a href="{{ . }}">Runbook</a>{{ end }}
+{{ end }}
+{{- end }}
+
+{{ define "openctem.slack.title" -}}
+[{{ template "openctem.status" . }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.severity | toUpper }} {{ .CommonLabels.alertname }}
+{{- end }}
+
+{{ define "openctem.slack.text" -}}
+{{ range .Alerts }}
+*{{ if eq .Status "firing" }}Firing{{ else }}Resolved{{ end }}:* {{ .Annotations.summary }}
+{{ with .Annotations.description }}{{ . }}
+{{ end }}`{{ template "openctem.where" . }}`{{ with .Annotations.runbook_url }} | <{{ . }}|Runbook>{{ end }}
+{{ end }}
+{{- end }}
+
+{{ define "openctem.slack.color" -}}
+{{ if eq .Status "resolved" }}good{{ else if eq .CommonLabels.severity "critical" }}danger{{ else }}warning{{ end }}
+{{- end }}

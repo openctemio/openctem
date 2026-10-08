@@ -593,6 +593,47 @@ func ForCapabilities(caps []string) (Stage, error) {
 	return Stage{}, ErrAmbiguousCapability
 }
 
+// ForWord is the stage one capability word names: a stage key
+// ("resolve.dns") or a pre-catalog word that names exactly one stage
+// ("dns"). Qualifier words ("recon", "scan") name none.
+func ForWord(word string) (Stage, bool) {
+	s, err := ForCapabilities([]string{word})
+	return s, err == nil
+}
+
+// ToolCanRun reports whether a tool can run a step's capability word. The
+// two vocabularies map onto each other through the catalog: the word is one
+// the tool declares (toolCaps, lowercase), or it names a stage that the
+// catalog has the tool implement, or that the tool declares under the
+// stage's key or one of its pre-catalog words. So "resolve.dns" fits a tool
+// declaring "dns", and "dns" fits a tool declaring "resolve.dns".
+//
+// This only decides whether the step is valid. Where a step runs and what it
+// may chain into is still placed by ForStep, from the catalog alone, so a
+// tenant tool declaring a word never gains a catalog contract.
+func ToolCanRun(tool string, toolCaps []string, word string) bool {
+	word = strings.ToLower(strings.TrimSpace(word))
+	if word == "" {
+		return false
+	}
+	if slices.Contains(toolCaps, word) {
+		return true
+	}
+	s, ok := ForWord(word)
+	if !ok {
+		return false
+	}
+	if s.Implements(tool) || slices.Contains(toolCaps, string(s.Key)) {
+		return true
+	}
+	for _, l := range s.Legacy {
+		if slices.Contains(toolCaps, l) {
+			return true
+		}
+	}
+	return false
+}
+
 // ForStep is the stage a workflow step runs: its pinned tool's stage when
 // the tool implements exactly one, else the one its capabilities name and
 // the tool implements, else the one its capabilities name. ok is false for a

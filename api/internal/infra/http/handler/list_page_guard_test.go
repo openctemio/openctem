@@ -21,7 +21,8 @@ func TestListHandlersUseTheSharedPageParser(t *testing.T) {
 		"compensating_control_handler.go", "compliance_handler.go", "ctem_cycle_handler.go",
 		"remediation_campaign_handler.go", "report_schedule_handler.go", "threat_actor_handler.go",
 		"threat_model_handler.go", "admin_audit_handler.go", "admin_target_mapping_handler.go",
-		"admin_user_handler.go", "admin_organization_handler.go"} {
+		"admin_user_handler.go", "admin_organization_handler.go", "asset_service_handler.go",
+		"asset_state_history_handler.go"} {
 		src, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)

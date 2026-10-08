@@ -169,7 +169,10 @@ describe('insertAdapterStep', () => {
     const next = insertAdapterStep(table, steps, 'subs', 'crawl', 'probe.http')
     expect(next).toHaveLength(3)
     const adapter = next[2]
-    expect(adapter.tool).toBe('httpx')
+    // A capability node with any tool, never a pinned tool that may be missing.
+    expect(adapter.tool).toBe('')
+    expect(adapter.capabilities).toEqual(['probe.http'])
+    expect(adapter.step_key).toBe('probe-http')
     expect(adapter.id.startsWith('temp-')).toBe(true)
     expect(adapter.depends_on).toEqual(['subs'])
     const crawl = next.find((s) => s.id === 'crawl')!

@@ -33,7 +33,15 @@ import {
 } from '@/lib/api'
 import { useToolsWithConfig } from '@/lib/api/tool-hooks'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { generateTempStepId, generateStepKey, isTempStepId } from '@/lib/utils'
+import { generateTempStepId } from '@/lib/utils'
+import { capabilitiesOfTool, withTool } from '@/features/scan-workflows/lib/step-capability'
+import {
+  removeStep,
+  renameStepKey,
+  stepKeyBase,
+  uniqueStepKey,
+} from '@/features/scan-workflows/lib/step-keys'
+import { roundPosition, toStepRequest } from '@/features/scan-workflows/lib/step-request'
 import {
   capabilityForStep,
   insertAdapterStep,
@@ -200,36 +208,31 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
   // Auto-set capabilities when tool changes
   const handleStepUpdate = useCallback(
     (stepId: string, updates: Partial<ScanWorkflowStep>) => {
-      setLocalSteps((prev) =>
-        prev.map((step) => {
+      setLocalSteps((prev) => {
+        let next = prev
+        // A key change moves every dependency on the step with it.
+        if (updates.step_key !== undefined) {
+          next = renameStepKey(next, stepId, updates.step_key)
+          const { step_key: _key, ...rest } = updates
+          updates = rest
+        }
+        return next.map((step) => {
           if (step.id !== stepId) return step
-
-          // If tool is being changed, auto-update capabilities from the selected tool
+          // A tool picked on the node: the step runs the capability the tool
+          // implements, or the tool's own words for a tool the catalog does
+          // not know (never a hardcoded word).
           if (updates.tool !== undefined && updates.tool !== step.tool) {
-            // No tool selected - clear capabilities
-            if (!updates.tool) {
-              return {
-                ...step,
-                ...updates,
-                capabilities: [],
-              }
-            }
-            // Tool selected - get capabilities directly from availableTools array
-            const selectedTool = availableTools.find((t) => t.name === updates.tool)
-            const toolCapabilities = selectedTool?.capabilities || []
-            return {
-              ...step,
-              ...updates,
-              capabilities: toolCapabilities,
-            }
+            if (!updates.tool) return { ...step, ...updates, capabilities: [], prefer_tools: [] }
+            const declared = availableTools.find((t) => t.name === updates.tool)?.capabilities ?? []
+            const r = withTool(capabilityTable, step, updates.tool, declared)
+            return { ...r.step, ...updates }
           }
-
           return { ...step, ...updates }
         })
-      )
+      })
       setHasChanges(true)
     },
-    [availableTools]
+    [availableTools, capabilityTable]
   )
 
   // Handle node position change
@@ -256,16 +259,15 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
     (data: AddNodeData) => {
       const { nodeType, position, label, toolName } = data
       const stepName = label || `New ${nodeType.charAt(0).toUpperCase() + nodeType.slice(1)}`
-      // Use tool name for step_key if available (more meaningful), otherwise use step name
-      const stepKeyBase = toolName || stepName
-      const stepKey = generateStepKey(stepKeyBase)
-
-      // Get capabilities from availableTools based on toolName
-      let stepCapabilities: string[] = []
-      if (toolName) {
-        const selectedTool = availableTools.find((t) => t.name === toolName)
-        stepCapabilities = selectedTool?.capabilities || []
-      }
+      // The step runs the capability its tool implements (or the tool's own
+      // words); its key is made from that, unique in this workflow.
+      const declared = availableTools.find((t) => t.name === toolName)?.capabilities ?? []
+      const caps = toolName ? capabilitiesOfTool(capabilityTable, toolName) : []
+      const stepCapabilities = caps.length === 1 ? [caps[0].key] : declared
+      const stepKey = uniqueStepKey(
+        stepKeyBase(caps.length === 1 ? caps[0].key : toolName || stepName),
+        localSteps.map((s) => s.step_key)
+      )
 
       const newStep: ScanWorkflowStep = {
         id: generateTempStepId(), // Temporary ID - backend will assign real UUID on save
@@ -286,7 +288,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
       setLocalSteps((prev) => [...prev, newStep])
       setHasChanges(true)
     },
-    [localSteps.length, availableTools]
+    [localSteps, availableTools, capabilityTable]
   )
 
   // Handle node delete
@@ -298,21 +300,12 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
   const handleConfirmDelete = useCallback(() => {
     if (!deleteStepId) return
 
-    const stepToDelete = localSteps.find((s) => s.id === deleteStepId)
-
-    setLocalSteps((prev) => {
-      const newSteps = prev.filter((s) => s.id !== deleteStepId)
-      return newSteps.map((step, idx) => ({
-        ...step,
-        depends_on: (step.depends_on || []).filter((d) => d !== stepToDelete?.step_key),
-        order: idx + 1,
-      }))
-    })
+    setLocalSteps((prev) => removeStep(prev, deleteStepId))
 
     setHasChanges(true)
     setDeleteStepId(null)
     toast.success('Step deleted')
-  }, [deleteStepId, localSteps])
+  }, [deleteStepId])
 
   // Handle save
   const handleSave = async () => {
@@ -328,31 +321,11 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
     setIsSaving(true)
     try {
       const updateData: UpdateScanWorkflowRequest = {
-        // Don't send capabilities - backend will derive them from the selected tool
-        steps: localSteps.map((s, idx) => ({
-          // A saved step keeps its id, so the save updates it in place and
-          // its run history stays attached. New steps carry a temp id only.
-          ...(isTempStepId(s.id) ? {} : { id: s.id }),
-          step_key: s.step_key,
-          name: s.name,
-          description: s.description || undefined,
-          order: idx + 1,
-          tool: s.tool,
-          // A capability step (no pinned tool) names its capability and how
-          // it picks a tool; a pinned step's capabilities come from its tool.
-          ...(s.tool ? {} : { capabilities: s.capabilities }),
-          prefer_tools: s.tool ? [] : (s.prefer_tools ?? []),
-          max_retries: s.max_retries,
-          timeout_seconds: s.timeout_seconds,
-          depends_on: s.depends_on || [],
-          ui_position: s.ui_position,
-          // Carry per-step config through; the backend replaces each step
-          // entry on save, so omitting it wiped any existing step config.
-          ...(s.config ? { config: s.config } : {}),
-        })),
+        // Every field of every step: the API replaces each step on save.
+        steps: localSteps.map(toStepRequest),
         // Save Start/End node positions
-        ui_start_position: startPosition,
-        ui_end_position: endPosition,
+        ui_start_position: roundPosition(startPosition),
+        ui_end_position: roundPosition(endPosition),
       }
       await put<ScanWorkflow>(scanWorkflowEndpoints.update(workflow.id), updateData)
       await invalidateAllScanWorkflowCaches()

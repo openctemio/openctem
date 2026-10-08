@@ -80,6 +80,7 @@
 - [CI/CD](development/ci-cd.md) - GitHub Actions workflows
 
 ### Deployment
+- [Monitoring and alerting](operations/monitoring.md) - Operator monitoring of the running platform (`deploy/observability`): API metrics, exporters, alert rules routed to Telegram/Slack, what an alert may contain, and a runbook per alert
 - [Safe Deploy & Migrations](deployment/safe-deploy-and-migrations.md) - Canonical safe-deploy sequence, expand-contract rules, schema-check semantics, dirty-migration recovery, rollback
 - [Least-privilege database roles](deployment/database-roles.md) - The API connects as `openctem_app` (DML only), migrations as `openctem_migrator` (schema owner); the bootstrap script, what the API needs at run time, compose/helm variables, and the upgrade runbook
 - [Rotating APP_ENCRYPTION_KEY](deployment/encryption-key-rotation.md) - What the key protects, `cmd/rekey` (dry run, apply, sweep), `APP_ENCRYPTION_KEY_PREVIOUS`, and the zero-downtime runbook

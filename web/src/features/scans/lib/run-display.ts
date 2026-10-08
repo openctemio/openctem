@@ -17,9 +17,25 @@ export function isRunInProgress(run: { status: string }): boolean {
  * `triggered_by_name`), never as a raw id; an id the API could not name
  * (a deleted user) reads "Unknown user".
  */
+/** What started a run that no person started, in words. */
+const TRIGGER_TYPE_LABELS: Record<string, string> = {
+  automation: 'Automation',
+  schedule: 'Schedule',
+  api: 'API',
+  webhook: 'Webhook',
+  asset_discovery: 'Asset discovery',
+  system: 'Platform',
+}
+
 export function runTriggeredByLabel(
-  run: Pick<ScanRun, 'triggered_by' | 'triggered_by_name'>
+  run: Pick<ScanRun, 'triggered_by' | 'triggered_by_name' | 'trigger'>
 ): string | null {
+  const t = run.trigger
+  if (t) {
+    if (t.type === 'user') return t.label || 'Unknown user'
+    const label = TRIGGER_TYPE_LABELS[t.type]
+    if (label) return label
+  }
   if (run.triggered_by_name) return run.triggered_by_name
   if (!run.triggered_by) return null
   return UUID.test(run.triggered_by) ? 'Unknown user' : run.triggered_by
