@@ -38,7 +38,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 - OAuth2 (Google, GitHub, Microsoft) + OIDC (Keycloak)
 
 ### Integrations
-- ITSM: Jira, Linear, Asana
+- ITSM: Jira
 - SCM: GitHub, GitLab (repository sync, credential import)
 - Notifications: Slack, Teams, Telegram, Email, Webhooks
 - Compliance: PCI-DSS, HIPAA, SOC2, GDPR, ISO27001, NIST, FedRAMP, CCPA

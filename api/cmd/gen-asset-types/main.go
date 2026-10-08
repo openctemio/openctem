@@ -246,10 +246,9 @@ type lensCfg struct {
 }
 
 type classCfg struct {
-	ID         string `yaml:"id"`
-	Label      string `yaml:"label"`
-	Lens       string `yaml:"lens"`
-	JupiterOne string `yaml:"jupiterone"`
+	ID    string `yaml:"id"`
+	Label string `yaml:"label"`
+	Lens  string `yaml:"lens"`
 }
 
 type virtualCfg struct {
@@ -358,11 +357,10 @@ type lensOut struct {
 }
 
 type classOut struct {
-	ID         string   `json:"id"`
-	Label      string   `json:"label"`
-	Lens       string   `json:"lens,omitempty"`
-	JupiterOne string   `json:"jupiterone"`
-	Types      []string `json:"types"`
+	ID    string   `json:"id"`
+	Label string   `json:"label"`
+	Lens  string   `json:"lens,omitempty"`
+	Types []string `json:"types"`
 }
 
 type relRule struct {
@@ -712,7 +710,7 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 		if len(classTypes[c.ID]) == 0 {
 			return nil, fmt.Errorf("class %q has no types", c.ID)
 		}
-		m.Classes = append(m.Classes, classOut{ID: c.ID, Label: c.Label, Lens: c.Lens, JupiterOne: c.JupiterOne, Types: classTypes[c.ID]})
+		m.Classes = append(m.Classes, classOut{ID: c.ID, Label: c.Label, Lens: c.Lens, Types: classTypes[c.ID]})
 	}
 	for _, l := range cfg.Lenses {
 		var cs []string
@@ -1209,8 +1207,8 @@ func renderGo(m *model) ([]byte, error) {
 		for i, t := range c.Types {
 			types[i] = fmt.Sprintf("%q", t)
 		}
-		w("{ID: %s, Label: %q, Lens: %s, JupiterOne: %q, Types: []AssetType{%s}},\n",
-			goIdent("Class", c.ID), c.Label, lens, c.JupiterOne, strings.Join(types, ", "))
+		w("{ID: %s, Label: %q, Lens: %s, Types: []AssetType{%s}},\n",
+			goIdent("Class", c.ID), c.Label, lens, strings.Join(types, ", "))
 	}
 	w("}\n\nvar registryTypes = []TypeDefinition{\n")
 	for _, t := range m.Types {
