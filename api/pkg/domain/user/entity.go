@@ -107,14 +107,6 @@ type User struct {
 	passwordResetExpiresAt     *time.Time
 	failedLoginAttempts        int
 	lockedUntil                *time.Time
-
-	// Federated identity binding (SSO/OIDC). Records the stable IdP identity
-	// (OIDC issuer + subject) that created/owns this account, so a verified
-	// email asserted by a DIFFERENT IdP cannot adopt it. Nil for local users
-	// and for federated users created before this was tracked (bound on next
-	// login). See findOrCreateUser in internal/app/auth/sso.go.
-	federatedIssuer  *string
-	federatedSubject *string
 }
 
 // NewFromKeycloak creates a new User from Keycloak claims.
@@ -308,9 +300,6 @@ func Reconstitute(
 	passwordResetExpiresAt *time.Time,
 	failedLoginAttempts int,
 	lockedUntil *time.Time,
-	// Federated identity (nil for local / pre-tracking federated users)
-	federatedIssuer *string,
-	federatedSubject *string,
 ) *User {
 	return &User{
 		id:                         id,
@@ -333,32 +322,7 @@ func Reconstitute(
 		passwordResetExpiresAt:     passwordResetExpiresAt,
 		failedLoginAttempts:        failedLoginAttempts,
 		lockedUntil:                lockedUntil,
-		federatedIssuer:            federatedIssuer,
-		federatedSubject:           federatedSubject,
 	}
-}
-
-// FederatedIssuer returns the OIDC issuer bound to this account, or nil if the
-// account has no recorded federated identity (local user, or a federated user
-// created before issuer binding was tracked).
-func (u *User) FederatedIssuer() *string { return u.federatedIssuer }
-
-// FederatedSubject returns the OIDC subject bound to this account, or nil.
-func (u *User) FederatedSubject() *string { return u.federatedSubject }
-
-// BindFederatedIdentity records the IdP identity (OIDC issuer + subject) that
-// owns this account. No-op when issuer is empty (nothing reliable to bind, e.g.
-// a provider that returned no id_token). Used on first federation and to
-// backfill a pre-tracking account on its next login (trust-on-first-use).
-func (u *User) BindFederatedIdentity(issuer, subject string) {
-	if issuer == "" {
-		return
-	}
-	u.federatedIssuer = &issuer
-	if subject != "" {
-		u.federatedSubject = &subject
-	}
-	u.updatedAt = time.Now().UTC()
 }
 
 // ID returns the user ID.
