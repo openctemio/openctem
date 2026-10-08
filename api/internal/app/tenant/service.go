@@ -96,7 +96,10 @@ type TenantService struct {
 	// and the in-app notice to administrators. Optional.
 	lifecycle         tenantdom.LifecycleRepository
 	lifecycleNotifier LifecycleInAppNotifier
-	logger            *logger.Logger
+	// classifier decides whether an invitee is internal or external
+	// (external_members.go).
+	classifier *AddressClassifier
+	logger     *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -610,6 +613,13 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		if err := s.requireAllowedEmailDomain(ctx, parsedTenantID, users[0].Email()); err != nil {
 			return nil, err
 		}
+		// Someone outside the organization joins only by accepting an
+		// invitation (their consent), never by being added.
+		if class, _, cerr := s.classifyInvitee(ctx, parsedTenantID, users[0].Email(), tenantdom.ExternalAccess{}, time.Now().UTC()); cerr != nil {
+			return nil, cerr
+		} else if class.Kind == tenantdom.MemberKindExternal {
+			return nil, ErrExternalNeedsInvitation
+		}
 	}
 
 	// A zero inviter (e.g. system/SCIM-driven provisioning, where there is no
@@ -683,6 +693,11 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	role, ok := tenantdom.ParseRole(input.Role)
 	if !ok {
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
+	}
+
+	// Someone outside the organization is a viewer or a member (RFC-058).
+	if membership.IsExternal() && (role == tenantdom.RoleAdmin || role == tenantdom.RoleOwner) {
+		return nil, accesscontrol.ErrExternalRoleCeiling
 	}
 
 	// Prevent promoting to owner
@@ -845,6 +860,11 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	}
 	if err := s.authorizeMemberChange(ctx, membership, actx); err != nil {
 		return err
+	}
+	// An external member whose access ended comes back only with a new end
+	// date (ExtendMemberAccess), or the expiry would suspend them again.
+	if membership.IsExpired(time.Now().UTC()) || membership.SuspendedReason() == tenantdom.SuspendedReasonExpired {
+		return fmt.Errorf("%w: this member's access has ended; set a new end date to re-enable them", shared.ErrValidation)
 	}
 
 	if err := membership.Reactivate(); err != nil {
@@ -1017,6 +1037,11 @@ type CreateInvitationInput struct {
 	Email   string   `json:"email" validate:"required,email,max=254"`
 	Role    string   `json:"-"`                                         // Internal use only - always set to "member" by handler
 	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=10"` // RBAC roles to assign (required, max 10)
+	// Access applies to an invitee outside the organization (RFC-058): when
+	// the access ends and why. Required for someone no organization manages
+	// (defaults to 90 days); ignored for an internal invitee.
+	AccessExpiresAt *time.Time `json:"-"`
+	AccessReason    string     `json:"-"`
 }
 
 // CreateInvitation creates an invitation to join a tenant.
@@ -1060,6 +1085,22 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		return nil, err
 	}
 
+	// Someone outside the organization joins as a viewer, with an expiry
+	// when no organization manages their address.
+	class, access, err := s.classifyInvitee(ctx, parsedID, input.Email,
+		tenantdom.ExternalAccess{ExpiresAt: input.AccessExpiresAt, Reason: input.AccessReason}, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if class.Kind == tenantdom.MemberKindExternal {
+		if err := requireViewerOnly(input.RoleIDs); err != nil {
+			return nil, err
+		}
+		if err := access.Validate(class, time.Now().UTC()); err != nil {
+			return nil, err
+		}
+	}
+
 	// Check for existing pending invitation
 	existingInv, err := s.repo.GetPendingInvitationByEmail(ctx, parsedID, input.Email)
 	if err == nil && existingInv != nil {
@@ -1091,6 +1132,7 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 	if err != nil {
 		return nil, err
 	}
+	invitation.SetAccess(access)
 
 	// Hash-at-rest: persist only the SHA-256 hash of the token, never the raw
 	// value. The raw token is what the invitee receives (email link + the
@@ -1116,7 +1158,11 @@ func (s *TenantService) CreateInvitation(ctx context.Context, tenantID string, i
 		WithResourceName(input.Email).
 		WithMessage(fmt.Sprintf("Invitation sent to %s with role %s", input.Email, role)).
 		WithMetadata("email", input.Email).
-		WithMetadata("role", role.String())
+		WithMetadata("role", role.String()).
+		WithMetadata("member_kind", string(class.Kind))
+	if access.ExpiresAt != nil {
+		event = event.WithMetadata("access_expires_at", access.ExpiresAt.Format(time.RFC3339))
+	}
 	s.logAudit(ctx, actx, event)
 
 	// Enqueue email job if email enqueuer is configured
@@ -1259,6 +1305,9 @@ func (s *TenantService) AcceptInvitation(ctx context.Context, token string, user
 	invitedBy := invitation.InvitedBy()
 	membership, err := tenantdom.NewMembership(userID, invitation.TenantID(), accesscontrol.InvitationMembershipRole(invitation), &invitedBy)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.ClassifyAcceptedInvitation(ctx, invitation, membership, time.Now().UTC()); err != nil {
 		return nil, err
 	}
 
