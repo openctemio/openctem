@@ -280,7 +280,7 @@ describe('cellsForType', () => {
     const partial = {
       ...bareService,
       subType: 'http',
-      metadata: { service: { port: 80, protocol: 'http' } },
+      metadata: { port: 80, protocol: 'http' },
     } as Asset
     const { container } = render(<SurfaceFacts asset={partial} />)
     expect(screen.getByText('80/http')).toBeInTheDocument()
@@ -297,7 +297,7 @@ describe('cellsForType', () => {
     expectNoUnknownChips(container)
     const ipNoPorts = {
       ...sensorIpWithPorts,
-      metadata: { ip_address: { ports: [] } },
+      metadata: { ports: [] },
     } as Asset
     rerender(<SurfaceFacts asset={ipNoPorts} />)
     expect(screen.getByText('No open ports')).toBeInTheDocument()
@@ -311,9 +311,7 @@ describe('cellsForType', () => {
   it('OpenPortChips hides "not scanned" and shows "none open"', () => {
     const { container, rerender } = render(<OpenPortChips asset={bareService} />)
     expect(container).toBeEmptyDOMElement()
-    rerender(
-      <OpenPortChips asset={{ ...bareService, metadata: { ip_address: { ports: [] } } } as Asset} />
-    )
+    rerender(<OpenPortChips asset={{ ...bareService, metadata: { ports: [] } } as Asset} />)
     expect(screen.getByText('No open ports')).toBeInTheDocument()
   })
 })
@@ -323,7 +321,7 @@ describe('drawer: Not collected yet', () => {
     const partial = {
       ...bareService,
       subType: 'http',
-      metadata: { service: { port: 443, protocol: 'https' } },
+      metadata: { port: 443, protocol: 'https' },
     } as Asset
     expect(missingSurfaceFacts(partial)).toEqual(['HTTP status', 'technologies', 'TLS certificate'])
     const { container } = render(<SurfaceFactsDetail asset={partial} />)
@@ -346,7 +344,7 @@ describe('drawer: Not collected yet', () => {
   it('is omitted when nothing is missing', () => {
     const complete = {
       ...sensorHttpServiceNoTech,
-      metadata: { ...sensorHttpServiceNoTech.metadata, service: { port: 8080, protocol: 'http' } },
+      metadata: { ...sensorHttpServiceNoTech.metadata, port: 8080, protocol: 'http' },
     } as Asset
     expect(missingSurfaceFacts(complete)).toEqual([])
     const { container } = render(<SurfaceFactsDetail asset={complete} />)

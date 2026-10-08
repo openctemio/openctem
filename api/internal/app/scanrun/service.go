@@ -196,6 +196,7 @@ type Service struct {
 	hops              scanrun.HopRepository     // stage chaining (hop_router.go); nil keeps every step on the run's seeds
 	webScope          WebScopeBuilder           // web_scope of web steps (web_scope.go); nil refuses web steps
 	endpoints         EndpointSelector          // incremental web scanning (web_endpoints.go)
+	runNotifier       RunNotifier               // live run updates (run_notify.go); nil: none
 	versions          scanworkflow.VersionStore // runs pinned to the workflow version they started with; nil reads the live workflow
 	logger            *logger.Logger
 

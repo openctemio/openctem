@@ -77,6 +77,7 @@ type SSOChangeService struct {
 	tenants tenantdom.Repository
 	inApp   SSOChangeInAppNotifier
 	mailer  SSOChangeMailer
+	domains DomainJITStore
 	ttl     time.Duration
 	now     func() time.Time
 	logger  *logger.Logger
@@ -358,6 +359,8 @@ func DescribeSSOChange(c *ssochange.Change) string {
 			fields = []string{"no fields"}
 		}
 		return "change identity provider " + c.TargetID + " (" + strings.Join(fields, ", ") + ")"
+	case ssochange.KindDomainJIT:
+		return describeDomainJIT(c)
 	}
 	return string(c.Kind)
 }
@@ -508,6 +511,8 @@ func (s *SSOChangeService) liveWrite(ctx context.Context, c *ssochange.Change) (
 			return ssochange.LiveWrite{}, err
 		}
 		return ssochange.LiveWrite{IdPUpdate: ip}, nil
+	case ssochange.KindDomainJIT:
+		return s.domainJITWrite(ctx, c)
 	}
 	return ssochange.LiveWrite{}, fmt.Errorf("%w: unknown sso change kind %q", shared.ErrValidation, c.Kind)
 }

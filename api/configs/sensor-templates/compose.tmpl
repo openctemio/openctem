@@ -39,11 +39,14 @@ services:
 {{- end}}
 {{- if isDaemon .Sensor}}
     # Hardened: read-only root filesystem, no capabilities, no privilege
-    # escalation (add NET_RAW to cap_add only for naabu SYN scans).
+    # escalation (add NET_RAW to cap_add only for naabu SYN scans). The
+    # sensor writes only /tmp besides its volumes (its tools too: XDG_*
+    # below); the image's home directory keeps the nuclei-templates release
+    # the sensor scans with until its first update.
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    tmpfs: [/tmp, /home/openctem, /scan, /cache, /config]
+    tmpfs: [/tmp]
 {{- end}}
     environment:
       API_URL: {{yamlQuote .BaseURL}}
@@ -54,6 +57,8 @@ services:
 {{- if isDaemon .Sensor}}
       SENSOR_LOCAL_POLICY: /etc/openctem/policy/sensor-policy.yaml
       SENSOR_KILL_SWITCH_FILE: /etc/openctem/policy/STOP
+      XDG_CONFIG_HOME: /tmp/.config
+      XDG_CACHE_HOME: /tmp/.cache
 {{- if .Policy.AllowPrivate}}
       SENSOR_ALLOW_PRIVATE_TARGETS: "1"
 {{- end}}
