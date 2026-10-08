@@ -140,6 +140,10 @@ type MemberWithUser struct {
 	HomeTenantName  string
 	ExpiresAt       *time.Time
 	SuspendedReason string
+	// DomainLapsed: the member's email domain was verified for SSO by this
+	// organization and its DNS proof lapsed (RFC-058): nobody vouches for
+	// the address any more.
+	DomainLapsed bool
 }
 
 // MemberStats contains statistics about tenant members.

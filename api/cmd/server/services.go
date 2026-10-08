@@ -1829,6 +1829,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A tool no online sensor may run refuses the trigger with the
 		// reason (docs/architecture/tool-availability.md).
 		scan.WithToolAvailability(s.Tool),
+		// Workflow readiness: the New Scan picker, the workflow list and
+		// the refusal of a workflow no sensor here can run.
+		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor)),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
@@ -2392,6 +2395,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// A domain the home organization stops holding suspends the members it
 	// managed elsewhere; proving it again restores them (RFC-058).
 	s.DomainVerify.SetClaimListener(s.Tenant)
+	s.Auth.SetLapsedDomainChecker(s.DomainVerify)
 	s.Auth.SetInviteeClassifier(s.Tenant)
 
 	// Trusted organizations (RFC-058): home-realm sign-in for external

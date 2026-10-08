@@ -695,7 +695,10 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
 			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at,
 			(u.auth_provider = 'local' AND u.password_hash IS NULL AND u.last_login_at IS NULL) AS pending_setup,
-			m.kind, m.home_domain, ht.name, m.expires_at, m.suspended_reason
+			m.kind, m.home_domain, ht.name, m.expires_at, m.suspended_reason,
+			EXISTS (SELECT 1 FROM verified_domains vd
+			        WHERE vd.tenant_id = m.tenant_id AND vd.purpose = 'sso' AND vd.status <> 'verified'
+			          AND vd.lapsed_at IS NOT NULL AND vd.domain = lower(split_part(u.email, '@', 2))) AS domain_lapsed
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -725,12 +728,13 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 			homeDomain, homeName      sql.NullString
 			expiresAt                 sql.NullTime
 			suspendedReason           sql.NullString
+			domainLapsed              bool
 		)
 
 		if err := rows.Scan(
 			&idStr, &userIDStr, &roleStr, &invitedByStr, &joinedAt,
 			&email, &name, &avatarURL, &status, &lastLoginAt, &pendingSetup,
-			&kind, &homeDomain, &homeName, &expiresAt, &suspendedReason,
+			&kind, &homeDomain, &homeName, &expiresAt, &suspendedReason, &domainLapsed,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan member with user: %w", err)
 		}
@@ -769,6 +773,7 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 			HomeTenantName:  homeName.String,
 			ExpiresAt:       nullTimeValue(expiresAt),
 			SuspendedReason: suspendedReason.String,
+			DomainLapsed:    domainLapsed,
 		})
 	}
 
@@ -829,6 +834,9 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			END as mfa_status,
 			(u.auth_provider = 'local' AND u.password_hash IS NULL AND u.last_login_at IS NULL) AS pending_setup,
 			m.kind, m.home_domain, ht.name, m.expires_at, m.suspended_reason,
+			EXISTS (SELECT 1 FROM verified_domains vd
+			        WHERE vd.tenant_id = m.tenant_id AND vd.purpose = 'sso' AND vd.status <> 'verified'
+			          AND vd.lapsed_at IS NOT NULL AND vd.domain = lower(split_part(u.email, '@', 2))) AS domain_lapsed,
 			COUNT(*) OVER() as total_count
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
@@ -882,13 +890,14 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			homeDomain, homeName      sql.NullString
 			expiresAt                 sql.NullTime
 			suspendedReason           sql.NullString
+			domainLapsed              bool
 		)
 
 		if err := rows.Scan(
 			&idStr, &userIDStr, &roleStr, &invitedByStr, &joinedAt,
 			&email, &name, &avatarURL, &status, &lastLoginAt,
 			&mfaStatus, &pendingSetup,
-			&kind, &homeDomain, &homeName, &expiresAt, &suspendedReason,
+			&kind, &homeDomain, &homeName, &expiresAt, &suspendedReason, &domainLapsed,
 			&totalCount,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan member: %w", err)
@@ -934,6 +943,7 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			HomeTenantName:  homeName.String,
 			ExpiresAt:       nullTimeValue(expiresAt),
 			SuspendedReason: suspendedReason.String,
+			DomainLapsed:    domainLapsed,
 		})
 	}
 
