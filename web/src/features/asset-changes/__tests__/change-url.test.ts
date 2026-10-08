@@ -6,7 +6,7 @@ const from = '2026-09-23T00:00:00.000Z'
 describe('changeUrl', () => {
   it('maps every view to its state-history endpoint', () => {
     const paths = CHANGE_VIEWS.map(
-      (v) => changeUrl(v, { from, internetOnly: false }, 20, 0).split('?')[0]
+      (v) => changeUrl(v, { from, internetOnly: false }, 20, 1).split('?')[0]
     )
     expect(paths).toEqual([
       '/api/v1/state-history/appearances',
@@ -18,16 +18,17 @@ describe('changeUrl', () => {
   })
 
   it('sends the period, page and internet-facing filter', () => {
-    const url = new URL(changeUrl('appeared', { from, internetOnly: true }, 50, 100), 'http://x')
+    const url = new URL(changeUrl('appeared', { from, internetOnly: true }, 50, 3), 'http://x')
     expect(url.searchParams.get('from')).toBe(from)
-    expect(url.searchParams.get('limit')).toBe('50')
-    expect(url.searchParams.get('offset')).toBe('100')
+    expect(url.searchParams.get('per_page')).toBe('50')
+    expect(url.searchParams.get('page')).toBe('3')
+    expect(url.searchParams.has('limit')).toBe(false)
     expect(url.searchParams.get('internet_facing')).toBe('true')
   })
 
-  it('omits offset on the first page and the filter when off', () => {
-    const url = new URL(changeUrl('shadow_it', { from, internetOnly: false }, 20, 0), 'http://x')
-    expect(url.searchParams.has('offset')).toBe(false)
+  it('omits page on the first page and the filter when off', () => {
+    const url = new URL(changeUrl('shadow_it', { from, internetOnly: false }, 20, 1), 'http://x')
+    expect(url.searchParams.has('page')).toBe(false)
     expect(url.searchParams.has('internet_facing')).toBe(false)
   })
 })
