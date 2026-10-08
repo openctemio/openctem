@@ -117,6 +117,18 @@ func (s *SensorService) RecordSignedUse(id SensorIdentity, clientIP string) {
 // KeyBound reports whether the identity authenticated with a signature.
 func (id SensorIdentity) KeyBound() bool { return id.signingKeyID != nil }
 
+// SetStatusNotifier wires a callback told when a sensor's status or keys
+// change (activate, disable, revoke, delete, key revocation), so live
+// protocol v3 connections re-check their identity at once (RFC-059 T8).
+func (s *SensorService) SetStatusNotifier(f func(tenantID, sensorID string)) { s.statusChanged = f }
+
+// notifyStatus calls the status notifier (no-op without one).
+func (s *SensorService) notifyStatus(a *sensordom.Sensor) {
+	if s.statusChanged != nil && a != nil && a.TenantID != nil {
+		s.statusChanged(a.TenantID.String(), a.ID.String())
+	}
+}
+
 // KeyThumbprint is the thumbprint of the signing key the identity
 // authenticated with ("" for a bearer key). Protocol v3 resolves it again to
 // re-check a long-lived connection (docs/rfcs/RFC-059-sensor-transport-v3.md).
@@ -260,6 +272,7 @@ func (s *SensorService) RevokeSigningKey(ctx context.Context, actx auditapp.Audi
 	if !ok {
 		return shared.ErrNotFound
 	}
+	s.notifyStatus(a)
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionSensorKeyRevoked, audit.ResourceTypeSensor, sensorID.String()).
 		WithResourceName(a.Name).WithMessage("Revoked a signing key of sensor "+a.Name).
 		WithSeverity(audit.SeverityHigh).WithMetadata("key_id", keyID.String()))
