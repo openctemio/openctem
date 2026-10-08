@@ -21,6 +21,8 @@ type RunTrigger struct {
 	ID string `json:"id,omitempty"`
 	// RunID: the automation run that started it.
 	RunID string `json:"run_id,omitempty"`
+	// NodeKey: the automation step that started it.
+	NodeKey string `json:"node_key,omitempty"`
 	// Label: the user's display name, when known.
 	Label string `json:"label,omitempty"`
 }
@@ -44,6 +46,7 @@ func runTrigger(run *scanrun.Run) RunTrigger {
 		t := RunTrigger{Type: runTriggerAutomation}
 		t.ID, _ = cause["workflow_id"].(string)
 		t.RunID, _ = cause["run_id"].(string)
+		t.NodeKey, _ = cause["node_key"].(string)
 		if t.ID != "" {
 			return t
 		}

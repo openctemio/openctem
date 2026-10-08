@@ -259,6 +259,8 @@ export interface RunTrigger {
   id?: string
   /** The automation run that started it. */
   run_id?: string
+  /** The automation step (node) that started it. */
+  node_key?: string
   /** The user's display name, when known. */
   label?: string
 }
