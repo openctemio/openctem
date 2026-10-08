@@ -248,3 +248,34 @@ func TestStepDispatch_ActiveChunksCarryHostKeys(t *testing.T) {
 		}
 	}
 }
+
+// Every step command records what its targets were gated with, for the
+// claim-time scope re-check: the stage's tier and passive flag, and the run
+// actor's act scope.
+func TestStepDispatch_CommandsRecordTheDispatchGate(t *testing.T) {
+	actor := shared.NewID()
+	for _, tc := range []struct {
+		tool    string
+		passive bool
+	}{
+		{"httpx", false},
+		{"dnsx", true},
+	} {
+		s, run, _, _, _ := gatingFixture(map[string]scanrun.StepRunStatus{"a": scanrun.StepRunStatusPending}, nil)
+		tpl, _ := s.templateRepo.GetWithSteps(context.Background(), run.ScanWorkflowID)
+		tpl.Steps[0].Tool = tc.tool
+		created := &capturingCommands{}
+		s.commandRepo = created
+		run.Context = map[string]any{"targets": []string{"a.example.com"}, "actor_user_id": actor.String()}
+		if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
+			t.Fatal(err)
+		}
+		if len(created.cmds) != 1 {
+			t.Fatalf("%s: commands = %d", tc.tool, len(created.cmds))
+		}
+		g := created.cmds[0].DispatchGate
+		if g == nil || g.Passive != tc.passive || (g.Tier == 0) != tc.passive || !g.ActScope || g.Actor != actor.String() {
+			t.Fatalf("%s: dispatch gate %+v", tc.tool, g)
+		}
+	}
+}

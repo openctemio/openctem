@@ -1617,7 +1617,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// RFC-052 §5: each sensor's grant, before every other gate.
 		command.WithGrants(repos.SensorGrant, s.Sensor),
 		// RFC-055 §6.3: the tier is assigned from the tool contract.
-		command.WithToolContracts(repos.Sensor)}
+		command.WithToolContracts(repos.Sensor),
+		// A scan job's targets pass the dispatch gate again when a sensor
+		// claims it: scope can change while it waits in the queue. Until
+		// the scan service exists the gate refuses (fail closed).
+		command.WithScopeRecheck(probeGate)}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
@@ -1812,7 +1816,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 		scan.WithAuditService(scanAuditAdapter),
 		scan.WithProfileRepo(repos.ScanProfile),
-		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
+		// Enforce scope EXCLUSIONS on every dispatch path; unwired or failing, nothing is dispatched (fail closed).
 		scan.WithScopeExclusionFilter(s.Scope),
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
@@ -1944,6 +1948,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
 	s.Scan.SetStepQueuer(s.ScanRun)
+	// A job the claim-time scope re-check fails settles its step.
+	s.Command.SetStepFailer(s.ScanRun)
 	s.Scan.SetWorkflowVersions(repos.ScanWorkflow)
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
 	if s.Retest != nil {

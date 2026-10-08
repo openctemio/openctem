@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -77,7 +79,7 @@ func (r *UserDashboardRepository) Create(ctx context.Context, d *dashboard.Dashb
 		d.Name(), d.Description(), d.Columns(), d.IsDefault(), layout, d.CreatedAt(), d.UpdatedAt(),
 	)
 	if err != nil {
-		return fmt.Errorf("create user dashboard: %w", err)
+		return dashboardWriteError("create user dashboard", err)
 	}
 	return nil
 }
@@ -100,7 +102,7 @@ func (r *UserDashboardRepository) Update(ctx context.Context, d *dashboard.Dashb
 		d.Name(), d.Description(), d.Columns(), layout, d.UpdatedAt(),
 	)
 	if err != nil {
-		return fmt.Errorf("update user dashboard: %w", err)
+		return dashboardWriteError("update user dashboard", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
@@ -188,4 +190,21 @@ func scanUserDashboard(row interface{ Scan(dest ...any) error }) (*dashboard.Das
 		name, description, columnCount, isDefault, widgets,
 		createdAt, updatedAt,
 	), nil
+}
+
+// errDashboardNameTaken: the user already has a dashboard with this name
+// (uq_user_dashboards_tenant_user_name).
+var errDashboardNameTaken = fmt.Errorf("%w: you already have a dashboard with this name", shared.ErrConflict)
+
+// dashboardWriteError maps a unique violation to a conflict the handler
+// answers 409; any other error stays an internal one.
+func dashboardWriteError(op string, err error) error {
+	if !isUniqueViolation(err) {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && pqErr.Constraint == "uq_user_dashboards_one_default" {
+		return fmt.Errorf("%w: another dashboard is already the default", shared.ErrConflict)
+	}
+	return errDashboardNameTaken
 }
