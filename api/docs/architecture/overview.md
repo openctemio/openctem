@@ -7,7 +7,7 @@
 | Language | Go 1.26+ |
 | HTTP Router | Chi v5 (with abstraction layer) |
 | HTTP Handlers | Standard `net/http` signature |
-| Authentication | JWT (local) / OAuth2 (Google, GitHub, Microsoft) / OIDC (Keycloak, RS256 JWKS) |
+| Authentication | Local accounts (JWT) / OAuth2 (Google, GitHub, Microsoft) / per-organization OIDC (e.g. Entra ID) and SAML SSO |
 | Validation | go-playground/validator/v10 |
 | Database | PostgreSQL 17 |
 | Cache | Redis 7 |
@@ -17,112 +17,74 @@
 ## System Diagram
 
 ```
-                                    ┌─────────────────────────────────────┐
-┌──────────────┐                    │       OpenCTEM Control Plane        │
-│   Clients    │                    ├─────────────────────────────────────┤
-├──────────────┤                    │  HTTP API (REST)                    │
-│  Web App     │───────────────────▶│  - /api/v1/sensors/*                │
-│  Mobile App  │                    │  - /api/v1/scan-workflows/*              │
-│  CLI         │                    │  - /api/v1/findings/*               │
-└──────────────┘                    │  - /api/v2/sensor/* (sensor API)    │
-                                                                        │  - /api/v1/audit-logs/verify        │
-                                    └──────────────┬──────────────────────┘
-                                                   │
-                        ┌──────────────────────────┼──────────────────────────┐
-                        ▼                          ▼                          ▼
-                 ┌──────────┐               ┌──────────┐               ┌──────────────┐
-                 │ Postgres │               │  Redis   │               │  Connectors  │
-                 │   (DB)   │               │ (Cache)  │               │  (Tenable)   │
-                 │   + RLS  │               └──────────┘               └──────────────┘
-                 └──────────┘
+ Browser ──► Web console (Next.js, same-origin proxy)
+                    │  /api/*
+                    ▼
+ ┌───────────────────────────────────────────────┐
+ │ OpenCTEM API (Go)                             │
+ │  /api/v1/*        console and integrations    │
+ │  /api/v2/sensor/* sensor protocol             │
+ │  controllers      scheduled background jobs   │
+ └──────┬──────────────┬──────────────┬──────────┘
+        ▼              ▼              ▼
+   PostgreSQL 17    Redis 7     External systems
+                                (ticketing, notifications,
+                                 SIEM, importers, SSO IdPs)
 
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                              Tenant Infrastructure                                   │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐    │
-│  │    Runner      │  │    Worker      │  │   Collector    │  │    Sensor      │    │
-│  │ (CI/CD scan)   │  │  (daemon)      │  │   (cloud)      │  │  (EASM)        │    │
-│  │                │  │                │  │                │  │                │    │
-│  │ - Poll tasks   │  │ - Poll tasks   │  │ - Poll tasks   │  │ - Poll tasks   │    │
-│  │ - Run scans    │  │ - Execute jobs │  │ - Collect data │  │ - EASM recon   │    │
-│  │ - Report back  │  │ - Report back  │  │ - Report back  │  │ - Report back  │    │
-│  └───────┬────────┘  └───────┬────────┘  └───────┬────────┘  └───────┬────────┘    │
-│          │                   │                   │                   │             │
-│          └───────────────────┴───────────────────┴───────────────────┘             │
-│                                         │                                          │
-│                            ┌────────────▼────────────┐                             │
-│                            │   OpenCTEM SDK (Go)     │                             │
-│                            │   - API key auth        │                             │
-│                            │   - Task polling        │                             │
-│                            │   - Finding submission  │                             │
-│                            └─────────────────────────┘                             │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+ Customer networks
+ ┌───────────────────────────────────────────────┐
+ │ Sensors (openctemio/sensor, built on sdk-go)  │
+ │  roles: scanner · collector · agent-mode      │
+ │  pull work from /api/v2/sensor, run tools,    │
+ │  report results (CTIS) back                   │
+ └───────────────────────────────────────────────┘
 ```
 
-## Distributed Agent Architecture
+## Sensors
 
-OpenCTEM uses a distributed agent model where:
-- **Control Plane** (this server) manages agents, pipelines, and findings
-- **Agents** run on tenant infrastructure using the OpenCTEM SDK
-- **Agents poll** for tasks based on their capabilities
-- **Data flows** from agents back to the control plane via REST API
+Scanning and collection run in **sensors**, not in the API. A sensor runs in the
+customer's network (or as a platform sensor operated by the platform), has its
+own identity ([agent-identity.md](agent-identity.md)), pulls commands over the
+sensor protocol v2 and reports results that the API ingests through the CTIS
+contract. Roles: **scanner** (runs tools such as nuclei, httpx, semgrep, trivy),
+**collector** (pulls data from other systems) and **agent-mode** (endpoint).
+Scan zones route work to the sensors that can reach the targets
+([scan-zones.md](scan-zones.md)). Full model: [sensors.md](sensors.md).
 
-### Agent Types
+## Scan workflows
 
-| Type | Description | Use Case |
-|------|-------------|----------|
-| `runner` | CI/CD one-shot | SAST, DAST, SCA scans in CI/CD |
-| `worker` | Server-controlled daemon | Continuous scanning |
-| `collector` | Data collection agent | Cloud inventory, vulnerability feeds |
-| `sensor` | EASM sensor | External attack surface monitoring |
-
-### Capability-Based Task Assignment
-
-Agents declare their capabilities (e.g., `sast`, `dast`, `sca`, `infra`) and tools (e.g., `semgrep`, `trivy`, `nuclei`). The control plane assigns tasks to agents with matching capabilities.
+A **scan workflow** is a reusable, multi-step definition; a **scan** applies a
+workflow (or a single tool) to targets on a schedule or on demand; each
+execution is a **scan run** made of **steps** and **tasks** dispatched to
+sensors. Steps declare the tool and capabilities they need; a step only goes to
+a sensor that advertises them.
 
 ```
-Pipeline Step: SAST Analysis
-├── Capabilities required: ["sast"]
-├── Tool preferred: "semgrep"
-└── Agents matched: [runner-1, runner-3]
-```
-
-## Pipeline Orchestration
-
-Pipelines orchestrate multi-step security workflows:
-
-```
-Pipeline Template: "Full Security Scan"
-├── Step 1: SAST Analysis (semgrep)
-├── Step 2: SCA Scan (trivy)
-├── Step 3: Secrets Detection (trufflehog)
-└── Step 4: Infrastructure Scan (nuclei)
+Scan workflow: "Full Security Scan"
+├── Step 1: SAST (semgrep)
+├── Step 2: SCA (trivy)
+├── Step 3: Secrets (betterleaks)
+└── Step 4: Web checks (nuclei)
     └── depends_on: [Step 1, Step 2]
-
-Pipeline Run
-├── Created by: manual trigger
-├── Asset: repo-xyz
-├── Status: running
-└── Step Runs:
-    ├── step-1: completed (15 findings)
-    ├── step-2: completed (3 findings)
-    ├── step-3: running
-    └── step-4: pending
 ```
+
+Lifecycle and states: [scan-lifecycle.md](scan-lifecycle.md); naming:
+[scan-naming.md](scan-naming.md).
 
 ## Multi-Tenant Architecture
 
-OpenCTEM uses a multi-tenant SaaS model where:
-- Users authenticate via Keycloak
-- Users can belong to multiple **Teams** (displayed in UI)
-- Teams are called **Tenants** in code/database
-- Each tenant has members with roles (owner, admin, member, viewer)
-- Data is isolated per tenant using PostgreSQL Row-Level Security (RLS)
+OpenCTEM is multi-tenant:
+- Users sign in with a local account, OAuth, or their organization's SSO
+- A user can belong to several **organizations** (shown as teams in parts of the UI)
+- Organizations are **tenants** in code and database
+- Each tenant has members with roles (owner, admin, member, viewer, and custom roles)
+- Every tenant-scoped query carries `tenant_id`; PostgreSQL RLS policies exist
+  but are not enabled yet ([rls-rollout.md](rls-rollout.md))
 
 ### Data Model
 
 ```
-User (Keycloak)     Membership (App DB)      Tenant (App DB)
+User                Membership               Tenant
 ┌──────────────┐    ┌──────────────────┐    ┌──────────────────┐
 │ id (sub)     │───<│ user_id          │    │ id               │
 │ email        │    │ tenant_id        │>───│ name             │
@@ -171,9 +133,9 @@ POST   /api/v1/tenants/{tenant}/invitations
 POST   /api/v1/invitations/lookup       {"token": ...}
 POST   /api/v1/invitations/accept       {"token": ...}
 
-# Tenant-scoped resources (future)
-GET    /api/v1/tenants/{tenant}/assets
-POST   /api/v1/tenants/{tenant}/assets
+# Tenant-scoped resources use the tenant of the access token
+GET    /api/v1/assets
+POST   /api/v1/assets
 ...
 ```
 
@@ -181,7 +143,7 @@ POST   /api/v1/tenants/{tenant}/assets
 
 | Context | Term |
 |---------|------|
-| UI/Frontend | Team |
+| UI/Frontend | Organization (Team in older screens) |
 | API Routes | /tenants |
 | Database tables | tenants, tenant_members |
 | Go code | tenant.Tenant, TenantService |
@@ -202,14 +164,14 @@ POST   /api/v1/tenants/{tenant}/assets
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
 │  │   HTTP      │  │  Postgres   │  │   Middleware    │  │
 │  │  Handlers   │  │   Repos     │  │  (CORS,Log...)  │  │
-│  │  (15+)      │  │   (15+)     │  │                 │  │
+│  │             │  │             │  │                 │  │
 │  └─────────────┘  └─────────────┘  └─────────────────┘  │
 └─────────────────────────────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
 │                   internal/app                           │
-│              (18 Application Services)                   │
+│      (application services, one package per context)    │
 │                                                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
 │  │ AssetService │  │ ScopeService │  │ VulnService  │   │
@@ -220,8 +182,8 @@ POST   /api/v1/tenants/{tenant}/assets
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│                  internal/domain                         │
-│          (17 Bounded Contexts)                           │
+│                    pkg/domain                            │
+│              (bounded contexts)                          │
 │              NO EXTERNAL DEPENDENCIES                    │
 │                                                          │
 │  ┌──────────┐ ┌────────────┐ ┌─────────────┐ ┌────────┐ │
@@ -231,8 +193,8 @@ POST   /api/v1/tenants/{tenant}/assets
 │  └──────────┘ └────────────┘ └─────────────┘ │ Sched. │ │
 │                                              └────────┘ │
 │  ┌──────────┐ ┌────────────┐ ┌─────────────┐ ┌────────┐ │
-│  │ tenant/  │ │ vuln./     │ │ agent/      │ │pipeline│ │
-│  │ Member   │ │ Finding    │ │ Agent       │ │Template│ │
+│  │ tenant/  │ │ vuln./     │ │ sensor/     │ │scanrun/│ │
+│  │ Member   │ │ Finding    │ │ Sensor      │ │Workflow│ │
 │  │ Invite   │ │ Comment    │ │ Repository  │ │Step,Run│ │
 │  └──────────┘ └────────────┘ └─────────────┘ └────────┘ │
 │  ┌──────────┐ ┌────────────┐ ┌─────────────┐ ┌────────┐ │
@@ -244,32 +206,7 @@ POST   /api/v1/tenants/{tenant}/assets
 
 ## Project Structure
 
-```
-openctem/
-├── cmd/server/              # Application entry point
-├── internal/
-│   ├── domain/              # Core business logic
-│   │   ├── shared/          # Shared types (ID, errors)
-│   │   ├── asset/           # Asset bounded context
-│   │   └── tenant/          # Multi-tenant context
-│   ├── app/                 # Application services
-│   │   ├── asset_service.go
-│   │   └── tenant_service.go
-│   ├── config/              # Configuration
-│   └── infra/               # Infrastructure adapters
-│       ├── http/            # HTTP server, handlers
-│       │   ├── handler/     # tenant_handler, asset_handler
-│       │   └── middleware/  # tenant, auth middleware
-│       └── postgres/        # Database repository
-├── pkg/                     # Public utilities
-│   ├── logger/              # Structured logging
-│   ├── pagination/          # Pagination helpers
-│   └── apierror/            # API error types
-├── migrations/              # Database migrations
-├── api/openapi/             # OpenAPI specification
-├── tests/                   # Integration tests
-└── docs/                    # Documentation
-```
+See [project-structure.md](project-structure.md).
 
 ## Design Principles
 
@@ -330,7 +267,8 @@ Hexagonal / Ports & Adapters
 - [Project Structure](project-structure.md)
 - [Clean Architecture Details](clean-arch.md)
 - [Notification System](notification-system.md)
-- [Scan Orchestration](scan-orchestration.md)
+- [Scan Lifecycle](scan-lifecycle.md)
+- [Scan Orchestration (older walkthrough)](scan-orchestration.md)
 - [Scan Zones](scan-zones.md)
 - [Tool Availability](tool-availability.md)
 - [Sensor ↔ Platform Trust](sensor-platform-trust.md)
