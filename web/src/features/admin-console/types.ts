@@ -278,3 +278,53 @@ export interface AdminOverview {
   }
   generated_at: string
 }
+
+/** One account in Console > Users (account-level facts only). */
+export interface PlatformUser {
+  id: string
+  email: string
+  name: string
+  status: string
+  /** local | oidc | google | github | microsoft | saml */
+  auth_provider: string
+  email_verified: boolean
+  locked: boolean
+  locked_until?: string
+  failed_logins: number
+  last_login_at?: string
+  created_at: string
+  memberships: number
+  mfa_enabled: boolean
+  is_platform_admin: boolean
+  erased: boolean
+}
+
+export interface PlatformUserDetail extends PlatformUser {
+  membership_list: {
+    tenant_id: string
+    tenant_name: string
+    tenant_slug: string
+    role: string
+    status: string
+    joined_at: string
+  }[]
+  identities: {
+    issuer: string
+    subject: string
+    tenant_id?: string
+    created_at: string
+    last_used_at?: string
+  }[]
+  sessions: {
+    id: string
+    ip_address?: string
+    user_agent?: string
+    auth_method: string
+    created_at: string
+    last_activity_at: string
+    expires_at: string
+  }[]
+}
+
+export type PlatformUserAction =
+  'revoke-sessions' | 'unlock' | 'password-reset' | 'resend-verification'
