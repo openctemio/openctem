@@ -93,16 +93,16 @@ Each batch payload carries only its own targets: `targets`/`target`, a
 `targets`, `scanner_config`, warnings or routing report. The protocol-v1 wire
 shape is unchanged.
 
-**Workflow scans** run as one pipeline, so their routed targets must fall in a
+**Workflow scans** run as one scan run, so their routed targets must fall in a
 single zone (or all be unzoned): otherwise the trigger fails with
 `ZONE_SPLIT_REQUIRED`. The run is stamped with the zone (`scan_zone_id` in the
-run context) and every step command, including those the pipeline service
+run context) and every step command, including those the scan run service
 schedules later, is stamped with it and left to the zone's sensors.
 
 ### Run completion with batches
 
 All batch commands of a single scan share the run's one step run
-(`commands.scan_run_step_id`). `pipeline.Service.OnStepCompleted/OnStepFailed` ask
+(`commands.scan_run_step_id`). `scanrun.Service.OnStepCompleted/OnStepFailed` ask
 the command repository (`command.StepBatchGate`) for the batches of the step:
 while one is still active nothing is recorded; when the last one finishes, the
 caller that wins `UPDATE scan_run_steps SET completed_at = NOW() WHERE completed_at
@@ -184,7 +184,7 @@ that is active work (`scan` whose tool is not a passive tool of the stage
 catalog, a scan naming no tool, `validate`, `connector_scan`) is neither
 offered nor claimable while an enabled window of its tenant, organization-wide
 or of the command's `scan_zone_id`, is active. This holds whatever created the
-command: the scan trigger, a pipeline step, `POST /api/v1/commands`, the
+command: the scan trigger, a scan workflow step, `POST /api/v1/commands`, the
 validation dispatcher, coverage and EASM dispatch. Held commands wait (their
 expiry and the run's unclaimed-run and timeout limits still apply). Work a
 sensor already holds keeps running. Commands without a zone are held only by
@@ -230,9 +230,8 @@ zones keep refusing all private targets.
 
 ## Results
 
-Ingest (protocol v1) does not carry the command that produced a report, so
-findings and assets are not stamped with a zone yet; the zone is recorded on the
-command (`commands.scan_zone_id`). Per-record provenance (sensor, zone) is
+Findings and assets are not stamped with a zone yet; the zone is recorded on
+the command (`commands.scan_zone_id`). Per-record provenance (sensor, zone) is
 Phase 2 (D21).
 
 ## Coverage view (V3)

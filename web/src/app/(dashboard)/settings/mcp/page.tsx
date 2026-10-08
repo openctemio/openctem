@@ -28,6 +28,7 @@ import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
+import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '@/features/api-keys/lib/expiry'
 import type { CreateAPIKeyResponse } from '@/features/api-keys/types/api-key.types'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 
@@ -70,13 +71,6 @@ const KEY_PRESETS: Record<
   },
 }
 
-const EXPIRY_OPTIONS = [
-  { label: 'Never', value: '0' },
-  { label: '30 days', value: '30' },
-  { label: '90 days', value: '90' },
-  { label: '1 year', value: '365' },
-]
-
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
   return (
@@ -102,7 +96,7 @@ export default function MCPConnectPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [preset, setPreset] = useState<PresetId>('general')
   const [name, setName] = useState(KEY_PRESETS.general.defaultName)
-  const [expiry, setExpiry] = useState('90')
+  const [expiry, setExpiry] = useState<string>(DEFAULT_API_KEY_EXPIRY_DAYS)
   const [created, setCreated] = useState<CreateAPIKeyResponse | null>(null)
   const { trigger, isMutating } = useCreateApiKey()
   const canWriteKeys = useHasPermission(Permission.ApiKeysWrite)
@@ -155,7 +149,7 @@ export default function MCPConnectPage() {
         name: trimmed,
         description: activePreset.description,
         scopes: activePreset.scopes,
-        expires_in_days: expiry === '0' ? undefined : Number(expiry),
+        expires_in_days: Number(expiry),
       })
       setCreated(res ?? null)
       setDialogOpen(false)
@@ -344,7 +338,7 @@ export default function MCPConnectPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {EXPIRY_OPTIONS.map((o) => (
+                  {API_KEY_EXPIRY_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>
                       {o.label}
                     </SelectItem>

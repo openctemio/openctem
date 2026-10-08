@@ -151,7 +151,7 @@ type Repository interface {
 	// GetAggregateStats computes all asset statistics using SQL aggregation.
 	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
 	// access applies the acting user's data scope, the same predicate as List.
-	GetAggregateStats(ctx context.Context, tenantID shared.ID, access AccessScope, types []string, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, access AccessScope, types, lenses, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
 
 	// GetInventoryOverview counts the caller's assets per (lens, type,
 	// sub-type) for the inventory overview, in one aggregate query.
@@ -277,6 +277,7 @@ type Filter struct {
 	TenantID         *string             // Filter by tenant ID
 	Name             *string             // Filter by name (partial match)
 	Types            []AssetType         // Filter by asset types
+	Lenses           []Lens              // Filter by registry lens (the stored asset_lens)
 	Criticalities    []Criticality       // Filter by criticality levels
 	Statuses         []Status            // Filter by statuses
 	Scopes           []Scope             // Filter by scopes
@@ -403,6 +404,12 @@ func (f Filter) WithSearch(search string) Filter {
 // WithTenantID adds a tenant ID filter.
 func (f Filter) WithTenantID(tenantID string) Filter {
 	f.TenantID = &tenantID
+	return f
+}
+
+// WithLenses adds a lens filter.
+func (f Filter) WithLenses(lenses ...Lens) Filter {
+	f.Lenses = lenses
 	return f
 }
 
@@ -561,6 +568,7 @@ func (f Filter) IsEmpty() bool {
 	return f.TenantID == nil &&
 		f.Name == nil &&
 		len(f.Types) == 0 &&
+		len(f.Lenses) == 0 &&
 		len(f.Criticalities) == 0 &&
 		len(f.Statuses) == 0 &&
 		len(f.Scopes) == 0 &&

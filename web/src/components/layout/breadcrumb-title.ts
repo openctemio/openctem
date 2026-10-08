@@ -1,21 +1,25 @@
 'use client'
 
 /**
- * A detail page names itself in the header breadcrumb.
+ * A page names the records in its URL for the header breadcrumb.
  *
- * The breadcrumb lives in the app header and only sees the URL, so a detail
- * page showed its raw ID ("Findings › dcdc3001..."). The page now calls
+ * The breadcrumb lives in the app header and only sees the URL, so a record
+ * id in it has no name. A detail page calls
  * `useBreadcrumbTitle("CVE-2024-21538 · cross-spawn")` once its record has
- * loaded; the breadcrumb shows that for the page's path and falls back to the
- * shortened ID before then and after the page unmounts.
+ * loaded; a sub-page names its parent record with
+ * `useBreadcrumbTitle(template.name, "/settings/pentest/templates/<id>")`.
+ * The breadcrumb shows that name for the path, and a short label for the
+ * record kind ("Finding", "Scan") before then; never the raw id.
  */
 
 import { useEffect, useSyncExternalStore } from 'react'
 import { usePathname } from 'next/navigation'
 
-type Entry = { path: string; title: string } | null
+type Entry = { path: string; title: string }
 
-let current: Entry = null
+// One entry per mounted caller; a new Map on every change so the snapshot
+// identity changes for useSyncExternalStore.
+let entries: ReadonlyMap<symbol, Entry> = new Map()
 const listeners = new Set<() => void>()
 
 function emit() {
@@ -27,29 +31,39 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener)
 }
 
-/** Name the current page in the breadcrumb (null/empty: keep the default). */
-export function useBreadcrumbTitle(title: string | null | undefined) {
+const EMPTY: ReadonlyMap<symbol, Entry> = new Map()
+
+/**
+ * Name a path in the breadcrumb: the current page (default) or `path`, an
+ * ancestor of it. null/empty keeps the default label.
+ */
+export function useBreadcrumbTitle(title: string | null | undefined, path?: string) {
   const pathname = usePathname()
+  const target = path ?? pathname
   useEffect(() => {
     if (!title) return
-    const entry = { path: pathname, title }
-    current = entry
+    const key = Symbol(target)
+    const next = new Map(entries)
+    next.set(key, { path: target, title })
+    entries = next
     emit()
     return () => {
-      if (current === entry) {
-        current = null
-        emit()
-      }
+      const rest = new Map(entries)
+      rest.delete(key)
+      entries = rest
+      emit()
     }
-  }, [pathname, title])
+  }, [target, title])
 }
 
-/** The title a page set for `pathname`, or null. */
-export function useBreadcrumbTitleFor(pathname: string): string | null {
-  const entry = useSyncExternalStore(
+/** The names pages set, by path (the latest caller wins for a path). */
+export function useBreadcrumbTitles(): ReadonlyMap<string, string> {
+  const snapshot = useSyncExternalStore(
     subscribe,
-    () => current,
-    () => null
+    () => entries,
+    () => EMPTY
   )
-  return entry && entry.path === pathname ? entry.title : null
+  const byPath = new Map<string, string>()
+  for (const e of snapshot.values()) byPath.set(e.path, e.title)
+  return byPath
 }

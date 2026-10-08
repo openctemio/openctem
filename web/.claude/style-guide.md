@@ -1,12 +1,12 @@
 # Coding Style Guide
 
-## 🎨 Code Formatting Rules
+## Code Formatting Rules
 
 ### No Emoji in Code (Critical Rule)
 
 **Rule**: Never use emoji characters in production code.
 
-#### ❌ NEVER Use Emoji In:
+#### NEVER Use Emoji In:
 
 1. **JSX/TSX Components**
 ```tsx
@@ -89,7 +89,7 @@ toast.error("Failed to create user")
 <Input placeholder="Enter name" />
 ```
 
-#### ✅ CORRECT Alternatives
+#### CORRECT Alternatives
 
 **Use Icon Libraries Instead:**
 
@@ -124,7 +124,7 @@ const multiplication = "×"
 <p>Step 1 → Step 2 → Step 3</p>
 ```
 
-#### ✅ When Emoji IS Allowed
+#### When Emoji IS Allowed
 
 **1. Markdown Documentation:**
 ```markdown
@@ -161,7 +161,7 @@ if (process.env.NODE_ENV === 'development') {
 
 ---
 
-## 📋 Other Style Rules
+## Other Style Rules
 
 ### Text Content
 
@@ -261,7 +261,7 @@ import { cn } from "@/lib/utils"
 
 ---
 
-## 🎯 Why No Emoji?
+## Why No Emoji?
 
 ### Problems with Emoji in Code:
 
@@ -313,7 +313,7 @@ import { cn } from "@/lib/utils"
 
 ---
 
-## ✅ Checklist
+## Checklist
 
 Before committing code, verify:
 
@@ -328,7 +328,7 @@ Before committing code, verify:
 
 ---
 
-## 🔧 ESLint Rule (Optional)
+## ESLint Rule (Optional)
 
 Add to `.eslintrc.json`:
 
@@ -348,7 +348,7 @@ Add to `.eslintrc.json`:
 
 ---
 
-## 📚 Icon Libraries We Use
+## Icon Libraries We Use
 
 **Primary: lucide-react**
 - Clean, consistent design
@@ -378,7 +378,7 @@ import { Save, User, Home, Settings } from "lucide-react"
 
 ---
 
-## 🎓 Examples
+## Examples
 
 ### Good vs Bad
 
