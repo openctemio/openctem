@@ -353,6 +353,9 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		input.Payload = gated.Payload
 		input.ScanZoneID = gated.ScanZoneID
+		// The claim re-checks the targets as GateCommandPayload checked
+		// them: the caller's act scope, no tier ceiling.
+		input.DispatchGate = &commanddom.DispatchGate{ActScope: true, Actor: requestUserID(r.Context())}
 		targets = gated.Targets
 	}
 
@@ -379,6 +382,17 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
+}
+
+// requestUserID is the id of the user who makes the request ("" for none).
+func requestUserID(ctx context.Context) string {
+	if id := middleware.GetLocalUserID(ctx); !id.IsZero() {
+		return id.String()
+	}
+	if id, err := shared.IDFromString(middleware.GetUserID(ctx)); err == nil && !id.IsZero() {
+		return id.String()
+	}
+	return ""
 }
 
 // maxAuditedTargets bounds the target list copied into one audit entry.
