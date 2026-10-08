@@ -304,13 +304,12 @@ func (h *PlanHandler) DeleteOverride(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetOwnPlan returns the organization's own plan and usage (Settings > Plan &
-// usage; owner or admin).
+// usage; owner or admin). The organization comes from the credential.
 // @Summary      Get this organization's plan and usage
 // @Tags         Tenants
 // @Produce      json
-// @Param        tenant  path  string  true  "Organization ID or slug"
 // @Success      200  {object}  PlanSummaryResponse
-// @Router       /tenants/{tenant}/plan [get]
+// @Router       /organization/plan [get]
 func (h *PlanHandler) GetOwnPlan(w http.ResponseWriter, r *http.Request) {
 	id, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
 	if err != nil {

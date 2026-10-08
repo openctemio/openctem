@@ -131,11 +131,20 @@ func TestPlanRepository(t *testing.T) {
 			t.Fatalf("insert member: %v", err)
 		}
 	}
+	// A suspended member still holds a seat; an offboarded one does not.
+	third := planTestUser(t, sqlDB, "plan-third-"+suffix+"@example.test")
+	gone := planTestUser(t, sqlDB, "plan-gone-"+suffix+"@example.test")
+	for u, status := range map[shared.ID]string{third: "suspended", gone: "offboarded"} {
+		if _, err := sqlDB.ExecContext(ctx, `INSERT INTO tenant_members (tenant_id, user_id, role, status) VALUES ($1, $2, 'viewer', $3)`,
+			a.String(), u.String(), status); err != nil {
+			t.Fatalf("insert %s member: %v", status, err)
+		}
+	}
 	ua, err := r.Usage(ctx, a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ua[plan.Seats] != 2 || ua[plan.Assets] != 0 || ua[plan.APIKeys] != 0 {
+	if ua[plan.Seats] != 3 || ua[plan.Assets] != 0 || ua[plan.APIKeys] != 0 {
 		t.Fatalf("usage a: %v", ua)
 	}
 	if ub, _ := r.Usage(ctx, b); ub[plan.Seats] != 1 {

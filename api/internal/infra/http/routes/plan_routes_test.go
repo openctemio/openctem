@@ -11,8 +11,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -33,55 +31,49 @@ func TestPlanAdminRoutesRegister(t *testing.T) {
 	}, nil, nil)
 }
 
-// GET /tenants/{tenant}/plan (Settings > Plan & usage) is for the
-// organization's owners and admins; members and viewers are refused before the
-// handler runs.
-func TestTenantPlanRouteIsAdminOnly(t *testing.T) {
-	tn, err := tenant.NewTenant("Acme", "acme", shared.NewID().String())
-	if err != nil {
-		t.Fatal(err)
-	}
+// GET /organization/plan (Settings > Plan & usage) is for the organization's
+// owners and admins; the organization comes from the credential. Members and
+// viewers are refused before the handler runs.
+func TestOrganizationPlanRouteIsAdminOnly(t *testing.T) {
 	plans := handler.NewPlanHandler(entitlement.NewService(nil, nil, nil, nil, nil), nil, logger.NewNop())
 	for _, tc := range []struct {
-		role       tenant.Role
+		role       string
+		admin      bool
 		wantHandle bool
 	}{
-		{tenant.RoleOwner, true},
-		{tenant.RoleAdmin, true},
-		{tenant.RoleMember, false},
-		{tenant.RoleViewer, false},
+		{"owner", true, true},
+		{"admin", true, true},
+		{"member", false, false},
+		{"viewer", false, false},
 	} {
-		u, err := userdom.NewProvisionedLocalUser("u@acme.test", "U")
-		if err != nil {
-			t.Fatal(err)
-		}
-		m, err := tenant.NewMembership(u.ID(), tn.ID(), tc.role, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
 		auth := func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				ctx := context.WithValue(r.Context(), middleware.LocalUserKey, u)
-				ctx = context.WithValue(ctx, middleware.UserIDKey, u.ID().String())
+				ctx := context.WithValue(r.Context(), middleware.UserIDKey, shared.NewID().String())
+				ctx = context.WithValue(ctx, middleware.TenantIDKey, shared.NewID().String())
+				ctx = context.WithValue(ctx, middleware.RoleKey, tc.role)
+				ctx = context.WithValue(ctx, middleware.IsAdminKey, tc.admin)
 				next.ServeHTTP(w, r.WithContext(ctx))
 			})
 		}
 		router := infrahttp.NewChiRouter()
-		registerTenantRoutes(router, &handler.TenantHandler{}, auth, nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, nil, plans)
+		registerOrganizationPlanRoutes(router, plans, auth, nil)
 		mux := router.(interface{ Handler() http.Handler }).Handler()
 
-		handled := func() (reached bool) {
+		code := func() (code int) {
 			defer func() {
 				if recover() != nil {
-					reached = true // the nil repository panics inside the handler
+					code = reachedHandler // the nil repository panics inside the handler
 				}
 			}()
 			rec := httptest.NewRecorder()
-			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/tenants/acme/plan", nil))
-			return rec.Code != http.StatusForbidden && rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/organization/plan", nil))
+			return rec.Code
 		}()
-		if handled != tc.wantHandle {
-			t.Errorf("%s: handled=%v, want %v", tc.role, handled, tc.wantHandle)
+		if code == http.StatusNotFound || code == http.StatusMethodNotAllowed {
+			t.Fatalf("%s: route not registered (%d)", tc.role, code)
+		}
+		if handled := code != http.StatusForbidden && code != http.StatusUnauthorized; handled != tc.wantHandle {
+			t.Errorf("%s: status %d, want handled=%v", tc.role, code, tc.wantHandle)
 		}
 	}
 }

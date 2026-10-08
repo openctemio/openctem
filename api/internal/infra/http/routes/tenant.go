@@ -26,7 +26,6 @@ func registerTenantRoutes(
 	membershipReader middleware.MembershipReader,
 	localAuth *handler.LocalAuthHandler,
 	ssoChanges *handler.SSOChangeHandler,
-	plans *handler.PlanHandler,
 ) {
 	if membershipReader == nil {
 		membershipReader = tenantRepo
@@ -158,11 +157,6 @@ func registerTenantRoutes(
 		r.GET("/settings/modules/bundles", h.GetModuleBundles, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
 		r.POST("/settings/modules/bundles", h.SubscribeModuleBundles, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 
-		// The organization's plan, limits and usage (Settings > Plan & usage).
-		if plans != nil {
-			r.GET("/plan", plans.GetOwnPlan, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
-		}
-
 		// Security settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite), requireStepUp())
 
@@ -248,6 +242,19 @@ func tenantPerm(p permission.Permission) Middleware {
 			middleware.RequireTenantPermission(tenantPermissionChecker, p.String())(next).ServeHTTP(w, r)
 		})
 	}
+}
+
+// registerOrganizationPlanRoutes serves the organization's plan, limits and
+// usage (Settings > Plan & usage) under the token singleton
+// /api/v1/organization: owners and administrators with settings:read
+// (docs/architecture/plans-and-limits.md).
+func registerOrganizationPlanRoutes(router Router, h *handler.PlanHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/plan", func(r Router) {
+		r.GET("/", h.GetOwnPlan, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
 // registerOrganizationMemberRoutes wires member administration under the

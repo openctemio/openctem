@@ -454,7 +454,8 @@ func Register(
 
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
-		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange, h.Plan)
+		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange)
+		registerOrganizationPlanRoutes(router, h.Plan, authMiddleware, userSync)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized
