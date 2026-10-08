@@ -327,4 +327,4 @@ export interface PlatformUserDetail extends PlatformUser {
 }
 
 export type PlatformUserAction =
-  'revoke-sessions' | 'unlock' | 'password-reset' | 'resend-verification'
+  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails'

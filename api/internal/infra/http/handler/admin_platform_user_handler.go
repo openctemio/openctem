@@ -170,7 +170,7 @@ func (h *AdminPlatformUserHandler) Search(w http.ResponseWriter, r *http.Request
 }
 
 func platformUserID(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
-	id, err := shared.IDFromString(chi.URLParam(r, "userId"))
+	id, err := shared.IDFromString(chi.URLParam(r, "user_id"))
 	if err != nil {
 		apierror.BadRequest("invalid user id").WriteJSON(w)
 		return shared.ID{}, false
@@ -178,16 +178,16 @@ func platformUserID(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
 	return id, true
 }
 
-// Get handles GET /api/v1/admin/platform-users/{userId}.
+// Get handles GET /api/v1/admin/platform-users/{user_id}.
 //
 // @Summary      One account across organizations (platform admin)
 // @Description  The account, the organizations it belongs to, its federated identities and its active sessions. Any admin role; audited.
 // @Tags         Admin
 // @Produce      json
-// @Param        userId  path  string  true  "User ID"
+// @Param        user_id path  string  true  "User ID"
 // @Success      200  {object}  AdminPlatformUserDetailResponse
 // @Failure      404  {object}  apierror.Error
-// @Router       /admin/platform-users/{userId} [get]
+// @Router       /admin/platform-users/{user_id} [get]
 func (h *AdminPlatformUserHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, ok := platformUserID(w, r)
 	if !ok {
@@ -261,62 +261,62 @@ func (h *AdminPlatformUserHandler) action(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"status": done})
 }
 
-// RevokeSessions handles POST /api/v1/admin/platform-users/{userId}/revoke-sessions.
+// RevokeSessions handles POST /api/v1/admin/platform-users/{user_id}/revoke-sessions.
 //
 // @Summary      Sign an account out everywhere (platform admin)
 // @Description  Ends every session of the account, in every organization. ops_admin+, reason required, audited. Refused for platform administrator and erased accounts.
 // @Tags         Admin
 // @Accept       json
 // @Produce      json
-// @Param        userId   path  string                          true  "User ID"
+// @Param        user_id  path  string                          true  "User ID"
 // @Param        request  body  AdminPlatformUserActionRequest  true  "Reason"
 // @Success      200  {object}  map[string]string
-// @Router       /admin/platform-users/{userId}/revoke-sessions [post]
+// @Router       /admin/platform-users/{user_id}/revoke-sessions [post]
 func (h *AdminPlatformUserHandler) RevokeSessions(w http.ResponseWriter, r *http.Request) {
 	h.action(w, r, h.actions.RevokeSessions, "sessions_revoked")
 }
 
-// Unlock handles POST /api/v1/admin/platform-users/{userId}/unlock.
+// Unlock handles POST /api/v1/admin/platform-users/{user_id}/unlock.
 //
 // @Summary      Unlock an account (platform admin)
 // @Description  Clears a lockout from failed sign-ins. ops_admin+, reason required, audited.
 // @Tags         Admin
 // @Accept       json
 // @Produce      json
-// @Param        userId   path  string                          true  "User ID"
+// @Param        user_id  path  string                          true  "User ID"
 // @Param        request  body  AdminPlatformUserActionRequest  true  "Reason"
 // @Success      200  {object}  map[string]string
-// @Router       /admin/platform-users/{userId}/unlock [post]
+// @Router       /admin/platform-users/{user_id}/unlock [post]
 func (h *AdminPlatformUserHandler) Unlock(w http.ResponseWriter, r *http.Request) {
 	h.action(w, r, h.actions.Unlock, "unlocked")
 }
 
-// SendPasswordReset handles POST /api/v1/admin/platform-users/{userId}/password-reset.
+// SendPasswordReset handles POST /api/v1/admin/platform-users/{user_id}/password-reset.
 //
 // @Summary      Email an account a password reset link (platform admin)
 // @Description  The forgot-password link, sent to the account's own mailbox; never returned. Accounts with a password only. ops_admin+, reason required, audited.
 // @Tags         Admin
 // @Accept       json
 // @Produce      json
-// @Param        userId   path  string                          true  "User ID"
+// @Param        user_id  path  string                          true  "User ID"
 // @Param        request  body  AdminPlatformUserActionRequest  true  "Reason"
 // @Success      200  {object}  map[string]string
-// @Router       /admin/platform-users/{userId}/password-reset [post]
+// @Router       /admin/platform-users/{user_id}/password-reset [post]
 func (h *AdminPlatformUserHandler) SendPasswordReset(w http.ResponseWriter, r *http.Request) {
 	h.action(w, r, h.actions.SendPasswordReset, "password_reset_sent")
 }
 
-// ResendVerification handles POST /api/v1/admin/platform-users/{userId}/resend-verification.
+// ResendVerification handles POST /api/v1/admin/platform-users/{user_id}/verification-emails.
 //
 // @Summary      Resend email verification (platform admin)
 // @Description  A fresh verification link to an unverified account's own mailbox; the previous one stops working. ops_admin+, reason required, audited.
 // @Tags         Admin
 // @Accept       json
 // @Produce      json
-// @Param        userId   path  string                          true  "User ID"
+// @Param        user_id  path  string                          true  "User ID"
 // @Param        request  body  AdminPlatformUserActionRequest  true  "Reason"
 // @Success      200  {object}  map[string]string
-// @Router       /admin/platform-users/{userId}/resend-verification [post]
+// @Router       /admin/platform-users/{user_id}/verification-emails [post]
 func (h *AdminPlatformUserHandler) ResendVerification(w http.ResponseWriter, r *http.Request) {
 	h.action(w, r, h.actions.ResendVerification, "verification_sent")
 }

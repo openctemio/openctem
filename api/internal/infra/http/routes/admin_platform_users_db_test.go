@@ -145,7 +145,7 @@ func TestAdminPlatformUsers_Actions(t *testing.T) {
 	t.Run("read-only administrator is refused and nothing changes", func(t *testing.T) {
 		c := newPlatformUsersHarness(t).newAdmin(admin.AdminRoleReadonly)
 		c.verify()
-		for _, action := range []string{"revoke-sessions", "unlock", "password-reset", "resend-verification"} {
+		for _, action := range []string{"revoke-sessions", "unlock", "password-reset", "verification-emails"} {
 			if code, body := c.do(http.MethodPost, "/api/v1/admin/platform-users/"+uid+"/"+action,
 				json.RawMessage(supportReason), true); code != http.StatusForbidden {
 				t.Fatalf("%s: %d %s, want 403", action, code, body)
@@ -201,7 +201,7 @@ func TestAdminPlatformUsers_Actions(t *testing.T) {
 	})
 
 	t.Run("email actions without SMTP are refused", func(t *testing.T) {
-		code, body := c.do(http.MethodPost, "/api/v1/admin/platform-users/"+uid+"/resend-verification", json.RawMessage(supportReason), true)
+		code, body := c.do(http.MethodPost, "/api/v1/admin/platform-users/"+uid+"/verification-emails", json.RawMessage(supportReason), true)
 		if code != http.StatusConflict || !strings.Contains(body, "EMAIL_UNAVAILABLE") {
 			t.Fatalf("resend verification: %d %s, want 409 EMAIL_UNAVAILABLE", code, body)
 		}

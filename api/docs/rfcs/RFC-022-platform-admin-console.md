@@ -572,7 +572,7 @@ again, without touching what an organization holds:
   verified email, lockout, failed sign-ins, MFA, last sign-in, how many
   organizations it is in, and whether it is a platform administrator or
   erased.
-- `GET /api/v1/admin/platform-users/{userId}` (any admin, **audited** as
+- `GET /api/v1/admin/platform-users/{user_id}` (any admin, **audited** as
   `platform_user.view`): the account, its organizations (name, role,
   membership status), its federated identities (issuer, subject) and its
   active sessions (IP, method, started, last seen).
@@ -582,7 +582,7 @@ again, without touching what an organization holds:
   `revoke-sessions` (every session, every organization), `unlock` (clears
   the failed-sign-in lockout), `password-reset` (the forgot-password link,
   emailed to the account; accounts with a password only), and
-  `resend-verification` (a new link; the old one stops working). Links go to
+  `verification-emails` (a new link; the old one stops working). Links go to
   the account's own mailbox and are never returned; without SMTP the email
   actions answer 409 `EMAIL_UNAVAILABLE`.
 - Refused with 409 for a platform administrator's account (managed in
