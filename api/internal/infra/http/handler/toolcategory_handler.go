@@ -127,12 +127,16 @@ func toToolCategoryResponse(tc *toolcategory.ToolCategory) ToolCategoryResponse 
 // @Router       /tool-categories [get]
 func (h *ToolCategoryHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	result, err := h.service.ListCategories(r.Context(), tool.ListCategoriesInput{
 		TenantID: middleware.GetTenantID(r.Context()),
 		Source:   q.Get("source"),
 		Search:   q.Get("q"),
-		Page:     parseQueryInt(q.Get("page"), 1),
-		PerPage:  parseQueryIntBounded(q.Get("per_page"), 20, 1, MaxPerPage),
+		Page:     paging.Page,
+		PerPage:  paging.PerPage,
 	})
 	if err != nil {
 		h.handleError(w, err, "tool category")

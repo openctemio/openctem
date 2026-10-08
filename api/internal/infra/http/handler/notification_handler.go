@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -104,18 +103,11 @@ func (h *NotificationHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse pagination
-	page := 1
-	perPage := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("per_page"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
-			perPage = parsed
-		}
-	}
+	page, perPage := paging.Page, paging.PerPage
 
 	// Build filter with validation
 	var filter notification.ListFilter
