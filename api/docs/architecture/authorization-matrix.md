@@ -1236,6 +1236,12 @@ a personal address, or be a work domain nobody has verified.
     `members:write`) sets a new end date and re-enables them;
   - a plain reactivation is refused.
 - The host sees the home organization's name only.
+- **Trusted organizations** (`/api/v1/organization/trusts`):
+  - reading needs owner/admin plus `members:read`; every change needs an owner with step-up;
+  - the service checks the caller's side: the host asks and changes settings, the home accepts, either ends;
+  - a third organization gets 404.
+- **Home-realm sign-in:** an active trust lets a home organization's identity provider sign its people in to the host, within the trust's role ceiling (viewer or member). This is never weaker than the host's SSO and 2FA policy.
+- **Ending a trust** suspends the host's external members homed there.
 
 ### Coverage
 

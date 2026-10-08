@@ -80,7 +80,7 @@ func (s *Service) checkScanToolsDispatchable(ctx context.Context, sc *scan.Scan)
 		}
 		steps, err := s.stepRepo.GetByScanWorkflowID(ctx, *sc.ScanWorkflowID)
 		if err != nil {
-			return fmt.Errorf("failed to get pipeline steps: %w", err)
+			return fmt.Errorf("failed to get scan workflow steps: %w", err)
 		}
 		seen := map[string]bool{}
 		for _, step := range steps {

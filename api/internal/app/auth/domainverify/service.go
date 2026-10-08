@@ -64,6 +64,9 @@ type Service struct {
 
 	limiter     VerifyLimiter
 	limiterOnce sync.Once
+
+	// claimListener hears SSO claim transitions (RFC-058 home cascade).
+	claimListener ClaimListener
 }
 
 // NewService creates a Service. When resolver is nil a NetResolver is used.
@@ -195,7 +198,18 @@ func (s *Service) List(ctx context.Context, tenantID shared.ID) ([]*verifieddoma
 
 // Delete removes a tenant's verified-domain row by id.
 func (s *Service) Delete(ctx context.Context, tenantID, id shared.ID) error {
-	return s.repo.Delete(ctx, tenantID, id)
+	vd, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return err
+	}
+	wasHolder := vd.IsVerified() && !vd.ClaimConflict()
+	if err := s.repo.Delete(ctx, tenantID, id); err != nil {
+		return err
+	}
+	if wasHolder && s.claimListener != nil && vd.Purpose() == verifieddomain.PurposeSSO {
+		s.claimListener.HomeDomainLost(ctx, vd.TenantID(), vd.Domain())
+	}
+	return nil
 }
 
 // VerifyByID runs verification for a stored row (admin "verify now"). It loads
@@ -215,10 +229,12 @@ func (s *Service) VerifyByID(ctx context.Context, tenantID, id shared.ID) (*veri
 			return nil, err
 		}
 	}
+	wasHolder := vd.IsVerified() && !vd.ClaimConflict()
 	s.checkAndStamp(ctx, vd, true)
 	if err := s.repo.Update(ctx, vd); err != nil {
 		return nil, err
 	}
+	s.claimChanged(ctx, vd, wasHolder)
 	return vd, nil
 }
 
@@ -304,6 +320,31 @@ func (s *Service) settleClaimConflict(ctx context.Context, vd *verifieddomain.Ve
 // `staleness` ago. A domain whose TXT record vanished is downgraded to failed
 // (fail-closed) so a lapsed/hijacked domain loses JIT authority. Returns the
 // number of rows whose status changed.
+// ClaimListener hears when an organization stops or starts holding an SSO
+// domain (RFC-058: external members homed by that domain are suspended, then
+// restored).
+type ClaimListener interface {
+	HomeDomainLost(ctx context.Context, home shared.ID, domain string)
+	HomeDomainRestored(ctx context.Context, home shared.ID, domain string)
+}
+
+// SetClaimListener wires the claim transitions.
+func (s *Service) SetClaimListener(l ClaimListener) { s.claimListener = l }
+
+// claimChanged tells the listener when vd's SSO claim changed from before.
+func (s *Service) claimChanged(ctx context.Context, vd *verifieddomain.VerifiedDomain, wasHolder bool) {
+	if s.claimListener == nil || vd.Purpose() != verifieddomain.PurposeSSO {
+		return
+	}
+	isHolder := vd.IsVerified() && !vd.ClaimConflict()
+	switch {
+	case wasHolder && !isHolder:
+		s.claimListener.HomeDomainLost(ctx, vd.TenantID(), vd.Domain())
+	case !wasHolder && isHolder:
+		s.claimListener.HomeDomainRestored(ctx, vd.TenantID(), vd.Domain())
+	}
+}
+
 func (s *Service) ReverifyDue(ctx context.Context, staleness time.Duration, batch int) (int, error) {
 	if batch <= 0 {
 		batch = 100
@@ -316,12 +357,14 @@ func (s *Service) ReverifyDue(ctx context.Context, staleness time.Duration, batc
 	changed := 0
 	for _, vd := range due {
 		before := vd.Status()
+		wasHolder := vd.IsVerified() && !vd.ClaimConflict()
 		s.checkAndStamp(ctx, vd, true)
 		s.settleClaimConflict(ctx, vd)
 		if uerr := s.repo.Update(ctx, vd); uerr != nil {
 			s.logger.Warn("re-verify update failed", "domain", vd.Domain(), "error", uerr)
 			continue
 		}
+		s.claimChanged(ctx, vd, wasHolder)
 		if vd.Status() != before {
 			changed++
 			s.logger.Info("verified domain status changed on re-verify",

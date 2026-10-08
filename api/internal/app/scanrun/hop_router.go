@@ -613,7 +613,7 @@ func (s *Service) OnCommandIngested(ctx context.Context, tenantID, commandID sha
 	if err != nil || run == nil || run.TenantID != tenantID || run.IsComplete() {
 		return
 	}
-	template, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+	template, err := s.runWorkflow(ctx, run)
 	if err != nil {
 		s.logger.Warn("chained stages: load the run template", "run_id", runID.String(), "error", err)
 		return
