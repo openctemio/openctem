@@ -189,6 +189,19 @@ func (s *Service) PublishDraft(ctx context.Context, tenantID, templateID string)
 	if err := s.templateRepo.Update(ctx, t); err != nil {
 		return nil, err
 	}
+	// The published steps become an immutable version now: the version
+	// store is what runs read, so a failure here fails the publish (the
+	// draft is kept). The next run reuses it, as its digest matches.
+	if s.versions != nil {
+		// Ownership was checked above (ownWorkflow).
+		published, err := s.templateRepo.GetWithSteps(ctx, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		if _, _, err := s.versions.PinVersion(ctx, tid, t.ID, scanworkflow.SpecOf(published)); err != nil {
+			return nil, fmt.Errorf("pin the published scan workflow version: %w", err)
+		}
+	}
 	if err := s.draftRepo.ClearDraft(ctx, tid, t.ID); err != nil {
 		return nil, err
 	}

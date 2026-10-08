@@ -40,6 +40,7 @@ func newDraftHarness(t *testing.T, name string) *scanWorkflowSaveHarness {
 		draftValidator{},
 		logger.New(logger.Config{Level: "error"}),
 		scanrun.WithDraftStore(postgres.NewScanWorkflowRepository(pg)),
+		scanrun.WithVersionStore(postgres.NewScanWorkflowRepository(pg)),
 	)
 	p.h = handler.NewScanWorkflowHandler(svc, validator.New(), logger.NewNop())
 	return p
@@ -142,6 +143,11 @@ func TestScanWorkflowDraft_SaveAlwaysPublishWhenClean(t *testing.T) {
 	// and the draft is gone.
 	if n := p.count(`SELECT count(*) FROM scan_workflow_steps WHERE scan_workflow_id=$1 AND id=$2 AND ui_position_x=-307`, id, steps["discover"].ID); n != 1 {
 		t.Fatal("published step lost its id or position")
+	}
+	// The published steps are an immutable version runs can pin, in the
+	// tenant, and without the removed step.
+	if n := p.count(`SELECT count(*) FROM scan_workflow_versions WHERE scan_workflow_id=$1 AND tenant_id=$2 AND strpos(spec::text, $3) = 0`, id, p.tenant.String(), "gowitness"); n != 1 {
+		t.Fatalf("published versions: %d, want 1", n)
 	}
 	if rec = p.do(p.tenant, http.MethodGet, id, nil, withID(p.h.GetDraft)); rec.Code != http.StatusNotFound {
 		t.Fatalf("draft after publish: %d, want 404", rec.Code)
