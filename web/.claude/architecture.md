@@ -52,6 +52,7 @@ web/
 ## Folder Responsibilities
 
 ### `/app` - Routing Only
+
 **Purpose**: Handle routing, layouts, loading states
 **Contains**: `page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`, API routes
 **Does NOT contain**: Business logic, complex components, data transformations
@@ -72,6 +73,7 @@ export default function UsersPage() {
 ```
 
 ### `/features` - Business Logic
+
 **Purpose**: Contain ALL code related to a specific feature
 **Contains**: Components, actions, hooks, schemas, types, utilities for ONE feature
 **Rule**: If it's used only by this feature, it goes here
@@ -88,21 +90,23 @@ features/users/
 ```
 
 ### `/components` - Shared Only
+
 **Purpose**: Components used across MULTIPLE features
 **Contains**: UI primitives, layouts, form helpers, providers
 **Does NOT contain**: Feature-specific components
 
 ```tsx
 // ✅ Good - Generic, reusable
-components/ui/button.tsx
-components/layout/app-header.tsx
+components / ui / button.tsx
+components / layout / app - header.tsx
 
 // ❌ Bad - Feature-specific
-components/user-profile.tsx  // → features/users/components/
-components/product-card.tsx  // → features/products/components/
+components / user - profile.tsx // → features/users/components/
+components / product - card.tsx // → features/products/components/
 ```
 
 ### `/lib` - Infrastructure
+
 **Purpose**: Shared infrastructure
 **Contains**: The API client and hooks (`lib/api/`), permissions, proxy helpers, i18n, shared helpers. The console has no database: all data comes from the API.
 **Does NOT contain**: Business logic, feature-specific code
@@ -110,6 +114,7 @@ components/product-card.tsx  // → features/products/components/
 ## Decision Tree: Where Does Code Go?
 
 ### For Components:
+
 ```
 Is it used in ONLY ONE feature?
 ├── YES → features/[feature]/components/
@@ -121,6 +126,7 @@ Is it used in ONLY ONE feature?
 ```
 
 ### For Functions/Utilities:
+
 ```
 Is it used in ONLY ONE feature?
 ├── YES → features/[feature]/lib/
@@ -130,6 +136,7 @@ Is it used in ONLY ONE feature?
 ```
 
 ### For Types:
+
 ```
 Is it used in ONLY ONE feature?
 ├── YES → features/[feature]/types/
@@ -139,6 +146,7 @@ Is it used in ONLY ONE feature?
 ```
 
 ### For Hooks:
+
 ```
 Is it used in ONLY ONE feature?
 ├── YES → features/[feature]/hooks/
@@ -148,12 +156,15 @@ Is it used in ONLY ONE feature?
 ## Creating a New Feature
 
 ### Step 1: Decide if it's a feature
+
 **Ask:**
+
 - Does it have 2+ related components?
 - Does it represent a business domain?
 - Could it be deployed independently?
 
 **Examples:**
+
 - ✅ `features/auth/` - Authentication domain
 - ✅ `features/users/` - User management
 - ✅ `features/products/` - Product catalog
@@ -161,21 +172,24 @@ Is it used in ONLY ONE feature?
 - ❌ `features/utils/` - Just utilities
 
 ### Step 2: Create feature structure
+
 ```bash
 mkdir -p features/[feature-name]/{components,actions,hooks,schemas,types,lib}
 touch features/[feature-name]/index.ts
 ```
 
 ### Step 3: Create barrel export
+
 ```tsx
 // features/[feature-name]/index.ts
-export { Component1, Component2 } from "./components/[name]"
-export { action1, action2 } from "./actions/[name]-actions"
-export { schema } from "./schemas/[name].schema"
-export type { Type1, Type2 } from "./types/[name].types"
+export { Component1, Component2 } from './components/[name]'
+export { action1, action2 } from './actions/[name]-actions'
+export { schema } from './schemas/[name].schema'
+export type { Type1, Type2 } from './types/[name].types'
 ```
 
 ### Step 4: Start building
+
 1. Define types in `types/`
 2. Create schemas in `schemas/`
 3. Build components in `components/`
@@ -189,12 +203,12 @@ export type { Type1, Type2 } from "./types/[name].types"
 ```tsx
 // ❌ Bad - Direct feature dependency
 // features/orders/components/order-card.tsx
-import { UserAvatar } from "@/features/users/components/user-avatar"
+import { UserAvatar } from '@/features/users/components/user-avatar'
 
 // ✅ Better - Move to shared
 // components/ui/avatar.tsx (generic)
 // features/orders/components/order-card.tsx
-import { Avatar } from "@/components/ui/avatar"
+import { Avatar } from '@/components/ui/avatar'
 
 // ✅ Or: Accept as prop
 // features/orders/components/order-card.tsx
@@ -205,6 +219,7 @@ interface OrderCardProps {
 ```
 
 ### Allowed Dependencies:
+
 ```
 features/[any]/
 ├── ✅ Can import from: components/
@@ -218,6 +233,7 @@ features/[any]/
 ## Styling Organization
 
 ### CSS Variables
+
 ```css
 /* app/globals.css */
 :root {
@@ -234,6 +250,7 @@ features/[any]/
 ```
 
 ### Component Styles
+
 ```tsx
 // ✅ Good - Tailwind utilities
 <div className="flex items-center gap-4 p-6 rounded-lg">
@@ -295,5 +312,6 @@ Pages under `src/app/` import from the feature's barrel
 ---
 
 **See also:**
+
 - [patterns.md](patterns.md) - Common code patterns
 - [troubleshooting.md](troubleshooting.md) - Common issues

@@ -131,6 +131,14 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Activity,
         keywords: ['history', 'sign-ins'],
       },
+      {
+        id: 'connected-apps',
+        title: 'Connected applications',
+        description: 'AI applications you allowed to read your data.',
+        url: '/account/connected-apps',
+        icon: Bot,
+        keywords: ['mcp', 'oauth', 'ai', 'assistant', 'claude', 'disconnect'],
+      },
     ],
   },
   {

@@ -15,8 +15,8 @@ BEFORE:
 AFTER:
   API ──→ ctis module (4K lines, zero deps, monthly updates)
   
-  SDK-Go: unchanged (Agent still imports SDK-Go)
-  Agent:  unchanged
+  SDK-Go: unchanged (the sensor imports SDK-Go)
+  Sensor: unchanged
 ```
 
 ## Why
@@ -26,7 +26,7 @@ AFTER:
 | SDK-Go adds scanner wrapper → API must rebuild | Unnecessary CI/CD cycles |
 | SDK-Go bumps transitive dep → API go.sum changes | Noisy diffs, false alerts |
 | 90% of SDK-Go code unused by API | Bloated dependency tree |
-| Agent bug fix → API forced to retest | Wrong dependency direction |
+| Sensor bug fix → API forced to retest | Wrong dependency direction |
 
 ## CTIS Module (`github.com/openctemio/ctis`)
 
@@ -64,19 +64,17 @@ BEFORE: "github.com/openctemio/sdk-go/pkg/shared/fingerprint"
 AFTER:  "github.com/openctemio/ctis/fingerprint"
 ```
 
-### Adapters copied into API
+### Scanner output
 
-Scanner output adapters (SARIF, Trivy, Nuclei, Semgrep, Betterleaks, Vuls) moved from SDK-Go into `internal/infra/adapters/`. Only API uses these — Agent does not.
-
-### ChunkData inlined
-
-`chunk.ChunkData` struct (8 fields) inlined into `ingest_handler.go`. Only used for JSON deserialization of chunked uploads.
+Scanner output is converted to CTIS on the sensor (sdk-go parsers). The API
+receives CTIS reports over the sensor protocol v2 and file imports through
+`internal/app/findingimport`; it carries no copy of the sdk-go scanner adapters.
 
 ### SDK-Go removed from go.mod
 
 ```
-// go.mod — SDK-Go is GONE
-require github.com/openctemio/ctis v1.0.0
+// api/go.mod: no sdk-go
+require github.com/openctemio/ctis vX.Y.Z
 // NO github.com/openctemio/sdk-go
 ```
 
@@ -86,7 +84,7 @@ require github.com/openctemio/ctis v1.0.0
 |---|---|---|
 | Patch (v1.0.x) | Bug fix, no struct changes | `go get ctis@latest` |
 | Minor (v1.x.0) | New fields/types added | `go get ctis@latest` (backward compatible) |
-| Major (vX.0.0) | Breaking: fields renamed/removed | Coordinate with Agent upgrade |
+| Major (vX.0.0) | Breaking: fields renamed/removed | Coordinate with a sensor and sdk-go release |
 
 **Key rule**: Fingerprint algorithm NEVER changes in minor/patch (would break dedup).
 
@@ -94,16 +92,14 @@ require github.com/openctemio/ctis v1.0.0
 
 API's ctis types and SDK-Go's ctis types are **copies from the same source**. CI verifies parity:
 - ctis module is the single source of truth
-- SDK-Go still has its own copy in `pkg/ctis/` (for Agent backward compat)
+- sdk-go and the sensor import the same module
 - Both must serialize/deserialize identically (same JSON tags)
 
 ## Key Files
 
 | File | Purpose |
 |---|---|
-| `go.mod` | `require github.com/openctemio/ctis v1.0.0` |
-| `internal/infra/adapters/` | Copied scanner adapters (SARIF, Trivy, etc.) |
-| `internal/infra/http/handler/ingest_handler.go` | ChunkData inlined |
+| `api/go.mod` | `require github.com/openctemio/ctis` |
 | `internal/app/ingest/` | All processors use `ctis` types |
 
 ## Related

@@ -5,7 +5,7 @@
 
 ## The question
 
-"Which findings came from Tenable, and which did our own agent produce?"
+"Which findings came from Tenable, and which did our own sensor produce?"
 
 It cannot be answered today, and the obvious fix is wrong. This records why, so
 the next person does not spend the research again.
@@ -30,13 +30,13 @@ The fingerprint is `sha256(assetID + ":" + base)`
 upsert keys on `ON CONFLICT (tenant_id, fingerprint)`
 (`internal/infra/postgres/finding_repository.go:622`).
 
-So the same CVE on the same host, reported by our agent and by a Tenable import,
-is **one row**. And the `DO UPDATE` set overwrites `agent_id` (`:636`),
-`scan_id` (`:635`) and `tool_version` (`:627`) — but **not** `source` and
+So the same CVE on the same host, reported by our sensor and by a Tenable import,
+is **one row**. And the `DO UPDATE` set overwrites `sensor_id`,
+`scan_id` and `tool_version` — but **not** `source` and
 **not** `tool_name`.
 
 A merged finding therefore already reports the *first* writer's technique
-alongside the *last* writer's agent. Two halves of one row describing two
+alongside the *last* writer's sensor. Two halves of one row describing two
 different scans. A provenance column added beside them inherits exactly that
 corruption, and would report one source for a finding that genuinely has two.
 
@@ -90,7 +90,7 @@ without a JOIN, and needs **no change to any request contract**:
 - DefectDojo already encodes the integration id —
   `internal/app/defectdojo/sync.go:106` sets
   `SourceRef: "defectdojo:" + intg.ID().String()`
-- agents already carry a real id from API-key auth
+- sensors already carry a real id from API-key auth
   (`ingest_handler.go:259-288`, stamped at `processor_findings.go:706`)
 - the Nessus upload handler knows what it is at the moment it builds findings
 

@@ -16,6 +16,41 @@ type DispatchGate struct {
 	// the user the job acts for ("" with ActScope is the system).
 	ActScope bool   `json:"act_scope,omitempty"`
 	Actor    string `json:"actor,omitempty"`
+	// Validated: the targets passed the scan target validator at dispatch
+	// (validate, retest and connector commands), so the claim applies it
+	// again. Off, only its private-range rule applies (scan targets include
+	// repositories by asset name, which the validator refuses).
+	Validated bool `json:"validated,omitempty"`
+	// NoZoneRouting: the dispatch did not route the targets over the scan
+	// zones (a connector scan runs outside every zone, on its pinned
+	// sensor), so the claim does not either.
+	NoZoneRouting bool `json:"no_zone_routing,omitempty"`
+}
+
+// ProbeDispatchGate is the record of a validate or retest command: the
+// probe's target passed the full gate at the safe active tier (t1), with no
+// act scope (validation.CheckTarget).
+var ProbeDispatchGate = DispatchGate{Tier: 1, Validated: true}
+
+// ConnectorDispatchGate is the record of a connector_scan command: the full
+// gate at t1, outside every scan zone (it runs on its pinned connector
+// sensor). A scan run adds the act scope of its actor.
+var ConnectorDispatchGate = DispatchGate{Tier: 1, Validated: true, NoZoneRouting: true}
+
+// StrictDispatchGateFor is the gate a probing command queued without a
+// record (before records existed) is re-checked with: its type's record
+// without an act scope, the full gate at t1. ok is false for a command type
+// that is not re-checked without a record.
+func StrictDispatchGateFor(t CommandType) (DispatchGate, bool) {
+	switch t {
+	case CommandTypeScan:
+		return BaselineDispatchGate, true
+	case CommandTypeValidate, CommandTypeRetest:
+		return ProbeDispatchGate, true
+	case CommandTypeConnectorScan:
+		return ConnectorDispatchGate, true
+	}
+	return DispatchGate{}, false
 }
 
 // BaselineDispatchGate is the gate a scan command created without a record

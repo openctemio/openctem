@@ -9,6 +9,7 @@
 #### NEVER Use Emoji In:
 
 1. **JSX/TSX Components**
+
 ```tsx
 // ❌ WRONG
 <Button>Save 💾</Button>
@@ -22,6 +23,7 @@
 ```
 
 2. **Variable/Function Names**
+
 ```tsx
 // ❌ WRONG
 const 📁fileName = "test.txt"
@@ -33,32 +35,35 @@ function searchUsers() {}
 ```
 
 3. **UI Text Content**
+
 ```tsx
 // ❌ WRONG
-const message = "Success! ✅"
-const title = "Dashboard 📊"
+const message = 'Success! ✅'
+const title = 'Dashboard 📊'
 
 // ✅ CORRECT
-const message = "Success!"
-const title = "Dashboard"
+const message = 'Success!'
+const title = 'Dashboard'
 ```
 
 4. **Object Keys**
+
 ```tsx
 // ❌ WRONG
 const config = {
-  "🏠 home": "/",
-  "👤 profile": "/profile"
+  '🏠 home': '/',
+  '👤 profile': '/profile',
 }
 
 // ✅ CORRECT
 const config = {
-  home: "/",
-  profile: "/profile"
+  home: '/',
+  profile: '/profile',
 }
 ```
 
 5. **Class Names**
+
 ```tsx
 // ❌ WRONG
 <div className="✨special-effect">
@@ -68,17 +73,19 @@ const config = {
 ```
 
 6. **Toast/Alert Messages**
+
 ```tsx
 // ❌ WRONG
-toast.success("User created! 🎉")
-toast.error("Failed! ❌")
+toast.success('User created! 🎉')
+toast.error('Failed! ❌')
 
 // ✅ CORRECT
-toast.success("User created successfully")
-toast.error("Failed to create user")
+toast.success('User created successfully')
+toast.error('Failed to create user')
 ```
 
 7. **Form Labels/Placeholders**
+
 ```tsx
 // ❌ WRONG
 <Label>Email 📧</Label>
@@ -95,25 +102,26 @@ toast.error("Failed to create user")
 
 ```tsx
 // ✅ lucide-react (recommended)
-import { Save, Home, User, AlertCircle } from "lucide-react"
+import { Save, Home, User, AlertCircle } from 'lucide-react'
 
-<Button>
+;<Button>
   <Save className="mr-2 h-4 w-4" />
   Save
 </Button>
 
 // ✅ heroicons
-import { HomeIcon } from "@heroicons/react/24/outline"
+import { HomeIcon } from '@heroicons/react/24/outline'
 
-<HomeIcon className="h-6 w-6" />
+;<HomeIcon className="h-6 w-6" />
 
 // ✅ react-icons
-import { FaSave } from "react-icons/fa"
+import { FaSave } from 'react-icons/fa'
 
-<FaSave className="mr-2" />
+;<FaSave className="mr-2" />
 ```
 
 **Use Unicode Symbols (Sparingly):**
+
 ```tsx
 // ✅ OK for mathematical/technical symbols
 const arrowRight = "→"
@@ -127,13 +135,17 @@ const multiplication = "×"
 #### When Emoji IS Allowed
 
 **1. Markdown Documentation:**
+
 ```markdown
 # 📚 Documentation
+
 ## 🚀 Quick Start
+
 ✅ This is allowed in .md files
 ```
 
 **2. Commit Messages:**
+
 ```bash
 git commit -m "✨ feat: add user profile"
 git commit -m "🐛 fix: resolve login issue"
@@ -141,6 +153,7 @@ git commit -m "🐛 fix: resolve login issue"
 ```
 
 **3. Code Comments (Sparingly):**
+
 ```tsx
 // ✅ Occasional use in comments is OK
 // TODO: 🚨 Fix this before production
@@ -152,10 +165,11 @@ git commit -m "🐛 fix: resolve login issue"
 ```
 
 **4. Development/Debug Only:**
+
 ```tsx
 // ✅ OK in dev-only code (removed in production)
 if (process.env.NODE_ENV === 'development') {
-  console.log("🔍 Debug:", data)
+  console.log('🔍 Debug:', data)
 }
 ```
 
@@ -166,6 +180,7 @@ if (process.env.NODE_ENV === 'development') {
 ### Text Content
 
 **Use Translation Keys:**
+
 ```tsx
 // ❌ WRONG - Hardcoded text
 <Button>Save Changes</Button>
@@ -175,6 +190,7 @@ if (process.env.NODE_ENV === 'development') {
 ```
 
 **Be Descriptive:**
+
 ```tsx
 // ❌ WRONG - Too short
 <Button>OK</Button>
@@ -186,25 +202,26 @@ if (process.env.NODE_ENV === 'development') {
 ### Component Structure
 
 **Order Elements Logically:**
+
 ```tsx
 // ✅ CORRECT order
 export function Component() {
   // 1. Hooks
   const [state, setState] = useState()
   const { data } = useQuery()
-  
+
   // 2. Derived state
   const isLoading = !data
-  
+
   // 3. Event handlers
   const handleClick = () => {}
-  
+
   // 4. Effects
   useEffect(() => {}, [])
-  
+
   // 5. Early returns
   if (isLoading) return <Skeleton />
-  
+
   // 6. Main render
   return <div>...</div>
 }
@@ -213,9 +230,12 @@ export function Component() {
 ### Conditional Rendering
 
 **Use Proper Patterns:**
+
 ```tsx
 // ❌ AVOID - Inline ternary hell
-{isLoading ? <Spinner /> : data ? <Content /> : error ? <Error /> : <Empty />}
+{
+  isLoading ? <Spinner /> : data ? <Content /> : error ? <Error /> : <Empty />
+}
 
 // ✅ PREFER - Early returns or variables
 if (isLoading) return <Spinner />
@@ -227,6 +247,7 @@ return <Content />
 ### Class Names
 
 **Use cn() Utility:**
+
 ```tsx
 import { cn } from "@/lib/utils"
 
@@ -240,6 +261,7 @@ import { cn } from "@/lib/utils"
 ```
 
 **Organize by Type:**
+
 ```tsx
 // ✅ CORRECT order
 <div className={cn(
@@ -351,27 +373,31 @@ Add to `.eslintrc.json`:
 ## Icon Libraries We Use
 
 **Primary: lucide-react**
+
 - Clean, consistent design
 - Tree-shakeable
 - TypeScript support
 - [Docs](https://lucide.dev)
 
 **Installation:**
+
 ```bash
 npm install lucide-react
 ```
 
 **Usage:**
-```tsx
-import { Save, User, Home, Settings } from "lucide-react"
 
-<Button>
+```tsx
+import { Save, User, Home, Settings } from 'lucide-react'
+
+;<Button>
   <Save className="mr-2 h-4 w-4" />
   Save Changes
 </Button>
 ```
 
 **Available Icons:**
+
 - 1000+ icons
 - Consistent 24x24 grid
 - Customizable size, color, stroke
@@ -383,6 +409,7 @@ import { Save, User, Home, Settings } from "lucide-react"
 ### Good vs Bad
 
 **Bad - Emoji everywhere:**
+
 ```tsx
 export function UserProfile() {
   return (
@@ -397,8 +424,9 @@ export function UserProfile() {
 ```
 
 **Good - Clean with icons:**
+
 ```tsx
-import { User, Edit, Trash, CheckCircle } from "lucide-react"
+import { User, Edit, Trash, CheckCircle } from 'lucide-react'
 
 export function UserProfile() {
   return (

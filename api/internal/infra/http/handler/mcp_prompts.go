@@ -167,7 +167,10 @@ func (h *MCPHandler) handlePromptsGet(w http.ResponseWriter, r *http.Request, re
 	// Enforce the key's scope — same gate as tools. API keys are never admin.
 	if prompt.RequiredPerm != "" && !middleware.HasPermission(ctx, prompt.RequiredPerm) {
 		h.auditPromptGet(r, tenantID, prompt.Name, rawArgs, auditdom.ResultDenied, true)
-		h.writeError(w, req.ID, rpcInvalidParams, "permission denied: this API key lacks the scope required for this prompt ("+prompt.RequiredPerm+")")
+		if h.writeScopeChallenge(w, r, req.ID, prompt.RequiredPerm) {
+			return
+		}
+		h.writeError(w, req.ID, rpcInvalidParams, "permission denied: this credential lacks the permission this prompt needs ("+prompt.RequiredPerm+")")
 		return
 	}
 

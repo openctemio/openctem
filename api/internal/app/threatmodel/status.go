@@ -16,9 +16,7 @@ const (
 	fsInProgress    = "in_progress"
 	fsFixApplied    = "fix_applied"
 	fsResolved      = "resolved"
-	fsVerified      = "verified"
 	fsAccepted      = "accepted"
-	fsAcceptedRisk  = "accepted_risk"
 	fsFalsePositive = "false_positive"
 )
 
@@ -70,9 +68,9 @@ func findingStatusToThreat(s string) (tmdom.ThreatStatus, bool) {
 	switch s {
 	case fsNew, fsConfirmed, fsInProgress:
 		return tmdom.StatusOpen, true
-	case fsAccepted, fsAcceptedRisk:
+	case fsAccepted:
 		return tmdom.StatusAccepted, true
-	case fsFixApplied, fsResolved, fsVerified:
+	case fsFixApplied, fsResolved:
 		return tmdom.StatusMitigated, true
 	default:
 		// false_positive, duplicate, draft, in_review, etc. are not evidence.

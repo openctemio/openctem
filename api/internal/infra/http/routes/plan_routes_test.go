@@ -28,7 +28,7 @@ func TestPlanAdminRoutesRegister(t *testing.T) {
 		AdminSignup:         handler.NewAdminSignupHandler(nil, nil, logger.NewNop()),
 		AdminOrganization:   &handler.AdminOrganizationHandler{},
 		Plan:                handler.NewPlanHandler(entitlement.NewService(nil, nil, nil, nil, nil), nil, logger.NewNop()),
-	}, nil, nil)
+	}, nil)
 }
 
 // GET /organization/plan (Settings > Plan & usage) is for the organization's

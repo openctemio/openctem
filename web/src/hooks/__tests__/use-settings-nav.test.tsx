@@ -53,6 +53,7 @@ describe('useSettingsNav', () => {
       'preferences',
       'my-notifications',
       'activity',
+      'connected-apps',
     ])
   })
 

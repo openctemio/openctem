@@ -152,6 +152,11 @@ func TestCommandCreate_ScanByAdminInScopeAccepted(t *testing.T) {
 	if p.Target != nil || strings.Join(p.Targets, ",") != "app.example.com,api.example.com" {
 		t.Fatalf("payload targets not the checked list: %s", f.repo.created[0].Payload)
 	}
+	// The claim re-checks the targets with what was checked here: the
+	// scanner's tier ceiling and the caller's act scope.
+	if g := f.repo.created[0].DispatchGate; g == nil || *g != (commanddom.DispatchGate{Tier: 1, ActScope: true, Actor: f.userID}) {
+		t.Fatalf("dispatch gate %+v", g)
+	}
 	f.requireResult(t, auditdom.ResultSuccess)
 	for _, l := range f.audit.logs {
 		if l.Result() == auditdom.ResultSuccess {
