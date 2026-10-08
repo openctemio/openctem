@@ -49,6 +49,9 @@ type Handlers struct {
 	// MCPAuth is the tenant-scoped `oct_` API-key auth middleware guarding the
 	// MCP endpoint. Set alongside MCP; nil disables the endpoint.
 	MCPAuth Middleware
+	// MCPDiscovery is the OAuth discovery of the MCP endpoint (Protected
+	// Resource Metadata, 401 challenge, Origin guard). nil without a public URL.
+	MCPDiscovery *MCPDiscovery
 	// APIKeyAuth authenticates `oct_` API keys on the tenant REST routes (the
 	// token-tenant chains), read-only. Share the instance behind MCPAuth so a
 	// key has one rate-limit budget. nil leaves the REST API JWT-only.
@@ -653,7 +656,7 @@ func Register(
 	// Per-IP rate limit runs before auth to throttle junk-token floods; the
 	// organization IP allowlist runs after it (mcpMiddlewares).
 	if h.MCP != nil && h.MCPAuth != nil {
-		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth)
+		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth, h.MCPDiscovery)
 	}
 
 	// Remediation Campaign routes

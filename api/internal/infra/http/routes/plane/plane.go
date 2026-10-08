@@ -28,7 +28,8 @@ const (
 	Inbound Plane = "inbound"
 	// SCIM is SCIM 2.0 provisioning (RFC 7644).
 	SCIM Plane = "scim"
-	// MCP is the read-only MCP server (RFC-016).
+	// MCP is the read-only MCP server (RFC-016) and its OAuth resource
+	// metadata (RFC-062).
 	MCP Plane = "mcp"
 	// Ops is liveness, readiness, metrics and the API docs.
 	Ops Plane = "ops"
@@ -69,6 +70,8 @@ var Rules = []Rule{
 
 	{Plane: SCIM, Prefix: "/scim/v2"},
 	{Plane: MCP, Prefix: "/api/v1/mcp"},
+	// RFC 9728 Protected Resource Metadata of the MCP endpoint (RFC-062).
+	{Plane: MCP, Prefix: "/.well-known/oauth-protected-resource"},
 
 	{Plane: Auth, Prefix: "/api/v1/auth"},
 	{Plane: Auth, Prefix: "/api/v1/invitations"},
