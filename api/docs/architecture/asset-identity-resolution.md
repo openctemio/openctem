@@ -6,12 +6,12 @@
 
 Multi-layer deduplication system that ensures the same real-world entity maps to a single asset regardless of how different sources name it.
 
-**Problem solved**: Splunk sends `192.168.1.10`, Qualys sends `web-server-01`, Nessus sends `web-server-01.corp` — all for the same host. Without identity resolution, these create 3 separate assets with fragmented findings and incorrect risk scores.
+**Problem solved**: one source sends `192.0.2.10`, another sends `web-server-01`, a third sends `web-server-01.corp` — all for the same host. Without identity resolution, these create 3 separate assets with fragmented findings and incorrect risk scores.
 
 ## Architecture
 
 ```
-Incoming asset (protocol v1 or v2, AssetProcessor.processBatch)
+Incoming asset (sensor protocol v2 or an import, AssetProcessor.processBatch)
     │
     ▼
 Normalize name (Layer 1)
@@ -77,7 +77,7 @@ every single-valued strong kind counts.
 | `shared_ip` | ingest | an IP matched several assets (none of them is used) |
 | `identifier_conflict` | ingest | strong identifiers point at different assets, or the incoming name belongs to another asset, or a strong identifier is held by another asset |
 | `shared_identifier` | backfill | two assets carry one strong identifier |
-| `renamed_host` | backfill | one Nessus/Tenable/Vuls source reported one IP under two host names |
+| `renamed_host` | backfill | one scanner source reported one IP under two host names |
 
 `evidence` holds what the assets share. A pair an operator rejected is not
 raised again.
@@ -105,10 +105,10 @@ Applied in `NewAsset()` constructor — single chokepoint, every entry point cov
 | host | DNS normalize or IP canonical | `Web-Server.CORP.` → `web-server.corp` |
 | repository | lowercase, strip protocol/SSH/.git, preserve host | `git@GitHub.com:Org/Repo.git` → `github.com/org/repo` |
 | application, website, api | URL normalize (lowercase host, strip default port, strip query) | `HTTPS://API.Example.COM:443/v1?k=v` → `https://api.example.com/v1` |
-| service/open_port | `host:port:protocol` canonical | `192.168.1.10:443/tcp` → `192.168.1.10:443:tcp` |
+| service/open_port | `host:port:protocol` canonical | `192.0.2.10:443/tcp` → `192.0.2.10:443:tcp` |
 | certificate | lowercase, normalize fingerprint | `AB:CD:EF:...` → `abcdef...` |
 | database | strip protocol/credentials/query | `postgres://user:pass@db:5432/mydb?ssl=true` → `db:5432/mydb` |
-| network, subnet | canonical CIDR (zero host bits) | `192.168.1.100/24` → `192.168.1.0/24` |
+| network, subnet | canonical CIDR (zero host bits) | `192.0.2.100/24` → `192.0.2.0/24` |
 | storage/s3_bucket | extract bucket name from URL | `my-bucket.s3.us-east-1.amazonaws.com` → `my-bucket` |
 | identity (IAM) | trim only (ARN is case-sensitive) | preserve case |
 
@@ -201,7 +201,7 @@ GET  /api/v1/assets/dedup/merge-log             — audit trail
 
 A merge moves every row that references the merged assets to the kept asset, then deletes the merged assets. The full list is in `internal/infra/postgres/asset_merge_plan.go`:
 
-- Plain moves: findings, exposures, suppression rules, SLA policies, scan sessions, pipeline runs, exposure events, runtime telemetry, attack-path nodes, threat-model threats.
+- Plain moves: findings, exposures, suppression rules, SLA policies, scan sessions, scan runs, exposure events, runtime telemetry, attack-path nodes, threat-model threats.
 - Moves that drop a merged row when the kept asset already has the same unique key: services, components, owners, business units and services, asset groups, compensating controls, sources, scan coverage, asset identifiers, and the derived `user_accessible_assets`.
 - Relationships and relationship suggestions. Edges that would become loops are dropped.
 - Child assets are re-parented to the kept asset, and pentest campaign asset lists are rewritten.
@@ -241,5 +241,5 @@ Key edge cases:
 - **IP reuse (DHCP)**: the 7-day IP trust window prevents merging old assets with new hosts
 - **NAT/shared IP**: Correlate on private IPs only, skip public behind NAT
 - **Race condition**: Accept eventual consistency, next ingest cycle catches duplicates
-- **IPv4-mapped IPv6**: `::ffff:192.168.1.1` normalized to `192.168.1.1`
+- **IPv4-mapped IPv6**: `::ffff:192.0.2.1` normalized to `192.0.2.1`
 - **Repo platform preserved**: `github.com/org/repo` ≠ `gitlab.com/org/repo`

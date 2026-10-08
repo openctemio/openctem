@@ -1,7 +1,6 @@
 # Finding status `not_observed`
 
-Research: `research/18-finding-to-vuln-lifecycle-and-fix-detection.md` (§6.2).
-Owner decision O2 (2026-10-04).
+Decision O2.
 
 ## Meaning
 
@@ -16,7 +15,7 @@ stale, **not fixed**.
 | SLA | Keeps running: it is an open status. |
 | Who sets it | Only the platform. No status transition leads to it, so `PATCH /findings/{id}/status`, bulk status and every other person-facing path refuse it. |
 | Writers today | Feature-branch expiry (`ExpireFeatureBranchFindings`): a finding not seen on a non-default branch for the branch's retention period. `resolution = 'branch_expired'` records why. Branch-only expiry (same job): a branch-only finding no branch still shows (`branch-only-findings.md`). Coverage auto-resolve in enforce mode, for template drift: a covered nuclei run that did not report the finding but ran another template release (`templates_digest`) than the finding's last sighting (`MarkCoverageNotObserved`, research/18 O6). |
-| Writers later | The closure evaluator (research 18 P2): a finding not reported by a run that could not prove coverage. |
+| Writers later | The closure evaluator (**Planned**): a finding not reported by a run that could not prove coverage. |
 
 ## Leaving `not_observed`
 

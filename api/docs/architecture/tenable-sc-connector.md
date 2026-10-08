@@ -5,12 +5,12 @@ describes what is built and where it lives.
 
 ## Switch
 
-Everything here is behind `integration.TenableConnectorEnabled` (owner
-decision D-14; `TENABLE_CONNECTOR_ENABLED` in the web). While it is false,
+Everything here is behind `integration.TenableConnectorEnabled` (decision
+D-14; `TENABLE_CONNECTOR_ENABLED` in the web). While it is false,
 Tenable integrations cannot be created (the connector validator is not
 wired), the sync and coverage controllers are not registered, and the page
-stays hidden. Flip it when a sensor release with the connector
-(openctemio/sensor#129, #131) is out.
+stays hidden. It is turned on once a sensor release with the connector is out
+(**Planned**).
 
 ## Shape
 
@@ -90,7 +90,7 @@ A scan whose `scanner_name` is `tenable_sc` is an ordinary OpenCTEM scan
   auto-resolve treats a completed full `connector_scan` like a scan command
   (same tool, covered assets only); a `connector_sync` never resolves by
   absence.
-- **Sensor**: openctemio/sensor#131 creates the scan definition, launches it,
+- **Sensor**: the connector in the sensor creates the scan definition, launches it,
   polls `scanResult`, stops it on cancel or timeout, pulls the individual
   result and deletes the definition it created.
 

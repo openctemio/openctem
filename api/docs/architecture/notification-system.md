@@ -389,7 +389,7 @@ const testNotificationRateLimit = 30 * time.Second
 Dynamic event types stored as JSONB:
 
 ```go
-// internal/domain/integration/notification_extension.go
+// pkg/domain/integration/notification_extension.go
 
 type EventType string
 
@@ -541,7 +541,7 @@ All related code (repository, service methods, API endpoints) has been removed.
 
 `/api/v1/webhooks` stored endpoint URLs and signing secrets, but no worker
 ever delivered to them. Nothing was sent, and nothing wrote
-`webhook_deliveries`. Owner decision B9 removed the feature: the routes,
+`webhook_deliveries`. Decision B9 removed the feature: the routes,
 handler, service, repository and domain package are gone. Migration `001032`
 does three things:
 

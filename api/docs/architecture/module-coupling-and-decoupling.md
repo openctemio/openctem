@@ -90,7 +90,7 @@ them per-tenant (60s TTL), and **403s (`MODULE_NOT_ENABLED`) a disabled module's
 route group**. It is **fail-open**: nil gate, missing tenant, core module, or any
 lookup miss → allowed, so it can never block legitimate traffic. It is now wired
 to **26 route groups** in `routes/routes.go` — including pentest, compliance,
-attack-simulation, threat-intel, remediation, scan-pipelines, workflows,
+attack-simulation, threat-intel, remediation, scan workflows, automations,
 attack-surface, exposures, suppressions, components, relationships, credentials,
 scanner-templates, template-sources, IOCs, control-testing, reports, and the CTEM
 groups (ctem-cycles, attacker-profiles, business-services, compensating-controls,

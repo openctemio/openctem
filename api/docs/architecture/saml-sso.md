@@ -32,7 +32,7 @@ Admin API (platform admin console, RFC-022):
 validates the certificate (parseable PEM X.509) and the role. On an
 organization that has an owner, the PUT does **not** change the live config: it
 stores a pending change (202) that an owner approves or rejects (RFC-022
-revision 8; see `sso-authentication.md`). The owner sees the new signing
+revision 8; see `sso-authentication.md`). The organization owner sees the new signing
 certificate's SHA-256 to compare with their IdP. An organization without an
 owner yet gets it applied directly.
 
@@ -92,7 +92,7 @@ hand-rolled.
 ## Default role of just-in-time members
 
 An SSO provider (OIDC or SAML) and the `SSO_ENTRA_DEFAULT_ROLE` fallback may
-only provision **member** or **viewer** (owner decision B18). `admin` is
+only provision **member** or **viewer** (decision B18). `admin` is
 refused when the provider is saved, and a provider stored before this rule
 with `admin` provisions viewers: an IdP misconfiguration must not mint
 administrators. Admins are promoted explicitly.
