@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { usePathname } from 'next/navigation'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { SidebarFooterLinks } from '../sidebar-footer-links'
-import { DOCS_URL, REPORT_ISSUE_URL } from '@/config/help-links'
+import { REPORT_ISSUE_URL } from '@/config/help-links'
+import { DOCS_URL } from '@/lib/docs-links'
 import { KEYBOARD_SHORTCUTS, shortcutsForShell } from '@/config/keyboard-shortcuts'
 
 // About reads the builds over the network; the dialog's own test covers that.

@@ -130,7 +130,7 @@ func TestEmailService_SendVerificationEmail_Success(t *testing.T) {
 	if data.Email != "user@example.com" {
 		t.Errorf("expected Email=user@example.com, got %s", data.Email)
 	}
-	expectedURL := "https://app.example.com/auth/verify-email?token=tok123"
+	expectedURL := "https://app.example.com/verify-email#token=tok123"
 	if data.VerificationURL != expectedURL {
 		t.Errorf("expected VerificationURL=%s, got %s", expectedURL, data.VerificationURL)
 	}
@@ -286,10 +286,6 @@ func TestEmailService_SendPasswordChangedEmail_Success(t *testing.T) {
 	if data.AppName != "OpenCTEM" {
 		t.Errorf("expected AppName=OpenCTEM, got %s", data.AppName)
 	}
-	expectedSupportURL := "https://app.example.com/support"
-	if data.SupportURL != expectedSupportURL {
-		t.Errorf("expected SupportURL=%s, got %s", expectedSupportURL, data.SupportURL)
-	}
 	if data.ChangedAt == "" {
 		t.Error("expected ChangedAt to be non-empty")
 	}
@@ -355,13 +351,9 @@ func TestEmailService_SendWelcomeEmail_Success(t *testing.T) {
 	if data.Email != "new@example.com" {
 		t.Errorf("expected Email=new@example.com, got %s", data.Email)
 	}
-	expectedLoginURL := "https://app.example.com/auth/login"
+	expectedLoginURL := "https://app.example.com/login"
 	if data.LoginURL != expectedLoginURL {
 		t.Errorf("expected LoginURL=%s, got %s", expectedLoginURL, data.LoginURL)
-	}
-	expectedSupportURL := "https://app.example.com/support"
-	if data.SupportURL != expectedSupportURL {
-		t.Errorf("expected SupportURL=%s, got %s", expectedSupportURL, data.SupportURL)
 	}
 	if data.AppName != "OpenCTEM" {
 		t.Errorf("expected AppName=OpenCTEM, got %s", data.AppName)
@@ -535,7 +527,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			vData := mock.lastData.(email.VerifyEmailData)
-			expectedVerifyURL := fmt.Sprintf("%s/auth/verify-email?token=t1", tc.baseURL)
+			expectedVerifyURL := fmt.Sprintf("%s/verify-email#token=t1", tc.baseURL)
 			if vData.VerificationURL != expectedVerifyURL {
 				t.Errorf("expected VerificationURL=%s, got %s", expectedVerifyURL, vData.VerificationURL)
 			}
@@ -557,7 +549,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			wData := mock.lastData.(email.WelcomeData)
-			expectedLoginURL := fmt.Sprintf("%s/auth/login", tc.baseURL)
+			expectedLoginURL := fmt.Sprintf("%s/login", tc.baseURL)
 			if wData.LoginURL != expectedLoginURL {
 				t.Errorf("expected LoginURL=%s, got %s", expectedLoginURL, wData.LoginURL)
 			}
@@ -573,16 +565,6 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 				t.Errorf("expected InvitationURL=%s, got %s", expectedInvURL, iData.InvitationURL)
 			}
 
-			// Test password changed support URL
-			err = svc.SendPasswordChangedEmail(context.Background(), "u@e.com", "U", "1.1.1.1")
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			pcData := mock.lastData.(email.PasswordChangedData)
-			expectedSupportURL := fmt.Sprintf("%s/support", tc.baseURL)
-			if pcData.SupportURL != expectedSupportURL {
-				t.Errorf("expected SupportURL=%s, got %s", expectedSupportURL, pcData.SupportURL)
-			}
 		})
 	}
 }
