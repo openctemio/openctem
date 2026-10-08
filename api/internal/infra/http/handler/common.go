@@ -202,6 +202,17 @@ func listPageMax(w http.ResponseWriter, r *http.Request, defaultPerPage, maxPerP
 	return p, true
 }
 
+// listLimit reads `limit` of a top-N list (pagination.LimitFromRequest),
+// answering 400 on a value that is not a positive whole number.
+func listLimit(w http.ResponseWriter, r *http.Request, defaultLimit, maxLimit int) (int, bool) {
+	n, err := pagination.LimitFromRequest(r.URL.Query(), defaultLimit, maxLimit)
+	if err != nil {
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return 0, false
+	}
+	return n, true
+}
+
 func listPage(w http.ResponseWriter, r *http.Request, defaultPerPage int) (pagination.Pagination, bool) {
 	p, err := pagination.FromRequest(r.URL.Query(), defaultPerPage)
 	if err != nil {
