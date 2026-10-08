@@ -39,6 +39,8 @@ import { useTenantLogo } from '../hooks/use-tenant-logo'
 import { planGeneralSave, planHasChanges } from '../lib/general-save-plan'
 import {} from '../types/settings.types'
 import { AccessRestrictionsCard, isIpLockoutError, parseLines } from './access-restrictions-card'
+import { PersonalAccountsCard } from './personal-accounts-card'
+import type { PersonalAccountsPolicy, SSOException } from '../types/settings.types'
 import { DeleteOrganization } from './delete-organization'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
 import { SensorOptInSwitches } from '@/features/sensors/components/sensor-opt-in-switches'
@@ -377,6 +379,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
     require_sensor_local_policy_for_private_targets: false,
     allow_sensor_interactsh: false,
     allow_sensor_custom_templates: false,
+    personal_accounts: 'allowed' as PersonalAccountsPolicy,
+    sso_exceptions: [] as SSOException[],
   })
 
   const [brandingForm, setBrandingForm] = useState({
@@ -418,6 +422,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
           settings.security?.require_sensor_local_policy_for_private_targets || false,
         allow_sensor_interactsh: settings.security?.allow_sensor_interactsh || false,
         allow_sensor_custom_templates: settings.security?.allow_sensor_custom_templates || false,
+        personal_accounts: settings.security?.personal_accounts ?? 'allowed',
+        sso_exceptions: settings.security?.sso_exceptions ?? [],
       })
       setBrandingForm({
         primary_color: settings.branding.primary_color || '#3B82F6',
@@ -527,6 +533,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
           securityForm.require_sensor_local_policy_for_private_targets,
         allow_sensor_interactsh: securityForm.allow_sensor_interactsh,
         allow_sensor_custom_templates: securityForm.allow_sensor_custom_templates,
+        personal_accounts: securityForm.personal_accounts,
+        sso_exceptions: securityForm.sso_exceptions,
       })
       if (result) {
         mutate(result)
@@ -764,6 +772,15 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
               }
               currentIp={settings?.security?.current_ip}
               ipAllowlistError={ipAllowlistError}
+              disabled={!canManageSecurityAndAPI}
+            />
+            <PersonalAccountsCard
+              tenantSlug={tenantId}
+              policy={securityForm.personal_accounts}
+              onPolicyChange={(p) => setSecurityForm({ ...securityForm, personal_accounts: p })}
+              exceptions={securityForm.sso_exceptions}
+              onExceptionsChange={(e) => setSecurityForm({ ...securityForm, sso_exceptions: e })}
+              ssoEnforced={!!settings?.security?.sso_enforced}
               disabled={!canManageSecurityAndAPI}
             />
             <SsoManagedNotice />
