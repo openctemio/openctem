@@ -74,7 +74,11 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 
 	// Apply global middleware (order matters!)
 	s.router.Use(
-		middleware.RecoveryWithConfig(log, cfg.IsProduction()),        // Recover from panics (no stack trace in prod)
+		middleware.RecoveryWithConfig(log, cfg.IsProduction()), // Recover from panics (no stack trace in prod)
+		// Metrics sits right inside Recovery so every answer is counted:
+		// the global rate limit (429), the concurrency limit (503), the body
+		// limit and a panic (500) included. Operator alerts read these.
+		middleware.Metrics(),
 		middleware.ConcurrencyLimit(cfg.Server.MaxConcurrentRequests), // Limit concurrent requests
 		middleware.RequestID(),                                 // Add request ID early
 		middleware.ContextLogger(log),                          // Inject request-scoped logger into context
@@ -83,7 +87,6 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 		middleware.BodyLimit(cfg.Server.MaxBodySize),           // Limit request body size (10MB default)
 		rateLimitMw, // Rate limiting
 		middleware.TimeoutWithLogger(cfg.Server.RequestTimeout, log), // Per-request timeout (+ panic recovery inside its goroutine)
-		middleware.Metrics(), // Prometheus metrics
 		middleware.LoggerWithConfig(log, middleware.LoggerConfig{
 			SkipPaths:            middleware.DefaultLoggerConfig().SkipPaths,
 			SkipSuccessful:       false, // Log all requests by default

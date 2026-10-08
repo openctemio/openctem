@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -171,31 +172,64 @@ func Metrics() func(http.Handler) http.Handler {
 				statusCode:     http.StatusOK,
 			}
 
+			// Deferred so a panic is counted too (as the 500 the recovery
+			// middleware outside answers) and the in-flight gauge does not
+			// leak one per panic. The panic continues to that middleware.
+			defer func() {
+				rec := recover()
+				if rec != nil {
+					mrw.statusCode = http.StatusInternalServerError
+				}
+				observeRequest(r, mrw, start)
+				if rec != nil {
+					panic(rec)
+				}
+			}()
+
 			next.ServeHTTP(mrw, r)
-
-			duration := time.Since(start).Seconds()
-			httpRequestsInFlight.Dec()
-
-			// Normalize path for metrics (replace IDs with placeholder)
-			path := normalizePath(r.URL.Path)
-
-			httpRequestsTotal.WithLabelValues(
-				r.Method,
-				path,
-				strconv.Itoa(mrw.statusCode),
-			).Inc()
-
-			httpRequestDuration.WithLabelValues(
-				r.Method,
-				path,
-			).Observe(duration)
-
-			httpResponseSize.WithLabelValues(
-				r.Method,
-				path,
-			).Observe(float64(mrw.bytesWritten))
 		})
 	}
+}
+
+// unmatchedRoute is the path label of a request no route matched.
+const unmatchedRoute = "unmatched"
+
+// routeLabel is the path label of a request: the route pattern it matched
+// (/api/v1/assets/{id}), never the raw path. A raw path would put names and
+// hosts from the URL into the label (tenant data, sent on to alerting) and
+// let anyone mint a new series per request with random paths. Requests no
+// route matched (scanners probing for files, 404s) share one label.
+func routeLabel(r *http.Request) string {
+	if rctx := chi.RouteContext(r.Context()); rctx != nil {
+		if p := rctx.RoutePattern(); p != "" {
+			return p
+		}
+	}
+	return unmatchedRoute
+}
+
+// observeRequest records one finished request.
+func observeRequest(r *http.Request, mrw *metricsResponseWriter, start time.Time) {
+	duration := time.Since(start).Seconds()
+	httpRequestsInFlight.Dec()
+
+	path := routeLabel(r)
+
+	httpRequestsTotal.WithLabelValues(
+		r.Method,
+		path,
+		strconv.Itoa(mrw.statusCode),
+	).Inc()
+
+	httpRequestDuration.WithLabelValues(
+		r.Method,
+		path,
+	).Observe(duration)
+
+	httpResponseSize.WithLabelValues(
+		r.Method,
+		path,
+	).Observe(float64(mrw.bytesWritten))
 }
 
 // normalizePath replaces dynamic path segments with placeholders.
