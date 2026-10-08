@@ -173,6 +173,10 @@ type SelectSensorResult struct {
 
 // Service handles scan workflow-related business operations.
 type Service struct {
+	// runnableTools: which tools an online sensor may run now (CheckSteps warnings).
+	runnableTools RunnableTools
+	// draftRepo stores the builder drafts (draft.go).
+	draftRepo         scanworkflow.DraftRepository
 	templateRepo      scanworkflow.Repository
 	stepRepo          scanworkflow.StepRepository
 	runRepo           scanrun.RunRepository
@@ -183,15 +187,16 @@ type Service struct {
 	securityValidator SecurityValidator
 	sensorSelector    SensorSelector // Optional: for platform sensor support
 	auditService      AuditService
-	scanDeactivator   ScanDeactivator       // Optional: for cascade scan deactivation
-	scanRunRecorder   ScanRunRecorder       // Optional: records run outcome back onto the scan
-	runCompleted      RunCompletedCallback  // Optional: fires scan_completed automation
-	db                TransactionDB         // Optional: for transaction support
-	targetGate        TargetGate            // checks run-context targets; nil refuses runs that carry targets
-	assetRefChecker   AssetRefChecker       // tenant + scope check of a run's asset_id; nil refuses runs that carry one
-	hops              scanrun.HopRepository // stage chaining (hop_router.go); nil keeps every step on the run's seeds
-	webScope          WebScopeBuilder       // web_scope of web steps (web_scope.go); nil refuses web steps
-	endpoints         EndpointSelector      // incremental web scanning (web_endpoints.go)
+	scanDeactivator   ScanDeactivator           // Optional: for cascade scan deactivation
+	scanRunRecorder   ScanRunRecorder           // Optional: records run outcome back onto the scan
+	runCompleted      RunCompletedCallback      // Optional: fires scan_completed automation
+	db                TransactionDB             // Optional: for transaction support
+	targetGate        TargetGate                // checks run-context targets; nil refuses runs that carry targets
+	assetRefChecker   AssetRefChecker           // tenant + scope check of a run's asset_id; nil refuses runs that carry one
+	hops              scanrun.HopRepository     // stage chaining (hop_router.go); nil keeps every step on the run's seeds
+	webScope          WebScopeBuilder           // web_scope of web steps (web_scope.go); nil refuses web steps
+	endpoints         EndpointSelector          // incremental web scanning (web_endpoints.go)
+	versions          scanworkflow.VersionStore // runs pinned to the workflow version they started with; nil reads the live workflow
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)
@@ -201,6 +206,22 @@ type Service struct {
 
 // Option is a functional option for Service.
 type Option func(*Service)
+
+// WithVersionStore pins each run to the scan workflow version it starts
+// with (research/62 P0-10).
+func WithVersionStore(store scanworkflow.VersionStore) Option {
+	return func(s *Service) { s.versions = store }
+}
+
+// runWorkflow is the workflow a run executes: its pinned version of the
+// workflow, so an edit made while it runs changes the next run only.
+func (s *Service) runWorkflow(ctx context.Context, run *scanrun.Run) (*scanworkflow.Workflow, error) {
+	live, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+	if err != nil {
+		return nil, err
+	}
+	return scanrun.PinnedWorkflow(ctx, s.versions, run, live)
+}
 
 // WithAuditService sets the audit service for Service.
 func WithAuditService(auditService AuditService) Option {
@@ -328,7 +349,7 @@ func NewService(
 		sensorRepo:        sensorRepo,
 		commandRepo:       commandRepo,
 		securityValidator: securityValidator,
-		logger:            log.With("service", "pipeline"),
+		logger:            log.With("service", "scan_workflow"),
 	}
 	for _, opt := range opts {
 		opt(s)

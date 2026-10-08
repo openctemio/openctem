@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
@@ -199,19 +198,11 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse pagination
-	if page := query.Get("page"); page != "" {
-		if p, err := strconv.Atoi(page); err == nil {
-			input.Page = p
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if perPage := query.Get("per_page"); perPage != "" {
-		if pp, err := strconv.Atoi(perPage); err == nil {
-			input.PerPage = pp
-		}
-	}
-	if input.PerPage == 0 {
-		input.PerPage = 20 // Default
-	}
+	input.Page, input.PerPage = paging.Page, paging.PerPage
 
 	// Parse filters
 	if actorID := query.Get("actor_id"); actorID != "" {
@@ -365,23 +356,11 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 	}
 
 	// Parse pagination
-	query := r.URL.Query()
-	page := 1
-	perPage := 20
-
-	if p := query.Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if pp := query.Get("per_page"); pp != "" {
-		if parsed, err := strconv.Atoi(pp); err == nil {
-			perPage = parsed
-		}
-	}
-	if perPage <= 0 {
-		perPage = 20 // guard: ?per_page=0 → int(Total)/perPage divide-by-zero panic below
-	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.GetResourceHistory(r.Context(), tenantID, resourceType, resourceID, page, perPage)
 	if err != nil {
@@ -430,23 +409,11 @@ func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse pagination
-	query := r.URL.Query()
-	page := 1
-	perPage := 20
-
-	if p := query.Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if pp := query.Get("per_page"); pp != "" {
-		if parsed, err := strconv.Atoi(pp); err == nil {
-			perPage = parsed
-		}
-	}
-	if perPage <= 0 {
-		perPage = 20 // guard: ?per_page=0 → int(Total)/perPage divide-by-zero panic below
-	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.GetUserActivity(r.Context(), tenantID, userID, page, perPage)
 	if err != nil {

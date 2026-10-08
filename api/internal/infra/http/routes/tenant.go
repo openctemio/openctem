@@ -244,6 +244,19 @@ func tenantPerm(p permission.Permission) Middleware {
 	}
 }
 
+// registerOrganizationPlanRoutes serves the organization's plan, limits and
+// usage (Settings > Plan & usage) under the token singleton
+// /api/v1/organization: owners and administrators with settings:read
+// (docs/architecture/plans-and-limits.md).
+func registerOrganizationPlanRoutes(router Router, h *handler.PlanHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/plan", func(r Router) {
+		r.GET("/", h.GetOwnPlan, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerOrganizationMemberRoutes wires member administration under the
 // token singleton /api/v1/organization: the tenant comes from the credential,
 // never from the path (docs/architecture/api-conventions.md §2).
@@ -258,6 +271,24 @@ func tenantPerm(p permission.Permission) Middleware {
 // and keeps a tombstone, POST .../erase (owner only) anonymises an offboarded
 // person. The service loads the membership within the caller's tenant (404
 // otherwise) and applies the peer-administrator rule.
+// registerOrganizationTrustRoutes registers trusted organizations (RFC-058)
+// under the token singleton /api/v1/organization/trusts. Reading needs an
+// owner or administrator; every change needs an owner with a recent
+// re-authentication. The service checks which side of a trust the caller's
+// organization is on (host updates, home accepts, either ends it).
+func registerOrganizationTrustRoutes(router Router, h *handler.OrgTrustHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/trusts", func(r Router) {
+		r.GET("/", h.List, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
+		r.POST("/", h.Create, middleware.RequireOwner(), requireStepUp())
+		r.PATCH("/{trust_id}", h.Update, middleware.RequireOwner(), requireStepUp())
+		r.POST("/{trust_id}/approve", h.Accept, middleware.RequireOwner(), requireStepUp())
+		r.DELETE("/{trust_id}", h.Delete, middleware.RequireOwner(), requireStepUp())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAuthHandler, tenantH *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
 	if localAuth == nil && tenantH == nil {
 		return
@@ -270,6 +301,8 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 			r.GET("/access-report", tenantH.GetMemberAccessReport, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
 			r.POST("/offboard", tenantH.OffboardMember, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite), requireStepUp())
 			r.POST("/erase", tenantH.EraseMemberPersonalData, middleware.RequireOwner(), requireStepUp())
+			// External members (RFC-058): when the access ends.
+			r.PATCH("/access", tenantH.UpdateMemberAccess, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
 		}
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }

@@ -118,9 +118,11 @@ func (h *EASMHandler) Candidates(w http.ResponseWriter, r *http.Request) {
 		}
 		q.States = append(q.States, st)
 	}
-	page := parseQueryIntBounded(query.Get("page"), 1, 1, 100000)
-	q.Limit = parseQueryIntBounded(query.Get("per_page"), 50, 1, MaxPerPage)
-	q.Offset = (page - 1) * q.Limit
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
+	}
+	q.Limit, q.Offset = paging.Limit(), paging.Offset()
 	// Which fixes an address row offers depends on the caller's own
 	// permissions (taken from the token, never the request).
 	q.Caller = easmapp.ReviewCaller{

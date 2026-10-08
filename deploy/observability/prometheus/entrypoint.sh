@@ -93,7 +93,7 @@ scrape_configs:
       module: ['${public_module}']
     static_configs:
       - targets: ['${public}/login']
-        labels: {probe: public-login}
+        labels: {probe: public-login, module: '${public_module}'}
     relabel_configs: *blackbox_relabel
 
   - job_name: prometheus

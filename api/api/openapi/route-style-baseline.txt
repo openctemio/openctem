@@ -28,6 +28,7 @@ R3 DELETE /api/v1/groups/{groupId}/members/{userId}
 R3 DELETE /api/v1/groups/{groupId}/scope-rules/{ruleId}
 R3 DELETE /api/v1/organization/members/{member_id}/mfa
 R3 GET /api/v1/organization/members/{member_id}/access-report
+R3 PATCH /api/v1/organization/members/{member_id}/access
 R3 POST /api/v1/organization/members/{member_id}/erase
 R3 POST /api/v1/organization/members/{member_id}/offboard
 R3 DELETE /api/v1/pentest/campaigns/{id}/members/{userId}
@@ -342,3 +343,7 @@ R8 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
 R9 GET /api/v1/tenants/{tenant}/settings/sso/changes
 R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/approve
 R9 POST /api/v1/tenants/{tenant}/settings/sso/changes/{changeId}/reject
+R3 DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
+R3 GET /api/v1/admin/tenants/{tenantId}/plan
+R3 PUT /api/v1/admin/tenants/{tenantId}/plan
+R3 PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}

@@ -46,6 +46,11 @@ type CachedMembership struct {
 	Role     string    `json:"role"`
 	Status   string    `json:"status"`
 	JoinedAt time.Time `json:"joined_at"`
+	// Kind is internal or external (RFC-058); empty in entries written
+	// before it existed, which means internal.
+	Kind string `json:"kind,omitempty"`
+	// HomeTenantID is an external member's home organization.
+	HomeTenantID string `json:"home_tenant_id,omitempty"`
 }
 
 const (
@@ -108,6 +113,10 @@ func (s *MembershipCacheService) GetMembership(
 		Role:     m.Role().String(),
 		Status:   string(m.Status()),
 		JoinedAt: m.JoinedAt(),
+		Kind:     string(m.Kind()),
+	}
+	if h := m.HomeTenantID(); h != nil {
+		val.HomeTenantID = h.String()
 	}
 	if cacheErr := s.cache.Set(ctx, key, val); cacheErr != nil {
 		s.log.Warn("failed to cache membership",
@@ -176,7 +185,7 @@ func (s *MembershipCacheService) reconstructFromCache(
 		id = shared.ID{}
 	}
 	role, _ := tenant.ParseRole(v.Role)
-	return tenant.ReconstituteMembershipWithStatus(
+	m := tenant.ReconstituteMembershipWithStatus(
 		id, userID, tenantID, role,
 		nil,        // invitedBy — not in cache
 		v.JoinedAt, // joinedAt
@@ -184,6 +193,17 @@ func (s *MembershipCacheService) reconstructFromCache(
 		nil, // suspendedAt — not in cache, never read by middleware
 		nil, // suspendedBy — not in cache, never read by middleware
 	)
+	kind := tenant.MemberKind(v.Kind)
+	if !kind.IsValid() {
+		kind = tenant.MemberKindInternal
+	}
+	var home *shared.ID
+	if v.HomeTenantID != "" {
+		if h, herr := shared.IDFromString(v.HomeTenantID); herr == nil {
+			home = &h
+		}
+	}
+	return m.WithAccessState(kind, home, "", nil, "", "")
 }
 
 // MembershipCacheServiceErrorIsTransient is exposed for tests that

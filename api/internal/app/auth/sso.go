@@ -92,6 +92,11 @@ type SSOService struct {
 	// pre-wiring. Fail-closed: an unverified/unknown domain never JIT-provisions.
 	domainVerifier DomainVerifier
 
+	// domainOwner answers which organization holds an email domain verified
+	// for SSO (email-first sign-in, discovery.go). Nil: discovery always
+	// answers "password".
+	domainOwner DomainOwnerLookup
+
 	// revocations records back-channel-logged-out sessions so their access
 	// tokens (and live WebSocket connections) stop at once rather than at
 	// expiry. nil = they expire naturally.
@@ -740,7 +745,7 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	// sub come ONLY from the signature-verified id_token, never the userinfo body.
 	var fed federatedBinding
 	if claims != nil {
-		fed = federatedBinding{issuer: claims.Issuer, sid: claims.SID, sub: claims.Subject}
+		fed = federatedBinding{issuer: claims.Issuer, sid: claims.SID, sub: claims.Subject, mfa: oidcMFAEvidence(claims)}
 		if claims.AuthTime != nil {
 			fed.authTime = claims.AuthTime.Time
 		}
@@ -1598,6 +1603,9 @@ type federatedBinding struct {
 	// authTime is when the provider last authenticated the user (id_token
 	// auth_time, SAML AuthnInstant); zero when the provider did not say.
 	authTime time.Time
+	// mfa: the provider proved a second factor for this sign-in (OIDC amr
+	// "mfa", SAML multi-factor AuthnContext). Recorded on the session.
+	mfa bool
 }
 
 // freshAuthMaxAge is how old the provider's authentication may be when a
@@ -1635,6 +1643,7 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 	}
 	newSession.SetAuthMethod(authMethod)
 	newSession.SetIDPTenant(idpTenant)
+	newSession.SetMFAEvidence(fed.mfa)
 
 	// Persist the IdP session binding (issuer/sid/sub) so an OIDC Back-Channel
 	// Logout from this provider can revoke exactly this session. Only stamped
@@ -1709,7 +1718,7 @@ func (s *SSOService) requireFederatedDomainProof(ctx context.Context, t *tenantd
 // accounts, auto-provisions tenant membership when requested, and creates the
 // session. Reused by the SAML SP flow so it shares the SSO session machinery.
 func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string, autoProvision bool) (*SSOCallbackResult, error) {
-	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, time.Time{}, useridentity.Key{})
+	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, federatedBinding{}, useridentity.Key{})
 }
 
 // completeFederatedLogin is CompleteFederatedLogin with the time the
@@ -1719,7 +1728,7 @@ func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Te
 //
 //nolint:cyclop // one decision tree: returning identity, existing email, new account
 func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string,
-	autoProvision bool, authAt time.Time, key useridentity.Key) (*SSOCallbackResult, error) {
+	autoProvision bool, fed federatedBinding, key useridentity.Key) (*SSOCallbackResult, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, ErrSSONoEmail
@@ -1752,7 +1761,7 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 			found.UpdateLastLogin()
 			acc.saveLogin(ctx, found, prev, changed)
 			acc.markUsed(ctx, ident)
-			return s.federatedSessionResult(ctx, found, t, authAt)
+			return s.federatedSessionResult(ctx, found, t, fed)
 		}
 	}
 
@@ -1807,7 +1816,7 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 		}
 	}
 
-	return s.federatedSessionResult(ctx, u, t, authAt)
+	return s.federatedSessionResult(ctx, u, t, fed)
 }
 
 // admitExistingSAMLAccount lets t's SAML IdP sign in an existing account
@@ -1891,12 +1900,12 @@ func (s *SSOService) requireFederatedMembership(ctx context.Context, u *userdom.
 }
 
 // federatedSessionResult issues the session of a SAML login.
-func (s *SSOService) federatedSessionResult(ctx context.Context, u *userdom.User, t *tenantdom.Tenant, authAt time.Time) (*SSOCallbackResult, error) {
+func (s *SSOService) federatedSessionResult(ctx context.Context, u *userdom.User, t *tenantdom.Tenant, fed federatedBinding) (*SSOCallbackResult, error) {
 	// Federated via a validated SAML assertion → stamped 'saml', issued by this
 	// tenant's IdP (exempt from this tenant's enforcement only — it IS this
 	// tenant's SSO login). No OIDC id_token binding — SAML single
 	// logout is out of scope for the OIDC back-channel path.
-	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML, t.ID(), federatedBinding{authTime: authAt})
+	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML, t.ID(), federatedBinding{authTime: fed.authTime, mfa: fed.mfa})
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}

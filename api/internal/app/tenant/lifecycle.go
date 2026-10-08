@@ -145,6 +145,9 @@ func (s *TenantService) OffboardMember(ctx context.Context, membershipID string,
 	tenantID := membership.TenantID().String()
 	userID := membership.UserID().String()
 	s.cutAccess(ctx, tenantID, userID)
+	if !membership.IsExternal() {
+		s.homeAccessEnded(ctx, membership.TenantID(), membership.UserID())
+	}
 
 	actx.TenantID = tenantID
 	event := auditapp.NewSuccessEvent(audit.ActionMemberOffboarded, audit.ResourceTypeMembership, membershipID).

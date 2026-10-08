@@ -255,5 +255,10 @@ type RunAdvancer interface {
 // service. Without it a workflow scan is refused (fail closed).
 func (s *Service) SetStepQueuer(q StepQueuer) { s.stepQueuer = q }
 
+// SetWorkflowVersions pins each workflow run to the scan workflow version
+// it starts with (research/62 P0-10); the scan run service then reads that
+// version for every later step.
+func (s *Service) SetWorkflowVersions(store scanworkflow.VersionStore) { s.workflowVersions = store }
+
 // ErrStepQueuerUnavailable: no step dispatcher is wired.
 var ErrStepQueuerUnavailable = errors.New("workflow step dispatcher is not configured; nothing dispatched")

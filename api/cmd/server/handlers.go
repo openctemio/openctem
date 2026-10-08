@@ -213,6 +213,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
+	if svc.Entitlement != nil {
+		tenantHandler.SetFreePlan(svc.Entitlement)
+	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}
@@ -571,6 +574,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Verified-domain handler (SSO P1 domain-ownership verification)
 	if svc.DomainVerify != nil {
 		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)
+		if svc.OrgTrust != nil {
+			handlers.OrgTrust = handler.NewOrgTrustHandler(svc.OrgTrust, log)
+		}
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
 		// Tenant self-service verification for EASM (research/22 P0-10, E6).
 		var audit handler.AttributionAuditor
@@ -605,6 +611,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.CredentialImport.SetAuditService(svc.Audit)
 	}
 
+	if svc.Entitlement != nil {
+		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
+		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {
 		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)

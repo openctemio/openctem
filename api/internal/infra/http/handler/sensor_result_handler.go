@@ -199,16 +199,11 @@ func (h *SensorResultHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	f := sensorresult.ListFilter{Page: atoiDefault(q.Get("page"), 1), PerPage: atoiDefault(q.Get("per_page"), 25)}
-	if f.PerPage > 100 {
-		f.PerPage = 100
+	paging, ok := listPage(w, r, 25)
+	if !ok {
+		return
 	}
-	if f.PerPage < 1 {
-		f.PerPage = 25
-	}
-	if f.Page < 1 {
-		f.Page = 1
-	}
+	f := sensorresult.ListFilter{Page: paging.Page, PerPage: paging.PerPage}
 	if v := q.Get("status"); v != "" {
 		st, err := sensorresult.ParseStatus(v)
 		if err != nil {
