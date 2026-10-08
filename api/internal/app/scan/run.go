@@ -226,7 +226,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		if _, err := s.usableWorkflow(ctx, tenantID, pid); err != nil {
 			if errors.Is(err, shared.ErrNotFound) {
 				s.logger.Warn("SECURITY: cross-tenant quick-scan workflow attempt",
-					"tenant_id", input.TenantID, "workflow_id", input.WorkflowID)
+					"tenant_id", tenantID.String(), "workflow_id", pid.String())
 			}
 			return nil, err
 		}
