@@ -393,7 +393,7 @@ which is the takeover revision 5 set out to prevent. Owner decision
     severity with `owner_recovery: true`, by actor `platform-admin:<email>`.
 - The suspended owners are left as they are. The new owner (or an
   administrator they appoint) decides whether to reactivate or remove them.
-- **Reason and step-up** (revision 13). The request also needs a `reason`
+- **Reason and step-up** (revision 14). The request also needs a `reason`
   (10 to 500 characters, kept in the admin audit row) and a fresh console
   authenticator code (`totp_code`). Organizations > an organization >
   Members offers "Recover ownership" to a super admin when every owner is
@@ -545,7 +545,7 @@ them:
 - **Admin activity** filters by result (`?outcome=failure`), so the overview
   links straight to refused actions or to break-glass sign-ins.
 
-## Revision 13: organization 360
+## Revision 14: organization 360
 
 Organizations > an organization opens on a summary: owners and active
 members, the plan with an over-limit badge and the limits that are over,
