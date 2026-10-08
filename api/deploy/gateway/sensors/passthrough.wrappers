@@ -1,0 +1,21 @@
+# OPENCTEM_SENSOR_GATEWAY=passthrough: sensor protocol v3 gRPC binding on the
+# same port (docs/rfcs/RFC-059-sensor-transport-v3.md T14). Needs the gateway
+# image with the layer4 module (deploy/gateway/Dockerfile).
+#
+# A TLS connection whose SNI is SENSOR_PUBLIC_HOSTNAME is not terminated
+# here: its bytes go to the API's mTLS listener, which checks the client
+# certificate itself. A PROXY protocol v2 header carries the sensor's
+# address; the API believes it only from SENSOR_MTLS_TRUSTED_PROXIES.
+# Every other connection continues to the TLS termination below.
+listener_wrappers {
+	layer4 {
+		@sensors tls sni {$SENSOR_PUBLIC_HOSTNAME}
+		route @sensors {
+			proxy {
+				proxy_protocol v2
+				upstream {$SENSOR_MTLS_UPSTREAM:api:8443}
+			}
+		}
+	}
+	tls
+}

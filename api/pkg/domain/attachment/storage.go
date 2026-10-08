@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // FileStorage is the pluggable interface for file persistence.
@@ -27,6 +29,23 @@ type FileStorage interface {
 
 	// Delete removes a file from storage. Idempotent — no error if already gone.
 	Delete(ctx context.Context, tenantID, storageKey string) error
+
+	// EraseTenant deletes every object stored for the tenant, its whole
+	// namespace (including files no attachment row names), and returns how
+	// many it removed. Idempotent. tenantID must be a canonical tenant id;
+	// anything else is refused, so a bad value can never widen the delete to
+	// another tenant or the whole store.
+	EraseTenant(ctx context.Context, tenantID string) (int, error)
+}
+
+// ValidateTenantNamespace checks that tenantID is a canonical tenant id (a
+// lowercase UUID), the only value a storage namespace may be erased by.
+func ValidateTenantNamespace(tenantID string) error {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil || id.IsZero() || id.String() != tenantID {
+		return fmt.Errorf("refusing to erase storage namespace %q: not a tenant id", tenantID)
+	}
+	return nil
 }
 
 // StorageConfig holds provider-specific configuration.
