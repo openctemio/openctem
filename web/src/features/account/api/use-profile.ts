@@ -9,6 +9,8 @@ import { get, put } from '@/lib/api/client'
 import { userEndpoints } from '@/lib/api/endpoints'
 import type { UserProfile, UpdateProfileInput } from '../types/account.types'
 import { useCallback, useState } from 'react'
+import { useBootstrapPending } from '@/context/bootstrap-provider'
+import { SWR_REFERENCE } from '@/lib/swr-config'
 
 // ============================================
 // FETCH PROFILE
@@ -18,12 +20,15 @@ import { useCallback, useState } from 'react'
  * Hook to fetch current user's profile
  */
 export function useProfile() {
+  // Inside the app shell the session bootstrap carries the profile and seeds
+  // this key (context/bootstrap-session.ts): wait for it, then read the cache.
+  const bootstrapPending = useBootstrapPending()
   const { data, error, isLoading, mutate } = useSWR<UserProfile>(
-    userEndpoints.me(),
+    bootstrapPending ? null : userEndpoints.me(),
     (url: string) => get<UserProfile>(url),
     {
+      ...SWR_REFERENCE,
       revalidateOnFocus: false,
-      dedupingInterval: 60000, // 1 minute
     }
   )
 
