@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import {
   ReactFlow,
@@ -11,6 +11,7 @@ import {
   type Edge,
   type Node,
 } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
 import { AlertTriangle, GitBranch, ListTree, Workflow } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -49,6 +50,12 @@ export interface WorkflowStagesProps {
   status?: Record<string, StepStatusTone>
   /** Link to the builder ("Open in builder"). */
   builderHref?: string
+  /** Extra content per step key (run counts, chips), shown on its card and node. */
+  badge?: Record<string, ReactNode>
+  /** A label for the connection from one step to the next (data-flow counts). */
+  edgeLabel?: (from: string, to: string) => string | undefined
+  /** Called with the step key when a step is chosen (a side panel). */
+  onSelectStep?: (stepKey: string) => void
   className?: string
 }
 
@@ -67,6 +74,9 @@ export function WorkflowStages({
   draftChanged,
   status,
   builderHref,
+  badge,
+  edgeLabel,
+  onSelectStep,
   className,
 }: WorkflowStagesProps) {
   const { t } = useTranslation()
@@ -190,7 +200,13 @@ export function WorkflowStages({
       ))}
 
       {view === 'graph' ? (
-        <MiniGraph steps={steps} status={status} />
+        <MiniGraph
+          steps={steps}
+          status={status}
+          badge={badge}
+          edgeLabel={edgeLabel}
+          onSelectStep={onSelectStep}
+        />
       ) : (
         <ol className="space-y-3">
           {plan.stages.map((stage, idx) => (
@@ -215,6 +231,8 @@ export function WorkflowStages({
                     waitsFor={(plan.waitsFor[step.step_key] ?? []).map(nameOf)}
                     toolAvailable={toolAvailable}
                     tone={status?.[step.step_key]}
+                    extra={badge?.[step.step_key]}
+                    onSelect={onSelectStep ? () => onSelectStep(step.step_key) : undefined}
                   />
                 ))}
               </ul>
@@ -232,12 +250,16 @@ function StepCard({
   waitsFor,
   toolAvailable,
   tone,
+  extra,
+  onSelect,
 }: {
   step: ScanWorkflowStep
   table?: CapabilityTable
   waitsFor: string[]
   toolAvailable?: (tool: string) => boolean | undefined
   tone?: StepStatusTone
+  extra?: ReactNode
+  onSelect?: () => void
 }) {
   const { t } = useTranslation()
   const cap = table ? capabilityForStep(table, step) : null
@@ -261,7 +283,25 @@ function StepCard({
   const unavailable = answers.length > 0 && answers.every((a) => a === false)
 
   return (
-    <li className={cn('rounded-md border px-3 py-2', tone ? TONE[tone] : undefined)}>
+    <li
+      className={cn(
+        'rounded-md border px-3 py-2',
+        tone ? TONE[tone] : undefined,
+        onSelect && 'cursor-pointer hover:bg-muted/40 focus-visible:outline focus-visible:outline-2'
+      )}
+      {...(onSelect
+        ? {
+            tabIndex: 0,
+            onClick: onSelect,
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelect()
+              }
+            },
+          }
+        : {})}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium break-words">{cap?.name ?? step.name}</p>
@@ -279,6 +319,7 @@ function StepCard({
         )}
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{toolText}</p>
+      {extra && <div className="mt-1 text-xs">{extra}</div>}
       {waitsFor.length > 1 && (
         <p className="mt-0.5 text-xs text-muted-foreground">
           {t('workflowStages.waitsFor', 'Waits for: {steps}', { steps: waitsFor.join(', ') })}
@@ -299,9 +340,15 @@ function StepCard({
 function MiniGraph({
   steps,
   status,
+  badge,
+  edgeLabel,
+  onSelectStep,
 }: {
   steps: ScanWorkflowStep[]
   status?: Record<string, StepStatusTone>
+  badge?: Record<string, ReactNode>
+  edgeLabel?: (from: string, to: string) => string | undefined
+  onSelectStep?: (stepKey: string) => void
 }) {
   const { t } = useTranslation()
   const { nodes, edges } = useMemo(() => {
@@ -315,7 +362,14 @@ function MiniGraph({
     const n: Node[] = steps.map((s) => ({
       id: s.id,
       position: pos[s.id],
-      data: { label: s.name || s.step_key },
+      data: {
+        label: (
+          <div>
+            <div>{s.name || s.step_key}</div>
+            {badge?.[s.step_key] && <div className="mt-0.5">{badge[s.step_key]}</div>}
+          </div>
+        ),
+      },
       className: cn('!w-44 !text-xs', status?.[s.step_key] && TONE[status[s.step_key]]),
       draggable: false,
       connectable: false,
@@ -326,10 +380,11 @@ function MiniGraph({
         id: `${x.source}->${x.target}`,
         source: x.source,
         target: x.target,
+        label: edgeLabel?.(byId.get(x.source)!.step_key, byId.get(x.target)!.step_key),
         markerEnd: { type: MarkerType.ArrowClosed },
       }))
     return { nodes: n, edges: e }
-  }, [steps, status])
+  }, [steps, status, badge, edgeLabel])
 
   return (
     <div
@@ -345,7 +400,15 @@ function MiniGraph({
           fitViewOptions={{ padding: 0.2 }}
           nodesDraggable={false}
           nodesConnectable={false}
-          elementsSelectable={false}
+          elementsSelectable={!!onSelectStep}
+          onNodeClick={
+            onSelectStep
+              ? (_, node) => {
+                  const st = steps.find((x) => x.id === node.id)
+                  if (st) onSelectStep(st.step_key)
+                }
+              : undefined
+          }
           proOptions={{ hideAttribution: true }}
         >
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} />

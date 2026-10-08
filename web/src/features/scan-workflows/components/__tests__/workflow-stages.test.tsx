@@ -138,4 +138,19 @@ describe('WorkflowStages', () => {
     expect(screen.getByText('Completed')).toBeInTheDocument()
     expect(screen.getByText('Failed')).toBeInTheDocument()
   })
+
+  it('shows a per-step badge and reports the chosen step', async () => {
+    const chosen: string[] = []
+    render(
+      <WorkflowStages
+        steps={recon}
+        table={table}
+        badge={{ ports: <span>chunks 3/5</span> }}
+        onSelectStep={(k) => chosen.push(k)}
+      />
+    )
+    expect(screen.getByText('chunks 3/5')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('Port scan'))
+    expect(chosen).toEqual(['ports'])
+  })
 })
