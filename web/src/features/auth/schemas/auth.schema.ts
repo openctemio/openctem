@@ -40,7 +40,14 @@ export const emailSchema = z
 export const passwordSchema = z
   .string()
   .min(1, 'Please enter your password')
-  .min(8, 'Password must be at least 8 characters long')
+  .min(12, 'Password must be at least 12 characters long')
+
+/**
+ * Password on the sign-in form: only required. Length rules apply when a
+ * password is chosen, not when an existing one is entered (accounts may have
+ * passwords set under an older, shorter minimum).
+ */
+export const loginPasswordSchema = z.string().min(1, 'Please enter your password')
 
 /**
  * Confirm password field validator
@@ -61,7 +68,7 @@ export const confirmPasswordSchema = z.string().min(1, 'Please confirm your pass
  */
 export const loginSchema = z.object({
   email: emailSchema,
-  password: passwordSchema,
+  password: loginPasswordSchema,
 })
 
 /**

@@ -124,7 +124,7 @@ const columns: ColumnDef<NotificationEventEntry>[] = [
 ]
 
 function HistoryList({ integrationId }: { integrationId: string }) {
-  // Server pagination over the channel's events (the API takes limit/offset).
+  // Server pagination over the channel's events (page / per_page).
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
   useEffect(() => {
     setPagination((p) => ({ ...p, pageIndex: 0 }))
