@@ -13,6 +13,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -22,6 +23,7 @@ import (
 type SensorRepository struct {
 	db *DB
 	tokenPepper
+	planLimits // sensors (the organization's own; platform sensors never count)
 }
 
 // NewSensorRepository creates a new SensorRepository.
@@ -31,6 +33,11 @@ func NewSensorRepository(db *DB) *SensorRepository {
 
 // Create persists a new sensor.
 func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
+	if !a.IsPlatformSensor && a.TenantID != nil {
+		if err := r.checkLimit(ctx, *a.TenantID, plan.Sensors, 1); err != nil {
+			return err
+		}
+	}
 	metadata, err := json.Marshal(a.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)

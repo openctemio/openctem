@@ -83,6 +83,7 @@ import {
   ShieldOff,
   UserMinus,
   Eraser,
+  CalendarClock,
 } from 'lucide-react'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
@@ -124,6 +125,10 @@ import { tenantEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
+import { MemberBadges } from '@/features/organization/components/member-badges'
+import { MemberAccessDialog } from '@/features/organization/components/member-access-dialog'
+import { suspendedReasonText } from '@/features/organization/lib/external-access'
+import { useTenantSettings } from '@/features/organization/api/use-tenant-settings'
 
 /**
  * The management actions of an administrator row, disabled for a caller who
@@ -149,6 +154,7 @@ function PeerAdminLockedItems({ mfaEnabled }: { mfaEnabled: boolean }) {
 // Pending invitations live in their own section, so they are NOT a tab here.
 type StatusFilter = 'current' | 'active' | 'suspended' | 'offboarded' | 'all'
 type RoleFilter = 'all' | MemberRole
+type KindFilter = 'all' | 'internal' | 'external'
 
 // Static config
 const MEMBER_PAGE_SIZES = [10, 20, 50, 100]
@@ -159,6 +165,14 @@ const statusFilters: { value: StatusFilter; label: string }[] = [
   { value: 'suspended', label: 'Disabled' },
   { value: 'offboarded', label: 'Offboarded' },
   { value: 'all', label: 'Everyone' },
+]
+
+// External members (api RFC-058): people whose email domain the
+// organization does not hold.
+const kindFilters: { value: KindFilter; label: string }[] = [
+  { value: 'all', label: 'Everyone' },
+  { value: 'internal', label: 'Internal' },
+  { value: 'external', label: 'External' },
 ]
 
 const roleFilters: { value: RoleFilter; label: string }[] = [
@@ -495,6 +509,10 @@ export default function UsersPage() {
   const [searchQuery, setSearchQueryParam] = useUrlFilter('q', '')
   const [statusParam, setStatusParam] = useUrlFilter('status', 'current')
   const [roleParam, setRoleParam] = useUrlFilter('role', 'all')
+  const [kindParam, setKindParam] = useUrlFilter('kind', 'all')
+  const kindFilter: KindFilter = kindFilters.some((f) => f.value === kindParam)
+    ? (kindParam as KindFilter)
+    : 'all'
   const statusFilter: StatusFilter = statusFilters.some((f) => f.value === statusParam)
     ? (statusParam as StatusFilter)
     : 'current'
@@ -523,6 +541,10 @@ export default function UsersPage() {
     setRoleParam(v)
     resetPage()
   }
+  const setKindFilter = (v: string) => {
+    setKindParam(v)
+    resetPage()
+  }
 
   // API Hooks - includeRoles: true to get RBAC roles in single API call (avoids N+1)
   const {
@@ -536,9 +558,20 @@ export default function UsersPage() {
     search: debouncedSearch || undefined,
     status: statusFilter,
     role: roleFilter === 'all' ? undefined : roleFilter,
+    kind: kindFilter === 'all' ? undefined : kindFilter,
     limit,
     offset,
   })
+  // SSO exceptions (owners and admins see the security settings): a badge
+  // on the members who may sign in without SSO.
+  const { settings: tenantSettings } = useTenantSettings(canManageMembers ? tenantSlug : undefined)
+  const ssoExceptionUntil = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const e of tenantSettings?.security?.sso_exceptions ?? []) map.set(e.user_id, e.expires_at)
+    return map
+  }, [tenantSettings])
+  const canChangeAccess = useCanMutate('PATCH /api/v1/organization/members/{member_id}/access')
+  const [accessMember, setAccessMember] = useState<MemberWithUser | null>(null)
   // Organization-wide counts for the metric strip (not just this page).
   const { stats: memberStats, mutate: mutateMemberStats } = useMemberStats(tenantSlug)
 
@@ -654,6 +687,11 @@ export default function UsersPage() {
               )}
             </p>
             <p className="text-muted-foreground text-xs">{row.original.email}</p>
+            <MemberBadges
+              member={row.original}
+              ssoExceptionUntil={ssoExceptionUntil.get(row.original.user_id)}
+              className="mt-1"
+            />
           </div>
         </div>
       ),
@@ -685,9 +723,21 @@ export default function UsersPage() {
     {
       accessorKey: 'status',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-      cell: ({ row }) => (
-        <MemberStatusBadge status={row.original.status} pendingSetup={row.original.pending_setup} />
-      ),
+      cell: ({ row }) => {
+        const reason =
+          row.original.status === 'suspended'
+            ? suspendedReasonText(row.original.suspended_reason)
+            : ''
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            <MemberStatusBadge
+              status={row.original.status}
+              pendingSetup={row.original.pending_setup}
+            />
+            {reason && <span className="text-muted-foreground text-xs">{reason}</span>}
+          </div>
+        )
+      },
     },
     // Two-factor status: the API includes it for owners and admins only.
     ...(members.some((m) => m.mfa_status)
@@ -760,6 +810,17 @@ export default function UsersPage() {
                     </DropdownMenuItem>
                   </Can>
                   <Can route="PATCH /api/v1/tenants/{tenant}/members/{userId}">
+                    {member.kind === 'external' && canChangeAccess && !offboarded && (
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault()
+                          setAccessMember(member)
+                        }}
+                      >
+                        <CalendarClock className="me-2 h-4 w-4" />
+                        Change end of access
+                      </DropdownMenuItem>
+                    )}
                     {member.pending_setup && (
                       <DropdownMenuItem
                         onSelect={(e) => {
@@ -1056,6 +1117,18 @@ export default function UsersPage() {
           ))}
         </SelectContent>
       </Select>
+      <Select value={kindFilter} onValueChange={(v) => setKindFilter(v)}>
+        <SelectTrigger className="h-9 w-[130px]" aria-label="Internal or external">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {kindFilters.map((f) => (
+            <SelectItem key={f.value} value={f.value}>
+              {f.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v)}>
         <SelectTrigger className="h-9 w-[130px]" aria-label="Membership role">
           <SelectValue />
@@ -1221,7 +1294,16 @@ export default function UsersPage() {
                 <DetailHeader
                   title={member.name}
                   badges={
-                    <MemberStatusBadge status={member.status} pendingSetup={member.pending_setup} />
+                    <>
+                      <MemberStatusBadge
+                        status={member.status}
+                        pendingSetup={member.pending_setup}
+                      />
+                      <MemberBadges
+                        member={member}
+                        ssoExceptionUntil={ssoExceptionUntil.get(member.user_id)}
+                      />
+                    </>
                   }
                   meta={[member.email]}
                   menu={[
@@ -1291,6 +1373,11 @@ export default function UsersPage() {
           )
         })()}
 
+      <MemberAccessDialog
+        member={accessMember}
+        onOpenChange={(open) => !open && setAccessMember(null)}
+        onSaved={refreshData}
+      />
       <InviteUserDialog
         tenantSlug={tenantSlug}
         open={inviteDialogOpen}

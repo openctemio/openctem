@@ -60,6 +60,8 @@ RUN cp -a /app/. /opt/openctem/web/ && rm -rf /app
 COPY --from=api /app/server /app/bootstrap-admin /opt/openctem/api/
 COPY --from=api /app/migrations /opt/openctem/api/migrations
 COPY --from=api /app/configs /opt/openctem/api/configs
+# The OpenAPI spec the API serves at /openapi.yaml (relative to its working dir).
+COPY --from=api /app/api/openapi/swagger.yaml /opt/openctem/api/api/openapi/swagger.yaml
 COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
 COPY --from=api /app/migrate-entrypoint.sh /usr/local/bin/openctem-migrate
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy

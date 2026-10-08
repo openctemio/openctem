@@ -5,7 +5,7 @@
 | Status | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated) |
 | Authors | Platform team |
 | Related | RFC-026 (v2 results), RFC-029 (v2 control plane), RFC-030 (leases), RFC-032 (enrollment, identity), RFC-035 (doorbell), RFC-040 (mutual distrust), RFC-052 (pairing, key-bound sensors), RFC-055 (tool contract) |
-| Code | `api/proto/openctem/sensor/v3/sensor.proto`, `api/pkg/sensorproto/v3` (generated), `api/internal/infra/sensorv3` (server), sdk-go `pkg/client` (client) |
+| Code | `api/proto/openctem/sensor/v3/sensor.proto`, `api/pkg/sensorproto/v3` (generated), `api/internal/infra/sensortransport` (server), sdk-go `pkg/client` (client) |
 
 ## 1. Summary
 
@@ -63,10 +63,10 @@ mTLS the preferred path where the network allows it.
 | T6 | v3 requires a key-bound sensor (RFC-052). A bearer key is refused on v3; such sensors stay on v2 until they pair. |
 | T7 | The client certificate certifies the sensor's registered Ed25519 key. `IssueCertificate` takes no CSR: the caller proved possession by signing the request (HTTPS) or in the handshake (gRPC). Subject CN = sensor id, URI SAN `spiffe://openctem/tenant/<tenant id>/sensor/<sensor id>`, extended key usage clientAuth, lifetime `SENSOR_MTLS_CERT_TTL` (default 7 days, 1 hour to 30 days). The sensor renews at two thirds of the lifetime. Issuance is rate-limited per sensor and recorded on the sensor's timeline. |
 | T8 | Revocation needs no CRL: every handshake and every call resolves the certificate's key through the sensor's active keys and status (the same lookup as a signed v2 request) and checks that tenant and sensor in the certificate match the key's row. Results are cached at most 5 seconds. Streams re-check every 30 seconds and at once when the sensor's status changes. |
-| T9 | The sensor CA is ECDSA P-256 with its own key, separate from the job signer (RFC-040): a certificate authenticates a channel and never authorizes a job. Loaded from `SENSOR_MTLS_CA_CERT_FILE` + `SENSOR_MTLS_CA_KEY_FILE`; when both are unset it is created once in `SENSOR_MTLS_CA_DIR` (default `/app/data/sensor-ca`, mode 0600, exclusive create so replicas sharing the volume agree). The mTLS listener's server certificate is minted in memory from the same CA for `SENSOR_PUBLIC_HOST`. |
+| T9 | The sensor CA is ECDSA P-256 with its own key, separate from the job signer (RFC-040): a certificate authenticates a channel and never authorizes a job. Loaded from `SENSOR_MTLS_CA_CERT_FILE` + `SENSOR_MTLS_CA_KEY_FILE`; when both are unset it is created once in `SENSOR_MTLS_CA_DIR` (default `data/sensor-ca`, i.e. `/app/data/sensor-ca` in the image; one file, mode 0600 in a 0700 directory, published with an atomic link so replicas sharing the volume agree). The mTLS listener's server certificate is minted in memory from the same CA for `SENSOR_PUBLIC_HOST`. |
 | T10 | mTLS listener: TLS 1.3 only; client certificates required and verified against the sensor CA only; ALPN `h2` only; 16 MiB per message; the v2 per-sensor rate limits; a keepalive every 25 seconds on the stream; client deadlines honoured; no server reflection. |
 | T11 | No message names a tenant. The tenant and the sensor are those of the authenticated identity; a command or report id of another sensor or tenant answers NOT_FOUND. A tenant-less (platform) sensor is refused on v3 as on v2. |
-| T12 | Push fan-out: a decorator on the command repository and the sensor status changes publish a wake (`{tenant_id, sensor_id?}`) on Redis channel `sensor:v3:wake`; every replica re-evaluates the doorbell for its streams of that tenant (jittered up to 250 ms). Without Redis each replica wakes its own streams and re-evaluates every 30 seconds. |
+| T12 | Push fan-out: a hook in the command repository (a command becomes pending, a held one is cancelled, bulk re-queues) and the sensor status changes publish a wake (`{tenant_id, sensor_id?}`) on Redis channel `sensor:v3:wake`; every replica re-evaluates the doorbell for its streams of that tenant (jittered up to 250 ms). Without Redis each replica wakes its own streams and re-evaluates every 30 seconds. |
 | T13 | Fallback in the SDK: `SENSOR_TRANSPORT=auto|grpc|https|v2`. `auto` tries gRPC, then on a transport-level failure (dial or handshake failure, no HTTP/2, a stream reset by an intermediary, Unimplemented) the HTTPS binding, then v2 when the platform has no v3. It never falls back on an identity error (UNAUTHENTICATED, PERMISSION_DENIED from the platform). gRPC is probed again every 30 minutes. The heartbeat reports the binding and the fallback reason; the platform stores the binding it served and shows both per sensor. |
 | T14 | Same port 443 by SNI: the gateway passes TLS for `SENSOR_PUBLIC_HOST` through at layer 4 to the API's mTLS listener (with PROXY protocol v2, accepted only from `SENSOR_MTLS_TRUSTED_PROXIES`) and terminates every other host as today. A separate port is a configuration option. |
 
@@ -166,7 +166,7 @@ by the v2 code it reuses.
 | `SENSOR_PUBLIC_HOST` | — | Host name sensors use for gRPC (e.g. `sensors.example.com[:443]`); no gRPC binding without it |
 | `SENSOR_MTLS_LISTEN_ADDR` | `:8443` | mTLS listener |
 | `SENSOR_MTLS_CA_CERT_FILE` / `SENSOR_MTLS_CA_KEY_FILE` | — | Sensor CA (PEM) |
-| `SENSOR_MTLS_CA_DIR` | `/app/data/sensor-ca` | Where the CA is created when the files are unset |
+| `SENSOR_MTLS_CA_DIR` | `data/sensor-ca` (in the image: `/app/data/sensor-ca`, on the `api-data` volume) | Where the CA is created when the files are unset |
 | `SENSOR_MTLS_CERT_TTL` | `168h` | Client certificate lifetime (1h–720h) |
 | `SENSOR_MTLS_TRUSTED_PROXIES` | — | CIDRs whose PROXY protocol header is believed on the mTLS listener |
 

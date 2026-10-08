@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -90,6 +91,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
@@ -884,9 +886,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
 
-	// Plans and limits (docs/architecture/plans-and-limits.md), with or
-	// without local auth.
+	// Plans and limits: every creation path checks the organization limits
+	// (docs/architecture/plans-and-limits.md). Seats and invitations are
+	// checked where the rows are inserted.
 	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
+	for _, r := range []interface{ SetPlanLimits(plan.Checker) }{
+		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing,
+	} {
+		r.SetPlanLimits(s.Entitlement)
+	}
 
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)
@@ -2292,6 +2300,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	if os.Getenv("AUTH_ALLOW_REGISTRATION") != "" {
+		log.Warn("AUTH_ALLOW_REGISTRATION is retired and ignored: who may sign up is the sign-up policy (Console > System > Sign-up)")
+	}
 	// Plans and limits: self-service organizations are Free.
 	s.Auth.SetFreePlan(s.Entitlement)
 	// Stamp the current permission version onto issued access tokens so the
@@ -2422,6 +2433,12 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// PKCE verifiers live in Redis keyed by state (TTL = state lifetime,
 		// GETDEL = single use) so a login can finish on any replica. Without
 		// Redis the service keeps them in process.
+		// A social sign-in creates an account only when the sign-up policy
+		// admits it (self-service, or a pending invitation for the email).
+		if s.Signup != nil {
+			s.OAuth.SetSignupPolicy(s.Signup)
+		}
+		s.OAuth.SetInvitationLookup(repos.Tenant)
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)

@@ -6,7 +6,7 @@
 > target before the proxy (sdk-go#111, released in sdk-go v0.15.0; content
 > tools follow the content proxy in sensor#102). Not built: the manifest
 > `egress.control` field and Phases 1–4 (no api code yet).
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
+> Scope: api + sdk-go + sensor (`openctemio/sensor`) + ui.
 > Builds on [RFC-023](RFC-023-scan-zones-and-scanners.md) (scan zones, the three
 > enforcement layers D7, the operator allow-list D8, credential tiers D12),
 > [RFC-030](RFC-030-scan-work-distribution.md) (eligibility, per-host
@@ -20,9 +20,9 @@
 > policy file, and extends the forwarder's destination check from proxied
 > jobs to every job of a proxy-aware tool.
 >
-> Owner's request (2026-10-02): "When sensors are used for internal systems,
-> some network zones can only be reached through a proxy; research the best
-> proxy solution."
+> Problem (2026-10-02): when sensors are used for internal systems, some
+> network zones can only be reached through a proxy. What is the best proxy
+> solution?
 
 ## 1. Answer in short
 
@@ -366,11 +366,11 @@ gains:
   "allowed_tools": ["nuclei", "httpx", "naabu"],
   "egress_profiles": [{
     "id": "…", "revision": 7, "name": "Plant OT segment",
-    "endpoints": [{"scheme": "socks5h", "host": "10.40.0.5", "port": 1080},
-                  {"scheme": "socks5h", "host": "10.40.0.6", "port": 1080}],
+    "endpoints": [{"scheme": "socks5h", "host": "198.51.100.5", "port": 1080},
+                  {"scheme": "socks5h", "host": "198.51.100.6", "port": 1080}],
     "auth": "basic", "credential_ref": null,
     "ca_bundle_pem": null, "dns": "proxy",
-    "health_target": "10.40.1.10:443",
+    "health_target": "198.51.100.10:443",
     "zones": ["…zone id…"]
   }]
 }
@@ -627,7 +627,7 @@ forwarder open `direct-tcpip` channels through an SSH connection
 - The SSH key is sealed like T2 credentials.
 - `ssh -D` gives the same result, but as an external process.
 
-This is Phase 4 and an owner decision (O7). A sensor in the segment is almost
+This is Phase 4 and an open decision (O7). A sensor in the segment is almost
 always the better answer.
 
 ### 6.11 UI
@@ -660,7 +660,7 @@ always the better answer.
 - **New scan / preview.** `POST /scan-zones/preview` returns, per zone, the
   path and the tools that will be limited or refused (`egress` member).
 - **Scan run page.** Per zone and per job, the path taken (`via
-  10.40.0.5:1080, SOCKS5, profile rev 7`), refused destinations, and
+  198.51.100.5:1080, SOCKS5, profile rev 7`), refused destinations, and
   throttled or blocked hosts. Run warnings explain `ZONE_UNREACHABLE`.
 
 ## 7. Compatibility
@@ -694,14 +694,14 @@ always the better answer.
 | Rotate through proxies or source addresses when a target throttles or blocks | Out of scope by design (§2.1). It evades the target owner's controls, and our customers scan their own estate, where a block is a signal to report, not an obstacle. |
 | Push `HTTPS_PROXY` to sensors from the platform | It mixes control and scan traffic (G1), can cut a sensor off from the platform, and cannot be scoped per zone or tool. |
 | Wire the profile into each tool's flags, with no forwarder | Credentials in argv and in N code paths. No single destination check, so scope enforcement depends on each tool's honesty. Failover and health would be reimplemented per tool. |
-| Only "put a sensor in every segment" | Still the first recommendation (§4.2). But some segments (OT, regulated enclaves, partner networks) allow only a managed proxy or bastion, and the owner asked for a proxy answer. |
+| Only "put a sensor in every segment" | Still the first recommendation (§4.2). But some segments (OT, regulated enclaves, partner networks) allow only a managed proxy or bastion, and they need a proxy answer. |
 | PAC files | They need a JavaScript engine in the sensor, and they choose a proxy per URL, which hides from the platform which path a job took. Explicit endpoint lists cover the scanner case. PAC remains possible for the control channel only (O6). |
 | Transparent interception or a VPN client in the sensor | Network-team infrastructure, not a scanner feature. A sensor behind such a network is simply "direct". |
 | SOCKS5 UDP ASSOCIATE for UDP probes | Rarely implemented by proxies and by our tools. UDP and ICMP stay "not through a proxy" (§2.1). |
 
 ## 10. Decisions
 
-### 10.1 Technical decisions taken here (no owner input needed)
+### 10.1 Technical decisions taken here
 
 - Three traffic classes with separate settings (§6.1).
 - Commands reference a profile and never carry a proxy URL (§6.3).
@@ -712,7 +712,7 @@ always the better answer.
   endpoint only (§6.8).
 - Proxied jobs are offered only to sensors that declare support (§6.3).
 
-### 10.2 Owner decisions
+### 10.2 Open decisions
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
@@ -723,7 +723,7 @@ always the better answer.
 | O5 | Proxy authentication methods | Basic and SOCKS5 user/password; + NTLM/Negotiate (Kerberos) | **Basic and SOCKS5 user/password** for the scan path. **NTLM/Negotiate only for the control proxy, and only on demand (Phase 4)**: Go has no built-in support, and the usual workaround is a local authenticating relay (cntlm or px), which we can document. |
 | O6 | PAC files and WPAD | support PAC for control; support PAC everywhere; neither | **Never WPAD. No PAC on the scan path.** PAC for the control channel only if a customer requires it (Phase 4); an explicit proxy covers the cases seen so far. |
 | O7 | SSH jump host profiles | build in Phase 4 / not at all | **Phase 4, on demand.** Recommend a sensor in the segment first. |
-| O8 | Who may manage egress profiles | (a) reuse `sensors:zones:write`; (b) new `sensors:egress:*`, admin and owner only | **(b).** A proxy decides where scan traffic and credentials go. This matches the owner's 2026-10 decision that sensor administration is admin-only. |
+| O8 | Who may manage egress profiles | (a) reuse `sensors:zones:write`; (b) new `sensors:egress:*`, admin and owner only | **(b).** A proxy decides where scan traffic and credentials go. This matches the rule that sensor administration is admin-only. |
 | O9 | A tool that cannot use a zone's proxy (raw SYN, UDP, ICMP, DNS templates) | (a) refuse that tool or part, visibly; (b) run it direct with a warning | **(a).** Going direct would scan from a path the administrator did not choose, possibly into a segment with a different policy. |
 | O10 | May the default (public) zone use a profile (the corporate egress proxy for external scans)? | yes / no | **Yes.** It is the supported way to scan the internet from a sensor whose only egress is the corporate proxy. Inspection caveats (§6.8) are shown. |
 
