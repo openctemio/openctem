@@ -71,6 +71,13 @@ type DispatchTargetsInput struct {
 	// the safe active probe every path sends unless it says otherwise;
 	// PassiveOnly dispatches are not tier-checked.
 	Tier *scopedom.Tier
+	// Recheck re-applies the gate to targets that passed a gate when their
+	// command was created (the claim-time re-check, command.Service). Their
+	// form cannot have changed since, and a scan dispatches some targets
+	// the validator's form rules refuse (a repository by its asset name),
+	// so only the validator's address rules apply again (an internal
+	// address needs a scan zone); every other check runs as usual.
+	Recheck bool
 }
 
 // RefusedTarget is a target the gate will not dispatch, with the reason and
@@ -179,6 +186,9 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	if err != nil {
 		return nil, err
 	}
+	if in.Recheck {
+		accepted, rejected = keepFormRejected(accepted, rejected)
+	}
 	for _, r := range rejected {
 		out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: r.Reason, Code: scopedom.RefusalInvalidTarget})
 	}
@@ -240,6 +250,22 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 		return nil, err
 	}
 	return out, nil
+}
+
+// keepFormRejected moves back to accepted every rejected target that is not
+// an internal address (Recheck): the claim re-checks what a dispatch already
+// let through, and only the address rules can turn on a change (a scan zone
+// deleted or shrunk).
+func keepFormRejected(accepted []string, rejected []rejectedTarget) ([]string, []rejectedTarget) {
+	still := rejected[:0:0]
+	for _, r := range rejected {
+		if isInternalTarget(r.Target) {
+			still = append(still, r)
+			continue
+		}
+		accepted = append(accepted, r.Target)
+	}
+	return accepted, still
 }
 
 // refuseUnconfirmed moves every kept target the ownership gate refuses to
