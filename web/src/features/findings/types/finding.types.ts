@@ -1211,6 +1211,8 @@ export interface ApiApproval {
   id: string
   tenant_id: string
   finding_id: string
+  /** The finding's title (approval lists); absent when it no longer exists. */
+  finding_title?: string
   requested_status: string
   requested_by: string
   justification: string
