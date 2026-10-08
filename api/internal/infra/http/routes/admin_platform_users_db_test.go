@@ -80,7 +80,7 @@ func (h *chainHarness) auditRow(action, resourceID string) (found bool, body str
 		var b []byte
 		err := h.db.QueryRowContext(context.Background(), `
 			SELECT COALESCE(request_body::text, '') FROM admin_audit_logs
-			WHERE action = $1 AND resource_id = $2 ORDER BY created_at DESC LIMIT 1`, action, resourceID).Scan(&b)
+			WHERE action = $1 AND resource_id = $2 AND success ORDER BY created_at DESC LIMIT 1`, action, resourceID).Scan(&b)
 		if err == nil {
 			return true, string(b)
 		}
