@@ -32,7 +32,7 @@
 #
 # Classes and lenses are fixed in code, not tenant-editable (RFC-042 D18).
 # Lens, class and type ids must not be a reserved /assets/ page segment
-# (all, changes, duplicates, groups, services, suggestions); the generator
+# (changes, duplicates, groups, suggestions, web); the generator
 # rejects them.
 # Tenants organise with groups and labels.
 # =============================================================================

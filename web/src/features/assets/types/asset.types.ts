@@ -106,23 +106,23 @@ export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = 
     description: 'Internet-facing assets and entry points',
     types: ['domain', 'subdomain', 'certificate', 'ip_address'],
     items: [
-      { key: 'domain', label: 'Domains', url: '/assets/domains?type=domain', countKey: 'domain' },
+      { key: 'domain', label: 'Domains', url: '/assets?types=domain', countKey: 'domain' },
       {
         key: 'subdomain',
         label: 'Subdomains',
-        url: '/assets/domains?type=subdomain',
+        url: '/assets?types=subdomain',
         countKey: 'subdomain',
       },
       {
         key: 'certificate',
         label: 'Certificates',
-        url: '/assets/certificates',
+        url: '/assets?types=certificate',
         countKey: 'certificate',
       },
       {
         key: 'ip_address',
         label: 'IP Addresses',
-        url: '/assets/ip-addresses',
+        url: '/assets?types=ip_address',
         countKey: 'ip_address',
       },
     ],
@@ -134,9 +134,19 @@ export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = 
     items: [
       // One web sub-type (RFC-042 §6.3.8 O3): stored as `website`,
       // labelled "Web applications".
-      { key: 'website', label: 'Web applications', url: '/assets/websites', countKey: 'website' },
-      { key: 'api', label: 'APIs', url: '/assets/apis', countKey: 'api' },
-      { key: 'mobile_app', label: 'Mobile Apps', url: '/assets/mobile', countKey: 'mobile_app' },
+      {
+        key: 'website',
+        label: 'Web applications',
+        url: '/assets?types=application&sub_type=website',
+        countKey: 'website',
+      },
+      { key: 'api', label: 'APIs', url: '/assets?types=application&sub_type=api', countKey: 'api' },
+      {
+        key: 'mobile_app',
+        label: 'Mobile Apps',
+        url: '/assets?types=application&sub_type=mobile_app',
+        countKey: 'mobile_app',
+      },
     ],
   },
   infrastructure: {
@@ -144,20 +154,20 @@ export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = 
     description: 'Servers, VMs, containers, Kubernetes, and services',
     types: ['host', 'container', 'kubernetes', 'service'],
     items: [
-      { key: 'host', label: 'Hosts', url: '/assets/hosts', countKey: 'host' },
+      { key: 'host', label: 'Hosts', url: '/assets?types=host', countKey: 'host' },
       {
         key: 'container',
         label: 'Containers',
-        url: '/assets/containers?type=container',
+        url: '/assets?types=container',
         countKey: 'container',
       },
       {
         key: 'kubernetes',
         label: 'Kubernetes',
-        url: '/assets/containers?type=kubernetes',
+        url: '/assets?types=kubernetes',
         countKey: 'kubernetes',
       },
-      { key: 'service', label: 'Services', url: '/assets/services', countKey: 'service' },
+      { key: 'service', label: 'Services', url: '/assets?types=service', countKey: 'service' },
     ],
   },
   network: {
@@ -168,25 +178,25 @@ export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = 
       {
         key: 'firewall',
         label: 'Firewalls',
-        url: '/assets/networks?sub_type=firewall',
+        url: '/assets?types=network&sub_type=firewall',
         countKey: 'firewall',
       },
       {
         key: 'load_balancer',
         label: 'Load Balancers',
-        url: '/assets/networks?sub_type=load_balancer',
+        url: '/assets?types=network&sub_type=load_balancer',
         countKey: 'load_balancer',
       },
       {
         key: 'switch',
         label: 'Switches',
-        url: '/assets/networks?sub_type=switch',
+        url: '/assets?types=network&sub_type=switch',
         countKey: 'switch',
       },
       {
         key: 'router',
         label: 'Routers',
-        url: '/assets/networks?sub_type=router',
+        url: '/assets?types=network&sub_type=router',
         countKey: 'router',
       },
     ],
@@ -199,10 +209,10 @@ export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = 
       {
         key: 'cloud_account',
         label: 'Cloud Accounts',
-        url: '/assets/cloud-accounts',
+        url: '/assets?types=cloud_account',
         countKey: 'cloud_account',
       },
-      { key: 'storage', label: 'Storage', url: '/assets/storage', countKey: 'storage' },
+      { key: 'storage', label: 'Storage', url: '/assets?types=storage', countKey: 'storage' },
     ],
   },
   data: {
@@ -210,7 +220,7 @@ export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = 
     description: 'Databases and data stores',
     types: ['database'],
     items: [
-      { key: 'database', label: 'Databases', url: '/assets/databases', countKey: 'database' },
+      { key: 'database', label: 'Databases', url: '/assets?types=database', countKey: 'database' },
     ],
   },
   identity: {
@@ -221,19 +231,19 @@ export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = 
       {
         key: 'iam_user',
         label: 'Users',
-        url: '/assets/identity?sub_type=iam_user',
+        url: '/assets?types=identity&sub_type=iam_user',
         countKey: 'iam_user',
       },
       {
         key: 'iam_role',
         label: 'Roles',
-        url: '/assets/identity?sub_type=iam_role',
+        url: '/assets?types=identity&sub_type=iam_role',
         countKey: 'iam_role',
       },
       {
         key: 'service_account',
         label: 'Service Accounts',
-        url: '/assets/identity?sub_type=service_account',
+        url: '/assets?types=identity&sub_type=service_account',
         countKey: 'service_account',
       },
     ],
@@ -246,7 +256,7 @@ export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = 
       {
         key: 'repository',
         label: 'Repositories',
-        url: '/assets/repositories',
+        url: '/assets?types=repository',
         countKey: 'repository',
       },
     ],
@@ -699,7 +709,7 @@ export interface Asset {
    * exists. Persisted to assets.owner_ref (max 500 chars).
    */
   ownerRef?: string
-  metadata: AssetMetadata & Record<string, unknown>
+  metadata: AssetMetadata
   tags?: string[]
   primaryOwner?: OwnerBrief
   firstSeen: string
@@ -751,7 +761,7 @@ export interface CreateAssetInput {
   groupId?: string // Optional - can create ungrouped assets
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
-  metadata?: AssetMetadata & Record<string, unknown>
+  metadata?: AssetMetadata
   tags?: string[]
 }
 
@@ -774,7 +784,7 @@ export interface UpdateAssetInput {
   groupId?: string | null // null to remove from group
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
-  metadata?: AssetMetadata & Record<string, unknown>
+  metadata?: AssetMetadata
   tags?: string[]
 }
 

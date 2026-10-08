@@ -11,7 +11,7 @@
  */
 import type { TypeAttribute, TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel, type AssetPropertyKey } from '@/features/asset-types/lib/property-schema'
-import type { FormFieldConfig } from '../types/page-config.types'
+import type { FormFieldConfig } from '../types/form-field.types'
 import type {
   AssetMetadata,
   AssetScope,
