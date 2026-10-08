@@ -27,6 +27,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -153,6 +154,14 @@ type TenantWithRoleResponse struct {
 	TenantResponse
 	Role     string    `json:"role"`
 	JoinedAt time.Time `json:"joined_at"`
+	// The caller's own membership (RFC-058). Kind is "internal" or
+	// "external"; AccessExpiresAt is when an external membership ends.
+	// BlockedReason, when set, says why the organization cannot be opened:
+	// suspended, expired, home_access_ended, home_domain_lapsed,
+	// trust_revoked or personal_accounts_blocked.
+	Kind            string     `json:"kind"`
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	BlockedReason   string     `json:"blocked_reason,omitempty"`
 }
 
 // MemberResponse represents a tenant member in API responses.
@@ -197,6 +206,9 @@ type MemberWithUserResponse struct {
 	// DomainLapsed: the member's email domain lost its verified SSO proof in
 	// this organization (owners and admins only).
 	DomainLapsed bool `json:"domain_lapsed,omitempty"`
+	// Personal: an external member with a consumer address (gmail.com, ...)
+	// that no organization manages (owners and admins only).
+	Personal bool `json:"personal,omitempty"`
 }
 
 // MemberRBACRoleResponse represents a simplified RBAC role in member response.
@@ -322,9 +334,12 @@ func toTenantResponse(t *tenant.Tenant) TenantResponse {
 
 func toTenantWithRoleResponse(twr *tenant.TenantWithRole) TenantWithRoleResponse {
 	return TenantWithRoleResponse{
-		TenantResponse: toTenantResponse(twr.Tenant),
-		Role:           twr.Role.String(),
-		JoinedAt:       twr.JoinedAt,
+		TenantResponse:  toTenantResponse(twr.Tenant),
+		Role:            twr.Role.String(),
+		JoinedAt:        twr.JoinedAt,
+		Kind:            string(memberKindOrInternal(twr.Kind)),
+		AccessExpiresAt: twr.ExpiresAt,
+		BlockedReason:   twr.BlockedReason(),
 	}
 }
 
@@ -780,6 +795,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 			Offset:         offset,
 			Status:         statusFilter,
 			Role:           r.URL.Query().Get("role"),
+			Kind:           memberKindFilter(r.URL.Query().Get("kind")),
 		}
 		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
 		if err != nil {
@@ -817,6 +833,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 				response[i].AccessExpiresAt = m.ExpiresAt
 				response[i].SuspendedReason = m.SuspendedReason
 				response[i].DomainLapsed = m.DomainLapsed
+				response[i].Personal = m.Kind == tenant.MemberKindExternal && m.HomeTenantName == "" && emaildomain.IsConsumer(m.HomeDomain)
 			}
 		}
 
@@ -3091,4 +3108,15 @@ func nonNilSSOExceptions(in []tenant.SSOException) []tenant.SSOException {
 		return []tenant.SSOException{}
 	}
 	return in
+}
+
+// memberKindFilter accepts ?kind=internal|external (RFC-058); anything else
+// lists every member.
+func memberKindFilter(v string) string {
+	switch v {
+	case string(tenant.MemberKindInternal), string(tenant.MemberKindExternal):
+		return v
+	default:
+		return ""
+	}
 }
