@@ -122,7 +122,7 @@ func (c *BitbucketClient) GetUser(ctx context.Context) (*User, error) {
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "bitbucket", resp.StatusCode, body)
 	}
 
 	if c.isCloud {
@@ -309,7 +309,7 @@ func (c *BitbucketClient) listCloudRepositories(ctx context.Context, opts ListOp
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "bitbucket", resp.StatusCode, body)
 	}
 
 	if c.config.Organization != "" {
@@ -385,7 +385,7 @@ func (c *BitbucketClient) listServerRepositories(ctx context.Context, opts ListO
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "bitbucket", resp.StatusCode, body)
 	}
 
 	var result struct {

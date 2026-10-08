@@ -46,6 +46,7 @@ import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { Permission, usePermissions } from '@/lib/permissions'
 import {
   useRelationshipSuggestions,
   useApproveSuggestion,
@@ -121,6 +122,10 @@ export default function RelationshipSuggestionsPage() {
     setSelectionEpoch((n) => n + 1)
   }, [])
   const [editingType, setEditingType] = useState<string | null>(null)
+  // Reviewing (scan, approve, dismiss, change the type) needs assets:write,
+  // the permission the API checks; readers see the queue only.
+  const { can } = usePermissions()
+  const canReview = can(Permission.AssetsWrite)
 
   const pageSize = list.perPage
   const { data, error, isLoading, isValidating } = useRelationshipSuggestions(
@@ -209,8 +214,8 @@ export default function RelationshipSuggestionsPage() {
     [updateType]
   )
 
-  const columns = useMemo<ColumnDef<RelationshipSuggestion>[]>(
-    () => [
+  const columns = useMemo<ColumnDef<RelationshipSuggestion>[]>(() => {
+    const all: ColumnDef<RelationshipSuggestion>[] = [
       {
         id: 'select',
         header: ({ table }) => (
@@ -249,6 +254,17 @@ export default function RelationshipSuggestionsPage() {
         enableSorting: false,
         cell: ({ row }) => {
           const s = row.original
+          if (!canReview) {
+            return (
+              <div className="flex items-center gap-1">
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <Badge variant="secondary" className="text-xs">
+                  {TYPE_LABELS[s.relationship_type] || s.relationship_type}
+                </Badge>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </div>
+            )
+          }
           return editingType === s.id ? (
             <Select
               defaultValue={s.relationship_type}
@@ -352,9 +368,9 @@ export default function RelationshipSuggestionsPage() {
           </div>
         ),
       },
-    ],
-    [editingType, handleApprove, handleDismiss, handleUpdateType, isMutating]
-  )
+    ]
+    return canReview ? all : all.filter((c) => c.id !== 'select' && c.id !== 'actions')
+  }, [canReview, editingType, handleApprove, handleDismiss, handleUpdateType, isMutating])
 
   const searchBox = (
     <div className="relative min-w-0 flex-1 sm:max-w-sm">
@@ -375,15 +391,17 @@ export default function RelationshipSuggestionsPage() {
         title="Relationship suggestions"
         description="Relationships detected between assets. Approve one to create the link."
       >
-        <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
-          {isGenerating ? (
-            <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="me-2 h-4 w-4" />
-          )}
-          Scan
-        </Button>
-        {total > 0 && (
+        {canReview && (
+          <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
+            {isGenerating ? (
+              <RefreshCw className="me-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="me-2 h-4 w-4" />
+            )}
+            Scan
+          </Button>
+        )}
+        {canReview && total > 0 && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button size="sm" disabled={isApprovingAll}>
@@ -426,7 +444,11 @@ export default function RelationshipSuggestionsPage() {
           <EmptyState
             icon={Link2}
             title="No pending suggestions"
-            description="Run a scan to detect new connections between assets."
+            description={
+              canReview
+                ? 'Run a scan to detect new connections between assets.'
+                : 'No relationships are waiting for review.'
+            }
           />
         ) : (
           <DataTable
@@ -449,7 +471,11 @@ export default function RelationshipSuggestionsPage() {
         )}
       </div>
 
-      <BulkActionBar count={selected.length} onClear={clearSelection} noun="selected">
+      <BulkActionBar
+        count={canReview ? selected.length : 0}
+        onClear={clearSelection}
+        noun="selected"
+      >
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="ghost" size="sm" className="h-8" disabled={isBatchApproving}>

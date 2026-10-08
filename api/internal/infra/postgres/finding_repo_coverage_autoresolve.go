@@ -43,7 +43,7 @@ func (r *FindingRepository) RepoCoverageStaleFindings(ctx context.Context, tenan
 				-- Only the tool that saw the finding last may close it
 				-- (RFC-043 interim guard).
 				AND COALESCE(f.last_seen_tool, f.tool_name) = $3
-				AND f.status IN `+coverageOpenStatuses+`
+				AND f.status IN `+autoResolveFromSQL+`
 				AND f.source NOT IN `+coverageProtectedSources+`
 		)
 		SELECT o.id::text, COUNT(*) OVER () AS open_total,
@@ -118,7 +118,7 @@ func (r *FindingRepository) ResolveRepoCoverageStale(ctx context.Context, tenant
 			AND f.id = ANY($2)
 			AND f.branch_id = rb.id
 			AND rb.is_default = true
-			AND f.status IN `+coverageOpenStatuses+`
+			AND f.status IN `+autoResolveFromSQL+`
 			AND f.source NOT IN `+coverageProtectedSources+`
 		RETURNING f.id::text`, tenantID.String(), pq.Array(idStrs))
 	if err != nil {

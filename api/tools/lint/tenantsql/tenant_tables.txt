@@ -146,6 +146,7 @@ sso_pending_changes
 suppression_rules
 template_sources
 tenant_identity_providers
+tenant_idle_lifecycle
 tenant_invitations
 tenant_members
 tenant_modules

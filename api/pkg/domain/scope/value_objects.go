@@ -61,7 +61,7 @@ func (t TargetType) IsValid() bool {
 func ParseTargetType(s string) (TargetType, error) {
 	t := TargetType(strings.ToLower(s))
 	if !t.IsValid() {
-		return "", fmt.Errorf("invalid target type: %s", s)
+		return "", fmt.Errorf("%w: %q", ErrInvalidTargetType, s)
 	}
 	return t, nil
 }
@@ -117,7 +117,7 @@ func (t ExclusionType) IsValid() bool {
 func ParseExclusionType(s string) (ExclusionType, error) {
 	t := ExclusionType(strings.ToLower(s))
 	if !t.IsValid() {
-		return "", fmt.Errorf("invalid exclusion type: %s", s)
+		return "", fmt.Errorf("%w: %q", ErrInvalidExclusionType, s)
 	}
 	return t, nil
 }
@@ -163,11 +163,11 @@ func (s Status) IsValid() bool {
 // ValidatePattern validates a pattern for the given target type.
 func ValidatePattern(targetType TargetType, pattern string) error {
 	if pattern == "" {
-		return fmt.Errorf("pattern cannot be empty")
+		return fmt.Errorf("%w: pattern cannot be empty", ErrInvalidPattern)
 	}
 
 	if len(pattern) > 500 {
-		return fmt.Errorf("pattern too long (max 500 characters)")
+		return fmt.Errorf("%w (max 500 characters)", ErrPatternTooLong)
 	}
 
 	switch targetType {
@@ -196,14 +196,14 @@ func validateDomainPattern(pattern string) error {
 
 	// Basic domain validation
 	if !regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$`).MatchString(pattern) {
-		return fmt.Errorf("invalid domain pattern: %s", pattern)
+		return fmt.Errorf("%w: not a domain name or *.domain wildcard", ErrInvalidPattern)
 	}
 	return nil
 }
 
 func validateIPAddress(pattern string) error {
 	if net.ParseIP(pattern) == nil {
-		return fmt.Errorf("invalid IP address: %s", pattern)
+		return fmt.Errorf("%w: not an IP address", ErrInvalidPattern)
 	}
 	return nil
 }
@@ -220,7 +220,7 @@ func validateCIDR(pattern string) error {
 				}
 			}
 		}
-		return fmt.Errorf("invalid CIDR or IP range: %s", pattern)
+		return fmt.Errorf("%w: not a CIDR block or first-last IP range", ErrInvalidPattern)
 	}
 	return nil
 }
@@ -228,15 +228,24 @@ func validateCIDR(pattern string) error {
 func validateRepositoryPattern(pattern string) error {
 	// Allow: github.com/org/repo, github.com/org/*, gitlab.com/group/project
 	if !regexp.MustCompile(`^[a-zA-Z0-9.-]+(/[a-zA-Z0-9._*-]+)+$`).MatchString(pattern) {
-		return fmt.Errorf("invalid repository pattern: %s", pattern)
+		return fmt.Errorf("%w: not a repository path such as github.com/org/repo", ErrInvalidPattern)
 	}
 	return nil
 }
 
+var (
+	cloudAccountPattern = regexp.MustCompile(`^(AWS|GCP|Azure|aws|gcp|azure):[a-zA-Z0-9_-]+$`)
+	// awsAccountIDPattern is an AWS account id without its provider prefix.
+	awsAccountIDPattern = regexp.MustCompile(`^[0-9]{12}$`)
+)
+
 func validateCloudAccountPattern(pattern string) error {
 	// Allow: AWS:123456789012, GCP:project-id, Azure:subscription-id
-	if !regexp.MustCompile(`^(AWS|GCP|Azure|aws|gcp|azure):[a-zA-Z0-9_-]+$`).MatchString(pattern) {
-		return fmt.Errorf("invalid cloud account pattern: %s (expected format: AWS:account-id)", pattern)
+	if awsAccountIDPattern.MatchString(pattern) {
+		return fmt.Errorf("%w: a bare AWS account id is not accepted; write it as AWS:%s", ErrInvalidPattern, pattern)
+	}
+	if !cloudAccountPattern.MatchString(pattern) {
+		return fmt.Errorf("%w: a cloud account is PROVIDER:id with PROVIDER one of AWS, GCP, Azure (for example AWS:123456789012)", ErrInvalidPattern)
 	}
 	return nil
 }
@@ -244,7 +253,7 @@ func validateCloudAccountPattern(pattern string) error {
 func validateURLPattern(pattern string) error {
 	// Allow wildcards in path
 	if !strings.HasPrefix(pattern, "http://") && !strings.HasPrefix(pattern, "https://") && !strings.HasPrefix(pattern, "*") {
-		return fmt.Errorf("invalid URL pattern: %s (must start with http://, https://, or *)", pattern)
+		return fmt.Errorf("%w: a URL must start with http://, https:// or *", ErrInvalidPattern)
 	}
 	return nil
 }

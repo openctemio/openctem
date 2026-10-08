@@ -34,10 +34,13 @@ import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
 // Import schema and server actions
 import { registerSchema, type RegisterInput } from '../schemas/auth.schema'
+import { passwordPolicyIssue } from '../lib/password-policy'
+import { PasswordPolicyHint } from './password-policy-hint'
 import { registerAction } from '../actions/local-auth-actions'
 import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth-actions'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { invitationTokenFromReturnTo } from '../lib/self-register'
+import { identityProviderLabel } from '@/lib/identity-provider-label'
 
 // ============================================
 // TYPES
@@ -99,6 +102,7 @@ export function RegisterForm({
   // button dead-ends. LoginForm has always asked the API which providers are
   // live; this is the same question, asked here too.
   const { data: authProviders } = useAuthProviders()
+  const passwordPolicy = authProviders?.password_policy
   const enabledSocialProviders = authProviders
     ? socialProviders.filter((provider) => authProviders.social?.[provider.id])
     : []
@@ -149,6 +153,11 @@ export function RegisterForm({
    * Handle form submission for local auth
    */
   function onSubmit(data: RegisterInput) {
+    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy)
+    if (issue) {
+      form.setError('password', { message: issue })
+      return
+    }
     startTransition(async () => {
       const result = await registerAction({
         email: data.email,
@@ -190,7 +199,7 @@ export function RegisterForm({
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)
-      toast.error(`Failed to sign up with ${provider}. Please try again.`)
+      toast.error(`Failed to sign up with ${identityProviderLabel(provider)}. Please try again.`)
     }
   }
 
@@ -321,6 +330,7 @@ export function RegisterForm({
                   {...field}
                 />
               </FormControl>
+              <PasswordPolicyHint />
               <FormMessage />
             </FormItem>
           )}
