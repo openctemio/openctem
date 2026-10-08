@@ -358,8 +358,8 @@ func TestResolveCTISAssetType_NameWinsOverContradictingType(t *testing.T) {
 		value    string
 		want     asset.AssetType
 	}{
-		{"domain reported as ip_address", ctis.AssetTypeIPAddress, "vndirect.com.vn", asset.AssetTypeDomain},
-		{"subdomain host reported as ip_address", ctis.AssetTypeIPAddress, "api.vndirect.com.vn", asset.AssetTypeDomain},
+		{"domain reported as ip_address", ctis.AssetTypeIPAddress, "example.co.uk", asset.AssetTypeDomain},
+		{"subdomain host reported as ip_address", ctis.AssetTypeIPAddress, "api.example.co.uk", asset.AssetTypeDomain},
 		{"real ipv4 stays", ctis.AssetTypeIPAddress, "203.0.113.7", asset.AssetTypeIPAddress},
 		{"real ipv6 stays", ctis.AssetTypeIPAddress, "2001:db8::1", asset.AssetTypeIPAddress},
 		{"bracketed ipv6 stays", ctis.AssetTypeIPAddress, "[2001:db8::1]", asset.AssetTypeIPAddress},

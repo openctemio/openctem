@@ -47,7 +47,7 @@ This RFC makes one model out of them:
 
 | Actor | Goal | Control |
 |---|---|---|
-| Careless admin | types `vndirect.com` for `vndirect.com.vn` | preview (`POST /scope/check`), step-up, second approver when the tenant has two or more admins, admin notification |
+| Careless admin | types `example.com` for `example.co.uk` | preview (`POST /scope/check`), step-up, second approver when the tenant has two or more admins, admin notification |
 | Compromised admin session | adds `*.victim.com` and scans it | step-up on every widening route (a stolen cookie alone cannot widen), approvals, notification of every admin, audit |
 | Malicious tenant (colluding admins) | uses the platform to scan a third party | approvals do not help; **ownership proof** for probes from platform sensors (`SCOPE_ACTIVE_PROOF`), platform deny list, public-suffix refusal, CIDR caps; none of them tenant-overridable |
 | Restricted member | scans outside their assets | act scope (D9) unchanged; may only *request* a one-off entry |
@@ -208,7 +208,7 @@ is re-evaluated, which confirms it. Idempotent (evidence upserted per asset,
 rule and source; confirmed records are left alone), per tenant, one system
 audit event per tenant (`attribution.backfill_confirmed`, the count and up to
 50 names). It runs at API start-up, recorded once per tenant. Live had 10 such
-names under `*.vndirect.com.vn` (2026-10-07).
+names under `*.example.co.uk` (2026-10-07).
 
 Tests: a wildcard match confirms; an expiring entry does not; an IP does not
 (unless inside an IP scope entry); an exclusion or tombstone blocks; removing
@@ -458,7 +458,7 @@ response by the guardrails PR. `t2` is never a default.
 ### 6.4 Dry run: `POST /check` (`scope:read`)
 
 ```json
-{ "targets": ["vndirect.com.vn", "promo-landing.net"],
+{ "targets": ["example.co.uk", "promo-landing.net"],
   "asset_ids": ["5f0c…"],
   "sensor_preference": "auto",
   "tier": 1 }
@@ -479,8 +479,8 @@ about assets outside their data scope; `proof_required` applies with
 
 ```json
 { "results": [
-  { "target": "vndirect.com.vn", "allowed": true,
-    "via": {"kind": "scope_target", "id": "…", "pattern": "*.vndirect.com.vn", "proof": "asserted"},
+  { "target": "example.co.uk", "allowed": true,
+    "via": {"kind": "scope_target", "id": "…", "pattern": "*.example.co.uk", "proof": "asserted"},
     "zone": null },
   { "target": "promo-landing.net", "allowed": false,
     "code": "no_entry",
@@ -555,15 +555,15 @@ The review queue already exists (RFC-036 §6.10); the web uses it as the
   never becomes an IP grant (§4.3). Such a row explains itself:
 
   ```json
-  { "name": "202.160.124.20", "type": "ip_address", "covered_by": null,
+  { "name": "198.51.100.20", "type": "ip_address", "covered_by": null,
     "hint": "ip_needs_ip_entry",
-    "resolved_from": ["vndirect.com.vn", "www.vndirect.com.vn"],
-    "network": {"asn": "AS131386", "org": "VNDIRECT Securities Corporation",
+    "resolved_from": ["example.co.uk", "www.example.co.uk"],
+    "network": {"asn": "AS64500", "org": "EXAMPLECO Securities Corporation",
                 "shared": false, "org_matches": true},
     "fixes": [
-      {"action": "add_entry", "target_type": "ip_address", "pattern": "202.160.124.20",
+      {"action": "add_entry", "target_type": "ip_address", "pattern": "198.51.100.20",
        "requires": "attack_surface:scope:approve"},
-      {"action": "add_entry", "target_type": "cidr", "pattern": "202.160.124.0/24",
+      {"action": "add_entry", "target_type": "cidr", "pattern": "198.51.100.0/24",
        "requires": "attack_surface:scope:approve"}] }
   ```
 
@@ -614,19 +614,19 @@ query `states` default `needs_review`, `limit` ≤ 50):
 
 ```json
 { "suggestions": [
-  { "id": "domain:*.dev.ipas.com.vn",
+  { "id": "domain:*.dev.example.com.au",
     "kind": "domain_wildcard",
     "target_type": "domain",
-    "pattern": "*.dev.ipas.com.vn",
+    "pattern": "*.dev.example.com.au",
     "strength": "strong",
     "covered": 12,
-    "covered_sample": ["a.dev.ipas.com.vn", "b.dev.ipas.com.vn"],
+    "covered_sample": ["a.dev.example.com.au", "b.dev.example.com.au"],
     "blocked": 1,
-    "blocked_sample": [{"name": "old.dev.ipas.com.vn", "code": "rejected"}],
+    "blocked_sample": [{"name": "old.dev.example.com.au", "code": "rejected"}],
     "hints": [
-      {"kind": "discovering_scope_target", "value": "ipas.com.vn"},
-      {"kind": "cert_org", "value": "IPAS JSC"},
-      {"kind": "same_ns_as_verified", "value": "ns1.ipas.com.vn"}
+      {"kind": "discovering_scope_target", "value": "example.com.au"},
+      {"kind": "cert_org", "value": "Example Pty Ltd"},
+      {"kind": "same_ns_as_verified", "value": "ns1.example.com.au"}
     ] },
   { "id": "cidr:203.0.113.0/24", "kind": "ip_cidr", "target_type": "cidr",
     "pattern": "203.0.113.0/24", "strength": "medium", "covered": 5, "blocked": 0,
@@ -639,7 +639,7 @@ query `states` default `needs_review`, `limit` ≤ 50):
 ```
 
 - **Domains:** a wildcard at each label level from the item up to the
-  registrable domain (`*.dev.ipas.com.vn`, then `*.ipas.com.vn`), never at
+  registrable domain (`*.dev.example.com.au`, then `*.example.com.au`), never at
   or above a public suffix (embedded PSL, §8.2), never a deny-listed name.
 - **IPs:** the `/24` (IPv4) or `/48` (IPv6) around the items; the RDAP
   allocation or ASN only when our data already holds it (no new outbound
@@ -669,7 +669,7 @@ query `states` default `needs_review`, `limit` ≤ 50):
 ```json
 { "action": "accept_rule",
   "target_type": "domain",
-  "pattern": "*.dev.ipas.com.vn",
+  "pattern": "*.dev.example.com.au",
   "asset_ids": [],
   "reason": "Our dev environment (ticket OPS-12)" }
 ```
@@ -689,10 +689,10 @@ what the action would change and changes nothing:
 { "action": "accept_rule",
   "allowed": true,
   "refusal": null,
-  "entry": {"target_type": "domain", "pattern": "*.dev.ipas.com.vn", "status": "pending", "approvals_required": 1},
-  "would_confirm": [{"asset_id": "…", "name": "a.dev.ipas.com.vn"}],
+  "entry": {"target_type": "domain", "pattern": "*.dev.example.com.au", "status": "pending", "approvals_required": 1},
+  "would_confirm": [{"asset_id": "…", "name": "a.dev.example.com.au"}],
   "would_reject": [],
-  "stays_blocked": [{"asset_id": "…", "name": "old.dev.ipas.com.vn", "code": "rejected"}],
+  "stays_blocked": [{"asset_id": "…", "name": "old.dev.example.com.au", "code": "rejected"}],
   "step_up_required": true }
 ```
 

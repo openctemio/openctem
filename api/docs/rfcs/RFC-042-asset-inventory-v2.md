@@ -959,8 +959,8 @@ first; T1 touches the same `POST /assets` path.
 
 #### 6.3.9 The property schema (amendment, 2026-10-07)
 
-**Problem.** The owner, on a domain's Properties ("Ip 202.160.124.20",
-"Ip addresses 202.160.124.20", "Port 443"): what are `ip` and
+**Problem.** The owner, on a domain's Properties ("Ip 198.51.100.20",
+"Ip addresses 198.51.100.20", "Port 443"): what are `ip` and
 `ip_address`? One concept, an asset's addresses, was stored under six keys
 (`ip`, `ip_address` as a string or an object, `ips`, `ip_addresses`,
 `resolved_ips`, `addresses`), and each reader (correlation, scope

@@ -19,7 +19,6 @@
 # Seed Files:
 #   - seed_required.sql      - Required data (roles, permissions, default settings)
 #   - seed_test.sql          - Test/demo data (test users, sample assets)
-#   - seed_vnsecurity_assets.sql - VNSecurity specific assets
 #
 # checkov:skip=CKV_DOCKER_2: One-time seed container, no healthcheck needed
 # checkov:skip=CKV_DOCKER_3: One-time container runs as root for postgres access

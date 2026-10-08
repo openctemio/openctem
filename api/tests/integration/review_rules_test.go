@@ -53,17 +53,17 @@ func TestReviewByRule(t *testing.T) {
 		automatic(t, db, tenant, id, attribution.StateNeedsReview)
 		return id
 	}
-	a := pending(tenantA, "a.dev.ipas.example", "subdomain")
-	b := pending(tenantA, "b.dev.ipas.example", "subdomain")
-	c := pending(tenantA, "c.ipas.example", "subdomain")
-	ex := pending(tenantA, "ex.dev.ipas.example", "subdomain")
+	a := pending(tenantA, "a.dev.partner.example", "subdomain")
+	b := pending(tenantA, "b.dev.partner.example", "subdomain")
+	c := pending(tenantA, "c.partner.example", "subdomain")
+	ex := pending(tenantA, "ex.dev.partner.example", "subdomain")
 	ip1 := pending(tenantA, "203.0.113.5", "ip_address")
 	ip2 := pending(tenantA, "203.0.113.9", "ip_address")
 	cdn := pending(tenantA, "104.16.1.1", "ip_address")
 	exec(`UPDATE assets SET properties = '{"asn": 13335, "asn_org": "Cloudflare, Inc."}' WHERE id = $1`, cdn.String())
 	exec(`INSERT INTO scope_exclusions (tenant_id, exclusion_type, pattern, reason, status, approved_by, approved_at, created_by)
-		VALUES ($1, 'domain', 'ex.dev.ipas.example', 'not ours', 'active', 'x', now(), 'y')`, tenantA.String())
-	bOnly := pending(tenantB, "z.dev.ipas.example", "subdomain")
+		VALUES ($1, 'domain', 'ex.dev.partner.example', 'not ours', 'active', 'x', now(), 'y')`, tenantA.String())
+	bOnly := pending(tenantB, "z.dev.partner.example", "subdomain")
 
 	svc := ruleService(db)
 	admin := scopesvc.Actor{UserID: shared.NewID().String(), CanApprove: true}
@@ -76,11 +76,11 @@ func TestReviewByRule(t *testing.T) {
 	for _, s := range got.Suggestions {
 		by[s.Pattern] = s
 	}
-	if s := by["*.dev.ipas.example"]; s.Covered != 2 || s.Blocked != 1 || s.TargetType != "domain" {
-		t.Errorf("*.dev.ipas.example = %+v", s)
+	if s := by["*.dev.partner.example"]; s.Covered != 2 || s.Blocked != 1 || s.TargetType != "domain" {
+		t.Errorf("*.dev.partner.example = %+v", s)
 	}
-	if s := by["*.ipas.example"]; s.Covered != 3 || s.Blocked != 1 {
-		t.Errorf("*.ipas.example = %+v", s)
+	if s := by["*.partner.example"]; s.Covered != 3 || s.Blocked != 1 {
+		t.Errorf("*.partner.example = %+v", s)
 	}
 	if s := by["203.0.113.0/24"]; s.Covered != 2 || s.TargetType != "cidr" {
 		t.Errorf("203.0.113.0/24 = %+v", s)
@@ -90,7 +90,7 @@ func TestReviewByRule(t *testing.T) {
 			t.Errorf("suggested %s (public suffix or shared provider space)", p)
 		}
 		for _, sample := range by[p].CoveredSample {
-			if sample == "z.dev.ipas.example" {
+			if sample == "z.dev.partner.example" {
 				t.Errorf("tenant B's item counted in tenant A's suggestion %s", p)
 			}
 		}
@@ -105,7 +105,7 @@ func TestReviewByRule(t *testing.T) {
 		t.Fatalf("public suffix preview: %+v %v", p, err)
 	}
 	member := scopesvc.Actor{UserID: shared.NewID().String()}
-	p, err = svc.Preview(ctx, tenantA, easmapp.RuleActionInput{Action: easmapp.RuleAcceptRule, TargetType: "domain", Pattern: "*.dev.ipas.example", Reason: "x", Actor: member})
+	p, err = svc.Preview(ctx, tenantA, easmapp.RuleActionInput{Action: easmapp.RuleAcceptRule, TargetType: "domain", Pattern: "*.dev.partner.example", Reason: "x", Actor: member})
 	if err != nil || p.Allowed || p.Refusal == nil || p.Refusal.Code != "REQUEST_MUST_BE_ONE_OFF" {
 		t.Fatalf("member accept_rule preview: %+v %v", p, err)
 	}
@@ -113,14 +113,14 @@ func TestReviewByRule(t *testing.T) {
 	// Accept as a rule: preview, then apply; the entry is in effect (one
 	// admin) and the pending items it covers are confirmed; the excluded one
 	// stays; tenant B's twin is untouched.
-	p, err = svc.Preview(ctx, tenantA, easmapp.RuleActionInput{Action: easmapp.RuleAcceptRule, TargetType: "domain", Pattern: "*.dev.ipas.example", Reason: "our dev", Actor: admin})
+	p, err = svc.Preview(ctx, tenantA, easmapp.RuleActionInput{Action: easmapp.RuleAcceptRule, TargetType: "domain", Pattern: "*.dev.partner.example", Reason: "our dev", Actor: admin})
 	if err != nil || !p.Allowed || len(p.WouldConfirm) != 2 || len(p.StaysBlocked) != 1 || p.Entry.Status != "active" || !p.StepUpRequired {
 		t.Fatalf("accept_rule preview: %+v %v", p, err)
 	}
 	if n := countRows(t, db, `SELECT count(*) FROM scope_targets WHERE tenant_id = $1`, tenantA); n != 0 {
 		t.Fatalf("a preview created %d scope entries", n)
 	}
-	res, err := svc.Apply(ctx, tenantA, easmapp.RuleActionInput{Action: easmapp.RuleAcceptRule, TargetType: "domain", Pattern: "*.dev.ipas.example", Reason: "our dev", Actor: admin})
+	res, err := svc.Apply(ctx, tenantA, easmapp.RuleActionInput{Action: easmapp.RuleAcceptRule, TargetType: "domain", Pattern: "*.dev.partner.example", Reason: "our dev", Actor: admin})
 	if err != nil || res.Target == nil {
 		t.Fatalf("accept_rule: %+v %v", res, err)
 	}
