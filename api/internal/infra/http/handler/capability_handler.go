@@ -229,14 +229,18 @@ func (h *CapabilityHandler) List(w http.ResponseWriter, r *http.Request) {
 	if c := q.Get("category"); c != "" {
 		category = &c
 	}
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
+	}
 	tenantID := middleware.GetTenantID(r.Context())
 	result, err := h.service.ListCapabilities(r.Context(), capabilitysvc.ListCapabilitiesInput{
 		TenantID:  tenantID,
 		IsBuiltin: isBuiltin,
 		Category:  category,
 		Search:    q.Get("q"),
-		Page:      parseQueryInt(q.Get("page"), 1),
-		PerPage:   parseQueryIntBounded(q.Get("per_page"), 50, 1, inc.PerPageCap(MaxPerPage)),
+		Page:      paging.Page,
+		PerPage:   min(paging.PerPage, inc.PerPageCap(MaxPerPage)),
 	})
 	if err != nil {
 		h.handleError(w, err, "capability")

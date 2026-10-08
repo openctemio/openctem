@@ -15,7 +15,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/relationship"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // RelationshipSuggestionHandler handles relationship suggestion HTTP requests.
@@ -66,10 +65,10 @@ func (h *RelationshipSuggestionHandler) List(w http.ResponseWriter, r *http.Requ
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	query := r.URL.Query()
-	page := pagination.New(
-		parseQueryInt(query.Get("page"), 1),
-		parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
-	)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	search := query.Get("search")
 	result, err := h.service.ListPending(r.Context(), tenantID, search, page)
