@@ -257,7 +257,7 @@ func (c *JobRecoveryController) notifyExhausted(ctx context.Context, failed []*c
 		}
 		msg := fmt.Sprintf("the command was handed to a sensor %d times and never finished (max dispatch attempts exceeded)", cmd.DispatchAttempts)
 		if err := c.steps.OnStepFailed(ctx, p.ScanRunID, p.StepKey, msg, scanrun.FailureCommandExhausted); err != nil {
-			c.logger.Error("failed to fail the pipeline step of an exhausted command",
+			c.logger.Error("failed to fail the scan workflow step of an exhausted command",
 				"command_id", cmd.ID.String(), "scan_run_id", p.ScanRunID, "step_key", p.StepKey, "error", err)
 		}
 	}

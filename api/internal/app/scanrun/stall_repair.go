@@ -47,7 +47,7 @@ func (s *Service) RepairStalledRuns(ctx context.Context) (int, error) {
 		if err != nil || run == nil || run.TenantID != st.TenantID || run.IsComplete() || run.ScanWorkflowID.IsZero() {
 			continue
 		}
-		template, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+		template, err := s.runWorkflow(ctx, run)
 		if err != nil {
 			s.logger.Warn("stall repair: load the run's workflow", "run_id", run.ID.String(), "error", err)
 			continue

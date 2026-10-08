@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/openctemio/openctem/api/internal/config"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -29,6 +30,9 @@ type AuthProvidersHandler struct {
 	// tenantCreationMode tells onboarding whether a new user may create an
 	// organization or must wait for the platform administrator.
 	tenantCreationMode string
+	// signupPolicy, when wired, replaces tenantCreationMode (the console
+	// sign-up setting).
+	signupPolicy signupdom.PolicySource
 	// registrationEnabled mirrors AUTH_ALLOW_REGISTRATION so the UI can hide
 	// sign-up when self-registration is off.
 	registrationEnabled bool
@@ -44,6 +48,12 @@ func (h *AuthProvidersHandler) WithRegistrationEnabled(enabled bool) *AuthProvid
 // WithTenantCreationMode sets the value reported as tenant_creation_mode.
 func (h *AuthProvidersHandler) WithTenantCreationMode(mode string) *AuthProvidersHandler {
 	h.tenantCreationMode = mode
+	return h
+}
+
+// WithSignupPolicy reports tenant_creation_mode from the console sign-up policy.
+func (h *AuthProvidersHandler) WithSignupPolicy(p signupdom.PolicySource) *AuthProvidersHandler {
+	h.signupPolicy = p
 	return h
 }
 
@@ -82,7 +92,8 @@ type AuthProvidersResponse struct {
 	// SSOEnvEntraEnabled reports whether the platform-wide (env-based)
 	// Microsoft Entra ID SSO fallback is usable (SSO_ENTRA_* configured).
 	SSOEnvEntraEnabled bool `json:"sso_env_entra_enabled"`
-	// TenantCreationMode is "self_service" or "admin_only" (TENANT_CREATION_MODE).
+	// TenantCreationMode is "self_service" or "admin_only": the console
+	// sign-up policy (seeded from TENANT_CREATION_MODE).
 	TenantCreationMode string `json:"tenant_creation_mode"`
 	// RegistrationEnabled reports whether anyone may self-register
 	// (AUTH_ALLOW_REGISTRATION, default false). When false the UI hides
@@ -97,7 +108,7 @@ type AuthProvidersResponse struct {
 // @Produce      json
 // @Success      200  {object}  AuthProvidersResponse
 // @Router       /auth/providers [get]
-func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, _ *http.Request) {
+func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Request) {
 	resp := AuthProvidersResponse{
 		Social: SocialProviders{
 			Microsoft: h.oauthRoutesLive && h.oauthConfig.Microsoft.IsConfigured(),
@@ -107,6 +118,9 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, _ *http.Reque
 		SSOEnvEntraEnabled:  h.entraSSO.IsConfigured(),
 		TenantCreationMode:  h.tenantCreationMode,
 		RegistrationEnabled: h.registrationEnabled,
+	}
+	if h.signupPolicy != nil {
+		resp.TenantCreationMode = string(h.signupPolicy.Current(r.Context()).Mode)
 	}
 	// Report what the server enforces: anything but an explicit self_service
 	// is admin-only.

@@ -392,30 +392,30 @@ func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tena
 
 	pipelineTemplate, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, scanWorkflowID)
 	if err != nil {
-		return fmt.Errorf("pipeline not found: %w", err)
+		return fmt.Errorf("scan workflow not found: %w", err)
 	}
 
 	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, pipelineTemplate.ID)
 	if err != nil {
-		return fmt.Errorf("failed to get pipeline steps: %w", err)
+		return fmt.Errorf("failed to get scan workflow steps: %w", err)
 	}
 	for _, step := range steps {
 		if step.Tool != "" {
 			stepTool, err := s.toolRepo.GetByName(ctx, tenantID, step.Tool)
 			if err != nil || stepTool == nil {
-				return fmt.Errorf("%w: pipeline step '%s' uses tool '%s' which is not found",
+				return fmt.Errorf("%w: workflow step '%s' uses tool '%s' which is not found",
 					shared.ErrValidation, step.StepKey, step.Tool)
 			}
 			if !stepTool.IsActive {
-				return fmt.Errorf("%w: pipeline step '%s' uses tool '%s' which is disabled",
+				return fmt.Errorf("%w: workflow step '%s' uses tool '%s' which is disabled",
 					shared.ErrValidation, step.StepKey, step.Tool)
 			}
 			if stepTool.IsCollector() {
-				return fmt.Errorf("%w: pipeline step '%s' uses '%s', an asset collector: collectors run on their collector sensor's own schedule and cannot be scanned with",
+				return fmt.Errorf("%w: workflow step '%s' uses '%s', an asset collector: collectors run on their collector sensor's own schedule and cannot be scanned with",
 					shared.ErrValidation, step.StepKey, step.Tool)
 			}
 			if stepTool.IsConnector() {
-				return fmt.Errorf("%w: pipeline step '%s' uses '%s', a connector: a connector runs as the scanner of a single scan, not as a workflow step",
+				return fmt.Errorf("%w: workflow step '%s' uses '%s', a connector: a connector runs as the scanner of a single scan, not as a workflow step",
 					shared.ErrValidation, step.StepKey, step.Tool)
 			}
 		}
@@ -725,7 +725,7 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		}
 		tenantID, _ := shared.IDFromString(input.TenantID)
 		if _, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, scanWorkflowID); err != nil {
-			return nil, fmt.Errorf("pipeline not found: %w", err)
+			return nil, fmt.Errorf("scan workflow not found: %w", err)
 		}
 		if err := sc.SetWorkflow(scanWorkflowID); err != nil {
 			return nil, err
