@@ -57,6 +57,7 @@ import {
 } from '@/features/findings/api/use-findings-api'
 import type { ApiApproval, ApprovalStatus } from '@/features/findings/types'
 import { APPROVAL_STATUSES, FINDING_STATUS_CONFIG } from '@/features/findings/types'
+import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
 import { useListParams } from '@/hooks/use-list-params'
 import {
   approvalTabCounts,
@@ -286,17 +287,12 @@ export default function ApprovalsPage() {
       {
         accessorKey: 'finding_id',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Finding" />,
-        cell: ({ row }) => {
-          const findingId = row.getValue('finding_id') as string
-          return (
-            <Link
-              href={`/findings/${findingId}`}
-              className="font-mono text-xs text-primary hover:underline"
-            >
-              {findingId.slice(0, 8)}...
-            </Link>
-          )
-        },
+        cell: ({ row }) => (
+          <ApprovalFindingLink
+            findingId={row.original.finding_id}
+            findingTitle={row.original.finding_title}
+          />
+        ),
         enableSorting: false,
       },
       {

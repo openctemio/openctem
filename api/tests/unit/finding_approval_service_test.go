@@ -162,8 +162,14 @@ func (m *mockFindingRepository) GetByID(_ context.Context, tenantID, id shared.I
 	}
 	return f, nil
 }
-func (m *mockFindingRepository) GetByIDs(_ context.Context, _ shared.ID, _ []shared.ID) ([]*vulnerability.Finding, error) {
-	return nil, nil
+func (m *mockFindingRepository) GetByIDs(_ context.Context, tenantID shared.ID, ids []shared.ID) ([]*vulnerability.Finding, error) {
+	var out []*vulnerability.Finding
+	for _, id := range ids {
+		if f, ok := m.findings[id]; ok && f.TenantID() == tenantID {
+			out = append(out, f)
+		}
+	}
+	return out, nil
 }
 func (m *mockFindingRepository) Update(_ context.Context, _ *vulnerability.Finding) error {
 	return nil
@@ -1202,6 +1208,41 @@ func (m *mockFindingRepository) AutoResolveStaleBranchOccurrences(_ context.Cont
 
 func (m *mockFindingRepository) FingerprintsOpenOnBranch(_ context.Context, _, _ shared.ID, _ []string) ([]string, error) {
 	return nil, nil
+}
+
+// An approver reads what a request is about: the list carries each
+// finding title, read only within the caller tenant.
+func TestFindingApprovalService_ApprovalFindingTitles_TenantScoped(t *testing.T) {
+	tenantID, otherTenant := shared.NewID(), shared.NewID()
+	newFinding := func(tenant shared.ID, title string) *vulnerability.Finding {
+		f, err := vulnerability.NewFinding(tenant, shared.NewID(), vulnerability.FindingSourceManual, "manual", vulnerability.SeverityHigh, "msg")
+		require.NoError(t, err)
+		f.SetTitle(title)
+		return f
+	}
+	mine := newFinding(tenantID, "SQL injection in /login")
+	theirs := newFinding(otherTenant, "Other tenant finding")
+
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[mine.ID()] = mine
+	findingRepo.findings[theirs.ID()] = theirs
+	svc := newApprovalTestService(findingRepo, newMockApprovalRepository())
+
+	gone := shared.NewID()
+	approvals := []*vulnerability.Approval{
+		{FindingID: mine.ID()}, {FindingID: mine.ID()}, {FindingID: theirs.ID()}, {FindingID: gone},
+	}
+	titles, err := svc.ApprovalFindingTitles(context.Background(), tenantID.String(), approvals)
+	require.NoError(t, err)
+	assert.Equal(t, map[shared.ID]string{mine.ID(): "SQL injection in /login"}, titles,
+		"another tenant finding or a deleted finding has no title")
+
+	empty, err := svc.ApprovalFindingTitles(context.Background(), tenantID.String(), nil)
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+
+	_, err = svc.ApprovalFindingTitles(context.Background(), "not-a-uuid", approvals)
+	assert.True(t, errors.Is(err, shared.ErrValidation))
 }
 
 // newApprovalTestFinding is a confirmed finding: both approval-gated
