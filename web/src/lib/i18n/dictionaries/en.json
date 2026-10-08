@@ -171,8 +171,6 @@
   "settings.item.tools": "Tools",
   "settings.desc.tools": "The tools your sensors have, and whether a scan can run with each.",
   "settings.item.capabilities": "Capabilities",
-  "settings.item.ci-pipelines": "CI/CD integration",
-  "settings.desc.ci-pipelines": "Which CI/CD pipelines may send results, and what fails them.",
   "settings.item.freeze-windows": "Scan freeze windows",
   "settings.desc.freeze-windows": "When active scans pause for maintenance or a change freeze.",
   "settings.item.scanner-content": "Scanner content",
