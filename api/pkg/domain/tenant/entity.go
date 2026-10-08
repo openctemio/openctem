@@ -40,11 +40,15 @@ func NewTenant(name, slug, createdBy string) (*Tenant, error) {
 	}
 
 	now := time.Now().UTC()
+	// A new organization asks personal accounts for a second factor
+	// (RFC-058); organizations created before keep "allowed".
+	initial := DefaultSettings()
+	initial.Security.PersonalAccounts = PersonalAccountsAllowedWithMFA
 	return &Tenant{
 		id:        shared.NewID(),
 		name:      name,
 		slug:      strings.ToLower(slug),
-		settings:  make(map[string]any),
+		settings:  initial.ToMap(),
 		createdBy: createdBy,
 		createdAt: now,
 		updatedAt: now,

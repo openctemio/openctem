@@ -44,6 +44,7 @@ import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth
 // SSO imports
 import { useAuthProviders } from '../api/use-auth-providers'
 import { useTenantSSOProviders } from '@/features/sso/api/use-sso-api'
+import { useEmailDiscovery } from '../hooks/use-email-discovery'
 import { initiateSSOLogin } from '@/features/sso/actions/sso-auth-actions'
 import { getProviderLabel, type SSOProviderType } from '@/features/sso/types/sso.types'
 
@@ -122,9 +123,6 @@ export function LoginForm({
   // Validate redirectTo to prevent open redirect attacks
   const safeRedirectTo = validateRedirectUrl(redirectTo, '/')
 
-  // Fetch tenant-specific SSO providers when ?org= is present
-  const { data: ssoProviders } = useTenantSSOProviders(orgSlug ?? null)
-
   // Fetch which social providers the backend actually has configured, so we
   // only render buttons that will work (no 404 dead-affordances). Buttons are
   // hidden while loading (data undefined) and only shown for providers === true.
@@ -152,6 +150,15 @@ export function LoginForm({
       password: '',
     },
   })
+
+  // Email-first sign-in: when the typed email's domain signs in through an
+  // organization's SSO, offer that organization's SSO like ?org= does.
+  const typedEmail = form.watch('email') ?? ''
+  const discoveredOrg = useEmailDiscovery(typedEmail, !orgSlug)
+  const ssoOrg = orgSlug ?? discoveredOrg ?? undefined
+
+  // Fetch the organization's SSO providers (?org= or discovered)
+  const { data: ssoProviders } = useTenantSSOProviders(ssoOrg ?? null)
 
   /**
    * Handle form submission for local auth
@@ -253,10 +260,10 @@ export function LoginForm({
    * Handle SSO login (Entra ID, Okta, Google Workspace)
    */
   async function handleSSOLogin(provider: SSOProviderType) {
-    if (!orgSlug) return
+    if (!ssoOrg) return
     setLoadingSSOProvider(provider)
     try {
-      await initiateSSOLogin(provider, orgSlug, safeRedirectTo, reauth)
+      await initiateSSOLogin(provider, ssoOrg, safeRedirectTo, reauth)
     } catch (error) {
       setLoadingSSOProvider(null)
       console.error(`SSO login error (${provider}):`, error)
@@ -385,7 +392,7 @@ export function LoginForm({
         )}
 
         {/* SSO Providers (when ?org= parameter is present) */}
-        {orgSlug && ssoProviders && ssoProviders.length > 0 && (
+        {ssoOrg && ssoProviders && ssoProviders.length > 0 && (
           <>
             <div className="relative my-2">
               <div className="absolute inset-0 flex items-center">

@@ -162,6 +162,15 @@ type SecuritySettings struct {
 	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
 	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
 
+	// PersonalAccounts says whether members with a personal address may use
+	// the organization (RFC-058): allowed (empty), allowed_with_mfa (the
+	// default for new organizations) or blocked.
+	PersonalAccounts PersonalAccountsPolicy `json:"personal_accounts,omitempty"`
+	// SSOExceptions lets named members sign in without SSO (with a second
+	// factor) while SSO is enforced, each with a reason and an end at most
+	// MaxSSOExceptionDays away. Changed by an owner with step-up.
+	SSOExceptions []SSOException `json:"sso_exceptions,omitempty"`
+
 	// A restricted_data_scope key left in stored JSON is ignored: members
 	// without a scope row see nothing in every organization (owner decision
 	// D2), there is no data-scope setting.
@@ -761,6 +770,12 @@ func (s *SecuritySettings) Validate() error {
 		if !isValidDomain(domain) {
 			return fmt.Errorf("%w: invalid domain: %s", shared.ErrValidation, domain)
 		}
+	}
+	if !s.PersonalAccounts.IsValid() {
+		return fmt.Errorf("%w: personal_accounts must be one of: allowed, allowed_with_mfa, blocked", shared.ErrValidation)
+	}
+	if len(s.SSOExceptions) > 100 {
+		return fmt.Errorf("%w: at most 100 sso exceptions", shared.ErrValidation)
 	}
 	return nil
 }
