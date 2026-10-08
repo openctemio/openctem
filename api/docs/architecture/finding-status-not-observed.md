@@ -3,6 +3,8 @@
 Research: `research/18-finding-to-vuln-lifecycle-and-fix-detection.md` (§6.2).
 Owner decision O2 (2026-10-04).
 
+The whole status set and lifecycle: [finding-status-lifecycle.md](finding-status-lifecycle.md).
+
 ## Meaning
 
 `not_observed` means that recent scans no longer report the finding, **but

@@ -53,14 +53,14 @@ func TestResolveRetestFindingStatus_AllCombinations(t *testing.T) {
 		role   pentest.CampaignRole
 		want   string
 	}{
-		{"lead+passed", "passed", pentest.CampaignRoleLead, "verified"},
-		{"reviewer+passed", "passed", pentest.CampaignRoleReviewer, "verified"},
+		{"lead+passed", "passed", pentest.CampaignRoleLead, "resolved"},
+		{"reviewer+passed", "passed", pentest.CampaignRoleReviewer, "resolved"},
 		{"tester+passed", "passed", pentest.CampaignRoleTester, ""},
 		{"observer+passed", "passed", pentest.CampaignRoleObserver, ""},
-		{"lead+failed", "failed", pentest.CampaignRoleLead, "remediation"},
-		{"tester+failed", "failed", pentest.CampaignRoleTester, "remediation"},
-		{"reviewer+failed", "failed", pentest.CampaignRoleReviewer, "remediation"},
-		{"observer+failed", "failed", pentest.CampaignRoleObserver, "remediation"},
+		{"lead+failed", "failed", pentest.CampaignRoleLead, "in_progress"},
+		{"tester+failed", "failed", pentest.CampaignRoleTester, "in_progress"},
+		{"reviewer+failed", "failed", pentest.CampaignRoleReviewer, "in_progress"},
+		{"observer+failed", "failed", pentest.CampaignRoleObserver, "in_progress"},
 		{"any+partial", "partial", pentest.CampaignRoleLead, ""},
 		{"any+canceled", "canceled", pentest.CampaignRoleLead, ""},
 		{"unknown+passed", "passed", pentest.CampaignRole("ghost"), ""},
@@ -90,27 +90,27 @@ func TestIsTransitionAllowedForRole_Matrix(t *testing.T) {
 		{"draft", "confirmed", pentest.CampaignRoleLead, true},
 		{"draft", "in_review", pentest.CampaignRoleLead, true},
 		{"in_review", "confirmed", pentest.CampaignRoleLead, true},
-		{"confirmed", "remediation", pentest.CampaignRoleLead, true},
-		{"retest", "verified", pentest.CampaignRoleLead, true},
+		{"confirmed", "in_progress", pentest.CampaignRoleLead, true},
+		{"fix_applied", "resolved", pentest.CampaignRoleLead, true},
 
 		// Tester: only own draft→in_review, confirmed→remediation, remediation→retest
 		{"draft", "in_review", pentest.CampaignRoleTester, true},
 		{"draft", "confirmed", pentest.CampaignRoleTester, false}, // skip review
 		{"in_review", "confirmed", pentest.CampaignRoleTester, false},
-		{"confirmed", "remediation", pentest.CampaignRoleTester, true},
-		{"remediation", "retest", pentest.CampaignRoleTester, true},
-		{"retest", "verified", pentest.CampaignRoleTester, false}, // security: no auto-verify
+		{"confirmed", "in_progress", pentest.CampaignRoleTester, true},
+		{"in_progress", "fix_applied", pentest.CampaignRoleTester, true},
+		{"fix_applied", "resolved", pentest.CampaignRoleTester, false}, // security: no auto-verify
 
 		// Reviewer: review + verify
 		{"in_review", "confirmed", pentest.CampaignRoleReviewer, true},
-		{"retest", "verified", pentest.CampaignRoleReviewer, true},
+		{"fix_applied", "resolved", pentest.CampaignRoleReviewer, true},
 		{"draft", "confirmed", pentest.CampaignRoleReviewer, false},
 		{"draft", "in_review", pentest.CampaignRoleReviewer, false},
 
 		// Observer: nothing
 		{"draft", "in_review", pentest.CampaignRoleObserver, false},
 		{"in_review", "confirmed", pentest.CampaignRoleObserver, false},
-		{"retest", "verified", pentest.CampaignRoleObserver, false},
+		{"fix_applied", "resolved", pentest.CampaignRoleObserver, false},
 	}
 	for _, c := range tests {
 		got := pentest.IsTransitionAllowedForRole(c.from, c.to, c.role)
@@ -263,11 +263,11 @@ func TestMapToCTEMStatus_AllPentestStatuses(t *testing.T) {
 		{"draft", "", true},
 		{"in_review", "", true},
 		{"confirmed", "confirmed", false},
-		{"remediation", "in_progress", false},
-		{"retest", "fix_applied", false},
-		{"verified", "resolved", false},
+		{"in_progress", "in_progress", false},
+		{"fix_applied", "fix_applied", false},
+		{"resolved", "resolved", false},
 		{"false_positive", "false_positive", false},
-		{"accepted_risk", "accepted_risk", false},
+		{"accepted", "accepted", false},
 		{"unknown_xyz", "unknown_xyz", false}, // pass-through
 	}
 	for _, tc := range tests {

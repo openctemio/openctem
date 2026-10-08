@@ -25,7 +25,7 @@ func (r *FindingRepository) HumanResolvedFingerprints(ctx context.Context, tenan
 		FROM findings
 		WHERE tenant_id = $1
 			AND fingerprint = ANY($2)
-			AND status IN ('resolved', 'verified')
+			AND status = 'resolved'
 			AND (resolution IS NULL OR resolution NOT IN ('false_positive', 'accepted_risk', 'duplicate', 'suppressed'))
 			AND resolution_method IS DISTINCT FROM 'scan_verified'`,
 		tenantID.String(), pq.Array(fingerprints))
