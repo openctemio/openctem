@@ -1,6 +1,6 @@
 # RFC-058: External members and trusted organizations
 
-- **Status:** Accepted (owner delegated GA1–GA28, 2026-10-08). Part 1 (external membership model) and part 2 (trusted organizations, home-realm sign-in) in implementation.
+- **Status:** Accepted (owner delegated GA1–GA28, 2026-10-08). Parts 1 (external membership model), 2 (trusted organizations, home-realm sign-in) and 3 (home cascade) in implementation.
 - **Related:**
   - RFC-050 (member lifecycle, data scope);
   - RFC-022 (platform admin console);
@@ -81,17 +81,40 @@ Every existing membership stays `internal`, so nothing changes for existing memb
 
 Step-up inside the host re-authenticates at the session's identity provider, which is the home's (existing behaviour); the host accepts it like the sign-in.
 
-## 7. Parts still to build
+## 7. Home cascade (part 3, implemented)
+
+The home organization controls the person.
+
+| Cause | Effect | Reversal |
+|---|---|---|
+| The home disables a member (`/suspend`, SCIM `active=false`) or offboards them (`/offboard`, SCIM delete) | Every external membership homed there, in every other organization, is suspended in its host (`suspended_reason = home_access_ended`). Host administrators are told and the host's log records each suspension. The home's log records how many, with nothing about the hosts' data. When the home holds the person's email domain, every session of the person ends: the organization that owns the identity let them go. | Re-enabling the member at home restores the memberships that the cascade suspended. A membership is not restored when its own end of access passed meanwhile. |
+| The home stops holding the domain: its DNS proof lapsed on re-verification, or it removed the domain | Members homed there by that domain are suspended in their hosts (`home_domain_lapsed`). This fails closed: nobody manages them any more. | Proving the domain again restores them. |
+| A trust ends | Part 2 (`trust_revoked`) | — |
+
+A host's own suspension of a member is never undone by the cascade: only memberships the cascade suspended, with the cascade's reason, are restored.
+
+## 8. Personal accounts and SSO exceptions (part 4, implemented)
+
+A **personal member** is an external member with a consumer mail address (gmail.com, outlook.com, ...). No organization can hold such a domain, so the person is always unmanaged. They join only by invitation, and their access must end (part 1).
+
+| Rule | Where |
+|---|---|
+| **Policy.** `Security.personal_accounts` is `allowed`, `allowed_with_mfa` or `blocked`. New organizations default to `allowed_with_mfa`; organizations created earlier keep `allowed` until an owner changes it. The setting is changed through `PATCH /tenants/{tenant}/settings/security`, which needs owner plus step-up and is audited. | `tenant.PersonalAccountsPolicy`, `NewTenant` |
+| **Blocked:** an invitation to a personal address is refused, and so is its acceptance; an existing personal member gets no token (`ErrPersonalAccountsBlocked`). Nothing is deleted, so switching back restores access. | `TenantService.requirePersonalAllowed`, `AuthService.enforcePersonalPolicy` |
+| **Allowed with MFA:** a token is minted only for a session that proved a second factor: a password session of a user with 2FA on, or a federated session with MFA evidence. | `enforcePersonalPolicy` |
+| **SSO exceptions.** `Security.sso_exceptions` names members who may sign in without SSO while it is enforced. Each exception has a reason, ends at most 90 days ahead, and names a current member. It is honoured only with a proven second factor at token mint; the per-request gate honours it too and fails closed on a lookup error. Owner plus step-up. | `SSOException`, `ssoExceptionAllows`, `SSOEnforcementGate.excepted` |
+| **Look-alike warning.** Creating an invitation reports `lookalike_of`: existing members whose address reaches the same mailbox once dots and `+tags` are ignored (Gmail) or `+tags` alone (other domains). This is a warning only: identity always stays the exact address, and accounts are never merged. | `TenantService.Lookalikes` |
+
+Not yet: a second factor (TOTP) for social-login accounts, with the challenge at social sign-in. Until then, a Google-only personal member of an `allowed_with_mfa` organization needs a password account with 2FA.
+
+## 9. Parts still to build
 
 1. **Policy:**
    - `Security.ExternalMembers` (off / invite-only / trusted-only);
    - personal-account policy (allowed / allowed with MFA, the new-org default / blocked);
    - enforce-SSO exception list;
    - look-alike Gmail warning only.
-2. **Home cascade:**
-   - home SCIM delete, suspend, offboard, domain lapse, trust revoke or home tenant suspension → external memberships suspended;
-   - host notified, audit on both sides;
-   - automatic reactivation only for reversible causes.
+2. **Home cascade, remaining cause:** the home organization itself being suspended or scheduled for deletion. This waits for the organization states from research/71.
 3. **Domains:**
    - several domains per organization with a per-domain JIT role;
    - lapsed-domain handling: stop JIT, flag members, block email password reset for local accounts on a lapsed domain.

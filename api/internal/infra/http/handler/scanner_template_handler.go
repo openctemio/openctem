@@ -239,11 +239,15 @@ func (h *ScannerTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *ScannerTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := app.ListScannerTemplatesInput{
 		TenantID: tenantID,
 		Search:   r.URL.Query().Get("search"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:     paging.Page,
+		PerPage:  paging.PerPage,
 	}
 
 	if templateType := r.URL.Query().Get("template_type"); templateType != "" {

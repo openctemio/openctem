@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
@@ -79,6 +80,33 @@ func (h *SSOHandler) ListTenantProviders(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"providers": providers,
 	})
+}
+
+// DiscoverRequest carries the email typed on the sign-in page (in the body,
+// never the URL).
+type DiscoverRequest struct {
+	Email string `json:"email"`
+}
+
+// Discover answers where an email signs in (email-first sign-in).
+// @Summary      Email-first sign-in discovery (public)
+// @Description  Returns {"next":"sso","org":slug} when the email's domain is claimed (DNS-verified, exclusive) by an organization with an active SSO provider, else {"next":"password","org":""}. The same shape for every email; it never says whether the email has an account.
+// @Tags         SSO
+// @Accept       json
+// @Produce      json
+// @Param        request  body  DiscoverRequest  true  "Email"
+// @Success      200  {object}  auth.DiscoverResult
+// @Router       /auth/discover [post]
+func (h *SSOHandler) Discover(w http.ResponseWriter, r *http.Request) {
+	var req DiscoverRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	res := h.ssoService.Discover(r.Context(), strings.TrimSpace(req.Email))
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(res)
 }
 
 // Authorize returns the SSO authorization URL for a tenant's provider.

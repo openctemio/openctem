@@ -47,21 +47,43 @@ groups:
           description: GET /login through the gateway (the URL users open) failed for 3 minutes.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#gatewaydown
 
+      # A public CA issues certificates for months: warn two weeks ahead.
       - alert: TlsCertExpiringSoon
-        expr: (probe_ssl_earliest_cert_expiry{probe="public-login"} - time()) / 86400 < 14
+        expr: (probe_ssl_earliest_cert_expiry{probe="public-login", module!="http_2xx_internal_ca"} - time()) < 14 * 86400
         for: 1h
-        labels: {severity: warning, component: platform}
+        labels: {severity: warning, component: platform, ca: public}
         annotations:
-          summary: The public TLS certificate expires in {{ $value | humanize }} days
+          summary: The public TLS certificate expires in {{ $value | humanizeDuration }}
           description: Renew the gateway certificate before it expires (automatic renewal may be failing).
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
 
       - alert: TlsCertExpiringSoon
-        expr: (probe_ssl_earliest_cert_expiry{probe="public-login"} - time()) / 86400 < 3
+        expr: (probe_ssl_earliest_cert_expiry{probe="public-login", module!="http_2xx_internal_ca"} - time()) < 3 * 86400
         for: 10m
-        labels: {severity: critical, component: platform}
+        labels: {severity: critical, component: platform, ca: public}
         annotations:
-          summary: The public TLS certificate expires in {{ $value | humanize }} days
+          summary: The public TLS certificate expires in {{ $value | humanizeDuration }}
+          description: Browsers and sensors will refuse the platform when it expires.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
+
+      # The gateway's internal CA issues 12-hour certificates and renews them
+      # with about a third of the lifetime left, so a few hours remaining is
+      # normal; under two hours means renewal stopped.
+      - alert: TlsCertExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{probe="public-login", module="http_2xx_internal_ca"} - time()) < 2 * 3600
+        for: 10m
+        labels: {severity: warning, component: platform, ca: internal}
+        annotations:
+          summary: The gateway's internal-CA certificate expires in {{ $value | humanizeDuration }}
+          description: The gateway renews these short-lived certificates itself; check its logs for renewal errors.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
+
+      - alert: TlsCertExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{probe="public-login", module="http_2xx_internal_ca"} - time()) < 30 * 60
+        for: 5m
+        labels: {severity: critical, component: platform, ca: internal}
+        annotations:
+          summary: The gateway's internal-CA certificate expires in {{ $value | humanizeDuration }}
           description: Browsers and sensors will refuse the platform when it expires.
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
 

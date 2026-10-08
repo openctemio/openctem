@@ -10,7 +10,6 @@ package handler
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -217,14 +216,11 @@ func (h *CIAdminHandler) ListPipelines(w http.ResponseWriter, r *http.Request) {
 		}
 		in.Filter.RepositoryAssetID = &id
 	}
-	in.Page, _ = strconv.Atoi(q.Get("page"))
-	in.PerPage, _ = strconv.Atoi(q.Get("per_page"))
-	if in.Page < 1 {
-		in.Page = 1
+	paging, ok := listPage(w, r, 25)
+	if !ok {
+		return
 	}
-	if in.PerPage < 1 || in.PerPage > cirunapp.MaxPipelinesPerPage {
-		in.PerPage = 25
-	}
+	in.Page, in.PerPage = paging.Page, min(paging.PerPage, cirunapp.MaxPipelinesPerPage)
 	scope, err := resolveDataScope(r.Context(), h.dataScope, tenantID)
 	if err != nil {
 		h.writeErr(w, err, "resolve data scope", "CI pipeline")
