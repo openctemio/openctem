@@ -10,10 +10,12 @@ import (
 )
 
 // Most tests assert the production posture. TestMain pins
-// allowPrivate=false so the OPENCTEM_HTTPSEC_ALLOW_PRIVATE env var
-// inherited from the harness cannot drift a test result.
+// allowPrivate=false and no named private range, so the
+// OPENCTEM_HTTPSEC_ALLOW_PRIVATE* env vars inherited from the harness cannot
+// drift a test result.
 func TestMain(m *testing.M) {
 	allowPrivate = false
+	allowedPrivateCIDRs = nil
 	m.Run()
 }
 
