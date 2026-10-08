@@ -843,7 +843,8 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 		// Fail closed: an unreadable security section never admits a session.
 		return fmt.Errorf("failed to read SSO enforcement policy: %w", err)
 	}
-	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) {
+	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) &&
+		!s.ssoExceptionAllows(ctx, sess, sec) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
@@ -1066,6 +1067,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// Per-tenant 2FA requirement: a password session whose user has not
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 
@@ -1316,6 +1320,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	// Per-tenant 2FA requirement: a password session whose user has not
 	// enrolled cannot mint a token for a tenant that requires 2FA.
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
+		return nil, err
+	}
+	if err := s.enforcePersonalPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 
