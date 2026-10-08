@@ -86,7 +86,7 @@ type recheckOutcome int
 
 const (
 	recheckKeep     recheckOutcome = iota // hand out (maybe narrowed)
-	recheckFailed                         // failed with SCOPE_CHANGED
+	recheckFailed                         // failed (SCOPE_CHANGED, GATE_RECORD_MISSING)
 	recheckWithheld                       // not decided, or changed meanwhile: stays pending
 )
 
@@ -142,6 +142,11 @@ func (s *Service) recheck(ctx context.Context, tenantID shared.ID, sensorID *sha
 		}
 		targets := payloadTargets(c.Payload)
 		if len(targets) == 0 {
+			if c.DispatchGate == nil && c.Type != commanddom.CommandTypeScan {
+				// A probe queued before records existed whose targets
+				// cannot be read: nothing may go out unchecked.
+				outcomes[c.ID] = s.failAtClaim(ctx, c, gateRecordMissingMessage, FailureGateRecordMissing)
+			}
 			continue
 		}
 		jobs = append(jobs, recheckJob{cmd: c, targets: targets, gate: gate})
@@ -169,11 +174,16 @@ func recheckGateOf(c *commanddom.Command) (commanddom.DispatchGate, bool) {
 	if c.DispatchGate != nil {
 		return *c.DispatchGate, true
 	}
-	if c.Type == commanddom.CommandTypeScan {
-		return commanddom.BaselineDispatchGate, true
-	}
-	return commanddom.DispatchGate{}, false
+	return commanddom.StrictDispatchGateFor(c.Type)
 }
+
+// FailureGateRecordMissing is the failure code of a probing job queued
+// without a record whose targets cannot be read to re-check them.
+const FailureGateRecordMissing = scanrundom.FailureGateRecordMissing
+
+// gateRecordMissingMessage is the error recorded on such a job.
+const gateRecordMissingMessage = FailureGateRecordMissing +
+	": this job was queued before its scope check was recorded and its targets cannot be checked now; create it again"
 
 // recheckBatches groups the jobs that share a gate record, so the gate runs
 // once per group (a step's chunks share one), split at maxRecheckTargets.
@@ -315,19 +325,11 @@ func (s *Service) settle(ctx context.Context, j recheckJob, v targetVerdict,
 	}
 	log := s.logger.With("tenant_id", j.cmd.TenantID.String(), "command_id", j.cmd.ID.String())
 	if len(kept) == 0 {
-		msg := scopeChangedMessage(refused)
-		won, err := store.FailPending(ctx, j.cmd, msg)
-		if err != nil || !won {
-			outcomes[j.cmd.ID] = recheckWithheld
-			if err != nil {
-				log.Warn("cannot fail a job whose scope changed; withholding it", "error", err)
-			}
-			return
+		outcomes[j.cmd.ID] = s.failAtClaim(ctx, j.cmd, scopeChangedMessage(refused), FailureScopeChanged)
+		if outcomes[j.cmd.ID] == recheckFailed {
+			log.Warn("SECURITY: job failed at claim: its scope changed and no target may be scanned",
+				"type", string(j.cmd.Type), "refused", len(refused), "codes", refusalCodes(refused))
 		}
-		outcomes[j.cmd.ID] = recheckFailed
-		log.Warn("SECURITY: scan job failed at claim: its scope changed and no target may be scanned",
-			"refused", len(refused), "codes", refusalCodes(refused))
-		s.reportScopeChanged(ctx, j.cmd, msg)
 		return
 	}
 	payload, err := narrowPayload(j.cmd.Payload, kept)
@@ -355,13 +357,39 @@ func (s *Service) settle(ctx context.Context, j recheckJob, v targetVerdict,
 
 // reportScopeChanged hands a command the re-check failed to the failure
 // observer, which settles its step, validation run or retest.
-func (s *Service) reportScopeChanged(ctx context.Context, cmd *commanddom.Command, msg string) {
+func (s *Service) reportScopeChanged(ctx context.Context, cmd *commanddom.Command, msg, code string) {
 	if s.failures == nil {
 		return
 	}
 	failed := *cmd
 	failed.Fail(msg)
-	s.failures.OnCommandFailed(context.WithoutCancel(ctx), &failed, msg, FailureScopeChanged)
+	s.failures.OnCommandFailed(context.WithoutCancel(ctx), &failed, msg, code)
+}
+
+// failAtClaim fails a pending command with msg (a conditional write, so a
+// second or concurrent claim records nothing) and reports it to the
+// failure observer with code. A command another writer changed, or a
+// failed write, is withheld.
+func (s *Service) failAtClaim(ctx context.Context, cmd *commanddom.Command, msg, code string) recheckOutcome {
+	store, ok := s.repo.(ScopeRecheckStore)
+	if !ok {
+		s.logger.Error("command repository cannot record a scope re-check; withholding the job",
+			"command_id", cmd.ID.String())
+		return recheckWithheld
+	}
+	won, err := store.FailPending(ctx, cmd, msg)
+	if err != nil || !won {
+		if err != nil {
+			s.logger.Warn("cannot fail a job at claim; withholding it", "command_id", cmd.ID.String(), "error", err)
+		}
+		return recheckWithheld
+	}
+	if code == FailureGateRecordMissing {
+		s.logger.Warn("SECURITY: job without a scope record refused at claim",
+			"tenant_id", cmd.TenantID.String(), "command_id", cmd.ID.String(), "type", string(cmd.Type))
+	}
+	s.reportScopeChanged(ctx, cmd, msg, code)
+	return recheckFailed
 }
 
 // maxListedRefused bounds the targets a SCOPE_CHANGED message names.

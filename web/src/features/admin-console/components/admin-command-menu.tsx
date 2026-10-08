@@ -3,7 +3,7 @@
 import React from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { ArrowRight, Building2, Laptop, Moon, Sun } from 'lucide-react'
+import { ArrowRight, Building2, Laptop, Moon, Sun, User } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import {
   CommandDialog,
@@ -22,7 +22,8 @@ import { commandFilter } from '@/lib/command-filter'
 import { adminFetcher } from '../api/admin-client'
 import { visibleAdminNav } from '../lib/admin-nav-visibility'
 import { useAdmin } from './admin-console-shell'
-import type { AdminOrganizationList } from '../types'
+import { PLATFORM_USER_SEARCH_MIN } from '../api/use-platform-users'
+import type { AdminOrganizationList, Paged, PlatformUser } from '../types'
 
 /** Searches shorter than this do not query organizations. */
 export const ORG_SEARCH_MIN = 2
@@ -47,6 +48,12 @@ export function AdminCommandMenu() {
       ? `/tenants?${new URLSearchParams({ search: q, page: '1', per_page: String(ORG_SEARCH_LIMIT) })}`
       : null
   const orgs = useSWR<AdminOrganizationList>(orgPath, adminFetcher, { keepPreviousData: true })
+  // Accounts across organizations (Console > Users); the API needs 3+ characters.
+  const userPath =
+    open && q.length >= PLATFORM_USER_SEARCH_MIN
+      ? `/platform-users?${new URLSearchParams({ q, page: '1', per_page: String(ORG_SEARCH_LIMIT) })}`
+      : null
+  const users = useSWR<Paged<PlatformUser>>(userPath, adminFetcher, { keepPreviousData: true })
 
   const run = React.useCallback(
     (fn: () => unknown) => {
@@ -59,6 +66,7 @@ export function AdminCommandMenu() {
 
   const sections = visibleAdminNav(admin.role)
   const orgResults = orgPath ? (orgs.data?.data ?? []) : []
+  const userResults = userPath ? (users.data?.data ?? []) : []
 
   return (
     <CommandDialog
@@ -70,7 +78,7 @@ export function AdminCommandMenu() {
       description={t('admin.palette.description', 'Go to a console page or an organization')}
     >
       <CommandInput
-        placeholder={t('admin.palette.placeholder', 'Search pages and organizations...')}
+        placeholder={t('admin.palette.placeholder', 'Search pages, organizations and accounts...')}
         value={query}
         onValueChange={setQuery}
       />
@@ -95,6 +103,22 @@ export function AdminCommandMenu() {
                   <Building2 className="text-muted-foreground" />
                   <span className="truncate">{org.name}</span>
                   <span className="ms-auto truncate text-xs text-muted-foreground">{org.slug}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {userResults.length > 0 && (
+            <CommandGroup heading={t('admin.palette.accounts', 'Accounts')}>
+              {userResults.map((u) => (
+                <CommandItem
+                  key={u.id}
+                  value={`${u.email} ${u.name} ${u.id}`}
+                  keywords={[q]}
+                  onSelect={() => run(() => router.push(`/admin/users/${u.id}`))}
+                >
+                  <User className="text-muted-foreground" />
+                  <span className="truncate">{u.name || u.email}</span>
+                  <span className="ms-auto truncate text-xs text-muted-foreground">{u.email}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

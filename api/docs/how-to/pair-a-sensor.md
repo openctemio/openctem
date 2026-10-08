@@ -11,9 +11,11 @@ for the approval, your TOTP code or your password.
 
 ## 1. Install the sensor
 
-Use **Sensors → Pair a sensor → Install command**. The command contains only
-the platform URL and, when your platform uses a private certificate authority,
-its fingerprint (`SENSOR_CA_FINGERPRINT`). It contains no key.
+Install the sensor as described in the sensor installation guide at
+[docs.openctem.io/install](https://docs.openctem.io/install/). The
+configuration needs only the platform URL and, when your platform uses a
+private certificate authority, its fingerprint (`SENSOR_CA_FINGERPRINT`). It
+contains no key.
 
 Keep the sensor's state directory on a persistent volume (`/var/lib/openctem/state`
 in the container): the sensor's identity lives in `identity/` there. The
@@ -32,7 +34,7 @@ Pair this sensor in OpenCTEM → Sensors → Pair a sensor
   Expires:     10:42 (10 minutes)
 ```
 
-In the console, open **Sensors → Pair a sensor → Enter a code** and type the
+In the console, open **Sensors → Pair a sensor → Enter code** and type the
 code. The console shows the same fingerprint, the host name, OS and version
 the sensor reported, and the address the request came from.
 
@@ -45,8 +47,9 @@ on the host run:
 openctemio-sensor pair K7QM-4ZTD
 ```
 
-The sensor prints its fingerprint; the console shows the fingerprint it
-received as soon as the sensor connects.
+(the dialog shows this command with the code). The sensor prints its
+fingerprint; the console shows the fingerprint it received as soon as the
+sensor connects.
 
 ## 3. Compare and approve
 
@@ -56,7 +59,7 @@ received as soon as the sensor connects.
    request.
 2. Check the host facts and the source address. An address you do not
    expect is a reason to deny.
-3. Tick **The fingerprint matches**, choose the name, the role, the zones and
+3. Confirm that the fingerprint shown on the sensor console matches, choose the name, the role, the zones and
    the **grant profile**, enter your TOTP code or password, and **Approve**.
 
 The sensor picks up its identity within a few seconds, confirms it, and
@@ -80,18 +83,20 @@ when you are satisfied (this needs the **Widen sensor grants** permission).
 
 ## Re-pairing a sensor
 
-If a sensor's key is lost or may be stolen, run `openctemio-sensor pair
---repair <sensor-id>` on its host (or delete `identity/` and start it with
-`SENSOR_REPAIR_ID=<sensor-id>`). Approve it like a new pairing. The old key is
-revoked at once, the history is kept, and the sensor returns to trust level
-New.
+If a sensor's key is lost or may be stolen, pair it again as the same sensor:
+the pairing request names the existing sensor (`repair_sensor_id` on
+`POST /api/v1/sensor-pairings/expectations`, or the sensor's own re-pairing
+request), and the console marks the request **Re-pairing <name>**. How to
+start a re-pairing on the host is in the sensor's documentation. Approve it
+like a new pairing. The old keys are revoked at once, the history is kept, and
+the sensor returns to trust level New.
 
 ## Bearer keys
 
 New organizations cannot create sensors with an API key (`octs_…`); pairing is
-the only way in. Existing organizations keep the option under **Sensors →
-Identity policy**, and their existing key-based sensors keep working, marked
-"legacy key". Turning on **Require key-bound identity** stops new keys from
+the only way in. Existing organizations keep the option (the sensor identity policy
+switch in the organization settings), and their existing key-based sensors
+keep working, marked "legacy key". Turning on **Require key-bound identity** stops new keys from
 being created.
 
 ## Troubleshooting

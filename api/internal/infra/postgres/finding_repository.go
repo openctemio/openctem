@@ -2750,7 +2750,7 @@ func (r *FindingRepository) CountWindow(ctx context.Context, tenantID shared.ID,
 		SELECT
 			COALESCE(SUM(CASE WHEN created_at >= NOW() - ($2::int || ' days')::interval THEN 1 ELSE 0 END), 0) AS new_count,
 			COALESCE(SUM(CASE WHEN resolved_at >= NOW() - ($2::int || ' days')::interval
-				AND status IN ('resolved','verified') THEN 1 ELSE 0 END), 0) AS resolved_count
+				AND status = 'resolved' THEN 1 ELSE 0 END), 0) AS resolved_count
 		FROM findings
 		WHERE tenant_id = $1 AND ` + inScope
 	if err = r.db.QueryRowContext(ctx, query, args...).Scan(&newCount, &resolvedCount); err != nil {
@@ -2919,10 +2919,9 @@ var findingStatsSelect = `
 			COALESCE(SUM(CASE WHEN status = 'duplicate' THEN 1 ELSE 0 END), 0) as status_duplicate,
 			COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) as status_draft,
 			COALESCE(SUM(CASE WHEN status = 'in_review' THEN 1 ELSE 0 END), 0) as status_in_review,
-			COALESCE(SUM(CASE WHEN status = 'remediation' THEN 1 ELSE 0 END), 0) as status_remediation,
-			COALESCE(SUM(CASE WHEN status = 'retest' THEN 1 ELSE 0 END), 0) as status_retest,
-			COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0) as status_verified,
-			COALESCE(SUM(CASE WHEN status = 'accepted_risk' THEN 1 ELSE 0 END), 0) as status_accepted_risk,
+			COALESCE(SUM(CASE WHEN status = 'fix_applied' THEN 1 ELSE 0 END), 0) as status_fix_applied,
+			COALESCE(SUM(CASE WHEN status = 'validated_fixed' THEN 1 ELSE 0 END), 0) as status_validated_fixed,
+			COALESCE(SUM(CASE WHEN status = 'not_observed' THEN 1 ELSE 0 END), 0) as status_not_observed,
 			COALESCE(SUM(CASE WHEN source = 'sast' THEN 1 ELSE 0 END), 0) as source_sast,
 			COALESCE(SUM(CASE WHEN source = 'dast' THEN 1 ELSE 0 END), 0) as source_dast,
 			COALESCE(SUM(CASE WHEN source = 'sca' THEN 1 ELSE 0 END), 0) as source_sca,
@@ -2957,9 +2956,9 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	var (
 		total, critical, high, medium, low, info                     int64
 		statusNew, statusConfirmed, statusInProgress, statusResolved int64
+		statusDraft, statusInReview, statusFixApplied                int64
+		statusValidatedFixed, statusNotObserved                      int64
 		statusFalsePositive, statusAccepted, statusDuplicate         int64
-		statusDraft, statusInReview, statusRemediation               int64
-		statusRetest, statusVerified, statusAcceptedRisk             int64
 		sourceSast, sourceDast, sourceSca, sourceSecret              int64
 		sourceIac, sourceContainer, sourceManual, sourcePentest      int64
 		sourceExternal                                               int64
@@ -2974,8 +2973,8 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 		&critical, &high, &medium, &low, &info,
 		&statusNew, &statusConfirmed, &statusInProgress, &statusResolved,
 		&statusFalsePositive, &statusAccepted, &statusDuplicate,
-		&statusDraft, &statusInReview, &statusRemediation,
-		&statusRetest, &statusVerified, &statusAcceptedRisk,
+		&statusDraft, &statusInReview,
+		&statusFixApplied, &statusValidatedFixed, &statusNotObserved,
 		&sourceSast, &sourceDast, &sourceSca, &sourceSecret,
 		&sourceIac, &sourceContainer, &sourceManual, &sourcePentest,
 		&sourceExternal,
@@ -2997,7 +2996,7 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.BySeverity[vulnerability.SeverityLow] = low
 	stats.BySeverity[vulnerability.SeverityInfo] = info // info + none (CVSS 0.0)
 
-	// By status (7 statuses: new, confirmed, in_progress, resolved, false_positive, accepted, duplicate)
+	// By status: every status of the lifecycle
 	stats.ByStatus[vulnerability.FindingStatusNew] = statusNew
 	stats.ByStatus[vulnerability.FindingStatusConfirmed] = statusConfirmed
 	stats.ByStatus[vulnerability.FindingStatusInProgress] = statusInProgress
@@ -3007,10 +3006,9 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.ByStatus[vulnerability.FindingStatusDuplicate] = statusDuplicate
 	stats.ByStatus[vulnerability.FindingStatusDraft] = statusDraft
 	stats.ByStatus[vulnerability.FindingStatusInReview] = statusInReview
-	stats.ByStatus[vulnerability.FindingStatusRemediation] = statusRemediation
-	stats.ByStatus[vulnerability.FindingStatusRetest] = statusRetest
-	stats.ByStatus[vulnerability.FindingStatusVerified] = statusVerified
-	stats.ByStatus[vulnerability.FindingStatusAcceptedRisk] = statusAcceptedRisk
+	stats.ByStatus[vulnerability.FindingStatusFixApplied] = statusFixApplied
+	stats.ByStatus[vulnerability.FindingStatusValidatedFixed] = statusValidatedFixed
+	stats.ByStatus[vulnerability.FindingStatusNotObserved] = statusNotObserved
 
 	// By source
 	stats.BySource[vulnerability.FindingSourceSAST] = sourceSast
@@ -3024,9 +3022,9 @@ func (r *FindingRepository) queryFindingStats(ctx context.Context, query string,
 	stats.BySource[vulnerability.FindingSourceExternal] = sourceExternal
 
 	// Calculate open and resolved counts
-	// Open = new + confirmed + in_progress + pentest active (draft, in_review, remediation, retest)
-	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview + statusRemediation + statusRetest
-	stats.ResolvedCount = statusResolved + statusVerified
+	// Open = new + confirmed + in_progress + pentest pre-publication (draft, in_review)
+	stats.OpenCount = statusNew + statusConfirmed + statusInProgress + statusDraft + statusInReview
+	stats.ResolvedCount = statusResolved
 
 	stats.KevOpen = kevOpen
 	stats.EpssHighOpen = epssHighOpen
