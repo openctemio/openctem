@@ -1808,7 +1808,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 		scan.WithAuditService(scanAuditAdapter),
 		scan.WithProfileRepo(repos.ScanProfile),
-		// Enforce scope EXCLUSIONS at scan target selection (fail-open).
+		// Enforce scope EXCLUSIONS on every dispatch path; unwired or failing, nothing is dispatched (fail closed).
 		scan.WithScopeExclusionFilter(s.Scope),
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.

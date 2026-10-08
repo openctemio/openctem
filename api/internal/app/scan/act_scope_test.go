@@ -74,11 +74,11 @@ func TestResolveScanTargets_SkipsOutOfActScope(t *testing.T) {
 		targets: map[string]string{"typed.example.org": actscope.ReasonNoScopeTarget},
 		assets:  map[shared.ID]bool{theirs.ID: true},
 	}
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{mine, theirs}},
 		actScope:       stub,
 		logger:         logger.NewNop(),
-	}
+	})
 	owner := shared.NewID()
 	sc := testScan("nuclei", "typed.example.org", "ok.example.com")
 	sc.AssetGroupID = shared.NewID()
