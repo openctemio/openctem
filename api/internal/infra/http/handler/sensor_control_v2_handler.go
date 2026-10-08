@@ -629,12 +629,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 		case command.TransitionFail:
 			// A refused job re-queued to another sensor has not failed.
 			if res.Command.Status == commanddom.CommandStatusFailed {
-				h.commands.triggerScanRunFailed(r.Context(), res.Command, res.Command.ErrorMessage, failCode)
-				// A failed retest check settles its retest now (unknown)
-				// instead of at the next sweep.
-				h.commands.triggerRetestSettle(res.Command)
-				h.commands.settleValidationRun(res.Command, false,
-					sensor.RedactPlatformText(res.Command.ErrorMessage), failCode)
+				h.commands.OnCommandFailed(r.Context(), res.Command, res.Command.ErrorMessage, failCode)
 			}
 		}
 	}

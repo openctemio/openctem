@@ -1,6 +1,8 @@
 # Makefile Commands Guide
 
-This document provides a comprehensive guide to using Makefile commands for the OpenCTEM UI project.
+The targets of `web/Makefile` (run them in `web/`). They wrap the npm scripts in
+`package.json`. The repository root `Makefile` has the cross-component targets
+(`make setup`, `make generate`, `make dev-web`, `make web-<script>`).
 
 ## Quick Start
 
@@ -74,7 +76,7 @@ make dev
 
 | Command             | Description                            |
 | ------------------- | -------------------------------------- |
-| `make docker-prod`  | Start production environment           |
+| `make docker-prod`  | Print how to start the production stack (`api/deploy`) |
 | `make docker-clean` | Remove containers, volumes, and images |
 
 ## Git Hooks
@@ -167,11 +169,10 @@ Create `.env.local` from `.env.example`:
 cp .env.example .env.local
 ```
 
-Key variables:
+Key variables (full list: [ops/ENVIRONMENT_VARIABLES.md](./ops/ENVIRONMENT_VARIABLES.md)):
 
 - `BACKEND_API_URL` - Backend API URL (server-side only)
 - `NEXT_PUBLIC_APP_URL` - Frontend URL (public)
-- `NEXT_PUBLIC_AUTH_PROVIDER` - Auth provider: "local" | "oidc" | "hybrid"
 
 ### Docker Environment
 
@@ -232,7 +233,7 @@ Features:
    extra_hosts:
      - 'host.docker.internal:host-gateway'
    ```
-3. Or use direct IP: `BACKEND_API_URL=http://192.168.x.x:8080`
+3. Or use the host's address: `BACKEND_API_URL=http://192.0.2.10:8080`
 
 ### Build failures
 
@@ -252,8 +253,8 @@ make docker-dev
 # Run type checker
 make type-check
 
-# Generate types from OpenAPI (if applicable)
-# Check API docs for type generation commands
+# Regenerate the API contract types (repository root)
+make -C .. generate
 ```
 
 ## NPM Scripts vs Makefile
@@ -273,5 +274,5 @@ You can use either Makefile or npm scripts - they do the same thing!
 ## Related Documentation
 
 - [Architecture](./ARCHITECTURE.md) - System architecture
-- [Features](./features/) - Feature documentation
-- [Deployment](./guides/) - Deployment guides
+- [Calling the API](./guides/API_INTEGRATION.md)
+- [Docker and Sentry](./ops/DOCKER_SENTRY_SETUP.md)

@@ -114,8 +114,9 @@ describe('Findings state lens', () => {
     render(<FindingsPage />)
     expect(screen.getByRole('radio', { name: /^Open/ })).toHaveAttribute('aria-checked', 'true')
     expect(lastListFilters().state).toBe('open')
-    // The metric strip follows the lens too (stats take the list filter).
-    expect(statsCalls.some((f) => f?.state === 'open')).toBe(true)
+    // Stats are asked under every lens at once (by_state), never per lens:
+    // the overview strip is page-level (research/81).
+    expect(statsCalls.every((f) => f?.state === 'all')).toBe(true)
   })
 
   it('shows honest lens counts from by_state of the same filter', () => {

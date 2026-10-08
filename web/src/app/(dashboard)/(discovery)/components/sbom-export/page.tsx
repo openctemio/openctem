@@ -13,9 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Separator } from '@/components/ui/separator'
 import {
   Download,
@@ -31,28 +29,12 @@ import {
 import { SBOM_FORMAT_LABELS } from '@/features/components'
 import type { SbomFormat } from '@/features/components'
 import { useComponentStatsApi } from '@/features/components/api/use-components-api'
-import { get } from '@/lib/api/client'
-import useSWR from 'swr'
+import { downloadSbom } from '@/features/components/api/download-sbom'
+import { getErrorMessage } from '@/lib/api/error-handler'
 import { toast } from 'sonner'
-
-type FileFormat = 'json' | 'xml'
 
 export default function SBOMExportPage() {
   const { data: apiStats } = useComponentStatsApi()
-
-  interface ExportComponent {
-    name: string
-    version: string
-    ecosystem: string
-    purl: string
-    license?: string
-    vulnerability_count: number
-  }
-  const { data: exportData } = useSWR<{ data: ExportComponent[]; total: number }>(
-    '/api/v1/components/export',
-    (url: string) => get(url),
-    { revalidateOnFocus: false }
-  )
 
   const stats = useMemo(
     () => ({
@@ -63,99 +45,20 @@ export default function SBOMExportPage() {
     }),
     [apiStats]
   )
-  const components = useMemo(() => exportData?.data ?? [], [exportData])
-  const [exportFormat, setExportFormat] = useState<SbomFormat>('cyclonedx-json')
-  const [fileFormat, setFileFormat] = useState<FileFormat>('json')
-  const [includeVulnerabilities, setIncludeVulnerabilities] = useState(true)
-  const [includeLicenses, setIncludeLicenses] = useState(true)
-  const [includeMetadata, setIncludeMetadata] = useState(true)
+  const [exportFormat, setExportFormat] = useState<SbomFormat>('cyclonedx')
   const [isExporting, setIsExporting] = useState(false)
 
+  // The API builds the document; the browser only saves it.
   const handleExport = async () => {
     setIsExporting(true)
-
-    // Simulate export delay
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-
-    // Build SBOM data based on format
-    const sbomData = {
-      bomFormat: exportFormat.includes('cyclonedx') ? 'CycloneDX' : 'SPDX',
-      specVersion: exportFormat.split('-')[1] || '1.5',
-      version: 1,
-      metadata: includeMetadata
-        ? {
-            timestamp: new Date().toISOString(),
-            tools: [{ name: 'OpenCTEM Security Platform', version: '1.0.0' }],
-            component: {
-              type: 'application',
-              name: 'Organization Assets',
-            },
-          }
-        : undefined,
-      components: components.map((c) => ({
-        type: 'library',
-        name: c.name,
-        version: c.version,
-        purl: c.purl,
-        licenses: includeLicenses && c.license ? [{ license: { id: c.license } }] : undefined,
-        ...(includeVulnerabilities && c.vulnerability_count > 0
-          ? { vulnerabilityCount: c.vulnerability_count }
-          : {}),
-      })),
+    try {
+      const filename = await downloadSbom(exportFormat)
+      toast.success(`SBOM exported as ${filename}`)
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'SBOM export failed'))
+    } finally {
+      setIsExporting(false)
     }
-
-    // Generate file
-    let content: string
-    let filename: string
-    let mimeType: string
-
-    if (fileFormat === 'json') {
-      content = JSON.stringify(sbomData, null, 2)
-      filename = `sbom-${exportFormat}.json`
-      mimeType = 'application/json'
-    } else {
-      // Escape XML special chars — package names/PURLs legally contain &, <, >
-      // which would otherwise produce a malformed/corrupt SBOM.
-      const xml = (v: string) =>
-        v
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&apos;')
-      // Simple XML conversion (in production, use proper XML library)
-      content = `<?xml version="1.0" encoding="UTF-8"?>
-<bom xmlns="http://cyclonedx.org/schema/bom/1.5">
-  <metadata>
-    <timestamp>${new Date().toISOString()}</timestamp>
-  </metadata>
-  <components>
-${components
-  .map(
-    (c) => `    <component type="library">
-      <name>${xml(c.name)}</name>
-      <version>${xml(c.version || '')}</version>
-      <purl>${xml(c.purl || '')}</purl>
-    </component>`
-  )
-  .join('\n')}
-  </components>
-</bom>`
-      filename = `sbom-${exportFormat}.xml`
-      mimeType = 'application/xml'
-    }
-
-    // Download file
-    const blob = new Blob([content], { type: mimeType })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
-
-    setIsExporting(false)
-    toast.success(`SBOM exported as ${filename}`)
   }
 
   return (
@@ -190,9 +93,7 @@ ${components
               <CardTitle className="text-3xl text-red-500">{stats.totalVulnerabilities}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">
-                {includeVulnerabilities ? 'Included' : 'Excluded'}
-              </p>
+              <p className="text-xs text-muted-foreground">Count per component</p>
             </CardContent>
           </Card>
 
@@ -205,9 +106,7 @@ ${components
               <CardTitle className="text-3xl text-blue-500">{stats.uniqueLicenses}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">
-                {includeLicenses ? 'Included' : 'Excluded'}
-              </p>
+              <p className="text-xs text-muted-foreground">As reported by your assets</p>
             </CardContent>
           </Card>
 
@@ -222,7 +121,7 @@ ${components
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">{fileFormat.toUpperCase()} output</p>
+              <p className="text-xs text-muted-foreground">Built by the server</p>
             </CardContent>
           </Card>
         </div>
@@ -249,7 +148,7 @@ ${components
                     {Object.entries(SBOM_FORMAT_LABELS).map(([value, label]) => (
                       <SelectItem key={value} value={value}>
                         <div className="flex flex-wrap items-center gap-2">
-                          {value.includes('cyclonedx') ? (
+                          {value === 'cyclonedx' ? (
                             <FileJson className="h-4 w-4 text-blue-500" />
                           ) : (
                             <FileText className="h-4 w-4 text-green-500" />
@@ -261,7 +160,7 @@ ${components
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {exportFormat.includes('cyclonedx')
+                  {exportFormat === 'cyclonedx'
                     ? 'CycloneDX is widely supported by security tools and CI/CD pipelines'
                     : 'SPDX is an ISO standard format for software bill of materials'}
                 </p>
@@ -269,88 +168,14 @@ ${components
 
               <Separator />
 
-              {/* File Format */}
-              <div className="space-y-3">
-                <Label>Output Format</Label>
-                <RadioGroup
-                  value={fileFormat}
-                  onValueChange={(v) => setFileFormat(v as FileFormat)}
-                  className="flex gap-4"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="json" id="json" />
-                    <Label htmlFor="json" className="flex items-center gap-2 cursor-pointer">
-                      <FileJson className="h-4 w-4" />
-                      JSON
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="xml" id="xml" />
-                    <Label htmlFor="xml" className="flex items-center gap-2 cursor-pointer">
-                      <FileText className="h-4 w-4" />
-                      XML
-                    </Label>
-                  </div>
-                </RadioGroup>
-              </div>
-
-              <Separator />
-
-              {/* Include Options */}
-              <div className="space-y-4">
-                <Label>Include in Export</Label>
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="vulnerabilities"
-                      checked={includeVulnerabilities}
-                      onCheckedChange={(checked) => setIncludeVulnerabilities(!!checked)}
-                    />
-                    <Label htmlFor="vulnerabilities" className="cursor-pointer">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Shield className="h-4 w-4 text-red-500" />
-                        Vulnerability Information
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Include CVEs, CVSS scores, and fix versions
-                      </p>
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="licenses"
-                      checked={includeLicenses}
-                      onCheckedChange={(checked) => setIncludeLicenses(!!checked)}
-                    />
-                    <Label htmlFor="licenses" className="cursor-pointer">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Scale className="h-4 w-4 text-blue-500" />
-                        License Information
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Include SPDX license identifiers and names
-                      </p>
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="metadata"
-                      checked={includeMetadata}
-                      onCheckedChange={(checked) => setIncludeMetadata(!!checked)}
-                    />
-                    <Label htmlFor="metadata" className="cursor-pointer">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <FileText className="h-4 w-4 text-slate-500" />
-                        Document Metadata
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Include timestamp, tool info, and component details
-                      </p>
-                    </Label>
-                  </div>
-                </div>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <Label className="text-foreground">What the export holds</Label>
+                <p>
+                  Every component your assets use that you can see, with its version, package URL,
+                  the licenses your assets report and the number of known vulnerabilities. The file
+                  validates against the official{' '}
+                  {exportFormat === 'cyclonedx' ? 'CycloneDX 1.6' : 'SPDX 2.3'} schema.
+                </p>
               </div>
 
               <Separator />
@@ -360,7 +185,7 @@ ${components
                 {isExporting ? (
                   <>
                     <Clock className="me-2 h-4 w-4 animate-spin" />
-                    Generating SBOM...
+                    Exporting...
                   </>
                 ) : (
                   <>
