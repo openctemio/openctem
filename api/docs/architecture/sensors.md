@@ -699,7 +699,7 @@ Each segment runs through the v1 pipeline with the v2 options:
 - **No global catalog writes.** Findings link to CVE catalog rows that
   exist; the sensor's CVE text stays on the tenant's finding. The catalog is
   written by trusted feeds only.
-- **Default-branch auto-resolve needs a proven run** (research 18 F3). Only a
+- **Default-branch auto-resolve needs a proven run.** Only a
   protocol v2 run **bound to a command** closes repository findings; it is
   evaluated per command (`evaluateRepoCoverage`) at the report's commit and
   again when the command completes. It qualifies only if the command
@@ -716,7 +716,7 @@ Each segment runs through the v1 pipeline with the v2 options:
   (100) and more than `SENSOR_V2_BLINDING_RATIO` (50 %) of the open findings
   of that tool on those assets (`auto_resolve: held`). A report without a
   command (CI, collector, `warn` mode), a tenant upload and any protocol v1
-  report never close a finding (owner decision O11); the per-branch
+  report never close a finding (decision O11); the per-branch
   occurrence sweep is unchanged.
 - **Coverage-scoped auto-resolve (non-repository findings).** The
   default-branch auto-resolve above only covers repository findings, so a host or
@@ -765,7 +765,7 @@ v2 responses carry `OpenCTEM-Protocol: 2`.
 | `SENSOR_PROTOCOL_V2_RESULTS` | `true` | Mount `/api/v2/sensor`, process v2 jobs, advertise on the heartbeat. `false` unmounts it; v2 jobs already queued wait until it is on again. |
 | `SENSOR_V2_BLINDING_RATIO` | `0.5` | Blinding guard ratio. |
 | `SENSOR_V2_BLINDING_MIN_FINDINGS` | `100` | Blinding guard floor. |
-| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce`. Keep `dry_run`: enforcement is postponed until the closure evaluator ships (owner decision D-22, research 18 P2); this path cannot see template, port or authentication coverage. |
+| `INGEST_COVERAGE_AUTO_RESOLVE` | `dry_run` | Coverage-scoped auto-resolve of non-repository findings: `off`, `dry_run` or `enforce`. Keep `dry_run`: enforcement is postponed until the closure evaluator ships (decision D-22); this path cannot see template, port or authentication coverage. |
 | `INGEST_MAX_PENDING_PER_TENANT` | `100` | Queue depth per tenant. |
 
 Migrations 000237 (`ingest_reports`, v2 columns on `ingest_jobs`) and 000239
@@ -1001,7 +1001,7 @@ digest differs from the current one. Every sensor therefore gets a version
 history, and a steady heartbeat writes nothing extra. The comparison uses the
 digest in the row the heartbeat already reads.
 
-**Phase 2** (RFC-033 §6.12, owner decisions O1–O4):
+**Phase 2** (RFC-033 §6.12, decisions O1–O4):
 
 - **Policy echo.** The PUT answer and `GET /api/v2/sensor/manifest` carry
   `policy {allowed_tools, allowed_capabilities, max_jobs}`, the sensor's
@@ -1313,7 +1313,7 @@ and narrows dispatch:
   `job_refused_local_policy` job event (identical rules fold within the event
   window) and, once per folded burst, the audit action
   `sensor.job_refused_local_policy` (severity high).
-- **Structured refusal and re-queue** (research/25 §3.6, D8; migration
+- **Structured refusal and re-queue** (D8; migration
   001046). Hello feature `refusal`: v2 `POST /commands/{id}/fail` accepts
   `refusal: {layer, rule, detail}` (layer from a closed set: `builtin`,
   `local`, `managed`, `scope`, `platform_tool_gate`; sanitized like the
@@ -1359,7 +1359,7 @@ and narrows dispatch:
   command waits for a qualifying sensor. Names that resolve to private
   addresses in public DNS are not detected here; the sensor's own policy
   covers them. An unreadable tenant setting withholds (fail closed).
-- **Dispatch pre-check** (research/25 §3.6). One function,
+- **Dispatch pre-check**. One function,
   `sensor.Accepts(report, job, options)` (`pkg/domain/sensor/accepts.go`),
   decides whether a sensor's last report would refuse a job, reading the
   payload as the sensor's admission check does (`sensor.JobOf`: tool from
@@ -1372,7 +1372,7 @@ and narrows dispatch:
   tenant switch above (layer `managed`). Allow and deny ranges are reported as
   counts, so they are left to the sensor. A sensor without a report or
   without a policy accepts what the policy would decide (the absent policy
-  allows both opt-ins, owner decision Q4 (a)). The same check runs in three
+  allows both opt-ins, decision Q4 (a)). The same check runs in three
   places:
   - **poll and claim** (`command.Service.Poll`, `Claim`): commands the sensor
     would refuse are left pending for another sensor; the poll reads a wider
@@ -1393,7 +1393,7 @@ and narrows dispatch:
   sensor can only withhold jobs from itself, and the sensor keeps enforcing
   its own policy on whatever it receives. Failures to read the sensor or the
   tenant setting withhold (fail closed).
-- **Organization opt-ins, default off** (research/25 D3, D9). Security
+- **Organization opt-ins, default off** (D3, D9). Security
   settings `allow_sensor_interactsh` and `allow_sensor_custom_templates`
   (`tenant.SecuritySettings`), off for existing and new organizations. The
   platform-side layer (`managed`) of the pre-check: with a switch off the
@@ -1445,9 +1445,9 @@ and narrows dispatch:
   scratch directories). The Helm snippet turns on `sensor.localPolicy` of
   chart 0.11.0.
 
-## Config report: the setup checklist (research/26)
+## Config report: the setup checklist
 
-> Design: [RFC-033 §11](../rfcs/RFC-033-sensor-manifest.md), from research/26
+> Design: [RFC-033 §11](../rfcs/RFC-033-sensor-manifest.md)
 > (sensor config doctor) P0. Operators: [Fix a sensor's setup checklist](../how-to/fix-sensor-setup-checklist.md).
 
 A sensor runs preflight checks on itself and sends the results with
@@ -1615,7 +1615,7 @@ still has to heartbeat. [RFC-035](../rfcs/RFC-035-sensor-control-plane-under-loa
 measured where this breaks and splits the fix into sensor-side (SDK) and
 platform-side work.
 
-**What the platform does** (owner decisions D1–D3):
+**What the platform does** (decisions D1–D3):
 
 - **Per-sensor deadline and ladder (D1).** Each heartbeat stores the interval
   the sensor follows and its deadline; the health controller walks a silent

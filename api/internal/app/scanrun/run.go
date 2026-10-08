@@ -450,6 +450,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 			// An active stage holds its hosts while a sensor runs the
 			// chunk, so no other sensor hits them at the same time.
 			cmd.HostKeys = chunkHostKeys(resolved.Stage, resolved.HasStage, chunkTargets(chunk, run.Context))
+			// What the step's targets were gated with: the claim gates
+			// them again with it (claim-time scope re-check).
+			cmd.DispatchGate = stepDispatchGate(run, resolved)
 		}
 		if err == nil {
 			if zoneID != nil {
@@ -472,6 +475,23 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	stepRun.Queue()
 	stepRun.CommandID = &created[0].ID
 	return s.stepRunRepo.Update(ctx, stepRun)
+}
+
+// stepDispatchGate is the gate record of a step's commands: the run
+// actor's act scope (seeds and chained hops are both checked against it),
+// the stage's tier and passive flag (a chained hop is gated at the stage's
+// tier; seeds at the tool's, never lower), or the tool's tier for a step
+// outside the stage catalog.
+func stepDispatchGate(run *scanrun.Run, resolved scanapp.StepTool) *command.DispatchGate {
+	g := &command.DispatchGate{Tier: int(scanapp.ProbeTier(resolved.Name)), ActScope: true}
+	if resolved.HasStage {
+		g.Tier = int(resolved.Stage.Tier)
+		g.Passive = resolved.Stage.Tier.Passive()
+	}
+	if actor := runActor(run); actor != nil {
+		g.Actor = actor.String()
+	}
+	return g
 }
 
 // stageKeyOf is the catalog stage a resolved step runs ("" when none).
