@@ -156,7 +156,7 @@ func (r *ContentPackRepository) List(ctx context.Context, tenantID shared.ID, f 
 		return nil, 0, fmt.Errorf("list content packs: %w", err)
 	}
 	defer rows.Close()
-	out := make([]*contentpack.Pack, 0, limit)
+	out := []*contentpack.Pack{} // limit is bounded by the service; not used as a capacity
 	for rows.Next() {
 		p, err := scanContentPack(rows)
 		if err != nil {

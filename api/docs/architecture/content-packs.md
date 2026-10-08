@@ -57,7 +57,7 @@ The routes are under `/api/v1/content-packs`, take the tenant from the JWT and a
 
 | Route | Permission |
 |---|---|
-| `GET /`, `GET /{id}`, `GET /{id}/archive` (canonical tar, `Digest` header), `GET /signing-key` | `scans:content:read` |
+| `GET /`, `GET /{id}`, `GET /{id}/download` (canonical tar, `Digest` header), `GET /signing-key` | `scans:content:read` |
 | `POST /` (multipart: `name`, `version`, `kind`, `acknowledge_secrets`, `archive`), `POST /{id}/revoke` (`reason`) | `scans:content:write` + a recent sign-in |
 
 A pack of another organization returns 404. The owner and admin roles hold both permissions (migration 001380).

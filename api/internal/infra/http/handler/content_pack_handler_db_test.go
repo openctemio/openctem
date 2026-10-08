@@ -90,7 +90,7 @@ func TestContentPackAPI(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/content-packs/signing-key", h.SigningKey)
 	r.Get("/content-packs/{id}", h.Get)
-	r.Get("/content-packs/{id}/archive", h.Archive)
+	r.Get("/content-packs/{id}/download", h.Download)
 	r.Post("/content-packs", h.Upload)
 	r.Post("/content-packs/{id}/revoke", h.Revoke)
 	do := func(tenant, method, path string, body *bytes.Buffer, ctype string) *httptest.ResponseRecorder {
@@ -119,7 +119,7 @@ func TestContentPackAPI(t *testing.T) {
 		t.Fatalf("pack %+v", p)
 	}
 
-	rec = do(tenantA, http.MethodGet, "/content-packs/"+p.ID+"/archive", nil, "")
+	rec = do(tenantA, http.MethodGet, "/content-packs/"+p.ID+"/download", nil, "")
 	if rec.Code != http.StatusOK || rec.Header().Get("Digest") != p.Digest || rec.Header().Get("Content-Type") != "application/x-tar" {
 		t.Fatalf("archive: %d %v", rec.Code, rec.Header())
 	}
@@ -128,7 +128,7 @@ func TestContentPackAPI(t *testing.T) {
 	}
 
 	// SECURITY: another tenant gets 404 for the pack and its archive.
-	for _, path := range []string{"/content-packs/" + p.ID, "/content-packs/" + p.ID + "/archive"} {
+	for _, path := range []string{"/content-packs/" + p.ID, "/content-packs/" + p.ID + "/download"} {
 		if rec := do(tenantB, http.MethodGet, path, nil, ""); rec.Code != http.StatusNotFound {
 			t.Fatalf("cross-tenant %s: %d", path, rec.Code)
 		}
