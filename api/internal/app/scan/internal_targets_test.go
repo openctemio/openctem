@@ -22,7 +22,7 @@ func TestResolveScanTargets_InternalAddressesOnlyInsideZones(t *testing.T) {
 		{ID: shared.NewID(), Name: "http://127.0.0.1:8080/"},
 	}
 	zones := &gateZones{}
-	svc := &Service{assetGroupRepo: &stubGroupAssetsRepo{assets: members}, zones: zones, logger: logger.NewNop()}
+	svc := allowAllChecks(&Service{assetGroupRepo: &stubGroupAssetsRepo{assets: members}, zones: zones, logger: logger.NewNop()})
 	sc := testScan("nuclei", "10.20.0.5", "203.0.113.7", "169.254.169.254")
 	sc.AssetGroupID = shared.NewID()
 

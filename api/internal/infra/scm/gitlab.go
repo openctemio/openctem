@@ -154,7 +154,7 @@ func (c *GitLabClient) GetUser(ctx context.Context) (*User, error) {
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "gitlab", resp.StatusCode, body)
 	}
 
 	var glUser struct {
@@ -318,7 +318,7 @@ func (c *GitLabClient) parseProjectsResponse(resp *http.Response) (*ListResult, 
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(context.Background(), "gitlab", resp.StatusCode, body)
 	}
 
 	var glProjects []glProject
