@@ -202,6 +202,8 @@ export type RunStageList = Schemas['internal_infra_http_handler.RunStageListResp
 /** GET /api/v1/scan-runs/{id}/events — a run timeline (research/62 P0-4). */
 export type RunEvent = Schemas['internal_infra_http_handler.RunEvent']
 export type RunEventsResponse = Schemas['internal_infra_http_handler.RunEventsResponse']
+export type RunMap = Schemas['internal_infra_http_handler.RunMapResponse']
+export type RunMapNode = Schemas['internal_infra_http_handler.RunMapNode']
 /** GET /api/v1/easm/candidates — the attribution review queue. */
 export type EASMReviewPage =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']
