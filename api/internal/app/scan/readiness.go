@@ -170,6 +170,27 @@ func (s *Service) workflowReadiness(ctx context.Context, tenantID shared.ID, w *
 	return r
 }
 
+// toolState is how a tool of the catalog can run for the tenant now:
+// ready, waiting, or "" (no sensor may run it).
+func (snap readinessSnapshot) toolState(name string, status sensordom.ToolStatus, useTenant, usePlatform bool) string {
+	state := ""
+	if useTenant {
+		switch status {
+		case sensordom.ToolReady, sensordom.ToolOutdated:
+			state = ReadinessReady
+		case sensordom.ToolOfflineOnly:
+			state = ReadinessWaiting
+		}
+	}
+	if state != ReadinessReady && usePlatform && slices.Contains(snap.pfTools, name) {
+		if snap.pfOnline {
+			return ReadinessReady
+		}
+		return ReadinessWaiting
+	}
+	return state
+}
+
 func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *scanworkflow.Step, snap readinessSnapshot, useTenant, usePlatform bool) StepReadiness {
 	sr := StepReadiness{StepKey: step.StepKey, Name: step.Name}
 	if sr.Name == "" {
@@ -205,22 +226,7 @@ func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *s
 			disabled = append(disabled, name)
 			continue
 		}
-		state := ""
-		if useTenant {
-			switch status {
-			case sensordom.ToolReady, sensordom.ToolOutdated:
-				state = ReadinessReady
-			case sensordom.ToolOfflineOnly:
-				state = ReadinessWaiting
-			}
-		}
-		if state != ReadinessReady && usePlatform && slices.Contains(snap.pfTools, name) {
-			if snap.pfOnline {
-				state = ReadinessReady
-			} else {
-				state = ReadinessWaiting
-			}
-		}
+		state := snap.toolState(name, status, useTenant, usePlatform)
 		switch {
 		case state == ReadinessReady:
 			best = ReadinessReady
