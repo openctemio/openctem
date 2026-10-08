@@ -1,12 +1,11 @@
 # RFC-012 — Real BAS / attack-simulation execution (make the "V" not-synthetic)
 
-> Status: **Proposed** (Phase 0 — honesty fix — shipped alongside this doc)
+> Status: **Proposed**. Phase 0 (honesty fix) and Phase 1 (real safe-check dispatch, `tryDispatchLive` in `internal/app/compliance/simulation.go`) shipped; Phases 2–3 not built.
 > Depends on: [RFC-011](RFC-011-validation-engine-dispatch.md) (validation dispatch)
 
 ## Problem
 
-OpenCTEM's CTEM maturity assessment scored **Validation 2.1/5 — the weakest
-phase**. The root cause is that Breach-and-Attack-Simulation (BAS) is **synthetic**:
+**Validation** is the weakest phase of the OpenCTEM CTEM loop. The root cause is that Breach-and-Attack-Simulation (BAS) is **synthetic**:
 
 `internal/app/compliance/simulation.go:executeSimulationTechnique` decides a
 run's outcome purely from *configuration*, with **no execution**:

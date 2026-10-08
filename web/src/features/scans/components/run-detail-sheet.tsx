@@ -188,7 +188,12 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
           <DetailSections>
             {(run.step_runs?.length ?? 0) > 0 && (
               <DetailSection title="Run map">
-                <RunMap runId={run.id} refreshInterval={runRefreshInterval(run)} />
+                <RunMap
+                  runId={run.id}
+                  refreshInterval={runRefreshInterval(run)}
+                  tasks={run.tasks}
+                  tasksTruncated={run.tasks_truncated}
+                />
               </DetailSection>
             )}
             {isScanRun && (

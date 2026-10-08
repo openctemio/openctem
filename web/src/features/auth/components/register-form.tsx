@@ -9,6 +9,7 @@
 'use client'
 
 import { loginErrorMessage } from '@/features/auth/lib/login-error'
+import { NOT_SET_UP_PATH, isSignupNotAvailable } from '@/features/auth/lib/signup-outcome'
 import { useTranslation } from '@/context/i18n-provider'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
@@ -168,6 +169,9 @@ export function RegisterForm({
             ? `/login?returnTo=${encodeURIComponent(returnTo)}&email=${encodeURIComponent(data.email)}`
             : redirectTo
         )
+      } else if (isSignupNotAvailable(result.code)) {
+        // The sign-up policy refused: the one "not set up" page.
+        router.push(NOT_SET_UP_PATH)
       } else {
         toast.error(result.error || 'Registration failed')
       }

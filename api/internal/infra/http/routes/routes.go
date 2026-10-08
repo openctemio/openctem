@@ -14,6 +14,7 @@ import (
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -80,6 +81,11 @@ type Handlers struct {
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
+	// SensorV3 serves sensor protocol v3 (RFC-059); nil unless
+	// SENSOR_TRANSPORT_V3_ENABLED. Register attaches the in-process v2 route
+	// group it serves through; the HTTPS binding is mounted by the caller
+	// (Server.MountPrefix).
+	SensorV3 *sensortransport.Server
 	// SensorPairing serves interactive pairing (RFC-052); nil when disabled.
 	SensorPairing *handler.SensorPairingHandler
 	IOC           *handler.IOCHandler        // nil if not initialized - IOC catalog (feeds B6 correlator)
@@ -752,7 +758,12 @@ func Register(
 	// Sensor protocol v2 results (RFC-026): its own route group and
 	// authenticator, only when enabled.
 	if h.SensorResultsV2 != nil {
-		registerSensorV2Routes(router, h.SensorResultsV2, sensorControlV2Handler(h, log), ingestRateLimiter, log)
+		ctl := sensorControlV2Handler(h, log)
+		budgets := newSensorV2Budgets(ingestRateLimiter, log)
+		mountSensorV2(router, h.SensorResultsV2, ctl, budgets, h.SensorResultsV2.Authenticate)
+		if h.SensorV3 != nil && ctl != nil {
+			h.SensorV3.Attach(sensorV2InProcess(h.SensorResultsV2, ctl, budgets), ctl, h.SensorResultsV2)
+		}
 	}
 
 	// Sensor pairing (RFC-052): sensor plane (signed by the key being

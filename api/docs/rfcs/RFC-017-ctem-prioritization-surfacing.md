@@ -2,7 +2,7 @@
 
 **Status:** Proposed. Shipped (checked 2026-10-04): P1 sort, filter and default P0-first (#308, openctemio/ui#276, openctemio/ui#392); P2 persisted reachability and explainability (#352, openctemio/ui#384); P3 business-service criticality (#435), attacker profiles only indirectly through the threat-model oracle (#338, #352); P5 in part (synthetic remediation sub-tabs removed). Not built: P4 score rationalisation, campaign↔finding assignment sync, priority filters on the MCP `list_findings` tool.
 **Author:** Platform
-**Related:** RFC-011 (validation engine), RFC-015 (remediation groups), CTEM maturity audit (2026-07)
+**Related:** RFC-011 (validation engine), RFC-015 (remediation groups)
 
 ## Summary
 

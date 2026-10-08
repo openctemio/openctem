@@ -1,6 +1,6 @@
 # RFC-038 — Sensor tool settings: typed schemas from the sensor, forms on the platform, signed config back
 
-> Status: **Proposed** (2026-10-02, api#826).
+> Status: **Proposed** (2026-10-02, #826). §6.12 custom template trust is implemented; the settings schema design (§6.1–§6.10, phases P0–P4) is not built.
 > Scope: sdk-go (schema types, registration, delivery and verification) +
 > sensor (`openctemio/sensor`: one schema per tool, typed option → flag
 > mapping) + api (storage, validation, policy, audit, push) + web (forms).
@@ -13,15 +13,16 @@
 > Mutual distrust: [RFC-040](RFC-040-platform-sensor-mutual-distrust.md)
 > §5.6 signs settings documents with the same separate signer as jobs and
 > amends S6 to a DSSE envelope over the exact bytes (no canonical JSON,
-> research 03 finding 8); a job names the settings version and digest it
+> because re-serialising lets a verifier and an executor read different
+> documents); a job names the settings version and digest it
 > runs with.
 >
-> Owner's request (2026-10-02): "Tools in the sensor need input options /
-> custom config. The SDK should have an interface for the sensor to
-> REGISTER those customisations; the platform receives them; in the UI when
-> adding/editing a sensor the admin can customise those parameters; the
-> sensor receives them back, stores them and runs with the right options.
-> Research many sources and propose the best, most secure, most modern way."
+> Problem (2026-10-02): tools in the sensor need input options and custom
+> config. The SDK should have an interface for the sensor to register those
+> customisations; the platform receives them; when adding or editing a sensor
+> the admin can customise those parameters in the UI; the sensor receives
+> them back, stores them and runs with the right options. The design should
+> be the most secure and current option available.
 
 ## 1. Answer in short
 
@@ -441,10 +442,9 @@ These are either platform-controlled per job or security boundaries.
 ### 6.12 Custom template trust (implemented 2026-10-03)
 
 Custom templates are not settings (§6.11), but they reach the sensor the
-same way settings will, so they get the delivery guarantees first. This
-follows research/03-sensor-signed-config (DSSE, exact bytes, tenant and
-sensor binding, expiry, one manifest per set, sensor-side capability
-fence) and research/01b R3 (nuclei template trust).
+same way settings will, so they get the delivery guarantees first: DSSE
+over the exact bytes, tenant and sensor binding, expiry, one manifest per
+set, a sensor-side capability fence, and nuclei's own template trust.
 
 **Upload (api).** `NucleiValidator` refuses, on the parsed document (any
 YAML or JSON spelling, any key case), templates that use the `code` or
@@ -564,9 +564,9 @@ caps them at `SENSOR_NUCLEI_MAX_RATE_LIMIT` / `_CONCURRENCY` /
 | Protobuf / CUE for schemas | Strong typing, but no UI metadata convention and a new toolchain for sensor authors; JSON Schema is what form generators and humans already read. |
 | OPA/Rego for policy | Another language and (usually) another service; our rules are small expressions over one document. CEL is embedded and cost-bounded. |
 | Settings in heartbeats | Heartbeats must stay small (RFC-033, RFC-035); settings change rarely. `config_version` + fetch is the existing pattern. |
-| Sensor-local only (env / file on the host) | That is today; the owner asked for platform-managed settings. Host env stays as the operator's override for content/egress settings that are explicitly host-owned (RFC-034 O1). |
+| Sensor-local only (env / file on the host) | That is today; the requirement is platform-managed settings. Host env stays as the operator's override for content/egress settings that are explicitly host-owned (RFC-034 O1). |
 
-## 10. Owner decisions (recommendations in bold)
+## 10. Open decisions (recommendations in bold)
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|

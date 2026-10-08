@@ -1186,6 +1186,9 @@ func (h *SensorHandler) handleValidationError(w http.ResponseWriter, err error) 
 
 // handleServiceError converts service errors to API errors.
 func (h *SensorHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Sensor").WriteJSON(w)

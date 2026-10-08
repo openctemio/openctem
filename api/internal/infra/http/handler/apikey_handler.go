@@ -325,6 +325,9 @@ func (h *APIKeyHandler) handleValidationError(w http.ResponseWriter, err error) 
 }
 
 func (h *APIKeyHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, apikeydom.ErrAPIKeyNotFound):
 		apierror.NotFound("API key").WriteJSON(w)

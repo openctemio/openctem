@@ -189,7 +189,7 @@ func TestAuthProvidersHandler_NoSecretLeak(t *testing.T) {
 	}
 }
 
-// registration_enabled mirrors AUTH_ALLOW_REGISTRATION so the UI can hide
+// registration_enabled reports the self_service sign-up mode so the UI can hide
 // sign-up. It defaults to false.
 func TestAuthProvidersHandler_RegistrationEnabled(t *testing.T) {
 	for _, enabled := range []bool{false, true} {

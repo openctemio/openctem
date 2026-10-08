@@ -154,13 +154,15 @@ func MisplacedPropertyKeys(t AssetType, subType string, props map[string]any) []
 }
 
 // NormalizeProperties folds every synonym key of props into its canonical
-// key and removes it. A canonical key with synonyms holds a list: string
-// and list values are merged into it, without duplicates. An object under a
-// synonym key is not a value of the canonical key (the CTIS technical
-// `ip_address` block) and stays; only its `address` joins an `ip` list.
-// Values of an `ip` key are parsed: a comma-separated string is split, the
-// addresses are kept in canonical form and anything that is not an address
-// is dropped. props is changed in place and returned (a nil map stays nil).
+// key and removes it. A list key (`List`): string and list values are merged
+// into it, without duplicates. An object under a synonym key is not a value
+// of the canonical key (the CTIS technical `ip_address` block) and stays;
+// only its `address` joins an `ip` list. Values of an `ip` key are parsed: a
+// comma-separated string is split, the addresses are kept in canonical form
+// and anything that is not an address is dropped. A scalar key (a renamed
+// boolean, a timestamp): the canonical key keeps its own value; without one
+// it takes the first synonym's value, unchanged. props is changed in place
+// and returned (a nil map stays nil).
 func NormalizeProperties(props map[string]any) map[string]any {
 	if len(props) == 0 {
 		return props
@@ -168,6 +170,10 @@ func NormalizeProperties(props map[string]any) map[string]any {
 	for i := range registryProperties {
 		p := &registryProperties[i]
 		if len(p.Synonyms) == 0 {
+			continue
+		}
+		if !p.List {
+			foldScalarSynonyms(props, p)
 			continue
 		}
 		present := false
@@ -203,6 +209,26 @@ func NormalizeProperties(props map[string]any) map[string]any {
 		props[p.Key] = list
 	}
 	return props
+}
+
+// foldScalarSynonyms moves the first synonym value of a scalar key to the key
+// when it has none, and removes every synonym that is not an object.
+func foldScalarSynonyms(props map[string]any, p *PropertyDefinition) {
+	_, has := props[p.Key]
+	for _, s := range p.Synonyms {
+		v, ok := props[s]
+		if !ok {
+			continue
+		}
+		if _, isObject := v.(map[string]any); isObject {
+			continue
+		}
+		if !has && v != nil {
+			props[p.Key] = v
+			has = true
+		}
+		delete(props, s)
+	}
 }
 
 // collectPropertyValues returns the string values of p's key and synonyms,
