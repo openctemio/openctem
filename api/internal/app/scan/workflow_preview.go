@@ -94,7 +94,7 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 	}
 	pid, err := shared.IDFromString(in.ScanWorkflowID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid pipeline id", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid scan workflow id", shared.ErrValidation)
 	}
 	tpl, err := s.templateRepo.GetWithSteps(ctx, pid)
 	if err != nil {

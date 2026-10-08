@@ -149,7 +149,7 @@ Every way into an organization starts at the lowest privilege. Raising it is a d
 ## 12. Parts still to build
 
 1. **Policy:** `Security.ExternalMembers` (off / invite-only / trusted-only).
-2. **Home cascade, remaining cause:** the home organization itself being suspended or scheduled for deletion. This waits for the organization states from research/71.
+2. **Home cascade, remaining cause:** the home organization itself being suspended or scheduled for deletion. This waits for organization lifecycle states (suspended, scheduled for deletion).
 3. **Personal accounts:** a second factor (TOTP) for social-login accounts.
 4. **Domains:**
    - include-subdomains on a verified domain;
