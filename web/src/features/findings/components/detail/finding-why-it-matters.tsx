@@ -21,6 +21,7 @@ import { PriorityClassBadge } from '../priority-class-badge'
 import { ScoreBreakdown } from './priority-explanation-card'
 import { useFindingPriorityExplanation } from '../../api/use-finding-priority-explanation'
 import { PRIORITY_CLASS_CONFIG, type FindingDetail } from '../../types'
+import { PriorityClassSla } from '@/features/sla/components/priority-class-sla'
 import { riskSignals, type RiskSignal, type SignalGroup } from '../../lib/finding-signals'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 
@@ -126,9 +127,12 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
           <PriorityClassBadge priorityClass={pc} showTooltip={false} />
           <span className="text-sm font-medium">{cfg.description.split(' — ')[0]}</span>
-          <span className="text-sm text-muted-foreground">
-            · {cfg.sla === 'Opportunistic' ? 'fix opportunistically' : `fix within ${cfg.sla}`}
-          </span>
+          <PriorityClassSla
+            priorityClass={pc}
+            assetId={finding.assets[0]?.id}
+            variant="sentence"
+            className="text-sm text-muted-foreground before:content-['·_']"
+          />
           {finding.priorityClassOverride && (
             <Badge variant="outline" className="text-xs">
               Set manually

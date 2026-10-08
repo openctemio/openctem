@@ -25,7 +25,8 @@ import {
   type PriorityExplanation,
   type PriorityScoreBreakdown,
 } from '../../api/use-finding-priority-explanation'
-import { PRIORITY_CLASS_CONFIG, type PriorityClass } from '../../types'
+import type { PriorityClass } from '../../types'
+import { PriorityClassSla } from '@/features/sla/components/priority-class-sla'
 
 interface PriorityExplanationCardProps {
   findingId: string
@@ -192,9 +193,7 @@ export function PriorityExplanationCard({
               </Badge>
             )}
             {isPriorityClass(cls) && (
-              <span className="text-muted-foreground text-xs">
-                SLA: {PRIORITY_CLASS_CONFIG[cls].sla}
-              </span>
+              <PriorityClassSla priorityClass={cls} className="text-muted-foreground text-xs" />
             )}
           </div>
 

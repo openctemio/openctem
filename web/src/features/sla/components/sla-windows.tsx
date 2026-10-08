@@ -8,7 +8,7 @@ import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { cn } from '@/lib/utils'
 
 import { useAssetSlaPolicyApi, type SlaPolicy } from '../api/use-sla-policies-api'
-import { DEFAULT_SLA_FORM, NO_SLA } from '../schemas/sla-policy-schema'
+import { NO_SLA } from '../schemas/sla-policy-schema'
 import { SEVERITY_LABELS, SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 
 /** The windows a policy (or the platform default) sets, in days. */
@@ -54,21 +54,6 @@ export function formatSlaWindow(days: number): string {
   return days === NO_SLA ? 'no SLA' : `${days}d`
 }
 
-/** Platform defaults when no policy governs an asset. */
-export const PLATFORM_DEFAULT_WINDOWS: SlaWindowValues = {
-  p0_days: DEFAULT_SLA_FORM.p0_days,
-  p1_days: DEFAULT_SLA_FORM.p1_days,
-  p2_days: DEFAULT_SLA_FORM.p2_days,
-  p3_days: DEFAULT_SLA_FORM.p3_days,
-  critical_days: DEFAULT_SLA_FORM.critical_days,
-  high_days: DEFAULT_SLA_FORM.high_days,
-  medium_days: DEFAULT_SLA_FORM.medium_days,
-  low_days: DEFAULT_SLA_FORM.low_days,
-  info_days: DEFAULT_SLA_FORM.info_days,
-  warning_threshold_pct: DEFAULT_SLA_FORM.warning_threshold_pct,
-  escalation_enabled: DEFAULT_SLA_FORM.escalation_enabled,
-}
-
 /**
  * Compact, two-row rendering of a policy's windows: the priority-class row
  * (which decides the deadline of every classified finding) first, then the
@@ -107,9 +92,12 @@ export function SlaWindows({ policy }: { policy: SlaWindowValues }) {
  * tenant default, else the platform defaults), read from the API.
  */
 export function AssetSlaPolicyCard({ assetId }: { assetId: string }) {
-  const { data, isLoading } = useAssetSlaPolicyApi(assetId)
-  const policy: SlaWindowValues = data ?? PLATFORM_DEFAULT_WINDOWS
-  const source = data ? data.name : 'Platform defaults (no SLA policy is configured)'
+  const { data: policy, isLoading } = useAssetSlaPolicyApi(assetId)
+  const source = !policy
+    ? 'The SLA policy could not be loaded.'
+    : policy.is_platform_default
+      ? 'Platform defaults (no SLA policy is configured)'
+      : policy.name
 
   return (
     <Card>
@@ -123,7 +111,7 @@ export function AssetSlaPolicyCard({ assetId }: { assetId: string }) {
       <CardContent className="space-y-3">
         {isLoading ? (
           <Skeleton className="h-10 w-full" />
-        ) : (
+        ) : !policy ? null : (
           <>
             <SlaWindows policy={policy} />
             <p className="text-xs text-muted-foreground">
