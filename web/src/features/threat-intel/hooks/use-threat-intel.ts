@@ -33,8 +33,9 @@ export function useThreatIntelStats(tenantId: string | null) {
   const shouldFetch = tenantId && canReadVulns
 
   const { data, error, isLoading, mutate } = useSWR<ThreatIntelStats>(
-    shouldFetch ? ['threat-intel-stats', tenantId] : null,
-    () => get<ThreatIntelStats>(threatIntelEndpoints.stats()),
+    // The endpoint URL: shared with every other reader (the dashboard).
+    shouldFetch ? threatIntelEndpoints.stats() : null,
+    (url: string) => get<ThreatIntelStats>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30000,

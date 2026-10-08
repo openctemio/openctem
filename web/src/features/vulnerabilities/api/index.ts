@@ -153,9 +153,11 @@ export function useActiveCVEStats(includeResolved?: boolean, config?: SWRConfigu
 
   const url =
     canRead && currentTenant ? `${VULNERABILITIES_BASE}/active/stats${qs ? `?${qs}` : ''}` : null
-  const key = url && currentTenant ? ([url, currentTenant.id] as const) : null
+  // Keyed by the URL alone: a tenant switch drops every cached answer
+  // (tenant-provider), so one key per endpoint cannot leak across tenants.
+  const key = url
 
-  return useSWR<ActiveCVEStats>(key, ([url]) => get<ActiveCVEStats>(url), {
+  return useSWR<ActiveCVEStats>(key, (u: string) => get<ActiveCVEStats>(u), {
     ...defaultConfig,
     ...config,
   })
@@ -198,9 +200,11 @@ export function useActiveCVEs(filters?: ActiveCVEsFilters, config?: SWRConfigura
 
   const url =
     canRead && currentTenant ? `${VULNERABILITIES_BASE}/active${qs ? `?${qs}` : ''}` : null
-  const key = url && currentTenant ? ([url, currentTenant.id] as const) : null
+  // Keyed by the URL alone: a tenant switch drops every cached answer
+  // (tenant-provider), so one key per endpoint cannot leak across tenants.
+  const key = url
 
-  return useSWR<ActiveCVEsResponse>(key, ([url]) => get<ActiveCVEsResponse>(url), {
+  return useSWR<ActiveCVEsResponse>(key, (u: string) => get<ActiveCVEsResponse>(u), {
     ...defaultConfig,
     ...config,
   })
@@ -267,9 +271,11 @@ export function useAffectedAssets(
     canRead && vulnId && currentTenant
       ? `${VULNERABILITIES_BASE}/${vulnId}/affected-assets${qs ? `?${qs}` : ''}`
       : null
-  const key = url && currentTenant ? ([url, currentTenant.id] as const) : null
+  // Keyed by the URL alone: a tenant switch drops every cached answer
+  // (tenant-provider), so one key per endpoint cannot leak across tenants.
+  const key = url
 
-  return useSWR<AffectedAssetsResponse>(key, ([url]) => get<AffectedAssetsResponse>(url), {
+  return useSWR<AffectedAssetsResponse>(key, (u: string) => get<AffectedAssetsResponse>(u), {
     ...defaultConfig,
     ...config,
   })
