@@ -69,11 +69,15 @@ const defaultConfig: SWRConfiguration = {
  * Fetch configured auth providers (public, no auth required).
  * Consumers should render social buttons only for providers reported `true`.
  */
-export function useAuthProviders(config?: SWRConfiguration) {
-  return useSWR<AuthProvidersResponse>(URL, (url: string) => get<AuthProvidersResponse>(url), {
-    ...defaultConfig,
-    ...config,
-  })
+export function useAuthProviders(config?: SWRConfiguration, enabled = true) {
+  return useSWR<AuthProvidersResponse>(
+    enabled ? URL : null,
+    (url: string) => get<AuthProvidersResponse>(url),
+    {
+      ...defaultConfig,
+      ...config,
+    }
+  )
 }
 
 /**

@@ -8,9 +8,10 @@
  * Provider order:
  * 1. TenantProvider - Team/tenant management (provides currentTenant)
  * 2. BootstrapProvider - Fetches all initial data in ONE API call
- * 3. PermissionProvider - Real-time permission sync (uses bootstrap for initial load)
- * 4. RiskScoringProvider - Tenant risk level thresholds for risk score display
- * 5. WebSocketProvider - Real-time WebSocket connection for activities, triage updates
+ * 3. WebSocketProvider - Real-time WebSocket connection (notifications, activity,
+ *    triage); the providers below fall back to polling only while it is down
+ * 4. PermissionProvider - Permission sync (uses bootstrap for initial load)
+ * 5. RiskScoringProvider - Tenant risk level thresholds for risk score display
  *
  * This setup reduces initial API calls from 4+ to 1:
  * - /me/permissions/sync → included in bootstrap
@@ -34,11 +35,12 @@ export function DashboardProviders({ children }: DashboardProvidersProps) {
     <TenantProvider>
       <BootstrapProvider>
         <BootstrapGate>
-          <PermissionProvider>
-            <RiskScoringProvider>
-              <WebSocketProvider>{children}</WebSocketProvider>
-            </RiskScoringProvider>
-          </PermissionProvider>
+          {/* The socket wraps the permission sync, which polls only while it is down. */}
+          <WebSocketProvider>
+            <PermissionProvider>
+              <RiskScoringProvider>{children}</RiskScoringProvider>
+            </PermissionProvider>
+          </WebSocketProvider>
         </BootstrapGate>
       </BootstrapProvider>
     </TenantProvider>
