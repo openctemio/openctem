@@ -125,7 +125,7 @@ sections below.
 | F-5 | TLS verification cannot be disabled by a tenant; a per-instance CA bundle replaces it. | Phase 0 follow-up (§8.3) |
 | F-6 | A failed delivery is recorded as failed and retried or dead-lettered. | Phase 0 follow-up PR |
 | F-7 | Per-tenant transactional SMTP reads the keys the writer stores and the encrypted credential; secrets never go into metadata. | Phase 0 follow-up |
-| F-8 | A credential decrypt failure fails closed in production. | Host, `class=invalid_config` (phase 1) |
+| F-8 | A credential decrypt failure fails closed in production. | **Fixed:** integration credentials, Jira/GitHub ticketing credentials and webhook secrets no longer fall back to the stored value |
 | F-9 | Inbound webhooks are routed by instance, carry a per-instance secret and have replay protection. | Design §10.5 |
 | F-10 | Pagination links are followed only on the same origin. | Host |
 | F-11 | git over ssh dials through the guarded dialer. | Host |
