@@ -50,6 +50,40 @@ governs the global social sign-in buttons). JIT members get the provider's
 `default_role` (`admin|member|viewer`, default **viewer**, set by the platform
 administrator); only the display name is re-synced on later logins.
 
+### Domain claims are exclusive
+
+A DNS-verified SSO domain is what lets an organization's IdP speak for the
+people at that domain (JIT, SAML for existing members, the Google `hd` check).
+The claim is therefore **one organization per domain, platform-wide**
+(`domainverify.Service`, migration 001303):
+
+- **Exclusive.** A second organization may add a domain another one holds (it
+  stays `pending`), but verifying it answers 409 "verified by another
+  organization". The response never names the holder. A partial unique index
+  (`uq_verified_domains_sso_claim`: `domain` where `purpose='sso'`,
+  `status='verified'`, not `claim_conflict`) closes the race of two
+  verifications at once.
+- **7-day dispute window.** When the holder's TXT record disappears, re-verify
+  downgrades its row to `failed` and stamps `lapsed_at`. Another organization
+  may verify only 7 days after that (`verifieddomain.ClaimDisputeWindow`), so
+  a DNS outage or a hijacked record cannot move the claim at once; the holder
+  restores its record and verifies again within the window. A former holder
+  cannot take back a domain someone else now holds.
+- **Promotion counts.** Turning a verified EASM domain into an SSO domain is a
+  claim and passes the same check. EASM proof itself stays per organization
+  and non-exclusive: it admits nobody.
+- **Domains nobody can own** are refused when added (`pkg/emaildomain`):
+  public suffixes from the Public Suffix List, including every name under a
+  private-section suffix (`alice.github.io`, `x.vercel.app`); free consumer
+  mailbox providers (a maintained list); and disposable-address services (the
+  public-domain disposable-email-domains list, embedded at build time and
+  refreshed with `api/scripts/update-disposable-domains.sh`).
+- **Rows that predate exclusivity.** Migration 001303 does not drop anyone's
+  access: when two or more organizations had the same domain verified for SSO,
+  every such row is flagged `claim_conflict` and keeps working. The admin
+  console shows a "Claim conflict" badge; the platform administrator removes
+  the wrong claim, and the next re-verify clears the flag on the one left.
+
 Security: outbound calls use `httpsec.SafeHTTPClient` (refuses loopback/RFC1918/
 link-local), Entra/Graph hosts are fixed strings, an email is required, and the
 email domain is checked against the provider's allow-list.
@@ -189,6 +223,25 @@ The `openid` scope is therefore required:
 
 For Okta and Google the email still comes from the userinfo endpoint (with its
 `email_verified` claim); for Entra it comes from the verified `id_token`.
+
+### Google Workspace: the `hd` claim
+
+A Google Workspace login must come from an account of the organization's
+Workspace. The callback reads the verified `id_token` `hd` (hosted domain)
+claim, which Google sends only for accounts of a Workspace or Cloud
+organization, and refuses the login with `ErrSSODomainNotAllowed` (no user,
+membership or session written) when:
+
+- `hd` is missing: a consumer Google account, even one registered with a
+  company address such as `alice@acme.com` (its `email_verified` is true);
+- the provider narrows domains (`allowed_domains`) and `hd` is not on the list;
+- the provider has no domain list and `hd` is not DNS-verified for the
+  organization (no verifier wired, or a lookup error, also refuses).
+
+The `hd` authorize parameter is only a hint for Google's account chooser; it
+is never the check. Existing members are held to the same rule as JIT
+newcomers, so a consumer account with a member's address cannot sign in as
+that member.
 
 ## One verifier, separate trust
 
