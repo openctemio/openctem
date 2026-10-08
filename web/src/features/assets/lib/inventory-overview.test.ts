@@ -71,11 +71,23 @@ describe('buildOverview', () => {
     ])
   })
 
-  it('links each attention count to the matching filtered inventory', () => {
+  it('links each attention count to the lens of the inventory, filtered', () => {
     const ext = lenses[0]
     expect(ext).toMatchObject({ unowned: 1, new7d: 2, needsReview: 3 })
-    expect(ext.href).toBe('/assets?types=domain')
-    expect(ext.unownedHref).toBe('/assets?types=domain&has_owner=false')
-    expect(ext.reviewHref).toBe('/assets?types=domain&attribution=needs_review%2Ccandidate')
+    expect(ext.href).toBe('/assets?lens=external_surface')
+    expect(ext.unownedHref).toBe('/assets?has_owner=false&lens=external_surface')
+    expect(ext.reviewHref).toBe(
+      '/assets?attribution=needs_review%2Ccandidate&lens=external_surface'
+    )
+  })
+
+  it('links high risk to the assets at or above the high-risk score, riskiest first', () => {
+    expect(lenses[1].highRiskHref).toBe(
+      '/assets?sort=-risk_score&lens=identities&min_risk_score=70'
+    )
+  })
+
+  it('links Other, which has no lens, by its types', () => {
+    expect(lenses[3].href).toBe('/assets?types=unclassified')
   })
 })
