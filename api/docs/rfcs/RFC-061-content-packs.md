@@ -231,7 +231,102 @@ The image carries code; the content comes at run time.
    - the content token is read-only and scoped to the tenant;
    - no secrets in logs.
 
-### 3.6 Isolation
+### 3.6 Tenant content sources (private repositories and sites)
+
+A tenant configures sources in the UI, through the API or as code. A source
+produces one or more packs. Packs bind to tools **by kind, not by tool
+name**, so the platform's tools and the tenant's own tools use them the same
+way.
+
+```yaml
+content_sources:
+  - name: acme-nuclei
+    type: git
+    url: https://gitlab.example.com/sec/nuclei-templates.git
+    ref: main
+    auth: { credential: gitlab-content-token }
+    sync: { webhook: true, poll: 6h }
+    packs:
+      - { kind: nuclei-templates, path: templates/, exclude: ["**/dos/**"] }
+  - name: acme-rules-site
+    type: https
+    url: https://rules.example.com/semgrep/latest.tar.gz
+    integrity: { cosign_public_key: acme-rules-key }
+    packs:
+      - { kind: semgrep-rules, path: rules/ }
+  - name: intranet-wordlists
+    type: https
+    url: https://files.corp.example/wordlists.tar.gz
+    fetch_via: sensor
+    integrity: { sha256: "…" }
+    packs:
+      - { kind: wordlist, path: . }
+```
+
+A step using it:
+
+```yaml
+content: { templates: { mode: merge, sources: [acme-nuclei], include: { tags: [cve, exposure] }, pin: commit } }
+```
+
+**Source types:**
+
+| Type | Location | Authentication (least privilege, read-only) | Sync and pin |
+|---|---|---|---|
+| `git` | GitHub, GitLab, Bitbucket, self-hosted | Preferred: a GitHub App installation with read-only contents. Alternatives: a GitLab project or group access token or deploy token; an SSH deploy key (read-only); a fine-grained personal token as the last resort | `ref` is a branch, tag or commit. Sync on a push webhook (signature verified), with polling as fallback. A sync pins the resolved commit |
+| `https` | An archive or a directory index | Header, basic, bearer or mTLS | **Integrity is required:** an expected sha256, or a tenant signing key (cosign or minisign) whose signature is verified |
+| `oci` | A registry artifact | Registry credentials | Manifest digest |
+| `s3` | Bucket and prefix | Role or keys | Object version or ETag + content digest |
+
+**Credentials:**
+- stored encrypted in the tenant credential store and referenced by name;
+- never sent to sensors (except the `fetch_via: sensor` path below, where the
+  sensor uses its own local credential configuration);
+- rotation reminders;
+- "last synced" and "last error" shown per source.
+
+**Fetch path:**
+- The platform fetches through the SSRF guard, public addresses only.
+- An intranet-only source sets `fetch_via: sensor`. One of the tenant's own
+  sensors, chosen by zone, fetches it under its local policy and egress
+  profile, then uploads the bytes to the platform. The normal lint, classify
+  and sign pipeline follows.
+- Platform (shared) sensors never fetch tenant sources.
+
+**Pack declaration and binding:**
+- Each source declares packs with `kind`, `path` and include/exclude globs.
+- Alternatively, an `openctem-content.yaml` at the repository root declares
+  the packs itself; the platform configuration may narrow it, never widen it.
+- Any tool whose `tool.yaml` declares a slot of that kind can use the pack,
+  built-in or custom.
+- A custom tool may declare a new namespaced kind (`x-acme/rules`); packs of
+  that kind bind only to tools declaring it.
+
+**Validation per kind:**
+- Before a pack becomes usable, its kind's validator (template or rule
+  validation, schema checks) runs in a sandbox on the platform side, with
+  results per file in the UI.
+- Tier classification, secret scanning and size limits apply as in §3.2.
+- A new namespaced kind declares its validator as a tool of class `parser`
+  run in the same sandbox, or gets only the generic checks (size, archive
+  safety, secret scan).
+
+**Security:**
+- Least-privilege read-only credentials.
+- Webhook secrets verified.
+- Every source change audited.
+- Approval required for sources whose packs classify as T2.
+- A source and its packs belong to one tenant.
+
+**Tests (mocked servers):**
+- a private GitHub and a GitLab fetch with each authentication type;
+- a webhook-triggered sync;
+- an `https` source whose sha256 or signature does not match is refused;
+- the `fetch_via: sensor` path, including a platform sensor refusing it;
+- a namespaced kind binds only to the custom tool that declares it;
+- a cross-tenant source or pack is never visible or delivered.
+
+### 3.7 Isolation
 
 - Tenant packs ship only to that tenant's sensors.
 - Platform (shared) sensors run platform packs, plus tenant packs that
@@ -282,7 +377,7 @@ The image carries code; the content comes at run time.
 | K2 | Pack store: ingest, canonical archive, lint, classification, signing, API and permissions, audit; platform-managed upstream sources with channels | api |
 | K3 | Desired state, push (v3 stream and v2 heartbeat), sensor prefetch, cache by digest, manifest by digest, GC | api, sdk-go, sensor |
 | K4 | Composition in steps, policies and profiles; pin at run start; retests reuse digests; placement by cached digest | api, web |
-| K5 | Tenant sources (upload, Git, OCI, URL); custom templates migrated; `$TMPDIR` path removed | api, sdk-go, sensor, web |
+| K5 | Tenant content sources (§3.6: git with app/token/deploy-key auth and webhooks, https with required integrity, oci, s3, `fetch_via: sensor`, binding by kind incl. namespaced kinds, per-kind validation); custom templates migrated; `$TMPDIR` path removed | api, sdk-go, sensor, web |
 | K6 | Offline bundles, mirrors, CLI `content pull/verify` | sdk-go, sensor |
 | K7 | CI: fetch at job start, cache by digest, freshness policy and `content_stale`, public signed content artifacts, `vuln-db` kind | ci, api |
 | K8 | Platform SBOM re-matching against new advisories; "re-scan recommended"; opt-in pipeline re-run | api |
