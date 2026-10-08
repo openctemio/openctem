@@ -121,7 +121,19 @@ type AuthService struct {
 	// Home-realm sign-in for external members (home_realm.go, RFC-058).
 	homeTrusts TrustLookup
 	homeOwners HomeDomainOwnerLookup
+	// lapsedDomains refuses email-only password resets on a domain whose
+	// verified owner lost it (RFC-058).
+	lapsedDomains LapsedDomainChecker
 }
+
+// LapsedDomainChecker reports whether an email domain was verified for SSO by
+// an organization that lost it and nobody holds it now.
+type LapsedDomainChecker interface {
+	IsLapsedSSODomain(ctx context.Context, domain string) (bool, error)
+}
+
+// SetLapsedDomainChecker wires the lapsed-domain rule for password resets.
+func (s *AuthService) SetLapsedDomainChecker(c LapsedDomainChecker) { s.lapsedDomains = c }
 
 // InviteeClassifier classifies an invitee at acceptance and applies the outcome
 // to the new membership (TenantService.ClassifyAcceptedInvitation).
@@ -1455,6 +1467,20 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 	// Only allow password reset for local users
 	if u.AuthProvider() != userdom.AuthProviderLocal {
 		return &ForgotPasswordResult{}, nil
+	}
+	// A mailbox on a domain whose verified owner lost it (lapsed or
+	// re-registered) proves nothing (RFC-058): no reset link by email. The
+	// person recovers through an administrator-issued setup link. The answer
+	// is the same as for an unknown address.
+	if s.lapsedDomains != nil {
+		if at := strings.LastIndex(email, "@"); at >= 0 {
+			lapsed, lerr := s.lapsedDomains.IsLapsedSSODomain(ctx, email[at+1:])
+			if lerr != nil || lapsed {
+				s.logger.Warn("password reset by email refused: the email domain lost its verified owner",
+					"user_id", u.ID().String(), "lookup_failed", lerr != nil)
+				return &ForgotPasswordResult{}, nil //nolint:nilerr // fail closed, same answer as an unknown address
+			}
+		}
 	}
 
 	// Generate reset token
