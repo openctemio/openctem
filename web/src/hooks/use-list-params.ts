@@ -54,6 +54,18 @@ export interface ListParams<F extends string> {
 
 export const DEFAULT_PAGE_SIZES = [10, 20, 50, 100] as const
 
+/**
+ * Back to page 1 of the route's list: for a switch outside the list that
+ * shows another list (a tab, a view, a mode), which must not open on the
+ * page number the previous list was on.
+ */
+export function resetListPage() {
+  const next = new URLSearchParams(window.location.search)
+  if (!next.has('page')) return
+  next.delete('page')
+  replaceUrlSearch(next)
+}
+
 const DIGITS = /^\d+$/
 
 /** A sort value (`field` / `-field`) when `field` is allowed, else null. */
