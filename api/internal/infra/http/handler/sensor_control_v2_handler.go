@@ -22,7 +22,6 @@ import (
 	"time"
 
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 
 	"github.com/go-chi/chi/v5"
 
@@ -620,7 +619,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 				// instead of at the next sweep.
 				h.commands.triggerRetestSettle(res.Command)
 				h.commands.settleValidationRun(res.Command, false,
-					sensordom.RedactPlatformText(res.Command.ErrorMessage), failCode)
+					sensor.RedactPlatformText(res.Command.ErrorMessage), failCode)
 			}
 		}
 	}
