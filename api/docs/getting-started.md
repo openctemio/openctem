@@ -66,7 +66,7 @@ comments, and `api/internal/config/config.go` is the source of truth. The ones y
 need locally:
 
 ```env
-APP_ENV=development              # development | production
+APP_ENV=development              # required locally: unset means production
 SERVER_PORT=8080
 DB_HOST=localhost
 DB_USER=openctem
@@ -76,8 +76,18 @@ REDIS_HOST=localhost
 LOG_LEVEL=debug                  # debug | info | warn | error
 LOG_FORMAT=text                  # text | json
 AUTH_PROVIDER=local              # local (built-in accounts) | oidc | hybrid
-AUTH_JWT_SECRET=<at least 64 random characters>
-APP_ENCRYPTION_KEY=<openssl rand -hex 32>
+AUTH_JWT_SECRET=...               # the .env.example value works in development
+APP_ENCRYPTION_KEY=...            # same; generate real ones for anything else
+```
+
+The development values in `.env.example` are refused whenever `APP_ENV` is not
+`development`, and a secret still holding example text (`openssl rand -hex 32`,
+`<CHANGE_ME...>`) is refused in every mode. To validate the settings without
+starting or connecting to anything (the server reads the environment, not the
+`.env` file):
+
+```bash
+(set -a; . ./.env; set +a; GOWORK=off go run ./cmd/server -check-config)
 ```
 
 Operator-facing configuration (TLS, SSO, SMTP, scaling) is documented at

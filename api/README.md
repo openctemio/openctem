@@ -132,8 +132,17 @@ Redis are never published.
 ```bash
 cd deploy
 cp .env.example .env   # set OPENCTEM_HOSTNAME, OPENCTEM_PUBLIC_URL, OPENCTEM_TLS_MODE, secrets
+docker compose run --rm --no-deps api -check-config   # validate the settings, start nothing
 docker compose up -d
 ```
+
+The API runs in production mode unless told otherwise: an unset `APP_ENV`
+means `production`, which refuses to start without TLS to Postgres and Redis,
+strong secrets and the other production checks. Secrets that still hold
+example-file text (`openssl rand -hex 32`, `<CHANGE_ME...>`) are refused in
+every mode. `server -check-config` reports the first problem without starting
+or connecting to anything (exit 0 = valid). Back the stack up with
+`deploy/backup.sh` (`backup`, `verify`, `restore <dir> --yes`).
 
 TLS modes (`OPENCTEM_TLS_MODE`): `internal` (own CA, for LAN/IP installs; the
 root for sensors is exported to `deploy/ca/`), `acme` (Let's Encrypt), `files`
@@ -162,12 +171,17 @@ docker compose -f deploy/docker-compose.yml exec api wget -qO- localhost:8080/re
 | `AUTH_JWT_SECRET` | JWT signing secret (min 64 chars) |
 | `APP_ENCRYPTION_KEY` | AES-256 key (64 hex chars: `openssl rand -hex 32`) |
 | `CORS_ALLOWED_ORIGINS` | Allowed CORS origins |
+| `DB_SSLMODE` | `require` or `verify-full` (the default `disable` is refused in production) |
+| `REDIS_TLS_ENABLED` | `true`; with a private CA also `REDIS_TLS_CA_FILE` |
+
+`APP_ENV` defaults to `production` when unset; set `APP_ENV=development`
+explicitly for local development (`.env.example` does).
 
 ### Optional
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTH_PROVIDER` | `local` | Auth provider: `local`, `oidc`, `hybrid` |
+| `AUTH_PROVIDER` | `local` | Auth provider: `local`, `oidc`, `hybrid` (the default was `oidc` up to v0.8.0) |
 | `TENANT_CREATION_MODE` | `admin_only` | Seeds the sign-up policy on the first start: `admin_only` (only the platform administrator creates organizations; nobody else can create an account without an invitation or their organization's SSO) or `self_service` (anyone may sign up and create one). Afterwards change it in the console (System > Sign-up). |
 | `AI_PLATFORM_PROVIDER` | — | AI triage: `claude`, `openai`, `gemini` |
 | `SMTP_ENABLED` | `false` | Enable email notifications (required for invitations) |
@@ -258,6 +272,7 @@ make security-scan   # Run security scan (semgrep + betterleaks + trivy)
 | GET | `/ready` | Readiness check (DB + Redis) |
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/docs` | API documentation |
+| GET | `/openapi.yaml` | The OpenAPI spec (shipped in the release images) |
 
 ### Assets
 

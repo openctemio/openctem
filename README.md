@@ -61,9 +61,22 @@ make check     # what CI runs, both components
 - **All-in-one image:** `ghcr.io/openctemio/openctem` embeds the same gateway.
   ```bash
   docker run -d -p 443:443 -v openctem-data:/data \
-    -e OPENCTEM_HOSTNAME=ctem.example.com -e DB_HOST=... -e DB_PASSWORD=... -e REDIS_HOST=... \
-    -e AUTH_JWT_SECRET=... -e APP_ENCRYPTION_KEY=... ghcr.io/openctemio/openctem:vX.Y.Z
+    -e OPENCTEM_HOSTNAME=ctem.example.com \
+    -e DB_HOST=db.example.com -e DB_PASSWORD=... -e DB_SSLMODE=require \
+    -e REDIS_HOST=redis.example.com -e REDIS_PASSWORD=... -e REDIS_TLS_ENABLED=true \
+    -e AUTH_JWT_SECRET=... -e APP_ENCRYPTION_KEY=... \
+    ghcr.io/openctemio/openctem:vX.Y.Z
   ```
+  An unset `APP_ENV` means `production`, so the container refuses to start
+  until the production checks pass: `DB_SSLMODE` `require` or `verify-full`, a
+  Redis password of 32+ characters with `REDIS_TLS_ENABLED=true` (plus
+  `REDIS_TLS_CA_FILE` for a private CA), an `AUTH_JWT_SECRET` of 64+ characters
+  (`openssl rand -hex 64`), an `APP_ENCRYPTION_KEY` (`openssl rand -hex 32`;
+  keep it, the stored credentials need it), and no secret left at example text.
+  For a throwaway trial without TLS to the datastores, set `APP_ENV=development`
+  explicitly; never for real data.
+  `--entrypoint /opt/openctem/api/server ... -check-config` validates the
+  settings without starting anything.
   `GATEWAY=on` (default) serves only :443 (`OPENCTEM_TLS_MODE` internal | acme |
   files | http, as in the Compose gateway); `GATEWAY=off` serves the API on :8080
   and the web on :3000 for your own proxy. `/data` keeps attachments and the
@@ -77,8 +90,10 @@ Installation, configuration and operations are documented at
 
 One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-api`,
 `openctem-web`, `openctem` (all-in-one), `migrations`, `seed`, `admin-cli`, all
-multi-arch (amd64, arm64), signed with cosign, with SBOMs on the release. The
-pre-monorepo names `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` keep
+multi-arch (amd64, arm64), signed with cosign, with a signed SPDX SBOM
+attestation per image (also attached to the release). The release notes carry
+the `cosign verify` and `cosign verify-attestation --type spdxjson` commands for
+the tag. The pre-monorepo names `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` keep
 receiving identical copies for two releases. See
 [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml).
 
