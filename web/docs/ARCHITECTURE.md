@@ -1,172 +1,55 @@
-# Architecture Overview
+# Web Console Architecture
 
-**Project Type:** Frontend Application with Separate Backend
-**Last Updated:** 2025-12-11
-**Version:** 3.0.0
+How the web console (`web/`) is built and how it talks to the API. Paths are
+relative to `web/`. Related: [security architecture](security-architecture.md),
+[calling the API](guides/API_INTEGRATION.md), [UI style contract](ui-style-contract.md).
 
----
-
-## 🏗️ System Architecture
-
-### Architecture Type: **Frontend + Separate Backend API**
+## Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Next.js Frontend                      │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │           Browser (Client-side)                  │   │
-│  │  - React Components                              │   │
-│  │  - Zustand State Management                      │   │
-│  │  - Client-side Navigation                        │   │
-│  └─────────────────┬───────────────────────────────┘   │
-│                    │                                     │
-│  ┌─────────────────▼───────────────────────────────┐   │
-│  │        Next.js Server (Edge/Node.js)            │   │
-│  │  - Server Components                             │   │
-│  │  - Server Actions                                │   │
-│  │  - src/proxy.ts (auth redirect, locale, CSP)     │   │
-│  │  - API Route Handlers                            │   │
-│  └─────────────────┬───────────────────────────────┘   │
-└────────────────────┼─────────────────────────────────────┘
-                     │
-                     │ HTTP/HTTPS Requests
-                     │ (server attaches auth from httpOnly cookie)
-                     │
-┌────────────────────▼─────────────────────────────────────┐
-│              External Backend API                         │
-│  - RESTful APIs                                          │
-│  - Business Logic                                         │
-│  - Database Access                                        │
-│  - File Storage                                           │
-│  - Email Service                                          │
-│  └──────────────────────────────────────────────────────┘
+Browser
+  React (Client Components), Zustand auth store, SWR cache
+        |  same-origin requests: /api/v1/*, WebSocket /api/v1/ws
+        v
+Next.js server (Node.js)
+  src/proxy.ts            signed-out redirect, locale, per-request CSP nonce
+  Server Components and Server Actions
+  src/app/api/v1/[...path]/route.ts   API proxy: session cookie -> Bearer token
+        |  BACKEND_API_URL (server-side only)
+        v
+OpenCTEM API (Go, api/)
+  business logic, authorization, PostgreSQL, Redis
 ```
 
----
+The console holds no data of its own: every read and write goes to the API, and
+the API is the only authority for authorization and tenant isolation. The console
+hides what a user cannot use, nothing more.
 
-## 🎯 Architecture Decision
+Responsibilities of the console: the user interface, the sign-in flows and
+session cookies, route protection (`RouteGuard`: module + permission), form
+validation (Zod, re-checked by the API), and API error display.
 
-### ✅ **Separate Backend API** (Current Setup)
-
-**Backend API URL:** Set in environment variable `BACKEND_API_URL` (server-side only). Client-side requests go through the Next.js proxy at `/api/v1/*`.
-
-**Responsibilities:**
-
-**Frontend (Next.js):**
-
-- ✅ User Interface & UX
-- ✅ Authentication Flow (local JWT + OAuth social + SAML SSO)
-- ✅ Token Management (httpOnly cookies set by the BFF proxy)
-- ✅ Client-side State Management (Zustand)
-- ✅ Route Protection
-- ✅ Form Validation (Zod)
-- ✅ API Request/Response Handling
-- ✅ Error Display & User Feedback
-
-**Backend API (Separate Service):**
-
-- ✅ Business Logic
-- ✅ Database Operations (CRUD)
-- ✅ Data Validation & Processing
-- ✅ File Upload & Storage
-- ✅ Email Sending
-- ✅ Background Jobs
-- ✅ Third-party API Integration
-- ✅ Server-side Token Validation
-
----
-
-## 📡 API Integration Pattern
-
-### Current Setup
-
-**Environment Variable:**
-
-```env
-# .env.local — server-side only (single source of truth)
-# Client-side requests proxied through Next.js at /api/v1/*
-BACKEND_API_URL=http://api:8080
-```
-
-**API Client Location:**
+## API access
 
 ```
 src/lib/api/
-├── client.ts          # API client with auth
-├── endpoints.ts       # API endpoint definitions
-├── error-handler.ts   # Error handling
-└── types.ts          # Request/Response types
+├── client.ts          # get/post/put/patch/del, CSRF header, refresh and step-up retry
+├── endpoints.ts       # URL builders (API_BASE, <area>Endpoints)
+├── error-handler.ts   # ApiClientError, handleApiError
+├── <area>-hooks.ts    # SWR hooks per area
+├── <area>-types.ts    # area types
+└── generated/         # contract types from the OpenAPI spec (not committed)
 ```
 
-### API Call Flow
+Details and examples: [guides/API_INTEGRATION.md](guides/API_INTEGRATION.md).
 
-```typescript
-┌──────────────┐
-│   Component  │
-└──────┬───────┘
-       │
-       │ Call hook/action
-       │
-┌──────▼───────┐
-│  Custom Hook │  (useUsers, usePosts)
-│  or Action   │
-└──────┬───────┘
-       │
-       │ Use API client
-       │
-┌──────▼───────┐
-│  API Client  │  (fetch with auth headers)
-└──────┬───────┘
-       │
-       │ HTTP Request
-       │ Authorization: Bearer {accessToken}
-       │
-┌──────▼────────────┐
-│   Backend API     │
-│  (Your Service)   │
-└───────────────────┘
-```
+## Authentication flow
 
-### Example Implementation
-
-```typescript
-// src/lib/api/client.ts
-import { useAuthStore } from '@/stores/auth-store'
-
-export async function apiClient<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const accessToken = useAuthStore.getState().accessToken
-  // Client-side: empty string (proxied via /api/v1/*)
-  // Server-side: env.api.url (BACKEND_API_URL)
-  const baseUrl = getApiBaseUrl()
-
-  const response = await fetch(`${baseUrl}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
-      ...options?.headers,
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.statusText}`)
-  }
-
-  return response.json()
-}
-
-// Usage in component
-const users = await apiClient<User[]>('/api/users')
-```
-
----
-
-## 🔐 Authentication Flow (with Separate Backend)
-
-Auth is **local JWT (email/password)** plus **OAuth social login** (Google, GitHub,
-Microsoft) and **SAML SSO**. There is no Keycloak/OIDC dependency — `src/` contains
-zero `keycloak` references. Social/SSO callbacks land on
-`/auth/callback/[provider]` and `/auth/sso/callback/[provider]`.
+Sign-in is **local accounts (email/password)**, **OAuth social login** (Google,
+GitHub, Microsoft) and **organization SSO** (OIDC such as Microsoft Entra ID, and
+SAML), all implemented by the API; the console has no identity-provider SDK of
+its own. Social and SSO callbacks land on `/auth/callback/[provider]` and
+`/auth/sso/callback/[provider]`.
 
 Tokens live in **httpOnly cookies** set by the Next.js BFF proxy — the browser
 never sees a Bearer token. The browser calls the relative proxy path `/api/v1/*`
@@ -199,285 +82,24 @@ backend-set) is echoed as the `X-CSRF-Token` header on mutations.
 
 ---
 
-## 🗂️ Data Flow Patterns
+## Data patterns
 
-### Pattern 1: Server Component + API (Recommended)
+- **Client Components + SWR** for most screens: a hook per resource with a
+  string key, `null` when the user lacks permission (see the API guide).
+- **Server Components** for reads that render on the server; they call the API
+  with `BACKEND_API_URL` and the session cookie.
+- **Server Actions** for form mutations that must run on the server (sign-in,
+  sign-out); call `revalidatePath` afterwards.
 
-```typescript
-// app/users/page.tsx (Server Component)
-async function UsersPage() {
-  // Fetch on server
-  const users = await fetch(`${env.api.url}/api/users`, {
-    headers: {
-      Authorization: `Bearer ${getServerSideToken()}`,
-    },
-  })
+## Design system
 
-  return <UserList users={users} />
-}
-```
+The shared UI primitives worth knowing (rules: [ui-style-contract.md](ui-style-contract.md)):
 
-**Pros:**
-
-- SEO friendly
-- Faster initial load
-- No loading state needed
-
-### Pattern 2: Client Component + SWR/React Query
-
-```typescript
-// components/users-list.tsx (Client Component)
-'use client'
-import useSWR from 'swr'
-
-function UsersList() {
-  const { data, error } = useSWR('/api/users', apiClient)
-
-  if (error) return <Error />
-  if (!data) return <Loading />
-
-  return <div>{data.map(user => ...)}</div>
-}
-```
-
-**Pros:**
-
-- Client-side caching
-- Auto-revalidation
-- Optimistic updates
-
-### Pattern 3: Server Action + Mutation
-
-```typescript
-// actions/create-user.ts
-'use server'
-export async function createUser(formData: FormData) {
-  const response = await fetch(`${env.api.url}/api/users`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${getServerSideToken()}`,
-    },
-    body: JSON.stringify(formData),
-  })
-
-  revalidatePath('/users')
-  return response.json()
-}
-```
-
-**Pros:**
-
-- Type-safe
-- Progressive enhancement
-- No client-side JS needed
-
----
-
-## 📦 Recommended Libraries for API Integration
-
-### Data Fetching
-
-```json
-{
-  "dependencies": {
-    "swr": "^2.x", // Client-side data fetching
-    "@tanstack/react-query": "^5.x" // Alternative to SWR
-  }
-}
-```
-
-### HTTP Client
-
-```typescript
-// Option 1: Native fetch (current)
-✅ Built-in, no dependencies
-❌ More boilerplate
-
-// Option 2: Axios
-✅ More features (interceptors, cancellation)
-❌ Additional dependency
-
-// Option 3: ky
-✅ Modern, lightweight
-❌ Less popular
-```
-
----
-
-## 🔧 Configuration
-
-### Environment Variables
-
-```env
-# Backend API — single source of truth (server-side only)
-# Client-side requests are proxied through Next.js at /api/v1/*
-BACKEND_API_URL=http://api:8080
-```
-
----
-
-## 🎨 Frontend Responsibilities (This Codebase)
-
-### ✅ What Frontend SHOULD Do
-
-1. **UI/UX Layer**
-   - Render components
-   - Handle user interactions
-   - Display data from backend
-   - Show loading/error states
-
-2. **Authentication**
-   - Local JWT, OAuth social (Google/GitHub/Microsoft), SAML SSO
-   - Token storage (httpOnly cookies set by the BFF proxy)
-   - Token refresh (server-side, via refresh-token cookie)
-   - Route protection (RouteGuard: module + permission)
-
-3. **Client State**
-   - UI state (modals, forms)
-   - Auth state (Zustand)
-   - Cached API data (SWR/React Query)
-
-4. **Validation**
-   - Form validation (Zod)
-   - Client-side validation for UX
-   - Display validation errors
-
-5. **API Communication**
-   - HTTP requests to backend
-   - Add auth headers
-   - Handle responses/errors
-   - Retry logic
-
-### ❌ What Frontend SHOULD NOT Do
-
-1. ❌ Database operations
-2. ❌ Business logic (complex calculations)
-3. ❌ File storage
-4. ❌ Email sending
-5. ❌ Background jobs
-6. ❌ Third-party API calls (should go through backend)
-
----
-
-## 🏛️ Backend Responsibilities (Your Separate API)
-
-### What Backend SHOULD Provide
-
-1. **RESTful API Endpoints**
-
-   ```
-   GET    /api/users
-   POST   /api/users
-   GET    /api/users/:id
-   PUT    /api/users/:id
-   DELETE /api/users/:id
-   ```
-
-2. **Authentication Validation**
-   - Validate JWT tokens
-   - Check token expiration
-   - Extract user info from token
-
-3. **Business Logic**
-   - Data processing
-   - Complex calculations
-   - Workflow management
-
-4. **Data Persistence**
-   - Database CRUD
-   - Transactions
-   - Data integrity
-
-5. **External Services**
-   - Email sending
-   - SMS notifications
-   - Payment processing
-   - File storage (S3, etc.)
-
----
-
-## 📋 Integration Checklist
-
-### Setup Required
-
-- [ ] **Backend API URL configured** in `.env.local`
-- [ ] **API client created** in `src/lib/api/client.ts`
-- [ ] **Error handling** for API calls
-- [ ] **Token injection** in API requests
-- [ ] **API endpoints defined** in `src/lib/api/endpoints.ts`
-- [ ] **Request/Response types** defined
-- [ ] **Loading states** implemented
-- [ ] **Error states** implemented
-- [ ] **Retry logic** for failed requests
-- [ ] **CORS configured** on backend (if needed)
-
-### Backend Requirements
-
-Your backend API should support:
-
-- [ ] **JWT token validation** (verify backend-issued JWTs)
-- [ ] **CORS headers** (allow Next.js domain)
-- [ ] **RESTful endpoints** (or GraphQL)
-- [ ] **Error responses** (consistent format)
-- [ ] **Rate limiting** (to prevent abuse)
-- [ ] **API documentation** (Swagger/OpenAPI)
-
----
-
-## 🎯 Advantages of This Architecture
-
-### ✅ Pros
-
-1. **Separation of Concerns**
-   - Frontend focuses on UI/UX
-   - Backend focuses on business logic
-
-2. **Scalability**
-   - Scale frontend and backend independently
-   - Multiple frontends can use same backend
-
-3. **Technology Freedom**
-   - Backend can be in any language (Node.js, Python, Go, Java)
-   - Frontend stays in Next.js/React
-
-4. **Team Structure**
-   - Frontend team works independently
-   - Backend team works independently
-
-5. **Security**
-   - Backend API can be private (not public)
-   - Sensitive operations on backend only
-
-### ⚠️ Considerations
-
-1. **Network Latency**
-   - Extra network hop (Frontend -> Backend -> Database)
-   - Mitigation: Caching (SWR, React Query)
-
-2. **CORS Configuration**
-   - Need to configure CORS on backend
-   - Development vs Production URLs
-
-3. **Token Management**
-   - Frontend must handle token refresh
-   - Backend must validate tokens
-
-4. **Error Handling**
-   - Need consistent error format
-   - Handle network errors gracefully
-
----
-
-## 🎨 Design System (current)
-
-The API client is mature — this is a shipping product, not a mock-data scaffold.
-The shared UI primitives worth knowing:
-
-- **`DataTable`** (`src/components/`) supports a server-pagination mode; list pages
+- **`DataTable`** (`src/features/shared/components/data-table/`) supports a server-pagination mode; list pages
   page/sort/filter against the backend instead of capping rows client-side.
-- **`SeverityBadge`** is the single source of truth for severity colours
+- **`SeverityBadge`** (`src/features/shared/components/severity-badge.tsx`) is the single source of truth for severity colours
   (`src/lib/severity-colors.ts`); pages must not hardcode their own severity hues.
-- **`Can`** (`src/components/auth`) gates UI by permission and supports a `minRole`
+- **`Can`** (`src/lib/permissions/can.tsx`) gates UI by permission and supports a `minRole`
   prop; route-level access is enforced by `RouteGuard` (module + permission, see
   `src/config/route-permissions.ts`).
 - **Routing:** the `/api/v1/*` BFF proxy is the route handler
@@ -490,7 +112,7 @@ The shared UI primitives worth knowing:
 
 ---
 
-## 🧩 Dashboard UI Architecture (New 2026)
+## Dashboard header
 
 ### **Header Centralization Strategy**
 
@@ -537,11 +159,6 @@ graph TD
 
 ### **Advantages**
 
-1.  **Duplicate Removal**: Removed redundant `<Header fixed />` from 80+ pages.
+1.  **No duplicates**: pages do not render their own `<Header fixed />`.
 2.  **Performance**: `layout.tsx` stays Server-Side. Only the Header island is Client-Side.
 3.  **Flexibility**: Strict Regex allows precise exceptions (e.g., hiding header on `findings/123` but showing it on `findings/123/edit`).
-
----
-
-**Last Updated:** 2026-01-25
-**Version:** 3.1.0 (UI Architecture Update)

@@ -1,5 +1,10 @@
 # Nginx Configuration
 
+The nginx front end used by `web/docker-compose.prod.yml` (the web console image
+alone behind nginx). The supported OpenCTEM deployment uses the platform gateway
+instead (`api/deploy/gateway`, see
+[docs.openctem.io/install](https://docs.openctem.io/install/)).
+
 ## SSL Certificates
 
 For production, you need SSL certificates. Here are your options:
@@ -11,11 +16,11 @@ For production, you need SSL certificates. Here are your options:
 sudo apt install certbot python3-certbot-nginx
 
 # Obtain certificate (automatic)
-sudo certbot --nginx -d your-domain.com -d www.your-domain.com
+sudo certbot --nginx -d ctem.example.com
 
 # Certificates will be placed in:
-# /etc/letsencrypt/live/your-domain.com/fullchain.pem
-# /etc/letsencrypt/live/your-domain.com/privkey.pem
+# /etc/letsencrypt/live/ctem.example.com/fullchain.pem
+# /etc/letsencrypt/live/ctem.example.com/privkey.pem
 
 # Update nginx.conf to use these paths
 ```
@@ -29,31 +34,31 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -out nginx/ssl/cert.pem \
   -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
 
-# ⚠️ WARNING: Self-signed certificates will show browser warnings
+# WARNING: Self-signed certificates will show browser warnings
 # Only use for local development
 ```
 
-### Option 3: Commercial Certificate
+### Option 3: Certificate from your CA
 
-1. Purchase SSL certificate from provider (DigiCert, Comodo, etc.)
+1. Obtain a certificate from your certificate authority
 2. Place certificate files in `nginx/ssl/`
 3. Update nginx.conf paths
 
 ## Configuration
 
 1. **Edit nginx.conf:**
-   - Replace `your-domain.com` with your actual domain
+   - Replace the placeholder `server_name your-domain.com` with your domain
    - Update SSL certificate paths
    - Adjust rate limiting if needed
 
 2. **Test configuration:**
    ```bash
-   docker-compose exec nginx nginx -t
+   docker compose -f docker-compose.prod.yml exec nginx nginx -t
    ```
 
 3. **Reload Nginx:**
    ```bash
-   docker-compose exec nginx nginx -s reload
+   docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
    ```
 
 ## Directory Structure

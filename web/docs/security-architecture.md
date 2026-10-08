@@ -433,10 +433,9 @@ Automatically run on `git commit` when `web/` files are staged (repository root
 
 ### 10.4 Dependency Management (Dependabot)
 
-- Weekly updates for npm, GitHub Actions, Docker base images.
+- Weekly updates for npm and GitHub Actions (`.github/dependabot.yml`).
 - Grouped updates: React, Next.js, testing, linting, Tailwind, Radix UI, TypeScript.
 - Major versions blocked by default (security updates still allowed).
-- Review assigned to `openctemio/security` team.
 
 ---
 
