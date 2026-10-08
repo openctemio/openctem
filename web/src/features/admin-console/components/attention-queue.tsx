@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-href'
 import type { AttentionItem, AttentionSeverity } from '../lib/attention'
 
 const SEVERITY: Record<
@@ -100,7 +101,7 @@ export function AttentionQueue({
                     size="sm"
                     className="shrink-0 self-start sm:self-center"
                   >
-                    <Link href={item.href}>
+                    <Link href={safeHref(item.href) ?? '/admin'}>
                       {t(item.actionKey, item.action)}
                       <ArrowRight className="ms-1 size-4" />
                     </Link>
