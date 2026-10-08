@@ -91,7 +91,6 @@ services:
     environment:
       NODE_ENV: production
       BACKEND_API_URL: http://api:8080
-      CSRF_SECRET: ${CSRF_SECRET:?CSRF_SECRET is required (openssl rand -hex 32)}
       # Browsers always see HTTPS (the gateway, or your TLS proxy in `http` mode).
       SECURE_COOKIES: "true"
       # The gateway overwrites X-Real-IP / X-Forwarded-For, so pass them on to

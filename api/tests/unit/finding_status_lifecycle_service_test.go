@@ -115,3 +115,19 @@ func TestLifecycle_ApprovalExpiryLeavesMovedFindingAlone(t *testing.T) {
 		})
 	}
 }
+
+// The retired aliases are not statuses: a status change to one is a 400
+// (validation), never mapped to the canonical status.
+func TestLifecycle_AliasStatusesAreRefused(t *testing.T) {
+	for _, alias := range []string{"accepted_risk", "verified", "remediation", "retest", "open"} {
+		svc, _, _ := newVulnTestService()
+		tenantID := shared.NewID()
+		created := createTestFindingViaService(t, svc, tenantID.String())
+		_, err := svc.UpdateFindingStatus(context.Background(), created.ID().String(), tenantID.String(),
+			finding.UpdateFindingStatusInput{Status: alias, HasVerifyPermission: true})
+		require.ErrorIs(t, err, shared.ErrValidation, alias)
+
+		_, err = svc.ListFindings(context.Background(), finding.ListFindingsInput{TenantID: tenantID.String(), Statuses: []string{alias}})
+		require.ErrorIs(t, err, shared.ErrValidation, "list filter %s", alias)
+	}
+}

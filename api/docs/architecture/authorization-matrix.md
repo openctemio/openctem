@@ -752,6 +752,9 @@ Authorization is enforced at the **route layer** in
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
+| `GET /api/v1/admin/platform-users?q=` | any admin (3+ characters; account-level facts only) |
+| `GET /api/v1/admin/platform-users/{user_id}` | any admin (audited `platform_user.view`) |
+| `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
 | `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
@@ -1612,7 +1615,7 @@ viewer (1) ┴─ Can only view resources
    (the web console's server, scripts) are not affected. Browsers normally
    reach these routes through the web console, which checks the
    same-origin rule and the double-submit pair on every write itself
-   (`web/SECURITY.md`, section 6). The IdP's own cross-site posts (SAML ACS,
+   (`web/docs/security-architecture.md`, section 6). The IdP's own cross-site posts (SAML ACS,
    back-channel logout) are authenticated by their signed payload instead.
 
 ## API Routes Summary
