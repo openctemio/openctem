@@ -104,13 +104,14 @@ func registerAdminRoutes(
 	// organization. Any admin reads; a super admin changes it with a fresh
 	// authenticator code (checked in the handler, which also writes the
 	// critical audit row and tells the other administrators).
+	// One group per prefix (chi cannot mount the same prefix twice): the
+	// super-admin guard is on the PUT route.
 	if h.AdminSignup != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
+			r.PUT("/", h.AdminSignup.Update, requireSuper)
 		}, adminMiddlewares...)
-		router.Group("/api/v1/admin/settings/signup", func(r Router) {
-			r.PUT("/", h.AdminSignup.Update)
-		}, superAdminOnly...)
 	}
 
 	// Provisioning a platform administrator (links or creates the users-table
