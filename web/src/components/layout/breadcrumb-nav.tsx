@@ -13,10 +13,10 @@ import {
 } from '@/components/ui/breadcrumb'
 import { Fragment } from 'react'
 import { cn } from '@/lib/utils'
-import { breadcrumbLabel } from './breadcrumb-labels'
+import { breadcrumbLabel, recordLabel } from './breadcrumb-labels'
 import { breadcrumbHasPage, isIdSegment } from './breadcrumb-routes'
 import { NavPendingHint } from './sidebar-link'
-import { useBreadcrumbTitleFor } from './breadcrumb-title'
+import { useBreadcrumbTitles } from './breadcrumb-title'
 
 interface BreadcrumbNavProps {
   /** Override the auto-generated page title */
@@ -29,7 +29,9 @@ interface BreadcrumbNavProps {
 
 export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: BreadcrumbNavProps) {
   const pathname = usePathname()
-  const pageNamedItself = useBreadcrumbTitleFor(pathname)
+  // Names pages gave the records in the URL; an id with no name yet shows
+  // what kind of record it is ("Scan"), never the id.
+  const titles = useBreadcrumbTitles()
 
   // Split pathname and filter empty strings
   const segments = pathname.split('/').filter(Boolean)
@@ -40,21 +42,23 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
   }
 
   // Build breadcrumb items with accumulated paths.
-  // For detail pages (trailing UUID), keep the parent as a link and add "Detail" as current page.
+  // For detail pages (trailing id), keep the parent as a link and add the
+  // record's name as the current page.
   const filteredSegments = [...segments]
   let detailPageLabel: string | null = null
   if (hideIdSegment) {
-    // Check if last segment(s) are IDs → this is a detail page
     while (
       filteredSegments.length > 0 &&
       isIdSegment(filteredSegments[filteredSegments.length - 1])
     ) {
-      const idSegment = filteredSegments.pop()!
-      detailPageLabel = idSegment.slice(0, 8) + '...'
+      filteredSegments.pop()
     }
-  }
-  if (detailPageLabel !== null && (pageTitle || pageNamedItself)) {
-    detailPageLabel = pageTitle || pageNamedItself
+    if (filteredSegments.length < segments.length) {
+      detailPageLabel =
+        pageTitle ||
+        titles.get(pathname) ||
+        recordLabel(filteredSegments[filteredSegments.length - 1])
+    }
   }
 
   // If all segments were IDs, show at least home
@@ -64,7 +68,9 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
 
   const breadcrumbItems = filteredSegments.map((segment, index) => {
     const path = '/' + filteredSegments.slice(0, index + 1).join('/')
-    const label = breadcrumbLabel(path, segment)
+    const label = isIdSegment(segment)
+      ? (titles.get(path) ?? recordLabel(filteredSegments[index - 1]))
+      : breadcrumbLabel(path, segment)
     // When on a detail page, the parent (e.g., "Findings") becomes a link, not current page
     const isLast = index === filteredSegments.length - 1 && detailPageLabel === null
 

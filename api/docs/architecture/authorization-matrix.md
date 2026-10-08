@@ -752,6 +752,7 @@ Authorization is enforced at the **route layer** in
 | Endpoint | Required Role |
 |----------|---------------|
 | `GET /api/v1/admin/auth/validate` | any admin |
+| `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
 | `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
 | `POST /api/v1/admin/auth/password` | any admin (the only write allowed while `password_change_required`) |
@@ -1593,6 +1594,28 @@ viewer (1) ┴─ Can only view resources
 5. **Owner Protection**: Team owners cannot be demoted or removed. Only team deletion removes the owner.
 
 6. **Invitation Security**: Invitations are validated against the accepting user's email address.
+
+7. **CSRF**: a write authenticated by a cookie needs the double-submit pair
+   (`csrf_token` cookie + `X-CSRF-Token` header; `admin_csrf` for the
+   console): `UnifiedAuth` and `CSRFOptional` for the session, `CheckDoubleSubmit`
+   for routes that read the refresh-token cookie. A write authenticated by a
+   header (Bearer JWT, `oct_` key) needs none: a page on another site cannot
+   set that header. The routes that run before a session exists and set
+   session cookies (`/auth/register`, `/login`, `/mfa/*`, `/token`,
+   `/refresh`, `/verify-email`, `/forgot-password`, `/reset-password`,
+   `/create-first-team`, `/discover`, the OAuth and SSO callbacks, and the
+   console's `/admin/auth/session`, `/mfa`, `/logout`, `/idp/start`,
+   `/idp/callback`) refuse a write a browser sent for another site
+   (`RejectCrossSiteBrowser`: an `Origin` that is neither the request's host
+   nor in `CORS_ALLOWED_ORIGINS`, `Origin: null`, or no `Origin` with
+   `Sec-Fetch-Site` other than `same-origin`/`none`), so a page on another
+   site cannot sign a visitor into the attacker's account (login CSRF) when
+   the API is reachable from browsers directly. Calls without either header
+   (the web console's server, scripts) are not affected. Browsers normally
+   reach these routes through the web console, which checks the
+   same-origin rule and the double-submit pair on every write itself
+   (`web/SECURITY.md`, section 6). The IdP's own cross-site posts (SAML ACS,
+   back-channel logout) are authenticated by their signed payload instead.
 
 ## API Routes Summary
 

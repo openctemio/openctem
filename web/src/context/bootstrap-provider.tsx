@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { useTenant } from './tenant-provider'
 import type { TenantModulesResponse } from '@/features/integrations/api/use-tenant-modules'
 import type { RiskLevelThresholds } from '@/features/shared/types/common.types'
+import { seedSessionCache, type BootstrapSessionData } from './bootstrap-session'
 
 // ============================================
 // TYPES
@@ -35,7 +36,7 @@ export interface BootstrapPermissions {
 
 // NOTE: Dashboard stats are NOT included in bootstrap to reduce query load.
 // Dashboard should be fetched separately via /api/v1/dashboard/stats when needed.
-export interface BootstrapData {
+export interface BootstrapData extends BootstrapSessionData {
   permissions: BootstrapPermissions
   modules?: TenantModulesResponse
   risk_levels?: RiskLevelThresholds
@@ -104,6 +105,11 @@ export function BootstrapProvider({ children }: BootstrapProviderProps) {
         const result = await get<BootstrapData>('/api/v1/me/bootstrap')
 
         // Prevent race conditions: ignore response if tenant changed while fetching
+        if (previousTenantIdRef.current !== tenantId) return
+
+        // Profile, organizations and badge counts go into the cache of the
+        // endpoints they replace before anything that reads them is released.
+        await seedSessionCache(result)
         if (previousTenantIdRef.current !== tenantId) return
 
         setData(result)
@@ -303,6 +309,16 @@ const defaultContextValue: BootstrapContextValue = {
  */
 export function useBootstrapContextOptional(): BootstrapContextValue | null {
   return React.useContext(BootstrapContext)
+}
+
+/**
+ * True while the app shell is loading the session bootstrap. A hook whose data
+ * the bootstrap carries (see bootstrap-session.ts) waits for it instead of
+ * sending its own request in parallel. Outside the shell it is always false.
+ */
+export function useBootstrapPending(): boolean {
+  const context = React.useContext(BootstrapContext)
+  return context !== null && context.isLoading
 }
 
 /**

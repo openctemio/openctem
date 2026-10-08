@@ -41,6 +41,8 @@ describe('MCPConnectPage', () => {
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         scopes: ['findings:read', 'assets:read', 'compliance:frameworks:read'],
+        // Every key expires: the API requires 1 to 365 days.
+        expires_in_days: 90,
       })
     )
     // The minted key is revealed in the config.

@@ -142,3 +142,15 @@ func latestMigrationVersion(dir string) (int64, error) {
 	}
 	return maxV, nil
 }
+
+// shippedSchemaVersion is the newest migration this binary ships, for the
+// console overview (0 when the migrations directory cannot be read: the
+// console then shows the applied version without a comparison).
+func shippedSchemaVersion(log *logger.Logger) int64 {
+	v, err := latestMigrationVersion(migrationsDirPath())
+	if err != nil {
+		log.Warn("console overview: shipped schema version unknown", "error", err)
+		return 0
+	}
+	return v
+}
