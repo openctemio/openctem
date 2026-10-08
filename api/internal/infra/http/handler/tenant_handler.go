@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -55,6 +56,8 @@ type TenantHandler struct {
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
 	// sign-up setting, read on each request.
 	signupPolicy signupdom.PolicySource
+	// freePlan: self-service organizations are Free, capped per person.
+	freePlan auth.FreePlan
 	// provisioning creates accounts on behalf of organization administrators.
 	// Nil disables POST /tenants/{tenant}/users.
 	provisioning *tenantapp.UserProvisioningService
@@ -78,6 +81,9 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
 }
+
+// SetFreePlan wires the Free plan for self-service organizations.
+func (h *TenantHandler) SetFreePlan(p auth.FreePlan) { h.freePlan = p }
 
 // SetSignupPolicy makes POST /tenants follow the console sign-up policy.
 func (h *TenantHandler) SetSignupPolicy(p signupdom.PolicySource) {
@@ -555,11 +561,26 @@ func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 	}
 
+	if h.freePlan != nil {
+		if err := h.freePlan.CheckFreeTeam(r.Context(), userID); err != nil {
+			if !WritePlanLimitError(w, err) {
+				h.handleServiceError(w, err)
+			}
+			return
+		}
+	}
+
 	actx := h.buildAuditContext(r)
 	t, err := h.service.CreateTenant(r.Context(), input, userID, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+	// A self-service organization starts on the Free plan.
+	if h.freePlan != nil {
+		if err := h.freePlan.AssignFree(r.Context(), t.ID()); err != nil {
+			h.logger.Error("assign the Free plan to a new organization", "tenant_id", t.ID().String(), "error", err)
+		}
 	}
 
 	// Apply the chosen module preset if one was picked during creation.
