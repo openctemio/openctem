@@ -81,7 +81,20 @@ type ScopeConfig struct {
 	// DenyExtra are the operator's own names and ranges no tenant may
 	// target (SCOPE_DENY_EXTRA, comma-separated domains and CIDRs).
 	DenyExtra []string
+	// ZoneResolver is the DNS resolver scan-zone routing resolves hostnames
+	// with (SCAN_ZONE_RESOLVER): "system" (the platform's own resolver, which
+	// may know internal names) or host[:port] of a recursive resolver.
+	// Unset: a public resolver when organizations are self-service (SaaS),
+	// otherwise system.
+	ZoneResolver string
 }
+
+// ScanZoneResolverSystem routes hostnames with the platform's own resolver.
+const ScanZoneResolverSystem = "system"
+
+// DefaultPublicZoneResolver is the resolver of SaaS installs: tenants must
+// not resolve names through the platform's internal DNS.
+const DefaultPublicZoneResolver = "1.1.1.1:53"
 
 // validate checks the proof mode.
 func (s ScopeConfig) validate() error {
@@ -1360,6 +1373,7 @@ func Load() (*Config, error) {
 		},
 		Scope: ScopeConfig{
 			ActiveProof:     getEnv("SCOPE_ACTIVE_PROOF", ""),
+			ZoneResolver:    getEnv("SCAN_ZONE_RESOLVER", ""),
 			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
 			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
 			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
@@ -1482,6 +1496,12 @@ func (c *Config) validateBasic() error {
 		c.Scope.ActiveProof = ScopeProofOff
 		if c.Auth.SelfServiceTenantCreation() {
 			c.Scope.ActiveProof = ScopeProofPlatformSensors
+		}
+	}
+	if c.Scope.ZoneResolver == "" {
+		c.Scope.ZoneResolver = ScanZoneResolverSystem
+		if c.Auth.SelfServiceTenantCreation() {
+			c.Scope.ZoneResolver = DefaultPublicZoneResolver
 		}
 	}
 	if err := c.Scope.validate(); err != nil {
