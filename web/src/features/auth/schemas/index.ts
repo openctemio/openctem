@@ -33,9 +33,4 @@ export type { OAuthCallbackParams } from './auth.schema'
 export type { AuthSuccessResponse, AuthErrorResponse, AuthResponse } from './auth.schema'
 
 // Helper functions
-export {
-  isValidEmail,
-  isValidPassword,
-  getPasswordStrength,
-  getPasswordStrengthLabel,
-} from './auth.schema'
+export { isValidEmail, getPasswordStrength, getPasswordStrengthLabel } from './auth.schema'
