@@ -10,7 +10,7 @@ package asset
 // asset_class and asset_lens in step through a trigger seeded from the same
 // YAML.
 
-// Class is the abstract kind of an asset (JupiterOne `_class`), one level
+// Class is the abstract kind of an asset, one level
 // above AssetType.
 type Class string
 
@@ -48,11 +48,10 @@ type LensDefinition struct {
 
 // ClassDefinition describes one class. Lens is empty for ClassOther.
 type ClassDefinition struct {
-	ID         Class       `json:"id"`
-	Label      string      `json:"label"`
-	Lens       Lens        `json:"lens,omitempty"`
-	JupiterOne string      `json:"jupiterone"`
-	Types      []AssetType `json:"types"`
+	ID    Class       `json:"id"`
+	Label string      `json:"label"`
+	Lens  Lens        `json:"lens,omitempty"`
+	Types []AssetType `json:"types"`
 }
 
 // AttributeDefinition is one typed attribute of a type, stored in
