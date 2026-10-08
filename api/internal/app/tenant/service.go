@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
+	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -99,7 +100,10 @@ type TenantService struct {
 	// classifier decides whether an invitee is internal or external
 	// (external_members.go).
 	classifier *AddressClassifier
-	logger     *logger.Logger
+	// trustPolicy reads the trusts with members' home organizations: role
+	// ceiling and proposed end of access (RFC-058). Optional.
+	trustPolicy TrustPolicy
+	logger      *logger.Logger
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -694,9 +698,21 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
 	}
 
-	// Someone outside the organization is a viewer or a member (RFC-058).
-	if membership.IsExternal() && (role == tenantdom.RoleAdmin || role == tenantdom.RoleOwner) {
-		return nil, accesscontrol.ErrExternalRoleCeiling
+	// Someone outside the organization is a viewer or a member (RFC-058),
+	// and a viewer only when the trust with their home organization says so.
+	if membership.IsExternal() {
+		if role == tenantdom.RoleAdmin || role == tenantdom.RoleOwner {
+			return nil, accesscontrol.ErrExternalRoleCeiling
+		}
+		if role == tenantdom.RoleMember && membership.HomeTenantID() != nil && s.trustPolicy != nil {
+			ceiling, cerr := s.trustPolicy.MaxRoleFor(ctx, membership.TenantID(), *membership.HomeTenantID())
+			if cerr != nil {
+				return nil, cerr
+			}
+			if ceiling == orgtrust.MaxRoleViewer {
+				return nil, accesscontrol.ErrExternalViewerCeiling
+			}
+		}
 	}
 
 	// Prevent promoting to owner

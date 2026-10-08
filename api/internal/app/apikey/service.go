@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -41,8 +42,11 @@ type Service struct {
 	legacy     []string          // earlier peppers that still verify (key rotation)
 	membership MembershipChecker // nil → no member-lifecycle gate (tests only)
 	holder     HolderPermissions // nil → scopes are not narrowed to the holder (tests only)
-	audit      *auditapp.AuditService
-	logger     *logger.Logger
+	// external decides whether an external member may create a key and how
+	// long it may live (RFC-058). nil → no external-member rule (tests only).
+	external ExternalKeyPolicy
+	audit    *auditapp.AuditService
+	logger   *logger.Logger
 }
 
 // ErrScopeNotHeld is returned (wrapped with shared.ErrForbidden) when a key is
@@ -123,6 +127,44 @@ type HolderPermissions interface {
 // its user is demoted.
 func (s *Service) SetHolderPermissions(h HolderPermissions) { s.holder = h }
 
+// ExternalKeyPolicy decides API keys for external members (RFC-058): an
+// external member may create a key only when the trust with their home
+// organization allows it, and a key never outlives the member's access.
+type ExternalKeyPolicy interface {
+	// APIKeyAllowance reports whether userID may create a key in tenantID
+	// and, when their access ends, until when a key may live.
+	APIKeyAllowance(ctx context.Context, tenantID, userID shared.ID) (allowed bool, until *time.Time, err error)
+}
+
+// SetExternalKeyPolicy wires the external-member rule.
+func (s *Service) SetExternalKeyPolicy(p ExternalKeyPolicy) { s.external = p }
+
+// ErrExternalNoAPIKeys refuses a key for an external member whose trust does
+// not allow keys.
+var ErrExternalNoAPIKeys = fmt.Errorf("%w: members from outside the organization cannot create API keys here", shared.ErrForbidden)
+
+// checkExternalAllowance applies the external-member rule to a new key.
+func (s *Service) checkExternalAllowance(ctx context.Context, tenantID shared.ID, userIDStr string, expiresInDays int) error {
+	if s.external == nil || userIDStr == "" {
+		return nil
+	}
+	userID, err := shared.IDFromString(userIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid user ID", shared.ErrValidation)
+	}
+	allowed, until, err := s.external.APIKeyAllowance(ctx, tenantID, userID)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrExternalNoAPIKeys
+	}
+	if until != nil && time.Now().Add(time.Duration(expiresInDays)*24*time.Hour).After(*until) {
+		return fmt.Errorf("%w: the key may not outlive your access, which ends %s", shared.ErrValidation, until.UTC().Format("2006-01-02"))
+	}
+	return nil
+}
+
 // MaxExpiresInDays is the longest lifetime an API key may have (settings
 // decision B14, 2026-10-04): every key expires, at most a year after it is
 // minted. An organization may later tighten this; it may not loosen it.
@@ -168,6 +210,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 	}
 	if input.ExpiresInDays < 1 || input.ExpiresInDays > MaxExpiresInDays {
 		return nil, ErrExpiryRequired
+	}
+	if err := s.checkExternalAllowance(ctx, tenantID, input.UserID, input.ExpiresInDays); err != nil {
+		return nil, err
 	}
 
 	// Generate random key bytes

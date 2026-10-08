@@ -323,6 +323,11 @@ const (
 	ActionSSOChangeRequested Action = "sso.change_requested"
 	ActionSSOChangeApproved  Action = "sso.change_approved"
 	ActionSSOChangeRejected  Action = "sso.change_rejected"
+	// Trusted organizations (RFC-058): recorded in both organizations' logs.
+	ActionSSOTrustRequested Action = "sso.trust_requested"
+	ActionSSOTrustAccepted  Action = "sso.trust_accepted"
+	ActionSSOTrustUpdated   Action = "sso.trust_updated"
+	ActionSSOTrustRevoked   Action = "sso.trust_revoked"
 	// ActionSCIMGroupMappingsUpdated: the SCIM group -> role mappings were
 	// replaced. Changes carry the before/after mapping of every group that
 	// changed; mapping a group to or from admin is owner-only.
@@ -604,6 +609,7 @@ func (a Action) IsValid() bool {
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
 		ActionSCIMGroupMappingsUpdated,
 		ActionCapabilityCreated, ActionCapabilityUpdated, ActionCapabilityDeleted,
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
@@ -766,6 +772,7 @@ func (a Action) Category() string {
 		ActionSSOIdentityProviderCreated, ActionSSOIdentityProviderUpdated, ActionSSOIdentityProviderDeleted,
 		ActionSSOVerifiedDomainAdded, ActionSSOVerifiedDomainVerified, ActionSSOVerifiedDomainDeleted,
 		ActionSSOChangeRequested, ActionSSOChangeApproved, ActionSSOChangeRejected,
+		ActionSSOTrustRequested, ActionSSOTrustAccepted, ActionSSOTrustUpdated, ActionSSOTrustRevoked,
 		ActionSCIMGroupMappingsUpdated:
 		return "sso"
 	}
@@ -779,9 +786,11 @@ func (a Action) Category() string {
 type ResourceType string
 
 const (
-	ResourceTypeUser           ResourceType = "user"
-	ResourceTypeTenant         ResourceType = "tenant"
-	ResourceTypeMembership     ResourceType = "membership"
+	ResourceTypeUser       ResourceType = "user"
+	ResourceTypeTenant     ResourceType = "tenant"
+	ResourceTypeMembership ResourceType = "membership"
+	// ResourceTypeOrgTrust is a trust between two organizations (RFC-058).
+	ResourceTypeOrgTrust       ResourceType = "organization_trust"
 	ResourceTypeInvitation     ResourceType = "invitation"
 	ResourceTypeRepository     ResourceType = "repository"
 	ResourceTypeBranch         ResourceType = "branch"
@@ -864,7 +873,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
-		ResourceTypeSCIMGroupMapping,
+		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
 		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:

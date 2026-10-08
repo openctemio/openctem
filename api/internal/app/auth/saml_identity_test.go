@@ -54,7 +54,7 @@ func TestSAMLLogin_NewUserBindsScopedIdentity(t *testing.T) {
 	svc, users, _, ids := samlHarness(t, map[string]bool{"corp.com": true})
 	tn := samlTenant(t, "acme")
 
-	res, err := svc.completeFederatedLogin(context.Background(), tn, "new@corp.com", "New", "member", true, time.Time{}, samlKey(tn, "nid-1"))
+	res, err := svc.completeFederatedLogin(context.Background(), tn, "new@corp.com", "New", "member", true, federatedBinding{}, samlKey(tn, "nid-1"))
 	if err != nil {
 		t.Fatalf("JIT login: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestSAMLLogin_ReturningIdentity_EmailChangeFollows(t *testing.T) {
 	ident, _ := useridentity.New(u.ID(), samlKey(tn, "nid-1"))
 	_ = ids.Create(context.Background(), ident)
 
-	res, err := svc.completeFederatedLogin(context.Background(), tn, "renamed@corp.com", "Person", "member", false, time.Time{}, samlKey(tn, "nid-1"))
+	res, err := svc.completeFederatedLogin(context.Background(), tn, "renamed@corp.com", "Person", "member", false, federatedBinding{}, samlKey(tn, "nid-1"))
 	if err != nil {
 		t.Fatalf("returning login: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestSAMLLogin_ReturningIdentity_NotMemberRefused(t *testing.T) {
 	ident, _ := useridentity.New(u.ID(), samlKey(tn, "nid-1"))
 	_ = ids.Create(context.Background(), ident)
 
-	_, err := svc.completeFederatedLogin(context.Background(), tn, "gone@corp.com", "Gone", "member", true, time.Time{}, samlKey(tn, "nid-1"))
+	_, err := svc.completeFederatedLogin(context.Background(), tn, "gone@corp.com", "Gone", "member", true, federatedBinding{}, samlKey(tn, "nid-1"))
 	if !errors.Is(err, ErrSSOFederatedNotMember) {
 		t.Fatalf("expected ErrSSOFederatedNotMember, got %v", err)
 	}
@@ -127,7 +127,7 @@ func TestSAMLLogin_SameEntityIDOtherOrganization_DoesNotResolve(t *testing.T) {
 		t.Fatalf("organization B's key must not resolve A's account, got %v / %v", got, err)
 	}
 	// A key claiming A's scope but presented to B's login is refused outright.
-	if _, err := svc.completeFederatedLogin(context.Background(), b, "victim@corp.com", "V", "member", true, time.Time{}, samlKey(a, "nid-victim")); !errors.Is(err, ErrSSOFederatedNotMember) {
+	if _, err := svc.completeFederatedLogin(context.Background(), b, "victim@corp.com", "V", "member", true, federatedBinding{}, samlKey(a, "nid-victim")); !errors.Is(err, ErrSSOFederatedNotMember) {
 		t.Fatalf("a key scoped to another organization must be refused, got %v", err)
 	}
 }
@@ -144,7 +144,7 @@ func TestSAMLLogin_OtherSubjectSameEmailRefused(t *testing.T) {
 	ident, _ := useridentity.New(u.ID(), samlKey(tn, "nid-1"))
 	_ = ids.Create(context.Background(), ident)
 
-	_, err := svc.completeFederatedLogin(context.Background(), tn, "person@corp.com", "X", "member", false, time.Time{}, samlKey(tn, "nid-2"))
+	_, err := svc.completeFederatedLogin(context.Background(), tn, "person@corp.com", "X", "member", false, federatedBinding{}, samlKey(tn, "nid-2"))
 	if !errors.Is(err, ErrFederatedIdentityConflict) {
 		t.Fatalf("expected ErrFederatedIdentityConflict, got %v", err)
 	}
@@ -163,7 +163,7 @@ func TestSAMLLogin_ExistingMemberBoundOnNextLogin(t *testing.T) {
 	m, _ := tenantdom.NewMembership(u.ID(), tn.ID(), tenantdom.RoleMember, nil)
 	members.created[u.ID().String()] = m
 
-	if _, err := svc.completeFederatedLogin(context.Background(), tn, "person@corp.com", "Person", "member", false, time.Time{}, samlKey(tn, "nid-1")); err != nil {
+	if _, err := svc.completeFederatedLogin(context.Background(), tn, "person@corp.com", "Person", "member", false, federatedBinding{}, samlKey(tn, "nid-1")); err != nil {
 		t.Fatalf("login: %v", err)
 	}
 	if keys := ids.keysOf(u.ID()); len(keys) != 1 || keys[0].Subject != "nid-1" {

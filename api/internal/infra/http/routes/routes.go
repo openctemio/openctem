@@ -241,6 +241,8 @@ type Handlers struct {
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
+	// OrgTrust: trusted organizations (RFC-058); nil if not initialized.
+	OrgTrust *handler.OrgTrustHandler
 
 	// Platform Stats handler (tenant-scoped platform sensor stats)
 	PlatformScanning *handler.PlatformScanningHandler
@@ -526,6 +528,7 @@ func Register(
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
+	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
