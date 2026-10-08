@@ -31,8 +31,9 @@ const EXEMPT = new Set([
 ])
 
 /**
- * Files not migrated yet. Remove an entry when its dialogs use the frame
- * (the test fails while a listed file is already clean); never add one.
+ * Files not migrated yet, moved onto the frame by area. The migrations leave
+ * this list alone (so they do not conflict with each other); the last one
+ * empties it, and then every file is checked. Never add an entry.
  */
 const PENDING = new Set<string>([
   'app/(dashboard)/(discovery)/assets/groups/page.tsx',
@@ -305,13 +306,9 @@ describe('modal surfaces', () => {
     expect(offenders).toEqual([])
   })
 
-  it('keep the pending list honest (remove a migrated file from it)', () => {
-    const byPath = new Map(files.map((f) => [f.rel, f.src]))
-    const stale = [...PENDING].filter((rel) => {
-      const src = byPath.get(rel)
-      return src === undefined || problems(src).length === 0
-    })
-    expect(stale).toEqual([])
+  it('lists only files that exist', () => {
+    const paths = new Set(files.map((f) => f.rel))
+    expect([...PENDING].filter((rel) => !paths.has(rel))).toEqual([])
   })
 
   it('catches the patterns it is meant to catch', () => {
