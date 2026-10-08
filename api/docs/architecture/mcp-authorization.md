@@ -254,6 +254,29 @@ Sender-constrained tokens (RFC 9449), `pkg/dpop` and `mcpoauth/dpop.go`:
 - Metadata: `dpop_signing_alg_values_supported` in both documents,
   `dpop_bound_access_tokens_required: false` in the resource metadata.
 
+## Write tools and confirmation (shipped)
+
+| Piece | Where |
+|---|---|
+| Scope | `mcp:findings.write` → `findings:write`; not in `scopes_supported`; grantable only when the organization policy lists it |
+| First tool | `add_finding_comment` (`finding_id`, `content` ≤ 4000, optional `confirmation_id`): an internal comment by the user, never sent to integrations |
+| Store | `mcp_action_confirmations` (migration `001372`): connection, user, tool, SHA-256 of the canonical arguments (without `confirmation_id`), server-written summary, status, 5-minute expiry |
+| Web | `/mcp/confirm/<id>` (signed-in session; same user and organization; summary shown as text) |
+| API | `GET /api/v1/mcp-access/confirmations/{id}`, `POST …/approve`, `POST …/deny` (API keys refused) |
+
+Flow: `tools/list` shows a write tool only to an OAuth connection holding
+its permission. First call: arguments validated, data scope checked, a
+pending confirmation created (`mcp_action.requested`), result
+`status: confirmation_required` with `confirmation_url` and
+`confirmation_id`; nothing changes. The person confirms or refuses on the
+page (`mcp_action.confirmed` / `mcp_action.refused`). Second call with the
+same arguments and `confirmation_id`: the confirmation is consumed
+atomically (approved, unexpired, same connection, tool and argument
+digest), data scope is checked again, the action runs once. Any other case
+answers "not confirmed" and changes nothing. `oct_` keys never run write
+tools. Confirmations are purged a day after they expire.
+
 ## Planned
 
-Write-tool confirmation: see RFC-062 §10 and §14.
+URL-mode elicitation for the confirmation once the endpoint speaks MCP
+2026-07-28 (RFC-062 §10, §11).

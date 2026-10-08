@@ -47,22 +47,23 @@ type AuditLogger interface {
 
 // Service is the authorization server.
 type Service struct {
-	repo         mcpoauth.Repository
-	endpoints    mcpoauth.Endpoints
-	pepper       string
-	oldPeppers   []string
-	fetcher      MetadataFetcher
-	members      MembershipChecker
-	permissions  HolderPermissions
-	policies     PolicyReader
-	connections  mcpoauth.ConnectionRepository
-	clients      mcpoauth.ClientRepository
-	replay       ReplayCache
-	dcrEnabled   bool
-	trustedHosts []string
-	audit        AuditLogger
-	log          *logger.Logger
-	now          func() time.Time
+	repo          mcpoauth.Repository
+	endpoints     mcpoauth.Endpoints
+	pepper        string
+	oldPeppers    []string
+	fetcher       MetadataFetcher
+	members       MembershipChecker
+	permissions   HolderPermissions
+	policies      PolicyReader
+	connections   mcpoauth.ConnectionRepository
+	clients       mcpoauth.ClientRepository
+	replay        ReplayCache
+	confirmations mcpoauth.ConfirmationRepository
+	dcrEnabled    bool
+	trustedHosts  []string
+	audit         AuditLogger
+	log           *logger.Logger
+	now           func() time.Time
 }
 
 // Config wires the service.
@@ -80,6 +81,9 @@ type Config struct {
 	Clients mcpoauth.ClientRepository
 	// Replay remembers DPoP proof ids; without it DPoP proofs are refused.
 	Replay ReplayCache
+	// Confirmations stores write-action confirmations (RFC-062 §10);
+	// without it write tools cannot run.
+	Confirmations mcpoauth.ConfirmationRepository
 	// DynamicRegistration turns POST /oauth/register on
 	// (MCP_OAUTH_DCR_ENABLED). Deprecated by MCP; off by default.
 	DynamicRegistration bool
@@ -105,7 +109,8 @@ func NewService(c Config) (*Service, error) {
 		fetcher: c.Fetcher, members: c.Members, permissions: c.Permissions, audit: c.Audit,
 		policies: c.Policies, trustedHosts: NormalizeTrustedHosts(c.TrustedClientHosts), connections: c.Connections,
 		clients: c.Clients, dcrEnabled: c.DynamicRegistration, replay: c.Replay,
-		log: c.Logger.With("service", "mcp-oauth"), now: time.Now,
+		confirmations: c.Confirmations,
+		log:           c.Logger.With("service", "mcp-oauth"), now: time.Now,
 	}, nil
 }
 

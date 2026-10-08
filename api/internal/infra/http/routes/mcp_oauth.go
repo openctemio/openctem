@@ -62,6 +62,13 @@ func registerMCPConnectionRoutes(router Router, h *handler.MCPConnectionsHandler
 		r.GET("/", h.ListAll, middleware.RequireAdmin())
 		r.DELETE("/{id}", h.RevokeAny, middleware.RequireAdmin())
 	}, tenantMiddlewares...)
+	// Write-action confirmations (RFC-062 §10): the person the connection
+	// belongs to, in their browser session.
+	router.Group("/api/v1/mcp-access/confirmations", func(r Router) {
+		r.GET("/{id}", h.GetConfirmation)
+		r.POST("/{id}/approve", h.ApproveConfirmation)
+		r.POST("/{id}/deny", h.DenyConfirmation)
+	}, tenantMiddlewares...)
 }
 
 // registerMCPClientRoutes mounts client registration (RFC-062 §5): the
