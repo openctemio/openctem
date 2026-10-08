@@ -309,9 +309,9 @@ domain (the "nOAuth" account-takeover class).
   for Google and GitHub. A domain can be verified in exactly one Entra tenant, so
   a domain-verified email is a reliable identifier. Absent/false ⇒ login refused.
 
-The account is also pinned to the immutable `(issuer, subject)`
-(`BindFederatedIdentity`); a different federated identity presenting the same
-email is rejected.
+The account is also keyed on the immutable `(issuer, subject)` (here `oid`, see
+"Accounts are keyed on the identity provider's user id" below); a different
+federated identity presenting the same email is rejected.
 
 > **Operator action required:** add the **`xms_edov`** optional claim (ID token)
 > to the app registration used for `OAUTH_MICROSOFT_*` (Azure portal → App
@@ -326,6 +326,54 @@ email is rejected.
 > whose domain the tenant owns get `xms_edov == true` and sign in normally. Use
 > the **per-tenant Entra SSO** path to admit specific external identities under an
 > explicit domain allow-list.
+
+## Accounts are keyed on the identity provider's user id
+
+Accounts are global and the email address is mutable at the identity provider,
+so every federated login finds the account by the provider's user id, never by
+the email alone. The ids live in `user_identities` (migration 001306; the old
+single `users.federated_issuer/subject` pair was copied there and is no longer
+used):
+
+| Path | Issuer | Subject | Scope |
+|---|---|---|---|
+| Organization OIDC, Okta / Google Workspace | verified `id_token` `iss` (`accounts.google.com` normalised to `https://accounts.google.com`) | `sub` | platform-wide |
+| Organization OIDC, Entra ID; social Microsoft | verified `id_token` `iss` (contains the directory `tid`) | `oid` (the same for every app in the directory; `sub` is pairwise per app). Identities bound under `sub` are re-keyed on the next login. | platform-wide |
+| Social Google | `https://accounts.google.com` | Google account id (`sub`) | platform-wide |
+| Social GitHub | `https://github.com` | numeric user id | platform-wide |
+| SAML | assertion `Issuer` (IdP entity id) | `NameID`, only when its format is `persistent` | **the organization** whose IdP certificate signed it |
+
+A SAML identity is scoped to its organization because the organization
+configures the signing certificate: another organization can configure the
+same entity id and `NameID` and must never reach an account bound elsewhere.
+An OIDC identity is platform-wide because only the issuer holds the keys that
+sign it (or, for social login, the provider's own API returned it).
+
+Every federated login:
+
+1. **Looks the identity up first.** A match is the account, whatever email the
+   provider now sends. An email changed at the provider moves with the account:
+   no second account is created and the login is not refused. The new address
+   is stored only when no other account holds it, and, for organization SSO,
+   only when the organization DNS-verified its domain (social logins rely on
+   the provider's verified email). Otherwise the account keeps its email and
+   the reason is logged.
+2. **Otherwise falls back to the email**, under the existing guards
+   (proof-before-link, cross-IdP Case 3, DNS-verified domain for an unbound
+   account of the same provider type, SAML membership + domain proof). An
+   account already bound to **another subject at the same issuer**, or to
+   another issuer, is refused (`ErrFederatedIdentityConflict`): that is another
+   person presenting the same email. This closes the gap where the organization
+   OIDC path compared the issuer only.
+3. **Binds the identity** to the account it admitted: on account creation, and
+   for an existing unbound account on its next login (its email matches the
+   provider-verified email and no other subject from the issuer is bound). The
+   database enforces one account per identity and one subject per issuer per
+   account (two unique indexes), so concurrent logins cannot bind twice.
+
+The identity store is required: a login that carries an identity is refused
+when it is not wired. Erasing a member's personal data deletes their
+identities, so a later sign-in never finds the anonymised account.
 
 ## Enforce SSO per-tenant (with owner break-glass)
 

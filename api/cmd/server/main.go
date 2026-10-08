@@ -109,6 +109,7 @@ func run() int {
 		return runSensorUpgradeCheck(ctx, db.DB, os.Stdout)
 	}
 	logSensorUpgradeLeftovers(ctx, db.DB, log)
+	registerOpsMetrics(db.DB, cfg, log)
 
 	redisClient, err := redis.New(&cfg.Redis, log)
 	if err != nil {

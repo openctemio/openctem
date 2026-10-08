@@ -110,6 +110,27 @@ describe('FindingRetestSection', () => {
 })
 
 describe('retestMeta', () => {
+  it('links the retest run to a user who can read scans', () => {
+    mockRetests = [retest({ outcome: 'still_vulnerable', run_id: 'run-1' })]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    expect(screen.getByRole('link', { name: 'View run' })).toHaveAttribute(
+      'href',
+      '/scans/runs?run=run-1'
+    )
+  })
+
+  it('shows no run link without scans:read or without a run', () => {
+    mockRetests = [retest({ outcome: 'still_vulnerable', run_id: 'run-1' })]
+    mockHasPermission = (p) => p !== 'scans:read'
+    const { unmount } = render(<FindingRetestSection finding={nucleiFinding} />)
+    expect(screen.queryByRole('link', { name: 'View run' })).not.toBeInTheDocument()
+    unmount()
+    mockHasPermission = () => true
+    mockRetests = [retest({ outcome: 'still_vulnerable' })]
+    render(<FindingRetestSection finding={nucleiFinding} />)
+    expect(screen.queryByRole('link', { name: 'View run' })).not.toBeInTheDocument()
+  })
+
   it('labels each outcome; only a confirmed fix reads as fixed', () => {
     expect(
       retestMeta(retest({ outcome: 'confirmed_fixed', result_status: 'validated_fixed' })).label

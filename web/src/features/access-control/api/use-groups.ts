@@ -31,6 +31,15 @@ const API_BASE = '/api/v1/groups'
  */
 export const MY_GROUPS_URL = '/api/v1/me/groups'
 
+/**
+ * The list query for an offset window: the API pages with page / per_page
+ * (one list convention); callers here keep their offset state.
+ */
+export function pageQuery(limit: number, offset: number): string {
+  const perPage = Math.max(1, limit)
+  return `page=${Math.floor(Math.max(0, offset) / perPage) + 1}&per_page=${perPage}`
+}
+
 // Generic API response type - using Record for flexible property access
 type ApiResponse<T> = T[] | Record<string, T[] | unknown>
 
@@ -45,8 +54,8 @@ interface GroupListResponse {
   groups: Group[]
   total_count: number
   unique_member_count: number
-  limit: number
-  offset: number
+  page: number
+  per_page: number
 }
 
 export function useGroups(filters?: GroupFilters) {
@@ -139,8 +148,8 @@ export function useGroup(groupId: string | null, options?: UseGroupOptions) {
 interface PaginatedMembersResponse {
   items: GroupMember[]
   total_count: number
-  limit: number
-  offset: number
+  page: number
+  per_page: number
 }
 
 export function useGroupMembers(
@@ -151,7 +160,7 @@ export function useGroupMembers(
   const limit = options?.limit ?? 20
   const offset = options?.offset ?? 0
 
-  const url = shouldFetch ? `${API_BASE}/${groupId}/members?limit=${limit}&offset=${offset}` : null
+  const url = shouldFetch ? `${API_BASE}/${groupId}/members?${pageQuery(limit, offset)}` : null
 
   const { data, error, isLoading, mutate } = useSWR<
     PaginatedMembersResponse | ApiResponse<GroupMember>
@@ -197,8 +206,8 @@ export function useGroupMembers(
 interface PaginatedAssetsResponse {
   items: GroupAsset[]
   total_count: number
-  limit: number
-  offset: number
+  page: number
+  per_page: number
 }
 
 export function useGroupAssets(
@@ -209,7 +218,7 @@ export function useGroupAssets(
   const limit = options?.limit ?? 20
   const offset = options?.offset ?? 0
 
-  const url = shouldFetch ? `${API_BASE}/${groupId}/assets?limit=${limit}&offset=${offset}` : null
+  const url = shouldFetch ? `${API_BASE}/${groupId}/assets?${pageQuery(limit, offset)}` : null
 
   const { data, error, isLoading, mutate } = useSWR<
     PaginatedAssetsResponse | ApiResponse<GroupAsset>

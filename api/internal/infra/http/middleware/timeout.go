@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -54,6 +55,7 @@ func TimeoutWithLogger(timeout time.Duration, log *logger.Logger) func(http.Hand
 				defer close(done)
 				defer func() {
 					if rec := recover(); rec != nil {
+						metrics.RecordPanic("http")
 						if log != nil {
 							log.Error("panic recovered in request handler",
 								"error", rec,
