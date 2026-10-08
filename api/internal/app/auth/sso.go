@@ -796,7 +796,7 @@ func (s *SSOService) ensureTenantMembership(ctx context.Context, u *userdom.User
 		return ErrSSONotAMember
 	}
 
-	membership, err := tenantdom.NewMembership(u.ID(), t.ID(), jitMembershipRole(rp.defaultRole), nil)
+	membership, err := tenantdom.NewMembership(u.ID(), t.ID(), s.jitRoleFor(ctx, t, email, rp.defaultRole), nil)
 	if err != nil {
 		return fmt.Errorf("build membership: %w", err)
 	}
@@ -900,10 +900,48 @@ func (s *SSOService) jitProvisioningAllowed(ctx context.Context, t *tenantdom.Te
 	if !verified {
 		return false
 	}
+	// Per-domain JIT (RFC-058): a domain may admit its people without
+	// provisioning newcomers.
+	if on, _ := s.domainJIT(ctx, t, emailDomain); !on {
+		return false
+	}
 	if len(rp.allowedDomains) > 0 && !rp.isDomainAllowed(emailDomain) {
 		return false
 	}
 	return t.TypedSettings().Security.EmailDomainAllowed(email)
+}
+
+// DomainJITPolicy is the per-domain just-in-time provisioning a domain
+// verifier may offer (domainverify.Service.DomainJITPolicy).
+type DomainJITPolicy interface {
+	DomainJITPolicy(ctx context.Context, tenantID, emailDomain string) (enabled bool, role string, err error)
+}
+
+// domainJIT returns whether the domain provisions newcomers and their role
+// ("" = the provider default). A verifier without per-domain settings keeps
+// the provider default behavior; a lookup error refuses (fail closed).
+func (s *SSOService) domainJIT(ctx context.Context, t *tenantdom.Tenant, emailDomain string) (bool, string) {
+	p, ok := s.domainVerifier.(DomainJITPolicy)
+	if !ok {
+		return true, ""
+	}
+	on, role, err := p.DomainJITPolicy(ctx, t.ID().String(), emailDomain)
+	if err != nil {
+		s.logger.Warn("per-domain JIT lookup failed; refusing JIT (fail-closed)", "tenant_id", t.ID().String(), "error", err)
+		return false, ""
+	}
+	return on, role
+}
+
+// jitRoleFor is the role a newcomer admitted on email's domain gets: the
+// domain's own JIT role when set, otherwise the provider default.
+func (s *SSOService) jitRoleFor(ctx context.Context, t *tenantdom.Tenant, email, providerDefault string) tenantdom.Role {
+	if at := strings.LastIndex(email, "@"); at >= 0 {
+		if _, role := s.domainJIT(ctx, t, strings.ToLower(email[at+1:])); role != "" {
+			return jitMembershipRole(role)
+		}
+	}
+	return jitMembershipRole(providerDefault)
 }
 
 // verifyIDToken validates the provider's id_token against its JWKS, the flow
@@ -1808,7 +1846,7 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 	}
 
 	if newUser && s.tenantMemberRepo != nil {
-		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), jitMembershipRole(defaultRole), nil)
+		membership, memErr := tenantdom.NewMembership(u.ID(), t.ID(), s.jitRoleFor(ctx, t, email, defaultRole), nil)
 		if memErr == nil {
 			memErr = s.tenantMemberRepo.CreateMembership(ctx, membership)
 		}

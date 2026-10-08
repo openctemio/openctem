@@ -236,6 +236,9 @@ type AppConfig struct {
 
 // SensorConfigConfig holds the sensor config template service settings.
 type SensorConfigConfig struct {
+	// TransportV3 is sensor protocol v3 (RFC-059,
+	// docs/rfcs/RFC-059-sensor-transport-v3.md).
+	TransportV3 SensorTransportV3Config
 	// TemplatesDir is the filesystem path containing sensor config templates
 	// (yaml.tmpl, env.tmpl, docker.tmpl, cli.tmpl). Operators can edit these
 	// without rebuilding the API or UI.
@@ -741,6 +744,18 @@ type RateLimitConfig struct {
 	ReadRequestsPerMin int
 }
 
+// SensorTransportV3Config configures sensor protocol v3 (RFC-059).
+type SensorTransportV3Config struct {
+	// Enabled mounts v3: the HTTPS binding under /api/v3/sensor (and, with a
+	// sensor CA, the gRPC binding). SENSOR_TRANSPORT_V3_ENABLED, default
+	// false: nothing changes for sensors until an operator turns it on.
+	Enabled bool
+	// PublicHost is host[:port] sensors dial for the gRPC binding
+	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443). Empty: the
+	// platform advertises only the HTTPS binding.
+	PublicHost string
+}
+
 // SensorConfig holds sensor management configuration.
 type SensorConfig struct {
 	// HeartbeatTimeout is the duration after which a sensor is marked as inactive
@@ -1020,6 +1035,10 @@ func Load() (*Config, error) {
 			URL:   getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
+			TransportV3: SensorTransportV3Config{
+				Enabled:    getEnvBool("SENSOR_TRANSPORT_V3_ENABLED", false),
+				PublicHost: getEnv("SENSOR_PUBLIC_HOST", ""),
+			},
 			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),

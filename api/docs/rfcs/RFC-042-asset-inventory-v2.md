@@ -1022,6 +1022,55 @@ tenant-scoped (the relationship upsert's conflict key includes
 `tenant_id`). Address matching for exclusions reads more keys, never fewer,
 so it can only exclude more (fail closed).
 
+#### 6.3.10 Property names (amendment, 2026-10-08)
+
+**Problem.** The per-type web pages read and wrote about sixty property
+keys the schema does not have (`os`, `cpu_cores`, `arch`, `open_ports`,
+`cert_issuer`, `cert_not_after`, `expiry_date`, `encryption`,
+`is_publicly_accessible`, `ssl`, `http_status` …), so a scanned host showed
+an empty OS column, a certificate entered by hand filed its dates under
+"Other", and three headline counts counted keys nothing writes. The schema
+itself mixed boolean spellings (`mfa_enabled`, `encrypted`, `archived`,
+`uses_ssl_pinning`) and timestamps without `_at` (`last_used`,
+`last_login`).
+
+**Design.** The naming rules are in the architecture page
+([Property names](../architecture/asset-inventory-v2.md#property-names)).
+What this amendment changes:
+
+1. The generator enforces the mechanical rules (boolean `is_`/`has_`,
+   timestamp `_at` or a spec term, plural lists) and one shape per key
+   across types; synonyms are allowed on scalar keys too (they move,
+   keeping their type).
+2. 22 boolean keys, 3 timestamps and one duration were renamed, each old
+   name kept as a synonym (they were the published schema):
+   `has_tls`, `is_auth_required`, `has_rate_limiting`, `has_cors`,
+   `has_ssl_pinning`, `has_edr`, `has_mfa`, `has_rbac`, `has_pod_security`,
+   `has_network_policies`, `has_scan_on_push`, `is_encrypted` (from
+   `encrypted` and `encryption_enabled`), `has_immutable_tags`,
+   `is_archived`, `is_privileged`, `is_ssl_enforced`, `is_public` (from
+   `publicly_accessible`), `has_versioning`, `has_logging`, `has_dhcp`,
+   `has_flow_logs`, `last_used_at`, `last_login_at`, `last_modified_at`,
+   `max_session_duration_seconds`. Scanner and stored spellings join as
+   synonyms: `os` → `os_name`, `web_server` → `server`, `self_signed` →
+   `is_self_signed`, `encryption` → `is_encrypted`.
+3. Network devices gain `vendor`, `model`, `firmware_version`,
+   `management_ip`, `serial_number`; HTTP services `chain_status_codes`.
+4. Migration `001333` folds stored synonyms (and a certificate's
+   `fingerprint` into `fingerprint_sha256`, once: the word is too generic
+   to be a synonym). Its down is a documented no-op: a fold is not
+   reversible.
+5. The web names keys through the generated `AssetPropertyKey`; a guard
+   test fails on hand-written `.metadata.<key>` reads in asset code.
+   `GET /assets/stats?count_by=` accepts only schema keys (synonyms fold),
+   at most 10.
+
+**Threat model.** No new input or endpoint. The fold runs inside each
+asset's own row. `count_by` was an unbounded list of arbitrary JSONB keys,
+each one more GROUP BY over the caller's (data-scoped) assets; it is now
+capped and limited to the schema, which only narrows what a member can ask
+for.
+
 ### 6.4 The services table (evolve `asset_services`)
 
 The table keeps its name, so the merge plan, RLS shadow policies and

@@ -314,12 +314,17 @@ func (m *mockAuthTenantRepo) CreateMembership(_ context.Context, membership *ten
 	return nil
 }
 
-func (m *mockAuthTenantRepo) GetMembership(_ context.Context, _ shared.ID, tenantID shared.ID) (*tenant.Membership, error) {
+func (m *mockAuthTenantRepo) GetMembership(_ context.Context, userID shared.ID, tenantID shared.ID) (*tenant.Membership, error) {
 	if m.getMembershipErr != nil {
 		return nil, m.getMembershipErr
 	}
 	if ms, ok := m.membershipByTenant[tenantID.String()]; ok {
 		return ms, nil
+	}
+	for _, ms := range m.memberships {
+		if ms.UserID() == userID && ms.TenantID() == tenantID {
+			return ms, nil
+		}
 	}
 	return nil, shared.ErrNotFound
 }

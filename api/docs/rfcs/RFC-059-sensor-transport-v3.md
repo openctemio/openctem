@@ -5,7 +5,7 @@
 | Status | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated) |
 | Authors | Platform team |
 | Related | RFC-026 (v2 results), RFC-029 (v2 control plane), RFC-030 (leases), RFC-032 (enrollment, identity), RFC-035 (doorbell), RFC-040 (mutual distrust), RFC-052 (pairing, key-bound sensors), RFC-055 (tool contract) |
-| Code | `api/proto/openctem/sensor/v3/sensor.proto`, `api/pkg/sensorproto/v3` (generated), `api/internal/infra/sensorv3` (server), sdk-go `pkg/client` (client) |
+| Code | `api/proto/openctem/sensor/v3/sensor.proto`, `api/pkg/sensorproto/v3` (generated), `api/internal/infra/sensortransport` (server), sdk-go `pkg/client` (client) |
 
 ## 1. Summary
 
@@ -66,7 +66,7 @@ mTLS the preferred path where the network allows it.
 | T9 | The sensor CA is ECDSA P-256 with its own key, separate from the job signer (RFC-040): a certificate authenticates a channel and never authorizes a job. Loaded from `SENSOR_MTLS_CA_CERT_FILE` + `SENSOR_MTLS_CA_KEY_FILE`; when both are unset it is created once in `SENSOR_MTLS_CA_DIR` (default `/app/data/sensor-ca`, mode 0600, exclusive create so replicas sharing the volume agree). The mTLS listener's server certificate is minted in memory from the same CA for `SENSOR_PUBLIC_HOST`. |
 | T10 | mTLS listener: TLS 1.3 only; client certificates required and verified against the sensor CA only; ALPN `h2` only; 16 MiB per message; the v2 per-sensor rate limits; a keepalive every 25 seconds on the stream; client deadlines honoured; no server reflection. |
 | T11 | No message names a tenant. The tenant and the sensor are those of the authenticated identity; a command or report id of another sensor or tenant answers NOT_FOUND. A tenant-less (platform) sensor is refused on v3 as on v2. |
-| T12 | Push fan-out: a decorator on the command repository and the sensor status changes publish a wake (`{tenant_id, sensor_id?}`) on Redis channel `sensor:v3:wake`; every replica re-evaluates the doorbell for its streams of that tenant (jittered up to 250 ms). Without Redis each replica wakes its own streams and re-evaluates every 30 seconds. |
+| T12 | Push fan-out: a hook in the command repository (a command becomes pending, a held one is cancelled, bulk re-queues) and the sensor status changes publish a wake (`{tenant_id, sensor_id?}`) on Redis channel `sensor:v3:wake`; every replica re-evaluates the doorbell for its streams of that tenant (jittered up to 250 ms). Without Redis each replica wakes its own streams and re-evaluates every 30 seconds. |
 | T13 | Fallback in the SDK: `SENSOR_TRANSPORT=auto|grpc|https|v2`. `auto` tries gRPC, then on a transport-level failure (dial or handshake failure, no HTTP/2, a stream reset by an intermediary, Unimplemented) the HTTPS binding, then v2 when the platform has no v3. It never falls back on an identity error (UNAUTHENTICATED, PERMISSION_DENIED from the platform). gRPC is probed again every 30 minutes. The heartbeat reports the binding and the fallback reason; the platform stores the binding it served and shows both per sensor. |
 | T14 | Same port 443 by SNI: the gateway passes TLS for `SENSOR_PUBLIC_HOST` through at layer 4 to the API's mTLS listener (with PROXY protocol v2, accepted only from `SENSOR_MTLS_TRUSTED_PROXIES`) and terminates every other host as today. A separate port is a configuration option. |
 

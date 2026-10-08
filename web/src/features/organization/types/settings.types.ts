@@ -37,6 +37,8 @@ export type EmailVerificationMode = 'auto' | 'always' | 'never'
 
 export interface SecuritySettings {
   mfa_required: boolean
+  /** Owners and admins must use 2FA (on for new organizations). */
+  mfa_required_for_admins?: boolean
   session_timeout_min: number
   ip_whitelist: string[]
   allowed_domains: string[]
@@ -58,6 +60,7 @@ export interface SecuritySettings {
 
 export interface UpdateSecuritySettingsInput {
   mfa_required?: boolean
+  mfa_required_for_admins?: boolean
   session_timeout_min?: number
   ip_whitelist?: string[]
   allowed_domains?: string[]

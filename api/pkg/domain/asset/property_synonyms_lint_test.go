@@ -33,6 +33,12 @@ var synonymKeyAllowed = map[string][]string{
 	"internal/app/sensor/service.go":             {"ip"},
 	"internal/app/ingest/identity_backfill.go":   {"ip"},
 	"pkg/domain/credential/import.go":            {"ip_address"},
+	// The CTIS technical service and certificate blocks: objects stored
+	// under the common keys `service` and `certificate`, not top-level
+	// properties, so their field names are the CTIS ones.
+	"internal/app/ingest/mappers.go": {"auth_required", "self_signed"},
+	// A log redaction key, not an asset property.
+	"pkg/logger/logger.go": {"encrypted"},
 }
 
 func TestPropertySynonyms_NeverIndexedOrWritten(t *testing.T) {

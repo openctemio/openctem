@@ -60,6 +60,8 @@ import {
 } from '@/features/assets'
 import { fetchAllAssets } from '@/features/assets/hooks/use-assets'
 import { ipAddresses } from '@/features/assets/lib/service-facts'
+import { propertyValue } from '@/features/asset-types/lib/property-schema'
+import type { AssetMetadata } from '@/features/assets/types'
 import { toastIfDuplicateAsset } from '@/features/assets/lib/duplicate-asset'
 import { IssuesChip, LabelChips, SurfaceFacts } from '@/features/assets/components/service-cells'
 import { useExposures } from '@/features/exposures/hooks'
@@ -260,8 +262,8 @@ export default function ExternalSurfacePage() {
   const [scanCandidates, setScanCandidates] = useState<ScanCandidate[]>([])
   const [scanDialogOpen, setScanDialogOpen] = useState(false)
 
-  const metadataFromForm = () => ({
-    ...(formData.ipAddress ? { ip_address: formData.ipAddress } : {}),
+  const metadataFromForm = (): AssetMetadata => ({
+    ...(formData.ipAddress ? { ip_addresses: [formData.ipAddress] } : {}),
     ...(formData.port ? { port: Number(formData.port) } : {}),
     ...(formData.parentDomain ? { parent_domain: formData.parentDomain } : {}),
   })
@@ -321,15 +323,16 @@ export default function ExternalSurfacePage() {
   }
 
   const openEdit = useCallback((a: Asset) => {
-    const m = a.metadata ?? {}
+    const parentDomain = propertyValue(a.metadata, 'parent_domain')
+    const port = propertyValue(a.metadata, 'port')
     setFormData({
       name: a.name,
       type: (CREATE_TYPES as readonly string[]).includes(a.type)
         ? (a.type as FormState['type'])
         : 'subdomain',
-      parentDomain: (m.parent_domain as string) || '',
+      parentDomain: typeof parentDomain === 'string' ? parentDomain : '',
       ipAddress: ipOf(a) || '',
-      port: m.port != null ? String(m.port) : '',
+      port: port != null ? String(port) : '',
       notes: a.description || '',
     })
     setEditAsset(a)

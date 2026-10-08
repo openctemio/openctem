@@ -194,6 +194,9 @@ type MemberWithUserResponse struct {
 	HomeOrganization string     `json:"home_organization,omitempty"`
 	AccessExpiresAt  *time.Time `json:"access_expires_at,omitempty"`
 	SuspendedReason  string     `json:"suspended_reason,omitempty"`
+	// DomainLapsed: the member's email domain lost its verified SSO proof in
+	// this organization (owners and admins only).
+	DomainLapsed bool `json:"domain_lapsed,omitempty"`
 }
 
 // MemberRBACRoleResponse represents a simplified RBAC role in member response.
@@ -813,6 +816,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 				response[i].MFAStatus = m.MFAStatus
 				response[i].AccessExpiresAt = m.ExpiresAt
 				response[i].SuspendedReason = m.SuspendedReason
+				response[i].DomainLapsed = m.DomainLapsed
 			}
 		}
 
@@ -1838,6 +1842,7 @@ type SecuritySettingsResponse struct {
 	// SSOEnforced is read-only here: set by the platform administrator.
 	SSOEnforced           bool     `json:"sso_enforced"`
 	MFARequired           bool     `json:"mfa_required"`
+	MFARequiredForAdmins  bool     `json:"mfa_required_for_admins"`
 	SessionTimeoutMin     int      `json:"session_timeout_min"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
@@ -1879,6 +1884,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 		Security: &SecuritySettingsResponse{
 			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
+			MFARequiredForAdmins:  s.Security.MFARequiredForAdmins,
 			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
@@ -1997,6 +2003,7 @@ type UpdateSecuritySettingsRequest struct {
 	// silently ignored field would look like it saved.
 	SSOEnforced           *bool    `json:"sso_enforced"`
 	MFARequired           *bool    `json:"mfa_required"`
+	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
@@ -2041,6 +2048,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	clientIP := getClientIP(r)
 	input := tenantapp.UpdateSecuritySettingsInput{
 		MFARequired:           req.MFARequired,
+		MFARequiredForAdmins:  req.MFARequiredForAdmins,
 		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,
 		AllowedDomains:        req.AllowedDomains,
