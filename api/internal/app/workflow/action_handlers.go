@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	workflowdom "github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -450,6 +451,9 @@ func (h *PipelineTriggerHandler) triggerScan(ctx context.Context, input *ActionI
 			TenantID:    input.TenantID.String(),
 			ScanID:      scanID,
 			TriggeredBy: "workflow:" + input.WorkflowID.String(),
+			// The run says an automation started it (research/62 P0-11); the
+			// cause in its context names the automation, its run and the node.
+			TriggerType: scanworkflow.TriggerTypeAutomation,
 			Context:     runContextWithCause(ctx, input.TriggerData),
 		})
 		if err != nil {
