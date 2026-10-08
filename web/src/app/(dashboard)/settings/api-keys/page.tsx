@@ -47,6 +47,7 @@ import {
   useRevokeApiKey,
   useDeleteApiKey,
 } from '@/features/api-keys/api/use-api-keys'
+import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '@/features/api-keys/lib/expiry'
 import type { APIKey } from '@/features/api-keys/types/api-key.types'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -60,14 +61,6 @@ const AVAILABLE_SCOPES = [
   'findings:write',
   'scans:write',
 ]
-
-const EXPIRY_OPTIONS = [
-  { value: '30', label: '30 days' },
-  { value: '90', label: '90 days' },
-  { value: '365', label: '1 year' },
-]
-// Every key expires, at most a year after it is created (the API refuses
-// anything else).
 
 function isExpired(k: APIKey): boolean {
   return !!k.expires_at && new Date(k.expires_at).getTime() < Date.now()
@@ -108,7 +101,7 @@ function GenerateKeyDialog({
 }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [expires, setExpires] = useState('90')
+  const [expires, setExpires] = useState<string>(DEFAULT_API_KEY_EXPIRY_DAYS)
   const [scopes, setScopes] = useState<string[]>(['assets:read', 'findings:read'])
   const { trigger, isMutating } = useCreateApiKey()
 
@@ -131,7 +124,7 @@ function GenerateKeyDialog({
       onOpenChange(false)
       setName('')
       setDescription('')
-      setExpires('90')
+      setExpires(DEFAULT_API_KEY_EXPIRY_DAYS)
       setScopes(['assets:read', 'findings:read'])
     } catch {
       toast.error('Failed to create API key')
@@ -173,7 +166,7 @@ function GenerateKeyDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {EXPIRY_OPTIONS.map((o) => (
+                {API_KEY_EXPIRY_OPTIONS.map((o) => (
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}
                   </SelectItem>

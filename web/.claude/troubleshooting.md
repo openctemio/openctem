@@ -2,19 +2,19 @@
 
 > Common issues and their solutions for Next.js 16 App Router projects.
 
-## 📋 Table of Contents
+## Table of Contents
 
 1. [App Router Issues](#app-router-issues)
 2. [Server Component Issues](#server-component-issues)
 3. [Client Component Issues](#client-component-issues)
 4. [Server Actions Issues](#server-actions-issues)
-5. [Build & Deployment Issues](#build-deployment-issues)
+5. [Build & Deployment Issues](#build--deployment-issues)
 6. [Performance Issues](#performance-issues)
 7. [TypeScript Issues](#typescript-issues)
 
 ---
 
-## 🚀 App Router Issues {#app-router-issues}
+## App Router Issues
 
 ### Issue: "use client" not working
 
@@ -94,7 +94,7 @@ app/
 
 ---
 
-## 🖥️ Server Component Issues {#server-component-issues}
+## Server Component Issues
 
 ### Issue: Can't use hooks in Server Component
 
@@ -170,7 +170,7 @@ export default async function Page() {
 
 ---
 
-## 💻 Client Component Issues {#client-component-issues}
+## Client Component Issues
 
 ### Issue: Hydration mismatch
 
@@ -253,7 +253,7 @@ export default function Page() {
 
 ---
 
-## ⚡ Server Actions Issues {#server-actions-issues}
+## Server Actions Issues
 
 ### Issue: Server Action not revalidating
 
@@ -330,7 +330,7 @@ Ensure form has proper name attributes:
 
 ---
 
-## 🏗️ Build & Deployment Issues {#build-deployment-issues}
+## Build & Deployment Issues
 
 ### Issue: Build fails with "Module not found"
 
@@ -401,7 +401,7 @@ const secret = process.env.API_SECRET
 
 ---
 
-## 🚀 Performance Issues {#performance-issues}
+## Performance Issues
 
 ### Issue: Slow page loads
 
@@ -477,7 +477,7 @@ npm run build
 
 ---
 
-## 📝 TypeScript Issues {#typescript-issues}
+## TypeScript Issues
 
 ### Issue: Type errors in Server Actions
 
@@ -520,7 +520,7 @@ import type { User } from "@/types/user.types"
 
 ---
 
-## 🔧 Debug Tips
+## Debug Tips
 
 ### Enable Logging
 
@@ -562,7 +562,7 @@ export const revalidate = 3600 // seconds
 
 ---
 
-## 🎯 Common Patterns That Work
+## Common Patterns That Work
 
 ### Pattern 1: Hybrid Rendering
 ```tsx
@@ -605,7 +605,7 @@ export function Component({ data }) {
 
 ---
 
-## 📞 Getting Help
+## Getting Help
 
 1. **Check official docs**: [nextjs.org/docs](https://nextjs.org/docs)
 2. **Search GitHub issues**: [github.com/vercel/next.js/issues](https://github.com/vercel/next.js/issues)

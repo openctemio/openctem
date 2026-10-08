@@ -127,6 +127,66 @@ var ecosystemAliases = map[string]Ecosystem{
 	"flutter": EcosystemPub,
 	// R
 	"r": EcosystemCran,
+	// Trivy package types not covered above (trivy fs / repo / image).
+	"uv":              EcosystemPyPI,
+	"bun":             EcosystemNPM,
+	"rustbinary":      EcosystemCargo,
+	"jar":             EcosystemMaven,
+	"pom":             EcosystemMaven,
+	"sbt":             EcosystemMaven,
+	"dotnet-core":     EcosystemNuGet,
+	"packages-props":  EcosystemNuGet,
+	"gemspec":         EcosystemRubyGems,
+	"composer-vendor": EcosystemComposer,
+	"mix-lock":        EcosystemHex,
+}
+
+// purlTypeEcosystems maps a package URL type (pkg:<type>/...) onto our
+// ecosystems. Importers that carry only a PURL (trivy fs components) are
+// classified from it.
+var purlTypeEcosystems = map[string]Ecosystem{
+	"npm":       EcosystemNPM,
+	"maven":     EcosystemMaven,
+	"pypi":      EcosystemPyPI,
+	"golang":    EcosystemGo,
+	"cargo":     EcosystemCargo,
+	"nuget":     EcosystemNuGet,
+	"gem":       EcosystemRubyGems,
+	"composer":  EcosystemComposer,
+	"hex":       EcosystemHex,
+	"cocoapods": EcosystemCocoaPods,
+	"swift":     EcosystemSwiftPM,
+	"pub":       EcosystemPub,
+	"cran":      EcosystemCran,
+}
+
+// EcosystemFromPURL returns the ecosystem a package URL's type names, and
+// false for a type outside our ecosystems (deb, apk, rpm, ...) or a value
+// that is not a package URL.
+func EcosystemFromPURL(purl string) (Ecosystem, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(purl), "pkg:")
+	if !ok {
+		return "", false
+	}
+	typ, _, ok := strings.Cut(rest, "/")
+	if !ok {
+		return "", false
+	}
+	e, ok := purlTypeEcosystems[strings.ToLower(typ)]
+	return e, ok
+}
+
+// ResolveEcosystem is the ecosystem of a dependency from its label, falling
+// back to its package URL when the label is missing or unknown.
+func ResolveEcosystem(label, purl string) Ecosystem {
+	e, _ := ParseEcosystem(label)
+	if e != EcosystemOther {
+		return e
+	}
+	if fromPURL, ok := EcosystemFromPURL(purl); ok {
+		return fromPURL
+	}
+	return EcosystemOther
 }
 
 // ParseEcosystem parses a string into an Ecosystem, normalizing the many

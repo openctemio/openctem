@@ -70,6 +70,13 @@ type Repository interface {
 	// GetLicenseStats retrieves license statistics for a tenant.
 	GetLicenseStats(ctx context.Context, tenantID shared.ID) ([]LicenseStats, error)
 
+	// ListSBOMEntries returns the components the tenant's assets use (one
+	// asset when assetID is set), each with the license strings the tenant
+	// observed for it, ordered by name and version. A non-nil scope keeps
+	// only components used by an asset in the user's data scope. At most
+	// limit entries are returned.
+	ListSBOMEntries(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope, limit int) ([]SBOMEntry, error)
+
 	// ListAssetUsage retrieves the assets that use a given global component
 	// (blast-radius reverse lookup). Joins asset_components × assets,
 	// scoped to the tenant. Returns empty result when the component is not
@@ -163,4 +170,16 @@ func (f Filter) WithHasVulnerabilities(has bool) Filter {
 func (f Filter) WithLicenses(licenses ...string) Filter {
 	f.Licenses = licenses
 	return f
+}
+
+// SBOMEntry is one component of a software bill of materials export.
+type SBOMEntry struct {
+	ID        shared.ID
+	Name      string
+	Version   string
+	Ecosystem Ecosystem
+	PURL      string
+	// Licenses are the license strings the tenant's assets report for it.
+	Licenses           []string
+	VulnerabilityCount int
 }

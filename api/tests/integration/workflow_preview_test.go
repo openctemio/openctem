@@ -30,6 +30,7 @@ func TestWorkflowPreview(t *testing.T) {
 		postgres.NewToolRepository(pg),
 		nil, nil, nil,
 		logger.NewNop(),
+		allowAllTargetChecks()...,
 	)
 
 	targets := make([]string, 0, 30)

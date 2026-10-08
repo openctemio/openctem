@@ -1221,3 +1221,61 @@ func truncateLicenseList(list string) string {
 	}
 	return out
 }
+
+// ListSBOMEntries returns the components the tenant uses for an SBOM export.
+// It starts from the tenant's own asset_components rows (the components table
+// is a global catalog), so another tenant's licenses or components never
+// appear; a non-nil scope keeps only rows of assets in the user's data scope.
+func (r *ComponentRepository) ListSBOMEntries(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope, limit int) ([]component.SBOMEntry, error) {
+	args := []any{tenantID.String()}
+	where := "ac.tenant_id = $1"
+	if assetID != nil {
+		args = append(args, assetID.String())
+		where += fmt.Sprintf(" AND ac.asset_id = $%d", len(args))
+	}
+	if scope != nil {
+		cond, scopeArgs := dataScopeCondAt("ac.asset_id", scope, len(args)+1)
+		where += " AND " + cond
+		args = append(args, scopeArgs...)
+	}
+	args = append(args, limit)
+	query := `
+		SELECT c.id, c.name, COALESCE(c.version, ''), c.ecosystem, c.purl, c.vulnerability_count,
+			COALESCE(string_agg(DISTINCT NULLIF(ac.license, ''), ','), '')
+		FROM asset_components ac
+		JOIN components c ON c.id = ac.component_id
+		WHERE ` + where + `
+		GROUP BY c.id, c.name, c.version, c.ecosystem, c.purl, c.vulnerability_count
+		ORDER BY c.name, c.version, c.id
+		LIMIT $` + fmt.Sprint(len(args))
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list SBOM components: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]component.SBOMEntry, 0, 64)
+	for rows.Next() {
+		var (
+			e        component.SBOMEntry
+			id, eco  string
+			licenses string
+		)
+		if err := rows.Scan(&id, &e.Name, &e.Version, &eco, &e.PURL, &e.VulnerabilityCount, &licenses); err != nil {
+			return nil, fmt.Errorf("failed to scan SBOM component: %w", err)
+		}
+		if e.ID, err = shared.IDFromString(id); err != nil {
+			return nil, fmt.Errorf("invalid component id %q: %w", id, err)
+		}
+		e.Ecosystem = component.Ecosystem(eco)
+		if licenses != "" {
+			e.Licenses = strings.Split(licenses, ",")
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+	return out, nil
+}
