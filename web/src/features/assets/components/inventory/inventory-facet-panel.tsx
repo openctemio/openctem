@@ -14,6 +14,12 @@
  *
  * No per-option counts: the stats counts ignore the other active filters, so
  * they would disagree with the list. Selecting anything resets to page 1.
+ *
+ * Typed mode (research/77): the type's attribute facets (OS family,
+ * provider, issuer, …) come first, from the registry. Enum values are the
+ * registry's, yes/no attributes offer Yes and No, and text or number
+ * attributes list the values the tenant has, most common first. They filter
+ * server-side (`properties=key:value`).
  */
 
 import { useState } from 'react'
@@ -27,7 +33,19 @@ import {
   type MultiFacetDef,
 } from '../../lib/inventory-facets'
 import type { AssetStatsData } from '../../hooks/use-assets'
-import type { InventoryFilters } from '../../lib/inventory-url'
+import { togglePropertyFilter, type InventoryFilters } from '../../lib/inventory-url'
+import type { TypeAttribute } from '@/features/asset-types/lib/type-view'
+
+/** One attribute facet of the typed inventory. */
+export interface AttributeFacet {
+  attribute: TypeAttribute
+  label: string
+  /** Value → count among the type's assets (stats count_by). */
+  counts: Record<string, number>
+}
+
+/** Text and number attributes list at most this many values. */
+const MAX_ATTRIBUTE_VALUES = 20
 
 /** Sections unfolded by default; the rest start folded (a selection unfolds them). */
 const OPEN_BY_DEFAULT = new Set<string>(['types', 'criticalities', 'hasOwner'])
@@ -44,6 +62,8 @@ interface InventoryFacetPanelProps {
   activeCount: number
   onClearAll: () => void
   className?: string
+  /** Typed mode: the type's attribute facets, shown first. */
+  attributeFacets?: AttributeFacet[]
 }
 
 export function InventoryFacetPanel({
@@ -54,6 +74,7 @@ export function InventoryFacetPanel({
   activeCount,
   onClearAll,
   className,
+  attributeFacets = [],
 }: InventoryFacetPanelProps) {
   const facets = groups.flatMap((g) => g.facets)
   // Signals sit right after the "kind" facets: they are what an analyst reaches
@@ -75,6 +96,14 @@ export function InventoryFacetPanel({
 
   return (
     <FacetPanel activeCount={activeCount} onClearAll={onClearAll} className={className}>
+      {attributeFacets.map((f) => (
+        <AttributeFacetSection
+          key={f.attribute.key}
+          facet={f}
+          filters={filters}
+          onChange={onChange}
+        />
+      ))}
       {facets.slice(0, kindCount).map(renderFacet)}
       <SignalsSection filters={filters} onChange={onChange} />
       {facets.slice(kindCount).map(renderFacet)}
@@ -170,6 +199,54 @@ function MultiFacetSection({
         >
           {expanded ? 'Show fewer' : `Show ${hiddenCount} more`}
         </button>
+      )}
+    </FacetSection>
+  )
+}
+
+function AttributeFacetSection({
+  facet,
+  filters,
+  onChange,
+}: {
+  facet: AttributeFacet
+  filters: InventoryFilters
+  onChange: (next: InventoryFilters) => void
+}) {
+  const { attribute, label, counts } = facet
+  const selected = filters.propertiesFilter?.[attribute.key] ?? []
+  let options: { value: string; label: string }[]
+  if (attribute.kind === 'bool') {
+    options = [
+      { value: 'true', label: 'Yes' },
+      { value: 'false', label: 'No' },
+    ]
+  } else if (attribute.kind === 'enum' && attribute.values) {
+    options = attribute.values.map((v) => ({ value: v, label: v }))
+  } else {
+    options = Object.keys(counts)
+      .filter((v) => v !== 'null' && v !== '')
+      .sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0))
+      .slice(0, MAX_ATTRIBUTE_VALUES)
+      .map((v) => ({ value: v, label: v }))
+  }
+  // A value selected from the URL stays visible (and removable).
+  for (const v of selected)
+    if (!options.some((o) => o.value === v)) options.push({ value: v, label: v })
+
+  return (
+    <FacetSection title={label} selectedCount={selected.length} defaultOpen={selected.length > 0}>
+      {options.length === 0 ? (
+        <p className="py-1 text-xs text-muted-foreground">None recorded yet.</p>
+      ) : (
+        options.map((o) => (
+          <FacetOption
+            key={o.value}
+            label={o.label}
+            checked={selected.includes(o.value)}
+            onCheckedChange={() => onChange(togglePropertyFilter(filters, attribute.key, o.value))}
+          />
+        ))
       )}
     </FacetSection>
   )
