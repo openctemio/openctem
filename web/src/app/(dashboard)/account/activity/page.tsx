@@ -1,7 +1,7 @@
 'use client'
 
 import { useDisplayUser } from '@/hooks/use-display-user'
-import { useState } from 'react'
+import { useListParams } from '@/hooks/use-list-params'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -55,7 +55,8 @@ const PER_PAGE = 10
 
 export default function ActivityPage() {
   const user = useDisplayUser()
-  const [page, setPage] = useState(1)
+  // The page lives in the URL (one list convention).
+  const { page, setPage } = useListParams({ defaultPageSize: PER_PAGE })
 
   // Paged on the server (the user-activity endpoint has no category filter,
   // so the old browser-side "type" filter is gone with the browser paging).
