@@ -34,7 +34,9 @@ type Observation struct {
 	ContentType  string
 	AuthState    string
 	Technologies []string
-	Params       []ParamObservation
+	// CatalogKey is the sensitive-path catalog entry the template matches.
+	CatalogKey string
+	Params     []ParamObservation
 	// OutOfScope: the endpoint lies under a scope exclusion. It is stored
 	// for visibility and never targeted or alerted on.
 	OutOfScope bool
@@ -115,6 +117,9 @@ func Observe(e ctis.Endpoint) (Observation, error) {
 		AuthState:    authOf(e.Auth),
 		ContentType:  contentType(e.ContentType),
 		Technologies: technologyNames(e.Technologies),
+	}
+	if c := DefaultCatalog.Match(tmpl); c != nil {
+		obs.CatalogKey = c.Key
 	}
 	if e.StatusCode >= 100 && e.StatusCode <= 599 {
 		obs.StatusCode = e.StatusCode
@@ -253,4 +258,24 @@ func typeHint(h string) string {
 		}
 	}
 	return h
+}
+
+// templatePlaceholders fill a template's typed variables with fixed values
+// of their type: a URL rebuilt from an endpoint never carries a value a
+// scan recorded.
+var templatePlaceholders = map[string]string{
+	"{int}": "1", "{uuid}": "00000000-0000-0000-0000-000000000001", "{date}": "2026-01-01",
+	"{email}": "user@example.com", "{hex}": "0000000000000000", "{token}": "test", "{id}": "test1",
+}
+
+// FillTemplate replaces the typed variables of a path (a template or a
+// masked example) with placeholders of their type.
+func FillTemplate(p string) string {
+	segs := strings.Split(p, "/")
+	for i, s := range segs {
+		if v, ok := templatePlaceholders[s]; ok {
+			segs[i] = v
+		}
+	}
+	return strings.Join(segs, "/")
 }

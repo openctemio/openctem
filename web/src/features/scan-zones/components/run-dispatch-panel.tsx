@@ -64,7 +64,7 @@ export function RunDispatchPanel({ dispatch }: { dispatch: RunDispatch }) {
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {dispatch.sensor_routing && (
           <Badge variant="outline" className="font-normal">
-            {dispatch.sensor_routing === 'platform' ? 'Platform sensors' : 'Your sensors'}
+            {dispatch.sensor_routing === 'platform' ? 'Platform scanning' : 'Your sensors'}
           </Badge>
         )}
         {routing && (

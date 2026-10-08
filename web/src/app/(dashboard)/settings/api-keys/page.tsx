@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { useUrlPagination } from '@/hooks/use-url-pagination'
+import { useListParams } from '@/hooks/use-list-params'
 import { useDebounce } from '@/hooks/use-debounce'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { KeyRound, Plus, Ban, Trash2, Copy, Check } from 'lucide-react'
@@ -338,7 +338,9 @@ function LoadingSkeleton() {
 const API_KEY_PAGE_SIZES = [10, 20, 50, 100]
 
 export default function APIKeysPage() {
-  const { pagination, setPagination, resetPage } = useUrlPagination(API_KEY_PAGE_SIZES, 20)
+  const list = useListParams({ pageSizes: API_KEY_PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
+  const resetPage = useCallback(() => setPage(1), [setPage])
   const [searchParam, setSearchParam] = useUrlFilter('q', '')
   const search = useDebounce(searchParam.trim(), 300)
   const { data, error, isLoading, mutate } = useApiKeys({

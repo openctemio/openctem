@@ -144,7 +144,7 @@ describe('RunStageLanes chunks', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0].textContent).toContain('edge-1')
     expect(rows[0].textContent).toContain('1 chunk(s), 1 done')
-    expect(rows[1].textContent).toContain('Platform sensors')
+    expect(rows[1].textContent).toContain('Platform scanning')
   })
 })
 

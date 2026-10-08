@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
@@ -307,6 +309,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
 		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
@@ -488,8 +491,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ThreatModel:           newThreatModelHandler(svc, log),
 		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log),
 
-		// Platform Stats (tenant-scoped platform sensor statistics)
-		PlatformStats: handler.NewPlatformStatsHandler(svc.Sensor, log),
+		// Platform scanning: the shared platform sensors as a service the
+		// tenant may use, never the sensors themselves.
+		PlatformScanning: handler.NewPlatformScanningHandler(
+			sensor.NewPlatformScanningService(repos.Sensor, app.PlatformSensorsAllowed), log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),

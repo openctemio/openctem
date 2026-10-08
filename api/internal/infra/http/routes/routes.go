@@ -119,6 +119,7 @@ type Handlers struct {
 
 	// CTEM Discovery handlers
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
+	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
 	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
@@ -235,7 +236,7 @@ type Handlers struct {
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
 
 	// Platform Stats handler (tenant-scoped platform sensor stats)
-	PlatformStats *handler.PlatformStatsHandler
+	PlatformScanning *handler.PlatformScanningHandler
 
 	// WebSocket handler for real-time communication
 	WebSocket *websocket.Handler
@@ -469,6 +470,11 @@ func Register(
 	// Asset Service routes (CTEM Discovery - network services on assets)
 	if h.AssetService != nil {
 		registerAssetServiceRoutes(router, h.AssetService, authMiddleware, userSync)
+	}
+
+	// Web surface: endpoints under their origin asset (RFC-056)
+	if h.WebEndpoint != nil {
+		registerWebEndpointRoutes(router, h.WebEndpoint, authMiddleware, userSync)
 	}
 
 	// Asset State History routes (CTEM Discovery - shadow IT detection, audit)
@@ -890,8 +896,8 @@ func Register(
 	}
 
 	// Platform Stats routes (tenant-scoped platform sensor statistics)
-	if h.PlatformStats != nil {
-		registerPlatformStatsRoutes(router, h.PlatformStats, authMiddleware, userSync)
+	if h.PlatformScanning != nil {
+		registerPlatformScanningRoutes(router, h.PlatformScanning, authMiddleware, userSync)
 	}
 
 	// ==========================================================================

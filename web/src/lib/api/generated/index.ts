@@ -155,6 +155,19 @@ export type ScopeBulkOperationResponse =
 // Asset state history ("What changed")
 export type StateChangeResponse = Schemas['internal_infra_http_handler.StateChangeResponse']
 
+// Web surface (RFC-056): endpoints under origins, path patterns, the change feed
+export type WebEndpointResponse = Schemas['internal_infra_http_handler.WebEndpointResponse']
+export type WebEndpointParamResponse =
+  Schemas['internal_infra_http_handler.WebEndpointParamResponse']
+export type WebEndpointStatsResponse =
+  Schemas['internal_infra_http_handler.WebEndpointStatsResponse']
+export type WebOriginResponse = Schemas['internal_infra_http_handler.WebOriginResponse']
+export type WebPathPatternResponse = Schemas['internal_infra_http_handler.WebPathPatternResponse']
+export type WebEndpointEventResponse =
+  Schemas['internal_infra_http_handler.WebEndpointEventResponse']
+export type WebPathCatalogEntry =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_webendpoint.CatalogEntry']
+
 // Admin console: an organization's audit hash-chain
 export type AdminAuditChainStatusResponse =
   Schemas['internal_infra_http_handler.AdminAuditChainStatusResponse']

@@ -62,6 +62,7 @@ import {
   DEFAULT_SCAN_WORKFLOW_SETTINGS,
 } from '@/lib/api'
 import { useToolAvailability, useToolsWithConfig } from '@/lib/api/tool-hooks'
+import { usePlatformScanning } from '@/lib/api/platform-hooks'
 import { availabilityByName, toolUnavailableReason } from '@/features/tools/lib/availability'
 import type { ToolWithConfig } from '@/lib/api/tool-types'
 
@@ -344,6 +345,7 @@ export function ScanWorkflowForm({
   const [maxParallelSteps, setMaxParallelSteps] = useState(
     workflow?.settings?.max_parallel_steps || 3
   )
+  const { offered: platformOffered } = usePlatformScanning()
   const [sensorPreference, setSensorPreference] = useState<ScanWorkflowSensorPreference>(
     workflow?.settings?.sensor_preference || 'auto'
   )
@@ -781,7 +783,12 @@ export function ScanWorkflowForm({
                 <SelectValue placeholder="Select preference" />
               </SelectTrigger>
               <SelectContent>
-                {SCAN_WORKFLOW_SENSOR_PREFERENCES.map((pref) => (
+                {SCAN_WORKFLOW_SENSOR_PREFERENCES.filter(
+                  // Platform scanning is a choice only where the organization
+                  // may use it (or the workflow already chose it).
+                  (pref) =>
+                    pref !== 'platform' || platformOffered || sensorPreference === 'platform'
+                ).map((pref) => (
                   <SelectItem key={pref} value={pref}>
                     {SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS[pref]}
                   </SelectItem>

@@ -208,8 +208,8 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 //     revoke credentials (it could otherwise extend its own life).
 //   - /api/v1/me, /api/v1/notifications, /api/v1/ws: the signed-in user's own
 //     surface (permissions bootstrap, inbox, websocket).
-//   - /api/v1/platform: its /stats route has no permission gate, so a key's
-//     scopes could not bound it.
+//   - /api/v1/platform: platform scanning as the signed-in organization sees
+//     it in the console; automation has no use for it.
 //   - /api/v1/users: account management, including /users/{id}/roles.
 //   - /api/v1/auth, /api/v1/admin, /api/v1/tenants, /api/v1/invitations:
 //     sign-in, the platform admin console, organization and membership

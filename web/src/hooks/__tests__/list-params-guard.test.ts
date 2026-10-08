@@ -10,21 +10,8 @@ import { join, relative, sep } from 'node:path'
  * - a prefixed list parameter (`run_page`, `x_per_page`, `y_sort`), and
  * - a page reading `page` / `per_page` itself through useUrlFilter or
  *   useUrlFilterNumber instead of the shared hook.
- *
- * PENDING lists the pages still to move to useListParams; it only shrinks.
  */
 const ROOT = join(__dirname, '..', '..', '..')
-const PENDING = new Set<string>([
-  'src/app/(dashboard)/settings/audit-log/page.tsx',
-  'src/app/(dashboard)/(scoping)/scope/page.tsx',
-  'src/app/(dashboard)/(scoping)/attack-surface/external/page.tsx',
-  'src/app/(dashboard)/(discovery)/assets/changes/page.tsx',
-  'src/app/(dashboard)/(discovery)/assets/suggestions/page.tsx',
-  'src/app/(dashboard)/(discovery)/exposures/page.tsx',
-  'src/app/(dashboard)/findings/page.tsx',
-  'src/app/(admin-console)/admin/(console)/scanning/target-mappings/page.tsx',
-  'src/hooks/use-url-pagination.ts',
-])
 
 const PREFIXED = /['"`](?!per_page['"`])[a-z][a-z0-9_]*_(page|per_page|sort)['"`]/
 const RAW_PAGING = /useUrlFilter(Number)?\(\s*['"`](page|per_page)['"`]/
@@ -57,20 +44,7 @@ describe('list URL parameters', () => {
   })
 
   it('page and per_page go through useListParams', () => {
-    const hits = files
-      .filter((abs) => !PENDING.has(rel(abs)) && RAW_PAGING.test(readFileSync(abs, 'utf8')))
-      .map(rel)
+    const hits = files.filter((abs) => RAW_PAGING.test(readFileSync(abs, 'utf8'))).map(rel)
     expect(hits).toEqual([])
-  })
-
-  it('has no pending entry that already moved', () => {
-    const stale = [...PENDING].filter((p) => {
-      try {
-        return !RAW_PAGING.test(readFileSync(join(ROOT, p), 'utf8'))
-      } catch {
-        return true
-      }
-    })
-    expect(stale).toEqual([])
   })
 })

@@ -52,6 +52,7 @@ import { canonicalAuditMetadataKey, canonicalAuditResourceType } from '@/lib/api
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 const SORTABLE = ['logged_at', 'action', 'resource_type', 'result', 'severity']
@@ -112,26 +113,11 @@ export default function AuditLogPage() {
   const [severityParam, setSeverityParam] = useUrlFilter('severity', 'all')
   const [hideSystemParam, setHideSystemParam] = useUrlFilter('hide_system', 'false')
   const [sortParam, setSortParam] = useUrlFilter('sort', '')
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '20')
+  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
 
   const debouncedSearch = useDebounce(searchTerm, 300)
-
-  const pagination = useMemo(
-    () => ({
-      pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 20,
-    }),
-    [pageParam, perPageParam]
-  )
-  const setPagination = useCallback(
-    (next: { pageIndex: number; pageSize: number }) => {
-      setPageParam(String(next.pageIndex + 1))
-      setPerPageParam(String(next.pageSize))
-    },
-    [setPageParam, setPerPageParam]
-  )
 
   // `sort=field:dir` in the URL ↔ the table's sorting state.
   const sorting = useMemo<SortingState>(() => {
@@ -142,9 +128,9 @@ export default function AuditLogPage() {
     (next: SortingState) => {
       const s = next[0]
       setSortParam(s ? `${s.id}:${s.desc ? 'desc' : 'asc'}` : '')
-      setPageParam('1')
+      setPage(1)
     },
-    [setSortParam, setPageParam]
+    [setSortParam, setPage]
   )
 
   const resultFilter = RESULT_OPTIONS.includes(resultParam as AuditResult)
@@ -272,7 +258,7 @@ export default function AuditLogPage() {
     setResultParam('all')
     setSeverityParam('all')
     setHideSystemParam('false')
-    setPageParam('1')
+    setPage(1)
   }
 
   const toolbarStart = (
@@ -284,7 +270,7 @@ export default function AuditLogPage() {
           value={searchTerm}
           onChange={(e) => {
             setSearchTerm(e.target.value)
-            setPageParam('1')
+            setPage(1)
           }}
           className="ps-9"
           aria-label="Search audit log"
@@ -294,7 +280,7 @@ export default function AuditLogPage() {
         value={resultFilter ?? 'all'}
         onValueChange={(value) => {
           setResultParam(value)
-          setPageParam('1')
+          setPage(1)
         }}
       >
         <SelectTrigger className="h-9 w-[130px]" aria-label="Result">
@@ -313,7 +299,7 @@ export default function AuditLogPage() {
         value={severityFilter ?? 'all'}
         onValueChange={(value) => {
           setSeverityParam(value)
-          setPageParam('1')
+          setPage(1)
         }}
       >
         <SelectTrigger className="h-9 w-[140px]" aria-label="Severity">
@@ -344,7 +330,7 @@ export default function AuditLogPage() {
           checked={hideSystem}
           onCheckedChange={(checked) => {
             setHideSystemParam(checked ? 'true' : 'false')
-            setPageParam('1')
+            setPage(1)
           }}
         />
         <Label

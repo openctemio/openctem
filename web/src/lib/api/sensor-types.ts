@@ -306,7 +306,6 @@ export interface Sensor {
   state?: SensorState
   health_reasons?: SensorHealthReason[]
   version_status?: SensorVersionStatus
-  is_platform_sensor?: boolean
   /** Protocol telemetry (RFC-029); absent on APIs without it. */
   protocol?: SensorProtocol | null
   /** Scanner content (RFC-031); absent on APIs without it. */
