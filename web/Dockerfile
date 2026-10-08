@@ -8,7 +8,7 @@
 #   OR: docker build --target development -t ui:dev .
 #
 # Production:
-#   docker-compose -f docker-compose.prod.yml up --build
+#   api/deploy/docker-compose.yml (the whole stack behind one HTTPS port)
 #   OR: docker build --target production -t ui:prod .
 # ==============================================================================
 
@@ -144,7 +144,7 @@ COPY --from=builder /app/public ./public
 # with a read-only root filesystem when those two are writable mounts:
 #   read_only: true
 #   tmpfs: [/tmp, "/app/.next/cache:uid=1001,gid=1001"]
-# (web/docker-compose.prod.yml and api/deploy/docker-compose.yml do this).
+# (api/deploy/docker-compose.yml does this).
 RUN mkdir -p .next/cache && chown -R nextjs:nodejs .next
 
 # Copy standalone build output
