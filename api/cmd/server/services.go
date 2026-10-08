@@ -1368,6 +1368,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Wire the finding counter so campaign progress (finding_count/resolved_count/
 	// progress) is computed from live finding data instead of staying at zero.
 	s.RemediationCampaign.SetFindingCounter(repos.Finding)
+	s.RemediationCampaign.SetFindingLister(repos.Finding)
 	// A restricted reader sees progress over their own findings (L-18).
 	s.RemediationCampaign.SetDataScope(s.DataScope)
 	// Creates, edits, status changes and deletes go to audit_logs.
