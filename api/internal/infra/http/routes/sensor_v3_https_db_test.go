@@ -66,6 +66,13 @@ type v3Sensor struct {
 // re-check (0: 30 s, so only a wake can deliver an event sooner).
 func newV3Harness(t *testing.T, recheck ...time.Duration) *v3Harness {
 	t.Helper()
+	return newV3HarnessWith(t, nil, recheck...)
+}
+
+// newV3HarnessWith is newV3Harness with command service options (the
+// claim-time scope re-check).
+func newV3HarnessWith(t *testing.T, opts []command.Option, recheck ...time.Duration) *v3Harness {
+	t.Helper()
 	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping protocol v3 test")
@@ -91,7 +98,7 @@ func newV3Harness(t *testing.T, recheck ...time.Duration) *v3Harness {
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
 	cmdRepo := postgres.NewCommandRepository(db)
-	cmdSvc := command.NewService(cmdRepo, log)
+	cmdSvc := command.NewService(cmdRepo, log, opts...)
 	sensorSvc.SetCancelFinder(cmdRepo)
 
 	ih := handler.NewIngestHandler(ingestSvc, sensorSvc, log)

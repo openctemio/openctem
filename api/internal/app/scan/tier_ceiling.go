@@ -16,6 +16,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -25,6 +28,32 @@ import (
 // stages; an unknown tool is t1).
 func ProbeTier(tool string) scopedom.Tier {
 	return scopedom.Tier(stage.ProbeTier(tool))
+}
+
+// scanDispatchGate is the gate record of a single-scanner run's commands, for
+// the claim-time re-check: the scanner's tier, the run actor's act scope (the
+// person who triggered it, else the scan's owner), and the loose ownership
+// rule of a passive or takeover-only probe. It never asks more than the
+// trigger checked (resolveScanTargets).
+func scanDispatchGate(sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
+	tier := ProbeTier(sc.ScannerName)
+	g := &command.DispatchGate{
+		Tier:     int(tier),
+		Passive:  tier <= scopedom.TierPassive || IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig),
+		ActScope: true,
+	}
+	recorded, _ := run.Context[RunContextKeyActor].(string)
+	actor := userIDPtr(recorded)
+	if actor == nil {
+		actor = userIDPtr(run.TriggeredBy)
+	}
+	if actor == nil {
+		actor = sc.CreatedBy
+	}
+	if actor != nil && !actor.IsZero() {
+		g.Actor = actor.String()
+	}
+	return g
 }
 
 // tierExceeded asks the ownership gate which targets exceed their ceiling
