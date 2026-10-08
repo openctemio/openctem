@@ -51,6 +51,14 @@ const (
 
 // StepOutput is one asset a stage of a run produced, as the inventory has
 // it now.
+// StepOutputCount is how many live assets of one type a step run of a run
+// produced (the run map's per-step outputs).
+type StepOutputCount struct {
+	StepRunID shared.ID
+	AssetType string
+	Count     int
+}
+
 type StepOutput struct {
 	StepRunID shared.ID
 	AssetID   shared.ID
@@ -104,6 +112,10 @@ type HopRepository interface {
 	// ListStepOutputs returns up to limit live assets the given step runs of
 	// the run produced, and how many there are in all.
 	ListStepOutputs(ctx context.Context, tenantID, runID shared.ID, stepRunIDs []shared.ID, limit int) ([]StepOutput, int, error)
+	// CountStepOutputs counts, per step run and asset type, the live assets
+	// the run's step runs produced. A non-nil scope counts only the assets
+	// the caller may see.
+	CountStepOutputs(ctx context.Context, tenantID, runID shared.ID, scope *shared.DataScope) ([]StepOutputCount, error)
 	// PendingStepIngest reports whether a sensor report of any command of
 	// the given step runs is still being received or ingested.
 	PendingStepIngest(ctx context.Context, tenantID shared.ID, stepRunIDs []shared.ID) (bool, error)
