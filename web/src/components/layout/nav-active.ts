@@ -7,7 +7,7 @@ import type { NavItem, NavLink, NavSectionLink } from '@/components/types'
 
 /**
  * A nav url is active for the current path on an exact match OR a child route
- * (`/assets/repositories` is active on `/assets/repositories/<id>`, `/exposures`
+ * (`/assets` is active on `/assets/<id>`, `/exposures`
  * on `/exposures/secrets`), but never on a mere string prefix (`/scans` is NOT
  * active on `/scan-profiles`).
  */

@@ -129,8 +129,7 @@ func (r *FindingRepository) MarkCoverageNotObserved(ctx context.Context, tenantI
 		WHERE f.tenant_id = $1
 			AND f.id = ANY($2::uuid[])
 			AND f.branch_id IS NULL
-			AND f.status IN `+coverageOpenStatuses+`
-			AND f.status <> 'not_observed'
+			AND f.status IN `+staleFromSQL+`
 			AND f.source NOT IN `+coverageProtectedSources+`
 		RETURNING f.id::text`, tenantID.String(), pq.Array(idStrs))
 	if err != nil {
