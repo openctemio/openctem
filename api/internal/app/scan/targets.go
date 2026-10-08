@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -63,7 +63,7 @@ type resolvedTargets struct {
 	// (RFC-054 §4.2 step 6, tier_ceiling.go).
 	TierExceeded int
 	// InternalOutsideZones counts internal-address targets left out because
-	// no scan zone of the tenant covers them (internal_targets.go).
+	// no scan zone of the tenant covers them (refuseInternalOutsideZones).
 	InternalOutsideZones int
 	Warnings             []string
 }
@@ -71,22 +71,25 @@ type resolvedTargets struct {
 // resolveScanTargets builds the target list server-side: the scan's direct
 // targets plus the members of every one of its asset groups (sensors do not
 // resolve asset groups themselves, so a group-only scan used to dispatch
-// nothing), deduplicated, minus every target matching an active scope
-// exclusion. Exclusions are enforced here, on the server, for every scan, and
-// a failed exclusion lookup stops the dispatch (fail closed) instead of
-// scanning everything. The per-run cap counts all groups together.
+// nothing), deduplicated, then puts it through the one target gate
+// (ResolveDispatchTargets): scope exclusions, ownership, the act scope of
+// whoever runs the scan, the private-range policy and the tier ceiling. A
+// check that cannot run (a failed or unwired lookup) stops the dispatch
+// (fail closed) instead of scanning everything. The per-run cap counts all
+// groups together.
 //
 // A group member is one asset, identified by its id. It is dispatched by name,
 // but exclusions are tested against every value that names it (its addresses
 // and repository URLs too), so a host whose address is excluded is skipped.
-// Archived members are not scanned.
+// Archived members are not scanned. Zone routing is planned by the trigger
+// itself (planZoneDispatch).
 func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resolvedTargets, error) {
-	seen := make(map[string]int) // lower-cased target -> index in candidates
-	var candidates []scope.ExclusionCandidate
-	names := make(map[shared.ID]string)
+	seen := make(map[string]int) // lower-cased target -> index in names
+	var names []string
+	assets := make(map[string]DispatchAsset)
 	var warnings []string
 	archived := 0
-	types := make(map[shared.ID]asset.TypeRef)
+	types := make(map[string]asset.TypeRef) // member name -> stored type
 	// A single-scanner run hands every target to one tool: members whose
 	// type it cannot scan are left out here. A workflow gates each step at
 	// its own dispatch (FilterStepTargets).
@@ -95,39 +98,45 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		return nil, err
 	}
 
-	add := func(id shared.ID, value string) {
+	add := func(value string) bool {
 		v := strings.TrimSpace(value)
 		if v == "" {
-			return
+			return false
 		}
 		if _, dup := seen[strings.ToLower(v)]; dup {
-			return
+			return false
 		}
-		seen[strings.ToLower(v)] = len(candidates)
-		candidates = append(candidates, scope.ExclusionCandidate{ID: id, Values: []string{v}})
-		names[id] = v
+		seen[strings.ToLower(v)] = len(names)
+		names = append(names, v)
+		return true
 	}
-	// alsoMatch adds an asset's other values to the candidate dispatched
-	// under its name, whichever came first (a direct target with the same
-	// name included), so an exclusion of any of them removes the target.
+	// alsoMatch adds an asset's other values to the target dispatched under
+	// its name, whichever came first (a direct target with the same name
+	// included), so an exclusion of any of them removes the target. A direct
+	// target stays a typed target: its ownership and act scope are decided
+	// by name.
 	alsoMatch := func(name string, values []string) {
 		i, ok := seen[strings.ToLower(strings.TrimSpace(name))]
 		if !ok {
 			return
 		}
+		a := assets[names[i]]
 		for _, v := range values {
 			if v = strings.TrimSpace(v); v != "" && !strings.EqualFold(v, strings.TrimSpace(name)) {
-				candidates[i].Values = append(candidates[i].Values, v)
+				a.AlsoMatch = append(a.AlsoMatch, v)
 			}
+		}
+		if len(a.IDs) > 0 || len(a.AlsoMatch) > 0 {
+			assets[names[i]] = a
 		}
 	}
 
 	for _, t := range sc.Targets {
-		add(shared.NewID(), t)
+		add(t)
 	}
-	// Group members, by asset id, for the attribution gate. A member whose
-	// name is also a direct target was added as the direct target first.
-	memberIDs := map[shared.ID]bool{}
+	// Group members, by asset id, for the ownership and act-scope checks. A
+	// member whose name is also a direct target was added as the direct
+	// target first.
 	if s.assetGroupRepo != nil {
 		listed := make(map[shared.ID]bool)
 		for _, groupID := range sc.GetAllAssetGroupIDs() {
@@ -147,72 +156,69 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 				if !gate.admits(m.Type) {
 					continue
 				}
-				before := len(candidates)
-				add(m.ID, m.Name)
-				if len(candidates) > before {
-					memberIDs[m.ID] = true
-					types[m.ID] = m.Type
+				if add(m.Name) {
+					name := names[len(names)-1]
+					assets[name] = DispatchAsset{IDs: []string{m.ID.String()}}
+					types[name] = m.Type
 				}
 				alsoMatch(m.Name, m.MatchValues)
 			}
-			// Bound the work before the exclusion lookup: exclusions only
-			// remove targets, so far more candidates than the cap cannot fit.
-			if len(candidates) > 2*maxResolvedTargets {
+			// Bound the work before the checks: they only remove targets,
+			// so far more candidates than the cap cannot fit.
+			if len(names) > 2*maxResolvedTargets {
 				return nil, fmt.Errorf("%w: scan resolves to more than %d targets, more than the %d allowed per run",
-					shared.ErrValidation, len(candidates), maxResolvedTargets)
+					shared.ErrValidation, len(names), maxResolvedTargets)
 			}
 		}
 	}
 
-	excluded := map[shared.ID]bool{}
-	if s.scopeExclusions != nil && len(candidates) > 0 {
-		var err error
-		excluded, err = s.scopeExclusions.ExcludedTargets(ctx, sc.TenantID.String(), candidates)
-		if err != nil {
-			return nil, fmt.Errorf("scope exclusion check failed, scan not dispatched: %w", err)
-		}
+	// A workflow (no scanner) is tier-checked per step, at its dispatch.
+	tier := scopedom.TierPassive
+	if sc.ScannerName != "" {
+		tier = ProbeTier(sc.ScannerName)
 	}
-
-	blocked, err := s.blockedCandidates(ctx, sc.TenantID, candidates, names, memberIDs, excluded, IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig))
+	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
+		TenantID:               sc.TenantID,
+		Targets:                names,
+		Assets:                 assets,
+		ActScope:               true,
+		FallbackUser:           sc.CreatedBy,
+		Tier:                   &tier,
+		AllowNonNetworkTargets: true,
+		SkipZoneRouting:        true,
+		TakeoverOnly:           IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig),
+		ActScopeAssetsByID:     true,
+		MaxTargets:             2 * maxResolvedTargets,
+		Path:                   "scan_run",
+	})
 	if err != nil {
-		return nil, err
-	}
-
-	outOfScope, err := s.runActScopeSkips(ctx, sc, candidates, names, memberIDs, excluded, blocked)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("scan not dispatched: %w", err)
 	}
 
 	if archived > 0 {
 		warnings = append(warnings, fmt.Sprintf("%d archived asset(s) in the group(s) were skipped", archived))
 	}
-	out := &resolvedTargets{Targets: make([]string, 0, len(candidates)), Archived: archived, Warnings: warnings}
+	out := &resolvedTargets{
+		Targets:       append(make([]string, 0, len(gated.Allowed)), gated.Allowed...),
+		Excluded:      len(gated.Excluded),
+		ExcludedNames: gated.Excluded,
+		Archived:      archived,
+		Warnings:      warnings,
+	}
 	if n := gate.total(); n > 0 {
 		out.Incompatible = n
 		out.IncompatibleReason = gate.describe()
 		out.Warnings = append(out.Warnings, fmt.Sprintf("%d asset(s) in the group(s) were skipped: %s", n, out.IncompatibleReason))
 	}
-	for _, c := range candidates {
-		if excluded[c.ID] {
-			out.Excluded++
-			out.ExcludedNames = append(out.ExcludedNames, names[c.ID])
-			continue
-		}
-		if state, no := blocked[c.ID.String()]; no {
-			out.Unconfirmed++
-			s.logRefusedTarget(ctx, sc.TenantID, "scan_run", names[c.ID], state)
-			continue
-		}
-		if outOfScope[c.ID] {
-			out.OutOfScope++
-			continue
-		}
-		out.Targets = append(out.Targets, names[c.ID])
-		if ref, typed := types[c.ID]; typed && ref.Type != "" {
+	if err := countRefusals(out, gated.Refused); err != nil {
+		return nil, err
+	}
+	for _, t := range out.Targets {
+		if ref, typed := types[t]; typed && ref.Type != "" {
 			if out.TargetTypes == nil {
 				out.TargetTypes = make(map[string]string)
 			}
-			out.TargetTypes[names[c.ID]] = typeLabel(ref)
+			out.TargetTypes[t] = typeLabel(ref)
 		}
 	}
 	if out.OutOfScope > 0 {
@@ -223,11 +229,14 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		out.Warnings = append(out.Warnings, fmt.Sprintf(
 			"%d target(s) were skipped: %s", out.Unconfirmed, ReasonOwnershipNotConfirmed))
 	}
-	if err := s.dropInternalOutsideZones(ctx, sc.TenantID, out); err != nil {
-		return nil, err
+	if out.InternalOutsideZones > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d internal address target(s) were skipped: %s", out.InternalOutsideZones, ReasonInternalOutsideZones))
 	}
-	if err := s.dropTierExceeded(ctx, sc.TenantID, sc.ScannerName, out); err != nil {
-		return nil, err
+	if out.TierExceeded > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d target(s) were skipped: %s runs %s probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Targets)",
+			out.TierExceeded, sc.ScannerName, tier))
 	}
 	if len(out.Targets) > maxResolvedTargets {
 		return nil, fmt.Errorf("%w: scan resolves to %d targets, more than the %d allowed per run",
@@ -242,6 +251,28 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		return nil, tooManyJobsError(sc, len(out.Targets))
 	}
 	return out, nil
+}
+
+// countRefusals counts the gate's refusals of a run by check. The gate runs
+// with the validator off and zone routing left to the trigger, so a refusal
+// is ownership, act scope, the private-range rule or the tier ceiling; any
+// other stops the run (a check this count does not know of).
+func countRefusals(out *resolvedTargets, refused []RefusedTarget) error {
+	for _, r := range refused {
+		switch {
+		case r.Reason == ReasonOwnershipNotConfirmed:
+			out.Unconfirmed++
+		case r.Reason == ReasonInternalOutsideZones && r.Code == scopedom.RefusalZoneNone:
+			out.InternalOutsideZones++
+		case r.Code == scopedom.RefusalTierExceeds:
+			out.TierExceeded++
+		case r.Code == scopedom.RefusalOutOfDataScope, r.Code == scopedom.RefusalNotAnAsset, r.Code == scopedom.RefusalNoEntry:
+			out.OutOfScope++
+		default:
+			return fmt.Errorf("scan not dispatched: target refused with an unexpected code %q", r.Code)
+		}
+	}
+	return nil
 }
 
 // applyTargetsToPayload writes the dispatch targets in the protocol-v1 shape

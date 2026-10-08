@@ -131,6 +131,6 @@ func newScanServiceWithRepo(repo scan.Repository, deps *testScanServiceDeps) *sc
 		deps.sensorSelector,
 		deps.secValidator,
 		logger.NewNop(),
-		scanservice.WithAuditService(deps.auditSvc),
+		allowAllTargetChecks(scanservice.WithAuditService(deps.auditSvc))...,
 	)
 }
