@@ -260,7 +260,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err != nil {
 		return nil, shared.NewDomainError(
 			"PIPELINE_NOT_FOUND",
-			fmt.Sprintf("ScanRun template '%s' not found. It may have been deleted.", sc.ScanWorkflowID.String()),
+			fmt.Sprintf("Scan workflow '%s' not found. It may have been deleted.", sc.ScanWorkflowID.String()),
 			shared.ErrNotFound,
 		)
 	}
@@ -273,7 +273,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if !template.IsActive {
 		return nil, shared.NewDomainError(
 			"PIPELINE_DISABLED",
-			fmt.Sprintf("ScanRun template '%s' is disabled. Please enable it or use a different pipeline.", template.Name),
+			fmt.Sprintf("Scan workflow '%s' is disabled. Enable it or choose another scan workflow.", template.Name),
 			shared.ErrValidation,
 		)
 	}
@@ -295,7 +295,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if len(steps) == 0 {
 		return nil, shared.NewDomainError(
 			"PIPELINE_EMPTY",
-			fmt.Sprintf("ScanRun '%s' has no steps. Please add at least one step.", template.Name),
+			fmt.Sprintf("Scan workflow '%s' has no steps. Add at least one step.", template.Name),
 			shared.ErrValidation,
 		)
 	}
@@ -370,7 +370,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// Create scan run
 	run, err := scanrun.NewRun(template.ID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pipeline run: %w", err)
+		return nil, fmt.Errorf("failed to create scan run: %w", err)
 	}
 	run.FreezeOverride = override
 	run.SetTotalSteps(len(steps))
@@ -1193,7 +1193,7 @@ func (s *Service) validateWorkflowStepTools(ctx context.Context, sc *scan.Scan) 
 	if sc.ScanWorkflowID == nil {
 		return shared.NewDomainError(
 			"PIPELINE_NOT_SET",
-			"Workflow scan has no pipeline configured",
+			"Workflow scan has no scan workflow configured",
 			shared.ErrValidation,
 		)
 	}
@@ -1220,7 +1220,7 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 		if err != nil {
 			return shared.NewDomainError(
 				"TOOL_NOT_FOUND",
-				fmt.Sprintf("Tool '%s' used by step '%s' is no longer available. Please update the pipeline.", step.Tool, step.StepKey),
+				fmt.Sprintf("Tool '%s' used by step '%s' is no longer available. Update the scan workflow.", step.Tool, step.StepKey),
 				shared.ErrValidation,
 			)
 		}
@@ -1264,7 +1264,7 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 	default:
 		return shared.NewDomainError(
 			"STEP_INVALID",
-			fmt.Sprintf("Step '%s' has no tool or capabilities configured. Please edit the pipeline and configure a scanner for this step.", step.StepKey),
+			fmt.Sprintf("Step '%s' has no tool or capabilities configured. Edit the scan workflow and configure a scanner for this step.", step.StepKey),
 			shared.ErrValidation,
 		)
 	}
