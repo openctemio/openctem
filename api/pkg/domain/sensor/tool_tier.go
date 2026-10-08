@@ -18,6 +18,7 @@ package sensor
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/openctemio/ctis/capability"
 
@@ -33,13 +34,37 @@ const (
 	ToolTrustUnverified = "unverified"
 )
 
-// ToolTrust is the trust level of a tool from its reported contract; ""
-// for a tool without a contract (a sensor older than the tool contract).
-func ToolTrust(c *ToolContract) string {
+// builtinTools are the tools compiled into a released sensor (the sensor's
+// "tools manifests") and the SDK's file importer. Keep in step with the
+// sensor's built-in tool list.
+var builtinTools = map[string]bool{
+	"betterleaks": true, "codeql": true, "dnsx": true, "httpx": true, "katana": true,
+	"naabu": true, "nuclei": true, "nuclei-validate": true, "semgrep": true,
+	"subfinder": true, "trivy": true, "file-import": true,
+}
+
+// IsBuiltinTool reports whether name is a tool the platform knows a
+// released sensor compiles in.
+func IsBuiltinTool(name string) bool {
+	return builtinTools[strings.ToLower(strings.TrimSpace(CanonicalTool(name)))]
+}
+
+// builtinOrigin reports whether the platform honors a contract's
+// "builtin" origin for the tool name: the origin is a sensor claim, so it
+// counts only for a tool a released sensor compiles in. Any other tool that
+// claims it is treated as operator-installed (unverified, T2).
+func builtinOrigin(name string, c *ToolContract) bool {
+	return c != nil && c.Origin == ToolOriginBuiltin && IsBuiltinTool(name)
+}
+
+// ToolTrust is the trust level of the tool name from its reported
+// contract; "" for a tool without a contract (a sensor older than the tool
+// contract).
+func ToolTrust(name string, c *ToolContract) string {
 	switch {
 	case c == nil:
 		return ""
-	case c.Origin == ToolOriginBuiltin:
+	case builtinOrigin(name, c):
 		return ToolTrustBuiltin
 	default:
 		return ToolTrustUnverified
@@ -92,7 +117,7 @@ func contractTier(tier int, job Job, c *ToolContract) int {
 		}
 		return tier
 	}
-	if c.Origin != ToolOriginBuiltin || declaresSideEffects(c) {
+	if !builtinOrigin(job.Tool, c) || declaresSideEffects(c) {
 		return TierIntrusive
 	}
 	if !known {
