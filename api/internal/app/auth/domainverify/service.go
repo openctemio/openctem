@@ -22,6 +22,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
+	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -53,24 +54,6 @@ func NewNetResolver() *NetResolver {
 // LookupTXT resolves TXT records for name.
 func (n *NetResolver) LookupTXT(ctx context.Context, name string) ([]string, error) {
 	return n.r.LookupTXT(ctx, name)
-}
-
-// blockedDomains are shared/public consumer providers that no single tenant can
-// own — allowing them would let any tenant auto-join every consumer-mail user.
-var blockedDomains = map[string]bool{
-	"onmicrosoft.com": true,
-	"microsoft.com":   true,
-	"gmail.com":       true,
-	"googlemail.com":  true,
-	"outlook.com":     true,
-	"hotmail.com":     true,
-	"yahoo.com":       true,
-	"icloud.com":      true,
-	"proton.me":       true,
-	"protonmail.com":  true,
-	"aol.com":         true,
-	"live.com":        true,
-	"msn.com":         true,
 }
 
 // Service manages verified domains and answers the JIT gate query.
@@ -116,16 +99,37 @@ func expectedTXTValue(token string) string {
 	return txtValuePrefix + token
 }
 
-// isBlocked reports whether a normalized domain is a shared/public consumer
-// domain (exact match) or any *.onmicrosoft.com tenant.
+// isBlocked reports whether no single organization can own a normalized
+// domain: a public suffix or a name under a shared platform suffix
+// (github.io), a free consumer mailbox provider, or a disposable-address
+// service. Allowing one would let an organization auto-join every user of it.
 func isBlocked(domain string) bool {
-	if blockedDomains[domain] {
-		return true
+	return emaildomain.ClaimRefusal(domain) != emaildomain.ReasonNone
+}
+
+// claimRefusal enforces that an SSO domain is claimed by one organization,
+// platform-wide. It returns ErrDomainClaimed when another organization holds
+// the domain verified for SSO, or lost its DNS proof less than
+// ClaimDisputeWindow ago (the holder may restore its record and keep the
+// claim). EASM rows never count: EASM proof admits nobody and is not
+// exclusive. The other organization is never named to the caller.
+func (s *Service) claimRefusal(ctx context.Context, vd *verifieddomain.VerifiedDomain, now time.Time) error {
+	claims, err := s.repo.ListSSOClaims(ctx, vd.Domain())
+	if err != nil {
+		return err
 	}
-	if strings.HasSuffix(domain, ".onmicrosoft.com") {
-		return true
+	for _, c := range claims {
+		if c.TenantID().Equals(vd.TenantID()) || c.Purpose() != verifieddomain.PurposeSSO {
+			continue
+		}
+		if c.IsVerified() {
+			return verifieddomain.ErrDomainClaimed
+		}
+		if l := c.LapsedAt(); l != nil && now.Sub(*l) < verifieddomain.ClaimDisputeWindow {
+			return verifieddomain.ErrDomainClaimed
+		}
 	}
-	return false
+	return nil
 }
 
 // generateToken returns a random URL-safe verification token.
@@ -168,6 +172,13 @@ func (s *Service) AddDomain(ctx context.Context, tenantID shared.ID, rawDomain s
 		if gerr != nil || existing.Purpose() != verifieddomain.PurposeEASM {
 			return nil, TXTRecord{}, err
 		}
+		// A verified EASM row becomes a verified SSO claim at once, so it
+		// passes the same exclusivity check as a fresh verification.
+		if existing.IsVerified() {
+			if cerr := s.claimRefusal(ctx, existing, time.Now().UTC()); cerr != nil {
+				return nil, TXTRecord{}, cerr
+			}
+		}
 		existing.PromoteToSSO(time.Now())
 		if uerr := s.repo.Update(ctx, existing); uerr != nil {
 			return nil, TXTRecord{}, uerr
@@ -194,6 +205,15 @@ func (s *Service) VerifyByID(ctx context.Context, tenantID, id shared.ID) (*veri
 	vd, err := s.repo.GetByID(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
+	}
+	// Only a row that is not verified yet can take a claim; a verified one
+	// is simply re-checked (it already holds the claim).
+	if vd.Purpose() == verifieddomain.PurposeSSO && !vd.IsVerified() {
+		if err := s.claimRefusal(ctx, vd, time.Now().UTC()); err != nil {
+			s.logger.Info("SSO domain verification refused: claimed by another organization",
+				"tenant_id", tenantID.String(), "domain", vd.Domain())
+			return nil, err
+		}
 	}
 	s.checkAndStamp(ctx, vd, true)
 	if err := s.repo.Update(ctx, vd); err != nil {
@@ -260,6 +280,26 @@ func (s *Service) IsVerifiedDomain(ctx context.Context, tenantID, emailDomain st
 	return vd.AdmitsSSO(), nil
 }
 
+// settleClaimConflict clears a pre-exclusivity conflict flag once the row is
+// the only verified SSO claim left for its domain (the platform administrator
+// removed the others, or their proof lapsed).
+func (s *Service) settleClaimConflict(ctx context.Context, vd *verifieddomain.VerifiedDomain) {
+	if !vd.ClaimConflict() || !vd.IsVerified() {
+		return
+	}
+	claims, err := s.repo.ListSSOClaims(ctx, vd.Domain())
+	if err != nil {
+		return
+	}
+	for _, c := range claims {
+		if !c.ID().Equals(vd.ID()) && c.IsVerified() {
+			return
+		}
+	}
+	vd.ClearClaimConflict(time.Now())
+	s.logger.Info("SSO domain claim conflict settled", "tenant_id", vd.TenantID().String(), "domain", vd.Domain())
+}
+
 // ReverifyDue re-checks verified domains that have not been checked since
 // `staleness` ago. A domain whose TXT record vanished is downgraded to failed
 // (fail-closed) so a lapsed/hijacked domain loses JIT authority. Returns the
@@ -277,6 +317,7 @@ func (s *Service) ReverifyDue(ctx context.Context, staleness time.Duration, batc
 	for _, vd := range due {
 		before := vd.Status()
 		s.checkAndStamp(ctx, vd, true)
+		s.settleClaimConflict(ctx, vd)
 		if uerr := s.repo.Update(ctx, vd); uerr != nil {
 			s.logger.Warn("re-verify update failed", "domain", vd.Domain(), "error", uerr)
 			continue
