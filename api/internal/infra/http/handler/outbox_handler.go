@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -109,7 +108,7 @@ type OutboxStatsResponse struct {
 // @Produce json
 // @Param status query string false "Filter by status (pending, processing, completed, failed, dead)"
 // @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Page size" default(20)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Success 200 {object} pagination.Result[OutboxEntryResponse]
 // @Failure 500 {object} apierror.Response
 // @Router /notification-outbox [get]
@@ -130,19 +129,11 @@ func (h *OutboxHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse pagination
-	page := 1
-	pageSize := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	// Build filter - always scoped to current tenant
 	filter := outbox.OutboxFilter{
