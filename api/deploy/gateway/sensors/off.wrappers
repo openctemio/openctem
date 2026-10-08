@@ -1,0 +1,3 @@
+# OPENCTEM_SENSOR_GATEWAY=off (default): no layer-4 routing. Sensors use
+# protocol v2, or protocol v3 over HTTPS (/api/v3/sensor), through the
+# normal TLS termination.

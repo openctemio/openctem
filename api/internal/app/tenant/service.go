@@ -103,7 +103,27 @@ type TenantService struct {
 	// trustPolicy reads the trusts with members' home organizations: role
 	// ceiling and proposed end of access (RFC-058). Optional.
 	trustPolicy TrustPolicy
-	logger      *logger.Logger
+	// blobEraser deletes the stored files (attachments, evidence) of a
+	// tenant being deleted. Wired at startup; nil only in tests.
+	blobEraser TenantBlobEraser
+	logger     *logger.Logger
+}
+
+// TenantBlobEraser deletes every stored file of one tenant from every storage
+// backend it uses (AttachmentService.EraseTenant). Idempotent.
+type TenantBlobEraser interface {
+	EraseTenant(ctx context.Context, tenantID string) (int, error)
+}
+
+// ErrStoredFilesNotErased: the organization was not deleted because its stored
+// files could not all be deleted (storage unreachable, or the organization's
+// own bucket refused). Nothing about the organization's rows changed; the
+// owner retries, and files already deleted stay deleted.
+var ErrStoredFilesNotErased = errors.New("the organization's stored files could not be deleted")
+
+// SetBlobEraser wires the stored-file erasure that organization deletion runs.
+func (s *TenantService) SetBlobEraser(e TenantBlobEraser) {
+	s.blobEraser = e
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -528,8 +548,46 @@ func (s *TenantService) DeleteTenant(ctx context.Context, actx auditapp.AuditCon
 		tenantSlug = t.Slug()
 	}
 
+	// Stored files first, rows second. Files are erased while the tenant row
+	// still exists, so if storage is down the deletion is refused and the
+	// obligation stays visible (the tenant and its attachment rows remain;
+	// the owner retries, erasure is idempotent). Deleting rows first would
+	// lose the only record of where the files are, and a tenant's own
+	// bucket keys with it.
+	filesErased := 0
+	if s.blobEraser != nil {
+		n, eraseErr := s.blobEraser.EraseTenant(ctx, parsedID.String())
+		if eraseErr != nil {
+			// The cause can name operator paths or endpoints: log it, keep it
+			// out of the response and the tenant's audit log.
+			s.logger.Error("organization deletion refused: stored files not erased",
+				"tenant_id", tenantID, "files_erased", n, "error", eraseErr)
+			failCtx := actx
+			failCtx.TenantID = tenantID
+			s.logAudit(ctx, failCtx, auditapp.NewFailureEvent(audit.ActionTenantDeleted, audit.ResourceTypeTenant, tenantID, ErrStoredFilesNotErased).
+				WithResourceName(tenantName).
+				WithSeverity(audit.SeverityHigh).
+				WithMessage("Organization deletion refused: its stored files could not be deleted").
+				WithMetadata("files_erased", n))
+			return ErrStoredFilesNotErased
+		}
+		filesErased = n
+	}
+
 	if err := s.repo.Delete(ctx, parsedID); err != nil {
 		return err
+	}
+
+	// A file uploaded between the erasure and the row delete has no row left
+	// to name it: erase the namespace once more. Uploads after this point
+	// fail on the missing tenant and remove their own file.
+	if s.blobEraser != nil {
+		n, eraseErr := s.blobEraser.EraseTenant(ctx, parsedID.String())
+		filesErased += n
+		if eraseErr != nil {
+			s.logger.Error("files uploaded during organization deletion may remain",
+				"tenant_id", tenantID, "error", eraseErr)
+		}
 	}
 
 	// The tenant row is gone, so the event cannot carry its tenant_id
@@ -542,7 +600,8 @@ func (s *TenantService) DeleteTenant(ctx context.Context, actx auditapp.AuditCon
 		WithSeverity(audit.SeverityCritical).
 		WithMessage(fmt.Sprintf("Tenant %q deleted (all tenant data cascaded)", tenantName)).
 		WithMetadata("slug", tenantSlug).
-		WithMetadata("deleted_tenant_id", tenantID)
+		WithMetadata("deleted_tenant_id", tenantID).
+		WithMetadata("files_erased", filesErased)
 	platformCtx := actx
 	platformCtx.TenantID = ""
 	s.logAudit(ctx, platformCtx, event)
@@ -741,6 +800,10 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	s.bumpPermissionVersion(ctx, membership.TenantID().String(), membership.UserID().String())
 
 	s.logger.Info("member role updated", "membership_id", membershipID, "new_role", role)
+	if tenantdom.PrivilegeRank(role) > tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) {
+		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
+			fmt.Sprintf("membership role raised from %s to %s", oldRole, role))
+	}
 
 	// Log audit event
 	actx.TenantID = membership.TenantID().String()
@@ -878,6 +941,8 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	if membership.IsExpired(time.Now().UTC()) || membership.SuspendedReason() == tenantdom.SuspendedReasonExpired {
 		return fmt.Errorf("%w: this member's access has ended; set a new end date to re-enable them", shared.ErrValidation)
 	}
+	// Re-enabling a newcomer SSO held for approval is the approval (RFC-058).
+	approval := membership.AwaitsApproval()
 
 	if err := membership.Reactivate(); err != nil {
 		return err
@@ -917,10 +982,17 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	s.logger.Info("member reactivated", "membership_id", membershipID, "user_id", userID)
 
 	actx.TenantID = tenantID
+	msg := "Member reactivated"
+	if approval {
+		msg = "Access approved for a member SSO admitted"
+		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
+			"access approved after their first sign-in through SSO")
+	}
 	event := auditapp.NewSuccessEvent(audit.ActionMemberReactivated, audit.ResourceTypeMembership, membershipID).
 		WithSeverity(audit.SeverityHigh).
-		WithMessage("Member reactivated").
-		WithMetadata("user_id", userID)
+		WithMessage(msg).
+		WithMetadata("user_id", userID).
+		WithMetadata("approval", approval)
 	s.logAudit(ctx, actx, event)
 
 	return nil
@@ -1653,6 +1725,8 @@ type UpdateSecuritySettingsInput struct {
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
 	SSOExceptions    *[]tenantdom.SSOException `json:"sso_exceptions"`
+	// JITRequiresApproval: see tenantdom.SecuritySettings (RFC-058).
+	JITRequiresApproval *bool `json:"jit_requires_approval"`
 	// RequesterIP is the client IP of the tenant user saving the settings, as
 	// the API sees it (trusted-proxy aware). When set, an IP allowlist that
 	// would exclude it is refused (lockout guard). Empty for the platform
@@ -1712,6 +1786,9 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.AllowedDomains != nil {
 			security.AllowedDomains = input.AllowedDomains
+		}
+		if input.JITRequiresApproval != nil {
+			security.JITRequiresApproval = *input.JITRequiresApproval
 		}
 		if input.EmailVerificationMode != nil {
 			security.EmailVerificationMode = tenantdom.EmailVerificationMode(*input.EmailVerificationMode)

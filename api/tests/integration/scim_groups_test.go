@@ -77,7 +77,7 @@ func TestSCIMGroups_RoleMapping_RealDB(t *testing.T) {
 		t.Fatalf("owner maps admin: %v", err)
 	}
 
-	// Provision the user as a plain member.
+	// Provision the user: a viewer until a group maps them higher (RFC-058).
 	res, _, err := prov.CreateOrActivate(ctx, tenantID, scim.ProvisionInput{UserName: email, Active: true})
 	if err != nil {
 		t.Fatalf("provision: %v", err)
@@ -91,8 +91,8 @@ func TestSCIMGroups_RoleMapping_RealDB(t *testing.T) {
 		}
 		return m.Role()
 	}
-	if roleOf() != tenantdom.RoleMember {
-		t.Fatalf("initial role = %s, want member", roleOf())
+	if roleOf() != tenantdom.RoleViewer {
+		t.Fatalf("initial role = %s, want viewer", roleOf())
 	}
 
 	// Create an "admin" group with the user → role becomes admin.
@@ -124,7 +124,8 @@ func TestSCIMGroups_RoleMapping_RealDB(t *testing.T) {
 		t.Errorf("after removing from admin (still in viewer): role = %s, want viewer", roleOf())
 	}
 
-	// Delete the viewer group → no role-group left → revert to member default.
+	// Delete the viewer group → no role-group left → the role is kept (a
+	// group change never raises anyone by default).
 	viewerGroups, _ := groupSvc.List(ctx, tenantID)
 	for _, g := range viewerGroups {
 		if g.DisplayName() == "viewer" {
@@ -133,8 +134,8 @@ func TestSCIMGroups_RoleMapping_RealDB(t *testing.T) {
 			}
 		}
 	}
-	if roleOf() != tenantdom.RoleMember {
-		t.Errorf("after all role-groups gone: role = %s, want member", roleOf())
+	if roleOf() != tenantdom.RoleViewer {
+		t.Errorf("after all role-groups gone: role = %s, want viewer", roleOf())
 	}
 }
 

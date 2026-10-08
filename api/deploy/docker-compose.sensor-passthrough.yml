@@ -1,0 +1,31 @@
+# Sensor protocol v3 with its gRPC binding on the same port 443
+# (docs/rfcs/RFC-059-sensor-transport-v3.md). The gateway is built with the
+# layer4 module and passes TLS for SENSOR_PUBLIC_HOSTNAME through to the API's
+# mTLS listener; every other host is served as before.
+#
+#   SENSOR_PUBLIC_HOSTNAME=sensors.example.com \
+#   docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up -d --build
+#
+# SENSOR_PUBLIC_HOSTNAME must resolve to this host and differ from
+# OPENCTEM_HOSTNAME. No public certificate is needed for it: the API mints the
+# server certificate from its sensor CA, and sensors pin that CA.
+services:
+  gateway:
+    build:
+      context: ./gateway
+    image: ${GATEWAY_L4_IMAGE:-openctem-gateway-l4:local}
+    environment:
+      OPENCTEM_SENSOR_GATEWAY: passthrough
+      SENSOR_PUBLIC_HOSTNAME: ${SENSOR_PUBLIC_HOSTNAME:?SENSOR_PUBLIC_HOSTNAME is required (the DNS name sensors dial for gRPC)}
+      SENSOR_MTLS_UPSTREAM: api:8443
+
+  api:
+    expose:
+      - "8443"
+    environment:
+      SENSOR_TRANSPORT_V3_ENABLED: "true"
+      SENSOR_PUBLIC_HOST: ${SENSOR_PUBLIC_HOSTNAME}:${GATEWAY_HTTPS_PORT:-443}
+      SENSOR_MTLS_LISTEN_ADDR: ":8443"
+      # The gateway's PROXY protocol header carries the sensor's address;
+      # it is believed from the gateway only.
+      SENSOR_MTLS_TRUSTED_PROXIES: ${OPENCTEM_NET_PREFIX:-172.30.80}.10/32
