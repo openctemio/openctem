@@ -1,9 +1,9 @@
 # RFC-001 Appendix: Edge Cases per Asset Type
 
-> **Status**: Completed — Part of [RFC-001](RFC-001-asset-identity-resolution.md)
+> **Status**: Implemented — Part of [RFC-001](RFC-001-asset-identity-resolution.md)
 
-Tài liệu này liệt kê TẤT CẢ edge cases có thể gặp khi dedup mỗi asset type.
-Mỗi case có: scenario, input, expected behavior, và normalization rule.
+This document lists ALL the edge cases that can come up when deduplicating each asset type.
+Each case has: scenario, input, expected behavior, and normalization rule.
 
 ---
 
@@ -23,7 +23,7 @@ Mỗi case có: scenario, input, expected behavior, và normalization rule.
 | D8 | With port | `example.com:443` | `example.com` | **NO** | Port is part of identity for services, not domains. Strip port from domain type |
 | D9 | With protocol | `https://example.com` | `example.com` | YES (for domain type) | Strip protocol for domain assets |
 | D10 | Wildcard | `*.example.com` | `example.com` | **NO** | Wildcard is a pattern, not a concrete domain |
-| D11 | IP as domain | `192.168.1.1` (type=domain) | — | **WRONG TYPE** | Should be `ip_address`, not domain. Validate at ingest |
+| D11 | IP as domain | `192.0.2.1` (type=domain) | — | **WRONG TYPE** | Should be `ip_address`, not domain. Validate at ingest |
 | D12 | With path | `example.com/path` | `example.com` | YES (for domain type) | Strip path for domain assets |
 
 **Normalization function:**
@@ -115,20 +115,20 @@ func normalizeCertName(name string) string {
 
 ## 4. IP_ADDRESS
 
-### Naming pattern: `192.168.1.1` or `2001:db8::1`
+### Naming pattern: `192.0.2.1` or `2001:db8::1`
 
 | # | Edge Case | Input A | Input B | Same entity? | Rule |
 |---|---|---|---|---|---|
-| I1 | IPv4 leading zeros | `192.168.001.010` | `192.168.1.10` | YES | `net.ParseIP` canonical |
+| I1 | IPv4 leading zeros | `192.000.002.010` | `192.0.2.10` | YES | `net.ParseIP` canonical |
 | I2 | IPv6 full vs short | `2001:0db8:0000:0000:0000:0000:0000:0001` | `2001:db8::1` | YES | `net.ParseIP` canonical |
-| I3 | IPv6 mixed notation | `::ffff:192.168.1.1` | `192.168.1.1` | **DEPENDS** | Same host, but v4-mapped v6 is different address. Treat as same? Recommend: YES, normalize v4-mapped to v4 |
+| I3 | IPv6 mixed notation | `::ffff:192.0.2.1` | `192.0.2.1` | **DEPENDS** | Same host, but v4-mapped v6 is different address. Treat as same? Recommend: YES, normalize v4-mapped to v4 |
 | I4 | IPv6 zone ID | `fe80::1%eth0` | `fe80::1` | YES | Strip zone ID (`%...`) — zone is interface-local |
-| I5 | IPv4 integer form | `3232235777` (=192.168.1.1) | `192.168.1.1` | YES | Convert integer to dotted (Phase 3) |
-| I6 | IPv4 hex form | `0xC0A80101` | `192.168.1.1` | YES | Convert hex to dotted (Phase 3) |
+| I5 | IPv4 integer form | `3221225985` (=192.0.2.1) | `192.0.2.1` | YES | Convert integer to dotted (Phase 3) |
+| I6 | IPv4 hex form | `0xC0000201` | `192.0.2.1` | YES | Convert hex to dotted (Phase 3) |
 | I7 | Loopback variations | `127.0.0.1` | `localhost` | **NO** | Different types (IP vs hostname) |
-| I8 | With port | `192.168.1.1:443` | `192.168.1.1` | YES (for ip_address type) | Strip port |
-| I9 | With CIDR | `192.168.1.1/32` | `192.168.1.1` | YES | Strip /32 (single host CIDR) |
-| I10 | With protocol | `https://192.168.1.1` | `192.168.1.1` | YES (for ip_address type) | Strip protocol |
+| I8 | With port | `192.0.2.1:443` | `192.0.2.1` | YES (for ip_address type) | Strip port |
+| I9 | With CIDR | `192.0.2.1/32` | `192.0.2.1` | YES | Strip /32 (single host CIDR) |
+| I10 | With protocol | `https://192.0.2.1` | `192.0.2.1` | YES (for ip_address type) | Strip protocol |
 | I11 | Private vs public same IP | `10.0.0.1` (tenant A) | `10.0.0.1` (tenant B) | **NO** | Tenant isolation — same IP different tenants |
 | I12 | Brackets (IPv6 URL) | `[2001:db8::1]` | `2001:db8::1` | YES | Strip brackets |
 
@@ -173,10 +173,10 @@ func normalizeIPAddress(name string) string {
 
 | # | Edge Case | Input A | Input B | Same entity? | Rule |
 |---|---|---|---|---|---|
-| H1 | Hostname vs IP | `web-server-01` | `192.168.1.10` (same host) | YES | IP correlation |
-| H2 | FQDN vs short name | `web-01.corp.local` | `web-01` | **MAYBE** | Correlate by IP. If same IP → merge, rename to FQDN |
+| H1 | Hostname vs IP | `web-server-01` | `192.0.2.10` (same host) | YES | IP correlation |
+| H2 | FQDN vs short name | `web-01.corp.example.com` | `web-01` | **MAYBE** | Correlate by IP. If same IP → merge, rename to FQDN |
 | H3 | Case variation | `Web-Server-01` | `web-server-01` | YES | Lowercase |
-| H4 | Trailing dot | `server.corp.local.` | `server.corp.local` | YES | Trim dot |
+| H4 | Trailing dot | `server.corp.example.com.` | `server.corp.example.com` | YES | Trim dot |
 | H5 | Multiple IPs same host | `web-01` (IP=[.1,.2,.3]) | Splunk sends `.2` only | YES | Any IP match → same host |
 | H6 | IP reuse (DHCP) | `web-01` had `10.0.0.5` last week | `db-01` has `10.0.0.5` now | **NO** | Check `last_seen` staleness (>30d → don't merge) |
 | H7 | Same IP different tenants | `10.0.0.1` (tenant A) | `10.0.0.1` (tenant B) | **NO** | Tenant isolation |
@@ -184,11 +184,11 @@ func normalizeIPAddress(name string) string {
 | H9 | VM migration (new IP) | `vm-prod-01` had `10.0.0.5` | Same VM now `10.0.0.50` (migrated) | YES | Same hostname → same asset (name match) |
 | H10 | Container host vs VM | `k8s-node-01` (bare metal) | `k8s-node-01` (VM) | YES | Same hostname = same entity regardless |
 | H11 | IPv6 host | Host named `2001:db8::1` | Host named `2001:0db8::0001` | YES | IPv6 canonical |
-| H12 | Hostname = IP | `192.168.1.10` (type=host) | `192.168.1.10` (type=ip_address) | **NO** | Different asset types |
-| H13 | Nessus FQDN override | Nessus `host-fqdn=server.corp` | Name attribute=`192.168.1.10` | YES | FQDN wins, IP in properties |
+| H12 | Hostname = IP | `192.0.2.10` (type=host) | `192.0.2.10` (type=ip_address) | **NO** | Different asset types |
+| H13 | Nessus FQDN override | Nessus `host-fqdn=server.corp` | Name attribute=`192.0.2.10` | YES | FQDN wins, IP in properties |
 | H14 | Cloud instance ID | AWS `i-0abc123` | Hostname `ip-10-0-0-5.ec2.internal` | **MAYBE** | Correlate by `external_id` if set |
-| H15 | Dual-stack host | IPv4 `192.168.1.10` | IPv6 `2001:db8::10` | YES if same host | Both in `ip_addresses[]` → match |
-| H16 | Hostname with domain search | `server01` (short) | `server01.corp.local` (resolved) | **MAYBE** | Correlate by IP. Name alone → ambiguous |
+| H15 | Dual-stack host | IPv4 `192.0.2.10` | IPv6 `2001:db8::10` | YES if same host | Both in `ip_addresses[]` → match |
+| H16 | Hostname with domain search | `server01` (short) | `server01.corp.example.com` (resolved) | **MAYBE** | Correlate by IP. Name alone → ambiguous |
 | H17 | Reverse DNS mismatch | Forward: `web.example.com` → `1.2.3.4` | Reverse: `1.2.3.4` → `host-1-2-3-4.isp.net` | YES | Same IP → merge, keep forward DNS name |
 | H18 | Hostname rename | Was `web-01`, renamed to `api-gateway-01` | Same IPs | YES | IP match → merge/rename |
 
@@ -219,13 +219,13 @@ func normalizeIPAddress(name string) string {
 
 | # | Edge Case | Input A | Input B | Same entity? | Rule |
 |---|---|---|---|---|---|
-| SP1 | Format variation | `192.168.1.10:443/tcp` | `192.168.1.10:443:tcp` | YES | Normalize separator |
-| SP2 | Missing protocol | `192.168.1.10:443` | `192.168.1.10:443:tcp` | YES | Default to `tcp` |
-| SP3 | UDP vs TCP same port | `192.168.1.10:53:tcp` | `192.168.1.10:53:udp` | **NO** | Different protocols = different services |
-| SP4 | Hostname vs IP | `web-01:443:tcp` | `192.168.1.10:443:tcp` | **MAYBE** | Correlate parent host by IP |
+| SP1 | Format variation | `192.0.2.10:443/tcp` | `192.0.2.10:443:tcp` | YES | Normalize separator |
+| SP2 | Missing protocol | `192.0.2.10:443` | `192.0.2.10:443:tcp` | YES | Default to `tcp` |
+| SP3 | UDP vs TCP same port | `192.0.2.10:53:tcp` | `192.0.2.10:53:udp` | **NO** | Different protocols = different services |
+| SP4 | Hostname vs IP | `web-01:443:tcp` | `192.0.2.10:443:tcp` | **MAYBE** | Correlate parent host by IP |
 | SP5 | IPv6 port | `[2001:db8::1]:443:tcp` | `2001:db8::1:443:tcp` | YES | Normalize IPv6+port format |
-| SP6 | Port 0 | `192.168.1.10:0:tcp` | — | INVALID | Reject port 0 |
-| SP7 | Port > 65535 | `192.168.1.10:99999` | — | INVALID | Reject out of range |
+| SP6 | Port 0 | `192.0.2.10:0:tcp` | — | INVALID | Reject port 0 |
+| SP7 | Port > 65535 | `192.0.2.10:99999` | — | INVALID | Reject out of range |
 
 #### sub_type: `http`
 
@@ -432,7 +432,7 @@ func normalizeRepoName(name string) string {
 | # | Edge Case | Input A | Input B | Same entity? | Rule |
 |---|---|---|---|---|---|
 | DB1 | Connection string vs name | `postgres://db.example.com:5432/mydb` | `mydb` | **MAYBE** | Correlate by hostname:port |
-| DB2 | Hostname vs IP | `db.example.com:5432` | `192.168.1.50:5432` | **MAYBE** | Correlate by IP (same as host) |
+| DB2 | Hostname vs IP | `db.example.com:5432` | `192.0.2.50:5432` | **MAYBE** | Correlate by IP (same as host) |
 | DB3 | With/without port | `db.example.com:5432` | `db.example.com` | **DEPENDS** | Default port can be implied. Recommend: always include port |
 | DB4 | With/without dbname | `db.example.com:5432/mydb` | `db.example.com:5432/otherdb` | **NO** | Different databases on same server |
 | DB5 | Protocol prefix | `postgres://host:5432/db` | `host:5432/db` | YES | Strip protocol |
@@ -473,8 +473,8 @@ func normalizeDatabaseName(name string) string {
 
 | # | Edge Case | Input A | Input B | Same entity? | Rule |
 |---|---|---|---|---|---|
-| N1 | CIDR format | `192.168.1.0/24` | `192.168.1.0/24` | YES | Exact match after normalize |
-| N2 | Non-canonical CIDR | `192.168.1.100/24` | `192.168.1.0/24` | YES | Normalize to network address (`net.ParseCIDR` zeroes host bits) |
+| N1 | CIDR format | `192.0.2.0/24` | `192.0.2.0/24` | YES | Exact match after normalize |
+| N2 | Non-canonical CIDR | `192.0.2.100/24` | `192.0.2.0/24` | YES | Normalize to network address (`net.ParseCIDR` zeroes host bits) |
 | N3 | VPC ID format | `vpc-abc123` | `VPC-ABC123` | YES | Lowercase |
 | N4 | VPC name vs ID | `prod-vpc` (name) | `vpc-abc123` (ID) | **MAYBE** | Correlate by `external_id` |
 | N5 | Same CIDR different VPCs | `10.0.0.0/16` (VPC A) | `10.0.0.0/16` (VPC B) | **NO** | Need VPC context. Store VPC in properties |
@@ -561,7 +561,7 @@ INSERT host   "example.com"   → CONFLICT! Same name.
 
 **Recommendation**: Keep current behavior (`name` unique per tenant regardless of type). If same name appears as different type, it's likely the same entity viewed differently. The `asset_type` can be updated/promoted if needed.
 
-**Exception**: `ip_address` type `192.168.1.1` and `host` type `192.168.1.1` — these SHOULD be the same entity. The type should be `host` (more specific), with IP stored in properties.
+**Exception**: `ip_address` type `192.0.2.1` and `host` type `192.0.2.1` — these SHOULD be the same entity. The type should be `host` (more specific), with IP stored in properties.
 
 ---
 

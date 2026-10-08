@@ -4,7 +4,7 @@
 - **Created**: 2026-06-06
 - **Owner**: Platform / Mobilization
 - **Parent**: [RFC-006 — Ticketing Provider Abstraction + Configurable Mapping](./RFC-006-ticketing-provider-and-mapping.md) (§3.3–3.6, Phase 3)
-- **Use case (verbatim)**: *"Create a task in OpenCTEM → it creates a task in Jira; when someone drags the status on the Jira board → OpenCTEM syncs the status back."* Two-way, continuous status sync.
+- **Use case**: *"Create a task in OpenCTEM → it creates a task in Jira; when someone drags the status on the Jira board → OpenCTEM syncs the status back."* Two-way, continuous status sync.
 
 > **TL;DR** — One direction already works. **OpenCTEM→Jira create** and **Jira→OpenCTEM status** are implemented today. The missing half is **OpenCTEM→Jira status** (the Jira client has no transition call) plus the cross-cutting machinery a *bidirectional* loop demands: **echo-guard**, a **typed link table**, **reliable delivery**, and **conflict policy**. This RFC specifies those in detail and stages a generic `remediation_task` so the same sync serves both findings and tasks (user chose *both*).
 
@@ -21,7 +21,7 @@
 | Typed link | ⚠️ heuristic | a finding↔ticket link is a URL inside `finding.WorkItemURIs()`; webhook resolves via `findingRepo.GetByWorkItemURI` (URL match), create-dedup via `/browse/<KEY>-` substring (#134) |
 | Mapping | ⚠️ partial | `internal/app/jira/mapping.go` has `DefaultMappingConfig` + `ParseMappingConfig` (per-integration overlay from `config.ticketing`); **inbound** uses it via defaults; **no outbound map**, not fully wired per-tenant |
 
-So the user's literal scenario ("drag in Jira → OpenCTEM updates") **already functions**. This RFC delivers the *reverse* edge and makes the whole loop safe and reliable.
+So the inbound half of this scenario ("drag in Jira → OpenCTEM updates") **already functions**. This RFC delivers the *reverse* edge and makes the whole loop safe and reliable.
 
 ## 2. The hard problems (why this is not just "call an API")
 
@@ -37,7 +37,7 @@ So the user's literal scenario ("drag in Jira → OpenCTEM updates") **already f
 
 ### 3.1 A `WorkItem` seam (serves *both* finding and remediation_task)
 
-The user wants findings **and** a grouping "task" to sync. There is **no `remediation_task` entity today**. Rather than couple the sync to `finding`, introduce a thin port the sync operates on:
+The use case needs findings **and** a grouping "task" to sync. There is **no `remediation_task` entity today**. Rather than couple the sync to `finding`, introduce a thin port the sync operates on:
 
 ```go
 // internal/app/ticketsync (new) — provider-agnostic, entity-agnostic.

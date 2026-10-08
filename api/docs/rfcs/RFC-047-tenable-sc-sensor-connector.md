@@ -1,11 +1,11 @@
 # RFC-047 — Tenable.sc two-way sensor connector
 
-> Status: **Proposed** (2026-10-04; design merged in #995). P0 pull path:
-> platform side in this PR's branch `feat/tenable-sc-connector-sync`,
-> sensor side in openctemio/sensor#129. P1 scan launch: platform branch
-> `feat/tenable-sc-connector-scan`, sensor openctemio/sensor#131. P2 coverage:
-> platform branch `feat/tenable-sc-coverage`. Current build:
-> [architecture/tenable-sc-connector.md](../architecture/tenable-sc-connector.md). Owner decision D-14 (2026-10-04, final):
+> Status: **Implemented in the API, switched off** (design 2026-10-04, #995).
+> The platform side of P0 (pull), P1 (scan launch) and P2 (coverage) is built
+> (`internal/app/tenablesc`); the sensor side is openctemio/sensor#129 and
+> #131. Everything stays behind `integration.TenableConnectorEnabled` (false)
+> until a sensor release carries the connector. Current build:
+> [architecture/tenable-sc-connector.md](../architecture/tenable-sc-connector.md). Decision D-14 (2026-10-04, final):
 > rebuild the Tenable integration as a **two-way Tenable Security Center
 > (Tenable.sc) connector that runs inside the sensor**. Pull assets,
 > vulnerabilities and plugin metadata; push scan launches and schedules; keep
@@ -388,7 +388,7 @@ tenant. P0 refuses to guess: when the same IP appears in two allowed
 repositories with different host UUIDs in one sync, the sensor pushes both rows
 with their repository and the platform logs a `tenable_ip_collision` warning;
 the zone-keyed identity of RFC-042 (P1 "zone-keyed identity") is where this is
-solved, by mapping a repository to a scan zone (owner question Q5).
+solved, by mapping a repository to a scan zone (question Q5).
 
 ### 7.2 Vulnerabilities → findings
 
@@ -399,7 +399,7 @@ solved, by mapping a repository to a scan zone (owner question Q5).
 | `severity.id` 0–4 | `info`, `low`, `medium`, `high`, `critical` |
 | `cve` (comma-separated) | `vulnerability.cve_ids` (all), `vulnerability.cve_id` (first) |
 | `cvssV3BaseScore`/`Vector`, `cvssV4BaseScore`, `baseScore`/`cvssVector` | `vulnerability.cvss_score`, `cvss_vector` and `cvss_version` (`3.x`, else `2.0`, as the Nessus parser); v4 in `properties.tenable_cvss_v4_*` |
-| `vprScore` | `vulnerability.vpr_score` (an input shown to people; it never feeds OpenCTEM priority, research/17 decision A3) |
+| `vprScore` | `vulnerability.vpr_score` (an input shown to people; it never feeds OpenCTEM priority) |
 | `exploitAvailable`, `exploitFrameworks`, `exploitEase` | `vulnerability.exploit_available`, `properties.tenable_exploit_frameworks`, `tenable_exploit_ease` |
 | `epssScore` (plugin) | `vulnerability.epss_score` |
 | `cpe` | `vulnerability.cpe` |
@@ -417,15 +417,14 @@ solved, by mapping a repository to a scan zone (owner question Q5).
 | `repository`, `vulnUUID` | `properties.tenable_repository_id`, `tenable_vuln_uuid` |
 | — | `fingerprint` = `tenable_sc:<repository>:<ip>:<plugin>:<port>/<proto>`. Never the identity: today ingest ignores a non-hex sensor fingerprint (`isValidFingerprint`), and RFC-043 item 12 keeps converter fingerprints as sighting keys |
 
-**What ingest keeps today.** Research 17
-(`research/17-finding-analysis-vs-tenable-sc.md`, §3 and R2) found that ingest
+**What ingest keeps today.** Ingest
 drops the plugin family (capped, never stored), the VPR, every CVE after the
 first, the CVSS version and the patch publication date, and keeps
 exploit-available only in metadata. The connector sends all of them in the
 first-class CTIS fields above, so nothing is lost on the wire; persisting them
 as finding columns (family, exploit available, VPR as a display-only input,
 CVSS version, all CVEs, patch date) and as filters and group-by dimensions is
-research 17 R2, shared with the `.nessus` path and not specific to this RFC.
+separate follow-up work, shared with the `.nessus` path and not specific to this RFC.
 The mitigated state and its dates (`tenable_state`, `tenable_last_mitigated`)
 are what §7.6 acts on.
 
@@ -440,7 +439,7 @@ sighting key, so the same Tenable row re-read by every sync is one sighting.
 
 Accepted-risk and recast flags are **kept, not applied**: OpenCTEM's triage
 stays a human decision in OpenCTEM. The Findings UI shows them as Tenable
-facts. Mirroring them into OpenCTEM statuses is owner question Q3.
+facts. Mirroring them into OpenCTEM statuses is question Q3.
 
 ### 7.4 Plugins → catalog
 
@@ -579,7 +578,7 @@ Tenable.sc frees licensed IPs when data leaves its repositories (aging, or an
 administrator removing vulnerability data). P2 does **not** delete data from
 Tenable.sc. The coverage UI shows the license numbers and that reclaim is the
 Tenable administrator's aging setting. An optional, separately allow-listed
-`reclaim` operation is owner question Q4.
+`reclaim` operation is question Q4.
 
 ## 10. Platform side
 
@@ -678,7 +677,7 @@ The Tenable connector UI stays hidden (#990) until P0 runs end to end. Then:
 | Download `.nessus` exports from scan results and reuse the parser | Only covers scans, not the cumulative or mitigated databases; loses VPR/ACR/AES and accept/recast; large XML on the sensor |
 | Reuse `collect` commands | `collect` has no typed payload, the SDK executor passes no options to collectors, and the platform never creates `collect` commands; a typed pair is clearer for policy and authz |
 | One `connector` type with an `operation` field | The sensor owner could not allow pull and refuse launch with `checks.allow` |
-| Tenable.sc-side schedules (iCal) created by OpenCTEM | Leaves long-lived objects in Tenable that OpenCTEM must reconcile, and keeps running if OpenCTEM is down or the owner revoked consent; OpenCTEM schedules (RFC-046) launch on demand instead (owner question Q2) |
+| Tenable.sc-side schedules (iCal) created by OpenCTEM | Leaves long-lived objects in Tenable that OpenCTEM must reconcile, and keeps running if OpenCTEM is down or the owner revoked consent; OpenCTEM schedules (RFC-046) launch on demand instead (question Q2) |
 | Absence-based auto-resolve for pulls | A pull window does not prove a vulnerability is gone; Tenable says so explicitly with its mitigated database |
 
 ## 14. Phases
@@ -694,11 +693,11 @@ The Tenable connector UI stays hidden (#990) until P0 runs end to end. Then:
 | **P2** | Coverage on runs, license numbers, Coverage panel back | api, web | Rolling coverage over a fake 3000-IP estate with a 500-IP license never exceeds headroom |
 | later | Signed envelopes for connector commands (RFC-040 P1), credential references, RFC-044 catalog import of plugins, tenable.io / Nessus Pro engines | all | — |
 
-## 15. Owner questions
+## 15. Open questions
 
 | # | Question | Options | Recommended |
 |---|---|---|---|
-| Q1 | Where do the Tenable allow-lists live? | (a) the connector's own config file (§6.1); (b) a `connectors.tenable_sc` section of `sensor-policy.yaml` | **(a)** for P0: the policy schema stays generic and the connector owns its keys and limits; both are owner-written, read-only files. Revisit when a second connector exists |
+| Q1 | Where do the Tenable allow-lists live? | (a) the connector's own config file (§6.1); (b) a `connectors.tenable_sc` section of `sensor-policy.yaml` | **(a)** for P0: the policy schema stays generic and the connector owns its keys and limits; both are operator-written, read-only files. Revisit when a second connector exists |
 | Q2 | Who owns scan schedules? | (a) OpenCTEM (RFC-046 rrule) launches on demand; (b) OpenCTEM creates Tenable.sc iCal schedules | **(a)** |
 | Q3 | Mirror Tenable accept-risk / recast into OpenCTEM statuses? | (a) keep as facts only; (b) per-integration opt-in mirror to `accepted` / severity override | **(a)** in P0; (b) later as an opt-in with audit |
 | Q4 | License reclaim | (a) none, Tenable aging only; (b) an allow-listed `reclaim` operation that removes a batch's data from a dedicated rotation repository after ingest confirms it | **(a)** in P2; (b) only if a customer needs it |

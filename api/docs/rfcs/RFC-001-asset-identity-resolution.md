@@ -1,6 +1,6 @@
 # RFC-001: Asset Identity Resolution & Deduplication
 
-- **Status**: Completed — moved to [docs/architecture/asset-identity-resolution.md](../architecture/asset-identity-resolution.md)
+- **Status**: Implemented — moved to [docs/architecture/asset-identity-resolution.md](../architecture/asset-identity-resolution.md)
 - **Author**: OpenCTEM Core Team
 - **Created**: 2026-04-15
 - **Updated**: 2026-04-15
@@ -17,7 +17,7 @@ CORE TYPE        SUB_TYPE              NAMING PATTERN              NORMALIZE    
 domain           —                     example.com                 lowercase+trim.    —
 subdomain        —                     api.example.com             lowercase+trim.    —
 certificate      —                     subject CN / serial         lowercase+trim.    fingerprint
-ip_address       —                     192.168.1.1                 net.ParseIP        —
+ip_address       —                     192.0.2.1                   net.ParseIP        —
 
 host             —                     hostname or IP              DNS norm           IP addresses
                  compute               vm-name                     DNS norm           IP addresses
@@ -66,24 +66,24 @@ unclassified     —                     anything                    trim       
 
 ### Service type — special considerations
 
-`service` gộp từ `http_service`, `open_port`, `discovered_url` — đây là 3 concept khác nhau:
+`service` merges `http_service`, `open_port` and `discovered_url` — these are 3 different concepts:
 
 | Sub Type | Layer | Example Name | Represents |
 |---|---|---|---|
-| `open_port` | L4 | `192.168.1.10:443:tcp` | Raw port scan result |
-| `http` | L7 | `https://192.168.1.10:443` | HTTP service on port |
-| `discovered_url` | L7 path | `https://192.168.1.10/login` | Specific endpoint |
+| `open_port` | L4 | `192.0.2.10:443:tcp` | Raw port scan result |
+| `http` | L7 | `https://192.0.2.10:443` | HTTP service on port |
+| `discovered_url` | L7 path | `https://192.0.2.10/login` | Specific endpoint |
 
-**Rule**: Khác sub_type → KHÔNG merge. `open_port:443` và `http_service:https://host:443` là 2 assets riêng — liên kết qua relationship `exposes`.
+**Rule**: Different sub_type → do NOT merge. `open_port:443` and `http_service:https://host:443` are 2 separate assets — linked through the `exposes` relationship.
 
-**Normalization cho service:**
+**Normalization for service:**
 ```go
 func normalizeServiceName(name string, subType string) string {
     switch subType {
     case "open_port", "":
         // Canonical: "host:port:protocol" (lowercase)
-        // Input: "192.168.1.10:443/tcp" → "192.168.1.10:443:tcp"
-        // Input: "192.168.1.10:443"     → "192.168.1.10:443:tcp" (default tcp)
+        // Input: "192.0.2.10:443/tcp" → "192.0.2.10:443:tcp"
+        // Input: "192.0.2.10:443"     → "192.0.2.10:443:tcp" (default tcp)
         return normalizePortIdentifier(name)
     case "http":
         return normalizeURL(name)
@@ -124,7 +124,7 @@ OpenCTEM deduplicates assets using a single unique constraint: `(tenant_id, name
 ### Real-world example
 
 ```
-Splunk sends:   name="192.168.1.10"       (only has IP)
+Splunk sends:   name="192.0.2.10"         (only has IP)
 Qualys sends:   name="web-server-01"       (hostname + same IP in properties)
 Nessus sends:   name="web-server-01.corp"  (FQDN + same IP)
 
@@ -268,9 +268,9 @@ func normalizeHostName(name string) string {
 | Input | Output |
 |---|---|
 | `Web-Server-01` | `web-server-01` |
-| `192.168.001.010` | `192.168.1.10` |
+| `192.0.002.010` | `192.0.2.10` |
 | `2001:0db8:0000::0001` | `2001:db8::1` |
-| `server.corp.local.` | `server.corp.local` |
+| `server.corp.example.com.` | `server.corp.example.com` |
 
 #### IP Addresses
 
@@ -285,15 +285,15 @@ func normalizeIPAddress(name string) string {
 ```
 
 `net.ParseIP` + `.String()` handles:
-- IPv4 leading zeros: `192.168.001.001` → `192.168.1.1`
+- IPv4 leading zeros: `192.0.002.001` → `192.0.2.1`
 - IPv6 shorthand: `2001:0db8::1` → `2001:db8::1`
 - IPv6 full form: `2001:0db8:0000:0000:0000:0000:0000:0001` → `2001:db8::1`
 
 #### Repository Names
 
-**Key principle**: `host` (platform) là một phần identity — `github.com/org/repo` và `gitlab.com/org/repo` là 2 repo khác nhau. Không bao giờ strip host.
+**Key principle**: `host` (platform) is part of the identity — `github.com/org/repo` and `gitlab.com/org/repo` are 2 different repos. Never strip the host.
 
-Khi repo name không có host (e.g., `org/repo` từ scanner), **KHÔNG tự gán host** vì không biết chắc platform. Thay vào đó, dùng **correlation** (Layer 2) dựa trên context từ integration/tool.
+When a repo name has no host (e.g., `org/repo` from a scanner), **do NOT assign a host automatically**, because the platform is not known for certain. Instead, use **correlation** (Layer 2) based on context from the integration/tool.
 
 ```go
 func normalizeRepoName(name string) string {
@@ -335,7 +335,7 @@ func normalizeRepoName(name string) string {
 
 **Correlation for repos without host (Layer 2):**
 
-Khi ingest nhận `org/repo` (không có host), correlator sẽ:
+When ingest receives `org/repo` (no host), the correlator will:
 
 ```go
 func (c *AssetCorrelator) CorrelateRepository(
@@ -685,7 +685,7 @@ func nameQuality(name string) int {
     if !strings.Contains(name, ".") {
         return 30
     }
-    // FQDN (e.g., "server01.corp.local")
+    // FQDN (e.g., "server01.corp.example.com")
     return 50
 }
 ```
@@ -895,8 +895,8 @@ CREATE INDEX idx_asset_merge_log_merged ON asset_merge_log(merged_asset_id) WHER
 ### 7.1 Multi-match: 1 incoming asset matches 2+ existing assets
 
 ```
-Incoming: name="web-01", IPs=[10.0.0.1, 10.0.0.2]
-Existing: Asset A (name="10.0.0.1"), Asset B (name="10.0.0.2")
+Incoming: name="web-01", IPs=[192.0.2.1, 192.0.2.2]
+Existing: Asset A (name="192.0.2.1"), Asset B (name="192.0.2.2")
 ```
 
 **Strategy**: Merge all matched assets into one.
@@ -923,7 +923,7 @@ if len(matchedAssets) > 1 {
 ### 7.2 Rename conflicts: new name already exists
 
 ```
-Asset A: name="192.168.1.10" (being renamed to "web-server-01")
+Asset A: name="192.0.2.10" (being renamed to "web-server-01")
 Asset B: name="web-server-01" (already exists)
 ```
 
@@ -936,8 +936,8 @@ Asset B: name="web-server-01" (already exists)
 ### 7.3 Race condition: two ingest jobs at same time
 
 ```
-Job 1: Creating asset "192.168.1.10"
-Job 2: Creating asset "web-server-01" with IP 192.168.1.10
+Job 1: Creating asset "192.0.2.10"
+Job 2: Creating asset "web-server-01" with IP 192.0.2.10
 Both run simultaneously
 ```
 
@@ -948,8 +948,8 @@ Both run simultaneously
 ### 7.4 IP reuse: different hosts get same IP over time (DHCP)
 
 ```
-Monday:  Host A has IP 192.168.1.10
-Tuesday: Host A decomissioned, Host B gets IP 192.168.1.10
+Monday:  Host A has IP 192.0.2.10
+Tuesday: Host A decomissioned, Host B gets IP 192.0.2.10
 ```
 
 **Strategy**: Check `last_seen` timestamps.
@@ -988,7 +988,7 @@ Host B (internal: 10.0.0.2) → NAT → Public: 203.0.113.1
 ### 7.6 IPv4 vs IPv6 for same host
 
 ```
-Host has both: 192.168.1.10 and fe80::1
+Host has both: 192.0.2.10 and fe80::1
 ```
 
 **Strategy**: Both IPs stored in `ip_addresses[]` array. Correlation checks all IPs in the array. If incoming asset has IPv6 that matches, it merges correctly.
@@ -1014,10 +1014,10 @@ Response:
     {
       "keep": {"id": "...", "name": "web-server-01", "finding_count": 50},
       "merge": [
-        {"id": "...", "name": "192.168.1.10", "finding_count": 12},
+        {"id": "...", "name": "192.0.2.10", "finding_count": 12},
         {"id": "...", "name": "web-server-01.corp", "finding_count": 3}
       ],
-      "correlation": "ip:192.168.1.10"
+      "correlation": "ip:192.0.2.10"
     }
   ]
 }
@@ -1112,9 +1112,9 @@ correlator_test.go:
 
 ```
 TestIngestDedup_SplunkThenQualys:
-  1. Ingest Splunk report with host "192.168.1.10"
-  2. Ingest Qualys report with host "web-server-01" (IP=192.168.1.10)
-  3. Assert: 1 asset exists, name="web-server-01", ip_addresses contains "192.168.1.10"
+  1. Ingest Splunk report with host "192.0.2.10"
+  2. Ingest Qualys report with host "web-server-01" (IP=192.0.2.10)
+  3. Assert: 1 asset exists, name="web-server-01", ip_addresses contains "192.0.2.10"
   4. Assert: All findings from both reports on same asset
 
 TestIngestDedup_CaseInsensitive:

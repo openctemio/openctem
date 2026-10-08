@@ -1,9 +1,13 @@
 # RFC-042 — Asset Inventory v2: services as rows, observations over time, one query language, labels, dynamic groups, policies and screenshots
 
-> Status: **Accepted** (2026-10-03; owner decisions D1–D21 approved as
-> recommended, §12). Implementation starts with the P0 slices in §9.1.
+> Status: **Accepted** (2026-10-03; decisions D1–D21, §12). Implemented so
+> far: P0 slice 1 (the type registry: `api/configs/asset-types.yaml`,
+> `assets.asset_class`, `GET /api/v1/asset-types`) and the §6.3.8 type model
+> hardening T1–T3 and O6 (enforced scanner/type compatibility). Not built yet:
+> services as rows, OQL, labels, dynamic groups, policies, observations,
+> rollups and screenshots (slices 2–7 and P1–P3).
 > **Amended 2026-10-03 by §6.3.8 (type model hardening)**: aliases are
-> input-only, sub-types are closed lists, owner decisions O1–O6 and the
+> input-only, sub-types are closed lists, decisions O1–O6 and the
 > ordered plan T0–T8.
 > Scope: api (data model, query compiler, facets, groups, policy engine,
 > target gate, screenshots store, rollups) + web (inventory pages; the UI
@@ -22,9 +26,9 @@
 > (service cards, facet menu, group-by chips, integrations catalog), written
 > in parallel; this RFC owns the data model, the engines and the APIs.
 >
-> Owner's request (2026-10-03): redesign how assets are discovered,
-> modelled, labelled, grouped, excluded, governed by policies and presented.
-> Keep OpenCTEM's deeper CTEM model. Owner rule for every number on screen:
+> Goal (2026-10-03): redesign how assets are discovered,
+> modelled, labelled, grouped, excluded, governed by policies and presented,
+> keeping OpenCTEM's deeper CTEM model. Rule for every number on screen:
 > **honest**.
 > A metric whose inputs are empty says "insufficient data"; it never shows a
 > default.
@@ -149,7 +153,7 @@ In scope:
   stay the imperative tool for findings.
 - **Hard delete from automation.** No policy, exclusion or lifecycle path
   deletes an asset. Deletion stays a human action under `assets:delete`,
-  and since owner decision O3 (2026-10) a human delete never destroys
+  and since decision O3 (2026-10) a human delete never destroys
   findings: an asset with findings is refused (archive it), one without is
   soft-deleted and purged after 30 days (`architecture/asset-deletion.md`).
 
@@ -361,9 +365,9 @@ requirement this RFC meets:
 
 ### 4.1 Design practices adopted
 
-Sources: research 08, "asset inventory / exposure graph system design", and
-research 09, "multi-type asset inventory" (2026-10-03). Each row says where
-the practice lands in this RFC.
+Sources: a review of asset inventory / exposure graph system design and of
+multi-type asset inventories (2026-10-03). Each row says where the practice
+lands in this RFC.
 
 | # | Practice | Where it lands here |
 |---|---|---|
@@ -390,7 +394,7 @@ to code" relationship chain (§6.3.5, the typed path and its edge sources,
 built from a graph model and OCSF `resource_relationship`) and connector
 normalisation.
 
-**What research 08 did not verify.** It has no verified evidence on:
+**What the design review did not verify.** It found no verified evidence on:
 
 - storage engines: Postgres JSONB/GIN, materialised facet tables,
   ClickHouse, OpenSearch, or a graph database;
@@ -484,9 +488,9 @@ seed (RFC-036) ──lineage──► asset (identity, owner, criticality, attri
 ### 6.3 Asset classes and the type registry
 
 OpenCTEM is **not** only a web-services inventory. OpenCTEM has 37 asset types
-(`AllAssetTypes()`, `api/pkg/domain/asset/value_objects.go:126-182`), and
-the live demo tenant uses 21 of them. Repositories are the most common
-type there, followed by hosts, networks, IPs, subdomains, domains and
+(`AllAssetTypes()`, `api/pkg/domain/asset/value_objects.go:126-182`), and a
+typical tenant uses about 21 of them. Repositories are usually the most
+common type, followed by hosts, networks, IPs, subdomains, domains and
 services. So the service card is **one lens** (the external
 surface) and not the shape of the whole inventory. This section defines
 what every type shares, what differs per type, and the one place where
@@ -547,7 +551,7 @@ Each class records its JupiterOne `_class` equivalent for interoperability
 | `network` | Network / Firewall / Gateway | network, vpc, subnet, firewall, load_balancer | Network |
 | `other` | — | unclassified | All assets only |
 
-**Gaps against research 09's suggested list.** It suggests `DnsRecord`
+**Gaps against the reviewed class list.** It suggests `DnsRecord`
 and `Image` classes. OpenCTEM has no DNS-record or container-image
 *type* today: DNS records are columns and observations of a `domain`
 (§6.4.2), and images are scanned through containers and registries.
@@ -681,7 +685,7 @@ and policies run over them:
 | Core field | Source |
 |---|---|
 | `name`, `type`, `sub_type`, `class`, `lens` | `assets` |
-| `owner` (unified, api#520), `bu`, `business_service` | existing |
+| `owner` (unified, #520), `bu`, `business_service` | existing |
 | `criticality` and **`effective_criticality`** (MAX of asset, BU, business service, served control plane; §3.5) | existing, read time |
 | `attribution` state + `attribution.confidence` (RFC-036, #835) | `asset_attributions` |
 | `exposure`, `is.public` | existing |
@@ -790,8 +794,8 @@ resources, `/api/v1/asset-groups` and `/api/v1/relationships` (RFC-041;
 | Existing | v2 |
 |---|---|
 | 37 types, `sub_type`, `TypeAliases` (`value_objects.go:88-113`) | The registry lists them with their sub-types and aliases. **Amended by §6.3.8:** aliases are input names only and are never stored; sub-types are a closed list per type |
-| Owner decision: type / group / tag are all needed | Kept. Type = registry; group = static and dynamic groups (§6.12); tag = custom labels (§6.7) |
-| Owner decision: effective criticality = MAX(asset, BU, service), used by risk score and priority | Unchanged, exposed as the core field `effective_criticality`; policies set only the asset's own value |
+| Decision: type / group / tag are all needed | Kept. Type = registry; group = static and dynamic groups (§6.12); tag = custom labels (§6.7) |
+| Decision: effective criticality = MAX(asset, BU, service), used by risk score and priority | Unchanged, exposed as the core field `effective_criticality`; policies set only the asset's own value |
 | `asset_types` / `asset_type_categories` tables | `asset_types.class` added and seeded from the YAML; categories table retired after one release |
 | `category.go`, `category-templates.tsx` | Replaced by generated code; the category names map to lenses, except `recon`, which folds into the External surface lens, and `infrastructure`, which splits into the Cloud & infrastructure and Containers & Kubernetes lenses. Classes are finer than any of the old category lists (16 + other) |
 | 25 per-type `config.tsx` pages | Folded into registry entries one class at a time; custom cells become named renderers; URLs redirect to lenses |
@@ -800,9 +804,9 @@ resources, `/api/v1/asset-groups` and `/api/v1/relationships` (RFC-041;
 
 #### 6.3.8 Type model hardening (amendment, 2026-10-03)
 
-> Status: **Accepted.** The owner approved O1–O6 as recommended on
-> 2026-10-03. The evidence is the asset-types review of the same date
-> (research 13: necessity, completeness, quality and best practice of the
+> Status: **Implemented** for T1–T3 and O6; T4a in part; T4b–T8 not built.
+> O1–O6 accepted 2026-10-03. The evidence is the asset-types review of the same date
+> (necessity, completeness, quality and best practice of the
 > asset types, with every HIGH finding re-read in code). This section
 > records the rules, the decisions and the ordered PR plan T0–T8.
 > Implementation status is kept in the table in "The plan" below.
@@ -857,7 +861,7 @@ decision.
 tool names as the §6.3.3 example shows. Tools are tenant-addable, and a
 custom tool declares target types, never a list of asset types.
 
-##### Owner decisions (approved 2026-10-03)
+##### Decisions (accepted 2026-10-03)
 
 | # | Question | Decision |
 |---|---|---|
@@ -893,7 +897,7 @@ until T4a gives their classes core types of their own.
 
 Every PR carries tests; data-access changes get two-tenant tests, and
 migrations are run up, down and up on a scratch Postgres 17 with seeded
-legacy data (never on live).
+legacy data (never on a production database).
 
 | PR | Scope | Contents | Status |
 |---|---|---|---|
@@ -910,7 +914,7 @@ legacy data (never on live).
 | **T8** Gaps, each gated on a producer | api + sensor + connectors | `identity` `user`/`group`/`oauth_app` (Entra/Okta connector); `network/ip_block` producers; `domain` email-posture attributes; then O4 `secret`, O5 `ai`, `saas_tenant`, IoT/OT | after T5 |
 
 Order: T1 → T2 → T3 → (O6) → T4a/T4b → T5; T6 follows slice 6; T7 and
-T8 run in parallel after T5. The research-12 isolation fixes (S0) land
+T8 run in parallel after T5. The asset isolation fixes (S0) land
 first; T1 touches the same `POST /assets` path.
 
 ###### 6.3.8.1 The normalisation migration (T3, reused by T4a)
@@ -959,8 +963,8 @@ first; T1 touches the same `POST /assets` path.
 
 #### 6.3.9 The property schema (amendment, 2026-10-07)
 
-**Problem.** The owner, on a domain's Properties ("Ip 202.160.124.20",
-"Ip addresses 202.160.124.20", "Port 443"): what are `ip` and
+**Problem.** A domain's Properties showed "Ip 203.0.113.20",
+"Ip addresses 203.0.113.20" and "Port 443": what are `ip` and
 `ip_address`? One concept, an asset's addresses, was stored under six keys
 (`ip`, `ip_address` as a string or an object, `ips`, `ip_addresses`,
 `resolved_ips`, `addresses`), and each reader (correlation, scope
@@ -1151,7 +1155,7 @@ Three layers, built mostly from parts that already exist:
 **The correlation job runs after ingest.**
 
 - Scope: single-flight per tenant and scan zone. It is leased, so two
-  runs never overlap (research 02 finding 6).
+  runs never overlap.
 - It runs after each completed scan run, debounced 5 minutes, and nightly.
 - Steps:
   1. **Windowed matches.** It runs RFC-028's hostname and IP matches.
@@ -1366,7 +1370,7 @@ which mode it used (`"mode": "multiselect" | "full"`).
 
 #### 6.6.2 Group-by
 
-The owner's design screenshots group services by technology, port, label,
+The design mockups group services by technology, port, label,
 domain, host, IP, CNAME, status code, title or web server. Each group
 needs its value, a count, its own pagination, export and "scan this
 group".
@@ -1531,7 +1535,7 @@ evidence: [http_title, http_status]
 
 #### 6.7.3 Technology catalog
 
-The owner's design screenshots show technologies with categories (font
+The design mockups show technologies with categories (font
 scripts, tag managers, analytics, web servers, JS frameworks and
 libraries, …), a short description, an icon and a version ("jQuery
 3.3.1").
@@ -2097,13 +2101,13 @@ bug seen in the asset-merge dedup fix.
 - **Events.**
   - Ingest writes an `inventory_change` row in the **same transaction**
     as the observation diff (§6.16). This is the transactional-outbox
-    pattern; research 02 finding 4.
+    pattern.
   - Each row carries tenant, subject, change kinds and `origin`, which
     is `ingest`, `user:<id>`, `policy:<id>` or `exclusion:<id>`.
   - Label, archive and owner changes made by any path write the same
     row.
 - **The policy worker** claims change rows with
-  `FOR UPDATE SKIP LOCKED` (research 02 finding 1), in batches of 500
+  `FOR UPDATE SKIP LOCKED`, in batches of 500
   per tenant. For each active policy whose trigger matches the change
   kinds, it evaluates the condition **as SQL over the batch's subject
   ids** (`compiled_condition AND id = ANY($batch)`). That is one query
@@ -2153,7 +2157,7 @@ bug seen in the asset-merge dedup fix.
 - A policy can feed a workflow through the existing `asset_discovered`
   trigger or the new `asset_policy_matched` outbox event, so the
   imperative steps stay in workflows.
-- D6 asks the owner to confirm this split.
+- D6 confirms this split.
 
 ### 6.16 Observations and change detection
 
@@ -2213,7 +2217,7 @@ inventory_observations(id, tenant_id, subject_type asset|service, subject_id,
 
 ### 6.17 Rollups, trends and distributions
 
-The owner's design screenshots (Overview, Dashboard, Asset Groups) need:
+The design mockups (Overview, Dashboard, Asset Groups) need:
 
 - trends: exposed assets, services and technologies over time;
 - top-10 distributions (asset types, domains, technologies) with export;
@@ -2286,7 +2290,7 @@ this shape:
   default. Distributions and facets are always computed live for scoped
   users.
 
-**Template-triggered checks** (research 01b R2, "new checks published in
+**Template-triggered checks** ("new checks published in
 the last 7/30 days, and how many of our services were checked against
 them"):
 
@@ -2302,7 +2306,7 @@ them"):
   This needs `scan_runs` to record the content version per tool, a small
   RFC-031 addition.
 - Until both inputs exist, the endpoint returns `insufficient_data` with
-  `reason: content_versions_not_reported`. Owner rule: no placeholder.
+  `reason: content_versions_not_reported`. Rule: no placeholder.
 
 ### 6.18 API summary
 
@@ -2756,9 +2760,9 @@ Every slice that adds a table referencing `assets` also updates
 |---|---|
 | Keep services as assets of type `service` | Every inventory count, dashboard and scope rule would mix hosts and ports. Services have different identity (host + port) and different lifecycle (they close and reopen). The services table already exists and is FK-safe in the merge plan |
 | Facets over `assets.properties` JSONB (today) | Full JSONB expansion per request; no typing; cannot be indexed per value at 100k+ (F10) |
-| Elasticsearch / OpenSearch for search and facets | Another stateful service to run, secure and keep consistent per tenant; Postgres with typed columns, trigram and GIN should meet §7 at the target sizes. Revisit above 5M services per tenant. **This is our own reasoning:** research 08 found no verified evidence comparing storage engines, so the P0 performance tests decide |
-| ClickHouse for observations / Neo4j for lineage | Same reasoning, also unverified by research 08. Observations are change-only and small; lineage depth is capped at 8 and fits a recursive CTE. Revisit if the P1/P3 tests miss §7 |
-| Probabilistic (ML) record merging | Research 08 "avoid": opaque merges cannot be explained or reversed. RFC-028's deterministic order + review stays |
+| Elasticsearch / OpenSearch for search and facets | Another stateful service to run, secure and keep consistent per tenant; Postgres with typed columns, trigram and GIN should meet §7 at the target sizes. Revisit above 5M services per tenant. **This is our own reasoning:** the design review found no verified evidence comparing storage engines, so the P0 performance tests decide |
+| ClickHouse for observations / Neo4j for lineage | Same reasoning, also unverified by the design review. Observations are change-only and small; lineage depth is capped at 8 and fits a recursive CTE. Revisit if the P1/P3 tests miss §7 |
+| Probabilistic (ML) record merging | Avoided: opaque merges cannot be explained or reversed. RFC-028's deterministic order + review stays |
 | Materialised views for facets | `REFRESH MATERIALIZED VIEW` is all-tenants and heavy; a per-tenant table refreshed on change is cheaper and states `as_of` |
 | Lucene / KQL-compatible syntax | Bigger grammar, regex and fuzzy operators we would have to refuse; OQL keeps search-box ergonomics with a typed registry |
 | Policies as workflows | Workflows are per event, per finding, without preview, apply-to-existing or caps (§6.15.6) |
@@ -2767,9 +2771,9 @@ Every slice that adds a table referencing `assets` also updates
 | gowitness | Viable as a separate GPL executable (D7), but its request interception cannot enforce the per-zone private-range policy |
 | Separate tag and label systems | Scope and assignment rules depend on tags; keeping tags as custom labels avoids breaking them |
 
-## 12. Owner decisions (recommendations in bold)
+## 12. Decisions (recommendations in bold)
 
-> **Approved 2026-10-03.** The owner approved D1–D21 **as recommended**.
+> **Accepted 2026-10-03.** D1–D21 were accepted **as recommended**.
 > The bold recommendation in each row below is now the decision. The
 > other options are kept as a record of what was considered.
 
@@ -2799,19 +2803,19 @@ Every slice that adds a table referencing `assets` also updates
 
 ## 13. Sources
 
-- Research in the workspace (2026-10-03):
-  - `01-easm-best-practices`: lineage and graph-cut exclusions,
+- Design reviews (2026-10-03):
+  - EASM practice: lineage and graph-cut exclusions,
     confidence and hop distance, seed groups and cadence,
     observations and diffs;
   - R2 template-triggered scans, R5 asset policies;
-  - `02-scan-orchestration-ha`: transactional outbox, `SKIP LOCKED`
+  - scan orchestration and high availability: transactional outbox, `SKIP LOCKED`
     claims, at-least-once delivery;
-  - `08-inventory-system-design`: per-source records → correlation →
+  - inventory system design: per-source records → correlation →
     canonical rows; deterministic, windowed identity keys; single-flight
     correlation; zone boundaries; run-tag change detection with scoped
     cleanup; Fetch/Map/Load/ScopedCleanup connectors; identity fields;
     field/operator/value query grammar; attribution states;
-  - `09-multi-type-inventory`: two-level class/type taxonomy, EASM as
+  - multi-type inventories: two-level class/type taxonomy, EASM as
     a subset of the shared model, one polymorphic table with per-type
     schemas, OCSF `resource_details` core, `jsonb_path_ops` and
     expression indexes, class tabs with per-tab columns, two-layer

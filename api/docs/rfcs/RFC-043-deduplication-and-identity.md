@@ -1,6 +1,6 @@
 # RFC-043 — Deduplication and identity
 
-> Status: **Accepted — decisions D1–D15 approved** (owner, 2026-10-03; #892).
+> Status: **Accepted — decisions D1–D15 approved** (2026-10-03; #892).
 > Progress: P0 merged; P1 item 10 implemented, item 11 implemented: v2 recipes at ingest and the re-fingerprint job with dry run (see §12).
 > Scope: api (ingest, finding and asset repositories, merge, tickets,
 > notifications, migrations) + sensor/sdk-go (fingerprint hints only) + web
@@ -11,9 +11,9 @@
 > Builds on [ADR-004](../architecture/decisions/004-finding-provenance.md)
 > (provenance belongs to the sighting), [RFC-028](RFC-028-asset-identity-model.md)
 > (asset identifiers), [RFC-039](RFC-039-continuous-retest.md) (regression
-> reopen), [RFC-040](https://github.com/openctemio/openctem/pull/870) (mutual
+> reopen), [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) (mutual
 > distrust: a sensor's claim is a hint) and
-> [RFC-042](https://github.com/openctemio/openctem/pull/878) (Asset Inventory v2:
+> [RFC-042](RFC-042-asset-inventory-v2.md) (Asset Inventory v2:
 > source records → links → canonical asset). **Asset identity design is RFC-042's;**
 > this RFC only lists the normalizer bugs that must be fixed before it lands and
 > the finding-side consequences of an asset merge or split.
@@ -476,7 +476,7 @@ RFC-042 owns the model; these are bugs in today's normalizer, each with a probe:
 19. Golden corpus in CI, property tests, schema gate, finding-merge coverage
     test; sensor fingerprints demoted to sighting attributes everywhere.
 
-## 13. Owner decisions (approved as recommended, 2026-10-03)
+## 13. Decisions (approved as recommended, 2026-10-03)
 
 | # | Decision | Recommendation |
 |---|---|---|
@@ -522,8 +522,8 @@ on). Deleting the oldest duplicates beyond N is **not** adopted.
 
 ## 16. Research
 
-Folded in from the adversarially verified report
-`research/10-dedup-best-practices.md` (2026-10-03). Findings cited above as R1–R9:
+Folded in from a review of published deduplication practice (2026-10-03),
+each claim checked against its source. Findings cited above as R1–R9:
 
 | R | Verified finding | Source | Where used |
 |---|---|---|---|
