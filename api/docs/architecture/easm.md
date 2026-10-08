@@ -332,6 +332,10 @@ The 12-hour re-check marks a lost record `failed`, and names under it stop
 auto-confirming.
 ## 4e. Settings and run-now (built, P0-11)
 
+These are their own route groups (`/api/v1/easm/settings`,
+`/api/v1/easm/sweeps`), registered beside `/api/v1/easm` and gated by the
+`attack_surface` module with their own permissions:
+
 | Route | Permission | What |
 |---|---|---|
 | `GET /api/v1/easm/settings` | `settings:read` | switches, intervals (effective, floor 6 h, max 168 h), what the platform runs, last CT run, last DNS check, when run-now is allowed again |
@@ -342,7 +346,7 @@ The settings live in the tenant settings section `easm` (`tenant.EASMSettings`,
 written with the section compare-and-swap). The zero value is the default:
 CT and DNS checks on at the platform cadence (decisions E3, E8). Turning CT off
 is the per-tenant opt-out from sending domain names to crt.sh and Cert
-Spotter (22b S6).
+Spotter.
 
 Enforcement sits in the services, so every path honors it: the CT and DNS
 controllers, the CT follow-up, run-now and seed sweeps. `certmonitor` and
@@ -458,11 +462,11 @@ or `PUT /assets/{id}/attribution`) is followed by
 `easm.DecisionEffects.AfterDecision`, best effort and only for the assets the
 decision stored (tenant and data scope already checked):
 
-- **Reclassify now** (22c B4): an asset-scoped request on the priority
+- **Reclassify now**: an asset-scoped request on the priority
   reclassify queue, which is drained every minute, so the P2 cap on findings
   of unconfirmed assets lifts (or applies) within two minutes instead of the
   12-hour sweep.
-- **Rejection hygiene** (22c B2): on `rejected`, the name's open CT and
+- **Rejection hygiene**: on `rejected`, the name's open CT and
   DNS-check exposures, and those of every name under it, are resolved with
   state history; the CT monitor stops writing exposures for rejected and
   tombstoned names. See

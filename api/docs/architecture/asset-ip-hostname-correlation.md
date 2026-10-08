@@ -253,7 +253,7 @@ A host can have multiple IP addresses (multi-NIC, dual-stack IPv4/IPv6):
 
 | File | Purpose |
 |------|---------|
-| `internal/app/asset_service.go` | `correlateByIPOrHostname()`, `mergeAndUpdateExisting()`, `looksLikeIP()` |
+| `internal/app/asset/service.go` | `correlateByIPOrHostname()`, `mergeAndUpdateExisting()`, `looksLikeIP()` |
 | `internal/infra/postgres/asset_repository.go` | `FindByIP()`, `FindByHostname()` |
 | `pkg/domain/asset/repository.go` | Interface definitions |
 | `migrations/000123_asset_ip_correlation_indexes.up.sql` | Property indexes |
