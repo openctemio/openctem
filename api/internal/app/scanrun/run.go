@@ -183,6 +183,9 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 		return nil, err
 	}
 	run.SetTotalSteps(len(template.Steps))
+	if err := scanrun.PinWorkflow(ctx, s.versions, run, template); err != nil {
+		return nil, err
+	}
 
 	// FIXED: Use atomic CreateRunIfUnderLimit to prevent race conditions
 	// This atomically checks concurrent run limits AND creates the run in a single transaction.
@@ -809,7 +812,7 @@ func (s *Service) OnStepCompletedWithSkips(ctx context.Context, runID, stepKey s
 		metrics.StepRunsTotal.WithLabelValues(stepKey, "completed").Inc()
 	}
 
-	template, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+	template, err := s.runWorkflow(ctx, run)
 	if err != nil {
 		return err
 	}
@@ -888,7 +891,7 @@ func (s *Service) settleBatchedStep(ctx context.Context, run *scanrun.Run, stepR
 		}
 		metrics.StepRunsTotal.WithLabelValues(stepRun.StepKey, "partial").Inc()
 	}
-	template, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+	template, err := s.runWorkflow(ctx, run)
 	if err != nil {
 		return err
 	}
@@ -916,7 +919,7 @@ func (s *Service) failStep(ctx context.Context, run *scanrun.Run, stepRun *scanr
 	}
 
 	// Get template to check fail_fast setting
-	template, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+	template, err := s.runWorkflow(ctx, run)
 	if err != nil {
 		return err
 	}
@@ -1646,7 +1649,7 @@ func (s *Service) AdvanceRun(ctx context.Context, run *scanrun.Run) error {
 	if run == nil {
 		return fmt.Errorf("%w: run is required", shared.ErrValidation)
 	}
-	template, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+	template, err := s.runWorkflow(ctx, run)
 	if err != nil {
 		return fmt.Errorf("load the run's workflow: %w", err)
 	}
@@ -1664,7 +1667,7 @@ func (s *Service) QueueRunStep(ctx context.Context, run *scanrun.Run, step *scan
 	if run == nil || step == nil {
 		return fmt.Errorf("%w: run and step are required", shared.ErrValidation)
 	}
-	template, err := s.templateRepo.GetWithSteps(ctx, run.ScanWorkflowID)
+	template, err := s.runWorkflow(ctx, run)
 	if err != nil {
 		return fmt.Errorf("load the run's template: %w", err)
 	}

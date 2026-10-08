@@ -367,6 +367,11 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 	run.FreezeOverride = override
 	run.SetTotalSteps(len(steps))
+	pinned := *template
+	pinned.Steps = steps
+	if err := scanrun.PinWorkflow(ctx, s.workflowVersions, run, &pinned); err != nil {
+		return nil, err
+	}
 	run.RetryAttempt = retryAttempt
 	run.ScheduledFor = scheduledFor
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
