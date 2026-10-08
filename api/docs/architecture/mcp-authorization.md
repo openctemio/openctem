@@ -163,7 +163,7 @@ every `mcp.tool_called` carries `auth_method`, `grant_id`, `client_id` and
 
 ### Storage
 
-Migration `001364_mcp_oauth`: `mcp_oauth_clients`, `mcp_oauth_requests`,
+Migration `001367_mcp_oauth`: `mcp_oauth_clients`, `mcp_oauth_requests`,
 `mcp_oauth_grants`, `mcp_oauth_tokens`; grants and requests cascade on
 organization and user deletion.
 
