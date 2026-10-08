@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -226,7 +225,7 @@ func (h *TemplateSourceHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Param        template_type  query     string  false  "Filter by template type (nuclei, semgrep, betterleaks)"
 // @Param        enabled        query     bool    false  "Filter by enabled status"
 // @Param        page           query     int     false  "Page number"
-// @Param        page_size      query     int     false  "Page size"
+// @Param        per_page       query     int     false  "Page size (max 100)"
 // @Param        sort_by        query     string  false  "Sort by field"
 // @Param        sort_order     query     string  false  "Sort order (asc, desc)"
 // @Success      200  {object}  ListSourcesResponse
@@ -254,16 +253,11 @@ func (h *TemplateSourceHandler) List(w http.ResponseWriter, r *http.Request) {
 		enabled := enabledStr == queryParamTrue
 		input.Enabled = &enabled
 	}
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if page, err := strconv.Atoi(pageStr); err == nil {
-			input.Page = page
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if pageSizeStr := r.URL.Query().Get("page_size"); pageSizeStr != "" {
-		if pageSize, err := strconv.Atoi(pageSizeStr); err == nil {
-			input.PageSize = pageSize
-		}
-	}
+	input.Page, input.PageSize = paging.Page, paging.PerPage
 
 	result, err := h.service.ListSources(r.Context(), input)
 	if err != nil {
