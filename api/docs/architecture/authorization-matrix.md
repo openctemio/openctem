@@ -1612,7 +1612,7 @@ viewer (1) ┴─ Can only view resources
    (the web console's server, scripts) are not affected. Browsers normally
    reach these routes through the web console, which checks the
    same-origin rule and the double-submit pair on every write itself
-   (`web/SECURITY.md`, section 6). The IdP's own cross-site posts (SAML ACS,
+   (`web/docs/security-architecture.md`, section 6). The IdP's own cross-site posts (SAML ACS,
    back-channel logout) are authenticated by their signed payload instead.
 
 ## API Routes Summary
