@@ -142,17 +142,24 @@ func TestRegister_NewAndExistingEmailAnswerIdentically(t *testing.T) {
 	}
 }
 
-// Forgot password: unknown and known emails get the same answer.
+// Forgot password: unknown and known emails get the same answer. Each call
+// gets its own service: the lookup runs in the background after the response,
+// and the in-memory test repository is not safe for concurrent use.
 func TestForgotPassword_UnknownAndKnownEmailAnswerIdentically(t *testing.T) {
-	svc, deps := newTestAuthService()
-	sess := auth.NewSessionService(deps.sessionRepo, deps.rtRepo, logger.NewNop())
-	h := handler.NewLocalAuthHandler(svc, sess, nil, nil, deps.cfg, logger.NewNop())
-	if rec := postJSON(t, h.Register, map[string]string{"email": "known@example.com", "password": "Str0ngPassw0rd!", "name": "K"}); rec.Code != http.StatusCreated {
-		t.Fatalf("seed: %d", rec.Code)
+	forgot := func(seed bool, email string) *httptest.ResponseRecorder {
+		svc, deps := newTestAuthService()
+		sess := auth.NewSessionService(deps.sessionRepo, deps.rtRepo, logger.NewNop())
+		h := handler.NewLocalAuthHandler(svc, sess, nil, nil, deps.cfg, logger.NewNop())
+		if seed {
+			if rec := postJSON(t, h.Register, map[string]string{"email": email, "password": "Str0ngPassw0rd!", "name": "K"}); rec.Code != http.StatusCreated {
+				t.Fatalf("seed: %d", rec.Code)
+			}
+		}
+		return postJSON(t, h.ForgotPassword, map[string]string{"email": email})
 	}
-	known := postJSON(t, h.ForgotPassword, map[string]string{"email": "known@example.com"})
-	unknown := postJSON(t, h.ForgotPassword, map[string]string{"email": "unknown@example.com"})
+	known := forgot(true, "known@example.com")
+	unknown := forgot(false, "unknown@example.com")
 	if known.Code != unknown.Code || !bytes.Equal(known.Body.Bytes(), unknown.Body.Bytes()) {
-		t.Fatalf("answers differ:\nknown:   %d %s\nunknown: %d %s", known.Code, known.Body.String(), unknown.Code, unknown.Body.String())
+		t.Fatalf("answers differ: known %d %s, unknown %d %s", known.Code, known.Body.String(), unknown.Code, unknown.Body.String())
 	}
 }
