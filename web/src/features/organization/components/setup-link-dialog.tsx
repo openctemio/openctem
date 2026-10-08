@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   SetupLinkResult,
@@ -62,7 +63,7 @@ export function SetupLinkDialog({ target, onOpenChange, issue }: SetupLinkDialog
 
   return (
     <Dialog open={!!target} onOpenChange={(next) => (next ? undefined : close())}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Setup link</DialogTitle>
           <DialogDescription>
@@ -70,24 +71,26 @@ export function SetupLinkDialog({ target, onOpenChange, issue }: SetupLinkDialog
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {outcome && target ? (
-            <SetupLinkResult outcome={outcome} email={target.email} />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Issue a new one-time link they can use to set their password. Any link issued before
-              stops working.
-            </p>
-          )}
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </div>
+        <DialogBody>
+          <div className="space-y-4 py-2">
+            {outcome && target ? (
+              <SetupLinkResult outcome={outcome} email={target.email} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Issue a new one-time link they can use to set their password. Any link issued before
+                stops working.
+              </p>
+            )}
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </DialogBody>
 
-        <DialogFooter className="gap-2">
+        <DialogFooter>
           {outcome ? (
             <Button onClick={close}>Done</Button>
           ) : (

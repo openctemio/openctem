@@ -37,6 +37,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -229,8 +231,8 @@ function CreateTrustDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="sm:max-w-lg">
-        <form onSubmit={submit}>
+      <DialogContent>
+        <DialogForm onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>Trust an organization</DialogTitle>
             <DialogDescription>
@@ -238,27 +240,29 @@ function CreateTrustDialog({
               the trust before it applies.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-5 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="trust-domain">Their email domain</Label>
-              <Input
-                id="trust-domain"
-                required
-                placeholder="partner.com"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                disabled={busy}
-              />
+          <DialogBody>
+            <div className="space-y-5 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="trust-domain">Their email domain</Label>
+                <Input
+                  id="trust-domain"
+                  required
+                  placeholder="partner.com"
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  disabled={busy}
+                />
+              </div>
+              <TrustSettingsFields value={settings} onChange={setSettings} disabled={busy} />
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
             </div>
-            <TrustSettingsFields value={settings} onChange={setSettings} disabled={busy} />
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-          </div>
-          <DialogFooter className="gap-2">
+          </DialogBody>
+          <DialogFooter>
             <Button type="button" variant="ghost" onClick={close}>
               Cancel
             </Button>
@@ -267,7 +271,7 @@ function CreateTrustDialog({
               Request trust
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )
@@ -313,17 +317,19 @@ function EditTrustDialog({
         onOpenChange(next)
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Trust settings: {trust?.organization}</DialogTitle>
           <DialogDescription>
             Changes apply to new sign-ins and invitations of people from this organization.
           </DialogDescription>
         </DialogHeader>
-        <div className="py-4">
-          <TrustSettingsFields value={settings} onChange={setSettings} disabled={busy} />
-        </div>
-        <DialogFooter className="gap-2">
+        <DialogBody>
+          <div className="py-4">
+            <TrustSettingsFields value={settings} onChange={setSettings} disabled={busy} />
+          </div>
+        </DialogBody>
+        <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
@@ -367,7 +373,7 @@ function ApproveTrustDialog({
 
   return (
     <Dialog open={!!trust} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Approve trust from {trust?.organization}</DialogTitle>
           <DialogDescription>
@@ -377,18 +383,20 @@ function ApproveTrustDialog({
             ends too.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex items-start gap-3 py-4">
-          <Checkbox
-            id="trust-attest-mfa"
-            checked={attest}
-            onCheckedChange={(c) => setAttest(c === true)}
-            disabled={busy}
-          />
-          <Label htmlFor="trust-attest-mfa" className="text-sm leading-snug font-normal">
-            Our identity provider requires a second factor for everyone.
-          </Label>
-        </div>
-        <DialogFooter className="gap-2">
+        <DialogBody>
+          <div className="flex items-start gap-3 py-4">
+            <Checkbox
+              id="trust-attest-mfa"
+              checked={attest}
+              onCheckedChange={(c) => setAttest(c === true)}
+              disabled={busy}
+            />
+            <Label htmlFor="trust-attest-mfa" className="text-sm leading-snug font-normal">
+              Our identity provider requires a second factor for everyone.
+            </Label>
+          </div>
+        </DialogBody>
+        <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

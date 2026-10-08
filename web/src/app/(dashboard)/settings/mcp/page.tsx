@@ -15,6 +15,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -361,54 +362,56 @@ export default function MCPConnectPage() {
               or removed. Pick the purpose to scope the key.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="mcp-key-purpose">Purpose</Label>
-              <Select value={preset} onValueChange={(v) => handlePresetChange(v as PresetId)}>
-                <SelectTrigger id="mcp-key-purpose">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(KEY_PRESETS) as PresetId[]).map((id) => (
-                    <SelectItem key={id} value={id}>
-                      {KEY_PRESETS[id].label} ({KEY_PRESETS[id].hint})
-                    </SelectItem>
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="mcp-key-purpose">Purpose</Label>
+                <Select value={preset} onValueChange={(v) => handlePresetChange(v as PresetId)}>
+                  <SelectTrigger id="mcp-key-purpose">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(KEY_PRESETS) as PresetId[]).map((id) => (
+                      <SelectItem key={id} value={id}>
+                        {KEY_PRESETS[id].label} ({KEY_PRESETS[id].hint})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {activePreset.scopes.map((s) => (
+                    <Badge key={s} variant="outline" className="font-mono text-xs">
+                      {s}
+                    </Badge>
                   ))}
-                </SelectContent>
-              </Select>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {activePreset.scopes.map((s) => (
-                  <Badge key={s} variant="outline" className="font-mono text-xs">
-                    {s}
-                  </Badge>
-                ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-key-name">Name</Label>
+                <Input
+                  id="mcp-key-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Claude on my laptop"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="mcp-key-expiry">Expires</Label>
+                <Select value={expiry} onValueChange={setExpiry}>
+                  <SelectTrigger id="mcp-key-expiry">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {API_KEY_EXPIRY_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="mcp-key-name">Name</Label>
-              <Input
-                id="mcp-key-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Claude on my laptop"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="mcp-key-expiry">Expires</Label>
-              <Select value={expiry} onValueChange={setExpiry}>
-                <SelectTrigger id="mcp-key-expiry">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {API_KEY_EXPIRY_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isMutating}>
               Cancel

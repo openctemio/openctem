@@ -25,6 +25,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -482,7 +483,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
 
       {/* Create Rule Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>Create assignment rule</DialogTitle>
             <DialogDescription>
@@ -490,108 +491,110 @@ export function AssignmentRulesSection({ header }: SectionProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="rule-name">Name</Label>
-              <Input
-                id="rule-name"
-                placeholder="e.g., Critical assets to Security team"
-                value={createForm.name}
-                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-              />
+          <DialogBody className="grid gap-4">
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="rule-name">Name</Label>
+                <Input
+                  id="rule-name"
+                  placeholder="e.g., Critical assets to Security team"
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="rule-description">Description (optional)</Label>
+                <Textarea
+                  id="rule-description"
+                  placeholder="Describe what this rule does..."
+                  value={createForm.description}
+                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="rule-priority">Priority</Label>
+                <Input
+                  id="rule-priority"
+                  type="number"
+                  value={createForm.priority}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, priority: parseInt(e.target.value) || 0 })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">Lower numbers have higher priority</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Target team</Label>
+                <Select
+                  value={createForm.target_group_id}
+                  onValueChange={(v) => setCreateForm({ ...createForm, target_group_id: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {groups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="rule-description">Description (optional)</Label>
-              <Textarea
-                id="rule-description"
-                placeholder="Describe what this rule does..."
-                value={createForm.description}
-                onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                rows={2}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="rule-priority">Priority</Label>
-              <Input
-                id="rule-priority"
-                type="number"
-                value={createForm.priority}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, priority: parseInt(e.target.value) || 0 })
-                }
-              />
-              <p className="text-xs text-muted-foreground">Lower numbers have higher priority</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Target team</Label>
-              <Select
-                value={createForm.target_group_id}
-                onValueChange={(v) => setCreateForm({ ...createForm, target_group_id: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a group" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Conditions Builder */}
-          <div className="space-y-3 py-2">
-            <Label>Conditions (optional)</Label>
-            <p className="text-xs text-muted-foreground">
-              Assets matching these conditions will be automatically assigned to the target group.
-            </p>
-            <div className="space-y-3">
-              {Object.entries(CONDITION_OPTIONS).map(([condKey, options]) => {
-                const selected = createForm.conditions[condKey] || []
-                return (
-                  <div key={condKey} className="space-y-1.5">
-                    <Label className="text-xs font-medium">
-                      {CONDITION_LABELS[condKey] || condKey}
-                    </Label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {options.map((opt) => {
-                        const isSelected = selected.includes(opt)
-                        return (
-                          <Badge
-                            key={opt}
-                            variant={isSelected ? 'default' : 'outline'}
-                            className="cursor-pointer text-xs"
-                            onClick={() => {
-                              const newValues = isSelected
-                                ? selected.filter((v) => v !== opt)
-                                : [...selected, opt]
-                              setCreateForm({
-                                ...createForm,
-                                conditions: {
-                                  ...createForm.conditions,
-                                  [condKey]: newValues,
-                                },
-                              })
-                            }}
-                          >
-                            {opt.replace(/_/g, ' ')}
-                          </Badge>
-                        )
-                      })}
+            {/* Conditions Builder */}
+            <div className="space-y-3 py-2">
+              <Label>Conditions (optional)</Label>
+              <p className="text-xs text-muted-foreground">
+                Assets matching these conditions will be automatically assigned to the target group.
+              </p>
+              <div className="space-y-3">
+                {Object.entries(CONDITION_OPTIONS).map(([condKey, options]) => {
+                  const selected = createForm.conditions[condKey] || []
+                  return (
+                    <div key={condKey} className="space-y-1.5">
+                      <Label className="text-xs font-medium">
+                        {CONDITION_LABELS[condKey] || condKey}
+                      </Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {options.map((opt) => {
+                          const isSelected = selected.includes(opt)
+                          return (
+                            <Badge
+                              key={opt}
+                              variant={isSelected ? 'default' : 'outline'}
+                              className="cursor-pointer text-xs"
+                              onClick={() => {
+                                const newValues = isSelected
+                                  ? selected.filter((v) => v !== opt)
+                                  : [...selected, opt]
+                                setCreateForm({
+                                  ...createForm,
+                                  conditions: {
+                                    ...createForm.conditions,
+                                    [condKey]: newValues,
+                                  },
+                                })
+                              }}
+                            >
+                              {opt.replace(/_/g, ' ')}
+                            </Badge>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          </DialogBody>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="ghost" onClick={() => setCreateDialogOpen(false)}>
               Cancel
             </Button>
@@ -612,7 +615,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Delete assignment rule</DialogTitle>
             <DialogDescription>

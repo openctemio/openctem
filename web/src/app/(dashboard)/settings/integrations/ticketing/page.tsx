@@ -24,6 +24,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -258,216 +260,218 @@ function ConfigureTicketingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Configure {integration.name}</DialogTitle>
           <DialogDescription>Control how OpenCTEM syncs with this tracker.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          {/* Default destination project */}
-          <div className="space-y-2 rounded-lg border p-3">
-            <Label htmlFor="default-project" className="font-medium">
-              Default project
-            </Label>
-            <p className="text-muted-foreground text-xs">
-              Where tickets land when a finding doesn&apos;t specify one and no routing rule
-              matches.
-            </p>
-            {projects.length > 0 && (
-              <Select value={projectKey || undefined} onValueChange={setProjectKey}>
-                <SelectTrigger id="default-project-picker">
-                  <SelectValue placeholder="Pick a Jira project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.key}>
-                      {p.key} — {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Input
-              id="default-project"
-              value={projectKey}
-              onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
-              placeholder={projectsLoading ? 'Loading projects…' : 'e.g. SEC'}
-            />
-            {projects.length === 0 && !projectsLoading && (
-              <p className="text-muted-foreground text-xs">
-                Couldn&apos;t list projects from Jira — enter the project key manually.
-              </p>
-            )}
-          </div>
-
-          {/* Bidirectional sync */}
-          <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
-            <div className="space-y-1">
-              <Label htmlFor="sync-enabled" className="font-medium">
-                Bidirectional status sync
+        <DialogBody>
+          <div className="space-y-4">
+            {/* Default destination project */}
+            <div className="space-y-2 rounded-lg border p-3">
+              <Label htmlFor="default-project" className="font-medium">
+                Default project
               </Label>
               <p className="text-muted-foreground text-xs">
-                When a finding&apos;s status changes in OpenCTEM, move the linked Jira issue to
-                match. Jira-side status changes already sync back automatically.
+                Where tickets land when a finding doesn&apos;t specify one and no routing rule
+                matches.
               </p>
-            </div>
-            <Switch id="sync-enabled" checked={syncEnabled} onCheckedChange={setSyncEnabled} />
-          </div>
-
-          {/* Ticket defaults + severity→priority mapping */}
-          <div className="space-y-3 rounded-lg border p-3">
-            <Label className="font-medium">Ticket defaults &amp; mapping</Label>
-            <p className="text-muted-foreground text-xs">
-              Override how OpenCTEM fills new tickets. Leave blank to use the defaults.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="issue-type" className="text-xs">
-                  Issue type
-                </Label>
-                <Input
-                  id="issue-type"
-                  value={issueType}
-                  onChange={(e) => setIssueType(e.target.value)}
-                  placeholder="Bug"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="default-priority" className="text-xs">
-                  Default priority
-                </Label>
-                <Input
-                  id="default-priority"
-                  value={defaultPriority}
-                  onChange={(e) => setDefaultPriority(e.target.value)}
-                  placeholder="Medium"
-                />
-              </div>
-            </div>
-            <Label className="text-xs">Severity → Jira priority</Label>
-            <div className="grid grid-cols-2 gap-3">
-              {SEVERITY_LEVELS.map((sev) => (
-                <div key={sev} className="space-y-1">
-                  <Label htmlFor={`sev-${sev}`} className="text-muted-foreground text-xs">
-                    {severityLabel(sev)}
-                  </Label>
-                  <Input
-                    id={`sev-${sev}`}
-                    value={sevPriority[sev]}
-                    onChange={(e) => setSevPriority((p) => ({ ...p, [sev]: e.target.value }))}
-                    placeholder={DEFAULT_JIRA_PRIORITY[sev]}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Outbound status mapping (finding status → Jira status NAME) */}
-          <div className="space-y-3 rounded-lg border p-3">
-            <Label className="font-medium">Outbound status names</Label>
-            <p className="text-muted-foreground text-xs">
-              When bidirectional sync moves a Jira issue, use these status names (match your Jira
-              workflow). Blank = stock default.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {(
-                [
-                  ['confirmed', 'To Do'],
-                  ['in_progress', 'In Progress'],
-                  ['fix_applied', 'Done'],
-                  ['resolved', 'Done'],
-                ] as const
-              ).map(([fs, ph]) => (
-                <div key={fs} className="space-y-1">
-                  <Label htmlFor={`out-${fs}`} className="text-muted-foreground text-xs">
-                    {fs.replace('_', ' ')}
-                  </Label>
-                  <Input
-                    id={`out-${fs}`}
-                    value={statusOutbound[fs]}
-                    onChange={(e) => setStatusOutbound((p) => ({ ...p, [fs]: e.target.value }))}
-                    placeholder={ph}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Inbound status mapping (Jira status NAME → finding status) */}
-          <div className="space-y-3 rounded-lg border p-3">
-            <Label className="font-medium">Inbound status mapping</Label>
-            <p className="text-muted-foreground text-xs">
-              Map your Jira workflow status names to OpenCTEM finding statuses so a Jira-side status
-              change updates the finding. Stock Jira names (To Do / In Progress / Done…) already
-              work — only add rows for custom workflow statuses.
-            </p>
-            {statusInbound.length === 0 && (
-              <p className="text-muted-foreground text-xs italic">
-                No custom mappings — stock defaults apply.
-              </p>
-            )}
-            {statusInbound.map((row, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Input
-                  value={row.jira}
-                  onChange={(e) =>
-                    setStatusInbound((rows) =>
-                      rows.map((r, j) => (j === i ? { ...r, jira: e.target.value } : r))
-                    )
-                  }
-                  placeholder="Jira status (e.g. Shipped)"
-                  className="flex-1"
-                />
-                <span className="text-muted-foreground text-xs">→</span>
-                <Select
-                  value={row.finding || undefined}
-                  onValueChange={(v) =>
-                    setStatusInbound((rows) =>
-                      rows.map((r, j) => (j === i ? { ...r, finding: v } : r))
-                    )
-                  }
-                >
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Finding status" />
+              {projects.length > 0 && (
+                <Select value={projectKey || undefined} onValueChange={setProjectKey}>
+                  <SelectTrigger id="default-project-picker">
+                    <SelectValue placeholder="Pick a Jira project" />
                   </SelectTrigger>
                   <SelectContent>
-                    {INBOUND_FINDING_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s.replace('_', ' ')}
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.key}>
+                        {p.key} — {p.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {row.finding && !isInboundFindingStatus(row.finding) && (
-                  <span className="text-destructive text-xs" role="alert">
-                    A ticket cannot set {row.finding.replace('_', ' ')}
-                  </span>
-                )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => setStatusInbound((rows) => rows.filter((_, j) => j !== i))}
-                  aria-label="Remove mapping"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+              )}
+              <Input
+                id="default-project"
+                value={projectKey}
+                onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
+                placeholder={projectsLoading ? 'Loading projects…' : 'e.g. SEC'}
+              />
+              {projects.length === 0 && !projectsLoading && (
+                <p className="text-muted-foreground text-xs">
+                  Couldn&apos;t list projects from Jira — enter the project key manually.
+                </p>
+              )}
+            </div>
+
+            {/* Bidirectional sync */}
+            <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+              <div className="space-y-1">
+                <Label htmlFor="sync-enabled" className="font-medium">
+                  Bidirectional status sync
+                </Label>
+                <p className="text-muted-foreground text-xs">
+                  When a finding&apos;s status changes in OpenCTEM, move the linked Jira issue to
+                  match. Jira-side status changes already sync back automatically.
+                </p>
               </div>
-            ))}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setStatusInbound((rows) => [...rows, { jira: '', finding: 'confirmed' }])
-              }
-            >
-              <Plus className="me-2 h-4 w-4" />
-              Add mapping
-            </Button>
+              <Switch id="sync-enabled" checked={syncEnabled} onCheckedChange={setSyncEnabled} />
+            </div>
+
+            {/* Ticket defaults + severity→priority mapping */}
+            <div className="space-y-3 rounded-lg border p-3">
+              <Label className="font-medium">Ticket defaults &amp; mapping</Label>
+              <p className="text-muted-foreground text-xs">
+                Override how OpenCTEM fills new tickets. Leave blank to use the defaults.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="issue-type" className="text-xs">
+                    Issue type
+                  </Label>
+                  <Input
+                    id="issue-type"
+                    value={issueType}
+                    onChange={(e) => setIssueType(e.target.value)}
+                    placeholder="Bug"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="default-priority" className="text-xs">
+                    Default priority
+                  </Label>
+                  <Input
+                    id="default-priority"
+                    value={defaultPriority}
+                    onChange={(e) => setDefaultPriority(e.target.value)}
+                    placeholder="Medium"
+                  />
+                </div>
+              </div>
+              <Label className="text-xs">Severity → Jira priority</Label>
+              <div className="grid grid-cols-2 gap-3">
+                {SEVERITY_LEVELS.map((sev) => (
+                  <div key={sev} className="space-y-1">
+                    <Label htmlFor={`sev-${sev}`} className="text-muted-foreground text-xs">
+                      {severityLabel(sev)}
+                    </Label>
+                    <Input
+                      id={`sev-${sev}`}
+                      value={sevPriority[sev]}
+                      onChange={(e) => setSevPriority((p) => ({ ...p, [sev]: e.target.value }))}
+                      placeholder={DEFAULT_JIRA_PRIORITY[sev]}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Outbound status mapping (finding status → Jira status NAME) */}
+            <div className="space-y-3 rounded-lg border p-3">
+              <Label className="font-medium">Outbound status names</Label>
+              <p className="text-muted-foreground text-xs">
+                When bidirectional sync moves a Jira issue, use these status names (match your Jira
+                workflow). Blank = stock default.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {(
+                  [
+                    ['confirmed', 'To Do'],
+                    ['in_progress', 'In Progress'],
+                    ['fix_applied', 'Done'],
+                    ['resolved', 'Done'],
+                  ] as const
+                ).map(([fs, ph]) => (
+                  <div key={fs} className="space-y-1">
+                    <Label htmlFor={`out-${fs}`} className="text-muted-foreground text-xs">
+                      {fs.replace('_', ' ')}
+                    </Label>
+                    <Input
+                      id={`out-${fs}`}
+                      value={statusOutbound[fs]}
+                      onChange={(e) => setStatusOutbound((p) => ({ ...p, [fs]: e.target.value }))}
+                      placeholder={ph}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Inbound status mapping (Jira status NAME → finding status) */}
+            <div className="space-y-3 rounded-lg border p-3">
+              <Label className="font-medium">Inbound status mapping</Label>
+              <p className="text-muted-foreground text-xs">
+                Map your Jira workflow status names to OpenCTEM finding statuses so a Jira-side
+                status change updates the finding. Stock Jira names (To Do / In Progress / Done…)
+                already work — only add rows for custom workflow statuses.
+              </p>
+              {statusInbound.length === 0 && (
+                <p className="text-muted-foreground text-xs italic">
+                  No custom mappings — stock defaults apply.
+                </p>
+              )}
+              {statusInbound.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    value={row.jira}
+                    onChange={(e) =>
+                      setStatusInbound((rows) =>
+                        rows.map((r, j) => (j === i ? { ...r, jira: e.target.value } : r))
+                      )
+                    }
+                    placeholder="Jira status (e.g. Shipped)"
+                    className="flex-1"
+                  />
+                  <span className="text-muted-foreground text-xs">→</span>
+                  <Select
+                    value={row.finding || undefined}
+                    onValueChange={(v) =>
+                      setStatusInbound((rows) =>
+                        rows.map((r, j) => (j === i ? { ...r, finding: v } : r))
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Finding status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INBOUND_FINDING_STATUSES.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s.replace('_', ' ')}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {row.finding && !isInboundFindingStatus(row.finding) && (
+                    <span className="text-destructive text-xs" role="alert">
+                      A ticket cannot set {row.finding.replace('_', ' ')}
+                    </span>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => setStatusInbound((rows) => rows.filter((_, j) => j !== i))}
+                    aria-label="Remove mapping"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setStatusInbound((rows) => [...rows, { jira: '', finding: 'confirmed' }])
+                }
+              >
+                <Plus className="me-2 h-4 w-4" />
+                Add mapping
+              </Button>
+            </div>
           </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
@@ -796,7 +800,7 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Connect Jira</DialogTitle>
           <DialogDescription>
@@ -805,74 +809,76 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="conn-name">Connection name</Label>
-            <Input
-              id="conn-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Security Remediation Board"
-              required
-            />
-          </div>
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="conn-name">Connection name</Label>
+              <Input
+                id="conn-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Security Remediation Board"
+                required
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="base-url">Jira base URL</Label>
-            <Input
-              id="base-url"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://yourorg.atlassian.net"
-              type="url"
-              required
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="base-url">Jira base URL</Label>
+              <Input
+                id="base-url"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://yourorg.atlassian.net"
+                type="url"
+                required
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="jira-email">Atlassian account email</Label>
-            <Input
-              id="jira-email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@yourorg.com"
-              type="email"
-              required
-            />
-            <p className="text-muted-foreground text-xs">
-              The email of the Atlassian account that owns the API token. Jira Cloud pairs it with
-              the token for authentication.
-            </p>
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="jira-email">Atlassian account email</Label>
+              <Input
+                id="jira-email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@yourorg.com"
+                type="email"
+                required
+              />
+              <p className="text-muted-foreground text-xs">
+                The email of the Atlassian account that owns the API token. Jira Cloud pairs it with
+                the token for authentication.
+              </p>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="project-key">Default project key (optional)</Label>
-            <Input
-              id="project-key"
-              value={projectKey}
-              onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
-              placeholder="e.g. SEC"
-            />
-            <p className="text-muted-foreground text-xs">
-              Where tickets land by default. After connecting you can pick it from your Jira
-              projects under Configure.
-            </p>
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="project-key">Default project key (optional)</Label>
+              <Input
+                id="project-key"
+                value={projectKey}
+                onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
+                placeholder="e.g. SEC"
+              />
+              <p className="text-muted-foreground text-xs">
+                Where tickets land by default. After connecting you can pick it from your Jira
+                projects under Configure.
+              </p>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="api-token">API token</Label>
-            <Input
-              id="api-token"
-              value={apiToken}
-              onChange={(e) => setApiToken(e.target.value)}
-              type="password"
-              placeholder="Paste your API token"
-              required
-            />
-            <p className="text-muted-foreground text-xs">
-              Generate from Atlassian account settings under Security.
-            </p>
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="api-token">API token</Label>
+              <Input
+                id="api-token"
+                value={apiToken}
+                onChange={(e) => setApiToken(e.target.value)}
+                type="password"
+                placeholder="Paste your API token"
+                required
+              />
+              <p className="text-muted-foreground text-xs">
+                Generate from Atlassian account settings under Security.
+              </p>
+            </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -882,7 +888,7 @@ function ConnectJiraDialog({ open, onOpenChange, onSuccess }: ConnectJiraDialogP
               {isMutating ? 'Connecting...' : 'Connect'}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )

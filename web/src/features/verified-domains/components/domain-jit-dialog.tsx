@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import {
@@ -92,7 +93,7 @@ export function DomainJITDialog({
         onOpenChange(next)
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>New people on {domain?.domain}</DialogTitle>
           <DialogDescription>
@@ -101,31 +102,33 @@ export function DomainJITDialog({
             Admitting more people, or with a higher role, waits for an owner&apos;s approval.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <Label htmlFor="domain-jit-enabled">Admit new people</Label>
-            <Switch
-              id="domain-jit-enabled"
-              checked={enabled}
-              onCheckedChange={setEnabled}
-              disabled={isMutating}
-            />
+        <DialogBody>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="domain-jit-enabled">Admit new people</Label>
+              <Switch
+                id="domain-jit-enabled"
+                checked={enabled}
+                onCheckedChange={setEnabled}
+                disabled={isMutating}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="domain-jit-role">Role</Label>
+              <Select value={role} onValueChange={setRole} disabled={!enabled || isMutating}>
+                <SelectTrigger id="domain-jit-role" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DEFAULT_ROLE}>Identity provider default</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
+                  <SelectItem value="member">Member</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="domain-jit-role">Role</Label>
-            <Select value={role} onValueChange={setRole} disabled={!enabled || isMutating}>
-              <SelectTrigger id="domain-jit-role" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={DEFAULT_ROLE}>Identity provider default</SelectItem>
-                <SelectItem value="viewer">Viewer</SelectItem>
-                <SelectItem value="member">Member</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <DialogFooter className="gap-2">
+        </DialogBody>
+        <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

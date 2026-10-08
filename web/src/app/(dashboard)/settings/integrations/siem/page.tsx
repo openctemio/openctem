@@ -16,6 +16,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { toast } from 'sonner'
@@ -244,7 +245,7 @@ export default function SIEMIntegrationPage() {
       </div>
 
       <Dialog open={showForm} onOpenChange={(open) => (open ? setShowForm(true) : closeForm())}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>New Splunk HEC integration</DialogTitle>
             <DialogDescription>
@@ -252,54 +253,56 @@ export default function SIEMIntegrationPage() {
               non-sensitive routing config.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="siem-name">Name</Label>
-              <Input
-                id="siem-name"
-                placeholder="Production Splunk"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
+          <DialogBody>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="siem-name">Name</Label>
+                <Input
+                  id="siem-name"
+                  placeholder="Production Splunk"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="siem-url">HEC endpoint URL</Label>
+                <Input
+                  id="siem-url"
+                  placeholder="https://splunk.example.com:8088"
+                  value={form.hecUrl}
+                  onChange={(e) => setForm({ ...form, hecUrl: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="siem-token">HEC token</Label>
+                <Input
+                  id="siem-token"
+                  type="password"
+                  placeholder="00000000-0000-0000-0000-000000000000"
+                  value={form.token}
+                  onChange={(e) => setForm({ ...form, token: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="siem-index">Index (optional)</Label>
+                <Input
+                  id="siem-index"
+                  placeholder="main"
+                  value={form.index}
+                  onChange={(e) => setForm({ ...form, index: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="siem-sourcetype">Sourcetype (optional)</Label>
+                <Input
+                  id="siem-sourcetype"
+                  placeholder="openctem:notification"
+                  value={form.sourcetype}
+                  onChange={(e) => setForm({ ...form, sourcetype: e.target.value })}
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="siem-url">HEC endpoint URL</Label>
-              <Input
-                id="siem-url"
-                placeholder="https://splunk.example.com:8088"
-                value={form.hecUrl}
-                onChange={(e) => setForm({ ...form, hecUrl: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="siem-token">HEC token</Label>
-              <Input
-                id="siem-token"
-                type="password"
-                placeholder="00000000-0000-0000-0000-000000000000"
-                value={form.token}
-                onChange={(e) => setForm({ ...form, token: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="siem-index">Index (optional)</Label>
-              <Input
-                id="siem-index"
-                placeholder="main"
-                value={form.index}
-                onChange={(e) => setForm({ ...form, index: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="siem-sourcetype">Sourcetype (optional)</Label>
-              <Input
-                id="siem-sourcetype"
-                placeholder="openctem:notification"
-                value={form.sourcetype}
-                onChange={(e) => setForm({ ...form, sourcetype: e.target.value })}
-              />
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeForm}>
               Cancel

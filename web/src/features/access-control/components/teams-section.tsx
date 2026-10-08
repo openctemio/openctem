@@ -24,6 +24,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { Plus, Trash2, Eye, Pencil, Loader2, AlertCircle, FolderKey, RefreshCw } from 'lucide-react'
@@ -291,7 +292,7 @@ export function TeamsSection({ header }: SectionProps) {
 
       {/* Create Group Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Create team</DialogTitle>
             <DialogDescription>
@@ -299,30 +300,32 @@ export function TeamsSection({ header }: SectionProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="group-name">Team name</Label>
-              <Input
-                id="group-name"
-                placeholder="e.g., Security Team, DevOps"
-                value={createForm.name}
-                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-              />
-            </div>
+          <DialogBody>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="group-name">Team name</Label>
+                <Input
+                  id="group-name"
+                  placeholder="e.g., Security Team, DevOps"
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="group-description">Description (optional)</Label>
-              <Textarea
-                id="group-description"
-                placeholder="Describe the purpose of this group..."
-                value={createForm.description}
-                onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                rows={3}
-              />
+              <div className="space-y-2">
+                <Label htmlFor="group-description">Description (optional)</Label>
+                <Textarea
+                  id="group-description"
+                  placeholder="Describe the purpose of this group..."
+                  value={createForm.description}
+                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                  rows={3}
+                />
+              </div>
             </div>
-          </div>
+          </DialogBody>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
               Cancel
             </Button>
@@ -340,7 +343,7 @@ export function TeamsSection({ header }: SectionProps) {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Delete team</DialogTitle>
             <DialogDescription>
