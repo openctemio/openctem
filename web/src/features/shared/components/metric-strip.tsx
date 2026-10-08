@@ -21,6 +21,8 @@ export interface MetricStripItem {
    * breakdown bar). Keep it short: the strip is a summary, not a card.
    */
   detail?: React.ReactNode
+  /** What the number counts, shown as the cell's tooltip. */
+  description?: string
   /** Clickable metrics act as quick filters. */
   onClick?: () => void
   /** The filter this metric applies is currently on. */
@@ -106,6 +108,7 @@ export function MetricStrip({
             type="button"
             onClick={item.onClick}
             aria-pressed={item.active ?? false}
+            title={item.description}
             className={cn(
               cellClass,
               'transition-colors hover:bg-accent/60 focus-visible:relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -114,7 +117,7 @@ export function MetricStrip({
             {body}
           </button>
         ) : (
-          <div key={item.key} className={cellClass}>
+          <div key={item.key} className={cellClass} title={item.description}>
             {body}
           </div>
         )

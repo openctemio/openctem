@@ -519,10 +519,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
-  '/settings/scanning/ci': {
-    permission: Permission.CIRead,
-    module: Module.Scans,
-  },
   // Scope policy (RFC-054 §6.3): readable with scope:read; saving needs
   // scope:approve and step-up, enforced by the API.
   '/settings/scope': {
