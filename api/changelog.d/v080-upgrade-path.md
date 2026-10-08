@@ -1,0 +1,8 @@
+### Fixed: a v0.8.0 database upgrades without failing, and its crawled URLs become web endpoints
+
+- Migration 001290 failed with a unique violation on a database that held two legacy `path` exclusions of one rule where the one to drop already carried the new pattern (`/api/*` next to `*/api`, `https://x/admin/*` next to `https://x/admin`). The duplicates are now deleted before the kept row is rewritten. A database that already ran 001290 is not affected.
+- Migration 001307 converts the crawled URL assets that v0.8.0 and older stored under a garbled name (`https:::host:path`, every crawler and API-created `discovered_url` asset of those releases) into web endpoints under their site, like 001288 does for URL-named ones: the URL is read back from the name, findings and exposure events move to the site (its garbled `http_service` asset when there is one), pending duplicate reviews that named the URL asset are removed, and the URL asset is deleted. 001288 matched only names starting with `http(s)://`, so on an upgraded v0.8.0 database it converted none of them. A URL whose site name belongs only to a deleted asset is left as it is. About 6 ms per URL asset.
+
+### Added: upgrade guide from v0.8.0
+
+- `docs/operations/upgrade-v0.8-to-v0.9.md`: pre-flight checks and read-only inventory queries (checked against the v0.8.0 schema), image, Compose, Helm and environment changes, the two-hop database path through `pre-baseline-001146` with measured durations, the data migrations users notice, removed routes and permissions, sensor upgrade order and compatibility, identity provider changes, verification and rollback. Every step was run on a copy of a v0.8.0 database up to the new API.
