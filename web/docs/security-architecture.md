@@ -369,7 +369,6 @@ Never exposed to the browser:
 | ----------------------------- | ----------------------- | -------------------------------------------------------------------------------- |
 | `BACKEND_API_URL`             | `http://localhost:8080` | Backend API URL                                                                  |
 | `SECURE_COOKIES`              | `false`                 | Secure flag on cookies (overridden to `true` in production via `NODE_ENV` check) |
-| `CSRF_SECRET`                 | (empty)                 | CSRF token signing key                                                           |
 | `COOKIE_MAX_AGE`              | `604800` (7 days)       | Refresh token cookie lifetime                                                    |
 | `ENABLE_TOKEN_REFRESH`        | `true`                  | Enable auto token refresh                                                        |
 | `TOKEN_REFRESH_BEFORE_EXPIRY` | `300` (5 min)           | Refresh trigger threshold                                                        |
