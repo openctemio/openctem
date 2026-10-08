@@ -2755,8 +2755,15 @@ func TestAuthService_PasswordValidation(t *testing.T) {
 		{
 			name:        "meets minimum length",
 			cfg:         defaultAuthTestConfig(),
-			password:    "12345678",
+			password:    "84719265",
 			expectError: false,
+		},
+		{
+			// A breached password is refused even when it meets the rules.
+			name:        "breached password",
+			cfg:         defaultAuthTestConfig(),
+			password:    "12345678",
+			expectError: true,
 		},
 		{
 			name: "too short",
