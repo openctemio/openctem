@@ -41,8 +41,10 @@ import { ScanControls, scanStateLabel } from '@/features/scans/components/scan-c
 import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
+  IDLE_RUN_LIST_REFRESH_MS,
   elapsedMs,
   isRunInProgress,
+  runListRefreshInterval,
   runTaskProgress,
   runTriggeredByLabel,
   scanRunCounts,
@@ -140,14 +142,22 @@ export default function ScanDetailPage() {
 
   // The latest runs, for the numbers above the tabs (runs still in progress
   // are the newest), whichever history page is open.
+  // They refresh every 10 s while a run is live, and every 2 min otherwise
+  // (to notice a run a schedule or someone else starts).
   const { data: latestRuns, mutate: refetchLatest } = useScanRuns(scanId, 1, 10, {
-    refreshInterval: 10000,
+    refreshInterval: runListRefreshInterval(10000, IDLE_RUN_LIST_REFRESH_MS),
   })
+  const latestLive = (latestRuns?.data ?? []).some(isRunInProgress)
+  // The history page only changes while a run is live; the latest runs above
+  // notice a new one.
   const {
     data: runsResponse,
     isLoading: isLoadingRuns,
     mutate: refetchRuns,
-  } = useScanRuns(scanId, runPage, runPerPage, { refreshInterval: 10000, keepPreviousData: true })
+  } = useScanRuns(scanId, runPage, runPerPage, {
+    refreshInterval: latestLive ? 10000 : 0,
+    keepPreviousData: true,
+  })
   const runs = useMemo(() => runsResponse?.data ?? [], [runsResponse])
   const refetchAll = () => Promise.all([refetchLatest(), refetchRuns()])
 
