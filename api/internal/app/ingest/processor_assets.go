@@ -1973,9 +1973,10 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	newProps := p.buildPropertiesFromCTIS(ctisAsset)
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
 	// The stored asset's schema decides (the report asset may be of another
-	// type that landed here by name): synonyms an older row still holds
-	// fold, and a key only another class may hold is not kept here.
-	asset.NormalizeProperties(mergedProps)
+	// type that landed here by name): technical blocks an older row still
+	// holds are promoted to flat keys, synonyms fold, and a key only another
+	// class may hold is not kept here.
+	asset.NormalizeAssetProperties(existing.Type(), existing.SubType(), mergedProps)
 	dropMisplacedProperties(existing.Type(), existing.SubType(), mergedProps)
 	existing.SetProperties(mergedProps)
 
@@ -2057,8 +2058,7 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 	// fold into ip_addresses; nameserver into nameservers, and so on.
 	asset.NormalizeProperties(props)
 
-	// A host also records the address it is named by, and the hostname of
-	// its technical ip_address block.
+	// A host also records the address it is named by.
 	if ctisAsset.Type == ctis.AssetTypeHost {
 		normalizeHostIPProperties(props, getAssetName(ctisAsset))
 	}
@@ -2086,6 +2086,11 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 			"errors", errs.Error(),
 		)
 	}
+
+	// Properties are flat (RFC-042 §6.3.10): the technical blocks' facts
+	// move to the stored type's keys, and the blocks go.
+	stored := resolveCTISAssetType(ctisAsset).stored
+	asset.NormalizeAssetProperties(stored.Type, stored.SubType, props)
 
 	return props
 }
@@ -2119,17 +2124,10 @@ func (p *AssetProcessor) extractOwnerRef(ctisAsset *ctis.Asset) string {
 }
 
 // normalizeHostIPProperties completes a host's properties once synonyms
-// are folded (asset.NormalizeProperties): the hostname of its technical
-// ip_address block becomes the top-level hostname, and a host named by an
-// address records that address in ip_addresses.
+// are folded (asset.NormalizeProperties): a host named by an address records
+// that address in ip_addresses. (The hostname of its technical ip_address
+// block reaches `hostname` through asset.PromoteTechnicalBlocks.)
 func normalizeHostIPProperties(props map[string]any, assetName string) {
-	if ipAddr, ok := props["ip_address"].(map[string]any); ok {
-		if hostname, ok := ipAddr["hostname"].(string); ok && hostname != "" {
-			if _, exists := props["hostname"]; !exists {
-				props["hostname"] = hostname
-			}
-		}
-	}
 	if looksLikeIPv4(assetName) {
 		asset.AddIPAddress(props, assetName)
 	}

@@ -225,9 +225,24 @@ mechanical ones.
 8. **Custom and third-party keys** use the `x_` prefix, show under "Other"
    and are never read by name in platform code.
 
-The CTIS technical blocks (`domain`, `ip_address`, `service`, `certificate`)
-are objects under common keys; their field names are the CTIS ones and they
-are read only by the facts helpers next to the flat keys.
+**CTIS technical blocks are promoted, not stored.** A CTIS report carries a
+domain's, an IP address's, a service's or a certificate's facts in a
+technical block (`technical.domain`, …). Every write path (ingest, REST,
+import) calls `asset.NormalizeAssetProperties`, which first moves each
+block's fields to the stored type's flat keys (`asset.PromoteTechnicalBlocks`)
+and then folds synonyms:
+
+| Block | Fills | Renamed fields | Not kept |
+|---|---|---|---|
+| `certificate` (certificate assets) | `subject_cn`, `sans`, `issuer_cn`, `issuer_org`, `serial_number`, `not_before`, `not_after`, `signature_algorithm`, `key_algorithm`, `key_size` | `fingerprint` → `fingerprint_sha256`, `self_signed` → `is_self_signed`, `expired` → `is_expired` | — |
+| `domain` (domains, subdomains) | `registrar`, `registered_at`, `expires_at`, `nameservers`, `whois`, `dns_records`, and from the records `dns_record_types`, the first CNAME as `cname_target`, A/AAAA values in `ip_addresses` | — | registration keys on a subdomain (it has none) |
+| `ip_address` (IP assets) | `version`, `hostname`, `asn`, `asn_org`, `country`, `city`, `geolocation`, `ports` (the port summary) | — | on other classes only `address` (→ `ip_addresses`) and a host's `hostname` apply |
+| `service` (services, applications) | `port`, `protocol`, `transport`, `product`, `version`, `banner`, `cpe`, `state`, `tls_version` | `name` → `service` (open port) or `server` (HTTP); `tls` → `has_tls` (recorded only when seen); `auth_required` → `is_auth_required` | `tls_cert_*` (the served certificate is a certificate asset), `extra_info`, `auth_methods` |
+
+A flat value already on the asset wins over the block's. A block's fields
+describe assets of its own class: an IP block's `version` never becomes an
+application's version. Migration `001334` promoted the blocks of rows
+written before; no reader looks inside a block any more.
 
 ## Three layers: source record, link, canonical row
 
