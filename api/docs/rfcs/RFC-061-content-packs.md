@@ -364,6 +364,7 @@ content: { templates: { mode: merge, sources: [acme-nuclei], include: { tags: [c
 | Tampered pack in transit or at rest | DSSE signature + digest verified before storing and again at mount |
 | Cross-tenant leakage of a custom pack | Tenant-scoped storage and delivery; per-task mounts; digest lookups tenant-scoped |
 | Archive tricks (traversal, symlinks, bombs) | Safe unpack at ingest with caps; canonical tar; sensors receive only canonical packs |
+| Hostile content attacks the ingest itself | Ingest runs in the API process, which is enough (owner decision 2026-10-08):<br>• pure-Go, memory-safe parsers (tar, gzip, YAML);<br>• no extraction to disk and no execution;<br>• bounded inputs, at most 2 ingests at once, a 60 s limit;<br>• fuzz tests on the archive and template parsers.<br>A linter that needs an external tool moves ingest to an isolated process first. |
 | A source fetch abused as SSRF | Platform fetches through httpsec; private ranges refused unless marked internal by the platform operator |
 | Secrets committed into a pack | Secret scan at ingest; a hit blocks the pack until acknowledged |
 | A tool's own updater bypasses packs | Update flags refused; updaters disabled; RFC-060 forwarder refuses update endpoints |
