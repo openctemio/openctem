@@ -507,6 +507,7 @@ types:
       - { name: ip_addresses, type: list }
       - { name: cname_target, type: string }
       - { name: dns_record_types, type: string }
+      - { name: dns_records, type: object }
       - { name: discovery_source, type: string, facet: true }
       - { name: is_wildcard, type: bool, facet: true }
     columns: [name, parent_domain, findings.open, last_seen, owner]

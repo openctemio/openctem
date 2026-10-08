@@ -122,7 +122,7 @@ func TestIngest_HTTPProbeCertificate(t *testing.T) {
 		t.Fatalf("tenant A: %d certificate assets, want 1", len(aCerts))
 	}
 	var name, notAfter, subject string
-	if err := r.db.QueryRowContext(ctx, `SELECT name, properties->'certificate'->>'not_after', properties->'certificate'->>'subject_cn'
+	if err := r.db.QueryRowContext(ctx, `SELECT name, properties->>'not_after', properties->>'subject_cn'
 		FROM assets WHERE id = $1 AND tenant_id = $2`, aCerts[0], a.tenant.String()).Scan(&name, &notAfter, &subject); err != nil {
 		t.Fatal(err)
 	}
@@ -174,8 +174,8 @@ func TestIngest_HTTPProbeCertificate(t *testing.T) {
 	ingestAs(c, certProbeReport(leaf))
 	var cnLen, sanCount int
 	var issuer string
-	if err := r.db.QueryRowContext(ctx, `SELECT char_length(properties->'certificate'->>'subject_cn'),
-			jsonb_array_length(properties->'certificate'->'sans'), properties->'certificate'->>'issuer_cn'
+	if err := r.db.QueryRowContext(ctx, `SELECT char_length(properties->>'subject_cn'),
+			jsonb_array_length(properties->'sans'), properties->>'issuer_cn'
 		FROM assets WHERE tenant_id = $1 AND asset_type = 'certificate'`, c.tenant.String()).Scan(&cnLen, &sanCount, &issuer); err != nil {
 		t.Fatal(err)
 	}

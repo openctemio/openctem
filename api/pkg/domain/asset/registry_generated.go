@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "b2fb599e3ccce51f"
+const RegistryVersion = "2532dc2f6acb4051"
 
 // Lenses.
 const (
@@ -150,6 +150,7 @@ var registryTypes = []TypeDefinition{
 			{Name: "ip_addresses", Kind: "list"},
 			{Name: "cname_target", Kind: "string"},
 			{Name: "dns_record_types", Kind: "string"},
+			{Name: "dns_records", Kind: "object"},
 			{Name: "discovery_source", Kind: "string", Facet: true},
 			{Name: "is_wildcard", Kind: "bool", Facet: true},
 		},

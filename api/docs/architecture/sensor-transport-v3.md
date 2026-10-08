@@ -58,6 +58,17 @@ over 512 bytes or carries ids that are not UUIDs is dropped, and a wake only
 ever makes a stream re-read the database. Without Redis, other replicas see
 a change at their 30 s re-check.
 
+## Transport per sensor
+
+Every heartbeat stores, with the protocol telemetry, the binding it arrived on
+(`sensors.protocol_binding`: `grpc`, `https` or `v2`) and the sensor's
+fallback reason (`protocol_fallback_reason`, printable ASCII, 256
+characters). The binding is the platform's: the v3 server marks the in-process
+heartbeat with the listener it came on (`handler.WithServedTransport`); a
+claimed binding in the body is ignored. A v3 heartbeat records protocol 3.
+The sensors API returns them under `protocol.binding` /
+`protocol.fallback_reason`; the detail sheet shows "Transport: …".
+
 ## Certificates and the gRPC binding
 
 - **CA**: `SENSOR_MTLS_CA_CERT_FILE` + `SENSOR_MTLS_CA_KEY_FILE`, or created once

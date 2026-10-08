@@ -296,13 +296,12 @@ func (r *AssetRepository) FindByIP(ctx context.Context, tenantID shared.ID, ip s
 }
 
 // FindByHostname finds an existing asset that matches the given hostname.
-// Searches: name (exact), properties->>'hostname', properties->'ip_address'->>'hostname'.
+// Searches: name (exact), properties->>'hostname'.
 // Returns nil (no error) if no match found.
 func (r *AssetRepository) FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*asset.Asset, error) {
 	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
 		a.name = $2
 		OR a.properties->>'hostname' = $2
-		OR a.properties->'ip_address'->>'hostname' = $2
 	) LIMIT 1`
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), hostname)

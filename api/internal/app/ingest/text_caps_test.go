@@ -97,3 +97,33 @@ func TestCapReportText_EveryFieldAndList(t *testing.T) {
 		t.Fatalf("a finding within the caps changed: %+v", g)
 	}
 }
+
+// A report may send a certificate's facts as free-form properties too; they
+// win over the (capped) technical block, so they are capped as well.
+func TestCapCertificateProperties(t *testing.T) {
+	sans := make([]any, 500)
+	for i := range sans {
+		sans[i] = "h.example.com"
+	}
+	props := map[string]any{
+		"subject_cn": strings.Repeat("x", 10_000) + "\x1b[31m",
+		"issuer_cn":  "evil\nINFO forged",
+		"sans":       sans,
+		"not_after":  "2027-01-01T00:00:00Z",
+	}
+	if n := capCertificateProperties(props); n == 0 {
+		t.Fatal("nothing changed")
+	}
+	if l := utf8.RuneCountInString(props["subject_cn"].(string)); l > MaxCertNameLen {
+		t.Errorf("subject_cn %d runes", l)
+	}
+	if strings.ContainsAny(props["issuer_cn"].(string), "\n\x1b") {
+		t.Errorf("issuer_cn kept control characters: %q", props["issuer_cn"])
+	}
+	if l := len(props["sans"].([]any)); l > MaxCertSANs {
+		t.Errorf("%d SANs", l)
+	}
+	if props["not_after"] != "2027-01-01T00:00:00Z" {
+		t.Error("an untouched key changed")
+	}
+}

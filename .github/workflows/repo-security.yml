@@ -48,6 +48,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Customer identifiers (self-test)
+        run: bash .github/scripts/check-customer-identifiers.test.sh >/dev/null
+
+      # Fails when a tracked file names a customer (case-insensitive fixed
+      # strings from the CUSTOMER_DENYLIST secret, so the list is never
+      # committed) or carries the live LAN range outside tests. Prints only
+      # file:line. Passes with a notice when the secret is empty (forks).
+      - name: Customer identifiers
+        env:
+          CUSTOMER_DENYLIST: ${{ secrets.CUSTOMER_DENYLIST }}
+        run: bash .github/scripts/check-customer-identifiers.sh
+
       - name: Install Betterleaks (pinned, checksum-verified)
         run: |
           curl -sSfL -o betterleaks.tgz \
@@ -115,3 +127,22 @@ jobs:
           ./actionlint -color
       - name: Actions are pinned to commit SHAs
         run: bash .github/scripts/check-action-pins.sh
+
+  # New or upgraded dependencies a pull request brings in (Go modules, npm,
+  # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a
+  # known high or critical vulnerability in what the pull request adds; existing
+  # dependencies are covered by govulncheck, npm audit and Trivy.
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never

@@ -67,8 +67,8 @@ func TestMigration001185NormalisesAssetProperties(t *testing.T) {
 	}
 	rows := []row{
 		{tenantA, "props-domain.example", "domain",
-			`{"ip": "202.160.124.20", "ip_addresses": ["202.160.124.20"], "port": "443", "protocol": "tcp", "title": "kept"}`,
-			`{"ip_addresses": ["202.160.124.20"], "title": "kept"}`},
+			`{"ip": "198.51.100.20", "ip_addresses": ["198.51.100.20"], "port": "443", "protocol": "tcp", "title": "kept"}`,
+			`{"ip_addresses": ["198.51.100.20"], "title": "kept"}`},
 		{tenantA, "props-host-1", "host",
 			`{"ip_address": {"address": "10.0.0.9", "asn": 1}, "resolved_ips": "10.0.0.10, 2001:DB8::1, junk", "addresses": ["10.0.0.9"]}`,
 			`{"ip_address": {"address": "10.0.0.9", "asn": 1}, "ip_addresses": ["10.0.0.9", "10.0.0.10", "2001:db8::1"]}`},

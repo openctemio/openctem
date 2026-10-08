@@ -584,7 +584,7 @@ func TestValidateSingleTarget_IPv6CIDRSize(t *testing.T) {
 // (research/63 PR0).
 func TestValidateSingleTarget_ServiceNames(t *testing.T) {
 	v := NewTargetValidator()
-	for _, in := range []string{"vndirect.com.vn:443:tcp", "vndirect.com.vn:443/tcp", "198.51.100.7:22:tcp", "[2001:db8::1]:443/tcp"} {
+	for _, in := range []string{"example.co.uk:443:tcp", "example.co.uk:443/tcp", "198.51.100.7:22:tcp", "[2001:db8::1]:443/tcp"} {
 		r := v.ValidateSingleTarget(in)
 		if !r.IsValid || r.Port == 0 {
 			t.Errorf("%q: %+v", in, r)

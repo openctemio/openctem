@@ -1066,6 +1066,17 @@ What this amendment changes:
    test fails on hand-written `.metadata.<key>` reads in asset code.
    `GET /assets/stats?count_by=` accepts only schema keys (synonyms fold),
    at most 10.
+6. *Flat, also for CTIS technical blocks.* Ingest stored a report's
+   technical blocks as objects (`properties.certificate.not_after`) next to
+   the flat attributes for the same facts, so every reader looked in two
+   places and a list column could not filter or sort on them. Every write
+   path now promotes a block's fields to the stored type's keys and drops
+   the block (`asset.NormalizeAssetProperties`); the field table is in the
+   architecture page. Fields with no key on the type are dropped: they are
+   relationships (a service's certificate, a host's ports) or unread
+   (`extra_info`). A service's `tls: false` is no longer recorded: a report
+   that never measured TLS sends the same value. Migration `001340`
+   promotes stored blocks; the web reads flat keys only.
 
 **Threat model.** No new input or endpoint. The fold runs inside each
 asset's own row. `count_by` was an unbounded list of arbitrary JSONB keys,

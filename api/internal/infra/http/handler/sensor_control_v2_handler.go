@@ -192,6 +192,7 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 	}
 	if !id.Paused {
 		data := heartbeatData(r, &req, 2)
+		data.Protocol, data.Binding, data.FallbackReason = heartbeatTransport(r.Context(), &req)
 		data.AdvisedSeconds, data.DoorbellAware = hints.NextHeartbeatSeconds, true
 		if err := h.ingest.sensorService.UpdateHeartbeat(r.Context(), s.ID, data); err != nil {
 			// As v1: the heartbeat answers even when the write failed.
@@ -445,6 +446,20 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) sensora
 		// Untrusted; only a well-formed digest is stored.
 		ConfigReport: sensor.ParseConfigReportSummary(req.ConfigReport),
 	}
+}
+
+// heartbeatTransport is the protocol, binding and fallback reason of a v2
+// route heartbeat: protocol 3 and the binding the v3 server decided when the
+// call was carried by protocol v3 (RFC-059), else protocol 2 on v2. The
+// reason is the sensor's own report.
+func heartbeatTransport(ctx context.Context, req *HeartbeatRequest) (protocol int, binding, reason string) {
+	if t, ok := servedTransportFrom(ctx); ok {
+		return 3, t.Binding, t.FallbackReason
+	}
+	if req.Transport != nil {
+		reason = req.Transport.FallbackReason
+	}
+	return 2, sensor.BindingV2, reason
 }
 
 // slimContentFor is a v2 heartbeat's content block, bounded; nil on v1.

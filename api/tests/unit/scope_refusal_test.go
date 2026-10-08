@@ -23,7 +23,7 @@ func TestScopeRefusal_CodesAndFixes(t *testing.T) {
 		if scopedom.RefusalMessages[c] == "" {
 			t.Errorf("%s has no message", c)
 		}
-		for _, target := range []string{"app.vndirect.com.vn", "https://shop.example.co.uk/x", "203.0.113.7"} {
+		for _, target := range []string{"app.example.co.uk", "https://shop.example.co.uk/x", "203.0.113.7"} {
 			for _, f := range scopedom.FixesFor(c, target, &scopedom.RuleRef{ID: "x"}, 7) {
 				if f.Requires != "" && !slices.Contains(all, permission.Permission(f.Requires)) {
 					t.Errorf("%s fix %s requires unknown permission %q", c, f.Action, f.Requires)
@@ -34,15 +34,15 @@ func TestScopeRefusal_CodesAndFixes(t *testing.T) {
 }
 
 func TestScopeRefusal_NoEntryFixes(t *testing.T) {
-	fixes := scopedom.FixesFor(scopedom.RefusalNoEntry, "https://app.vndirect.com.vn/login", nil, 7)
+	fixes := scopedom.FixesFor(scopedom.RefusalNoEntry, "https://app.example.co.uk/login", nil, 7)
 	var add *scopedom.Fix
 	for i := range fixes {
 		if fixes[i].Action == scopedom.FixAddEntry {
 			add = &fixes[i]
 		}
 	}
-	if add == nil || add.Pattern != "*.vndirect.com.vn" {
-		t.Fatalf("add_entry fix = %+v, want *.vndirect.com.vn (the registrable domain, never the public suffix)", add)
+	if add == nil || add.Pattern != "*.example.co.uk" {
+		t.Fatalf("add_entry fix = %+v, want *.example.co.uk (the registrable domain, never the public suffix)", add)
 	}
 	// An approver allows it; a member requests it; nobody sees both.
 	approver := scopedom.FilterFixes(fixes, func(string) bool { return true })
