@@ -8,6 +8,8 @@ import {
   SENSOR_AUDIT_VERBS,
 } from '../audit-types'
 import { formatAction } from '@/features/organization/types/audit.types'
+import fs from 'node:fs'
+import path from 'node:path'
 
 /**
  * Audit rows written before the agent -> sensor rename keep agent.*, resource
@@ -25,48 +27,50 @@ describe('sensor audit events before and after the rename', () => {
     expect(formatAction(historical)).toBe(formatAction(current))
   })
 
-  it('labels sensor.created as "Sensor Created" on the settings audit page', () => {
-    expect(formatAction('sensor.created')).toBe('Sensor Created')
-    expect(formatAction('agent.created')).toBe('Sensor Created')
-    expect(formatAction('agent.key_regenerated')).toBe('Sensor Key Regenerated')
+  it('labels sensor.created as "Sensor created" on the settings audit page', () => {
+    expect(formatAction('sensor.created')).toBe('Sensor created')
+    expect(formatAction('agent.created')).toBe('Sensor created')
+    expect(formatAction('agent.key_regenerated')).toBe('Sensor API key regenerated')
   })
 
   it('labels sensor.commands_released (jobs taken back on revoke/disable, RFC-040)', () => {
     expect(getActionLabel('sensor.commands_released')).toBe(
-      'Sensor Jobs Taken Back (Revoked or Disabled)'
+      'Sensor jobs taken back (revoked or disabled)'
     )
-    expect(formatAction('sensor.commands_released')).toBe('Sensor Commands Released')
+    expect(formatAction('sensor.commands_released')).toBe(
+      getActionLabel('sensor.commands_released')
+    )
   })
 
   it('labels the scan zone actions (RFC-023)', () => {
-    expect(getActionLabel('scan_zone.created')).toBe('Scan Zone Created')
-    expect(getActionLabel('scan_zone.sensor_assigned')).toBe('Sensor Assigned to Scan Zone')
-    expect(getActionLabel('scan_zone.sensor_unassigned')).toBe('Sensor Unassigned from Scan Zone')
+    expect(getActionLabel('scan_zone.created')).toBe('Scan zone created')
+    expect(getActionLabel('scan_zone.sensor_assigned')).toBe('Sensor assigned to scan zone')
+    expect(getActionLabel('scan_zone.sensor_unassigned')).toBe('Sensor unassigned from scan zone')
     expect(canonicalAuditResourceType('scan_zone')).toBe('scan_zone')
   })
 
   it('labels the scope, tool and scanner template changes (RFC-040)', () => {
-    expect(getActionLabel('scope_target.created')).toBe('Scope Target Created')
-    expect(getActionLabel('scope_exclusion.deactivated')).toBe('Scope Exclusion Deactivated')
-    expect(getActionLabel('tool.config_updated')).toBe('Tool Configuration Updated')
-    expect(getActionLabel('scanner_template.updated')).toBe('Scanner Template Updated')
+    expect(getActionLabel('scope_target.created')).toBe('Scope target created')
+    expect(getActionLabel('scope_exclusion.deactivated')).toBe('Scope exclusion deactivated')
+    expect(getActionLabel('tool.config_updated')).toBe('Tool configuration updated')
+    expect(getActionLabel('scanner_template.updated')).toBe('Scanner template updated')
     expect(canonicalAuditResourceType('scope_exclusion')).toBe('scope_exclusion')
   })
 
   it('labels the remediation campaign actions', () => {
-    expect(getActionLabel('remediation_campaign.created')).toBe('Remediation Campaign Created')
-    expect(getActionLabel('remediation_campaign.updated')).toBe('Remediation Campaign Updated')
+    expect(getActionLabel('remediation_campaign.created')).toBe('Remediation campaign created')
+    expect(getActionLabel('remediation_campaign.updated')).toBe('Remediation campaign updated')
     expect(getActionLabel('remediation_campaign.status_changed')).toBe(
-      'Remediation Campaign Status Changed'
+      'Remediation campaign status changed'
     )
-    expect(getActionLabel('remediation_campaign.deleted')).toBe('Remediation Campaign Deleted')
+    expect(getActionLabel('remediation_campaign.deleted')).toBe('Remediation campaign deleted')
     expect(canonicalAuditResourceType('remediation_campaign')).toBe('remediation_campaign')
   })
 
   it('leaves every other action alone', () => {
     expect(canonicalAuditAction('finding.created')).toBe('finding.created')
     expect(canonicalAuditAction('user_agent.created')).toBe('user_agent.created')
-    expect(getActionLabel('finding.created')).toBe('Finding Created')
+    expect(getActionLabel('finding.created')).toBe('Finding created')
   })
 
   it('maps the resource type "agent" onto "sensor" and nothing else', () => {
@@ -83,5 +87,47 @@ describe('sensor audit events before and after the rename', () => {
     // Only the three keys the contract names; an unrelated key is not touched.
     expect(canonicalAuditMetadataKey('agent_version')).toBe('agent_version')
     expect(canonicalAuditMetadataKey('user_agent')).toBe('user_agent')
+  })
+})
+
+/**
+ * Every view labels an action through getActionLabel. The settings audit log
+ * used to Title-Case the raw id instead ("Sso Change Requested").
+ */
+describe('audit action labels', () => {
+  it('reads acronyms and product terms the console way', () => {
+    expect(getActionLabel('sso.change_requested')).toBe('SSO change requested')
+    expect(formatAction('sso.change_requested')).toBe('SSO change requested')
+    expect(getActionLabel('tenant.settings_updated')).toBe('Organization settings updated')
+    expect(getActionLabel('user.mfa_enabled')).toBe('User two-step verification enabled')
+    expect(getActionLabel('api_key.created')).toBe('API key created')
+  })
+
+  // Every action the API can write (api/pkg/domain/audit/value_objects.go)
+  // gets a sentence-case label, never the raw id.
+  const source = fs.readFileSync(
+    path.resolve(__dirname, '../../../../../api/pkg/domain/audit/value_objects.go'),
+    'utf8'
+  )
+  const apiActions = [...source.matchAll(/^\s+Action\w+\s+Action\s*=\s*"([a-z0-9_.]+)"/gm)].map(
+    (m) => m[1]
+  )
+
+  it('finds the API action list', () => {
+    expect(apiActions.length).toBeGreaterThan(100)
+    expect(apiActions).toContain('sso.change_requested')
+  })
+
+  it('labels every API action in sentence case, without raw separators', () => {
+    for (const action of apiActions) {
+      const label = getActionLabel(action)
+      expect(label, action).not.toMatch(/[._]/)
+      expect(label.charAt(0), action).toBe(label.charAt(0).toUpperCase())
+      // No Title Case: after the first word, a capital starts only an acronym.
+      for (const word of label.split(' ').slice(1)) {
+        if (/^[A-Z][a-z]/.test(word)) throw new Error(`${action}: "${label}"`)
+      }
+      expect(formatAction(action), action).toBe(label)
+    }
   })
 })

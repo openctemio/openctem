@@ -5,6 +5,8 @@
  * API endpoint: /api/v1/audit-logs
  */
 
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
+
 // ============================================
 // VALUE OBJECTS
 // ============================================
@@ -307,173 +309,47 @@ export interface AuditLog {
 // ============================================
 
 /**
- * Get display label for action
+ * Audit actions whose label is not just their words: the event reads better
+ * phrased differently, or the identifier uses an internal term. Every other
+ * action is labelled by `humanizeIdentifier` ("sso.change_requested" ->
+ * "SSO change requested"). Sentence case, like every console label.
  */
-export function getActionLabel(action: AuditAction): string {
-  const labels: Partial<Record<AuditAction, string>> = {
-    // User actions
-    'user.created': 'User Created',
-    'user.updated': 'User Updated',
-    'user.deleted': 'User Deleted',
-    'user.suspended': 'User Suspended',
-    'user.activated': 'User Activated',
-    'user.deactivated': 'User Deactivated',
-    'user.login': 'User Login',
-    'user.logout': 'User Logout',
-    // Tenant actions
-    'tenant.created': 'Team Created',
-    'tenant.updated': 'Team Updated',
-    'tenant.deleted': 'Team Deleted',
-    'tenant.settings_updated': 'Team Settings Updated',
-    // Membership actions
-    'member.added': 'Member Added',
-    'member.removed': 'Member Removed',
-    'member.role_changed': 'Member Role Changed',
-    // Invitation actions
-    'invitation.created': 'Invitation Created',
-    'invitation.accepted': 'Invitation Accepted',
-    'invitation.deleted': 'Invitation Deleted',
-    'invitation.expired': 'Invitation Expired',
-    // Repository actions
-    'repository.created': 'Repository Created',
-    'repository.updated': 'Repository Updated',
-    'repository.deleted': 'Repository Deleted',
-    'repository.archived': 'Repository Archived',
-    // Component actions
-    'component.created': 'Component Created',
-    'component.updated': 'Component Updated',
-    'component.deleted': 'Component Deleted',
-    // Vulnerability actions
-    'vulnerability.created': 'Vulnerability Created',
-    'vulnerability.updated': 'Vulnerability Updated',
-    'vulnerability.deleted': 'Vulnerability Deleted',
-    // Finding actions
-    'finding.created': 'Finding Created',
-    'finding.updated': 'Finding Updated',
-    'finding.deleted': 'Finding Deleted',
-    'finding.status_changed': 'Finding Status Changed',
-    'finding.triaged': 'Finding Triaged',
-    'finding.assigned': 'Finding Assigned',
-    'finding.unassigned': 'Finding Unassigned',
-    'finding.commented': 'Finding Commented',
-    'finding.bulk_updated': 'Findings Bulk Updated',
-    'finding.duplicate_marked': 'Finding Marked Duplicate',
-    // Branch actions
-    'branch.created': 'Branch Created',
-    'branch.updated': 'Branch Updated',
-    'branch.deleted': 'Branch Deleted',
-    'branch.scanned': 'Branch Scanned',
-    'branch.set_default': 'Default Branch Set',
-    // SLA Policy actions
-    'sla_policy.created': 'SLA Policy Created',
-    'sla_policy.updated': 'SLA Policy Updated',
-    'sla_policy.deleted': 'SLA Policy Deleted',
-    'saved_view.created': 'Saved View Created',
-    'saved_view.updated': 'Saved View Updated',
-    'saved_view.deleted': 'Saved View Deleted',
-    // Scan actions
-    'scan.started': 'Scan Started',
-    'scan.completed': 'Scan Completed',
-    'scan.failed': 'Scan Failed',
-    // Security actions
-    'auth.failed': 'Authentication Failed',
-    'permission.denied': 'Permission Denied',
-    'token.revoked': 'Token Revoked',
-    // Settings actions
-    'settings.updated': 'Settings Updated',
-    // Data actions
-    'data.exported': 'Data Exported',
-    'data.imported': 'Data Imported',
-    // Sensor actions (pre-rename rows are mapped onto these first)
-    'sensor.created': 'Sensor Created',
-    'sensor.updated': 'Sensor Updated',
-    'sensor.deleted': 'Sensor Deleted',
-    'sensor.activated': 'Sensor Activated',
-    'sensor.deactivated': 'Sensor Deactivated',
-    'sensor.revoked': 'Sensor Revoked',
-    'sensor.key_regenerated': 'Sensor API Key Regenerated',
-    'sensor.key_renewed': 'Sensor API Key Renewed',
-    'sensor.key_renewal_refused': 'Sensor API Key Renewal Refused',
-    'sensor.identity_cloned': 'Sensor Key Used by Two Processes',
-    'sensor.job_refused_local_policy': 'Sensor Refused a Job (Local Policy)',
-    // Revoking or disabling a sensor re-queues or fails the jobs it held
-    'sensor.commands_released': 'Sensor Jobs Taken Back (Revoked or Disabled)',
-    'sensor.connected': 'Sensor Connected',
-    'sensor.disconnected': 'Sensor Disconnected',
-    // Scan zone actions
-    'scan_zone.created': 'Scan Zone Created',
-    'scan_zone.updated': 'Scan Zone Updated',
-    'scan_zone.deleted': 'Scan Zone Deleted',
-    'scan_zone.sensor_assigned': 'Sensor Assigned to Scan Zone',
-    'scan_zone.sensor_unassigned': 'Sensor Unassigned from Scan Zone',
-    // Scope actions
-    'scope_target.created': 'Scope Target Created',
-    'scope_target.updated': 'Scope Target Updated',
-    'scope_target.deleted': 'Scope Target Deleted',
-    'scope_target.activated': 'Scope Target Activated',
-    'scope_target.deactivated': 'Scope Target Deactivated',
-    'scope_exclusion.created': 'Scope Exclusion Requested',
-    'scope_exclusion.updated': 'Scope Exclusion Updated',
-    'scope_exclusion.deleted': 'Scope Exclusion Deleted',
-    'scope_exclusion.activated': 'Scope Exclusion Activated',
-    'scope_exclusion.deactivated': 'Scope Exclusion Deactivated',
-    'scope_exclusion.approved': 'Scope Exclusion Approved',
-    'scope_exclusion.rejected': 'Scope Exclusion Rejected',
-    'suppression_rule.approved': 'Suppression Rule Approved',
-    'suppression_rule.self_approved': 'Suppression Rule Self-Approved by Owner',
-    // EASM seeds (RFC-036)
-    'easm_seed.created': 'EASM Seed Added',
-    'easm_seed.updated': 'EASM Seed Changed',
-    'easm_seed.deleted': 'EASM Seed Removed',
-    // Report schedules
-    'report_schedule.created': 'Report Schedule Created',
-    'report_schedule.activated': 'Report Schedule Activated',
-    'report_schedule.deleted': 'Report Schedule Deleted',
-    // Tool actions
-    'tool.created': 'Tool Created',
-    'tool.updated': 'Tool Updated',
-    'tool.deleted': 'Tool Deleted',
-    'tool.activated': 'Tool Activated',
-    'tool.deactivated': 'Tool Deactivated',
-    'tool.config_updated': 'Tool Configuration Updated',
-    'tool.config_deleted': 'Tool Configuration Reset',
-    // Scanner template actions
-    'scanner_template.created': 'Scanner Template Created',
-    'scanner_template.updated': 'Scanner Template Updated',
-    'scanner_template.deprecated': 'Scanner Template Deprecated',
-    'scanner_template.deleted': 'Scanner Template Deleted',
-    // Remediation campaign actions
-    'remediation_campaign.created': 'Remediation Campaign Created',
-    'remediation_campaign.updated': 'Remediation Campaign Updated',
-    'remediation_campaign.status_changed': 'Remediation Campaign Status Changed',
-    'remediation_campaign.deleted': 'Remediation Campaign Deleted',
-    // Configuration changes
-    'invitation.resent': 'Invitation Resent',
-    'scim_token.created': 'SCIM Token Created',
-    'scim_token.revoked': 'SCIM Token Revoked',
-    'storage_config.updated': 'Evidence Storage Changed',
-    'integration.created': 'Integration Created',
-    'integration.updated': 'Integration Updated',
-    'integration.deleted': 'Integration Deleted',
-    'integration.enabled': 'Integration Enabled',
-    'integration.disabled': 'Integration Disabled',
-    'integration.credentials_changed': 'Integration Credentials Changed',
-    'integration.webhook_secret_read': 'Webhook Secret Viewed',
-    'integration.webhook_secret_rotated': 'Webhook Secret Rotated',
-    'notification_outbox.retried': 'Notification Retried',
-    'notification_outbox.deleted': 'Notification Deleted',
-    'priority_rule.created': 'Priority Rule Created',
-    'priority_rule.updated': 'Priority Rule Updated',
-    'priority_rule.deleted': 'Priority Rule Deleted',
-    'scope_rule.created': 'Scope Rule Created',
-    'scope_rule.updated': 'Scope Rule Updated',
-    'scope_rule.deleted': 'Scope Rule Deleted',
-    'assignment_rule.created': 'Assignment Rule Created',
-    'assignment_rule.updated': 'Assignment Rule Updated',
-    'assignment_rule.deleted': 'Assignment Rule Deleted',
-  }
+const ACTION_LABEL_OVERRIDES: Record<string, string> = {
+  'auth.failed': 'Authentication failed',
+  'finding.bulk_updated': 'Findings bulk updated',
+  'finding.duplicate_marked': 'Finding marked duplicate',
+  'branch.set_default': 'Default branch set',
+  'sensor.key_regenerated': 'Sensor API key regenerated',
+  'sensor.key_renewed': 'Sensor API key renewed',
+  'sensor.key_renewal_refused': 'Sensor API key renewal refused',
+  'sensor.identity_cloned': 'Sensor key used by two processes',
+  'sensor.job_refused_local_policy': 'Sensor refused a job (local policy)',
+  // Revoking or disabling a sensor re-queues or fails the jobs it held
+  'sensor.commands_released': 'Sensor jobs taken back (revoked or disabled)',
+  'scan_zone.sensor_assigned': 'Sensor assigned to scan zone',
+  'scan_zone.sensor_unassigned': 'Sensor unassigned from scan zone',
+  'scope_exclusion.created': 'Scope exclusion requested',
+  'suppression_rule.self_approved': 'Suppression rule self-approved by owner',
+  'easm_seed.created': 'EASM seed added',
+  'easm_seed.updated': 'EASM seed changed',
+  'easm_seed.deleted': 'EASM seed removed',
+  'tool.config_updated': 'Tool configuration updated',
+  'tool.config_deleted': 'Tool configuration reset',
+  'storage_config.updated': 'Evidence storage changed',
+  'integration.webhook_secret_read': 'Webhook secret viewed',
+  'integration.webhook_secret_rotated': 'Webhook secret rotated',
+  'notification_outbox.retried': 'Notification retried',
+  'notification_outbox.deleted': 'Notification deleted',
+}
+
+/**
+ * Display label for an audit action, the one used wherever an action is
+ * shown (audit log, account activity, sensor activity). A sensor event
+ * written before the sensor rename reads the same as a new one.
+ */
+export function getActionLabel(action: AuditAction | string): string {
   const canonical = canonicalAuditAction(action)
-  return labels[canonical] || action
+  return ACTION_LABEL_OVERRIDES[canonical] ?? humanizeIdentifier(canonical)
 }
 
 /**
