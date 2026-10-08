@@ -43,6 +43,8 @@ type ScanWorkflowHandler struct {
 	users user.Repository
 	// runEvents reads the run timeline (nil: an empty timeline).
 	runEvents command.EventReader
+	// readiness computes ?include=readiness (nil: never included).
+	readiness WorkflowReadinessFunc
 }
 
 // NewScanWorkflowHandler creates a new ScanWorkflowHandler.
@@ -123,10 +125,13 @@ type TemplateResponse struct {
 	Settings         ScanWorkflowSettingsResponse `json:"settings"`
 	Tags             []string                     `json:"tags,omitempty"`
 	Steps            []StepResponse               `json:"steps"`
-	UIStartPosition  *UIPositionResponse          `json:"ui_start_position,omitempty"`
-	UIEndPosition    *UIPositionResponse          `json:"ui_end_position,omitempty"`
-	CreatedAt        string                       `json:"created_at"`
-	UpdatedAt        string                       `json:"updated_at"`
+	// Readiness is whether the workflow can run for the caller's
+	// organization now, with ?include=readiness.
+	Readiness       *WorkflowReadinessResponse `json:"readiness,omitempty"`
+	UIStartPosition *UIPositionResponse        `json:"ui_start_position,omitempty"`
+	UIEndPosition   *UIPositionResponse        `json:"ui_end_position,omitempty"`
+	CreatedAt       string                     `json:"created_at"`
+	UpdatedAt       string                     `json:"updated_at"`
 	// RetiredAt is set when the workflow was deleted while it had runs (it
 	// is read-only and kept for their history).
 	RetiredAt string `json:"retired_at,omitempty"`
@@ -500,7 +505,17 @@ func (h *ScanWorkflowHandler) CreateTemplate(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(toTemplateResponse(template))
 }
 
-// GetTemplate handles GET /api/v1/scan-workflows/templates/{id}
+// GetTemplate handles GET /api/v1/scan-workflows/{id}
+// @Summary      Get a scan workflow
+// @Description  The scan workflow with its steps. include=readiness adds whether it can run for the caller's organization now (ready, waiting, ci_only, blocked) and why, per step.
+// @Tags         Scan workflows
+// @Produce      json
+// @Param        id       path   string  true   "Scan workflow ID"
+// @Param        include  query  string  false  "readiness"
+// @Success      200  {object}  TemplateResponse
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-workflows/{id} [get]
 func (h *ScanWorkflowHandler) GetTemplate(w http.ResponseWriter, r *http.Request) {
 	templateID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
@@ -519,11 +534,27 @@ func (h *ScanWorkflowHandler) GetTemplate(w http.ResponseWriter, r *http.Request
 		template.Steps = steps
 	}
 
+	out := toTemplateResponse(template)
+	if wantsReadiness(r) {
+		h.attachReadiness(r.Context(), tenantID, []*scanworkflow.Workflow{template}, []*TemplateResponse{out})
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toTemplateResponse(template))
+	json.NewEncoder(w).Encode(out)
 }
 
-// ListTemplates handles GET /api/v1/scan-workflows/templates
+// ListTemplates handles GET /api/v1/scan-workflows
+// @Summary      List scan workflows
+// @Description  The organization's scan workflows and the system templates, with their steps. include=readiness adds, for each, whether it can run for the caller's organization now and why, in one computation.
+// @Tags         Scan workflows
+// @Produce      json
+// @Param        is_active  query  bool    false  "Active only"
+// @Param        search     query  string  false  "Name search"
+// @Param        include    query  string  false  "readiness"
+// @Param        page       query  int     false  "Page"
+// @Param        per_page   query  int     false  "Page size"
+// @Success      200  {object}  pagination.Result[TemplateResponse]
+// @Security     BearerAuth
+// @Router       /scan-workflows [get]
 func (h *ScanWorkflowHandler) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
@@ -553,6 +584,9 @@ func (h *ScanWorkflowHandler) ListTemplates(w http.ResponseWriter, r *http.Reque
 	}
 
 	resp := pagination.Map(result, toTemplateResponse)
+	if wantsReadiness(r) {
+		h.attachReadiness(r.Context(), tenantID, result.Data, resp.Data)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -705,19 +739,8 @@ func (h *ScanWorkflowHandler) ValidateScanWorkflow(w http.ResponseWriter, r *htt
 		h.handleStepError(w, err)
 		return
 	}
-	out := ScanWorkflowGraphValidationResponse{
-		Valid:    rep.Valid(),
-		Errors:   make([]ScanWorkflowGraphIssueResponse, 0, len(rep.Errors)),
-		Warnings: make([]ScanWorkflowGraphIssueResponse, 0, len(rep.Warnings)),
-	}
-	for _, is := range rep.Errors {
-		out.Errors = append(out.Errors, toGraphIssueResponse(is))
-	}
-	for _, is := range rep.Warnings {
-		out.Warnings = append(out.Warnings, toGraphIssueResponse(is))
-	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	_ = json.NewEncoder(w).Encode(toGraphValidationResponse(rep))
 }
 
 func toGraphIssueResponse(is stage.GraphIssue) ScanWorkflowGraphIssueResponse {
