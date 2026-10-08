@@ -153,6 +153,15 @@ jobs:
       - name: Asset Types Drift
         run: GOWORK=off go run ./cmd/gen-asset-types -check
 
+      # Sensor protocol v3 (RFC-059): buf lint, buf breaking against the
+      # base branch, and the committed Go code matches the .proto.
+      - name: Sensor Protocol v3 (buf lint, breaking, generated code)
+        run: |
+          base="origin/${{ github.base_ref || develop }}"
+          if [ "${{ github.event_name }}" = merge_group ]; then base="${{ github.event.merge_group.base_sha }}"; fi
+          git fetch --no-tags origin develop >/dev/null 2>&1 || true
+          bash scripts/check-proto.sh "$base"
+
       - name: Security Gates (security lint)
         working-directory: .
         env:
