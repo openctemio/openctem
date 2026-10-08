@@ -123,7 +123,7 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (*Crea
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("jira api error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody)
 	}
 
 	var result CreateIssueResult
@@ -201,7 +201,7 @@ func (c *Client) GetTransitions(ctx context.Context, issueKey string) ([]Transit
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("jira api error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody)
 	}
 
 	var parsed struct {
@@ -260,7 +260,7 @@ func (c *Client) DoTransition(ctx context.Context, issueKey, transitionID, comme
 	// Jira returns 204 No Content on a successful transition.
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
-		return fmt.Errorf("jira transition error (status %d): %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("jira transition: %w", httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody))
 	}
 	return nil
 }
@@ -291,7 +291,7 @@ func (c *Client) AddComment(ctx context.Context, issueKey, body string) error {
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
-		return fmt.Errorf("jira comment error (status %d): %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("jira comment: %w", httpsec.NewUpstreamStatusError(ctx, "jira", resp.StatusCode, respBody))
 	}
 	return nil
 }
