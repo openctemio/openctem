@@ -25,6 +25,44 @@ vi.mock('@/lib/api/scan-workflow-hooks', () => ({
                 ],
               },
               {
+                id: 'starter-code',
+                name: 'Code / CI',
+                description: 'Scan repositories.',
+                is_system_template: true,
+                tags: ['starter', 'code'],
+                steps: [{ id: 'c1', name: 'Static analysis', tool: '' }],
+                readiness: {
+                  state: 'ci_only',
+                  steps: [
+                    {
+                      step_key: 'sast',
+                      name: 'Static analysis',
+                      state: 'ci_only',
+                      reason: 'Static analysis runs in your CI pipeline',
+                      fix: 'Set up the CI pipeline integration',
+                    },
+                  ],
+                },
+              },
+              {
+                id: 'net-blocked',
+                name: 'Network sweep',
+                description: 'Ports then HTTP.',
+                steps: [],
+                readiness: {
+                  state: 'blocked',
+                  steps: [
+                    {
+                      step_key: 'ports',
+                      name: 'Port scan',
+                      state: 'blocked',
+                      reason: 'No sensor offers Port scan',
+                      fix: 'Add a sensor with naabu',
+                    },
+                  ],
+                },
+              },
+              {
                 id: 'p1',
                 name: 'External discovery',
                 description: 'subfinder then httpx',
@@ -148,5 +186,35 @@ describe('BasicInfoStep', () => {
     expect(screen.getByText('Sensor Preference')).toBeInTheDocument()
     // Nothing to offer: the workflows are not fetched.
     expect(workflowCalls.every((f) => f === undefined)).toBe(true)
+  })
+
+  it('asks the API for readiness and shows a workflow that cannot run off, with why and the fix', () => {
+    render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={vi.fn()} />)
+    expect(workflowCalls.at(-1)).toMatchObject({ include: 'readiness' })
+    const code = screen.getByRole('radio', { name: 'Code / CI' })
+    expect(code).toBeDisabled()
+    expect(screen.getByText(/Runs in your CI pipeline/)).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Set up the CI pipeline integration' })
+    ).toHaveAttribute('href', '/ci-cd')
+    // A runnable starter stays selectable.
+    expect(screen.getByRole('radio', { name: 'Discover' })).toBeEnabled()
+  })
+
+  it('lists workflows that cannot run last, off, under Not available', async () => {
+    render(
+      <BasicInfoStep
+        data={{ ...DEFAULT_NEW_SCAN, mode: 'workflow', workflowId: undefined }}
+        onChange={vi.fn()}
+      />
+    )
+    await userEvent.click(screen.getByRole('combobox', { name: 'Workflow' }))
+    expect(await screen.findByText('Not available')).toBeInTheDocument()
+    const blocked = screen.getByRole('option', { name: /Network sweep/ })
+    expect(blocked).toHaveAttribute('aria-disabled', 'true')
+    const options = screen.getAllByRole('option').map((o) => o.textContent ?? '')
+    expect(options.findIndex((o) => o.includes('External discovery'))).toBeLessThan(
+      options.findIndex((o) => o.includes('Network sweep'))
+    )
   })
 })
