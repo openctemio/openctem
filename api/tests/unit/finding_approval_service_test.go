@@ -880,26 +880,23 @@ func TestFindingApprovalService_ListApprovals_StatusFilterAndCounts(t *testing.T
 	tenantID := shared.NewID()
 	findingID := shared.NewID()
 	requester := shared.NewID()
-	approver := shared.NewID()
 
 	findingRepo := newMockFindingRepository()
-	findingRepo.findings[findingID] = &vulnerability.Finding{}
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	ids := make([]string, 0, 3)
+	ids := make([]shared.ID, 0, 3)
 	for i := 0; i < 3; i++ {
 		a, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 			TenantID: tenantID.String(), FindingID: findingID.String(),
 			RequestedStatus: "false_positive", Justification: "j", RequestedBy: requester.String(),
 		})
 		require.NoError(t, err)
-		ids = append(ids, a.ID.String())
+		ids = append(ids, a.ID)
 	}
-	_, err := svc.RejectApproval(context.Background(), finding.RejectApprovalInput{
-		TenantID: tenantID.String(), ApprovalID: ids[0], RejectedBy: approver.String(), Reason: "no",
-	})
-	require.NoError(t, err)
+	// One request was rejected (the reject path itself is tested elsewhere).
+	approvalRepo.approvals[ids[0]].Status = vulnerability.ApprovalStatusRejected
 
 	rejected, err := svc.ListApprovals(context.Background(), tenantID.String(), "rejected", 1, 10)
 	require.NoError(t, err)
