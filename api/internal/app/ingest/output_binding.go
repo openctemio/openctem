@@ -321,7 +321,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 		if err == nil {
 			item := &sensorresult.Item{
 				TenantID: tenantID, SensorID: agt.ID, SensorType: string(s.sensorTypeOf(ctx, agt)),
-				Protocol: sensorresult.ProtocolV1, Route: opts.Route, ReportID: report.Metadata.ID,
+				Protocol: sensorresult.ProtocolV2, Route: opts.Route, ReportID: report.Metadata.ID,
 				Reason: sensorresult.ReasonOutOfContract, Payload: payload,
 				AssetsCount: len(sp.held.Assets), FindingsCount: len(sp.held.Findings), ToolName: tool,
 			}
