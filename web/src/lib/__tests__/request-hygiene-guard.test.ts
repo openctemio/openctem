@@ -46,12 +46,12 @@ const RAW_FETCH_BASELINE: Record<string, number> = {
 
 /** Reviewed `['/api/v1/…', …]` SWR keys, file → count. */
 const TUPLE_KEY_BASELINE: Record<string, number> = {
-  'features/assets/hooks/use-asset-tags.ts': 1,
-  'features/assets/hooks/use-assets.ts': 2,
-  'features/exposures/hooks/use-exposures.ts': 2,
+  // Not one GET URL, so no URL key to share: every page of the inventory's
+  // addresses merged into one result.
   'features/scan-zones/components/zone-coverage-card.tsx': 1,
+  // A POST preview of the form being edited, keyed by its content.
   'features/scans/components/new-scan/workflow-preview.tsx': 1,
-  'features/threat-intel/hooks/use-threat-intel.ts': 7,
+  // The web's own build (not an API call) and the API's, per shell.
   'hooks/use-build-versions.ts': 2,
 }
 
