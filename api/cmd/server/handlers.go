@@ -633,6 +633,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.SignupPolicy = svc.Signup
 	}
 	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
+	handlers.Bootstrap.WithSession(bootstrapSession(cfg, svc, handlers))
 	return handlers
 }
 
@@ -1102,4 +1103,30 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 		return nil
 	}
 	return handler.NewSensorPairingHandler(svc.SensorPairing, svc.Sensor, log)
+}
+
+// bootstrapSession wires the session parts of GET /me/bootstrap to the same
+// code that serves /users/me, /users/me/tenants, /notifications/unread-count,
+// /easm/candidates and the organization policy of /auth/providers.
+func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
+	s := handler.BootstrapSession{}
+	if h.User != nil {
+		s.Me = h.User.MeResponse
+		s.MyTenants = h.User.MyTenantsResponse
+	}
+	if svc.Notification != nil {
+		s.UnreadCount = svc.Notification.GetUnreadCount
+	}
+	if h.EASM != nil && h.EASM.HasReview() {
+		s.EASMReviewCount = h.EASM.ReviewCount
+	}
+	mode := cfg.Auth.TenantCreationMode
+	signup := svc.Signup
+	s.TenantCreationMode = func(ctx context.Context) string {
+		if signup != nil {
+			return string(signup.Current(ctx).Mode)
+		}
+		return mode
+	}
+	return s
 }
