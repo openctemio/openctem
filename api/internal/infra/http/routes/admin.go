@@ -24,6 +24,8 @@ import (
 //	------------------------  ----------------  --------------------------
 //	/admin/auth/validate      any admin         —
 //	/admin/overview           any admin         —
+//	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
+//	                          audited)          audited; platform admins refused
 //	/admin/users              super_admin       super_admin (+ audited)
 //	/admin/administrators     —                 super_admin (audited)
 //	/admin/audit-logs         any admin         —
@@ -266,6 +268,32 @@ func registerAdminRoutes(
 				r.DELETE("/{tenantId}/sso/verified-domains/{id}", h.VerifiedDomain.Delete, write("organization.domain_delete")...)
 				r.PATCH("/{tenantId}/sso/verified-domains/{id}", h.VerifiedDomain.UpdateJIT, write("organization.domain_jit")...)
 			}
+		}, adminMiddlewares...)
+	}
+
+	// Console > Users (RFC-022): find an account across
+	// organizations (any admin; viewing one is audited) and run a support
+	// action on it (ops_admin+, reason required, rate-limited, audited).
+	// Account-level facts only, never organization data.
+	if h.AdminPlatformUser != nil {
+		opsSupport := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		if h.AdminSupportRateLimiter != nil {
+			opsSupport = append(opsSupport, h.AdminSupportRateLimiter.WriteMiddleware())
+		}
+		audited := func(action string, base []Middleware) []Middleware {
+			out := cloneMW(base)
+			if h.AdminAuditMiddleware != nil {
+				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "user", "user_id"))
+			}
+			return out
+		}
+		router.Group("/api/v1/admin/platform-users", func(r Router) {
+			r.GET("/", h.AdminPlatformUser.Search)
+			r.GET("/{user_id}", h.AdminPlatformUser.Get, audited("platform_user.view", nil)...)
+			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
+			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
+			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)
+			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", opsSupport)...)
 		}, adminMiddlewares...)
 	}
 
