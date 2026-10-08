@@ -21,5 +21,5 @@ func TestAdminSettingsRoutesRegister(t *testing.T) {
 	registerAdminRoutes(router, Handlers{
 		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(nil, logger.NewNop()),
 		AdminSignup:         handler.NewAdminSignupHandler(nil, nil, logger.NewNop()),
-	}, nil, nil)
+	}, nil)
 }
