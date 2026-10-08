@@ -1,5 +1,6 @@
 'use client'
 
+import { isTempStepId } from '@/lib/utils'
 import { useCallback, useMemo, useEffect, useState, useRef } from 'react'
 import {
   ReactFlow,
@@ -406,6 +407,8 @@ function WorkflowBuilderInner({
             toolDisplayName: step.tool,
             capabilities: step.capabilities,
             stepKey: step.step_key,
+            // A saved step's key is fixed: run history refers to it.
+            stepKeyLocked: !isTempStepId(step.id),
             timeout: step.timeout_seconds,
             dependsOn: step.depends_on,
             categoryColor: (step as ScanWorkflowStep & { category_color?: string }).category_color,
@@ -424,11 +427,9 @@ function WorkflowBuilderInner({
                   onLabelChange: (label: string) => {
                     onStepUpdate(step.id, { name: label })
                   },
+                  // The page derives the capability from the tool.
                   onToolChange: (tool: string) => {
-                    // Find the selected tool's capabilities and update both tool and capabilities
-                    const selectedTool = availableTools.find((t) => t.name === tool)
-                    const capabilities = selectedTool?.capabilities || []
-                    onStepUpdate(step.id, { tool, capabilities })
+                    onStepUpdate(step.id, { tool })
                   },
                   onDescriptionChange: (description: string) => {
                     onStepUpdate(step.id, { description })
