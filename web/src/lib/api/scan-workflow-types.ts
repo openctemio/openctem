@@ -18,6 +18,8 @@ export const SCAN_RUN_TRIGGERS = [
   'webhook',
   'api',
   'on_asset_discovery',
+  'automation',
+  'system',
 ] as const
 export type ScanWorkflowTriggerType = (typeof SCAN_RUN_TRIGGERS)[number]
 
@@ -27,6 +29,8 @@ export const SCAN_RUN_TRIGGER_LABELS: Record<ScanWorkflowTriggerType, string> = 
   webhook: 'Webhook',
   api: 'API',
   on_asset_discovery: 'On Asset Discovery',
+  automation: 'Automation',
+  system: 'System',
 }
 
 // ============================================
@@ -266,7 +270,7 @@ export interface ScanRun {
   scan_id?: string
   /** The run's scan, named by the server on list rows (empty when deleted). */
   scan_name?: string
-  trigger_type: ScanWorkflowTriggerType | 'system'
+  trigger_type: ScanWorkflowTriggerType
   triggered_by?: string
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
   triggered_by_name?: string
