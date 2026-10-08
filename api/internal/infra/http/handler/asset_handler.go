@@ -602,6 +602,10 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := assetapp.ListAssetsInput{
 		TenantID:         tenantID,
 		Name:             query.Get("name"),
@@ -631,8 +635,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Attribution:          parseQueryArray(query.Get("attribution")),
 		CoveredBy:            query.Get("covered_by"),
 		Sort:                 query.Get("sort"),
-		Page:                 parseQueryInt(query.Get("page"), 1),
-		PerPage:              parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:                 paging.Page,
+		PerPage:              paging.PerPage,
 		ActingUserID:         middleware.GetUserID(r.Context()),
 		IsAdmin:              middleware.IsAdmin(r.Context()),
 	}

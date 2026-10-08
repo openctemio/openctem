@@ -565,14 +565,18 @@ func (h *CommandHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *CommandHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := command.ListInput{
 		TenantID: tenantID,
 		SensorID: r.URL.Query().Get("sensor_id"),
 		Type:     r.URL.Query().Get("type"),
 		Status:   r.URL.Query().Get("status"),
 		Priority: r.URL.Query().Get("priority"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+		Page:     paging.Page,
+		PerPage:  paging.PerPage,
 	}
 
 	result, err := h.service.List(r.Context(), input)
