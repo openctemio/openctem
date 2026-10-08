@@ -24,12 +24,15 @@ import (
 //	------------------------  ----------------  --------------------------
 //	/admin/auth/validate      any admin         —
 //	/admin/overview           any admin         —
+//	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
+//	                          audited)          audited; platform admins refused
 //	/admin/users              super_admin       super_admin (+ audited)
 //	/admin/administrators     —                 super_admin (audited)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         ops_admin+ (+ audited)
 //	/admin/platform-idp       super_admin       super_admin (audited)
+//	/admin/access-requests    any admin         ops_admin+ (approve/reject, audited)
 //	/admin/settings/plans     any admin         super_admin + fresh TOTP code
 //	/admin/tenants/{id}/plan  any admin         ops_admin+ (plan, overrides; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
@@ -132,6 +135,24 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// The request-access queue: any admin reads; approving (creates the
+	// organization, requester as owner) or rejecting needs ops_admin+, audited.
+	if h.AccessRequest != nil {
+		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
+		decide := func(action string) []Middleware {
+			mws := []Middleware{requireOps}
+			if h.AdminAuditMiddleware != nil {
+				mws = append(mws, h.AdminAuditMiddleware.AuditLog(action, "access_request", "id"))
+			}
+			return mws
+		}
+		router.Group("/api/v1/admin/access-requests", func(r Router) {
+			r.GET("/", h.AccessRequest.List)
+			r.POST("/{id}/approve", h.AccessRequest.Approve, decide("access_request.approve")...)
+			r.POST("/{id}/reject", h.AccessRequest.Reject, decide("access_request.reject")...)
 		}, adminMiddlewares...)
 	}
 
@@ -247,6 +268,32 @@ func registerAdminRoutes(
 				r.DELETE("/{tenantId}/sso/verified-domains/{id}", h.VerifiedDomain.Delete, write("organization.domain_delete")...)
 				r.PATCH("/{tenantId}/sso/verified-domains/{id}", h.VerifiedDomain.UpdateJIT, write("organization.domain_jit")...)
 			}
+		}, adminMiddlewares...)
+	}
+
+	// Console > Users (RFC-022): find an account across
+	// organizations (any admin; viewing one is audited) and run a support
+	// action on it (ops_admin+, reason required, rate-limited, audited).
+	// Account-level facts only, never organization data.
+	if h.AdminPlatformUser != nil {
+		opsSupport := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		if h.AdminSupportRateLimiter != nil {
+			opsSupport = append(opsSupport, h.AdminSupportRateLimiter.WriteMiddleware())
+		}
+		audited := func(action string, base []Middleware) []Middleware {
+			out := cloneMW(base)
+			if h.AdminAuditMiddleware != nil {
+				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "user", "user_id"))
+			}
+			return out
+		}
+		router.Group("/api/v1/admin/platform-users", func(r Router) {
+			r.GET("/", h.AdminPlatformUser.Search)
+			r.GET("/{user_id}", h.AdminPlatformUser.Get, audited("platform_user.view", nil)...)
+			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
+			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
+			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)
+			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", opsSupport)...)
 		}, adminMiddlewares...)
 	}
 

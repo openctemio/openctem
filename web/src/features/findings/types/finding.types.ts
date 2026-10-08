@@ -22,28 +22,26 @@ import type { CriticalityLevel } from '@/lib/criticality'
  * - duplicate: Linked to another finding
  */
 export type FindingStatus =
-  // Automated statuses
   | 'new' // Scanner just found it
   | 'confirmed' // Verified as real issue, needs fix
-  | 'in_progress' // Developer working on fix
-  | 'fix_applied' // Dev/owner marked as fixed — awaiting scan verification
+  | 'in_progress' // Being fixed
+  | 'fix_applied' // Marked fixed, awaiting verification (scan, retest or security review)
+  | 'validated_fixed' // A validation re-check no longer observes it; a person closes it
   | 'not_observed' // Not seen by recent scans, no proof the check ran: stale, NOT fixed (SLA keeps running)
-  | 'resolved' // Verified fixed (by scan or security review)
+  | 'resolved' // Verified fixed; how is the resolution (scan, retest, security review)
   | 'false_positive' // Not a real issue (requires approval)
   | 'accepted' // Risk accepted (requires approval, has expiration)
   | 'duplicate' // Linked to another finding
-  // Pentest-specific statuses (source='pentest')
-  | 'draft' // Pentester drafting (hidden from dashboard)
+  // Pentest pre-publication (source='pentest'), hidden from dashboards
+  | 'draft' // Pentester drafting
   | 'in_review' // Peer reviewing
-  | 'remediation' // Dev fixing (pentest)
-  | 'retest' // Awaiting re-verification
-  | 'verified' // Manual retest passed
-  | 'accepted_risk' // Risk accepted (pentest term)
 
 export type StatusCategory = 'open' | 'in_progress' | 'closed'
 
 export interface StatusConfig {
+  /** English label; the localised one is `labelKey` in the i18n dictionaries. */
   label: string
+  labelKey: string
   color: string
   bgColor: string
   textColor: string
@@ -56,6 +54,7 @@ export interface StatusConfig {
 export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   new: {
     label: 'New',
+    labelKey: 'findings.status.new',
     color: 'border-blue-500/50',
     bgColor: 'bg-blue-500/20',
     textColor: 'text-blue-400',
@@ -64,6 +63,7 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
   confirmed: {
     label: 'Confirmed',
+    labelKey: 'findings.status.confirmed',
     color: 'border-orange-500/50',
     bgColor: 'bg-orange-500/20',
     textColor: 'text-orange-400',
@@ -72,6 +72,7 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
   in_progress: {
     label: 'In Progress',
+    labelKey: 'findings.status.in_progress',
     color: 'border-yellow-500/50',
     bgColor: 'bg-yellow-500/20',
     textColor: 'text-yellow-400',
@@ -80,14 +81,25 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
   fix_applied: {
     label: 'Fix Applied',
+    labelKey: 'findings.status.fix_applied',
     color: 'border-yellow-600/50',
     bgColor: 'bg-yellow-600/20',
     textColor: 'text-yellow-500',
     icon: 'wrench',
     category: 'in_progress',
   },
+  validated_fixed: {
+    label: 'Validated Fixed',
+    labelKey: 'findings.status.validated_fixed',
+    color: 'border-teal-500/50', // palette-ok: status scheme, like every status here
+    bgColor: 'bg-teal-500/20', // palette-ok: status scheme
+    textColor: 'text-teal-400', // palette-ok: status scheme
+    icon: 'shield-check',
+    category: 'in_progress',
+  },
   not_observed: {
     label: 'Not Observed',
+    labelKey: 'findings.status.not_observed',
     color: 'border-zinc-500/50', // palette-ok: status scheme, like every status here
     bgColor: 'bg-zinc-500/20', // palette-ok: status scheme
     textColor: 'text-zinc-400', // palette-ok: status scheme
@@ -96,6 +108,7 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
   resolved: {
     label: 'Resolved',
+    labelKey: 'findings.status.resolved',
     color: 'border-emerald-500/50',
     bgColor: 'bg-emerald-500/20',
     textColor: 'text-emerald-400',
@@ -104,6 +117,7 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
   false_positive: {
     label: 'False Positive',
+    labelKey: 'findings.status.false_positive',
     color: 'border-slate-500/50',
     bgColor: 'bg-slate-500/20',
     textColor: 'text-slate-400',
@@ -113,6 +127,7 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
   accepted: {
     label: 'Risk Accepted',
+    labelKey: 'findings.status.accepted',
     color: 'border-amber-500/50',
     bgColor: 'bg-amber-500/20',
     textColor: 'text-amber-400',
@@ -123,15 +138,17 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
   duplicate: {
     label: 'Duplicate',
+    labelKey: 'findings.status.duplicate',
     color: 'border-slate-500/50',
     bgColor: 'bg-slate-500/20',
     textColor: 'text-slate-400',
     icon: 'copy',
     category: 'closed',
   },
-  // Pentest-specific statuses
+  // Pentest pre-publication
   draft: {
     label: 'Draft',
+    labelKey: 'findings.status.draft',
     color: 'border-gray-500/50',
     bgColor: 'bg-gray-500/20',
     textColor: 'text-gray-400',
@@ -140,44 +157,12 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
   in_review: {
     label: 'In Review',
+    labelKey: 'findings.status.in_review',
     color: 'border-blue-500/50',
     bgColor: 'bg-blue-500/20',
     textColor: 'text-blue-400',
     icon: 'eye',
     category: 'open',
-  },
-  remediation: {
-    label: 'Remediation',
-    color: 'border-yellow-500/50',
-    bgColor: 'bg-yellow-500/20',
-    textColor: 'text-yellow-400',
-    icon: 'wrench',
-    category: 'in_progress',
-  },
-  retest: {
-    label: 'Retest',
-    color: 'border-orange-500/50',
-    bgColor: 'bg-orange-500/20',
-    textColor: 'text-orange-400',
-    icon: 'rotate-cw',
-    category: 'in_progress',
-  },
-  verified: {
-    label: 'Verified',
-    color: 'border-emerald-500/50',
-    bgColor: 'bg-emerald-500/20',
-    textColor: 'text-emerald-400',
-    icon: 'shield-check',
-    category: 'closed',
-  },
-  accepted_risk: {
-    label: 'Accepted Risk',
-    color: 'border-amber-500/50',
-    bgColor: 'bg-amber-500/20',
-    textColor: 'text-amber-400',
-    icon: 'alert-triangle',
-    category: 'closed',
-    requiresApproval: true,
   },
 }
 
@@ -196,6 +181,8 @@ export const STATUS_TRANSITIONS: Record<FindingStatus, FindingStatus[]> = {
   in_progress: ['fix_applied', 'confirmed'],
   // Fix applied — awaiting a proof-of-fix retest or manual security review
   fix_applied: ['resolved', 'in_progress'],
+  // Validated fixed — a validation re-check no longer observes it; a person closes or reopens it
+  validated_fixed: ['resolved', 'confirmed', 'duplicate', 'false_positive', 'accepted'],
   // Not observed — set by the platform only; seen again, triaged, or closed with proof
   not_observed: ['confirmed', 'in_progress', 'resolved', 'duplicate', 'false_positive', 'accepted'],
   // Closed states (can reopen to confirmed)
@@ -203,13 +190,9 @@ export const STATUS_TRANSITIONS: Record<FindingStatus, FindingStatus[]> = {
   false_positive: ['confirmed'],
   accepted: ['confirmed'],
   duplicate: ['confirmed'],
-  // Pentest transitions
-  draft: ['in_review', 'confirmed', 'false_positive', 'accepted_risk'],
-  in_review: ['confirmed', 'false_positive', 'accepted_risk'],
-  remediation: ['retest', 'false_positive', 'accepted_risk'],
-  retest: ['verified', 'remediation', 'false_positive', 'accepted_risk'],
-  verified: ['remediation'],
-  accepted_risk: ['draft', 'confirmed'],
+  // Pentest pre-publication (the pentest menu uses PENTEST_STATUS_TRANSITION_ROLES)
+  draft: ['in_review', 'confirmed', 'false_positive', 'accepted'],
+  in_review: ['confirmed', 'false_positive', 'accepted'],
 }
 
 /** Statuses valid for automated findings */
@@ -218,6 +201,7 @@ export const AUTOMATED_STATUSES: FindingStatus[] = [
   'confirmed',
   'in_progress',
   'fix_applied',
+  'validated_fixed',
   'not_observed',
   'resolved',
   'false_positive',
@@ -230,12 +214,27 @@ export const PENTEST_STATUSES: FindingStatus[] = [
   'draft',
   'in_review',
   'confirmed',
-  'remediation',
-  'retest',
-  'verified',
+  'in_progress',
+  'fix_applied',
+  'resolved',
   'false_positive',
-  'accepted_risk',
+  'accepted',
 ]
+
+/** Every finding status, in lifecycle order. */
+export const ALL_FINDING_STATUSES: FindingStatus[] = Object.keys(
+  FINDING_STATUS_CONFIG
+) as FindingStatus[]
+
+/** The statuses of a category, in lifecycle order: the findings filter groups by these. */
+export function findingStatusesInCategory(category: StatusCategory): FindingStatus[] {
+  return ALL_FINDING_STATUSES.filter((s) => FINDING_STATUS_CONFIG[s].category === category)
+}
+
+/** True for a value the API accepts as a finding status. */
+export function isFindingStatus(value: string): value is FindingStatus {
+  return Object.prototype.hasOwnProperty.call(FINDING_STATUS_CONFIG, value)
+}
 
 /** Get valid statuses for a finding based on its source */
 export function getStatusesForSource(source: string): FindingStatus[] {
@@ -247,7 +246,7 @@ export function getStatusesForSource(source: string): FindingStatus[] {
  * Check if a status requires approval to transition to
  */
 export function requiresApproval(status: FindingStatus): boolean {
-  return status === 'false_positive' || status === 'accepted' || status === 'accepted_risk'
+  return status === 'false_positive' || status === 'accepted'
 }
 
 // ============================================
