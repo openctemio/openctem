@@ -738,7 +738,7 @@ domain ─contains→ subdomain ─resolves_to→ ip_address ─exposes→ [serv
     node.
   - The drawer of an exposed service shows "runs code from `repo-x`
     (3 critical findings)". The reverse view, on a repository, shows
-    "reachable from the internet through `api.acme.com:443`".
+    "reachable from the internet through `api.example.com:443`".
 - **What this feeds.** It is the input RFC-017 reachability and
   attack-path work need. An inventory that stops at the web service cannot
   answer it.
@@ -947,7 +947,7 @@ first; T1 touches the same `POST /assets` path.
    owners and history keep the same `asset_id`.
 5. **Dedup-aware, not dedup-acting.** Pairs that are now the same class
    in one tenant with the same host but different names (for example
-   `https://app.x.com` and `app.x.com`) go to the RFC-043 review queue
+   `https://app.example.com` and `app.example.com`) go to the RFC-043 review queue
    with reason `type_consolidation`. Nothing merges automatically.
 6. **History.** One `reclassified` state-history row per moved asset
    (field `asset_type`, old → new).
@@ -1214,7 +1214,7 @@ text     = quoted | bare ;                         (* free text → search *)
 - `:` means:
   - *equals* for enums and numbers;
   - *matches* for strings: case-insensitive and fuzzy, where `*` is a
-    wildcard (`host:*.staging.acme.com`, `title:*admin*`);
+    wildcard (`host:*.staging.example.com`, `title:*admin*`);
   - *contains* for CIDRs (`ip:10.0.0.0/8`).
 - `=` is **exact, case-sensitive** for strings: `title="Sign In"`. This
   is the split between fuzzy `:` and exact `=` (I8).
@@ -1766,7 +1766,7 @@ and returns:
 ```json
 { "total": 1840, "in_scope": 1602,
   "skipped": { "excluded": 120, "unconfirmed": 96, "archived": 12, "type_incompatible": 10 },
-  "samples": { "excluded": [ { "target": "vpn.acme.com", "reason": "excluded:7f…" } ] },
+  "samples": { "excluded": [ { "target": "vpn.example.com", "reason": "excluded:7f…" } ] },
   "budget": { "remaining_today": 5000, "after": 3398 },
   "preview_token": "…" }
 ```
@@ -2612,7 +2612,7 @@ applies after resolution; claim-time gating is on the API.
 - Two mutually-triggering policies stop at depth 3.
 - Rotating a fixture certificate yields exactly one `cert_changed` and
   one alert digest.
-- Approving `*.staging.acme.com` archives matching assets and their
+- Approving `*.staging.example.com` archives matching assets and their
   only-through descendants; removing it restores them.
 
 ### P2: Screenshots and system labels: 4
