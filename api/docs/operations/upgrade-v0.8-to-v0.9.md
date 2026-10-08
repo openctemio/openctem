@@ -45,7 +45,7 @@ need a decision from you or from your organization owners.
 
 | | |
 |---|---|
-| **Downtime** | Required. The API, web and sensors are stopped for the whole upgrade; there is no rolling upgrade from v0.8.0 (tables are renamed). Measured migration time: seconds on a small database, about 1.5 minutes on a 630 MB database (see [4.4](#44-how-long-it-takes)). Plan **60 minutes** of window for a database up to a few GB, including backup, image pulls, checks and sign-in tests. |
+| **Downtime** | Required. The API and web are stopped for the whole upgrade; there is no rolling upgrade from v0.8.0 (tables are renamed). Measured migration time: seconds on a small database, about 1.5 minutes on a 630 MB database (see [4.4](#44-how-long-it-takes)). Plan **60 minutes** of window for a database up to a few GB, including backup, image pulls, checks and sign-in tests. |
 | **Database** | Two hops. v0.9.0 starts its migrations from one baseline file (`001146_baseline`, [RFC-053](../rfcs/RFC-053-migration-baseline.md)) and refuses a v0.8.0 database without changing it. First apply the migrations of git tag **`pre-baseline-001146`** (000225 → 001146), then the v0.9.0 migrations image (001147 → latest). |
 | **PostgreSQL** | **17 or later** is required (migration 000257 uses PostgreSQL 17 syntax). The v0.8.0 Compose files shipped `postgres:17-alpine`. |
 | **Images** | New names: `ghcr.io/openctemio/openctem-api`, `openctem-web`, all-in-one `openctem`; `migrations`, `seed`, `admin-cli` keep their names. One tag (`v0.9.0`) for all of them. |
@@ -101,7 +101,7 @@ docker exec restore-test sh -c 'until pg_isready -U postgres; do sleep 1; done'
 docker exec restore-test createdb -U postgres openctem
 docker exec -i restore-test pg_restore -U postgres -d openctem --no-owner < openctem-v0.8.0-*.dump
 docker exec restore-test psql -U postgres -d openctem -c 'SELECT version, dirty FROM schema_migrations;'
-docker rm -f restore-test
+# keep it for the rehearsal below, then: docker rm -f restore-test
 ```
 
 Also back up the root `.env`/env files and your Helm values: `APP_ENCRYPTION_KEY`
@@ -109,7 +109,9 @@ must stay exactly the same (it decrypts integration credentials, TOTP secrets
 and sensor key peppers).
 
 **Rehearse on the restored copy.** Run [section 4](#4-database-migration-path)
-against the restore-test database: you get your own migration durations and
+against the restore-test database (`--network container:restore-test` and
+`postgres://postgres:x@localhost:5432/openctem?sslmode=disable` in the
+`docker run` commands): you get your own migration durations and
 see any data problem before the window.
 
 ### 2.3 Disk
