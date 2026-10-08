@@ -21,26 +21,12 @@ export const emailSchema = z
   .email('Please enter a valid email address')
 
 /**
- * Password field validator
- * Minimum 8 characters (updated from 7 for better security)
- *
- * CUSTOMIZATION: Add stronger password requirements for production:
- * Example with stricter validation:
- * ```typescript
- * export const passwordSchema = z
- *   .string()
- *   .min(1, 'Please enter your password')
- *   .min(8, 'Password must be at least 8 characters')
- *   .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
- *   .regex(/[a-z]/, 'Must contain at least one lowercase letter')
- *   .regex(/[0-9]/, 'Must contain at least one number')
- *   .regex(/[^A-Za-z0-9]/, 'Must contain at least one special character')
- * ```
+ * A newly chosen password: only required here. Its rules (length, character
+ * classes) are the server's password policy, read from GET /auth/providers
+ * and checked in the form with `passwordPolicyIssue` (lib/password-policy);
+ * the server enforces them in any case.
  */
-export const passwordSchema = z
-  .string()
-  .min(1, 'Please enter your password')
-  .min(12, 'Password must be at least 12 characters long')
+export const passwordSchema = z.string().min(1, 'Please enter a password')
 
 /**
  * Password on the sign-in form: only required. Length rules apply when a
@@ -272,18 +258,6 @@ export type AuthResponse<T = unknown> = AuthSuccessResponse<T> | AuthErrorRespon
 export function isValidEmail(email: string): boolean {
   try {
     emailSchema.parse(email)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * Validates if a password meets requirements
- */
-export function isValidPassword(password: string): boolean {
-  try {
-    passwordSchema.parse(password)
     return true
   } catch {
     return false

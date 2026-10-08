@@ -178,7 +178,7 @@ func (c *Client) getJSON(ctx context.Context, pathOrURL string, out any) error {
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("defectdojo: unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return httpsec.NewUpstreamStatusError(ctx, "defectdojo", resp.StatusCode, body)
 	}
 
 	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, out); err != nil {

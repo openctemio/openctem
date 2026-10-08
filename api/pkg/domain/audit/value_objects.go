@@ -29,6 +29,14 @@ const (
 	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
 	// settings (RFC-039).
 	ActionTenantRetestUpdated Action = "tenant.retest_updated"
+
+	// Idle Free workspaces (docs/architecture/idle-workspaces.md).
+	ActionTenantIdleReminded         Action = "tenant.idle_reminded"
+	ActionTenantIdleReadOnly         Action = "tenant.idle_read_only"
+	ActionTenantIdleFinalWarning     Action = "tenant.idle_final_warning"
+	ActionTenantIdleDeletionDue      Action = "tenant.idle_deletion_due"
+	ActionTenantIdleReactivated      Action = "tenant.idle_reactivated"
+	ActionTenantIdleExemptionChanged Action = "tenant.idle_exemption_changed"
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
@@ -562,6 +570,8 @@ func (a Action) IsValid() bool {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated,
+		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
+		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionScopeSettingsUpdated,

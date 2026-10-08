@@ -103,7 +103,7 @@ func TestRefuseTierExceeded(t *testing.T) {
 // run left with nothing.
 func TestResolveScanTargets_TierCeiling(t *testing.T) {
 	gate := &stubGate{ceiling: map[string]scopedom.Tier{"passive-only.example.com": scopedom.TierPassive}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
+	svc := allowAllChecks(&Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()})
 
 	sc := testScan("nuclei", "ok.example.com", "passive-only.example.com")
 	got, err := svc.resolveScanTargets(context.Background(), sc)

@@ -922,7 +922,7 @@ func newTestScanService(opts ...scanservice.ServiceOption) (*scanservice.Service
 		deps.sensorSelector,
 		deps.secValidator,
 		log,
-		append([]scanservice.ServiceOption{scanservice.WithAuditService(deps.auditSvc)}, opts...)...,
+		allowAllTargetChecks(append([]scanservice.ServiceOption{scanservice.WithAuditService(deps.auditSvc)}, opts...)...)...,
 	)
 	// A workflow scan's first steps are queued by the scan run service, the
 	// one step dispatcher (research/27 P0-2), as in production.
