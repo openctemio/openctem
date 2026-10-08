@@ -22,6 +22,7 @@ import (
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/emaildomain"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/password"
@@ -393,7 +394,7 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 	// the response says nothing about the token.
 	invitationTenantID, invited := s.pendingInvitationFor(ctx, input.InvitationToken, email)
 	if !signupdom.Admit(s.signupPolicyNow(ctx), signupdom.Identity{
-		Intent: signupdom.IntentAccount, InvitedPending: invited,
+		Intent: signupdom.IntentAccount, InvitedPending: invited, DisposableEmail: disposableEmail(email),
 	}).Admitted() {
 		return nil, ErrSignupNotAvailable
 	}
@@ -2151,4 +2152,10 @@ func (s *AuthService) dummyPasswordHash() string {
 		}
 	})
 	return s.dummyHash
+}
+
+// disposableEmail reports whether email is on a disposable-address service.
+func disposableEmail(email string) bool {
+	at := strings.LastIndex(email, "@")
+	return at >= 0 && emaildomain.IsDisposable(email[at+1:])
 }

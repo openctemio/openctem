@@ -26,6 +26,8 @@ func TestAdmit(t *testing.T) {
 		{"account, self_service, stranger", self, Identity{Intent: IntentAccount}, OutcomeSelfService},
 		{"account, self_service, invited", self, Identity{Intent: IntentAccount, InvitedPending: true}, OutcomeAcceptInvitation},
 		{"account, self_service, SSO JIT", self, Identity{Intent: IntentAccount, JITEligible: true}, OutcomeJITMember},
+		{"account, self_service, disposable email", self, Identity{Intent: IntentAccount, DisposableEmail: true}, OutcomeNotSetUp},
+		{"account, self_service, disposable but invited", self, Identity{Intent: IntentAccount, DisposableEmail: true, InvitedPending: true}, OutcomeAcceptInvitation},
 
 		// Unknown intent or mode: refused (fail-closed).
 		{"unknown intent", self, Identity{Intent: "delete-everything"}, OutcomeNotSetUp},

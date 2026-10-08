@@ -21,6 +21,10 @@ type Identity struct {
 	// JITEligible: an organization's SSO admits this identity just-in-time
 	// (auto-provision on, DNS-verified SSO domain, allowed domains).
 	JITEligible bool
+	// DisposableEmail: the email is on a disposable-address service
+	// (pkg/emaildomain). Self-service sign-up refuses it; an invitation or an
+	// organization's SSO is the organization choosing the person.
+	DisposableEmail bool
 }
 
 // Outcome is the admission decision.
@@ -50,7 +54,7 @@ func (o Outcome) Admitted() bool { return o != OutcomeNotSetUp }
 //	creating an account:
 //	  an organization's SSO admits it  → jit_member     (either mode)
 //	  a pending invitation for it      → accept_invitation (either mode)
-//	  self_service mode                → self_service
+//	  self_service mode, not a disposable email → self_service
 //	otherwise                          → not_set_up (write nothing)
 //
 // An existing account signing in is never refused here: a mode change never
@@ -68,7 +72,7 @@ func Admit(p Policy, id Identity) Outcome {
 			return OutcomeJITMember
 		case id.InvitedPending:
 			return OutcomeAcceptInvitation
-		case p.AllowsSelfService():
+		case p.AllowsSelfService() && !id.DisposableEmail:
 			return OutcomeSelfService
 		}
 	}

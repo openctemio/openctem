@@ -61,7 +61,7 @@ Every path that would write an account or an organization asks one function,
 | an organization | the policy is `self_service` | create-first-team, `POST /tenants` |
 | an account | an organization's SSO admits the identity (JIT: auto-provision, DNS-verified SSO domain, allowed domains), in either mode | OIDC/SAML callbacks |
 | an account | a pending invitation is addressed to the email, in either mode | register with the invitation token; a social sign-in whose verified email has a pending invitation |
-| an account | the policy is `self_service` | register, first social sign-in |
+| an account | the policy is `self_service` and the email is not on a disposable-address service (`pkg/emaildomain`) | register, first social sign-in |
 
 Anything else is refused **before anything is written**: no `users`,
 `sessions`, `refresh_tokens` or membership row. Register and the social
