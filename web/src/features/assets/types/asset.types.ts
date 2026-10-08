@@ -74,198 +74,6 @@ export type AssetType =
   | 'mobile' // @deprecated - Use mobile_app instead
 
 /**
- * Asset Type Category for grouping in UI
- */
-export type AssetTypeCategory =
-  | 'external'
-  | 'applications'
-  | 'infrastructure'
-  | 'network'
-  | 'cloud'
-  | 'data'
-  | 'identity'
-  | 'code'
-
-export interface CategorySubItem {
-  key: string // sub_type key or asset_type
-  label: string
-  url: string
-  countKey: string // key in bySubType or byType to get count
-}
-
-export interface CategoryConfig {
-  label: string
-  description: string
-  types: AssetType[] // for total count calculation
-  items: CategorySubItem[] // individual rows in overview
-}
-
-export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = {
-  external: {
-    label: 'External Attack Surface',
-    description: 'Internet-facing assets and entry points',
-    types: ['domain', 'subdomain', 'certificate', 'ip_address'],
-    items: [
-      { key: 'domain', label: 'Domains', url: '/assets/domains?type=domain', countKey: 'domain' },
-      {
-        key: 'subdomain',
-        label: 'Subdomains',
-        url: '/assets/domains?type=subdomain',
-        countKey: 'subdomain',
-      },
-      {
-        key: 'certificate',
-        label: 'Certificates',
-        url: '/assets/certificates',
-        countKey: 'certificate',
-      },
-      {
-        key: 'ip_address',
-        label: 'IP Addresses',
-        url: '/assets/ip-addresses',
-        countKey: 'ip_address',
-      },
-    ],
-  },
-  applications: {
-    label: 'Applications',
-    description: 'Web, mobile, and API applications',
-    types: ['application'],
-    items: [
-      // One web sub-type (RFC-042 §6.3.8 O3): stored as `website`,
-      // labelled "Web applications".
-      { key: 'website', label: 'Web applications', url: '/assets/websites', countKey: 'website' },
-      { key: 'api', label: 'APIs', url: '/assets/apis', countKey: 'api' },
-      { key: 'mobile_app', label: 'Mobile Apps', url: '/assets/mobile', countKey: 'mobile_app' },
-    ],
-  },
-  infrastructure: {
-    label: 'Infrastructure',
-    description: 'Servers, VMs, containers, Kubernetes, and services',
-    types: ['host', 'container', 'kubernetes', 'service'],
-    items: [
-      { key: 'host', label: 'Hosts', url: '/assets/hosts', countKey: 'host' },
-      {
-        key: 'container',
-        label: 'Containers',
-        url: '/assets/containers?type=container',
-        countKey: 'container',
-      },
-      {
-        key: 'kubernetes',
-        label: 'Kubernetes',
-        url: '/assets/containers?type=kubernetes',
-        countKey: 'kubernetes',
-      },
-      { key: 'service', label: 'Services', url: '/assets/services', countKey: 'service' },
-    ],
-  },
-  network: {
-    label: 'Network & Security',
-    description: 'Firewalls, switches, routers, load balancers',
-    types: ['network'],
-    items: [
-      {
-        key: 'firewall',
-        label: 'Firewalls',
-        url: '/assets/networks?sub_type=firewall',
-        countKey: 'firewall',
-      },
-      {
-        key: 'load_balancer',
-        label: 'Load Balancers',
-        url: '/assets/networks?sub_type=load_balancer',
-        countKey: 'load_balancer',
-      },
-      {
-        key: 'switch',
-        label: 'Switches',
-        url: '/assets/networks?sub_type=switch',
-        countKey: 'switch',
-      },
-      {
-        key: 'router',
-        label: 'Routers',
-        url: '/assets/networks?sub_type=router',
-        countKey: 'router',
-      },
-    ],
-  },
-  cloud: {
-    label: 'Cloud',
-    description: 'Cloud accounts and storage',
-    types: ['cloud_account', 'storage'],
-    items: [
-      {
-        key: 'cloud_account',
-        label: 'Cloud Accounts',
-        url: '/assets/cloud-accounts',
-        countKey: 'cloud_account',
-      },
-      { key: 'storage', label: 'Storage', url: '/assets/storage', countKey: 'storage' },
-    ],
-  },
-  data: {
-    label: 'Data',
-    description: 'Databases and data stores',
-    types: ['database'],
-    items: [
-      { key: 'database', label: 'Databases', url: '/assets/databases', countKey: 'database' },
-    ],
-  },
-  identity: {
-    label: 'Identity & Access',
-    description: 'Users, roles, and service accounts',
-    types: ['identity'],
-    items: [
-      {
-        key: 'iam_user',
-        label: 'Users',
-        url: '/assets/identity?sub_type=iam_user',
-        countKey: 'iam_user',
-      },
-      {
-        key: 'iam_role',
-        label: 'Roles',
-        url: '/assets/identity?sub_type=iam_role',
-        countKey: 'iam_role',
-      },
-      {
-        key: 'service_account',
-        label: 'Service Accounts',
-        url: '/assets/identity?sub_type=service_account',
-        countKey: 'service_account',
-      },
-    ],
-  },
-  code: {
-    label: 'Code & CI/CD',
-    description: 'Source code repositories and pipelines',
-    types: ['repository'],
-    items: [
-      {
-        key: 'repository',
-        label: 'Repositories',
-        url: '/assets/repositories',
-        countKey: 'repository',
-      },
-    ],
-  },
-}
-
-/**
- * Legacy asset types that are deprecated but still supported
- */
-export const LEGACY_ASSET_TYPES: AssetType[] = ['credential', 'mobile', 'endpoint']
-
-/**
- * Check if an asset type is deprecated
- */
-export const isLegacyAssetType = (type: AssetType): boolean => {
-  return LEGACY_ASSET_TYPES.includes(type)
-}
-
-/**
  * Asset Scope - Ownership/location perspective
  * Indicates who owns or manages the asset
  */
@@ -699,7 +507,7 @@ export interface Asset {
    * exists. Persisted to assets.owner_ref (max 500 chars).
    */
   ownerRef?: string
-  metadata: AssetMetadata & Record<string, unknown>
+  metadata: AssetMetadata
   tags?: string[]
   primaryOwner?: OwnerBrief
   firstSeen: string
@@ -751,7 +559,7 @@ export interface CreateAssetInput {
   groupId?: string // Optional - can create ungrouped assets
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
-  metadata?: AssetMetadata & Record<string, unknown>
+  metadata?: AssetMetadata
   tags?: string[]
 }
 
@@ -774,7 +582,7 @@ export interface UpdateAssetInput {
   groupId?: string | null // null to remove from group
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
-  metadata?: AssetMetadata & Record<string, unknown>
+  metadata?: AssetMetadata
   tags?: string[]
 }
 

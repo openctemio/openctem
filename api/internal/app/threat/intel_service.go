@@ -472,7 +472,7 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 
 	// Decompress gzip. Bound both the compressed input and the decompressed
 	// output to defend against an oversized body / decompression bomb.
-	gzReader, err := gzip.NewReader(io.LimitReader(resp.Body, maxCompressedFeedBytes))
+	gzReader, err := gzip.NewReader(httpsec.NewLimitedReader(resp.Body, maxCompressedFeedBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
 	}
@@ -480,7 +480,7 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 
 	// The scores CSV is parsed by a pure helper so the format handling is
 	// unit-testable without the SSRF-guarded HTTP client (which refuses loopback).
-	return parseEPSSCSV(io.LimitReader(gzReader, maxDecompressedFeedBytes))
+	return parseEPSSCSV(httpsec.NewLimitedReader(gzReader, maxDecompressedFeedBytes))
 }
 
 // parseEPSSCSV parses the (already-decompressed) EPSS scores CSV. The feed opens
@@ -602,7 +602,7 @@ func (s *IntelService) fetchKEVFrom(ctx context.Context, url string) ([]*threati
 
 	// Parse JSON (bounded to guard against an oversized upstream body)
 	var kevCatalog kevCatalogResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDecompressedFeedBytes)).Decode(&kevCatalog); err != nil {
+	if err := json.NewDecoder(httpsec.NewLimitedReader(resp.Body, maxDecompressedFeedBytes)).Decode(&kevCatalog); err != nil {
 		return nil, fmt.Errorf("failed to parse KEV JSON: %w", err)
 	}
 

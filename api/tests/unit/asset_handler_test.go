@@ -621,3 +621,7 @@ func TestAssetHandler_Sync_NonRepositoryIs400(t *testing.T) {
 func (m *HandlerMockRepository) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
 	return 0, nil
 }
+
+func (m *HandlerMockRepository) GetInventoryOverview(_ context.Context, _ shared.ID, _ asset.AccessScope) ([]asset.InventoryOverviewRow, error) {
+	return nil, nil
+}

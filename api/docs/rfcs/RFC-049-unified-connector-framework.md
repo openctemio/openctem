@@ -129,7 +129,7 @@ sections below.
 | F-9 | Inbound webhooks are routed by instance, carry a per-instance secret and have replay protection. | Design §10.5 |
 | F-10 | Pagination links are followed only on the same origin. | Host |
 | F-11 | git over ssh dials through the guarded dialer. | Host |
-| F-12 | Every response read is bounded. | Descriptor `max_response_bytes`, enforced by the host |
+| F-12 | Every response read is bounded. | **Fixed for today's clients:** `httpsec.ReadLimited` / `DecodeJSON` / `NewLimitedReader` (oversize is an error), security-lint Rule 8; the host enforces descriptor `max_response_bytes` |
 | F-13 | Instances are loaded only by tenant and id in the query. | Host loads instances only via `GetByTenantAndID` |
 | F-14 | Integration create, update, delete, test and credential changes are audited. | §10.2 |
 | F-15 | Every integration surface sits behind its module gate (a feature flag, not a boundary). | Phase 4 |

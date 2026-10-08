@@ -19,10 +19,6 @@ import (
 // Coverage-scoped auto-resolve of non-repository findings: the queries behind
 // ingest.Service.EvaluateCommandCoverage.
 
-// coverageOpenStatuses are the statuses a scan may close; the same set as the
-// default-branch auto-resolve.
-const coverageOpenStatuses = `('new', 'open', 'confirmed', 'in_progress', 'fix_applied')`
-
 // coverageProtectedSources are never closed by a scan.
 const coverageProtectedSources = `('pentest', 'manual', 'bug_bounty', 'red_team')`
 
@@ -115,7 +111,7 @@ func (r *FindingRepository) CoverageStaleFindings(ctx context.Context, tenantID 
 				AND f.asset_id = ANY($2)
 				AND f.tool_name = $3
 				AND f.branch_id IS NULL
-				AND f.status IN `+coverageOpenStatuses+`
+				AND f.status IN `+autoResolveFromSQL+`
 				AND f.source NOT IN `+coverageProtectedSources+`
 		)
 		SELECT o.id::text, COUNT(*) OVER () AS open_total,
@@ -194,7 +190,7 @@ func (r *FindingRepository) ResolveCoverageStale(ctx context.Context, tenantID s
 		WHERE f.tenant_id = $1
 			AND f.id = ANY($2)
 			AND f.branch_id IS NULL
-			AND f.status IN `+coverageOpenStatuses+`
+			AND f.status IN `+autoResolveFromSQL+`
 			AND f.source NOT IN `+coverageProtectedSources+`
 		RETURNING f.id::text`, tenantID.String(), pq.Array(idStrs))
 	if err != nil {
@@ -244,7 +240,7 @@ func (r *FindingRepository) ResolveSourceMitigated(ctx context.Context, tenantID
 		FROM findings f
 		JOIN m ON m.fingerprint = f.fingerprint AND m.asset_id = f.asset_id
 		WHERE f.tenant_id = $1
-			AND f.status IN ` + coverageOpenStatuses + `
+			AND f.status IN ` + autoResolveFromSQL + `
 			AND f.source NOT IN ` + coverageProtectedSources + `
 			AND COALESCE(f.last_seen_tool, f.tool_name) = $2
 			AND COALESCE(f.last_seen_at, f.created_at) <= m.mitigated_at`
@@ -258,7 +254,7 @@ func (r *FindingRepository) ResolveSourceMitigated(ctx context.Context, tenantID
 			resolved_at = NOW(),
 			updated_at = NOW()
 		WHERE f.tenant_id = $1 AND f.id IN (` + match + `)
-			AND f.status IN ` + coverageOpenStatuses + `
+			AND f.status IN ` + autoResolveFromSQL + `
 		RETURNING f.id::text`
 	}
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), tool, pq.Array(fps), pq.Array(assets), pq.Array(ats))

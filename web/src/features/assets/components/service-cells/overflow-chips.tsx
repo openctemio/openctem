@@ -7,19 +7,26 @@ export interface OverflowChipsProps {
   values: string[]
   /** Values are identifiers (IPs, hosts): render them in mono. */
   mono?: boolean
+  /** Show the label in the chip (a table column header already names it). */
+  showLabel?: boolean
 }
 
 /**
  * The first value as a chip, then "+N" with the rest in a tooltip. Nothing
  * when there are no values (the caller decides whether to say "unknown").
  */
-export function OverflowChips({ label, values, mono = true }: OverflowChipsProps) {
+export function OverflowChips({
+  label,
+  values,
+  mono = true,
+  showLabel = true,
+}: OverflowChipsProps) {
   if (values.length === 0) return null
   const [first, ...rest] = values
   return (
     <>
       <FactChip tone="muted" title={`${label} ${first}`}>
-        <span>{label}</span>
+        {showLabel && <span>{label}</span>}
         {mono ? <ChipMono>{first}</ChipMono> : <span className="truncate">{first}</span>}
       </FactChip>
       {rest.length > 0 && (

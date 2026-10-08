@@ -1487,6 +1487,20 @@ func (s *AssetService) GetPropertyFacets(ctx context.Context, tenantID, actingUs
 	return s.repo.GetPropertyFacets(ctx, parsedTenantID, access, types, subType)
 }
 
+// GetInventoryOverview returns the inventory overview counts, over the
+// assets the acting user may list only.
+func (s *AssetService) GetInventoryOverview(ctx context.Context, tenantID, actingUserID string, isAdmin bool) ([]assetdom.InventoryOverviewRow, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	access, err := s.listAccessScope(ctx, tenantID, actingUserID, isAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetInventoryOverview(ctx, parsedTenantID, access)
+}
+
 // GetAssetStats returns aggregated asset statistics using SQL aggregation,
 // counted only over the assets the acting user may list.
 // Filters: types (asset_type ANY), tags (overlap, matches List semantics).

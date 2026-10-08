@@ -9,14 +9,41 @@
  * inventory-url) maps the sortable ones to the API's sort fields. Columns the
  * API cannot sort (internet, owner, tags) have sorting turned off rather than
  * reordering only the rows on screen.
+ *
+ * Typed mode (research/77): when the list is one type, its registry columns
+ * follow the name (AttributeCell), the redundant Type column goes, and a
+ * scannable type gets the scope gate's answer per row. Every row has a menu:
+ * the type's actions (lib/type-actions), Edit and Delete.
  */
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ChevronRight, Globe, MinusCircle, User, Users } from 'lucide-react'
+import {
+  ChevronRight,
+  Globe,
+  MinusCircle,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  User,
+  Users,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
+import type { TypeView } from '@/features/asset-types/lib/type-view'
+import { propertyLabel } from '@/features/asset-types/lib/property-schema'
+import { rowActionsFor } from '../../lib/type-actions'
+import { AttributeCell } from './attribute-cell'
 import { DataTable, DataTableColumnHeader, RiskScoreBadge } from '@/features/shared'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
@@ -34,9 +61,22 @@ import {
   SurfaceFacts,
   cellsForType,
   hasSurfaceFacts,
+  surfaceCellsCovered,
 } from '../service-cells'
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
+
+/** A one-type list shows "Service facts" only when its own columns do not already. */
+function showsServiceFacts(view: TypeView): boolean {
+  const cells = cellsForType(view.type, view.subType)
+  return (
+    cells !== null &&
+    !surfaceCellsCovered(
+      cells,
+      view.columns.map((c) => c.key)
+    )
+  )
+}
 
 function daysSinceISO(iso?: string | null): number | undefined {
   if (!iso) return undefined
@@ -63,6 +103,15 @@ interface InventoryTableProps {
   hasFilters: boolean
   /** Called after an asset is edited from the detail sheet (e.g. tags), to refetch the list. */
   onAssetUpdated?: () => void
+  /** The list is one type: its registry columns, scope and actions. */
+  typeView?: TypeView | null
+  /** Open the edit form (shown with assets:write). */
+  onEditAsset?: (asset: Asset) => void
+  /** Ask to delete (shown with assets:delete). */
+  onDeleteAsset?: (asset: Asset) => void
+  /** Overrides the empty-table text (typed mode says how to find the type). */
+  emptyMessage?: string
+  emptyDescription?: string
 }
 
 export function InventoryTable({
@@ -79,10 +128,27 @@ export function InventoryTable({
   toolbarEnd,
   hasFilters,
   onAssetUpdated,
+  typeView = null,
+  onEditAsset,
+  onDeleteAsset,
+  emptyMessage,
+  emptyDescription,
 }: InventoryTableProps) {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
   const { can } = usePermissions()
   const canWriteAssets = can(Permission.AssetsWrite)
+  const canDeleteAssets = can(Permission.AssetsDelete)
+  // The scope gate's own answer per row, one request per page, for a type
+  // scanners can scan (the same check a scan runs).
+  const scopeNames = useMemo(
+    () => (typeView?.scannable ? assets.map((a) => a.name).filter(Boolean) : []),
+    [typeView, assets]
+  )
+  const {
+    resultFor: scopeResultFor,
+    isLoading: scopeChecking,
+    available: scopeAvailable,
+  } = useScopeCheck(scopeNames)
   // Tag suggestions only load once someone can actually edit tags.
   const { tags: tagSuggestions } = useAssetTags(undefined, canWriteAssets)
   const sorting = useMemo(() => sortToSorting(sort), [sort])
@@ -106,7 +172,7 @@ export function InventoryTable({
 
   const columns = useMemo<ColumnDef<Asset>[]>(() => {
     const sortable = (id: string) => id in SORT_FIELDS
-    return [
+    const all: ColumnDef<Asset>[] = [
       {
         id: 'select',
         enableSorting: false,
@@ -153,6 +219,14 @@ export function InventoryTable({
           </div>
         ),
       },
+      ...(typeView?.columns ?? []).map((attribute): ColumnDef<Asset> => ({
+        id: `attr:${attribute.key}`,
+        enableSorting: false,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={propertyLabel(attribute.key)} />
+        ),
+        cell: ({ row }) => <AttributeCell asset={row.original} attribute={attribute} />,
+      })),
       {
         id: 'type',
         accessorKey: 'type',
@@ -286,8 +360,93 @@ export function InventoryTable({
           />
         ),
       },
+      ...(typeView?.scannable && scopeAvailable
+        ? [
+            {
+              id: 'scope',
+              enableSorting: false,
+              header: ({ column }) => <DataTableColumnHeader column={column} title="Scope" />,
+              cell: ({ row }) => (
+                <ScopeCheckBadge
+                  result={scopeResultFor(row.original.name)}
+                  loading={scopeChecking}
+                />
+              ),
+            } as ColumnDef<Asset>,
+          ]
+        : []),
+      {
+        id: 'actions',
+        enableSorting: false,
+        enableHiding: false,
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => {
+          const asset = row.original
+          const actions = rowActionsFor(asset, typeView).filter((a) =>
+            a.permissions.every((p) => can(p))
+          )
+          const canEdit = canWriteAssets && !!onEditAsset
+          const canDelete = canDeleteAssets && !!onDeleteAsset
+          return (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label={`Actions for ${asset.name}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                {actions.map((a) => (
+                  <DropdownMenuItem key={a.id} onClick={() => void a.run(asset)}>
+                    <a.icon className="me-2 h-4 w-4" />
+                    {a.label}
+                  </DropdownMenuItem>
+                ))}
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => onEditAsset?.(asset)}>
+                    <Pencil className="me-2 h-4 w-4" />
+                    Edit
+                  </DropdownMenuItem>
+                )}
+                {canDelete && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={() => onDeleteAsset?.(asset)}
+                    >
+                      <Trash2 className="me-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )
+        },
+      },
     ]
-  }, [classAndLens, canWriteAssets, saveRowLabels])
+    return all.filter(
+      (c) => !typeView || (c.id !== 'type' && (c.id !== 'service' || showsServiceFacts(typeView)))
+    )
+  }, [
+    classAndLens,
+    canWriteAssets,
+    canDeleteAssets,
+    can,
+    saveRowLabels,
+    typeView,
+    scopeAvailable,
+    scopeResultFor,
+    scopeChecking,
+    onEditAsset,
+    onDeleteAsset,
+  ])
 
   return (
     <>
@@ -359,9 +518,10 @@ export function InventoryTable({
             </div>
           )
         }}
-        emptyMessage="No assets match these filters"
+        emptyMessage={emptyMessage ?? 'No assets match these filters'}
         emptyDescription={
-          hasFilters ? 'Try removing a filter or clearing them all.' : 'No assets yet.'
+          emptyDescription ??
+          (hasFilters ? 'Try removing a filter or clearing them all.' : 'No assets yet.')
         }
       />
 
@@ -370,12 +530,14 @@ export function InventoryTable({
         open={!!selectedAsset}
         onOpenChange={(open) => !open && setSelectedAsset(null)}
         // Icon and title come from the asset's own type ("Repository details").
-        // Edit/delete stay on the per-type pages, so those actions are gated
-        // off here; tags are editable inline like on every other asset page.
-        onEdit={() => {}}
-        onDelete={() => {}}
-        canEdit={false}
-        canDelete={false}
+        onEdit={() => {
+          if (selectedAsset) onEditAsset?.(selectedAsset)
+        }}
+        onDelete={() => {
+          if (selectedAsset) onDeleteAsset?.(selectedAsset)
+        }}
+        canEdit={canWriteAssets && !!onEditAsset}
+        canDelete={canDeleteAssets && !!onDeleteAsset}
         tagSuggestions={tagSuggestions}
         onUpdateTags={
           canWriteAssets
