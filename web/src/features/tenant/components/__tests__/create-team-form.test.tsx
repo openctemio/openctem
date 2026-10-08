@@ -121,6 +121,6 @@ describe('CreateTeamForm — slug prefix', () => {
     })
     render(<CreateTeamForm isFirstTeam={false} showCancel={false} />)
     expect(screen.getByTestId('slug-host-prefix')).toHaveTextContent('ctem.example.com/')
-    expect(screen.queryByText(/openctem\.io/)).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('openctem.io')
   })
 })
