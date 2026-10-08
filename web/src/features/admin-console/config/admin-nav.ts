@@ -1,5 +1,6 @@
 import {
   Building2,
+  Inbox,
   KeyRound,
   LayoutDashboard,
   ScrollText,
@@ -36,6 +37,7 @@ export const adminNav: AdminNavSection[] = [
     title: 'Manage',
     items: [
       { title: 'Organizations', url: '/admin/organizations', icon: Building2 },
+      { title: 'Access requests', url: '/admin/organizations/access-requests', icon: Inbox },
       {
         title: 'Administrators',
         url: '/admin/administrators',

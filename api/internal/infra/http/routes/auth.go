@@ -36,6 +36,7 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 	if h.SignupPolicy != nil {
 		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
 	}
+	authProvidersHandler.WithCaptchaSiteKey(cfg.Auth.CaptchaTurnstileSiteKey)
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
@@ -57,6 +58,14 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		// Local auth endpoints - public (no auth required)
 		// SECURITY: Rate limited to prevent brute-force and credential stuffing attacks
 		if authCfg.Provider.SupportsLocal() && h.LocalAuth != nil {
+			// Request access (sign-up closed, requests allowed): the
+			// registration budget; the service adds per-address and
+			// per-domain limits and the optional CAPTCHA.
+			if h.AccessRequest != nil {
+				r.POST("/access-requests", ChainFunc(h.AccessRequest.Submit, registerRL).ServeHTTP)
+				r.POST("/access-requests/confirm", ChainFunc(h.AccessRequest.Confirm, passwordRL).ServeHTTP)
+			}
+
 			// Registration - strict rate limit (3/min)
 			registerHandler := ChainFunc(h.LocalAuth.Register, registerRL)
 			r.POST("/register", registerHandler.ServeHTTP)

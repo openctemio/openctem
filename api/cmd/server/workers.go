@@ -401,6 +401,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Access requests: unconfirmed ones go after 24 h, decided ones after 90 days.
+	if svc.AccessRequest != nil {
+		w.ControllerManager.Register(controller.NewAccessRequestRetentionController(
+			svc.AccessRequest, log.With("controller", "access-request-retention")))
+	}
+
 	// Domain re-verify sweep (SSO P1): periodically re-checks verified domains;
 	// a domain whose TXT record vanished is downgraded to failed (fail-closed),
 	// so a lapsed/hijacked domain loses SSO JIT authority.

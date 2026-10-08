@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -261,6 +262,19 @@ func run() int {
 	}
 	if services.Role != nil {
 		services.UserProvisioning = tenant.NewUserProvisioningService(repos.Tenant, repos.User, services.Role, setupMailer, services.Audit, log)
+	}
+
+	// The request-access queue: approval creates the organization with the
+	// requester as owner, through the same creator as the console.
+	if services.Signup != nil && services.Tenant != nil {
+		var captcha accessrequestapp.Captcha
+		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
+			captcha = t
+		}
+		services.AccessRequest = accessrequestapp.NewService(repos.AccessRequest, services.Signup,
+			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
+			accessRequestMailer{email: services.Email, appName: cfg.App.Name, log: log},
+			captcha, cfg.SMTP.BaseURL, log)
 	}
 
 	// Wire AI triage job enqueuer if service is enabled

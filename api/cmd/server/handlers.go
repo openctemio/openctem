@@ -597,6 +597,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.CredentialImport.SetAuditService(svc.Audit)
 	}
 
+	if svc.AccessRequest != nil {
+		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
+	}
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {
 		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)

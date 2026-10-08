@@ -76,6 +76,12 @@ export const authEndpoints = {
    */
   register: () => `${API_BASE.AUTH}/register`,
 
+  /** Request access (public; sign-up closed, requests allowed). */
+  accessRequests: () => `${API_BASE.AUTH}/access-requests`,
+
+  /** Confirm an access request by its emailed token (token in the body). */
+  accessRequestConfirm: () => `${API_BASE.AUTH}/access-requests/confirm`,
+
   /**
    * Login with email/password (local auth)
    */
