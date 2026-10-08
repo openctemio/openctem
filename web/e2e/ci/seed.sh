@@ -60,7 +60,7 @@ fi
 # so the seed turns that requirement off for its organization, as for
 # organizations that existed before the policy. Done in the database: nobody
 # can sign in to change it before enrolling.
-docker run --rm --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v slug="$SLUG" >/dev/null <<'SQL'
 UPDATE tenants
    SET settings = settings || jsonb_build_object('security',
