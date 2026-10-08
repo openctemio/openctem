@@ -5,7 +5,7 @@
   - they can never be an owner (database-enforced), an administrator, or hold a full-data-access role;
   - without a home organization their access must end (90 days by default, 365 at most);
   - expired access is suspended automatically within a minute, in that organization only.
-- Administrators set a new end date with `PATCH /api/v1/tenants/{tenant}/members/{memberId}/access`. The members list shows `kind`, `home_organization`, `access_expires_at` and `suspended_reason`.
+- Administrators set a new end date with `PATCH /api/v1/organization/members/{member_id}/access`. The members list shows `kind`, `home_organization`, `access_expires_at` and `suspended_reason`.
 - Existing memberships are unchanged (all internal).
 - An organization that has not verified any domain keeps treating colleagues on its own unclaimed domain as internal.
 - Migration 001308.

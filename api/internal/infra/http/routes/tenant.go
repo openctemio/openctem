@@ -98,7 +98,6 @@ func registerTenantRoutes(
 		r.PATCH("/members/{userId}", h.UpdateMemberRole, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/members/{userId}/suspend", h.SuspendMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/members/{userId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
-		r.PATCH("/members/{userId}/access", h.UpdateMemberAccess, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
 		// Administrator-created accounts: create a user with roles and a
 		// one-time set-password link; reissue the link while the account is unused.
@@ -271,6 +270,8 @@ func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAut
 			r.GET("/access-report", tenantH.GetMemberAccessReport, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
 			r.POST("/offboard", tenantH.OffboardMember, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite), requireStepUp())
 			r.POST("/erase", tenantH.EraseMemberPersonalData, middleware.RequireOwner(), requireStepUp())
+			// External members (RFC-058): when the access ends.
+			r.PATCH("/access", tenantH.UpdateMemberAccess, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
 		}
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
