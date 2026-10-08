@@ -2091,6 +2091,9 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 	// move to the stored type's keys, and the blocks go.
 	stored := resolveCTISAssetType(ctisAsset).stored
 	asset.NormalizeAssetProperties(stored.Type, stored.SubType, props)
+	if stored.Type == asset.AssetTypeCertificate {
+		capCertificateProperties(props)
+	}
 
 	return props
 }
