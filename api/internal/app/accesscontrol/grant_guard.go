@@ -120,6 +120,66 @@ func (a grantActor) mayCarry(perms []string, fullData bool) error {
 	return nil
 }
 
+// ErrExternalRoleCeiling refuses a role an external member may not hold.
+var ErrExternalRoleCeiling = fmt.Errorf("%w: someone outside your organization can be a viewer or a member, never an administrator or owner, and cannot get full data access", ErrGrantForbidden)
+
+// capExternalTarget enforces the external-member role ceiling (RFC-058): a
+// member whose email domain the organization does not own may not hold the
+// owner or admin role, nor a role with full data access. It applies to every
+// actor, system paths included; the owner role is also refused by a
+// database trigger. No-op when no membership reader is wired.
+func (s *RoleService) capExternalTarget(ctx context.Context, tid, uid roledom.ID, r *roledom.Role) error {
+	if s.membershipReader == nil || r == nil {
+		return nil
+	}
+	privileged := r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID || r.HasFullDataAccess()
+	if !privileged && (s.externalCeiling == nil || r.ID() == roledom.ViewerRoleID) {
+		return nil
+	}
+	t, err := shared.IDFromString(tid.String())
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	u, err := shared.IDFromString(uid.String())
+	if err != nil {
+		return fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+	}
+	m, err := s.membershipReader.GetMembership(ctx, u, t)
+	if err != nil {
+		if shared.IsNotFound(err) {
+			return nil // not a member: ensureTenantMember refuses it
+		}
+		return fmt.Errorf("load membership: %w", err)
+	}
+	if m == nil || !m.IsExternal() {
+		return nil
+	}
+	if privileged {
+		return ErrExternalRoleCeiling
+	}
+	// The trust with the member's home may cap them at viewer.
+	if m.HomeTenantID() != nil {
+		ceiling, cerr := s.externalCeiling(ctx, t, *m.HomeTenantID())
+		if cerr != nil {
+			return fmt.Errorf("load the trust ceiling: %w", cerr)
+		}
+		if ceiling == "viewer" {
+			return ErrExternalViewerCeiling
+		}
+	}
+	return nil
+}
+
+// ErrExternalViewerCeiling refuses more than viewer for an external member
+// whose home organization's trust caps them at viewer.
+var ErrExternalViewerCeiling = fmt.Errorf("%w: the trust with this member's organization allows the viewer role only", ErrGrantForbidden)
+
+// SetExternalRoleCeiling wires the trust ceiling for external members:
+// ceiling returns "viewer" or "member" for members homed in home.
+func (s *RoleService) SetExternalRoleCeiling(ceiling func(ctx context.Context, host, home shared.ID) (string, error)) {
+	s.externalCeiling = ceiling
+}
+
 // ErrAdminPromotionOwnerOnly is returned when someone other than an owner tries
 // to make a user an administrator.
 var ErrAdminPromotionOwnerOnly = fmt.Errorf("%w: only the organization owner can make someone an administrator", ErrGrantForbidden)

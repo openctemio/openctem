@@ -55,7 +55,7 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
     adding && currentTenant?.slug && debouncedSearch.trim()
       ? `/api/v1/tenants/${currentTenant.slug}/members?${new URLSearchParams({
           include: 'user',
-          limit: '10',
+          per_page: '10',
           search: debouncedSearch.trim(),
           // Grant picker: active members only (the API refuses anyone else).
           status: PICKER_MEMBER_STATUS,

@@ -1208,6 +1208,36 @@ provisioning or SSO JIT re-activates a tombstone from zero (only the new
 role). Tombstones yield no token, no tenant-switcher entry, are left out of
 the default member list (`?status=offboarded|all` shows them) and out of SCIM.
 
+### External members (RFC-058)
+
+A member whose email domain the organization does not hold is **external**.
+The domain may belong to another organization (their home organization), be
+a personal address, or be a work domain nobody has verified.
+
+- They join only by accepting an invitation addressed to them. Adding an
+  existing account or creating an account for them is refused
+  (`ErrExternalNeedsInvitation`).
+- They join as a **viewer** with no data scope until added to a team.
+  An invitation offering more is refused.
+- They never hold the owner role (DB CHECK and triggers on `tenant_members`
+  and `user_roles`). They are never granted the admin role or a role with full
+  data access (`RoleService.capExternalTarget`, every grant path, system paths
+  included; `ErrExternalRoleCeiling`, 403).
+- Without a home organization, their access must end:
+  - 90 days by default, 365 at most;
+  - `MemberAccessExpiryController` suspends the membership within a minute
+    (`suspended_reason = expired`), in that organization only;
+  - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
+    `members:write`) sets a new end date and re-enables them;
+  - a plain reactivation is refused.
+- The host sees the home organization's name only.
+- **Trusted organizations** (`/api/v1/organization/trusts`):
+  - reading needs owner/admin plus `members:read`; every change needs an owner with step-up;
+  - the service checks the caller's side: the host asks and changes settings, the home accepts, either ends;
+  - a third organization gets 404.
+- **Home-realm sign-in:** an active trust lets a home organization's identity provider sign its people in to the host, within the trust's role ceiling (viewer or member). This is never weaker than the host's SSO and 2FA policy.
+- **Ending a trust** suspends the host's external members homed there.
+
 ### Coverage
 
 | Surface | Before (audit 2026-10, F4) | Now |

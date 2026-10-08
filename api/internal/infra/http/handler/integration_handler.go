@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -1654,9 +1655,9 @@ func (h *IntegrationHandler) SendNotification(w http.ResponseWriter, r *http.Req
 // @Accept       json
 // @Produce      json
 // @Param        id      path      string  true   "Integration ID"  format(uuid)
-// @Param        limit   query     int     false  "Maximum number of entries to return"  default(50) minimum(1) maximum(100)
-// @Param        offset  query     int     false  "Number of entries to skip"  default(0) minimum(0)
-// @Success      200     {object}  integrationapp.GetNotificationEventsResult  "Notification events with pagination"
+// @Param        page      query     int     false  "Page (1-based)"  default(1) minimum(1)
+// @Param        per_page  query     int     false  "Page size"  default(50) minimum(1) maximum(100)
+// @Success      200     {object}  object{data=[]integrationapp.NotificationEventEntry,total=int,page=int,per_page=int,total_pages=int}  "Notification events, one page"
 // @Failure      400     {object}  map[string]string  "Bad request"
 // @Failure      401     {object}  map[string]string  "Unauthorized"
 // @Failure      403     {object}  map[string]string  "Forbidden"
@@ -1673,15 +1674,16 @@ func (h *IntegrationHandler) GetNotificationEvents(w http.ResponseWriter, r *htt
 		return
 	}
 
-	query := r.URL.Query()
-	limit := parseQueryInt(query.Get("limit"), 50)
-	offset := parseQueryInt(query.Get("offset"), 0)
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
+	}
 
 	result, err := h.service.GetNotificationEvents(r.Context(), integrationapp.GetNotificationEventsInput{
 		IntegrationID: id,
 		TenantID:      tenantID,
-		Limit:         limit,
-		Offset:        offset,
+		Limit:         paging.Limit(),
+		Offset:        paging.Offset(),
 	})
 	if err != nil {
 		h.handleServiceError(w, err)
@@ -1690,7 +1692,7 @@ func (h *IntegrationHandler) GetNotificationEvents(w http.ResponseWriter, r *htt
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(pagination.NewResult(result.Data, result.Total, paging))
 }
 
 // JiraWebhookConfigResponse describes how to configure an inbound Jira webhook

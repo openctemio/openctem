@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
@@ -25,6 +27,7 @@ import (
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -173,6 +176,14 @@ type MemberWithUserResponse struct {
 	PendingSetup bool `json:"pending_setup"`
 	// RBAC roles (included when ?include=roles)
 	RBACRoles []MemberRBACRoleResponse `json:"rbac_roles,omitempty"`
+	// External members (RFC-058). Kind is "internal" or "external".
+	// HomeOrganization names the organization that manages an external
+	// member's address (empty when none does). AccessExpiresAt and
+	// SuspendedReason ("expired") are included only for owners and admins.
+	Kind             string     `json:"kind"`
+	HomeOrganization string     `json:"home_organization,omitempty"`
+	AccessExpiresAt  *time.Time `json:"access_expires_at,omitempty"`
+	SuspendedReason  string     `json:"suspended_reason,omitempty"`
 }
 
 // MemberRBACRoleResponse represents a simplified RBAC role in member response.
@@ -203,6 +214,8 @@ type InvitationResponse struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 	CreatedAt   time.Time `json:"created_at"`
 	Pending     bool      `json:"pending"`
+	// AccessExpiresAt is when an external invitee's access will end (RFC-058).
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 }
 
 // =============================================================================
@@ -246,6 +259,29 @@ type UpdateMemberRoleRequest struct {
 type CreateInvitationRequest struct {
 	Email   string   `json:"email" validate:"required,email,max=254"`
 	RoleIDs []string `json:"role_ids" validate:"required,min=1,max=10"` // RBAC roles to assign (required, max 10)
+	// AccessExpiresAt ends the access of an invitee outside the organization
+	// (RFC-058). Required for someone no organization manages; defaults to
+	// 90 days when omitted; at most 365 days. Ignored for an internal invitee.
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	// AccessReason says why the external invitee gets access (shown to admins).
+	AccessReason string `json:"access_reason,omitempty" validate:"max=500"`
+}
+
+// UpdateMemberAccessRequest sets when an external member's access ends.
+type UpdateMemberAccessRequest struct {
+	// ExpiresAt: at most 365 days from now; may be omitted only for someone
+	// another organization manages.
+	ExpiresAt *time.Time `json:"expires_at"`
+	Reason    string     `json:"reason" validate:"max=500"`
+}
+
+// MemberAccessResponse is an external member's access after a change.
+type MemberAccessResponse struct {
+	ID              string     `json:"id"`
+	Kind            string     `json:"kind"`
+	Status          string     `json:"status"`
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	AccessReason    string     `json:"access_reason,omitempty"`
 }
 
 // =============================================================================
@@ -332,6 +368,8 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 		ExpiresAt: inv.ExpiresAt(),
 		CreatedAt: inv.CreatedAt(),
 		Pending:   inv.IsPending(),
+
+		AccessExpiresAt: inv.Access().ExpiresAt,
 	}
 	if includeToken {
 		resp.Token = inv.Token()
@@ -649,8 +687,8 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // the assignee and owner pickers need.
 //   - status: active | suspended (membership status); empty = any
 //   - role: owner | admin | member | viewer (effective system role); empty = any
-//   - limit: max results (default 100, max 100)
-//   - offset: pagination offset
+//   - page: 1-based page (default 1)
+//   - per_page: page size (default 100, max 500)
 //   - status: active | suspended | offboarded | all. Default: active and
 //     suspended (offboarded tombstones are left out, so pickers never offer
 //     a person who left; pickers pass status=active to leave out disabled
@@ -679,15 +717,12 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	callerRole := middleware.GetTeamRole(r.Context())
 	showDirectory := callerRole == tenant.RoleOwner || callerRole == tenant.RoleAdmin
 
-	// Parse search/pagination parameters. We always go through the
-	// paginated SearchMembersWithUserInfo path when include=user is
-	// set, even if the client did not pass an explicit limit — the
-	// default cap protects the API from accidentally returning every
-	// member of a 50k-tenant in one response. Clients that want more
-	// results must opt in by passing limit=N (capped server-side).
+	// The list is always paged (page, per_page): the default page protects
+	// the API from returning every member of a 50k-member organization in
+	// one response. per_page goes up to 500 (pickers of the whole set).
 	const (
-		defaultMemberLimit = 100
-		maxMemberLimit     = 500
+		defaultMemberPage = 100
+		maxMemberPage     = 500
 	)
 	search := r.URL.Query().Get("search")
 	statusFilter := r.URL.Query().Get("status")
@@ -698,21 +733,11 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("status must be active, suspended, offboarded or all").WriteJSON(w)
 		return
 	}
-	limit := defaultMemberLimit
-	offset := 0
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			if parsed > maxMemberLimit {
-				parsed = maxMemberLimit
-			}
-			limit = parsed
-		}
+	paging, ok := listPageMax(w, r, defaultMemberPage, maxMemberPage)
+	if !ok {
+		return
 	}
-	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-		if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	if includeUser {
 		// Always paginate when include=user. The legacy unpaginated
@@ -749,11 +774,17 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 				AvatarURL:    m.AvatarURL,
 				Status:       m.Status,
 				PendingSetup: m.PendingSetup,
+				Kind:         string(memberKindOrInternal(m.Kind)),
+			}
+			if m.Kind == tenant.MemberKindExternal {
+				response[i].HomeOrganization = m.HomeTenantName
 			}
 			if showDirectory {
 				response[i].Email = m.Email
 				response[i].LastLoginAt = m.LastLoginAt
 				response[i].MFAStatus = m.MFAStatus
+				response[i].AccessExpiresAt = m.ExpiresAt
+				response[i].SuspendedReason = m.SuspendedReason
 			}
 		}
 
@@ -764,12 +795,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data":   response,
-			"total":  total,
-			"limit":  limit,
-			"offset": offset,
-		})
+		_ = json.NewEncoder(w).Encode(pagination.NewResult(response, int64(total), paging))
 		return
 	}
 
@@ -798,12 +824,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data":   response,
-		"total":  result.Total,
-		"limit":  limit,
-		"offset": offset,
-	})
+	_ = json.NewEncoder(w).Encode(pagination.NewResult(response, int64(result.Total), paging))
 }
 
 // enrichMembersWithRoles fetches RBAC roles for all members in ONE
@@ -986,6 +1007,53 @@ func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Member suspended"})
 }
 
+// UpdateMemberAccess handles PATCH /api/v1/organization/members/{member_id}/access
+// @Summary Set when an external member's access ends
+// @Description For a member from outside the organization (RFC-058): sets the end date of their access (at most 365 days; required for someone no organization manages). A member suspended because their access ended is re-enabled.
+// @Tags Tenants
+// @Accept json
+// @Produce json
+// @Param member_id path string true "Membership ID"
+// @Param body body UpdateMemberAccessRequest true "New end of access"
+// @Success 200 {object} MemberAccessResponse
+// @Failure 400 {object} apierror.Error
+// @Failure 403 {object} apierror.Error
+// @Failure 404 {object} apierror.Error
+// @Security BearerAuth
+// @Router /organization/members/{member_id}/access [patch]
+func (h *TenantHandler) UpdateMemberAccess(w http.ResponseWriter, r *http.Request) {
+	memberID := chi.URLParam(r, "member_id")
+	if memberID == "" {
+		apierror.BadRequest("Member ID is required").WriteJSON(w)
+		return
+	}
+	var req UpdateMemberAccessRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if len(req.Reason) > 500 {
+		apierror.BadRequest("reason must be at most 500 characters").WriteJSON(w)
+		return
+	}
+	actx := h.tokenTenantAuditContext(r)
+	if actx.ActorID == "" || actx.TenantID == "" {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+	m, err := h.service.ExtendMemberAccess(r.Context(), memberID,
+		tenantapp.ExtendMemberAccessInput{ExpiresAt: req.ExpiresAt, Reason: req.Reason}, actx)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(MemberAccessResponse{
+		ID: m.ID().String(), Kind: string(m.Kind()), Status: string(m.Status()),
+		AccessExpiresAt: m.ExpiresAt(), AccessReason: m.ExpiryReason(),
+	})
+}
+
 // ReactivateMember handles POST /api/v1/tenants/{tenant}/members/{memberId}/reactivate
 func (h *TenantHandler) ReactivateMember(w http.ResponseWriter, r *http.Request) {
 	memberID := r.PathValue("userId")
@@ -1083,9 +1151,11 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 	// In simplified model, all invited users are "member"
 	// Permissions come from RBAC roles (roleIDs)
 	input := tenantapp.CreateInvitationInput{
-		Email:   req.Email,
-		Role:    "member", // Always "member" - owner is never created via invitation
-		RoleIDs: req.RoleIDs,
+		Email:           req.Email,
+		Role:            "member", // Always "member" - owner is never created via invitation
+		RoleIDs:         req.RoleIDs,
+		AccessExpiresAt: req.AccessExpiresAt,
+		AccessReason:    req.AccessReason,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -2953,4 +3023,12 @@ func (h *TenantHandler) UpdateAssetIdentitySettings(w http.ResponseWriter, r *ht
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(updated.AssetIdentity)
+}
+
+// memberKindOrInternal maps an unset kind to internal.
+func memberKindOrInternal(k tenant.MemberKind) tenant.MemberKind {
+	if k.IsValid() {
+		return k
+	}
+	return tenant.MemberKindInternal
 }

@@ -265,6 +265,10 @@ produced, and a fresh database applies it and then the migrations above it.
   drops nothing (golang-migrate then shows the tracker dirty at -1; `migrate
   force NNNNNN` restores it). Restore a backup instead.
 
+Coming from v0.8.0 (migration 000224): follow
+[Upgrading from v0.8.0 to v0.9.0](../operations/upgrade-v0.8-to-v0.9.md#4-database-migration-path),
+which gives the exact commands for both steps.
+
 The runbooks of individual migrations that the baseline replaced (for example
 the asset tenant foreign keys of 000920-000922 and the assignee scrub of
 001012) are in the tree at that tag.

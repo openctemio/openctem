@@ -58,6 +58,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
@@ -785,6 +786,11 @@ type Services struct {
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
+	// AddressClassifier decides whether an invitee is internal or external
+	// (RFC-058).
+	AddressClassifier *tenantapp.AddressClassifier
+	// OrgTrust manages trusted organizations (RFC-058).
+	OrgTrust *orgtrustapp.Service
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
@@ -1885,6 +1891,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithDB(deps.DB),
 		scanrun.WithSensorSelector(scanRunSensorSelectorAdapter),
 		scanrun.WithToolRepo(repos.Tool),
+		// A draft check warns about steps no online sensor can run now.
+		scanrun.WithRunnableTools(s.Tool),
 		scanrun.WithQualityGate(repos.ScanProfile, repos.Finding),
 		scanrun.WithScanDeactivator(s.Scan),     // Cascade pause scans when scan workflow is deactivated
 		scanrun.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
@@ -1897,6 +1905,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Chained steps take what their predecessors produced, through the
 		// per-hop gate (hop_router.go).
 		scanrun.WithHopStore(scanHops),
+		// A run executes the workflow version it started with (research/62 P0-10).
+		scanrun.WithVersionStore(repos.ScanWorkflow),
 		// Web steps carry the path exclusions of their hosts (RFC-056).
 		scanrun.WithWebScope(s.Scope),
 		// Incremental web scanning: new or changed endpoints only (RFC-056).
@@ -1906,6 +1916,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
 	s.Scan.SetStepQueuer(s.ScanRun)
+	s.Scan.SetWorkflowVersions(repos.ScanWorkflow)
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
 	if s.Retest != nil {
 		s.Retest.SetRunRecorder(s.ScanRun)
@@ -2346,6 +2357,30 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
 	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)
+
+	// External members (RFC-058): the holder of a verified SSO domain is the
+	// home organization of its addresses.
+	s.AddressClassifier = tenantapp.NewAddressClassifier(s.DomainVerify, func(ctx context.Context, tenantID shared.ID) (bool, error) {
+		return domainverify.OwnsAnySSODomain(ctx, repos.VerifiedDomain, tenantID)
+	})
+	s.Tenant.SetAddressClassifier(s.AddressClassifier)
+	s.Auth.SetInviteeClassifier(s.Tenant)
+
+	// Trusted organizations (RFC-058): home-realm sign-in for external
+	// members, the role ceiling, proposed end of access and API keys.
+	s.OrgTrust = orgtrustapp.NewService(repos.OrgTrust, s.DomainVerify, s.Tenant, s.Audit, log)
+	trustPolicy := orgtrustapp.NewPolicy(repos.OrgTrust, repos.Tenant)
+	s.Tenant.SetTrustPolicy(trustPolicy)
+	s.Auth.SetHomeRealm(repos.OrgTrust, s.DomainVerify)
+	if s.Role != nil {
+		s.Role.SetExternalRoleCeiling(func(ctx context.Context, host, home shared.ID) (string, error) {
+			r, err := trustPolicy.MaxRoleFor(ctx, host, home)
+			return string(r), err
+		})
+	}
+	if s.APIKey != nil {
+		s.APIKey.SetExternalKeyPolicy(trustPolicy)
+	}
 
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises
