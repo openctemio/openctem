@@ -263,6 +263,7 @@ func run() int {
 	}
 	if services.Role != nil {
 		services.UserProvisioning = tenant.NewUserProvisioningService(repos.Tenant, repos.User, services.Role, setupMailer, services.Audit, log)
+		services.UserProvisioning.SetAddressClassifier(services.AddressClassifier)
 	}
 
 	// The request-access queue: approval creates the organization with the

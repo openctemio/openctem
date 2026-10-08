@@ -428,6 +428,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// External members' access end dates (RFC-058): an expired membership is
+	// suspended within a minute.
+	if svc.Tenant != nil {
+		w.ControllerManager.Register(controller.NewMemberAccessExpiryController(svc.Tenant, time.Minute, 200,
+			log.With("controller", "member-access-expiry")))
+	}
+
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(
 		repos.FindingApproval,
 		repos.Finding,

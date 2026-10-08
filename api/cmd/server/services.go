@@ -787,6 +787,9 @@ type Services struct {
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
+	// AddressClassifier decides whether an invitee is internal or external
+	// (RFC-058).
+	AddressClassifier *tenantapp.AddressClassifier
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
@@ -2353,6 +2356,14 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
 	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)
+
+	// External members (RFC-058): the holder of a verified SSO domain is the
+	// home organization of its addresses.
+	s.AddressClassifier = tenantapp.NewAddressClassifier(s.DomainVerify, func(ctx context.Context, tenantID shared.ID) (bool, error) {
+		return domainverify.OwnsAnySSODomain(ctx, repos.VerifiedDomain, tenantID)
+	})
+	s.Tenant.SetAddressClassifier(s.AddressClassifier)
+	s.Auth.SetInviteeClassifier(s.Tenant)
 
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises

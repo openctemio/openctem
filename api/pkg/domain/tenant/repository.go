@@ -131,6 +131,15 @@ type MemberWithUser struct {
 	// PendingSetup: an administrator-created local account whose owner has not
 	// set a password or signed in yet.
 	PendingSetup bool
+	// External members (RFC-058). HomeTenantName is the name of the
+	// organization that manages the address, shown to the host (the only
+	// thing it learns about the home organization). Filled by
+	// SearchMembersWithUserInfo only.
+	Kind            MemberKind
+	HomeDomain      string
+	HomeTenantName  string
+	ExpiresAt       *time.Time
+	SuspendedReason string
 }
 
 // MemberStats contains statistics about tenant members.
