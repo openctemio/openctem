@@ -11,6 +11,7 @@ import useSWR from 'swr'
 
 import { useTenant } from '@/context/tenant-provider'
 import { del, get, post } from '@/lib/api/client'
+import { SWR_REFERENCE } from '@/lib/swr-config'
 
 export type SavedViewPage = 'findings'
 
@@ -43,11 +44,15 @@ export interface SaveViewInput {
 
 export const savedViewsKey = (page: SavedViewPage) => `/api/v1/views?page=${page}`
 
-export function useSavedViews(page: SavedViewPage) {
+export function useSavedViews(page: SavedViewPage, enabled = true) {
   const { currentTenant } = useTenant()
-  const key = currentTenant ? savedViewsKey(page) : null
-  const { data, error, isLoading, mutate } = useSWR<{ data: SavedView[] }>(key, (url: string) =>
-    get<{ data: SavedView[] }>(url)
+  const key = currentTenant && enabled ? savedViewsKey(page) : null
+  // Reference data: served from cache when the menu shows again; creating,
+  // deleting or duplicating a view calls mutate().
+  const { data, error, isLoading, mutate } = useSWR<{ data: SavedView[] }>(
+    key,
+    (url: string) => get<{ data: SavedView[] }>(url),
+    SWR_REFERENCE
   )
   return { views: data?.data ?? [], error, isLoading, mutate }
 }
