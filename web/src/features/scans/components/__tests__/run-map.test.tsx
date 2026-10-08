@@ -18,6 +18,20 @@ vi.mock('@/features/scan-workflows/components/workflow-stages', () => ({
   },
 }))
 
+// The run's change notices: the test drives them by hand.
+const channels: { channelType: string; channelId: string | null; onData?: (d: unknown) => void }[] =
+  []
+vi.mock('@/hooks/use-websocket', () => ({
+  useChannel: (opts: {
+    channelType: string
+    channelId: string | null
+    onData?: (d: unknown) => void
+  }) => {
+    channels.push(opts)
+    return { data: null, isSubscribed: true, clearData: () => {} }
+  },
+}))
+
 import { RunMap } from '../run-map'
 
 const data: RunMapData = {
@@ -120,6 +134,22 @@ describe('RunMap', () => {
     const sub = await screen.findByRole('region', { name: 'Step Subdomains' })
     expect(within(sub).getByText('domain')).toBeInTheDocument()
     expect(within(sub).getByText('312')).toBeInTheDocument()
+  })
+
+  it('refreshes when the run says it changed', async () => {
+    get.mockResolvedValue(data)
+    renderMap()
+    await screen.findByTestId('stages')
+    const sub = channels[channels.length - 1]
+    expect(sub.channelType).toBe('run')
+    expect(sub.channelId).toBe('r1')
+    const before = get.mock.calls.filter(([u]) => u === '/api/v1/scan-runs/r1/map').length
+    await act(async () => sub.onData?.({ type: 'run.changed', run_id: 'r1' }))
+    await waitFor(() =>
+      expect(
+        get.mock.calls.filter(([u]) => u === '/api/v1/scan-runs/r1/map').length
+      ).toBeGreaterThan(before)
+    )
   })
 
   it('says when the map cannot be loaded', async () => {

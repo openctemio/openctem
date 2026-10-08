@@ -858,7 +858,11 @@ export default function UsersPage() {
                               tenantEndpoints.reactivateMember(tenantSlug, member.id),
                               { method: 'POST' }
                             )
-                            toast.success(`${member.name || member.email} re-enabled`)
+                            toast.success(
+                              member.suspended_reason === 'awaiting_approval'
+                                ? `${member.name || member.email} approved`
+                                : `${member.name || member.email} re-enabled`
+                            )
                             refreshData()
                           } catch (error) {
                             toast.error(getErrorMessage(error, 'Failed to re-enable member'))
@@ -866,7 +870,7 @@ export default function UsersPage() {
                         }}
                       >
                         <CheckCircle className="me-2 h-4 w-4" />
-                        Re-enable
+                        {member.suspended_reason === 'awaiting_approval' ? 'Approve' : 'Re-enable'}
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem

@@ -53,6 +53,15 @@ cover, and the run fails and nothing is committed.
 Plaintext values left over from before encryption was configured count as
 failures. Run `cmd/encrypt-credentials` first if there are any.
 
+The server fails closed on a stored integration credential or webhook secret
+that no configured key opens: it is never used as is (that would send
+ciphertext, or an unencrypted secret, to the upstream service). Such an
+integration reports "stored credentials cannot be decrypted with the
+configured key" until the value is re-entered, re-keyed (old key back in
+`APP_ENCRYPTION_KEY_PREVIOUS`, then `rekey`) or, for a plaintext row,
+encrypted with `cmd/encrypt-credentials`. A Jira webhook secret that does not
+open verifies no webhook until it is rotated.
+
 Not re-keyed: `findings.type_details.secret.fingerprint`, the keyed fingerprint
 of a secret finding. Its key is derived from `APP_ENCRYPTION_KEY`, and the
 secret itself is never stored, so it cannot be recomputed. After a rotation a
