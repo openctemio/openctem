@@ -222,6 +222,9 @@ type InvitationResponse struct {
 	Pending     bool      `json:"pending"`
 	// AccessExpiresAt is when an external invitee's access will end (RFC-058).
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	// LookalikeOf lists members whose address reaches the same mailbox once
+	// dots and +tags are ignored: a warning, never a merge (create only).
+	LookalikeOf []string `json:"lookalike_of,omitempty"`
 }
 
 // =============================================================================
@@ -1186,9 +1189,13 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	resp := toInvitationResponse(invitation, true) // Include token for creator
+	// Look-alike addresses only warn (RFC-058): j.doe@gmail.com and
+	// jdoe+x@gmail.com reach one mailbox but stay two accounts.
+	resp.LookalikeOf = h.service.Lookalikes(r.Context(), tenantID, req.Email)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(toInvitationResponse(invitation, true)) // Include token for creator
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // canGrantRoles enforces anti-escalation for invitations and administrator-
@@ -1839,6 +1846,10 @@ type SecuritySettingsResponse struct {
 	// on (research/25 D3; off by default).
 	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates"`
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	PersonalAccounts string `json:"personal_accounts"`
+	// SSOExceptions: members who may sign in without SSO while it is enforced.
+	SSOExceptions []tenant.SSOException `json:"sso_exceptions"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
@@ -1871,6 +1882,8 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
 			AllowSensorInteractsh:                     s.Security.AllowSensorInteractsh,
 			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
+			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
+			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
@@ -1991,6 +2004,11 @@ type UpdateSecuritySettingsRequest struct {
 	// alerted.
 	AllowSensorInteractsh      *bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates *bool `json:"allow_sensor_custom_templates"`
+	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
+	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
+	// SSOExceptions replaces the list of members who may sign in without SSO
+	// (with a second factor) while it is enforced.
+	SSOExceptions *[]tenant.SSOException `json:"sso_exceptions" validate:"omitempty,max=100"`
 }
 
 // UpdateSecuritySettings handles PATCH /api/v1/tenants/{tenant}/settings/security
@@ -2026,6 +2044,8 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		RequireSensorLocalPolicyForPrivateTargets: req.RequireSensorLocalPolicyForPrivateTargets,
 		AllowSensorInteractsh:                     req.AllowSensorInteractsh,
 		AllowSensorCustomTemplates:                req.AllowSensorCustomTemplates,
+		PersonalAccounts:                          req.PersonalAccounts,
+		SSOExceptions:                             req.SSOExceptions,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
 	}
@@ -3052,4 +3072,11 @@ func memberKindOrInternal(k tenant.MemberKind) tenant.MemberKind {
 		return k
 	}
 	return tenant.MemberKindInternal
+}
+
+func nonNilSSOExceptions(in []tenant.SSOException) []tenant.SSOException {
+	if in == nil {
+		return []tenant.SSOException{}
+	}
+	return in
 }
