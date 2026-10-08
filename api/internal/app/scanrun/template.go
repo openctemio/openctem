@@ -26,7 +26,7 @@ type CreateTemplateInput struct {
 
 // CreateTemplate creates a new scan workflow.
 func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput) (*scanworkflow.Workflow, error) {
-	s.logger.Info("creating scan workflow", "name", input.Name)
+	s.logger.Info("creating scan workflow", "name", sanitizeLogValue(input.Name))
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -391,7 +391,7 @@ type CloneTemplateInput struct {
 // CloneTemplate creates a copy of an existing template with all its steps.
 // This supports cloning both tenant templates AND system templates.
 func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (*scanworkflow.Workflow, error) {
-	s.logger.Info("cloning scan workflow", "template_id", input.TemplateID, "new_name", input.NewName)
+	s.logger.Info("cloning scan workflow", "template_id", sanitizeLogValue(input.TemplateID), "new_name", sanitizeLogValue(input.NewName))
 
 	// Get the original template with steps
 	original, err := s.GetTemplateWithSteps(ctx, input.TemplateID)
