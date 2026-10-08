@@ -33,6 +33,7 @@ type Router = infrahttp.Router
 // Handlers holds all HTTP handlers for route registration.
 type Handlers struct {
 	Health           *handler.HealthHandler
+	ClientErrors     *handler.ClientErrorHandler
 	Auth             *handler.AuthHandler             // OIDC auth info handler
 	LocalAuth        *handler.LocalAuthHandler        // Local auth handler (nil if OIDC-only)
 	OAuth            *handler.OAuthHandler            // OAuth handler for social login (nil if not configured)
@@ -336,6 +337,7 @@ func Register(
 	// Health routes: /health and /ready are public; /metrics is gated by a
 	// bearer token unless METRICS_PUBLIC=true (see MetricsConfig).
 	registerHealthRoutes(router, h.Health, middleware.MetricsAuth(cfg.Metrics.Public, cfg.Metrics.Token, log))
+	registerClientErrorRoute(router, h.ClientErrors, log)
 
 	// API Documentation routes (public)
 	if h.Docs != nil {

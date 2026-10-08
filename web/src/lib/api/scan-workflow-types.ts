@@ -247,6 +247,18 @@ export interface StepRun {
  * Scan runs are workflow runs: this is the one run type of the web (scan-types
  * re-exports it). List rows carry no step runs or tasks; the run read does.
  */
+/** Who or what started a run (API RunTrigger). */
+export interface RunTrigger {
+  type:
+    'user' | 'schedule' | 'automation' | 'api' | 'webhook' | 'asset_discovery' | 'system' | string
+  /** The user, the automation or the scan (schedule). */
+  id?: string
+  /** The automation run that started it. */
+  run_id?: string
+  /** The user's display name, when known. */
+  label?: string
+}
+
 /**
  * What a run is (API scan_runs.kind). A run that executes no scan workflow
  * (a retest) has no scan_workflow_id and names what it is about in subject.
@@ -270,6 +282,8 @@ export interface ScanRun {
   triggered_by?: string
   /** Display name of the user in triggered_by, when it is a user id (API fills it). */
   triggered_by_name?: string
+  /** Who or what started the run, in one shape for every kind of run. */
+  trigger?: RunTrigger
   status: ScanRunStatus
   /** The schedule occurrence this run serves (scheduled runs only); one run per occurrence. */
   scheduled_for?: string
