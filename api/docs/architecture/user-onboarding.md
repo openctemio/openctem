@@ -184,6 +184,15 @@ roles: `member` when they include the system member or admin role, otherwise
 role set exactly. The same applies to invitations (including ones created
 before this rule).
 
+### Password policy
+
+A password that is set, reset or changed must be at least
+`AUTH_PASSWORD_MIN_LENGTH` characters (default **12**), meet the composition
+rules (`AUTH_PASSWORD_REQUIRE_*`), and must not be on the embedded list of the
+most used breached passwords (`pkg/password/common.txt`, about 47,000 entries
+from the SecLists Pwdb top 100k, matched case-insensitively, no network call).
+Existing passwords are not re-checked; the sign-in form takes them as typed.
+
 ### Anti-enumeration on the public endpoints
 
 No public sign-in endpoint tells an unauthenticated caller whether an email

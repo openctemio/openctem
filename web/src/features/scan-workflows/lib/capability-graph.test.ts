@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ScanWorkflowStep } from '@/lib/api'
 import { makeIsValidConnection, wouldCreateCycle } from '@/components/flow/connection-rules'
 import {
+  issueMessagesByStep,
   capabilityForStep,
   checkStepConnection,
   insertAdapterStep,
@@ -227,5 +228,18 @@ describe('issuesForStep', () => {
     }
     expect(issuesForStep(report, 'crawl').map((i) => i.message)).toEqual(['m1', 'm2'])
     expect(issuesForStep(null, 'crawl')).toEqual([])
+  })
+})
+
+describe('issueMessagesByStep', () => {
+  it('groups issues by step with their fix, edge issues by the target', () => {
+    expect(
+      issueMessagesByStep([
+        { code: 'A', node: 'ports', message: 'm1', fix: 'do x' },
+        { code: 'B', to: 'crawl', from: 'subs', message: 'm2' },
+        { code: 'C', message: 'whole workflow' },
+      ])
+    ).toEqual({ ports: ['m1. do x'], crawl: ['m2'] })
+    expect(issueMessagesByStep(undefined)).toEqual({})
   })
 })
