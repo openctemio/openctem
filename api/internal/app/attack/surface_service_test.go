@@ -204,7 +204,7 @@ func (f fakeRecords) Records(_ context.Context, tenantID shared.ID, ids []string
 // state and outside the inventory (RFC-054 §4.4: "Added · needs review").
 func TestGetRecentChanges_AttributionState(t *testing.T) {
 	tenant := shared.NewID()
-	review := mustAsset(t, tenant, "a.vndirect.com.vn")
+	review := mustAsset(t, tenant, "a.example.co.uk")
 	legacy := mustAsset(t, tenant, "legacy.example.com")
 	repo := &fakeSurfaceAssets{list: []*asset.Asset{review, legacy}}
 	svc := NewSurfaceService(repo, nil, logger.NewNop())
@@ -216,7 +216,7 @@ func TestGetRecentChanges_AttributionState(t *testing.T) {
 	for _, c := range got {
 		by[c.AssetName] = c
 	}
-	if c := by["a.vndirect.com.vn"]; c.Type != "added" || c.AttributionState != "needs_review" || c.InInventory || c.AssetID != review.ID().String() {
+	if c := by["a.example.co.uk"]; c.Type != "added" || c.AttributionState != "needs_review" || c.InInventory || c.AssetID != review.ID().String() {
 		t.Errorf("review asset change = %+v", c)
 	}
 	if c := by["legacy.example.com"]; c.AttributionState != "" || !c.InInventory {

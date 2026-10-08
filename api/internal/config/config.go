@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // Environment constants
@@ -1459,6 +1460,12 @@ func (c *Config) validateBasic() error {
 		}
 	}
 	if err := c.Scope.validate(); err != nil {
+		return err
+	}
+	// The SSRF guard ignores a refused private-egress setting; refusing to
+	// start makes the operator notice instead of debugging blocked calls.
+	if err := httpsec.ValidatePrivateEgress(c.App.Env,
+		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
 		return err
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {

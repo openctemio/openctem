@@ -23,6 +23,28 @@ import (
 // a v3 call arrived on.
 const sensorPeerContextKey contextKey = "sensor_peer"
 
+// servedTransportContextKey carries the binding a v3 heartbeat arrived on
+// and the sensor's fallback reason.
+const servedTransportContextKey contextKey = "served_transport"
+
+// ServedTransport is the transport of a v3 heartbeat.
+type ServedTransport struct {
+	// Binding is grpc or https, decided by the listener the call came on.
+	Binding string
+	// FallbackReason is the sensor's report (untrusted).
+	FallbackReason string
+}
+
+// WithServedTransport marks a v3 heartbeat with its transport.
+func WithServedTransport(ctx context.Context, t ServedTransport) context.Context {
+	return context.WithValue(ctx, servedTransportContextKey, t)
+}
+
+func servedTransportFrom(ctx context.Context) (ServedTransport, bool) {
+	t, ok := ctx.Value(servedTransportContextKey).(ServedTransport)
+	return t, ok
+}
+
 // SensorPeer is where a v3 call came from.
 type SensorPeer struct {
 	// IP is the client address (the trusted-proxy rule already applied).

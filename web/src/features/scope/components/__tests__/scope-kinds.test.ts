@@ -24,7 +24,7 @@ describe('scope kinds', () => {
 
   it.each([
     ['example.com', 'domain'],
-    ['*.vndirect.com.vn', 'domain'],
+    ['*.example.co.uk', 'domain'],
     ['api.dev.acme.io', 'domain'],
     ['203.0.113.7', 'ip_address'],
     ['2001:db8::1', 'ip_address'],
@@ -51,8 +51,8 @@ describe('scope kinds', () => {
   })
 
   it('defaults coverage by depth: a registrable domain covers below it, a host only itself', () => {
-    expect(defaultCoverage('ipas.com.vn')).toBe('subdomains')
+    expect(defaultCoverage('example.com.au')).toBe('subdomains')
     expect(defaultCoverage('acme.io')).toBe('subdomains')
-    expect(defaultCoverage('api.ipas.com.vn')).toBe('name')
+    expect(defaultCoverage('api.example.com.au')).toBe('name')
   })
 })

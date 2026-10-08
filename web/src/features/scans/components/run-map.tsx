@@ -1,11 +1,12 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import useSWR from 'swr'
+import useSWR, { useSWRConfig } from 'swr'
 import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunMap as RunMapData, RunTask } from '@/lib/api/generated'
 import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
+import { useChannel } from '@/hooks/use-websocket'
 import { mapEdgeLabel, mapStatus, mapSteps, nodeBadgeLines } from '../lib/run-map'
 import { RunStepPanel } from './run-step-panel'
 
@@ -29,6 +30,18 @@ export function RunMap({
   tasksTruncated?: boolean
 }) {
   const [selected, setSelected] = useState<string | null>(null)
+  // Live: the run's change notices (run:{id}, at most one a second) refresh
+  // every cached read of this run (map, run, tasks, stages, timeline). The
+  // notice carries no data; polling stays as the fallback.
+  const { mutate } = useSWRConfig()
+  const runPrefix = `/api/v1/scan-runs/${encodeURIComponent(runId)}`
+  useChannel({
+    channelType: 'run',
+    channelId: runId,
+    onData: () => {
+      void mutate((key) => typeof key === 'string' && key.startsWith(runPrefix))
+    },
+  })
   const { data, error, isLoading } = useSWR<RunMapData>(
     scanRunEndpoints.map(runId),
     (url: string) => get<RunMapData>(url),

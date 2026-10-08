@@ -15,7 +15,7 @@ import (
 // A wildcard pattern (*.example.com) names a set of hosts, not a host. The
 // target validator accepts it, so it used to reach an active scanner as a
 // literal target: live, a nuclei scan was dispatched against
-// "*.vndirect.com.vn" and the sensor's local policy refused it ("cannot
+// "*.example.co.uk" and the sensor's local policy refused it ("cannot
 // resolve"), a run that could never have worked.
 //
 // Rules:
