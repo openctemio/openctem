@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -550,7 +551,9 @@ type LoginResult struct {
 // Login authenticates a user and creates a session.
 // Returns a global refresh token and list of tenant memberships.
 // Client should call ExchangeToken to get a tenant-scoped access token.
-func (s *AuthService) Login(ctx context.Context, input LoginInput) (*LoginResult, error) {
+func (s *AuthService) Login(ctx context.Context, input LoginInput) (result *LoginResult, err error) {
+	defer func() { recordLoginFailure(err) }()
+
 	// Normalize email
 	email := strings.TrimSpace(strings.ToLower(input.Email))
 
@@ -2134,4 +2137,23 @@ func (s *AuthService) dummyPasswordHash() string {
 		}
 	})
 	return s.dummyHash
+}
+
+// recordLoginFailure counts a refused password sign-in by reason, for the
+// operator's login-failure alert (credential stuffing shows as a spike of
+// invalid_credentials). Only the reason is recorded: never the email or IP.
+func recordLoginFailure(err error) {
+	if err == nil {
+		return
+	}
+	reason := "other"
+	switch {
+	case errors.Is(err, ErrInvalidCredentials):
+		reason = "invalid_credentials"
+	case errors.Is(err, ErrAccountLocked):
+		reason = "locked"
+	case errors.Is(err, ErrAccountSuspended):
+		reason = "suspended"
+	}
+	metrics.LoginFailuresTotal.WithLabelValues(reason).Inc()
 }

@@ -203,9 +203,8 @@ func (s *TenantService) SetPermissionServices(cacheSvc *accesscontrol.Permission
 }
 
 // SetSessionService injects the session service so SuspendMember and
-// OffboardMember can revoke all of the user's sessions immediately.
-// Without it, suspended users can still hit JWT-claim-scoped routes
-// (e.g. /api/v1/me/*) until their JWT expires.
+// OffboardMember can end the sessions the organization may end
+// (endTenantSessions) and erasure can end all of them.
 func (s *TenantService) SetSessionService(sessionService *authapp.SessionService) {
 	s.sessionService = sessionService
 }
@@ -781,24 +780,16 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 	//      so the RequireMembership middleware re-reads the suspended
 	//      status from the DB on the next request instead of waiting
 	//      for the cache TTL to expire.
-	//   3. Session revocation: kills all of this user's active sessions
-	//      and refresh tokens. Without this, JWT-claim-scoped routes
-	//      (/api/v1/me/*, /api/v1/notifications) would still let the
-	//      user in until their JWT expired (~30 min).
+	//   3. Session revocation scoped to this tenant (endTenantSessions):
+	//      the sessions this tenant's IdP signed in end; sessions that
+	//      also serve the person's other organizations stay (JWT-claim
+	//      routes re-check the membership per request). A person with no
+	//      other organization loses every session.
 	//   4. Pending invitation cleanup: removes any unaccepted invites
 	//      so the user can't rejoin via a stale link.
 	s.invalidateUserPermissions(ctx, tenantID, userID)
 	s.invalidateMembershipCache(ctx, tenantID, userID)
-
-	if s.sessionService != nil {
-		if err := s.sessionService.RevokeAllSessions(ctx, userID, ""); err != nil {
-			// Best effort — log but don't fail the suspend. The
-			// permission cache invalidation above is the primary
-			// kill switch; session revocation is defense in depth.
-			s.logger.Warn("failed to revoke sessions on suspend",
-				"user_id", userID, "error", err)
-		}
-	}
+	s.endTenantSessions(ctx, tenantID, userID)
 
 	if deleted, derr := s.repo.DeletePendingInvitationsByUserID(ctx, membership.TenantID(), membership.UserID()); derr != nil {
 		s.logger.Warn("failed to clean up invitations on suspend", "error", derr)

@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -96,6 +97,20 @@ type SSOService struct {
 	// expiry. nil = they expire naturally.
 	revocations   SessionRevocationStore
 	revocationTTL time.Duration
+
+	// identities binds accounts to the IdP's (issuer, subject); logins find
+	// the account by it first (federated_identity.go). Required: a login that
+	// carries an identity is refused when it is not wired.
+	identities useridentity.Repository
+}
+
+// SetIdentityRepo wires the federated identity store.
+func (s *SSOService) SetIdentityRepo(repo useridentity.Repository) {
+	s.identities = repo
+}
+
+func (s *SSOService) accounts() federatedAccounts {
+	return federatedAccounts{identities: s.identities, users: s.userRepo, logger: s.logger}
 }
 
 // SetSessionRevocationStore wires immediate revocation for sessions ended by
@@ -680,7 +695,7 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		// These come from the signature-verified, JWKS-pinned id_token (not the
 		// userinfo body), so they are authoritative for distinguishing IdPs.
 		if claims != nil {
-			userInfo.Issuer = claims.Issuer
+			userInfo.Issuer = canonicalIssuer(claims.Issuer)
 			userInfo.Subject = claims.Subject
 		}
 	}
@@ -939,11 +954,13 @@ func entraUserInfoFromClaims(claims *oidc.Claims) (*SSOUserInfo, error) {
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("entra id_token has no email claim")
 	}
+	subject, legacy := entraSubject(claims)
 	return &SSOUserInfo{
 		Email:         claims.Email,
 		Name:          claims.Name,
 		Issuer:        claims.Issuer,
-		Subject:       claims.Subject,
+		Subject:       subject,
+		LegacySubject: legacy,
 		EmailVerified: true, // gated on xms_edov==true above (domain-owner verified)
 	}, nil
 }
@@ -1148,11 +1165,16 @@ type SSOUserInfo struct {
 	Name      string
 	AvatarURL string
 
-	// Issuer + Subject are the verified id_token's federated identity (OIDC
-	// iss/sub), used to bind the account to the IdP that owns it. Empty when
-	// the provider returned no id_token to verify — binding is then skipped.
+	// Issuer + Subject are the verified id_token's federated identity, the
+	// key the account is found by (federated_identity.go). Empty when the
+	// provider returned no id_token to verify: the email then finds the
+	// account, under the adoption guards, and nothing is bound.
 	Issuer  string
 	Subject string
+	// LegacySubject is the subject the issuer used for this identity before
+	// (Entra: `sub`, now keyed on `oid`); an identity bound under it is
+	// re-keyed to Subject.
+	LegacySubject string
 
 	// EmailVerified records that the IdP proved ownership of Email (Entra
 	// xms_edov==true, or the OIDC email_verified claim). Producers set it true
@@ -1280,7 +1302,21 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 	}
 	provider := rp.provider
 
-	// Try to find existing user by email
+	// The IdP's (issuer, subject) finds a returning account first, whatever
+	// email the IdP now sends for it.
+	key := useridentity.Key{Issuer: userInfo.Issuer, Subject: userInfo.Subject}
+	if key.Valid() {
+		u, ident, err := s.accounts().lookup(ctx, key, userInfo.LegacySubject)
+		if err != nil {
+			return nil, fmt.Errorf("resolve federated identity: %w", err)
+		}
+		if u != nil {
+			return s.returningFederatedUser(ctx, t, u, ident, userInfo), nil
+		}
+	}
+
+	// Unknown identity: the email may name an existing account, adopted only
+	// under the proof-before-link guards.
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
 		return s.adoptExistingUser(ctx, t, existingUser, userInfo, provider)
@@ -1309,9 +1345,6 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 	if err != nil {
 		return nil, err
 	}
-	// Record the IdP identity on first federation (no-op if no id_token issuer).
-	newUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
-
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
 		// Handle race condition: another concurrent request may have created
 		// the user between our GetByEmail and Create calls.
@@ -1328,9 +1361,31 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}
+	if key.Valid() {
+		if err := s.accounts().bind(ctx, newUser, key); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrSSODomainNotAllowed, err)
+		}
+	}
 
 	s.logger.Info("created SSO user", "user_id", newUser.ID().String(), "email", userInfo.Email, "provider", provider)
 	return newUser, nil
+}
+
+// returningFederatedUser completes the login of an account found by its
+// (issuer, subject). The email the IdP sends now is adopted only when this
+// organization DNS-verified its domain and no other account holds it;
+// otherwise the account keeps its email and the login still succeeds.
+func (s *SSOService) returningFederatedUser(ctx context.Context, t *tenantdom.Tenant, u *userdom.User,
+	ident *useridentity.Identity, userInfo *SSOUserInfo) *userdom.User {
+	acc := s.accounts()
+	prev, changed := acc.adoptProviderEmail(ctx, u, userInfo.Email, func(ctx context.Context, email string) error {
+		return s.requireFederatedDomainProof(ctx, t, email)
+	})
+	syncFederatedProfile(u, userInfo.Name)
+	u.UpdateLastLogin()
+	acc.saveLogin(ctx, u, prev, changed)
+	acc.markUsed(ctx, ident)
+	return u
 }
 
 // adoptExistingUser applies the proof-before-link / account-takeover guard
@@ -1340,13 +1395,13 @@ func (s *SSOService) findOrCreateUser(ctx context.Context, t *tenantdom.Tenant, 
 // an email is NEVER, on its own, enough to bind a federated identity — the four
 // pre-existing-account cases are handled as follows (fail-closed):
 //
-//	Case 4 (same IdP identity already bound): the returning user — provider
-//	   matches and the recorded (issuer) matches, so the login proceeds.
-//	Case 3 (a DIFFERENT federated identity bound): a different auth provider, or
-//	   the same provider with a different verified issuer — rejected (cross-IdP
-//	   takeover). The provider enum is coarse (every Okta org / generic OIDC IdP
-//	   collapse to AuthProviderOIDC), so the issuer check below is what actually
-//	   distinguishes IdPs.
+//	Case 4 (same IdP identity already bound): never reaches here — the
+//	   returning user is found by (issuer, subject) in findOrCreateUser.
+//	Case 3 (a DIFFERENT federated identity bound): a different auth provider,
+//	   another issuer, or another subject at the same issuer — rejected
+//	   (cross-IdP takeover). The provider enum is coarse (every Okta org /
+//	   generic OIDC IdP collapse to AuthProviderOIDC), so the identity check
+//	   below is what actually distinguishes IdPs and people.
 //	Case 1 (a real password-backed local account, no federated identity): never
 //	   silently linked. Refused with ErrAccountLinkRequiresVerification so the
 //	   user signs in with their existing password first, then links the IdP from
@@ -1390,37 +1445,47 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant,
 		}
 	}
 
-	// Same provider type, but the login cannot be matched to the IdP the
-	// account is bound to: the account has no recorded issuer (legacy,
-	// Keycloak-synced, or created without an id_token), or this login carried no
-	// id_token. Every Okta/generic OIDC IdP collapses to the same provider type,
-	// so without a binding the type match proves nothing — any organization's
-	// IdP could assert this email. Require the organization to have DNS-proven
-	// the email domain before adopting (and, below, binding) the account.
-	if existingProvider == expectedProvider {
-		if bound := existingUser.FederatedIssuer(); bound == nil || *bound == "" || userInfo.Issuer == "" {
-			if err := s.requireFederatedDomainProof(ctx, t, userInfo.Email); err != nil {
-				s.logger.Warn("SSO login blocked: account has no matching IdP binding and the email domain is not DNS-verified for this organization",
-					"sso_provider", expectedProvider)
-				return nil, fmt.Errorf("%w: %w", ErrAccountLinkRequiresVerification, err)
-			}
+	// The IdP's identity was not found (findOrCreateUser looks it up first),
+	// so the account holds no binding for it. An account bound to another
+	// subject at the same IdP, or to another IdP, is a different person's
+	// account: refused (Case 3). Matching the email is never enough.
+	key := useridentity.Key{Issuer: userInfo.Issuer, Subject: userInfo.Subject}
+	if key.Valid() {
+		sameIssuer, otherIssuer, err := s.accounts().boundIdentities(ctx, existingUser, key)
+		if err != nil {
+			return nil, fmt.Errorf("check federated identities: %w", err)
+		}
+		if sameIssuer {
+			s.logger.Warn("SSO login blocked: email bound to another subject at this identity provider",
+				"email", userInfo.Email, "issuer", userInfo.Issuer)
+			return nil, fmt.Errorf("%w: %w", ErrSSODomainNotAllowed, ErrFederatedIdentityConflict)
+		}
+		if otherIssuer != nil {
+			s.logger.Warn("SSO login blocked: email bound to a different identity provider",
+				"email", userInfo.Email,
+				"bound_issuer", otherIssuer.Key.Issuer,
+				"login_issuer", userInfo.Issuer,
+			)
+			return nil, fmt.Errorf("%w: this email is registered with a different identity provider", ErrSSODomainNotAllowed)
 		}
 	}
 
-	if userInfo.Issuer != "" {
-		if bound := existingUser.FederatedIssuer(); bound != nil && *bound != "" {
-			if *bound != userInfo.Issuer {
-				s.logger.Warn("SSO login blocked: email bound to a different identity provider",
-					"email", userInfo.Email,
-					"bound_issuer", *bound,
-					"login_issuer", userInfo.Issuer,
-				)
-				return nil, fmt.Errorf("%w: this email is registered with a different identity provider", ErrSSODomainNotAllowed)
-			}
-		} else {
-			existingUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
-			s.logger.Info("bound federated identity to existing account",
-				"email", userInfo.Email, "issuer", userInfo.Issuer)
+	// Same provider type and no binding to match: every Okta/generic OIDC IdP
+	// collapses to the same provider type, so the type match proves nothing
+	// and any organization's IdP could assert this email. Require the
+	// organization to have DNS-proven the email domain before adopting (and,
+	// below, binding) the account.
+	if existingProvider == expectedProvider {
+		if err := s.requireFederatedDomainProof(ctx, t, userInfo.Email); err != nil {
+			s.logger.Warn("SSO login blocked: account has no matching IdP binding and the email domain is not DNS-verified for this organization",
+				"sso_provider", expectedProvider)
+			return nil, fmt.Errorf("%w: %w", ErrAccountLinkRequiresVerification, err)
+		}
+	}
+
+	if key.Valid() {
+		if err := s.accounts().bind(ctx, existingUser, key); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrSSODomainNotAllowed, err)
 		}
 	}
 
@@ -1644,60 +1709,58 @@ func (s *SSOService) requireFederatedDomainProof(ctx context.Context, t *tenantd
 // accounts, auto-provisions tenant membership when requested, and creates the
 // session. Reused by the SAML SP flow so it shares the SSO session machinery.
 func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string, autoProvision bool) (*SSOCallbackResult, error) {
-	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, time.Time{})
+	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, time.Time{}, useridentity.Key{})
 }
 
 // completeFederatedLogin is CompleteFederatedLogin with the time the
 // provider authenticated the user (SAML AuthnInstant), which opens the
-// step-up window when it is recent.
+// step-up window when it is recent, and the assertion's identity (issuer +
+// persistent NameID, scoped to t; empty when the IdP sent no persistent id).
+//
+//nolint:cyclop // one decision tree: returning identity, existing email, new account
 func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string,
-	autoProvision bool, authAt time.Time) (*SSOCallbackResult, error) {
+	autoProvision bool, authAt time.Time, key useridentity.Key) (*SSOCallbackResult, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, ErrSSONoEmail
 	}
 
+	// The identity is trusted only inside the organization whose IdP
+	// certificate signed it: never look it up, or bind it, platform-wide.
+	if key.Valid() && (key.ScopeTenantID == nil || *key.ScopeTenantID != t.ID()) {
+		return nil, ErrSSOFederatedNotMember
+	}
+
 	newUser := false
-	u, err := s.userRepo.GetByEmail(ctx, email)
-	if err == nil && u != nil {
-		// Account-takeover guard: a password-backed local account must not be
-		// accessible via an external assertion.
-		if u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil {
-			return nil, ErrSSOFederatedTakeover
+	var u *userdom.User
+	if key.Valid() {
+		found, ident, lerr := s.accounts().lookup(ctx, key, "")
+		if lerr != nil {
+			return nil, fmt.Errorf("resolve federated identity: %w", lerr)
 		}
-		// Cross-tenant takeover guard: users are global, so GetByEmail can match a
-		// user who belongs to a DIFFERENT tenant. A federated assertion (SAML in
-		// particular, where the tenant admin holds the IdP signing key) must not
-		// bind to a pre-existing user unless they are already a member of THIS
-		// tenant — otherwise a malicious tenant could forge an assertion for any
-		// global email and mint a session as that victim. Brand-new users (no
-		// match) are created + auto-provisioned below; existing users must have
-		// been invited (membership) first. Fail closed on lookup error.
-		if s.tenantMemberRepo != nil {
-			m, mErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID())
-			if mErr != nil || m == nil || m.IsOffboarded() {
-				s.logger.Warn("federated login refused: user is not a member of the target tenant",
-					"user_id", u.ID().String(), "tenant_id", t.ID().String())
-				return nil, ErrSSOFederatedNotMember
+		if found != nil {
+			// Bound earlier in this organization; the person must still be a
+			// member of it (an offboarded member's identity row survives).
+			if err := s.requireFederatedMembership(ctx, found, t); err != nil {
+				return nil, err
 			}
+			acc := s.accounts()
+			prev, changed := acc.adoptProviderEmail(ctx, found, email, func(ctx context.Context, e string) error {
+				return s.requireFederatedDomainProof(ctx, t, e)
+			})
+			syncFederatedProfile(found, name)
+			found.UpdateLastLogin()
+			acc.saveLogin(ctx, found, prev, changed)
+			acc.markUsed(ctx, ident)
+			return s.federatedSessionResult(ctx, found, t, authAt)
 		}
-		// Membership alone does not let this organization's IdP speak for the
-		// account. Users are global: an organization can make someone a member
-		// (an accepted invitation, SCIM, an admin add) without owning their
-		// identity, and a session minted here is exchangeable for every other
-		// organization the account belongs to. So the organization must have
-		// DNS-proven the email domain — the same proof the OIDC path demands
-		// before it claims an existing passwordless account
-		// (requireClaimableOwnershipProof) and that JIT demands for new users.
-		if err := s.requireFederatedDomainProof(ctx, t, email); err != nil {
-			s.logger.Warn("federated login refused: email domain is not DNS-verified for this organization",
-				"user_id", u.ID().String(), "tenant_id", t.ID().String())
+	}
+
+	existing, err := s.userRepo.GetByEmail(ctx, email)
+	if err == nil && existing != nil {
+		u = existing
+		if err := s.admitExistingSAMLAccount(ctx, u, t, email, name, key); err != nil {
 			return nil, err
-		}
-		syncFederatedProfile(u, name)
-		u.UpdateLastLogin()
-		if uerr := s.userRepo.Update(ctx, u); uerr != nil {
-			s.logger.Warn("federated login: update last login", "error", uerr)
 		}
 	} else {
 		// No account yet: the organization's SSO admits new people only through
@@ -1721,6 +1784,10 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 			} else {
 				return nil, fmt.Errorf("create user: %w", cerr)
 			}
+		} else if key.Valid() {
+			if berr := s.accounts().bind(ctx, newU, key); berr != nil {
+				return nil, berr
+			}
 		}
 		u = newU
 	}
@@ -1740,6 +1807,91 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 		}
 	}
 
+	return s.federatedSessionResult(ctx, u, t, authAt)
+}
+
+// admitExistingSAMLAccount lets t's SAML IdP sign in an existing account
+// found by email: never a password account, only a member of t, only on a
+// domain t DNS-verified; the assertion's identity is then bound.
+func (s *SSOService) admitExistingSAMLAccount(ctx context.Context, u *userdom.User, t *tenantdom.Tenant,
+	email, name string, key useridentity.Key) error {
+	// Account-takeover guard: a password-backed local account must not be
+	// accessible via an external assertion.
+	if u.AuthProvider() == userdom.AuthProviderLocal && u.PasswordHash() != nil {
+		return ErrSSOFederatedTakeover
+	}
+	// Cross-tenant takeover guard: users are global, so GetByEmail can match a
+	// user who belongs to a DIFFERENT tenant. A federated assertion (SAML in
+	// particular, where the tenant admin holds the IdP signing key) must not
+	// bind to a pre-existing user unless they are already a member of THIS
+	// tenant — otherwise a malicious tenant could forge an assertion for any
+	// global email and mint a session as that victim. Brand-new users (no
+	// match) are created + auto-provisioned below; existing users must have
+	// been invited (membership) first. Fail closed on lookup error.
+	if err := s.requireFederatedMembership(ctx, u, t); err != nil {
+		return err
+	}
+	// Membership alone does not let this organization's IdP speak for the
+	// account. Users are global: an organization can make someone a member
+	// (an accepted invitation, SCIM, an admin add) without owning their
+	// identity, and a session minted here is exchangeable for every other
+	// organization the account belongs to. So the organization must have
+	// DNS-proven the email domain — the same proof the OIDC path demands
+	// before it claims an existing passwordless account
+	// (requireClaimableOwnershipProof) and that JIT demands for new users.
+	if err := s.requireFederatedDomainProof(ctx, t, email); err != nil {
+		s.logger.Warn("federated login refused: email domain is not DNS-verified for this organization",
+			"user_id", u.ID().String(), "tenant_id", t.ID().String())
+		return err
+	}
+	if err := s.bindSAMLIdentity(ctx, u, t, key); err != nil {
+		return err
+	}
+	syncFederatedProfile(u, name)
+	u.UpdateLastLogin()
+	if uerr := s.userRepo.Update(ctx, u); uerr != nil {
+		s.logger.Warn("federated login: update last login", "error", uerr)
+	}
+	return nil
+}
+
+// bindSAMLIdentity binds the assertion's identity to an existing account
+// that passed the membership and domain checks. The identity was not found
+// by lookup, so an account already bound to another subject at this IdP is
+// someone else's: refused. No identity (no persistent NameID): nothing to do.
+func (s *SSOService) bindSAMLIdentity(ctx context.Context, u *userdom.User, t *tenantdom.Tenant, key useridentity.Key) error {
+	if !key.Valid() {
+		return nil
+	}
+	sameIssuer, _, err := s.accounts().boundIdentities(ctx, u, key)
+	if err != nil {
+		return fmt.Errorf("check federated identities: %w", err)
+	}
+	if sameIssuer {
+		s.logger.Warn("federated login refused: email bound to another subject at this identity provider",
+			"user_id", u.ID().String(), "tenant_id", t.ID().String())
+		return ErrFederatedIdentityConflict
+	}
+	return s.accounts().bind(ctx, u, key)
+}
+
+// requireFederatedMembership admits an existing account through t's SAML IdP
+// only when it is a member of t (not offboarded). Fail closed on lookup error.
+func (s *SSOService) requireFederatedMembership(ctx context.Context, u *userdom.User, t *tenantdom.Tenant) error {
+	if s.tenantMemberRepo == nil {
+		return nil
+	}
+	m, mErr := s.tenantMemberRepo.GetMembership(ctx, u.ID(), t.ID())
+	if mErr != nil || m == nil || m.IsOffboarded() {
+		s.logger.Warn("federated login refused: user is not a member of the target tenant",
+			"user_id", u.ID().String(), "tenant_id", t.ID().String())
+		return ErrSSOFederatedNotMember
+	}
+	return nil
+}
+
+// federatedSessionResult issues the session of a SAML login.
+func (s *SSOService) federatedSessionResult(ctx context.Context, u *userdom.User, t *tenantdom.Tenant, authAt time.Time) (*SSOCallbackResult, error) {
 	// Federated via a validated SAML assertion → stamped 'saml', issued by this
 	// tenant's IdP (exempt from this tenant's enforcement only — it IS this
 	// tenant's SSO login). No OIDC id_token binding — SAML single

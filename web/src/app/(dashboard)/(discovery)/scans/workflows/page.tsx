@@ -89,7 +89,6 @@ import {
   type ScanWorkflow,
   type CreateScanWorkflowRequest,
   type UpdateScanWorkflowRequest,
-  SCAN_RUN_TRIGGER_LABELS,
   SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
 } from '@/lib/api'
 
@@ -193,9 +192,11 @@ export default function ScanWorkflowsPage() {
     }
   }
 
-  const handleCreateWorkflow = async (data: CreateScanWorkflowRequest) => {
+  const handleCreateWorkflow = async (
+    data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest
+  ) => {
     try {
-      await createWorkflow(data)
+      await createWorkflow({ ...data, name: data.name ?? '', steps: data.steps ?? [] })
       toast.success('Workflow created successfully')
       await invalidateAllScanWorkflowCaches()
       setIsFormOpen(false)
@@ -204,14 +205,11 @@ export default function ScanWorkflowsPage() {
     }
   }
 
-  const handleUpdateWorkflow = async (data: CreateScanWorkflowRequest) => {
+  const handleUpdateWorkflow = async (data: UpdateScanWorkflowRequest) => {
     if (!editingWorkflow) return
     setUpdatingWorkflow(true)
     try {
-      await put<ScanWorkflow>(
-        scanWorkflowEndpoints.update(editingWorkflow.id),
-        data as UpdateScanWorkflowRequest
-      )
+      await put<ScanWorkflow>(scanWorkflowEndpoints.update(editingWorkflow.id), data)
       toast.success(`Workflow "${editingWorkflow.name}" updated`)
       await invalidateAllScanWorkflowCaches()
       setEditingWorkflow(null)
@@ -273,9 +271,6 @@ export default function ScanWorkflowsPage() {
   const visibleWorkflows =
     owner === 'mine' ? tenantWorkflows : owner === 'system' ? systemTemplates : allWorkflows
 
-  const triggerText = (workflow: ScanWorkflow) =>
-    workflow.triggers.map((t) => SCAN_RUN_TRIGGER_LABELS[t.type]).join(', ') || 'Manual'
-
   const workflowColumns: ColumnDef<ScanWorkflow>[] = [
     {
       accessorKey: 'name',
@@ -311,16 +306,6 @@ export default function ScanWorkflowsPage() {
               ? 'Unavailable'
               : 'Inactive'}
         </Badge>
-      ),
-    },
-    {
-      id: 'trigger',
-      enableSorting: false,
-      header: 'Trigger',
-      cell: ({ row }) => (
-        <span className="whitespace-nowrap text-sm text-muted-foreground">
-          {triggerText(row.original)}
-        </span>
       ),
     },
     {
@@ -536,7 +521,7 @@ export default function ScanWorkflowsPage() {
             <SheetDescription>
               {editingWorkflow
                 ? 'Modify the workflow configuration'
-                : 'Configure a new scan workflow with triggers and steps'}
+                : 'Configure a new scan workflow and its steps'}
             </SheetDescription>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4">
@@ -591,11 +576,7 @@ export default function ScanWorkflowsPage() {
                       </Badge>
                     </>
                   }
-                  meta={[
-                    pl.triggers.length > 0
-                      ? pl.triggers.map((t) => SCAN_RUN_TRIGGER_LABELS[t.type]).join(', ')
-                      : 'Manual',
-                  ]}
+                  meta={[`${pl.steps?.length ?? 0} steps`]}
                   actions={
                     isTemplate ? (
                       <>
