@@ -303,13 +303,19 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewOneOffScanArchiveController(svc.Scan, 0, 0))
 
 	// Scan timeout controller: enforces per-scan timeout_seconds on running scan_runs
-	w.ControllerManager.Register(controller.NewScanTimeoutController(
+	scanTimeout := controller.NewScanTimeoutController(
 		repos.ScanRun,
 		&controller.ScanTimeoutControllerConfig{
 			Interval: 60 * time.Second,
 			Logger:   log.With("controller", "scan-timeout"),
 		},
-	))
+	)
+	// A run the reaper ends fires the run-finished event (automations) like
+	// any other (research/62 P0-11).
+	if svc.ScanRun != nil {
+		scanTimeout.SetReapedRunListener(svc.ScanRun.NotifyRunsReaped)
+	}
+	w.ControllerManager.Register(scanTimeout)
 
 	// Stalled run repair (research/62 SG-10): a run whose chained step waits
 	// for a report that failed or expired, or whose plan was saved without
@@ -667,6 +673,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Interval:      6 * time.Hour,
 				RetentionDays: 90,
 				Logger:        log.With("controller", "sensor-event-retention"),
+			},
+		))
+	}
+
+	// Run timelines: command_events past 30 days (research/62 P0-4).
+	if repos.CommandEvent != nil {
+		w.ControllerManager.Register(controller.NewCommandEventRetentionController(
+			repos.CommandEvent,
+			&controller.CommandEventRetentionConfig{
+				Interval:      6 * time.Hour,
+				RetentionDays: 30,
+				Logger:        log.With("controller", "command-event-retention"),
 			},
 		))
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -91,6 +92,9 @@ type OAuthService struct {
 	// invitations answers whether a pending invitation is addressed to an
 	// email (an invited person may sign up with Google/GitHub/Microsoft).
 	invitations InvitationLookup
+	// identities binds accounts to the provider's (issuer, subject); a login
+	// finds the account by it first (federated_identity.go). Required.
+	identities useridentity.Repository
 }
 
 // InvitationLookup answers whether any organization has a pending invitation
@@ -118,6 +122,23 @@ func (s *OAuthService) invitedPending(ctx context.Context, email string) bool {
 	}
 	return ok
 }
+
+// SetIdentityRepo wires the federated identity store.
+func (s *OAuthService) SetIdentityRepo(repo useridentity.Repository) {
+	s.identities = repo
+}
+
+func (s *OAuthService) accounts() federatedAccounts {
+	return federatedAccounts{identities: s.identities, users: s.userRepo, logger: s.logger}
+}
+
+// Issuers of the social providers that have no id_token on this path: the
+// identity comes from the provider's own API over the access token, so only
+// that provider can produce it.
+const (
+	googleIssuer = "https://accounts.google.com"
+	githubIssuer = "https://github.com"
+)
 
 // SetPKCEStore replaces the PKCE verifier store. Production wires the Redis
 // store so a login started on one replica can finish on another; the default
@@ -519,11 +540,15 @@ type OAuthUserInfo struct {
 	Email     string
 	Name      string
 	AvatarURL string
-	// Issuer + Subject are the immutable federated identity from a verified
-	// id_token (set for Microsoft). When present, the account is bound to and
-	// matched by this pair rather than the mutable email alone.
+	// Issuer + Subject are the provider's immutable user id: from the verified
+	// id_token for Microsoft (keyed on oid), from the provider API for Google
+	// (sub) and GitHub (numeric id). The account is found by this pair first;
+	// the email is a mutable attribute (federated_identity.go).
 	Issuer  string
 	Subject string
+	// LegacySubject is the subject the identity was bound under before
+	// (Microsoft: sub); a binding found under it is re-keyed to Subject.
+	LegacySubject string
 }
 
 // getUserInfo fetches user information from the OAuth provider.
@@ -582,6 +607,9 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, accessToken string
 		Email:     data.Email,
 		Name:      data.Name,
 		AvatarURL: data.Picture,
+		// The v2 userinfo id is the Google account id, the OIDC sub.
+		Issuer:  googleIssuer,
+		Subject: data.ID,
 	}, nil
 }
 
@@ -632,11 +660,17 @@ func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string
 		name = userData.Login
 	}
 
+	ghID := ""
+	if userData.ID > 0 {
+		ghID = fmt.Sprintf("%d", userData.ID)
+	}
 	return &OAuthUserInfo{
-		ID:        fmt.Sprintf("%d", userData.ID),
+		ID:        ghID,
 		Email:     email,
 		Name:      name,
 		AvatarURL: userData.AvatarURL,
+		Issuer:    githubIssuer,
+		Subject:   ghID,
 	}, nil
 }
 
@@ -741,28 +775,50 @@ func microsoftUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("microsoft id_token has no email claim")
 	}
+	subject, legacy := entraSubject(claims)
 	return &OAuthUserInfo{
-		ID:      claims.Subject,
-		Email:   claims.Email,
-		Name:    claims.Name,
-		Issuer:  claims.Issuer,
-		Subject: claims.Subject,
+		ID:            claims.Subject,
+		Email:         claims.Email,
+		Name:          claims.Name,
+		Issuer:        claims.Issuer,
+		Subject:       subject,
+		LegacySubject: legacy,
 	}, nil
 }
 
-// findOrCreateUser finds an existing user or creates a new one.
+// findOrCreateUser finds the account of a social login or creates one.
+//
+// The provider's (issuer, subject) finds a returning account first; the email
+// it sends now replaces the old one when no other account holds it (the
+// provider verified it). Only an unknown identity falls back to the email,
+// under the takeover guards, and is then bound to the account.
 func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUserInfo, provider OAuthProvider) (*userdom.User, error) {
-	// Try to find existing user by email
+	acc := s.accounts()
+	key := useridentity.Key{Issuer: userInfo.Issuer, Subject: userInfo.Subject}
+	if key.Valid() {
+		u, ident, err := acc.lookup(ctx, key, userInfo.LegacySubject)
+		if err != nil {
+			return nil, fmt.Errorf("resolve federated identity: %w", err)
+		}
+		if u != nil {
+			prev, changed := acc.adoptProviderEmail(ctx, u, userInfo.Email, nil)
+			u.UpdateLastLogin()
+			acc.saveLogin(ctx, u, prev, changed)
+			acc.markUsed(ctx, ident)
+			return u, nil
+		}
+	}
+
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
 		// SECURITY: an account is bound to the auth provider that created it.
-		// Users are matched by email, but a verified email at one IdP does NOT
-		// prove ownership of an account created at another. On a provider
-		// mismatch the ONLY safe adoption is a CLAIMABLE LOCAL account (invited,
-		// no password yet) signing in via its IdP for the first time. Block
-		// every other mismatch — a password-backed local account AND a different
-		// federated provider (e.g. account created via Google, login attempted
-		// via GitHub) — otherwise it is a cross-IdP account takeover.
+		// A verified email at one IdP does NOT prove ownership of an account
+		// created at another. On a provider mismatch the ONLY safe adoption is
+		// a CLAIMABLE LOCAL account (invited, no password yet) signing in via
+		// its IdP for the first time. Block every other mismatch — a
+		// password-backed local account AND a different federated provider
+		// (e.g. account created via Google, login attempted via GitHub) —
+		// otherwise it is a cross-IdP account takeover.
 		existingProvider := existingUser.AuthProvider()
 		expectedProvider := provider.ToAuthProvider()
 
@@ -774,28 +830,29 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 					"existing_provider", existingProvider,
 					"oauth_provider", expectedProvider,
 				)
-				return nil, fmt.Errorf("this email is registered with a different login method")
+				return nil, errors.New("this email is registered with a different login method")
 			}
 		}
 
-		// Defense-in-depth: when the provider supplied a verified federated
-		// identity (issuer+subject from a signed id_token, e.g. Microsoft), pin
-		// the account to it. If already pinned, a DIFFERENT identity presenting
-		// the same email is rejected; otherwise bind it now (safe here — the
-		// email was domain-verified before we reached this point).
-		if userInfo.Issuer != "" && userInfo.Subject != "" {
-			if boundIss, boundSub := existingUser.FederatedIssuer(), existingUser.FederatedSubject(); boundIss != nil && boundSub != nil {
-				if *boundIss != userInfo.Issuer || *boundSub != userInfo.Subject {
-					s.logger.Warn("OAuth login blocked: federated identity mismatch for email",
-						"email", userInfo.Email, "oauth_provider", expectedProvider)
-					return nil, fmt.Errorf("this email is registered with a different login method")
-				}
-			} else {
-				existingUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
+		// The identity was not found above. An account bound to another
+		// subject at this provider, or to another issuer, belongs to a
+		// different identity: refuse. Otherwise bind this one (the account
+		// email matches the provider-verified email).
+		if key.Valid() {
+			sameIssuer, otherIssuer, berr := acc.boundIdentities(ctx, existingUser, key)
+			if berr != nil {
+				return nil, fmt.Errorf("check federated identities: %w", berr)
+			}
+			if sameIssuer || otherIssuer != nil {
+				s.logger.Warn("OAuth login blocked: federated identity mismatch for email",
+					"email", userInfo.Email, "oauth_provider", expectedProvider)
+				return nil, errors.New("this email is registered with a different login method")
+			}
+			if berr := acc.bind(ctx, existingUser, key); berr != nil {
+				return nil, errors.New("this email is registered with a different login method")
 			}
 		}
 
-		// Update last login
 		existingUser.UpdateLastLogin()
 		if err := s.userRepo.Update(ctx, existingUser); err != nil {
 			s.logger.Warn("failed to update last login", "error", err)
@@ -816,17 +873,17 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 		return nil, ErrSignupNotAvailable
 	}
 
-	// Create new user
 	newUser, err := userdom.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, provider.ToAuthProvider())
 	if err != nil {
 		return nil, err
 	}
-	if userInfo.Issuer != "" && userInfo.Subject != "" {
-		newUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
-	}
-
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+	if key.Valid() {
+		if err := acc.bind(ctx, newUser, key); err != nil {
+			return nil, fmt.Errorf("bind new account: %w", err)
+		}
 	}
 
 	s.logger.Info("created OAuth user", "user_id", newUser.ID().String(), "email", userInfo.Email, "provider", provider)
