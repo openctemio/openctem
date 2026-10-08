@@ -1,10 +1,9 @@
 // Package adminconsole implements the platform admin console session
 // (RFC-022, docs/rfcs/RFC-022-platform-admin-console.md).
 //
-// Following Tenable Security Center, a platform administrator is a normal user
-// account with a system-level role: it signs in on the same /login page as
-// everyone else, then this service opens a console session after a mandatory
-// TOTP code. admin_users holds the role, the TOTP secret and the audit trail,
+// A platform administrator is a normal user account with a system-level
+// role: it signs in on the same /login page as everyone else, then this
+// service opens a console session after a mandatory TOTP code. admin_users holds the role, the TOTP secret and the audit trail,
 // linked to the users row. Only a password sign-in can open the console: no
 // organization's SSO/SAML identity provider can authenticate an administrator.
 //

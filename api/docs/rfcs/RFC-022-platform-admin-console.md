@@ -393,7 +393,7 @@ which is the takeover revision 5 set out to prevent. Owner decision
     severity with `owner_recovery: true`, by actor `platform-admin:<email>`.
 - The suspended owners are left as they are. The new owner (or an
   administrator they appoint) decides whether to reactivate or remove them.
-- **Reason and step-up** (revision 13). The request also needs a `reason`
+- **Reason and step-up** (revision 14). The request also needs a `reason`
   (10 to 500 characters, kept in the admin audit row) and a fresh console
   authenticator code (`totp_code`). Organizations > an organization >
   Members offers "Recover ownership" to a super admin when every owner is
@@ -506,7 +506,18 @@ add:
 
 Details: `docs/architecture/plans-and-limits.md`.
 
-## Revision 12: console layout, overview and search
+## Revision 12: idle Free workspaces
+
+A Free organization nobody signs in to is reminded at 60 days, read-only at
+90 (changes refused, reads and exports kept), warned again at 113 and due for
+deletion at 120; a sign-in by any member undoes it at once. The platform
+administrators are alerted at deletion_due and delete from the console;
+nothing is deleted automatically. Organizations > an organization shows the
+stage and lets an ops_admin+ exempt it with a reason (audited).
+
+Details: `docs/architecture/idle-workspaces.md`.
+
+## Revision 13: console layout, overview and search
 
 The console is organized by what an operator does, and opens on what needs
 them:
@@ -534,7 +545,7 @@ them:
 - **Admin activity** filters by result (`?outcome=failure`), so the overview
   links straight to refused actions or to break-glass sign-ins.
 
-## Revision 13: organization 360
+## Revision 14: organization 360
 
 Organizations > an organization opens on a summary: owners and active
 members, the plan with an over-limit badge and the limits that are over,

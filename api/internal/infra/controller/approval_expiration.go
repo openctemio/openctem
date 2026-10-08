@@ -137,9 +137,23 @@ func (c *ApprovalExpirationController) processExpiredApproval(ctx context.Contex
 		return fmt.Errorf("failed to update approval: %w", err)
 	}
 
-	// Step 2: Reopen the finding to "confirmed" status
+	// Step 2: Reopen the finding to "confirmed" status, only while it still
+	// holds the status the approval gave it: a finding someone has moved on
+	// since (resolved, reopened, marked duplicate) is left alone.
+	f, err := c.findingRepo.GetByID(ctx, approval.TenantID, approval.FindingID)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil
+		}
+		return fmt.Errorf("failed to load finding: %w", err)
+	}
+	if string(f.Status()) != approval.RequestedStatus {
+		c.logger.Debug("finding no longer holds the expired approval's status, not reopening",
+			"approval_id", approval.ID, "finding_id", approval.FindingID, "status", f.Status())
+		return nil
+	}
 	findingIDs := []shared.ID{approval.FindingID}
-	err := c.findingRepo.UpdateStatusBatch(
+	err = c.findingRepo.UpdateStatusBatch(
 		ctx,
 		approval.TenantID,
 		findingIDs,

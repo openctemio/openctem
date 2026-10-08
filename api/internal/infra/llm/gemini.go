@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -189,7 +188,7 @@ func (p *GeminiProvider) Complete(ctx context.Context, req CompletionRequest) (*
 	defer resp.Body.Close()
 
 	// Read response body
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := httpsec.ReadLimited(resp.Body, httpsec.MaxResponseBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}

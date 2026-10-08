@@ -84,8 +84,8 @@ type GitHubTicketService struct {
 //
 // The encryptor is used to decrypt the integration's stored credential the
 // same way the SCM integration layer does (IntegrationService.decryptCredentials):
-// encryptor.DecryptString, falling back to the stored value as plaintext when
-// decryption fails. If encryptor is nil, credentials are treated as plaintext.
+// encryptor.DecryptString; a value that does not decrypt is skipped, never
+// used as is. If encryptor is nil, credentials are treated as plaintext.
 func NewGitHubTicketService(
 	findingRepo vulnerability.FindingRepository,
 	integrationRepo integration.Repository,
@@ -252,7 +252,7 @@ func firstGitHubIssue(uris []string) (owner, repo string, number int, url string
 // resolveCredential lists the tenant's GitHub integrations, picks the first
 // connected one, and decrypts its stored credential. This mirrors how the SCM
 // layer resolves the access token (IntegrationService.decryptCredentials):
-// intg.CredentialsEncrypted() → decrypt, with plaintext fallback on failure.
+// intg.CredentialsEncrypted() → decrypt; an undecryptable value is skipped.
 func (s *GitHubTicketService) resolveCredential(ctx context.Context, tenantID shared.ID) (token, baseURL string, err error) {
 	intgs, err := s.integrationRepo.ListByProvider(ctx, tenantID, integration.ProviderGitHub)
 	if err != nil {
@@ -269,11 +269,10 @@ func (s *GitHubTicketService) resolveCredential(ctx context.Context, tenantID sh
 		}
 		decrypted, decErr := s.decrypt(encrypted)
 		if decErr != nil {
-			// Decryption failed — assume the stored value is plaintext
-			// (backward compatibility), matching IntegrationService.
-			s.logger.Debug("github credential not encrypted, using plaintext",
-				"integration_id", intg.ID().String())
-			decrypted = encrypted
+			// Fail closed: never send an undecryptable value upstream.
+			s.logger.Warn("github credential cannot be decrypted; skipping the integration",
+				"tenant_id", tenantID.String(), "integration_id", intg.ID().String())
+			continue
 		}
 		if strings.TrimSpace(decrypted) == "" {
 			continue

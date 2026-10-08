@@ -16,7 +16,6 @@ import {
   changePasswordSchema,
   oauthCallbackSchema,
   isValidEmail,
-  isValidPassword,
   getPasswordStrength,
   getPasswordStrengthLabel,
 } from './auth.schema'
@@ -68,17 +67,13 @@ describe('passwordSchema', () => {
   })
 
   it('should reject empty password', () => {
-    expect(() => passwordSchema.parse('')).toThrow('Please enter your password')
+    expect(() => passwordSchema.parse('')).toThrow('Please enter a password')
   })
 
-  it('should reject passwords shorter than 12 characters', () => {
-    const shortPasswords = ['pass', 'test', '1234567', 'abc', 'elevenchars']
-
-    shortPasswords.forEach((password) => {
-      expect(() => passwordSchema.parse(password)).toThrow(
-        'Password must be at least 12 characters long'
-      )
-    })
+  // Length and character rules are the server policy (GET /auth/providers),
+  // checked with passwordPolicyIssue; the schema keeps no copy of them.
+  it('keeps no length rule of its own', () => {
+    expect(() => passwordSchema.parse('short')).not.toThrow()
   })
 })
 
@@ -175,13 +170,13 @@ describe('registerSchema', () => {
     expect(() => registerSchema.parse(invalidData)).toThrow()
   })
 
-  it('should reject short password', () => {
+  it('should reject an empty password', () => {
     const invalidData = {
       firstName: 'John',
       lastName: 'Doe',
       email: 'test@example.com',
-      password: 'short',
-      confirmPassword: 'short',
+      password: '',
+      confirmPassword: '',
     }
 
     expect(() => registerSchema.parse(invalidData)).toThrow()
@@ -256,10 +251,10 @@ describe('resetPasswordSchema', () => {
     expect(() => resetPasswordSchema.parse(invalidData)).toThrow('Reset token is required')
   })
 
-  it('should reject short password', () => {
+  it('should reject an empty password', () => {
     const invalidData = {
-      password: 'short',
-      confirmPassword: 'short',
+      password: '',
+      confirmPassword: '',
       token: 'valid-reset-token',
     }
 
@@ -316,11 +311,11 @@ describe('changePasswordSchema', () => {
     )
   })
 
-  it('should reject short new password', () => {
+  it('should reject an empty new password', () => {
     const invalidData = {
       currentPassword: 'oldpassword123',
-      newPassword: 'short',
-      confirmNewPassword: 'short',
+      newPassword: '',
+      confirmNewPassword: '',
     }
 
     expect(() => changePasswordSchema.parse(invalidData)).toThrow()
@@ -377,20 +372,6 @@ describe('isValidEmail', () => {
     expect(isValidEmail('missing@domain')).toBe(false)
     expect(isValidEmail('')).toBe(false)
     expect(isValidEmail('@example.com')).toBe(false)
-  })
-})
-
-describe('isValidPassword', () => {
-  it('should return true for valid passwords (12+ characters)', () => {
-    expect(isValidPassword('password1234')).toBe(true)
-    expect(isValidPassword('MyP@ssw0rd12')).toBe(true)
-    expect(isValidPassword('abcdefghijkl')).toBe(true)
-  })
-
-  it('should return false for invalid passwords', () => {
-    expect(isValidPassword('short')).toBe(false)
-    expect(isValidPassword('1234567')).toBe(false)
-    expect(isValidPassword('')).toBe(false)
   })
 })
 
