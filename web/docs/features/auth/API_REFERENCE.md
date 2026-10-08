@@ -54,7 +54,6 @@ serverEnv.keycloak.clientSecret: string
 
 // Security
 serverEnv.security.secureCookies: boolean
-serverEnv.security.csrfSecret: string
 
 // Token management
 serverEnv.token.cookieMaxAge: number
@@ -83,10 +82,10 @@ validateEnv() // Throws error if missing required vars
 ```typescript
 import { isProduction, isDevelopment, isServer, isClient } from '@/lib/env'
 
-isProduction()  // true if NODE_ENV === 'production'
+isProduction() // true if NODE_ENV === 'production'
 isDevelopment() // true if NODE_ENV === 'development'
-isServer()      // true if running on server
-isClient()      // true if running on client
+isServer() // true if running on server
+isClient() // true if running on client
 ```
 
 ---
@@ -132,6 +131,7 @@ const url = buildAuthorizationUrl({
 ```
 
 **Parameters:**
+
 - `options?: Partial<KeycloakAuthParams>`
 
 **Returns:** `string` - Full authorization URL
@@ -149,6 +149,7 @@ redirectToLogin('/dashboard') // Return to /dashboard after login
 ```
 
 **Parameters:**
+
 - `returnUrl?: string` - URL to return to after login
 
 #### `redirectToRegister()`
@@ -174,6 +175,7 @@ redirectToLogout({
 ```
 
 **Parameters:**
+
 - `options?: KeycloakLogoutParams`
 
 ### Token Operations
@@ -199,6 +201,7 @@ const tokens = await exchangeCodeForTokens(code)
 ```
 
 **Parameters:**
+
 - `code: string` - Authorization code from callback
 
 **Returns:** `Promise<KeycloakTokenResponse>`
@@ -220,6 +223,7 @@ const userInfo = await fetchUserInfo(accessToken)
 ```
 
 **Parameters:**
+
 - `accessToken: string` - Valid access token
 
 **Returns:** `Promise<KeycloakUserInfo>`
@@ -309,7 +313,7 @@ Decodes JWT without verification.
 ```typescript
 import { decodeJWT } from '@/lib/keycloak'
 
-const payload = decodeJWT<{exp: number, sub: string}>(token)
+const payload = decodeJWT<{ exp: number; sub: string }>(token)
 ```
 
 #### `decodeAccessToken(token)`
@@ -347,6 +351,7 @@ if (isTokenExpired(token, 30)) {
 ```
 
 **Parameters:**
+
 - `token: string | {exp: number}` - JWT or decoded token
 - `bufferSeconds?: number` - Buffer time (default: 30)
 
@@ -387,7 +392,8 @@ Checks if token should be refreshed.
 ```typescript
 import { shouldRefreshToken } from '@/lib/keycloak'
 
-if (shouldRefreshToken(token, 300)) { // 5 minutes
+if (shouldRefreshToken(token, 300)) {
+  // 5 minutes
   // Refresh token now
 }
 ```
@@ -526,6 +532,7 @@ setCookie('theme', 'dark', {
 ```
 
 **Options:**
+
 - `maxAge?: number` - Seconds until expiry
 - `path?: string` - Cookie path (default: '/')
 - `domain?: string` - Cookie domain
@@ -555,9 +562,9 @@ Get all cookies as object.
 ```typescript
 import { localeCookie } from '@/lib/cookies'
 
-localeCookie.get()               // Current locale
-localeCookie.set('vi')          // Set locale
-localeCookie.remove()           // Remove locale
+localeCookie.get() // Current locale
+localeCookie.set('vi') // Set locale
+localeCookie.remove() // Remove locale
 ```
 
 #### `themeCookie`
@@ -565,7 +572,7 @@ localeCookie.remove()           // Remove locale
 ```typescript
 import { themeCookie } from '@/lib/cookies'
 
-themeCookie.get()                // 'light' | 'dark' | 'system'
+themeCookie.get() // 'light' | 'dark' | 'system'
 themeCookie.set('dark')
 themeCookie.remove()
 ```
@@ -586,9 +593,9 @@ Server-side cookie management with HttpOnly support.
 import { setServerCookie } from '@/lib/cookies-server'
 
 await setServerCookie('refresh_token', token, {
-  httpOnly: true,   // XSS protection
-  secure: true,     // HTTPS only
-  sameSite: 'lax',  // CSRF protection
+  httpOnly: true, // XSS protection
+  secure: true, // HTTPS only
+  sameSite: 'lax', // CSRF protection
   maxAge: 60 * 60 * 24 * 7, // 7 days
 })
 ```
@@ -722,11 +729,11 @@ import {
   useHasRole,
 } from '@/stores/auth-store'
 
-const user = useUser()                     // AuthUser | null
-const status = useAuthStatus()             // AuthStatus
-const isAuth = useIsAuthenticated()        // boolean
-const roles = useUserRoles()               // string[]
-const isAdmin = useHasRole('admin')        // boolean
+const user = useUser() // AuthUser | null
+const status = useAuthStatus() // AuthStatus
+const isAuth = useIsAuthenticated() // boolean
+const roles = useUserRoles() // string[]
+const isAdmin = useHasRole('admin') // boolean
 ```
 
 ### Actions (Outside Component)
@@ -734,9 +741,9 @@ const isAdmin = useHasRole('admin')        // boolean
 ```typescript
 import { loginWithToken, logoutUser, forceLogin } from '@/stores/auth-store'
 
-loginWithToken(token)         // Login from anywhere
-logoutUser()                  // Logout from anywhere
-forceLogin('/dashboard')      // Force redirect to login
+loginWithToken(token) // Login from anywhere
+logoutUser() // Logout from anywhere
+forceLogin('/dashboard') // Force redirect to login
 ```
 
 ---

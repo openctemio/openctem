@@ -47,7 +47,7 @@ Frontend dashboard for the OpenCTEM Continuous Threat Exposure Management platfo
 | State     | Zustand (auth), React Context (theme, direction, layout)       |
 | Data      | SWR (client fetching), Server Components (SSR)                 |
 | Forms     | React Hook Form + Zod validation                               |
-| Auth      | Local JWT, OAuth2 (Google, GitHub, Microsoft), SAML SSO       |
+| Auth      | Local JWT, OAuth2 (Google, GitHub, Microsoft), SAML SSO        |
 | Testing   | Vitest, React Testing Library, Playwright                      |
 
 ## Project Structure
@@ -130,7 +130,7 @@ TRUST_PROXY_HEADERS=false
 ```
 
 See [`.env.example`](.env.example) for the full, authoritative list of variables the
-app actually reads (`CSRF_SECRET`, `SECURE_COOKIES`, cookie names, sidebar-badge
+app actually reads (`SECURE_COOKIES`, cookie names, sidebar-badge
 flag, etc.).
 
 ### Production

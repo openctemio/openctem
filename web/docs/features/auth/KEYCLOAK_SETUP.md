@@ -55,10 +55,10 @@ Go to **Clients** → **nextjs-frontend** → **Settings** tab:
 
 ```yaml
 # Access Settings
-Access Type: public  # For SPA/frontend apps
-Standard Flow Enabled: ON  # Authorization Code Flow
-Direct Access Grants Enabled: OFF  # Don't allow password grant
-Implicit Flow Enabled: OFF  # Not recommended for security
+Access Type: public # For SPA/frontend apps
+Standard Flow Enabled: ON # Authorization Code Flow
+Direct Access Grants Enabled: OFF # Don't allow password grant
+Implicit Flow Enabled: OFF # Not recommended for security
 
 # URLs (Development)
 Valid Redirect URIs:
@@ -67,7 +67,7 @@ Valid Redirect URIs:
 
 Web Origins:
   - http://localhost:3000
-  - +  # Allow CORS from redirect URIs
+  - + # Allow CORS from redirect URIs
 
 # URLs (Production - Add later)
 Valid Redirect URIs:
@@ -202,10 +202,6 @@ API_URL=http://localhost:8000/api
 ### Step 4: Security Settings
 
 ```bash
-# CSRF secret (generate random 32+ char string)
-# Generate with: openssl rand -base64 32
-CSRF_SECRET=your-generated-secret-here
-
 # Enable HTTPS-only cookies (set to true in production)
 SECURE_COOKIES=false
 
@@ -247,24 +243,17 @@ export default function TestKeycloakPage() {
       <div className="space-y-4">
         <div>
           <h2 className="font-semibold">Configuration:</h2>
-          <pre className="bg-gray-100 p-4 rounded">
-            {JSON.stringify(env.keycloak, null, 2)}
-          </pre>
+          <pre className="bg-gray-100 p-4 rounded">{JSON.stringify(env.keycloak, null, 2)}</pre>
         </div>
 
         <div>
           <h2 className="font-semibold">Endpoints:</h2>
-          <pre className="bg-gray-100 p-4 rounded">
-            {JSON.stringify(urls, null, 2)}
-          </pre>
+          <pre className="bg-gray-100 p-4 rounded">{JSON.stringify(urls, null, 2)}</pre>
         </div>
 
         <div>
           <h2 className="font-semibold">Test Login:</h2>
-          <a
-            href={authUrl}
-            className="px-4 py-2 bg-blue-500 text-white rounded"
-          >
+          <a href={authUrl} className="px-4 py-2 bg-blue-500 text-white rounded">
             Test Keycloak Login
           </a>
         </div>
@@ -279,6 +268,7 @@ export default function TestKeycloakPage() {
 Navigate to: `http://localhost:3000/test-keycloak`
 
 Expected results:
+
 - ✅ Configuration shows your Keycloak URL, realm, client ID
 - ✅ Endpoints show valid URLs
 - ✅ Click "Test Keycloak Login" redirects to Keycloak login page
@@ -325,9 +315,6 @@ NEXT_PUBLIC_API_URL=https://api.your-domain.com
 # Security (Production)
 SECURE_COOKIES=true  # ⚠️ CRITICAL: Must be true in production
 NODE_ENV=production
-
-# CSRF Secret (Different from dev!)
-CSRF_SECRET=different-production-secret-32-chars-min
 ```
 
 ### Step 3: Verify HTTPS
@@ -355,7 +342,6 @@ Before going to production:
 - [ ] Keycloak server is on HTTPS
 - [ ] App is on HTTPS
 - [ ] `SECURE_COOKIES=true` in production
-- [ ] `CSRF_SECRET` is 32+ random characters
 - [ ] Different secrets for dev/staging/production
 - [ ] Redirect URIs are whitelisted in Keycloak
 - [ ] Access token lifespan is short (5-15 minutes)
