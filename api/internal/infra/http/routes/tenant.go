@@ -271,6 +271,24 @@ func registerOrganizationPlanRoutes(router Router, h *handler.PlanHandler, authM
 // and keeps a tombstone, POST .../erase (owner only) anonymises an offboarded
 // person. The service loads the membership within the caller's tenant (404
 // otherwise) and applies the peer-administrator rule.
+// registerOrganizationTrustRoutes registers trusted organizations (RFC-058)
+// under the token singleton /api/v1/organization/trusts. Reading needs an
+// owner or administrator; every change needs an owner with a recent
+// re-authentication. The service checks which side of a trust the caller's
+// organization is on (host updates, home accepts, either ends it).
+func registerOrganizationTrustRoutes(router Router, h *handler.OrgTrustHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/trusts", func(r Router) {
+		r.GET("/", h.List, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
+		r.POST("/", h.Create, middleware.RequireOwner(), requireStepUp())
+		r.PATCH("/{trust_id}", h.Update, middleware.RequireOwner(), requireStepUp())
+		r.POST("/{trust_id}/approve", h.Accept, middleware.RequireOwner(), requireStepUp())
+		r.DELETE("/{trust_id}", h.Delete, middleware.RequireOwner(), requireStepUp())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAuthHandler, tenantH *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
 	if localAuth == nil && tenantH == nil {
 		return

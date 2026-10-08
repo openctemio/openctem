@@ -109,6 +109,7 @@ func TestScanRuns_FollowScansModuleOnPresets(t *testing.T) {
 				{http.MethodGet, "/api/v1/scan-runs/" + runID + "/tasks"},
 				{http.MethodGet, "/api/v1/scan-runs/" + runID + "/tasks/" + runID + "/logs"},
 				{http.MethodGet, "/api/v1/scan-runs/" + runID + "/stages"},
+				{http.MethodGet, "/api/v1/scan-runs/" + runID + "/map"},
 				{http.MethodPost, "/api/v1/scan-runs/" + runID + "/cancel"},
 			} {
 				// The handler either panics on its nil service or answers
@@ -203,7 +204,7 @@ func TestScanRuns_OtherTenantRunIsNotFound(t *testing.T) {
 	if code, body := get("/api/v1/scan-runs/" + runA); code != http.StatusOK {
 		t.Fatalf("own run: %d %s, want 200", code, body)
 	}
-	for _, p := range []string{"", "/tasks", "/stages"} {
+	for _, p := range []string{"", "/tasks", "/stages", "/map"} {
 		if code, body := get("/api/v1/scan-runs/" + runB + p); code != http.StatusNotFound {
 			t.Errorf("other tenant's run%s: %d %s, want 404", p, code, body)
 		}

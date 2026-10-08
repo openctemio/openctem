@@ -148,13 +148,17 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := apikey.ListInput{
 		TenantID:  tenantID,
 		UserID:    ownerFilter,
 		Status:    query.Get("status"),
 		Search:    query.Get("search"),
-		Page:      parseQueryInt(query.Get("page"), 1),
-		PerPage:   parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:      paging.Page,
+		PerPage:   paging.PerPage,
 		SortBy:    query.Get("sort"),
 		SortOrder: query.Get("order"),
 	}

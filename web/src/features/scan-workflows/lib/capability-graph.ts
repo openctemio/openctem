@@ -267,3 +267,20 @@ export function issuesForStep(report: GraphValidation | null, stepKey: string): 
   if (!report) return []
   return (report.errors ?? []).filter((e) => e.node === stepKey || e.to === stepKey)
 }
+
+/** Warnings of a graph check that point at one step (by step key). */
+export function warningsForStep(report: GraphValidation | null, stepKey: string): GraphIssue[] {
+  if (!report) return []
+  return (report.warnings ?? []).filter((e) => e.node === stepKey || e.to === stepKey)
+}
+
+/** Issue text by step key: the message, then how to fix it. */
+export function issueMessagesByStep(issues: GraphIssue[] | undefined): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const e of issues ?? []) {
+    const key = e.node || e.to
+    if (!key || !e.message) continue
+    ;(out[key] ??= []).push(e.fix ? `${e.message}. ${e.fix}` : e.message)
+  }
+  return out
+}

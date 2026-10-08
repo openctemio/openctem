@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { AlertTriangle, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import type { ScanWorkflowStep } from '@/lib/api'
-import type { Capability, CapabilityParam } from '../lib/capability-graph'
+import type { Capability, CapabilityParam, GraphIssue } from '../lib/capability-graph'
 import { paramValue, selectionOf, toolsMissingParams, withParam } from '../lib/step-settings'
 import { ToolSelectionField } from './tool-selection-field'
 
@@ -30,18 +30,27 @@ import { ToolSelectionField } from './tool-selection-field'
 export function NodeInspector({
   step,
   capability,
+  issues = [],
   readOnly,
   onChange,
   onClose,
 }: {
   step: ScanWorkflowStep
   capability: Capability | null
+  /** What the API's check of the draft says about this step. */
+  issues?: GraphIssue[]
   readOnly?: boolean
   onChange: (step: ScanWorkflowStep) => void
   onClose: () => void
 }) {
   const mode = selectionOf(step)
   const missing = capability ? toolsMissingParams(capability, step.config) : {}
+  // Settings outside the capability contract (a pinned tool's own keys,
+  // or keys an older template stored): shown so they can be removed.
+  const contract = new Set(capability?.params.map((p) => p.name) ?? [])
+  const extra = capability
+    ? Object.entries(step.config ?? {}).filter(([k]) => !contract.has(k) && k !== 'exclude')
+    : []
 
   return (
     <aside
@@ -72,6 +81,22 @@ export function NodeInspector({
 
       <ScrollArea className="flex-1">
         <div className="space-y-5 px-4 py-4">
+          {issues.length > 0 && (
+            <ul className="space-y-2" aria-label="Problems of this step">
+              {issues.map((is, i) => (
+                <li
+                  key={`${is.code}-${i}`}
+                  className="flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-xs"
+                >
+                  <AlertTriangle className="mt-px h-3 w-3 shrink-0 text-warning" />
+                  <span>
+                    {is.message}
+                    {is.fix && <span className="block text-muted-foreground">{is.fix}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
           {!capability ? (
             <p className="text-xs text-muted-foreground">
               {step.tool || 'This tool'} has no capability contract: it runs with its own settings
@@ -106,6 +131,39 @@ export function NodeInspector({
                   />
                 ))}
               </section>
+              {extra.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Other settings
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Not part of this capability: only a pinned tool reads them.
+                  </p>
+                  <ul className="space-y-1">
+                    {extra.map(([k, v]) => (
+                      <li key={k} className="flex items-center gap-2 text-xs">
+                        <code className="truncate">
+                          {k} = {JSON.stringify(v)}
+                        </code>
+                        {!readOnly && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="ms-auto h-6 px-2 text-xs"
+                            aria-label={`Remove ${k}`}
+                            onClick={() =>
+                              onChange({ ...step, config: withParam(step.config, k, undefined) })
+                            }
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
             </>
           )}
 

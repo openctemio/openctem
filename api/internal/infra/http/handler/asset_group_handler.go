@@ -237,6 +237,10 @@ func (h *AssetGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := asset.ListAssetGroupsInput{
 		TenantID:       tenantID,
 		Search:         query.Get("search"),
@@ -250,8 +254,8 @@ func (h *AssetGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 		MinRiskScore:   parseQueryIntPtr(query.Get("min_risk_score")),
 		MaxRiskScore:   parseQueryIntPtr(query.Get("max_risk_score")),
 		Sort:           query.Get("sort"),
-		Page:           parseQueryInt(query.Get("page"), 1),
-		PerPage:        parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:           paging.Page,
+		PerPage:        paging.PerPage,
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -513,9 +517,11 @@ func (h *AssetGroupHandler) GetAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := r.URL.Query()
-	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.GetGroupAssets(r.Context(), middleware.MustGetTenantID(r.Context()), id, page, perPage)
 	if err != nil {
@@ -574,9 +580,11 @@ func (h *AssetGroupHandler) GetFindings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	query := r.URL.Query()
-	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.GetGroupFindings(r.Context(), middleware.MustGetTenantID(r.Context()), id, page, perPage)
 	if err != nil {

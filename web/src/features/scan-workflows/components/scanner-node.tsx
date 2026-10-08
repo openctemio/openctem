@@ -70,6 +70,8 @@ export type ScannerNodeData = {
   portLabels?: Record<string, string>
   // Problems the API's graph check reports for this step
   issues?: string[]
+  // Warnings for this step (it may not run now, e.g. no sensor offers its tool)
+  warnings?: string[]
   // Callbacks for inline editing
   onLabelChange?: (label: string) => void
   onToolChange?: (tool: string) => void
@@ -395,6 +397,17 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
             </p>
           )
         )}
+
+        {(data.warnings ?? []).map((msg) => (
+          <div
+            key={msg}
+            className="flex items-start gap-1.5 text-[10px] text-warning"
+            role="status"
+          >
+            <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+            <span className="break-words">{msg}</span>
+          </div>
+        ))}
 
         {/* Graph check issues (from the API) */}
         {(data.issues ?? []).map((msg) => (

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/finding"
@@ -207,19 +206,10 @@ func (h *FindingSourceHandler) ListCategories(w http.ResponseWriter, r *http.Req
 	}
 
 	// Parse pagination
-	pageNum := 1
-	perPage := 20
-	if p := query.Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			pageNum = parsed
-		}
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if pp := query.Get("per_page"); pp != "" {
-		if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 {
-			perPage = parsed
-		}
-	}
-	page := pagination.New(pageNum, perPage)
 
 	// Build filter
 	filter := findingsource.NewCategoryFilter()
@@ -401,19 +391,10 @@ func (h *FindingSourceHandler) ListFindingSources(w http.ResponseWriter, r *http
 	}
 
 	// Parse pagination
-	pageNum := 1
-	perPage := 50
-	if p := query.Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			pageNum = parsed
-		}
+	page, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	if pp := query.Get("per_page"); pp != "" {
-		if parsed, err := strconv.Atoi(pp); err == nil && parsed > 0 {
-			perPage = parsed
-		}
-	}
-	page := pagination.New(pageNum, perPage)
 
 	// Build filter
 	filter := findingsource.NewFilter()
