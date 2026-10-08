@@ -91,7 +91,7 @@ export function RunMap({
         <ul
           role="status"
           aria-label="Steps without output"
-          className="space-y-0.5 text-xs text-amber-700 dark:text-amber-400"
+          className="space-y-0.5 text-xs text-warning"
         >
           {warnings.map((w) => (
             <li key={w.key}>{w.text}</li>
