@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
@@ -1010,23 +1012,22 @@ func (h *TenantHandler) SuspendMember(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Member suspended"})
 }
 
-// UpdateMemberAccess handles PATCH /api/v1/tenants/{tenant}/members/{memberId}/access
+// UpdateMemberAccess handles PATCH /api/v1/organization/members/{member_id}/access
 // @Summary Set when an external member's access ends
 // @Description For a member from outside the organization (RFC-058): sets the end date of their access (at most 365 days; required for someone no organization manages). A member suspended because their access ended is re-enabled.
 // @Tags Tenants
 // @Accept json
 // @Produce json
-// @Param tenant path string true "Tenant ID or slug"
-// @Param memberId path string true "Membership ID"
+// @Param member_id path string true "Membership ID"
 // @Param body body UpdateMemberAccessRequest true "New end of access"
 // @Success 200 {object} MemberAccessResponse
 // @Failure 400 {object} apierror.Error
 // @Failure 403 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
 // @Security BearerAuth
-// @Router /tenants/{tenant}/members/{memberId}/access [patch]
+// @Router /organization/members/{member_id}/access [patch]
 func (h *TenantHandler) UpdateMemberAccess(w http.ResponseWriter, r *http.Request) {
-	memberID := r.PathValue("userId")
+	memberID := chi.URLParam(r, "member_id")
 	if memberID == "" {
 		apierror.BadRequest("Member ID is required").WriteJSON(w)
 		return
@@ -1040,8 +1041,8 @@ func (h *TenantHandler) UpdateMemberAccess(w http.ResponseWriter, r *http.Reques
 		apierror.BadRequest("reason must be at most 500 characters").WriteJSON(w)
 		return
 	}
-	actx := h.buildAuditContext(r)
-	if actx.ActorID == "" {
+	actx := h.tokenTenantAuditContext(r)
+	if actx.ActorID == "" || actx.TenantID == "" {
 		apierror.Unauthorized("Authentication required").WriteJSON(w)
 		return
 	}

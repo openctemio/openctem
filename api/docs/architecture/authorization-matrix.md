@@ -1206,7 +1206,7 @@ a personal address, or be a work domain nobody has verified.
   - 90 days by default, 365 at most;
   - `MemberAccessExpiryController` suspends the membership within a minute
     (`suspended_reason = expired`), in that organization only;
-  - `PATCH /tenants/{tenant}/members/{memberId}/access` (owner/admin,
+  - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
     `members:write`) sets a new end date and re-enables them;
   - a plain reactivation is refused.
 - The host sees the home organization's name only.
