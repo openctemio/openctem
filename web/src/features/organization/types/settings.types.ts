@@ -54,6 +54,21 @@ export interface SecuritySettings {
    * IP allowlist so an owner does not lock themselves out.
    */
   current_ip?: string
+  /** Set by the platform administrator; read-only here. */
+  sso_enforced?: boolean
+  /** Whether personal email accounts may join (api RFC-058). */
+  personal_accounts?: PersonalAccountsPolicy
+  /** Members who may sign in without SSO while it is enforced. */
+  sso_exceptions?: SSOException[]
+}
+
+export type PersonalAccountsPolicy = 'allowed' | 'allowed_with_mfa' | 'blocked'
+
+export interface SSOException {
+  user_id: string
+  reason: string
+  /** RFC 3339, at most 90 days ahead. */
+  expires_at: string
 }
 
 export interface UpdateSecuritySettingsInput {
@@ -66,6 +81,9 @@ export interface UpdateSecuritySettingsInput {
   /** research/25 D3: off unless an owner enables it; enabling is audited. */
   allow_sensor_interactsh?: boolean
   allow_sensor_custom_templates?: boolean
+  personal_accounts?: PersonalAccountsPolicy
+  /** Replaces the whole list. */
+  sso_exceptions?: SSOException[]
 }
 
 // ============================================
