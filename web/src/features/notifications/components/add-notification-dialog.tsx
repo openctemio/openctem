@@ -365,7 +365,6 @@ export function AddNotificationDialog({
           to_emails: toEmailsList,
           use_tls: data.use_tls,
           use_starttls: data.use_starttls,
-          skip_verify: false,
         })
       }
 

@@ -24,7 +24,12 @@ import {
   Building2,
   ChevronsUpDown,
   Check,
+  Trash2,
 } from 'lucide-react'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { usePermissions, Permission } from '@/lib/permissions'
+import { bulkDeleteAssetsSafely, reportBulkDelete } from '../../lib/safe-delete'
+import { bulkActionsFor } from '../../lib/type-actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -147,6 +152,36 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const { currentTenant } = useTenant()
   const tenantSlug = currentTenant?.slug ?? null
   const ownerDialogOpen = dialog === 'owner'
+  const { can } = usePermissions()
+  const canDelete = can(Permission.AssetsDelete)
+  // Type actions (repository Scan / Sync) for the selected assets they fit.
+  const typeActions = bulkActionsFor(selected).filter((a) => a.permissions.every((p) => can(p)))
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const runTypeAction = async (action: (typeof typeActions)[number]) => {
+    setBusy(true)
+    try {
+      await action.run(selected.filter(action.applies))
+      onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteSelected = async () => {
+    setBusy(true)
+    try {
+      const outcome = await bulkDeleteAssetsSafely(selected.map((a) => a.id))
+      reportBulkDelete(outcome, onDone)
+      setConfirmDelete(false)
+      onDone()
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to delete'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const membersUrl = (() => {
     if (!ownerDialogOpen || !tenantSlug) return null
@@ -303,6 +338,30 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
               Add tag
             </Button>
             <InventoryBusinessContextActions selected={selected} onDone={onDone} />
+            {typeActions.map((a) => (
+              <Button
+                key={a.id}
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => void runTypeAction(a)}
+              >
+                <a.icon className="me-2 h-4 w-4" />
+                {a.label}
+              </Button>
+            ))}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                disabled={busy}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="me-2 h-4 w-4" />
+                Delete
+              </Button>
+            )}
           </>
         ) : (
           <span className="whitespace-nowrap px-2 text-xs text-muted-foreground">
@@ -310,6 +369,17 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
           </span>
         )}
       </BulkActionBar>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete ${count} asset${count === 1 ? '' : 's'}?`}
+        desc="They leave every list. An asset that has findings is not deleted: archive it instead to keep the finding history."
+        confirmText={busy ? 'Deleting...' : 'Delete'}
+        destructive
+        isLoading={busy}
+        handleConfirm={() => void deleteSelected()}
+      />
 
       {/* Set criticality */}
       <Dialog open={dialog === 'criticality'} onOpenChange={(o) => !o && closeDialog()}>

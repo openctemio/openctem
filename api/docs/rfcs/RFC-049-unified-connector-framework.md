@@ -122,14 +122,14 @@ sections below.
 | F-2 | Upstream response bodies are never echoed back to the tenant. | Notifiers fixed in #1068; the rest move to the host redactor (§5.6, phase 1) |
 | F-3 | SMTP dials the validated address (no second resolution) and every session has a deadline. | **Fixed: #1069** |
 | F-4 | Private-range egress is granted per tenant, not process-wide. | Design §9.2 |
-| F-5 | TLS verification cannot be disabled by a tenant; a per-instance CA bundle replaces it. | Phase 0 follow-up (§8.3) |
+| F-5 | TLS verification cannot be disabled by a tenant; a per-instance CA bundle replaces it. | **Fixed:** tenant SMTP `skip_verify` refused and ignored when stored; the per-instance CA bundle is still a follow-up (§8.3) |
 | F-6 | A failed delivery is recorded as failed and retried or dead-lettered. | Phase 0 follow-up PR |
 | F-7 | Per-tenant transactional SMTP reads the keys the writer stores and the encrypted credential; secrets never go into metadata. | Phase 0 follow-up |
-| F-8 | A credential decrypt failure fails closed in production. | Host, `class=invalid_config` (phase 1) |
+| F-8 | A credential decrypt failure fails closed in production. | **Fixed:** integration credentials, Jira/GitHub ticketing credentials and webhook secrets no longer fall back to the stored value |
 | F-9 | Inbound webhooks are routed by instance, carry a per-instance secret and have replay protection. | Design §10.5 |
 | F-10 | Pagination links are followed only on the same origin. | Host |
 | F-11 | git over ssh dials through the guarded dialer. | Host |
-| F-12 | Every response read is bounded. | Descriptor `max_response_bytes`, enforced by the host |
+| F-12 | Every response read is bounded. | **Fixed for today's clients:** `httpsec.ReadLimited` / `DecodeJSON` / `NewLimitedReader` (oversize is an error), security-lint Rule 8; the host enforces descriptor `max_response_bytes` |
 | F-13 | Instances are loaded only by tenant and id in the query. | Host loads instances only via `GetByTenantAndID` |
 | F-14 | Integration create, update, delete, test and credential changes are audited. | §10.2 |
 | F-15 | Every integration surface sits behind its module gate (a feature flag, not a boundary). | Phase 4 |
@@ -514,8 +514,13 @@ Redis, the sensor gateway, other tenants' services on the same VPC).
 
 Replacement:
 
-- The global switch stays only for single-tenant on-prem installs and logs a
-  startup warning when more than one tenant exists.
+- Done: `OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1` (every private range) is honored
+  only with `APP_ENV=development`; in any other environment the API refuses
+  to start. An on-prem install names the ranges it needs in
+  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` (each inside 10/8, 172.16/12,
+  192.168/16 or fc00::/7; hard-blocked addresses stay blocked), logged at
+  start-up. That list is still process-wide, so a multi-tenant deployment
+  leaves it empty until the per-tenant allowlist below exists.
 - A **platform admin** (not a tenant admin) may grant a tenant an egress
   allowlist entry: `(tenant_id, connector id or *, CIDR or host, port set,
   reason, expires_at, granted_by)`. The guard admits a private answer only if
@@ -573,8 +578,8 @@ the audit log.
 
 ### 10.3 Rate limits and quotas
 
-- Upstream courtesy: descriptor rate (token bucket per instance), honoured
-  by both hosts; `Retry-After` honoured, capped at 60 s.
+- Upstream courtesy: descriptor rate (token bucket per instance), honored
+  by both hosts; `Retry-After` honored, capped at 60 s.
 - Platform fairness: per-tenant quotas on platform workers (concurrent pulls,
   pushes per minute, test calls per minute) so one tenant's connector cannot
   starve the outbox or the controller. Replaces today's in-memory,

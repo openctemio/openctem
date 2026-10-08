@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // Environment constants
@@ -506,8 +507,7 @@ const (
 	TenantCreationSelfService = "self_service"
 	// TenantCreationAdminOnly reserves organization creation for the platform
 	// administrator: the admin console, or bootstrap-admin -org-name at first
-	// install (on-prem / enterprise, Tenable Security Center style). The
-	// default.
+	// install (on-prem / enterprise installs). The default.
 	TenantCreationAdminOnly = "admin_only"
 )
 
@@ -1459,6 +1459,12 @@ func (c *Config) validateBasic() error {
 		}
 	}
 	if err := c.Scope.validate(); err != nil {
+		return err
+	}
+	// The SSRF guard ignores a refused private-egress setting; refusing to
+	// start makes the operator notice instead of debugging blocked calls.
+	if err := httpsec.ValidatePrivateEgress(c.App.Env,
+		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
 		return err
 	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {

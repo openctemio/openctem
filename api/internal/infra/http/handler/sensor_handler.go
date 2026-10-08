@@ -413,6 +413,11 @@ type SensorProtocolResponse struct {
 	UserAgent  string `json:"user_agent"`
 	SeenAt     string `json:"seen_at"`
 	Deprecated bool   `json:"deprecated"`
+	// Binding is how the last heartbeat arrived (RFC-059): grpc (mTLS),
+	// https (protocol v3 over HTTPS) or v2; absent before it was recorded.
+	Binding string `json:"binding,omitempty" enums:"grpc,https,v2"`
+	// FallbackReason is why the sensor is not on gRPC, as it reported it.
+	FallbackReason string `json:"fallback_reason,omitempty"`
 }
 
 // SensorHealthReasonResponse is one problem found on a sensor. code is
@@ -1100,6 +1105,9 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 			UserAgent:  p.UserAgent,
 			SeenAt:     p.SeenAt.UTC().Format(time.RFC3339),
 			Deprecated: p.Deprecated(),
+
+			Binding:        p.Binding,
+			FallbackReason: p.FallbackReason,
 		}
 	}
 

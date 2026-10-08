@@ -2,7 +2,6 @@ package defectdojo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -182,7 +181,7 @@ func (c *Client) getJSON(ctx context.Context, pathOrURL string, out any) error {
 		return fmt.Errorf("defectdojo: unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, out); err != nil {
 		return fmt.Errorf("defectdojo: decode response: %w", err)
 	}
 	return nil

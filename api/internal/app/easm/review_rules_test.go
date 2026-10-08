@@ -8,10 +8,10 @@ import (
 
 func TestDomainPatterns(t *testing.T) {
 	cases := map[string][]string{
-		"a.dev.ipas.com.vn": {"*.dev.ipas.com.vn", "*.ipas.com.vn"},
-		"ipas.com.vn":       {"*.ipas.com.vn"},
-		"x.y.example.co.uk": {"*.y.example.co.uk", "*.example.co.uk"},
-		"com.vn":            nil, // a public suffix has no registrable domain
+		"a.dev.example.com.au": {"*.dev.example.com.au", "*.example.com.au"},
+		"example.com.au":       {"*.example.com.au"},
+		"x.y.example.co.uk":    {"*.y.example.co.uk", "*.example.co.uk"},
+		"com.vn":               nil, // a public suffix has no registrable domain
 	}
 	for host, want := range cases {
 		if got := domainPatterns(host); !slices.Equal(got, want) {
@@ -36,10 +36,10 @@ func TestSharedAddressAndStrength(t *testing.T) {
 	if ok, _ := sharedAddress(map[string]any{"cdn": "cloudflare"}); !ok {
 		t.Error("a CDN-flagged address is shared")
 	}
-	if ok, _ := sharedAddress(map[string]any{"asn_org": "VNDIRECT-AS-VN"}); ok {
+	if ok, _ := sharedAddress(map[string]any{"asn_org": "EXAMPLECO-AS-VN"}); ok {
 		t.Error("an organization's own allocation is not shared")
 	}
-	hints := evidenceHints([]ReviewEvidence{{Rule: "fqdn_under_asserted_root", Observed: map[string]any{"root": "ipas.com.vn", "root_origin": "easm_seed"}}})
+	hints := evidenceHints([]ReviewEvidence{{Rule: "fqdn_under_asserted_root", Observed: map[string]any{"root": "example.com.au", "root_origin": "easm_seed"}}})
 	if len(hints) != 1 || hints[0].Kind != "discovering_easm_seed" || strengthOf(hints) != StrengthMedium {
 		t.Errorf("seed hint = %+v %s", hints, strengthOf(hints))
 	}

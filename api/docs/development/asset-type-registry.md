@@ -9,7 +9,7 @@ their classes and the lenses those classes belong to. It implements RFC-042
 | Level | Count | Where |
 |---|---|---|
 | Lens (inventory tab) | 8 | `lenses:` |
-| Class (JupiterOne `_class`) | 16 + `other` | `classes:`; each class has one lens, `other` has none |
+| Class | 16 + `other` | `classes:`; each class has one lens, `other` has none |
 | Type | 37 + `unclassified` | `types:`; each type has one class |
 
 Each type entry declares:
