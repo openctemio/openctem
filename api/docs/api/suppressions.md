@@ -36,7 +36,7 @@ Unlike in-code ignore files, platform-controlled suppression rules:
 | POST | `/api/v1/suppressions/{id}/approve` | Approve pending rule | `findings:suppressions:approve` |
 | POST | `/api/v1/suppressions/{id}/reject` | Reject pending rule | `findings:suppressions:approve` |
 | DELETE | `/api/v1/suppressions/{id}` | Delete suppression rule | `findings:suppressions:delete` |
-| GET | `/api/v1/suppressions/active` | List active rules (for agents) | `findings:suppressions:read` |
+| GET | `/api/v1/suppressions/active` | List active rules (for sensors) | `findings:suppressions:read` |
 
 ---
 
@@ -243,7 +243,7 @@ loaded it. If the rule was edited since (for example broadened by its
 requester), the approval is refused with `409` and must be repeated on the
 current version.
 
-**Four eyes** (owner decision B16): the requester cannot approve their own rule
+**Four eyes** (decision B16): the requester cannot approve their own rule
 while the organization has at least two people who can approve (owners,
 admins, holders of `findings:suppressions:approve`): `403`. In an organization
 with a single eligible approver, that person may approve their own rule only if
@@ -299,9 +299,9 @@ HTTP/1.1 204 No Content
 
 ---
 
-## List Active Rules (Agent Endpoint)
+## List Active Rules (Sensor Endpoint)
 
-Returns a simplified list of active suppression rules for agents to use during scans.
+Returns a simplified list of active suppression rules for sensors to use during scans.
 
 ### Request
 
@@ -378,13 +378,13 @@ suppressed = (
 
 ---
 
-## Agent Integration
+## Sensor Integration
 
-### How Agents Use Suppressions
+### How Sensors Use Suppressions
 
-1. Agent starts scan
-2. Agent fetches active suppressions from `/api/v1/suppressions/active`
-3. During security gate check, agent filters out suppressed findings
+1. Sensor starts scan
+2. Sensor fetches active suppressions from `/api/v1/suppressions/active`
+3. During security gate check, sensor filters out suppressed findings
 4. Only non-suppressed findings above threshold cause failure
 
 ### SDK Client Example
@@ -407,7 +407,7 @@ exitCode := gate.CheckAndPrintWithSuppressions(
 
 ### CI/CD Integration
 
-The agent automatically fetches and applies suppressions when:
+The sensor automatically fetches and applies suppressions when:
 - `PUSH=true` (connected to platform)
 - API key is configured
 - Suppressions endpoint is accessible

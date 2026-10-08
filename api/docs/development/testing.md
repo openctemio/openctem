@@ -3,76 +3,33 @@
 ## Test Structure
 
 ```
-# Unit tests (inline)
-pkg/domain/asset/entity_test.go
-internal/app/asset_service_test.go
-
-# Integration tests
-tests/integration/asset_test.go
-
-# E2E tests
-tests/e2e/api_test.go
-
-# Test fixtures
-testdata/assets.json
-testdata/golden/risk_score_output.json
+pkg/domain/<context>/*_test.go       # domain unit tests, next to the code
+internal/app/<context>/*_test.go     # service tests, next to the code
+internal/infra/**/*_db_test.go       # repository and route tests against PostgreSQL
+tests/unit/                          # cross-cutting unit tests (route authz coverage,
+                                     # permission catalog sync, scope classification, ...)
+tests/integration/                   # integration tests (PostgreSQL, Redis)
 ```
 
 ## Run Tests
 
 ```bash
-# All unit tests
-make test
-# or
-go test ./internal/...
+make test           # everything; DB-backed tests skip unless TEST_DATABASE_URL is set
+make test-db TEST_DATABASE_URL=...   # everything against a *_test database; nothing skips
+make test-coverage  # with a coverage report
+make test-load      # load tests for the platform queue
 
-# With coverage
-make test-coverage
-# or
-go test -coverprofile=coverage.out ./internal/...
-go tool cover -html=coverage.out
-
-# Integration tests (requires DB)
-make test-integration
-# or
-go test -tags=integration ./tests/integration/...
-
-# E2E tests
-make test-e2e
-# or
-go test -tags=e2e ./tests/e2e/...
+go test ./internal/app/scan/...       # one package
+go test -run TestScopeEntry ./tests/unit/
 ```
+
+Run Go from `api/` with `GOWORK=off` (CI does the same).
 
 ## Mocking
 
-### Generate Mocks
-```bash
-make generate-mocks
-# or
-./scripts/generate-mocks.sh
-```
-
-Uses [mockgen](https://github.com/golang/mock):
-```bash
-mockgen -source=pkg/domain/asset/repository.go \
-        -destination=internal/mocks/asset_repository.go
-```
-
-### Using Mocks
-```go
-func TestAssetService_Create(t *testing.T) {
-    ctrl := gomock.NewController(t)
-    defer ctrl.Finish()
-
-    mockRepo := mocks.NewMockAssetRepository(ctrl)
-    mockRepo.EXPECT().
-        Create(gomock.Any(), gomock.Any()).
-        Return(nil)
-
-    service := app.NewAssetService(mockRepo)
-    // ...
-}
-```
+Tests mostly use small hand-written fakes that implement the repository
+interfaces in `pkg/domain/<context>/repository.go`. Mocks generated with
+mockgen are produced by `make generate` (`go generate ./...`).
 
 ## DB-backed tests
 

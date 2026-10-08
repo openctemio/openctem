@@ -150,7 +150,7 @@ After migration 000124, all host IP data uses a single format:
 
 | Type | Represents | Created By | Example |
 |------|-----------|------------|---------|
-| `host` | Physical/virtual machine | ESXi, CMDB, agent, Splunk logs | `web-server-01`, `192.0.2.5` (placeholder) |
+| `host` | Physical/virtual machine | ESXi, CMDB, sensor, Splunk logs | `web-server-01`, `192.0.2.5` (placeholder) |
 | `ip_address` | Network endpoint | DNS resolution, network scan | `203.0.113.5` (from domain A record) |
 
 **Key rules:**

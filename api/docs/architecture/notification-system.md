@@ -299,7 +299,7 @@ permission no longer opens this stream to them. Whoever holds
 Teams or a webhook, so the history shows them nothing new. The web console
 hides *View events* and *Queue* without that permission.
 
-### Event History API (TODO)
+### Event History API (**Planned**)
 
 ```
 GET /api/v1/notification-events           # List archived events
