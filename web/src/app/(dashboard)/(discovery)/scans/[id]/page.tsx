@@ -14,7 +14,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { AlertTriangle, ArrowLeft, RefreshCw, Tag, Trash2, XCircle } from 'lucide-react'
 
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -137,6 +137,7 @@ export default function ScanDetailPage() {
   const [openRunId, setOpenRunId] = useState<string | null>(null)
 
   const { data: config, isLoading, error } = useScanConfig(scanId)
+  useBreadcrumbTitle(config?.name)
 
   // The latest runs, for the numbers above the tabs (runs still in progress
   // are the newest), whichever history page is open.
