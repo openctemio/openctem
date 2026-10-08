@@ -372,6 +372,10 @@ func (h *ExposureHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	query := r.URL.Query()
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := exposuresvc.ListExposuresInput{
 		TenantID: tenantID,
 
@@ -381,8 +385,8 @@ func (h *ExposureHandler) List(w http.ResponseWriter, r *http.Request) {
 		FirstSeenBefore: parseQueryInt64(query.Get("first_seen_before"), 0),
 		LastSeenAfter:   parseQueryInt64(query.Get("last_seen_after"), 0),
 		LastSeenBefore:  parseQueryInt64(query.Get("last_seen_before"), 0),
-		Page:            parseQueryInt(query.Get("page"), 1),
-		PerPage:         parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:            paging.Page,
+		PerPage:         paging.PerPage,
 		SortBy:          query.Get("sort_by"),
 		SortOrder:       query.Get("sort_order"),
 	}
