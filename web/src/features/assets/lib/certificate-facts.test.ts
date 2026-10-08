@@ -29,37 +29,35 @@ describe('certStatus', () => {
     expect(certStatus(asset({ cert_not_after: iso }), NOW)).toBe('unknown')
   })
 
-  it('reads the nested map ingest writes', () => {
+  it('reads the keys ingest stores (the CTIS block promoted)', () => {
     const ok = new Date(NOW + 200 * DAY).toISOString()
     const gone = new Date(NOW - 2 * DAY).toISOString()
-    expect(certStatus(asset({ certificate: { not_after: ok } }), NOW)).toBe('valid')
-    expect(certStatus(asset({ certificate: { not_after: gone } }), NOW)).toBe('expired')
-    expect(certDaysLeft(asset({ certificate: { not_after: gone } }), NOW)).toBe(-2)
+    expect(certStatus(asset({ not_after: ok }), NOW)).toBe('valid')
+    expect(certStatus(asset({ not_after: gone }), NOW)).toBe('expired')
+    expect(certDaysLeft(asset({ not_after: gone }), NOW)).toBe(-2)
+    // A block is promoted before a row is stored; it is never read.
+    expect(certStatus(asset({ certificate: { not_after: ok } }), NOW)).toBe('unknown')
   })
 
   it("trusts the scanner's expired flag when there is no date", () => {
-    expect(certStatus(asset({ certificate: { expired: true } }), NOW)).toBe('expired')
+    expect(certStatus(asset({ is_expired: true }), NOW)).toBe('expired')
   })
 })
 
 describe('certIssuer', () => {
-  it('prefers the flat keys, then the ingest organisation, then the CN', () => {
+  it('prefers the organisation, then the CN', () => {
     expect(certIssuer(asset({ issuer_org: 'Org A', issuer_cn: 'CN A' }))).toBe('Org A')
     expect(certIssuer(asset({ issuer_cn: 'CN A' }))).toBe('CN A')
-    expect(certIssuer(asset({ certificate: { issuer_org: 'Org', issuer_cn: 'CN' } }))).toBe('Org')
-    expect(certIssuer(asset({ certificate: { issuer_cn: 'R11' } }))).toBe('R11')
     expect(certIssuer(asset({}))).toBeUndefined()
   })
 })
 
 describe('certificate details', () => {
-  it('reads the ingest map as well as the flat keys', () => {
+  it('reads subject, SANs, key size and wildcard', () => {
     const ingest = asset({
-      certificate: {
-        subject_cn: '*.example.com',
-        sans: ['*.example.com', 'example.com'],
-        key_size: 2048,
-      },
+      subject_cn: '*.example.com',
+      sans: ['*.example.com', 'example.com'],
+      key_size: 2048,
     })
     expect(certSubject(ingest)).toBe('*.example.com')
     expect(certSans(ingest)).toEqual(['*.example.com', 'example.com'])
