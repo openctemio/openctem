@@ -59,8 +59,8 @@ describe('emailSchema', () => {
 })
 
 describe('passwordSchema', () => {
-  it('should accept valid passwords (8+ characters)', () => {
-    const validPasswords = ['password123', 'MyP@ssw0rd', 'abcdefgh', 'verylongpassword123']
+  it('should accept valid passwords (12+ characters)', () => {
+    const validPasswords = ['password1234', 'MyP@ssw0rd12', 'abcdefghijkl', 'verylongpassword123']
 
     validPasswords.forEach((password) => {
       expect(() => passwordSchema.parse(password)).not.toThrow()
@@ -71,12 +71,12 @@ describe('passwordSchema', () => {
     expect(() => passwordSchema.parse('')).toThrow('Please enter your password')
   })
 
-  it('should reject passwords shorter than 8 characters', () => {
-    const shortPasswords = ['pass', 'test', '1234567', 'abc']
+  it('should reject passwords shorter than 12 characters', () => {
+    const shortPasswords = ['pass', 'test', '1234567', 'abc', 'elevenchars']
 
     shortPasswords.forEach((password) => {
       expect(() => passwordSchema.parse(password)).toThrow(
-        'Password must be at least 8 characters long'
+        'Password must be at least 12 characters long'
       )
     })
   })
@@ -116,13 +116,15 @@ describe('loginSchema', () => {
     expect(() => loginSchema.parse(invalidData)).toThrow()
   })
 
-  it('should reject short password', () => {
-    const invalidData = {
+  // Sign-in takes the existing password as typed: accounts may have passwords
+  // set under an older, shorter minimum. The length rule applies on change.
+  it('should accept a short existing password on sign-in', () => {
+    const data = {
       email: 'test@example.com',
       password: 'short',
     }
 
-    expect(() => loginSchema.parse(invalidData)).toThrow()
+    expect(() => loginSchema.parse(data)).not.toThrow()
   })
 
   it('should reject missing fields', () => {
@@ -142,8 +144,8 @@ describe('registerSchema', () => {
       firstName: 'John',
       lastName: 'Doe',
       email: 'test@example.com',
-      password: 'password123',
-      confirmPassword: 'password123',
+      password: 'password1234',
+      confirmPassword: 'password1234',
     }
 
     expect(() => registerSchema.parse(validData)).not.toThrow()
@@ -379,10 +381,10 @@ describe('isValidEmail', () => {
 })
 
 describe('isValidPassword', () => {
-  it('should return true for valid passwords (8+ characters)', () => {
-    expect(isValidPassword('password123')).toBe(true)
-    expect(isValidPassword('MyP@ssw0rd')).toBe(true)
-    expect(isValidPassword('abcdefgh')).toBe(true)
+  it('should return true for valid passwords (12+ characters)', () => {
+    expect(isValidPassword('password1234')).toBe(true)
+    expect(isValidPassword('MyP@ssw0rd12')).toBe(true)
+    expect(isValidPassword('abcdefghijkl')).toBe(true)
   })
 
   it('should return false for invalid passwords', () => {
