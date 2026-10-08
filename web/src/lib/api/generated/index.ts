@@ -175,6 +175,10 @@ export type AdminAuditChainRebaselineRequest =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineRequest']
 export type AdminAuditChainRebaselineResponse =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineResponse']
+// Admin console: the sign-up policy (System > Sign-up)
+export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']
+export type UpdateSignupPolicyRequest =
+  Schemas['internal_infra_http_handler.UpdateSignupPolicyRequest']
 export type AuditChainSample =
   Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample']
 export type AuditChainClass =
