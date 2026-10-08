@@ -2,6 +2,7 @@ import {
   Building2,
   Gauge,
   History,
+  Inbox,
   KeyRound,
   LayoutDashboard,
   UserCog,
@@ -60,6 +61,13 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/organizations',
         icon: Building2,
         keywords: ['tenants', 'teams', 'customers'],
+      },
+      {
+        title: 'Access requests',
+        i18nKey: 'admin.nav.access-requests',
+        url: '/admin/organizations/access-requests',
+        icon: Inbox,
+        keywords: ['requests', 'sign-up', 'approve', 'inbox'],
       },
       {
         title: 'Users',

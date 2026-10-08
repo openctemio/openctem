@@ -553,6 +553,11 @@ type AuthConfig struct {
 	// (internal/app/signup), not a config flag.
 	RequireEmailVerification bool // Require email verification (default: true)
 
+	// CAPTCHA (Cloudflare Turnstile) on the public request-access form. Unset:
+	// no CAPTCHA (the rate limits still apply).
+	CaptchaTurnstileSecret  string
+	CaptchaTurnstileSiteKey string
+
 	// Email verification/reset token settings
 	EmailVerificationDuration time.Duration // Email verification token lifetime (default: 24h)
 	PasswordResetDuration     time.Duration // Password reset token lifetime (default: 1h)
@@ -1199,6 +1204,8 @@ func Load() (*Config, error) {
 			LockoutDuration:           getEnvDuration("AUTH_LOCKOUT_DURATION", 15*time.Minute),
 			MaxActiveSessions:         getEnvInt("AUTH_MAX_ACTIVE_SESSIONS", 10),
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
+			CaptchaTurnstileSecret:    getEnv("CAPTCHA_TURNSTILE_SECRET", ""),
+			CaptchaTurnstileSiteKey:   getEnv("CAPTCHA_TURNSTILE_SITE_KEY", ""),
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
 			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(appEnv())),
