@@ -58,6 +58,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
@@ -788,6 +789,8 @@ type Services struct {
 	// AddressClassifier decides whether an invitee is internal or external
 	// (RFC-058).
 	AddressClassifier *tenantapp.AddressClassifier
+	// OrgTrust manages trusted organizations (RFC-058).
+	OrgTrust *orgtrustapp.Service
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
@@ -2357,6 +2360,22 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	})
 	s.Tenant.SetAddressClassifier(s.AddressClassifier)
 	s.Auth.SetInviteeClassifier(s.Tenant)
+
+	// Trusted organizations (RFC-058): home-realm sign-in for external
+	// members, the role ceiling, proposed end of access and API keys.
+	s.OrgTrust = orgtrustapp.NewService(repos.OrgTrust, s.DomainVerify, s.Tenant, s.Audit, log)
+	trustPolicy := orgtrustapp.NewPolicy(repos.OrgTrust, repos.Tenant)
+	s.Tenant.SetTrustPolicy(trustPolicy)
+	s.Auth.SetHomeRealm(repos.OrgTrust, s.DomainVerify)
+	if s.Role != nil {
+		s.Role.SetExternalRoleCeiling(func(ctx context.Context, host, home shared.ID) (string, error) {
+			r, err := trustPolicy.MaxRoleFor(ctx, host, home)
+			return string(r), err
+		})
+	}
+	if s.APIKey != nil {
+		s.APIKey.SetExternalKeyPolicy(trustPolicy)
+	}
 
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises

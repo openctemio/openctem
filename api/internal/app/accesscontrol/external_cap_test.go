@@ -60,3 +60,26 @@ func TestCapExternalTarget(t *testing.T) {
 		t.Error("the ceiling must answer 403")
 	}
 }
+
+// A trust that caps the home organization's people at viewer refuses member.
+func TestCapExternalTarget_TrustViewerCeiling(t *testing.T) {
+	tid, uid := roledom.NewID(), roledom.NewID()
+	home := shared.NewID()
+	ext, _ := tenantdom.NewMembership(shared.NewID(), shared.NewID(), tenantdom.RoleViewer, nil)
+	if err := ext.Classify(tenantdom.Classification{Kind: tenantdom.MemberKindExternal, HomeTenantID: &home, Domain: "home.example"},
+		tenantdom.ExternalAccess{}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	svc := &RoleService{membershipReader: capMembers{ext}}
+	svc.SetExternalRoleCeiling(func(context.Context, shared.ID, shared.ID) (string, error) { return "viewer", nil })
+	if err := svc.capExternalTarget(context.Background(), tid, uid, capRole(roledom.MemberRoleID, false)); !errors.Is(err, ErrExternalViewerCeiling) {
+		t.Fatalf("member under a viewer ceiling: want ErrExternalViewerCeiling, got %v", err)
+	}
+	if err := svc.capExternalTarget(context.Background(), tid, uid, capRole(roledom.ViewerRoleID, false)); err != nil {
+		t.Fatalf("viewer under a viewer ceiling: %v", err)
+	}
+	svc.SetExternalRoleCeiling(func(context.Context, shared.ID, shared.ID) (string, error) { return "member", nil })
+	if err := svc.capExternalTarget(context.Background(), tid, uid, capRole(roledom.MemberRoleID, false)); err != nil {
+		t.Fatalf("member under a member ceiling: %v", err)
+	}
+}
