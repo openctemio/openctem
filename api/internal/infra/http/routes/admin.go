@@ -29,6 +29,7 @@ import (
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         ops_admin+ (+ audited)
 //	/admin/platform-idp       super_admin       super_admin (audited)
+//	/admin/access-requests    any admin         ops_admin+ (approve/reject, audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, admins emailed)
 //	/admin/tenants/{id}/audit-chain
@@ -111,6 +112,24 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// The request-access queue: any admin reads; approving (creates the
+	// organization, requester as owner) or rejecting needs ops_admin+, audited.
+	if h.AccessRequest != nil {
+		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
+		decide := func(action string) []Middleware {
+			mws := []Middleware{requireOps}
+			if h.AdminAuditMiddleware != nil {
+				mws = append(mws, h.AdminAuditMiddleware.AuditLog(action, "access_request", "id"))
+			}
+			return mws
+		}
+		router.Group("/api/v1/admin/access-requests", func(r Router) {
+			r.GET("/", h.AccessRequest.List)
+			r.POST("/{id}/approve", h.AccessRequest.Approve, decide("access_request.approve")...)
+			r.POST("/{id}/reject", h.AccessRequest.Reject, decide("access_request.reject")...)
 		}, adminMiddlewares...)
 	}
 

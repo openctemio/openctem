@@ -175,6 +175,12 @@ export type AdminAuditChainRebaselineRequest =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineRequest']
 export type AdminAuditChainRebaselineResponse =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineResponse']
+// Admin console: the request-access queue (Organizations > Access requests)
+export type AccessRequest = Schemas['internal_infra_http_handler.AccessRequestResponse']
+export type AccessRequestList = Schemas['internal_infra_http_handler.AccessRequestListResponse']
+export type ApproveAccessRequestInput = Schemas['internal_infra_http_handler.ApproveAccessRequest']
+export type ApproveAccessRequestResult =
+  Schemas['internal_infra_http_handler.ApproveAccessRequestResponse']
 // Admin console: the sign-up policy (System > Sign-up)
 export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']
 export type UpdateSignupPolicyRequest =

@@ -1216,6 +1216,48 @@ export async function forgotPasswordAction(
 }
 
 /**
+ * Request access to the platform (sign-up closed, requests allowed). The API
+ * answers every accepted submission the same way, whatever happens to it.
+ */
+export async function submitAccessRequestAction(input: {
+  company: string
+  email: string
+  note: string
+}): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
+  try {
+    const data = await backendFetch<{ message: string }>(authEndpoints.accessRequests(), {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+    return { success: true, data: null, message: data.message }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Could not send the request',
+      code: (error as { code?: unknown } | null)?.code as string | undefined,
+    }
+  }
+}
+
+/** Confirm an access request with the token from the emailed link. */
+export async function confirmAccessRequestAction(
+  token: string
+): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
+  try {
+    const data = await backendFetch<{ message: string }>(authEndpoints.accessRequestConfirm(), {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    })
+    return { success: true, data: null, message: data.message }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'This link is invalid or has expired.',
+    }
+  }
+}
+
+/**
  * Reset password with token
  */
 export async function resetPasswordAction(

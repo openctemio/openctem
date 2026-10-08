@@ -213,6 +213,8 @@ type Handlers struct {
 	AdminOrganization *handler.AdminOrganizationHandler
 	AdminConsole      *handler.AdminConsoleHandler
 	AdminAuditChain   *handler.AdminAuditChainHandler
+	// AccessRequest: the request-access queue (public form + console).
+	AccessRequest *handler.AccessRequestHandler
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
