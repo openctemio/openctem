@@ -13,6 +13,8 @@
  * these cells anywhere else.
  */
 
+import type { AssetPropertyKey } from '@/features/asset-types/lib/property-schema'
+
 export type SurfaceCell =
   /** HTTP status with redirect chain. */
   | 'status'
@@ -82,4 +84,31 @@ export function cellsForType(type: string, subType?: string): readonly SurfaceCe
     if (exact) return exact
   }
   return SURFACE_CELLS[type] ?? null
+}
+
+/**
+ * The property keys each surface fact shows. A one-type inventory whose own
+ * columns already show every fact of its cells drops the "Service facts"
+ * column (a certificate list has "Valid until"; it needs no expiry chip too).
+ */
+const SURFACE_CELL_KEYS: Readonly<Record<SurfaceCell, readonly AssetPropertyKey[]>> = {
+  status: ['status_code'],
+  port: ['port'],
+  product: ['product'],
+  ip: ['ip_addresses'],
+  cname: ['cname_target'],
+  dns: ['cname_target', 'ip_addresses'],
+  asn: ['asn', 'asn_org'],
+  ports: ['ports'],
+  tech: ['technologies'],
+  tls: ['has_tls', 'tls_version'],
+  cert: ['not_after'],
+}
+
+/** True when `columns` already show every fact of `cells`. */
+export function surfaceCellsCovered(
+  cells: readonly SurfaceCell[],
+  columns: readonly string[]
+): boolean {
+  return cells.every((c) => SURFACE_CELL_KEYS[c].some((k) => columns.includes(k)))
 }
