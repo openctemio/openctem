@@ -731,7 +731,11 @@ func (s *Service) OnStepStarted(ctx context.Context, runID, stepKey string, sens
 	if stepRun == nil {
 		return nil
 	}
-	return s.stepRunRepo.AssignSensor(ctx, stepRun.ID, sensorID, commandID)
+	if err := s.stepRunRepo.AssignSensor(ctx, stepRun.ID, sensorID, commandID); err != nil {
+		return err
+	}
+	s.notifyRunByID(ctx, rid)
+	return nil
 }
 
 // OnStepCompleted is called when a sensor reports step completion.
@@ -940,6 +944,9 @@ func (s *Service) failStep(ctx context.Context, run *scanrun.Run, stepRun *scanr
 // can no longer succeed, records the run's counters, and either settles the
 // run (every step finished) or schedules the steps that became runnable.
 func (s *Service) advanceRun(ctx context.Context, run *scanrun.Run, template *scanworkflow.Workflow) error {
+	// Whatever advancing does (next steps queued, skips, the run settled),
+	// the live run map hears about it once it is done.
+	defer s.notifyRun(run.TenantID, run.ID)
 	s.refreshStepRuns(ctx, run)
 	s.skipBlockedSteps(ctx, run, template)
 
@@ -1571,6 +1578,7 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	s.recordScanRun(ctx, run, string(scanrun.RunStatusCanceled))
 
 	closure := s.closeCanceledRun(ctx, run)
+	s.notifyRun(run.TenantID, run.ID)
 	// A canceled run finished too: automations listening for finished runs
 	// hear about it (research/62 P0-11).
 	if s.runCompleted != nil {
@@ -1690,8 +1698,10 @@ func (s *Service) QueueRunStep(ctx context.Context, run *scanrun.Run, step *scan
 			return nil // queued by a concurrent call
 		}
 		s.failQueuedStep(ctx, stepRun, step.StepKey, qerr)
+		s.notifyRun(run.TenantID, run.ID)
 		return qerr
 	}
+	s.notifyRun(run.TenantID, run.ID)
 	return nil
 }
 

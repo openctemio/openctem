@@ -31,7 +31,9 @@ func generateWebhookSecret() (string, error) {
 }
 
 // secretFromIntegration decrypts the webhook secret stored on an integration's
-// metadata, or returns "" if none is set.
+// metadata, or returns "" if none is set or it does not decrypt (fail closed:
+// the integration then verifies no inbound webhook until the secret is
+// rotated).
 func (s *IntegrationService) secretFromIntegration(intg *integrationdom.Integration) string {
 	enc, _ := intg.Metadata()[jiraWebhookSecretMetaKey].(string)
 	if enc == "" {
@@ -39,9 +41,10 @@ func (s *IntegrationService) secretFromIntegration(intg *integrationdom.Integrat
 	}
 	plain, err := s.encryptor.DecryptString(enc)
 	if err != nil {
-		// Backward-compat: treat an undecryptable value as plaintext (mirrors
-		// decryptCredentials). A genuinely corrupt value just fails to match.
-		return enc
+		s.logger.Warn("webhook secret cannot be decrypted; rotate it",
+			"tenant_id", intg.TenantID().String(),
+			"integration_id", intg.ID().String())
+		return ""
 	}
 	return plain
 }

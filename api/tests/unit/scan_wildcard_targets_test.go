@@ -15,7 +15,7 @@ import (
 )
 
 // A wildcard pattern (*.x) is not a host. Live, a nuclei scan was dispatched
-// against "*.vndirect.com.vn" and refused by the sensor ("cannot resolve").
+// against "*.example.co.uk" and refused by the sensor ("cannot resolve").
 // Active tools now refuse it at create, edit, quick scan and trigger;
 // discovery tools take its root domain.
 

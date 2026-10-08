@@ -111,6 +111,11 @@ type StepRepository interface {
 }
 
 // ErrScanWorkflowRetired refuses a change to, or a run of, a retired workflow.
+// ErrScanWorkflowNotFound: the scan workflow does not exist, or it is
+// another organization's private workflow (never said apart).
+var ErrScanWorkflowNotFound = shared.NewDomainError("SCAN_WORKFLOW_NOT_FOUND",
+	"scan workflow not found", shared.ErrNotFound)
+
 var ErrScanWorkflowRetired = shared.NewDomainError("WORKFLOW_RETIRED",
 	"this scan workflow was deleted; its runs are kept for history, but it cannot be changed or run", shared.ErrConflict)
 

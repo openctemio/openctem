@@ -623,7 +623,7 @@ query `states` default `needs_review`, `limit` ≤ 50):
     "blocked_sample": [{"name": "old.dev.example.org", "code": "rejected"}],
     "hints": [
       {"kind": "discovering_scope_target", "value": "example.org"},
-      {"kind": "cert_org", "value": "IPAS JSC"},
+      {"kind": "cert_org", "value": "Example Org"},
       {"kind": "same_ns_as_verified", "value": "ns1.example.org"}
     ] },
   { "id": "cidr:203.0.113.0/24", "kind": "ip_cidr", "target_type": "cidr",
