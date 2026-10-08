@@ -37,7 +37,7 @@ type TriggerRunInput struct {
 // Uses atomic CreateRunIfUnderLimit to prevent race conditions in concurrent run limits.
 // If the template is a system template, it will be auto-cloned for the tenant first.
 func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*scanrun.Run, error) {
-	s.logger.Info("triggering pipeline", "template_id", input.TemplateID)
+	s.logger.Info("triggering scan run", "template_id", input.TemplateID)
 
 	// Get template with steps
 	template, err := s.GetTemplateWithSteps(ctx, input.TemplateID)
@@ -51,7 +51,7 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 	// below) or it belongs to the caller's tenant. Without this check a user
 	// could trigger another tenant's private scan workflow by guessing its ID.
 	if !template.IsSystemTemplate && template.TenantID.String() != input.TenantID {
-		s.logger.Warn("SECURITY: cross-tenant pipeline trigger attempt",
+		s.logger.Warn("SECURITY: cross-tenant scan run trigger attempt",
 			"template_id", template.ID.String(),
 			"template_tenant_id", template.TenantID.String(),
 			"caller_tenant_id", input.TenantID)
@@ -984,10 +984,10 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 	// scope) are not counted: the run did what it was allowed to do.
 	outcome := st.outcome()
 	uncovered := uncoveredTargetCount(run.Context)
-	partialMsg := fmt.Sprintf("Scan workflow completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
+	partialMsg := fmt.Sprintf("Scan run completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
 	if outcome == scanrun.RunStatusCompleted && uncovered > 0 {
 		outcome = scanrun.RunStatusPartial
-		partialMsg = fmt.Sprintf("Pipeline completed, but %d target(s) were not scanned: no scan zone or sensor could reach them (see uncovered_targets)", uncovered)
+		partialMsg = fmt.Sprintf("Scan run completed, but %d target(s) were not scanned: no scan zone or sensor could reach them (see uncovered_targets)", uncovered)
 	}
 
 	switch outcome {
@@ -998,7 +998,7 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
 			NewSuccessEvent(audit.ActionScanRunCompleted, audit.ResourceTypeScanRun, run.ID.String()).
-				WithMessage(fmt.Sprintf("Pipeline run completed successfully with %d findings", st.findings)).
+				WithMessage(fmt.Sprintf("Scan run completed successfully with %d findings", st.findings)).
 				WithMetadata("completed_steps", st.completed).
 				WithMetadata("total_findings", st.findings).
 				WithMetadata("quality_gate_passed", qgPassed))
@@ -1008,7 +1008,7 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 		}
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
 			NewSuccessEvent(audit.ActionScanRunPartial, audit.ResourceTypeScanRun, run.ID.String()).
-				WithMessage(fmt.Sprintf("Pipeline run completed partially with %d findings (%d steps failed, %d partial)",
+				WithMessage(fmt.Sprintf("Scan run completed partially with %d findings (%d steps failed, %d partial)",
 					st.findings, st.failed, st.partial)).
 				WithMetadata("completed_steps", st.completed).
 				WithMetadata("partial_steps", st.partial).
@@ -1022,8 +1022,8 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 		}
 		s.logAudit(ctx, AuditContext{TenantID: run.TenantID.String()},
 			NewFailureEvent(audit.ActionScanRunFailed, audit.ResourceTypeScanRun, run.ID.String(),
-				fmt.Errorf("pipeline completed with %d step failures", st.failed)).
-				WithMessage(fmt.Sprintf("Pipeline run failed with %d step failures", st.failed)).
+				fmt.Errorf("scan run completed with %d step failures", st.failed)).
+				WithMessage(fmt.Sprintf("Scan run failed with %d step failures", st.failed)).
 				WithMetadata("completed_steps", st.completed).
 				WithMetadata("failed_steps", st.failed).
 				WithMetadata("total_findings", st.findings).
@@ -1553,7 +1553,7 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 		return nil
 	}
 	if run.IsComplete() {
-		return shared.NewDomainError("INVALID_STATE", "pipeline run is already complete", shared.ErrValidation)
+		return shared.NewDomainError("INVALID_STATE", "scan run is already complete", shared.ErrValidation)
 	}
 
 	// Through the guarded status transition, not a full-row write of the copy
@@ -1567,7 +1567,7 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 			s.closeCanceledRun(ctx, cur)
 			return nil
 		}
-		return shared.NewDomainError("INVALID_STATE", "pipeline run is already complete", shared.ErrValidation)
+		return shared.NewDomainError("INVALID_STATE", "scan run is already complete", shared.ErrValidation)
 	}
 	if err != nil {
 		return err
@@ -1586,7 +1586,7 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	}
 
 	event := NewSuccessEvent(audit.ActionScanRunCanceled, audit.ResourceTypeScanRun, runID).
-		WithMessage("Pipeline run canceled").
+		WithMessage("Scan run canceled").
 		WithMetadata("canceled_steps", closure.Steps).
 		WithMetadata("canceled_commands", closure.Commands).
 		WithMetadata("sensors_told_to_stop", len(closure.Sensors))
@@ -1621,7 +1621,7 @@ func (s *Service) closeCanceledRun(ctx context.Context, run *scanrun.Run) scanru
 	}
 	n, err := s.commandRepo.CancelByScanRunID(ctx, run.TenantID, run.ID)
 	if err != nil {
-		s.logger.Warn("failed to cancel commands for pipeline run", "run_id", run.ID.String(), "error", err)
+		s.logger.Warn("failed to cancel commands for scan run", "run_id", run.ID.String(), "error", err)
 		return scanrun.CanceledRunClosure{}
 	}
 	return scanrun.CanceledRunClosure{Commands: n}
