@@ -13,4 +13,4 @@
   - whether those members may create API keys (off by default; a key never outlives their access);
   - an optional default end of access.
 - **Ending a trust** suspends the host's members from that organization, in the host only.
-- Migration 001318: `tenant_trusts`, `sessions.mfa_evidence`.
+- Migration 001320: `tenant_trusts`, `sessions.mfa_evidence`.

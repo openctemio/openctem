@@ -17,8 +17,11 @@ const (
 	TriggerTypeWebhook          TriggerType = "webhook"
 	TriggerTypeAPI              TriggerType = "api"
 	TriggerTypeOnAssetDiscovery TriggerType = "on_asset_discovery"
-	// TriggerTypeSystem: platform-started work (an automatic retest).
+	// TriggerTypeSystem: platform-started work (an automatic retest, a
+	// retry of a failed run).
 	TriggerTypeSystem TriggerType = "system"
+	// TriggerTypeAutomation: a scan an automation step started.
+	TriggerTypeAutomation TriggerType = "automation"
 )
 
 // SensorPreference determines which sensors can execute the scan workflow.
