@@ -387,14 +387,15 @@ asset-types-sql:
 asset-types-check:
 	@GOWORK=off $(GOCMD) run ./cmd/gen-asset-types -check
 
-## proto: Generate protobuf code
+## proto: Regenerate the sensor protocol v3 Go code (api/pkg/sensorproto/v3)
+##        from api/proto with pinned buf and plugins (commit the result)
 proto:
-	@echo "Generating protobuf..."
-	@if [ -d "api/proto" ]; then \
-		protoc --go_out=. --go-grpc_out=. api/proto/*.proto; \
-	else \
-		echo "No proto files found in api/proto/"; \
-	fi
+	@bash scripts/check-proto.sh --generate
+
+## proto-check: buf lint, buf breaking against develop, generated code current
+##              (CI: Sensor Protocol v3)
+proto-check:
+	@bash scripts/check-proto.sh
 
 ## dev: Run with hot reload (requires air)
 dev:
