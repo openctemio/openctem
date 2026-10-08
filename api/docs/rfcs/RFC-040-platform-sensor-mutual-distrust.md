@@ -4,6 +4,8 @@
 > §9 approved). Proposed 2026-10-03 in #870. P0 implementation is split into the PR
 > groups of §6.1: groups A, B and C merged; group D merged on the platform
 > and in sdk-go/sensor `main`, not yet in a sensor release (§6.1).
+> Amended 2026-10-08 (§11): review of every sensor → platform input, the
+> outbound-only invariant, and decisions Q9–Q12 (Q3 revised for new installs).
 > Scope: api (sensor gateway, signer, ingest pipeline, audit, detections) +
 > web (output encoding) + sdk-go (job verification, local policy, credential
 > providers, local audit) + sensor (`openctemio/sensor`) + helm-charts and
@@ -871,3 +873,148 @@ Q1 (a), Q2 (a), Q3 (a), Q4 (a), Q5 (c), Q6 (a), Q7 (a), Q8 (a).
 - TUF security: https://theupdateframework.io/docs/security/
 - Vault Transit: https://developer.hashicorp.com/vault/docs/secrets/transit
 - AWS KMS asymmetric key specs (Ed25519): https://docs.aws.amazon.com/kms/latest/developerguide/asymmetric-key-specs.html
+
+## 11. Amendment (2026-10-08): sensor → platform input review and the outbound-only invariant
+
+Since the RFC was accepted, the platform has started accepting more from sensors:
+
+- protocol v3 (gRPC over mTLS with SNI passthrough, an HTTPS binding, a control stream, Redis wake fan-out);
+- manifests with content digests, transport and fallback reasons;
+- sandbox provenance, and command logs;
+- CI uploads over OIDC.
+
+This amendment records the review of every sensor → platform input on `develop` (6684c011b), with sdk-go `main` (2e008ba) and sensor `main` (31394db). It sets the outbound-only rule as an invariant and revises decision Q3 for new installs. The review's evidence is in [architecture/sensor-platform-trust.md](../architecture/sensor-platform-trust.md#sensor--platform-input-review-2026-10-08).
+
+### 11.1 Invariant: sensors are outbound-only
+
+> **Sensors never accept inbound connections. All control flows over the sensor-initiated, authenticated
+> channel** (poll and claim, the v3 control stream, pairing). The sensor binds nothing reachable from the
+> network. Health, metrics and diagnostics stay on loopback or a Unix socket, or travel over that channel.
+
+| Concern | Sensor-initiated (kept) | Platform-initiated (rejected) |
+|---|---|---|
+| Firewall and NAT | Works behind NAT, egress proxies and default-deny inbound firewalls. The network owner opens only one outbound flow to the gateway. | Every sensor host needs an inbound port, a firewall exception and often a public address. Each sensor is then a listener on the internet or the LAN. |
+| SaaS blast radius | A platform compromise reaches only sensors that are connected, and only through messages they validate. No platform component holds a list of addresses it can dial into. | The platform holds addresses and credentials for every tenant's sensor network. A platform compromise can then dial into every customer network at once. |
+| Compromised-platform containment | The sensor decides what it accepts: signed jobs (§5.6), the local policy (§5.7), the kill switch. An attacker who controls the platform can only send what the sensor's checks admit. | A listener runs its parser on whatever arrives, before any of the sensor's own checks. A compromised platform, or anyone who can reach the port, attacks that parser directly. |
+| Attack surface on the sensor host | None from the network. | A network service with its own authentication, TLS, parsing and DoS surface, on customer hardware the platform operator does not patch. |
+| Identity | The sensor proves its key on every request (RFC 9421, mTLS). The platform authenticates the sensor. | The platform would need a credential that every sensor accepts. One stolen platform credential would open every sensor. |
+
+**Verified 2026-10-08:**
+
+- The sensor binary has no `net.Listen`, `ListenAndServe`, `grpc.NewServer`, pprof or `DefaultServeMux` server on its path.
+- Per-task relays bind to 127.0.0.1 inside a private network namespace.
+- Forwarder sockets are Unix sockets.
+- No image has an `EXPOSE`.
+- A latent webhook collector (default `:8080`) is never started, and is to be removed.
+
+**Enforced by:**
+
+- a regression test in the sensor repository: a static guard over the build's packages, plus a runtime check that the process holds no listening socket;
+- a container smoke check: no exposed ports and no LISTEN sockets.
+
+A future diagnostic surface must be added as a message on the existing channel, never as a listener.
+
+### 11.2 What the review found, and what changed
+
+No cross-tenant path was found:
+
+- Every sensor-plane query takes the tenant and the sensor from the authenticated identity: a bearer key, an RFC 9421 signature, or an mTLS certificate re-checked against the key row on every request.
+- No path parameter or body field can name another tenant.
+- Results are bound to a command the sensor holds.
+- Platform sensors cannot ingest into another tenant.
+
+The defects were in availability, integrity inside a tenant, and the platform → sensor direction.
+
+| # | Severity | Finding | Change |
+|---|---|---|---|
+| C1 | Critical | Result segments and CI uploads were fully decoded before their item limits were checked. A 1.2 MB body allocated 1.75 GB, enough for one sensor to OOM a shared replica. | The streaming pre-pass counts items before anything is decoded (`JSONBounds`). Over a bound the answer is `413 report-too-large`, and the SDK re-splits the segment (#1553). |
+| H1 | High | The v3 HTTPS binding is mounted ahead of the router. It skipped the per-IP rate limit, the concurrency limit and the timeout, while an unauthenticated forged signature cost a database lookup. | The per-IP limit is kept. At most 256 unary calls per replica are in flight before authentication. Stream deadlines are lifted only after authentication. The gRPC binding gets a unary read deadline. Key-use writes are debounced (#1557). |
+| H2 | High | Coverage auto-resolve closed findings on any asset a report named, not only on the assets the command covers. | Candidate assets are filtered through the command's targets (#1551). |
+| H3 | High | The unauthenticated pairing rate limiter used the raw path segment as its key, about 1 MB each, held for 30 minutes. | Non-ids get a 404 before the limiter, which now keys on the parsed id (#1559). |
+| H4 | High | Ingest staging was never purged, so an open → fill → abandon loop could fill the database disk. | A purge runs every 10 minutes, and the report header is capped (#1561). |
+| H5 | High | A compromised platform or a TLS MITM can direct unpinned sensors that have no local policy. Jobs are unsigned (§5.6 not built). With no policy file a sensor accepts any target outside the built-in deny list. Platform TLS trusts the system roots unless `SENSOR_CA_FINGERPRINT` is set. The v3 CA pin is fetched over that channel and falls back on x509 errors. | Decisions in §11.4. sdk-go changes are stacked one PR at a time. |
+| H6 | High | `SENSOR_SANDBOX_NETWORK=auto` silently runs tools unconfined under Docker's default seccomp. Targets are resolved once at admission and tools resolve again, so DNS rebinding reaches the sensor host's metadata or loopback. | Decisions in §11.4. |
+| M1 | Medium | Scan-zone preview resolved any name with the platform's resolver and returned private answers. | The act-scope check runs before lookup. Only public or in-zone answers are shown. `SCAN_ZONE_RESOLVER` defaults to a public resolver on self-service installs (#1564). |
+| M3 | Medium | Jira comments carried finding titles as live wiki markup. | Comments are encoded like issues (#1562). |
+| M4 | Medium | A scan name could inject YAML or Groovy into generated CI snippets. | Names are folded to one line (#1563). |
+
+The remaining medium items:
+
+- per-tenant row and byte quotas;
+- a per-sensor in-flight bound and a connection cap on v3;
+- a process-wide decoded-bytes budget and a tenant-fair global concurrency limit;
+- manifest history pruning;
+- a per-tenant control-plane budget;
+- a sharded nonce store;
+- IPv6 grouping for pairing;
+- an expected-organization pin at pairing;
+- the source-resolve tool rule;
+- findings outside the command scope.
+
+Each is tracked in [architecture/sensor-platform-trust.md](../architecture/sensor-platform-trust.md#sensor--platform-input-review-2026-10-08).
+
+### 11.3 Design additions
+
+1. **One ingest trust boundary.** Every sensor input passes the same layer, in this order, before domain code runs:
+   1. **Validate**: media type, digest, bounded pre-pass, schema.
+   2. **Normalise**: one string sanitiser with per-field caps; URLs limited to http and https.
+   3. **Bound**: per-segment, per-report, per-sensor and per-tenant quotas, plus a process-wide decoded-bytes budget.
+   4. **Attribute**: tenant, sensor, command, tool and provenance come only from the identity and the stored command. Payload claims such as `discovery_source` are ignored, and timestamps are clamped.
+   5. **Scope**: one rule decides create, change and close per asset, for assets, findings, relationships, coverage and source-resolve.
+   6. **Quarantine**: anything out of scope, or above a poisoning heuristic, is quarantined, never applied silently.
+
+2. **Trust level drives what a sensor may assert.**
+
+   | Level | Who | Change existing | Close findings | Unsolicited push |
+   |---|---|---|---|---|
+   | T0 | bearer key, no policy, unpinned | nothing | nothing | quarantine only |
+   | T1 | key-bound (paired) | assets its command covers | command-covered, same tool, blinding guard | collector role only |
+   | T2 | key-bound + local policy + pinned + signed jobs | as T1 | as T1 | collector role only |
+   | Platform sensor | operator-run | as T1, for the command's tenant only (the tenant comes from the job) | as T1 | never |
+
+   Self-reported facts (tool lists, local policy state, `network_enforced`, transport) are for routing and display only. They never relax a platform check.
+
+3. **Output encoding per renderer.**
+
+   | Renderer | Rule |
+   |---|---|
+   | Web | React text only, `safeHref`/`safeImageSrc` for every data URL, nonce CSP |
+   | CSV | leading-whitespace-aware formula escaping on every export |
+   | HTML/PDF/email | `html/template` |
+   | Jira (issue, epic, comment) | wiki escaping, URLs defanged |
+   | GitHub/GitLab | code spans and blocks |
+   | Slack/Teams | escaped, URLs defanged |
+   | Telegram | HTML parse mode, escaped |
+   | Generated configuration (CI files, install snippets) | one line, quoted per format |
+   | Logs | structured, CR/LF quoted |
+
+4. **Security signals** (closed-set labels only; per-sensor detail goes to the sensor timeline and audit log, not to metric labels):
+
+   | Metric | Labels |
+   |---|---|
+   | `sensor_auth_failures_total` | `kind`: signature, replay, unknown_key, revoked, cert |
+   | `sensor_cross_tenant_attempts_total` | `route` |
+   | `sensor_quota_refusals_total` | `kind` |
+   | `sensor_results_outside_scope_total` | `kind` |
+   | `sensor_unsafe_posture` (gauge) | `kind`: policy_none, pin_none, network_unenforced, bearer_key |
+
+   Alerts:
+
+   | Alert | Fires when |
+   |---|---|
+   | `SensorAuthFailureSpike` | auth failures rise sharply |
+   | `SensorQuotaPressure` | quota refusals rise |
+   | `SensorPoisoningSuspected` | results outside scope pass a ratio threshold |
+   | `SensorsUnhardened` | unhardened sensors persist for 24 h |
+
+   These extend detections A1–A12 (§5.11).
+
+### 11.4 Decisions (2026-10-08)
+
+| # | Question | Decision |
+|---|---|---|
+| Q9 | Outbound-only | **Invariant** (§11.1), with a regression test in the sensor. |
+| Q3 (revised) | Sensor without a local policy file | **New installs fail closed**: network jobs are refused with `no_local_policy` and a clear reason, and custom templates and out-of-band callbacks are refused. Existing paired sensors keep working and report `policy=none`. The Sensors page and an alert flag them, with a one-click "generate policy" built from the organization's scope. Q3 (a) stays for existing installs only, as an upgrade path. |
+| Q10 | Platform TLS identity on the sensor | **Pinned at pairing.** The CA/SPKI fingerprint is stored in the identity and emitted in every install snippet. The v3 CA bundle is fetched only over the pinned channel and is sticky. An x509 failure never falls back to another binding. Unpinned sensors report `pin=none` and are flagged. |
+| Q11 | Job signing | **Build §5.6 now** with a signer key separate from the API. It is never derived from `APP_ENCRYPTION_KEY`. Template signing moves to the signer. The sensor verifies before execution, and new enrollments require signed jobs. |
+| Q12 | Unconfined sandbox | `auto` must not run unconfined silently. `network_enforced=false` is reported prominently: on the manifest, as a Sensors page warning and as an alert. Compose and Helm ship the seccomp profile by default. The forwarder re-checks every resolved address at connect time, refusing link-local, loopback and private ranges unless the zone or policy allows them. When unconfined, custom templates are refused and nuclei runs with local-network access restricted. |
