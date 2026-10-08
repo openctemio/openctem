@@ -44,7 +44,7 @@ func NewTenant(name, slug, createdBy string) (*Tenant, error) {
 		id:        shared.NewID(),
 		name:      name,
 		slug:      strings.ToLower(slug),
-		settings:  make(map[string]any),
+		settings:  NewTenantSettings(),
 		createdBy: createdBy,
 		createdAt: now,
 		updatedAt: now,
