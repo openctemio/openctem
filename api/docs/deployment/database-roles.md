@@ -91,8 +91,7 @@ Separate credentials, with the old single-role layout as the fallback:
 | `DATABASE_MIGRATE_URL` | all-in-one image only: the full migrator URL | built from `DB_MIGRATE_USER` |
 | `DB_SUPERUSER` / `DB_SUPERUSER_PASSWORD` | compose: the bundled Postgres superuser and the `db-roles` job | `DB_USER` / `DB_PASSWORD` |
 
-- **`deploy/docker-compose.yml`** (full stack) and **`docker-compose.prod.yml`**
-  (API only) have a one-shot `db-roles` job. When `DB_MIGRATE_USER` is set, it
+- **`deploy/docker-compose.yml`** has a one-shot `db-roles` job. When `DB_MIGRATE_USER` is set, it
   runs the bootstrap script as `DB_SUPERUSER` on every `up`, before `migrate`.
   `migrate` connects as `DB_MIGRATE_USER`, and the API as `DB_USER`. With
   `DB_MIGRATE_USER` unset, the job exits at once and nothing changes.

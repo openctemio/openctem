@@ -17,8 +17,8 @@ deploy OpenCTEM with Docker Compose or the all-in-one image, follow
 | `api/Dockerfile.migrations`, `Dockerfile.seed`, `Dockerfile.admin-cli` | The `migrations`, `seed` and `admin-cli` release images |
 | `api/docker-compose.yml` | Base services: PostgreSQL 17 and Redis 7 (ports published for development) |
 | `api/docker-compose.dev.yml` | The API in the `development` target, source bind-mounted |
-| `api/docker-compose.prod.yml` | The API alone from a published image, with `db-roles` and `migrate` one-shot services |
-| `api/deploy/docker-compose.yml` | The full production stack: gateway (one HTTPS port), web, API, PostgreSQL and Redis with TLS |
+| `api/deploy/docker-compose.yml` | The supported Compose deployment: gateway (one HTTPS port), web, API, PostgreSQL and Redis with TLS, and the one-shot `datastore-tls`, `db-roles` and `migrate` services |
+| `api/deploy/backup.sh` | Backup (`backup`), restore check (`verify`) and restore (`restore <dir> --yes`) of that stack |
 | `api/deploy/gateway/` | Gateway Caddyfile, TLS modes, entrypoint and `smoke-test.sh`. `planes.caddy` is generated from the API's plane table: do not edit it by hand |
 | `deploy/allinone/` | The all-in-one image (`ghcr.io/openctemio/openctem`): API, web and gateway in one container |
 
@@ -78,26 +78,36 @@ Release images are built by `.github/workflows/docker-publish.yml` from a
 `vX.Y.Z` tag: `ghcr.io/openctemio/openctem-api`, `openctem-web`, `openctem`
 (all-in-one), `migrations`, `seed` and `admin-cli`.
 
-## Production compose files
+## Production
 
-`api/docker-compose.prod.yml` runs a published API image with its `migrate`
-one-shot service; the API starts only after migrations succeed
-(`depends_on: migrate: { condition: service_completed_successfully }`). Keep
-`MIGRATIONS_VERSION` equal to `API_VERSION`.
+The supported deployments are `api/deploy/docker-compose.yml`, the all-in-one
+image and the Helm chart; the API-only and web-only Compose files are removed.
+`make docker-prod` only prints how to start `api/deploy`. Operators follow
+[docs.openctem.io/install](https://docs.openctem.io/install/).
+
+In `api/deploy` the API starts only after the `migrate` one-shot service
+succeeds (`depends_on: migrate: { condition: service_completed_successfully }`),
+and `OPENCTEM_VERSION` tags every platform image, so the migrations always match
+the API.
+
+The API image runs in production mode unless `APP_ENV` says otherwise: an unset
+`APP_ENV` means `production`. Check a configuration without starting anything:
+
+```bash
+docker run --rm --env-file api.env ghcr.io/openctemio/openctem-api:vX.Y.Z -check-config
+# or, in api/deploy:
+docker compose run --rm --no-deps api -check-config
+```
 
 If a migration fails midway, `golang-migrate` marks `schema_migrations.dirty` and
 the API refuses to start. Recovery is in the
 [runbook](safe-deploy-and-migrations.md#dirty-migration-recovery). Never set
 `SKIP_SCHEMA_CHECK=true` in production.
 
-The complete production stack (`api/deploy/docker-compose.yml`), its environment
-variables and TLS modes are documented for operators at
-[docs.openctem.io/install](https://docs.openctem.io/install/).
-
 ## Make targets
 
 ```bash
-make docker-down         # stop the dev and prod compose stacks
+make docker-down         # stop the development compose stack
 make docker-logs         # follow logs
 make docker-logs-app     # API logs only
 make docker-ps           # running containers

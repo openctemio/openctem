@@ -129,7 +129,7 @@ make tidy             # Tidy go.mod
 ```bash
 make docker-dev       # Start dev environment (hot reload)
 make docker-dev-d     # Start dev environment (background)
-make docker-prod      # Start production environment
+make docker-prod      # Prints how to start the production stack (api/deploy)
 make docker-down      # Stop all containers
 make docker-logs      # View logs
 make docker-logs-app  # View app logs only

@@ -13,7 +13,7 @@ api/
 ├── pkg/                    # Domain model and shared packages
 ├── migrations/             # SQL migrations (golang-migrate) and seed SQL
 ├── configs/                # Asset and relationship type registries, sensor and scan workflow templates
-├── deploy/                 # Production compose stack, gateway, Postgres role bootstrap
+├── deploy/                 # Production compose stack, gateway, Postgres role bootstrap, backup.sh
 ├── tests/                  # Cross-cutting unit and integration tests
 ├── tools/                  # Code generators and custom linters
 ├── scripts/                # Developer and CI scripts
@@ -21,7 +21,7 @@ api/
 ├── docs/                   # Engineering documentation
 ├── Dockerfile              # development / builder / production targets
 ├── Dockerfile.migrations, Dockerfile.seed, Dockerfile.admin-cli
-├── docker-compose.yml, docker-compose.dev.yml, docker-compose.prod.yml
+├── docker-compose.yml, docker-compose.dev.yml   # development only
 ├── Makefile                # see docs/MAKEFILE.md
 ├── .env.example, .air.toml, .golangci.yml
 └── go.mod                  # module github.com/openctemio/openctem/api

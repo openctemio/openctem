@@ -76,7 +76,7 @@ make dev
 
 | Command             | Description                            |
 | ------------------- | -------------------------------------- |
-| `make docker-prod`  | Start production environment           |
+| `make docker-prod`  | Print how to start the production stack (`api/deploy`) |
 | `make docker-clean` | Remove containers, volumes, and images |
 
 ## Git Hooks
