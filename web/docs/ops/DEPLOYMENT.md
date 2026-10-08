@@ -52,7 +52,6 @@ NEXT_PUBLIC_APP_URL=https://your-app.com
 
 # Security (CRITICAL)
 SECURE_COOKIES=true  # Must be true in production
-CSRF_SECRET=<generated-64-char-secret>  # Run: npm run generate-secret
 ENABLE_TOKEN_REFRESH=true
 TOKEN_REFRESH_BEFORE_EXPIRY=300
 ```
@@ -127,7 +126,6 @@ Then add to Vercel:
 vercel env add BACKEND_API_URL
 vercel env add NEXT_PUBLIC_APP_URL
 vercel env add SECURE_COOKIES
-vercel env add CSRF_SECRET
 # ... add all required vars (see .env.example)
 
 # Option B: Via Vercel Dashboard
@@ -290,7 +288,6 @@ services:
       - '3000:3000'
     environment:
       - NODE_ENV=production
-      - CSRF_SECRET=${CSRF_SECRET}
       - SECURE_COOKIES=true
     restart: unless-stopped
     networks:
@@ -552,7 +549,6 @@ Before going live, verify:
 
 - [ ] All environment variables set
 - [ ] SECURE_COOKIES=true
-- [ ] CSRF_SECRET generated (64+ characters)
 - [ ] NODE_ENV=production
 - [ ] HTTPS enabled
 
@@ -608,14 +604,15 @@ Before going live, verify:
 
 ### "CSRF validation failed" Error
 
-**Cause:** CSRF_SECRET not set or cookies not working
+**Cause:** the `csrf_token` cookie is missing or not sent back as the
+`X-CSRF-Token` header (CSRF is the double-submit cookie; there is no secret
+to configure).
 
 **Fix:**
 
-1. Verify CSRF_SECRET is set: `echo $CSRF_SECRET`
-2. Verify SECURE_COOKIES=true in production
-3. Verify HTTPS is enabled
-4. Check browser console for cookie errors
+1. Verify SECURE_COOKIES=true in production
+2. Verify HTTPS is enabled
+3. Check browser console for cookie errors
 
 ### 502 Bad Gateway (Nginx)
 

@@ -25,10 +25,6 @@ Quick reference checklist for deploying to production. Print this and check off 
 - [ ] All required variables set (check .env.example)
 - [ ] **CRITICAL:** `SECURE_COOKIES=true`
 - [ ] **CRITICAL:** `NODE_ENV=production`
-- [ ] **CRITICAL:** `CSRF_SECRET` generated (64+ chars)
-  ```bash
-  npm run generate-secret
-  ```
 - [ ] Backend API URL is HTTPS
 - [ ] App URL is HTTPS
 - [ ] No secrets hardcoded in source code
@@ -299,6 +295,7 @@ only needs `BACKEND_API_URL`.
 ## Quick Command Reference
 
 ### Build & Test
+
 ```bash
 npm run build      # Build for production
 npm test           # Run tests
@@ -307,6 +304,7 @@ npm audit          # Security audit
 ```
 
 ### Deployment
+
 ```bash
 # Vercel
 vercel --prod
@@ -320,6 +318,7 @@ pm2 logs nextjs-app
 ```
 
 ### Monitoring
+
 ```bash
 # Check site
 curl -I https://your-app.com
@@ -375,6 +374,7 @@ _Add any deployment-specific notes, issues encountered, or special configuration
 ---
 
 **Status:**
+
 - [ ] Deployment Complete
 - [ ] Verified Working
 - [ ] Team Notified
@@ -385,6 +385,7 @@ _Add any deployment-specific notes, issues encountered, or special configuration
 **🎉 Congratulations on your production deployment!**
 
 For issues or questions, refer to:
+
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - Full deployment guide
 - [docs/auth/TROUBLESHOOTING.md](docs/auth/TROUBLESHOOTING.md) - Common issues
 - [RELEASE_READINESS.md](RELEASE_READINESS.md) - Release assessment

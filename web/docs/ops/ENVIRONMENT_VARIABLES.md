@@ -8,13 +8,13 @@ Next.js has two types of environment variables with different scopes and securit
 
 ## NEXT_PUBLIC_* vs Server-only Variables
 
-| Property | `NEXT_PUBLIC_*` | Server-only (no prefix) |
-|----------|-----------------|-------------------------|
-| **Visible to** | Browser + Server | Server only |
-| **Used in** | Client Components, Browser JS | API Routes, Server Components, Server Actions |
-| **Security** | Public (can be seen by anyone) | Private (hidden from client) |
-| **Build time** | Bundled into client JS | Not bundled |
-| **Example** | `NEXT_PUBLIC_APP_URL` | `BACKEND_API_URL` |
+| Property       | `NEXT_PUBLIC_*`                | Server-only (no prefix)                       |
+| -------------- | ------------------------------ | --------------------------------------------- |
+| **Visible to** | Browser + Server               | Server only                                   |
+| **Used in**    | Client Components, Browser JS  | API Routes, Server Components, Server Actions |
+| **Security**   | Public (can be seen by anyone) | Private (hidden from client)                  |
+| **Build time** | Bundled into client JS         | Not bundled                                   |
+| **Example**    | `NEXT_PUBLIC_APP_URL`          | `BACKEND_API_URL`                             |
 
 ---
 
@@ -114,7 +114,7 @@ export async function GET(request: Request) {
   const response = await fetch(`${backendUrl}/api/v1/users`, {
     headers: {
       // Forward auth headers from original request
-      'Authorization': request.headers.get('Authorization') || '',
+      Authorization: request.headers.get('Authorization') || '',
     },
   })
 
@@ -164,23 +164,23 @@ Attacker CANNOT see:
 api:
   # Only expose internally within Docker network
   expose:
-    - "8080"
+    - '8080'
   # NO ports mapping = not accessible from host
 
 ui:
   # Only UI is exposed to the outside world
   ports:
-    - "3000:3000"
+    - '3000:3000'
 ```
 
 ### 3. Attack Surface Reduction
 
-| Without BFF Pattern | With BFF Pattern |
-|---------------------|------------------|
+| Without BFF Pattern         | With BFF Pattern                       |
+| --------------------------- | -------------------------------------- |
 | Browser → Backend (exposed) | Browser → Next.js → Backend (internal) |
-| Backend must handle CORS | CORS handled at Next.js level |
-| Backend exposed to DDoS | Only Next.js exposed |
-| API keys visible to browser | API keys server-side only |
+| Backend must handle CORS    | CORS handled at Next.js level          |
+| Backend exposed to DDoS     | Only Next.js exposed                   |
+| API keys visible to browser | API keys server-side only              |
 
 ---
 
@@ -217,9 +217,6 @@ NEXT_PUBLIC_SENTRY_DSN=
 # Internal backend URL (Docker network) — the single required variable
 BACKEND_API_URL=http://api:8080
 
-# CSRF secret for the double-submit token (MUST be server-only!)
-CSRF_SECRET=your-csrf-secret
-
 # HTTPS-only cookies (set true in production)
 SECURE_COOKIES=false
 ```
@@ -236,7 +233,7 @@ SECURE_COOKIES=false
 
 ```typescript
 // src/components/UserCard.tsx
-"use client"
+'use client'
 
 // WRONG - This will be undefined in browser!
 const API_URL = process.env.BACKEND_API_URL
@@ -262,10 +259,10 @@ NEXT_PUBLIC_DB_PASSWORD=password123
 ### Mistake 3: Calling backend directly from browser
 
 ```typescript
-"use client"
+'use client'
 
 // WRONG - Exposes backend URL and bypasses proxy
-const BACKEND = "http://api:8080"  // or process.env.BACKEND_API_URL
+const BACKEND = 'http://api:8080' // or process.env.BACKEND_API_URL
 
 export function fetchData() {
   // This exposes your internal architecture
@@ -305,12 +302,13 @@ await fetch('/api/v1/users', { credentials: 'include' })
 
 ## Summary
 
-| Variable Type | Use For | Example |
-|---------------|---------|---------|
-| `NEXT_PUBLIC_*` | Browser-visible config | App URL, Cookie names, Feature flags |
-| Server-only | Secrets, Internal URLs | JWT secrets, Database passwords, Backend URL |
+| Variable Type   | Use For                | Example                                      |
+| --------------- | ---------------------- | -------------------------------------------- |
+| `NEXT_PUBLIC_*` | Browser-visible config | App URL, Cookie names, Feature flags         |
+| Server-only     | Secrets, Internal URLs | JWT secrets, Database passwords, Backend URL |
 
 **Key Rules**:
+
 1. Never put secrets in `NEXT_PUBLIC_*` variables
 2. Backend URL should be server-only for security
 3. Browser calls frontend URL, not backend directly

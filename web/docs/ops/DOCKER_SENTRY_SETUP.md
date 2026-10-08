@@ -138,7 +138,6 @@ NEXT_PUBLIC_APP_URL=https://app.your-domain.com
 
 # Security (REQUIRED)
 SECURE_COOKIES=true
-CSRF_SECRET=<generate-with-npm-run-generate-secret>
 
 # Optional (inert until @sentry/nextjs is wired — see Sentry Setup below)
 NEXT_PUBLIC_SENTRY_DSN=https://...@sentry.io/...
@@ -343,7 +342,6 @@ newgrp docker
 ### Environment
 
 - [ ] `.env` file created with all required variables
-- [ ] `CSRF_SECRET` generated (32+ chars)
 - [ ] `SECURE_COOKIES=true`
 - [ ] Backend API accessible (handles auth: local JWT / OAuth / SAML SSO)
 
