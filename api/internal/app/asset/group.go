@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -458,6 +459,7 @@ func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, tenantID strin
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
+					metrics.RecordPanic("scope_reconcile")
 					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
 				}
 			}()
@@ -510,6 +512,7 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, tenantID 
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
+					metrics.RecordPanic("scope_reconcile")
 					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
 				}
 			}()

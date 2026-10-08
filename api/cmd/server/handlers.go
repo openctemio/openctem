@@ -38,6 +38,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -116,10 +117,11 @@ func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
 
 // newScanWorkflowHandler builds the scan workflow handler with the run page's task
 // logs (RFC-029 §4.4.1).
-func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, scope *datascope.Enforcer, users user.Repository, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
+func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, events command.EventReader, scope *datascope.Enforcer, users user.Repository, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
 	h := handler.NewScanWorkflowHandler(svc, v, log)
 	h.SetTaskLogs(logs)
 	h.SetUserNames(users)
+	h.SetRunEvents(events)
 	if scope != nil {
 		// Runs about a finding (retests) follow the finding's data scope.
 		h.SetFindingScope(scope)
@@ -395,7 +397,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CI:              handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:         ciAdmin,
 		CIRunner:        ciRunner,
-		ScanWorkflow:    newScanWorkflowHandler(svc.ScanRun, commandLogs, svc.DataScope, repos.User, v, log),
+		ScanWorkflow:    newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
