@@ -193,7 +193,7 @@ describe('BasicInfoStep', () => {
     expect(workflowCalls.at(-1)).toMatchObject({ include: 'readiness' })
     const code = screen.getByRole('radio', { name: 'Code / CI' })
     expect(code).toBeDisabled()
-    expect(screen.getByText(/Runs in your CI pipeline/)).toBeInTheDocument()
+    expect(screen.getByText(/runs in your CI pipeline/i)).toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: 'Set up the CI pipeline integration' })
     ).toHaveAttribute('href', '/ci-cd')
