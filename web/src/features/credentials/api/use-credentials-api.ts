@@ -62,7 +62,7 @@ function buildCredentialsEndpoint(filters?: CredentialApiFilters): string {
   const params = new URLSearchParams()
 
   if (filters.page) params.set('page', String(filters.page))
-  if (filters.page_size) params.set('page_size', String(filters.page_size))
+  if (filters.per_page) params.set('per_page', String(filters.per_page))
   if (filters.search) params.set('search', filters.search)
   if (filters.sort) params.set('sort', filters.sort)
 
@@ -181,7 +181,7 @@ export function useCredentialIdentitiesApi(
 
     const params = new URLSearchParams()
     if (filters.page) params.set('page', String(filters.page))
-    if (filters.page_size) params.set('page_size', String(filters.page_size))
+    if (filters.per_page) params.set('per_page', String(filters.per_page))
     if (filters.search) params.set('search', filters.search)
     if (filters.state?.length) params.set('state', filters.state.join(','))
 
@@ -226,7 +226,7 @@ export function useRelatedCredentialsApi(credentialId: string | null, config?: S
  */
 export function useIdentityExposuresApi(
   identity: string | null,
-  filters?: { page?: number; page_size?: number },
+  filters?: { page?: number; per_page?: number },
   config?: SWRConfiguration
 ) {
   const { currentTenant } = useTenant()
@@ -241,7 +241,7 @@ export function useIdentityExposuresApi(
 
     const params = new URLSearchParams()
     if (filters.page) params.set('page', String(filters.page))
-    if (filters.page_size) params.set('page_size', String(filters.page_size))
+    if (filters.per_page) params.set('per_page', String(filters.per_page))
 
     const queryString = params.toString()
     return queryString ? `${baseUrl}?${queryString}` : baseUrl

@@ -192,7 +192,7 @@ export default function NotificationOutboxPage() {
   } = useNotificationOutboxApi({
     status: statusFilter === 'all' ? undefined : statusFilter,
     page: pagination.pageIndex + 1,
-    page_size: pagination.pageSize,
+    per_page: pagination.pageSize,
   })
 
   // Mutations
