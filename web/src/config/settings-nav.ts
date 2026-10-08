@@ -33,6 +33,7 @@ import {
   FileSliders,
   FolderGit2,
   FolderKey,
+  Gauge,
   GitBranch,
   History,
   Key,
@@ -161,6 +162,15 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Boxes,
         permission: Permission.TeamUpdate,
         keywords: ['features', 'plan', 'license', 'enable', 'disable'],
+      },
+      {
+        id: 'plan',
+        title: 'Plan & usage',
+        description: 'Your plan, its limits and what this organization uses.',
+        url: '/settings/plan',
+        icon: Gauge,
+        permission: Permission.TeamUpdate,
+        keywords: ['plan', 'limits', 'quota', 'seats', 'usage', 'free', 'pro', 'enterprise'],
       },
       {
         id: 'audit-log',
