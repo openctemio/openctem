@@ -128,7 +128,17 @@ export interface SensorProtocol {
   user_agent: string
   seen_at: string
   deprecated: boolean
+  /**
+   * How the last heartbeat arrived (api RFC-059): `grpc` (protocol v3 over
+   * mutual TLS), `https` (protocol v3 over HTTPS) or `v2`; absent before the
+   * platform recorded it.
+   */
+  binding?: SensorTransportBinding
+  /** Why the sensor is not on gRPC, as it reported it. */
+  fallback_reason?: string
 }
+
+export type SensorTransportBinding = 'grpc' | 'https' | 'v2'
 
 /**
  * Scanner content (api RFC-031): the data a tool scans with (trivy's
