@@ -104,7 +104,7 @@ describe('buildAttention', () => {
       }),
       'ops_admin'
     )
-    expect(item.href).toBe('/admin/organizations/org-1')
+    expect(item.href).toBe('/admin/organizations/org-1?tab=users')
     expect(item.vars?.name).toBe('Acme')
     expect(item.action).toBe('Add an owner')
   })
@@ -116,7 +116,7 @@ describe('buildAttention', () => {
       }),
       'readonly'
     )
-    expect(item.href).toBe('/admin/organizations')
+    expect(item.href).toBe('/admin/organizations?owner=none')
     expect(item.action).toBe('View')
   })
 
@@ -177,7 +177,7 @@ describe('AttentionQueue', () => {
     expect(screen.getByText('2 of 3 platform sensors are offline or stale.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Add an owner/ })).toHaveAttribute(
       'href',
-      '/admin/organizations/org-1'
+      '/admin/organizations/org-1?tab=users'
     )
   })
 })
