@@ -175,6 +175,10 @@ export type AdminAuditChainRebaselineRequest =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineRequest']
 export type AdminAuditChainRebaselineResponse =
   Schemas['internal_infra_http_handler.AdminAuditChainRebaselineResponse']
+// Admin console: the sign-up policy (System > Sign-up)
+export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']
+export type UpdateSignupPolicyRequest =
+  Schemas['internal_infra_http_handler.UpdateSignupPolicyRequest']
 export type AuditChainSample =
   Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample']
 export type AuditChainClass =
@@ -195,6 +199,9 @@ export type RunTaskLogLine = Schemas['internal_infra_http_handler.RunTaskLogLine
 /** GET /api/v1/scan-runs/{id}/stages — how each stage of a run was planned. */
 export type RunStage = Schemas['internal_infra_http_handler.RunStageResponse']
 export type RunStageList = Schemas['internal_infra_http_handler.RunStageListResponse']
+/** GET /api/v1/scan-runs/{id}/events — a run timeline (research/62 P0-4). */
+export type RunEvent = Schemas['internal_infra_http_handler.RunEvent']
+export type RunEventsResponse = Schemas['internal_infra_http_handler.RunEventsResponse']
 /** GET /api/v1/easm/candidates — the attribution review queue. */
 export type EASMReviewPage =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']

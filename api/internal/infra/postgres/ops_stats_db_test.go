@@ -2,17 +2,39 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 )
 
 // The operator snapshot reads on the migrated schema and moves with the
-// rows it counts. Other tests share the database, so it checks deltas.
+// rows it counts. The counts are platform-wide and other tests share the
+// database, so the test reads before and after its own writes inside one
+// REPEATABLE READ transaction (rolled back): what other tests commit in
+// between is not seen, and the deltas are exactly this test's rows.
 // Requires DATABASE_URL.
 func TestReadOpsSnapshot(t *testing.T) {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
 
-	before, err := ReadOpsSnapshot(ctx, sqlDB)
+	// Committed before the transaction starts: the tenant and two active,
+	// online sensors the transaction then takes offline.
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	offlineID := seedZoneSensor(ctx, t, sqlDB, &tenant, "ops-offline", zoneSensorOpts{})
+	disabledID := seedZoneSensor(ctx, t, sqlDB, &tenant, "ops-disabled", zoneSensorOpts{})
+
+	tx, err := sqlDB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("%v\n%s", err, q)
+		}
+	}
+
+	before, err := ReadOpsSnapshot(ctx, tx)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
@@ -20,29 +42,18 @@ func TestReadOpsSnapshot(t *testing.T) {
 		t.Fatalf("schema version not read: %+v", before)
 	}
 
-	tenant := seedTestTenant(ctx, t, sqlDB)
-	seedZoneSensor(ctx, t, sqlDB, &tenant, "ops-offline", zoneSensorOpts{health: "offline"})
-	seedZoneSensor(ctx, t, sqlDB, &tenant, "ops-disabled", zoneSensorOpts{health: "offline", status: "disabled"})
-
+	exec(`UPDATE sensors SET health = 'offline' WHERE id = $1`, offlineID.String())
+	exec(`UPDATE sensors SET health = 'offline', status = 'disabled' WHERE id = $1`, disabledID.String())
 	// A pending command due an hour ago, and one scheduled in the future
 	// (not due: neither counted nor aged).
-	if _, err := sqlDB.ExecContext(ctx, `
-		INSERT INTO commands (tenant_id, type, status, created_at)
-		VALUES ($1, 'scan', 'pending', now() - interval '1 hour')`, tenant.String()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := sqlDB.ExecContext(ctx, `
-		INSERT INTO commands (tenant_id, type, status, scheduled_at)
-		VALUES ($1, 'scan', 'pending', now() + interval '1 day')`, tenant.String()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := sqlDB.ExecContext(ctx, `
-		INSERT INTO notification_outbox (tenant_id, event_type, title, status)
-		VALUES ($1, 'test', 'ops snapshot test', 'dead')`, tenant.String()); err != nil {
-		t.Fatal(err)
-	}
+	exec(`INSERT INTO commands (tenant_id, type, status, created_at)
+		VALUES ($1, 'scan', 'pending', now() - interval '1 hour')`, tenant.String())
+	exec(`INSERT INTO commands (tenant_id, type, status, scheduled_at)
+		VALUES ($1, 'scan', 'pending', now() + interval '1 day')`, tenant.String())
+	exec(`INSERT INTO notification_outbox (tenant_id, event_type, title, status)
+		VALUES ($1, 'test', 'ops snapshot test', 'dead')`, tenant.String())
 
-	after, err := ReadOpsSnapshot(ctx, sqlDB)
+	after, err := ReadOpsSnapshot(ctx, tx)
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}

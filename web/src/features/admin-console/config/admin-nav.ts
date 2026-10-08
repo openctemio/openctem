@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   ScrollText,
   UserCog,
+  UserPlus,
   Waypoints,
   type LucideIcon,
 } from 'lucide-react'
@@ -56,6 +57,7 @@ export const adminNav: AdminNavSection[] = [
         icon: KeyRound,
         minRole: 'super_admin',
       },
+      { title: 'Sign-up', url: '/admin/system/sign-up', icon: UserPlus },
       { title: 'System logs', url: '/admin/system-logs', icon: ScrollText },
     ],
   },

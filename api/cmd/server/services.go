@@ -65,6 +65,7 @@ import (
 	scanfreezeapp "github.com/openctemio/openctem/api/internal/app/scanfreeze"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
+	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -784,6 +785,9 @@ type Services struct {
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
+
+	// The platform sign-up policy (who may create an organization).
+	Signup *signupapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -2258,6 +2262,13 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// Initialize auth service
 	s.Auth = auth.NewAuthService(repos.User, repos.Session, repos.RefreshToken, repos.Tenant, s.Audit, cfg.Auth, log)
 	s.Auth.SetRoleService(s.Role)
+	// The sign-up policy (Console > System > Sign-up). TENANT_CREATION_MODE
+	// seeds it on the first start only; afterwards the console value wins.
+	s.Signup = signupapp.NewService(repos.SignupPolicy, repos.AdminAuditLog, repos.Admin, nil, log)
+	if err := s.Signup.Seed(context.Background(), cfg.Auth.TenantCreationMode); err != nil {
+		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
+	}
+	s.Auth.SetSignupPolicy(s.Signup)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
