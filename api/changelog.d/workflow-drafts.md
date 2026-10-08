@@ -14,5 +14,5 @@
 - Badges: Unsaved, Draft, Published vN.
 - API: `GET`/`PUT`/`DELETE /api/v1/scan-workflows/{id}/draft` and
   `POST /api/v1/scan-workflows/{id}/publish`, gated like the workflow reads
-  and writes. Migration 001324 adds `draft`, `draft_issues` and
+  and writes. Migration 001329 adds `draft`, `draft_issues` and
   `draft_updated_at` to `scan_workflows`.
