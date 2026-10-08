@@ -167,6 +167,8 @@ func (s *Server) Subscribe(ctx context.Context, _ *connect.Request[sensorv3.Subs
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-s.done:
+			return nil
 		case <-deadline.C:
 			return nil
 		case <-keepalive.C:

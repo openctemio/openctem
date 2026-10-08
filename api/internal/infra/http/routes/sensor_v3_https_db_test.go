@@ -48,16 +48,18 @@ import (
 )
 
 type v3Harness struct {
-	t    *testing.T
-	db   *sql.DB
-	srv  *httptest.Server
-	cmds *command.Service
-	v3   *sensortransport.Server
+	t       *testing.T
+	db      *sql.DB
+	srv     *httptest.Server
+	cmds    *command.Service
+	v3      *sensortransport.Server
+	sensors *sensor.SensorService
 }
 
 type v3Sensor struct {
 	id, tenantID string
 	signer       *sensorsig.Signer
+	key          ed25519.PrivateKey
 }
 
 // newV3Harness builds the stack; recheck is the control stream's periodic
@@ -124,7 +126,9 @@ func newV3Harness(t *testing.T, recheck ...time.Duration) *v3Harness {
 	srv.EnableHTTP2 = true
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
-	return &v3Harness{t: t, db: sqldb, srv: srv, cmds: cmdSvc, v3: v3}
+	sensorSvc.SetStatusNotifier(v3.Hub().Wake)
+	sensorSvc.SetEventRepository(postgres.NewSensorEventRepository(db), sensordom.DefaultEventLimits())
+	return &v3Harness{t: t, db: sqldb, srv: srv, cmds: cmdSvc, v3: v3, sensors: sensorSvc}
 }
 
 func (h *v3Harness) exec(q string, args ...any) {
@@ -162,7 +166,7 @@ func (h *v3Harness) newKeyBound(tenantID string) v3Sensor {
 	signer, _ := sensorsig.NewSigner(key)
 	h.exec(`INSERT INTO sensor_keys (tenant_id, sensor_id, thumbprint, public_key, status) VALUES ($1, $2, $3, $4, 'active')`,
 		tenantID, sid, signer.KeyID(), []byte(signer.PublicKey()))
-	return v3Sensor{id: sid, tenantID: tenantID, signer: signer}
+	return v3Sensor{id: sid, tenantID: tenantID, signer: signer, key: key}
 }
 
 // client is a v3 client of the HTTPS binding signing with s's key; grpc

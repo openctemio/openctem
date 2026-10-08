@@ -12,7 +12,7 @@ is built, where it lives and how to work on it.
 | CI: buf lint, buf breaking, generated code current | built | `api/scripts/check-proto.sh`, step "Sensor Protocol v3" of API CI |
 | HTTPS binding (`/api/v3/sensor`) | built, behind `SENSOR_TRANSPORT_V3_ENABLED` | `internal/infra/sensortransport` (server), `handler/sensor_v3_bridge.go` (identity, in-process authenticator, stream hints), `routes/sensor_v2.go` (`sensorV2InProcess`) |
 | Control stream `Subscribe`, push on command changes (one replica) | built | `sensortransport/subscribe.go`, `postgres/command_notify.go` |
-| Sensor CA, certificates, mTLS listener | planned | step 3 |
+| Sensor CA, `IssueCertificate`, mTLS listener (gRPC binding), revocation | built | `sensortransport/ca.go`, `issuer.go`, `mtls.go`; `SensorService.SetStatusNotifier` |
 | Redis wake fan-out | planned | step 4 |
 | Gateway SNI passthrough | planned | step 5 |
 
@@ -48,6 +48,35 @@ also re-resolves the identity: a revoked key or sensor ends the stream with
 UNAUTHENTICATED) or a keepalive (25 s). A wake always sends; a re-check
 sends only a change. Streams close after 24–30 minutes and the sensor
 reconnects; at most 4 per sensor.
+
+## Certificates and the gRPC binding
+
+- **CA**: `SENSOR_MTLS_CA_CERT_FILE` + `SENSOR_MTLS_CA_KEY_FILE`, or created once
+  in `SENSOR_MTLS_CA_DIR` (`/app/data/sensor-ca/sensor-ca.pem`, 0600 in 0700).
+  ECDSA P-256, 10 years, path length 0. Its fingerprint is logged at start.
+  The key is not the job signer's (RFC-040): a certificate opens a channel,
+  it never authorizes a job. Rotating the CA: replace the files and restart;
+  sensors get certificates from the new CA on their next `IssueCertificate`
+  over HTTPS (their old certificate fails the handshake, which is a
+  transport failure, so they fall back to HTTPS and renew).
+- **Issuance** (`IssueCertificate`, either binding): for a key-bound sensor
+  that is not paused, a certificate for its *registered* Ed25519 key, CN =
+  sensor id, URI SAN `spiffe://openctem/tenant/<tenant>/sensor/<sensor>`, EKU
+  clientAuth, `SENSOR_MTLS_CERT_TTL` (7 days). Budget: 5, then one per 10
+  minutes per sensor. Recorded on the sensor timeline (`certificate_issued`).
+  The answer carries the CA bundle the sensor pins for the gRPC host.
+- **Listener** (`SENSOR_MTLS_LISTEN_ADDR`, `:8443`, only with
+  `SENSOR_PUBLIC_HOST`): TLS 1.3, client certificate required and verified
+  against the sensor CA only, ALPN `h2` only (anything else fails the
+  handshake), server certificate minted from the CA for the public host. At
+  the handshake and on every request the certificate key is resolved through
+  the key table (`SigningIdentity`, cached 5 s): an unknown or revoked key, a
+  revoked or deleted sensor, or a SAN that does not match the key's row is
+  refused. A disabled sensor is paused as on v2.
+- **Revocation of live streams**: activating, disabling, revoking or deleting
+  a sensor and revoking a key wake its streams (`SetStatusNotifier`); the
+  identity is re-resolved and a stream of a revoked identity ends with
+  UNAUTHENTICATED within the wake jitter (test: under 2 s).
 
 ## Working on the proto
 
