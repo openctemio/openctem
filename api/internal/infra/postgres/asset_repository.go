@@ -1202,6 +1202,17 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
+	// Batch lookup by id (the caller's tenant and data scope still apply).
+	if len(filter.IDs) > 0 {
+		placeholders := make([]string, len(filter.IDs))
+		for i, id := range filter.IDs {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, id)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("a.id IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
 	// Business unit membership filter (business_unit_assets join).
 	if len(filter.BusinessUnitIDs) > 0 {
 		placeholders := make([]string, len(filter.BusinessUnitIDs))

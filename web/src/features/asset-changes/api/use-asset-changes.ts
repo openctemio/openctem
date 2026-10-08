@@ -85,28 +85,23 @@ export function useAssetChanges(
 
 export type ChangeCounts = Record<ChangeView, number>
 
-/**
- * The count of every view for the period, for the metric strip. Each is a
- * `per_page=1` request that reads `total`, fetched in parallel under one key so
- * the strip loads (and refreshes) as a unit.
- */
+/** The count of every view for the period, for the metric strip. */
 export function useAssetChangeCounts(q: ChangeQuery, enabled = true) {
-  const key = enabled ? ['asset-change-counts', q.from, q.internetOnly] : null
+  // One request for the five totals (GET /state-history/counts), where the
+  // strip used to send one per_page=1 list request per view (research/81).
+  // The API leaves newly exposed out of the internet-facing toggle, as the
+  // page does: it is internet-facing by definition.
   const { data, error, isLoading, mutate } = useSWR<ChangeCounts>(
-    key,
-    async () => {
-      const totals = await Promise.all(
-        CHANGE_VIEWS.map((v) =>
-          // Newly exposed is internet-facing by definition; the page never
-          // applies the toggle to it, so neither does its count.
-          get<ChangeListPage>(
-            changeUrl(v, v === 'newly_exposed' ? { ...q, internetOnly: false } : q, 1, 1)
-          ).then((r) => r.total ?? 0)
-        )
-      )
-      return Object.fromEntries(CHANGE_VIEWS.map((v, i) => [v, totals[i]])) as ChangeCounts
-    },
+    enabled ? changeCountsUrl(q) : null,
+    (url: string) => get<ChangeCounts>(url),
     swrConfig
   )
   return { counts: data, error, isLoading, mutate }
+}
+
+/** The URL of the five view totals for a window (exported for tests). */
+export function changeCountsUrl(q: ChangeQuery): string {
+  const params = new URLSearchParams({ from: q.from })
+  if (q.internetOnly) params.set('internet_facing', 'true')
+  return `/api/v1/state-history/counts?${params.toString()}`
 }
