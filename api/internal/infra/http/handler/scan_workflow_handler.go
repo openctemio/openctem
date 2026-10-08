@@ -50,30 +50,17 @@ func NewScanWorkflowHandler(service *scanrun.Service, v *validator.Validator, lo
 type CreateTemplateRequest struct {
 	Name        string                       `json:"name" validate:"required,min=1,max=255"`
 	Description string                       `json:"description" validate:"max=1000"`
-	Triggers    []TriggerRequest             `json:"triggers" validate:"max=10,dive"`
 	Settings    *ScanWorkflowSettingsRequest `json:"settings"`
 	Tags        []string                     `json:"tags" validate:"max=10,dive,max=50"`
 	Steps       []CreateStepRequest          `json:"steps" validate:"max=50,dive"`
 }
 
-// TriggerRequest represents a trigger configuration in the request.
-type TriggerRequest struct {
-	Type     string         `json:"type" validate:"required,oneof=manual schedule webhook api on_asset_discovery"`
-	Schedule string         `json:"schedule"`
-	Webhook  string         `json:"webhook"`
-	Filters  map[string]any `json:"filters"`
-}
-
 // ScanWorkflowSettingsRequest represents template settings in the request.
 type ScanWorkflowSettingsRequest struct {
-	MaxParallelSteps     int      `json:"max_parallel_steps" validate:"min=0,max=10"`
-	FailFast             bool     `json:"fail_fast"`
-	RetryFailedSteps     int      `json:"retry_failed_steps" validate:"min=0,max=5"`
-	TimeoutSeconds       int      `json:"timeout_seconds" validate:"min=0,max=86400"`
-	NotifyOnComplete     bool     `json:"notify_on_complete"`
-	NotifyOnFailure      bool     `json:"notify_on_failure"`
-	NotificationChannels []string `json:"notification_channels"`
-	SensorPreference     string   `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
+	MaxParallelSteps int    `json:"max_parallel_steps" validate:"min=0,max=10"`
+	FailFast         bool   `json:"fail_fast"`
+	TimeoutSeconds   int    `json:"timeout_seconds" validate:"min=0,max=86400"`
+	SensorPreference string `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 }
 
 // UIPositionRequest represents a visual position in the workflow builder.
@@ -123,7 +110,6 @@ type TemplateResponse struct {
 	Version          int                          `json:"version"`
 	IsActive         bool                         `json:"is_active"`
 	IsSystemTemplate bool                         `json:"is_system_template"`
-	Triggers         []TriggerResponse            `json:"triggers"`
 	Settings         ScanWorkflowSettingsResponse `json:"settings"`
 	Tags             []string                     `json:"tags,omitempty"`
 	Steps            []StepResponse               `json:"steps"`
@@ -136,24 +122,12 @@ type TemplateResponse struct {
 	RetiredAt string `json:"retired_at,omitempty"`
 }
 
-// TriggerResponse represents a trigger in the response.
-type TriggerResponse struct {
-	Type     string         `json:"type"`
-	Schedule string         `json:"schedule,omitempty"`
-	Webhook  string         `json:"webhook,omitempty"`
-	Filters  map[string]any `json:"filters,omitempty"`
-}
-
 // ScanWorkflowSettingsResponse represents template settings in the response.
 type ScanWorkflowSettingsResponse struct {
-	MaxParallelSteps     int      `json:"max_parallel_steps"`
-	FailFast             bool     `json:"fail_fast"`
-	RetryFailedSteps     int      `json:"retry_failed_steps"`
-	TimeoutSeconds       int      `json:"timeout_seconds"`
-	NotifyOnComplete     bool     `json:"notify_on_complete"`
-	NotifyOnFailure      bool     `json:"notify_on_failure"`
-	NotificationChannels []string `json:"notification_channels,omitempty"`
-	SensorPreference     string   `json:"sensor_preference"`
+	MaxParallelSteps int    `json:"max_parallel_steps"`
+	FailFast         bool   `json:"fail_fast"`
+	TimeoutSeconds   int    `json:"timeout_seconds"`
+	SensorPreference string `json:"sensor_preference"`
 }
 
 // UIPositionResponse represents a visual position in the workflow builder response.
@@ -450,7 +424,6 @@ func (h *ScanWorkflowHandler) CreateTemplate(w http.ResponseWriter, r *http.Requ
 		TenantID:    tenantID,
 		Name:        req.Name,
 		Description: req.Description,
-		Triggers:    toTriggers(req.Triggers),
 		Settings:    toSettings(req.Settings),
 		Tags:        req.Tags,
 		CreatedBy:   userID,
@@ -565,7 +538,6 @@ func (h *ScanWorkflowHandler) ListTemplates(w http.ResponseWriter, r *http.Reque
 type UpdateTemplateRequest struct {
 	Name            string                       `json:"name" validate:"omitempty,min=1,max=255"`
 	Description     string                       `json:"description" validate:"max=1000"`
-	Triggers        []TriggerRequest             `json:"triggers" validate:"max=10,dive"`
 	Settings        *ScanWorkflowSettingsRequest `json:"settings"`
 	Tags            []string                     `json:"tags" validate:"max=10,dive,max=50"`
 	IsActive        *bool                        `json:"is_active"`
@@ -616,7 +588,6 @@ func (h *ScanWorkflowHandler) UpdateTemplate(w http.ResponseWriter, r *http.Requ
 		TemplateID:      templateID,
 		Name:            req.Name,
 		Description:     req.Description,
-		Triggers:        toTriggers(req.Triggers),
 		Settings:        toSettings(req.Settings),
 		Tags:            req.Tags,
 		IsActive:        req.IsActive,
@@ -1143,31 +1114,14 @@ func (h *ScanWorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) 
 
 // --- Conversion Helpers ---
 
-func toTriggers(triggers []TriggerRequest) []scanworkflow.Trigger {
-	result := make([]scanworkflow.Trigger, len(triggers))
-	for i, t := range triggers {
-		result[i] = scanworkflow.Trigger{
-			Type:     scanworkflow.TriggerType(t.Type),
-			Schedule: t.Schedule,
-			Webhook:  t.Webhook,
-			Filters:  t.Filters,
-		}
-	}
-	return result
-}
-
 func toSettings(settings *ScanWorkflowSettingsRequest) *scanworkflow.Settings {
 	if settings == nil {
 		return nil
 	}
 	s := &scanworkflow.Settings{
-		MaxParallelSteps:     settings.MaxParallelSteps,
-		FailFast:             settings.FailFast,
-		RetryFailedSteps:     settings.RetryFailedSteps,
-		TimeoutSeconds:       settings.TimeoutSeconds,
-		NotifyOnComplete:     settings.NotifyOnComplete,
-		NotifyOnFailure:      settings.NotifyOnFailure,
-		NotificationChannels: settings.NotificationChannels,
+		MaxParallelSteps: settings.MaxParallelSteps,
+		FailFast:         settings.FailFast,
+		TimeoutSeconds:   settings.TimeoutSeconds,
 	}
 	if settings.SensorPreference != "" {
 		s.SensorPreference = scanworkflow.SensorPreference(settings.SensorPreference)
@@ -1196,16 +1150,6 @@ func toUIPosition(pos *UIPositionRequest) *scanworkflow.UIPosition {
 }
 
 func toTemplateResponse(t *scanworkflow.Workflow) *TemplateResponse {
-	triggers := make([]TriggerResponse, len(t.Triggers))
-	for i, tr := range t.Triggers {
-		triggers[i] = TriggerResponse{
-			Type:     string(tr.Type),
-			Schedule: tr.Schedule,
-			Webhook:  tr.Webhook,
-			Filters:  tr.Filters,
-		}
-	}
-
 	steps := make([]StepResponse, len(t.Steps))
 	for i, s := range t.Steps {
 		steps[i] = *toStepResponse(s)
@@ -1219,16 +1163,11 @@ func toTemplateResponse(t *scanworkflow.Workflow) *TemplateResponse {
 		Version:          t.Version,
 		IsActive:         t.IsActive,
 		IsSystemTemplate: t.IsSystemTemplate,
-		Triggers:         triggers,
 		Settings: ScanWorkflowSettingsResponse{
-			MaxParallelSteps:     t.Settings.MaxParallelSteps,
-			FailFast:             t.Settings.FailFast,
-			RetryFailedSteps:     t.Settings.RetryFailedSteps,
-			TimeoutSeconds:       t.Settings.TimeoutSeconds,
-			NotifyOnComplete:     t.Settings.NotifyOnComplete,
-			NotifyOnFailure:      t.Settings.NotifyOnFailure,
-			NotificationChannels: t.Settings.NotificationChannels,
-			SensorPreference:     string(t.Settings.SensorPreference),
+			MaxParallelSteps: t.Settings.MaxParallelSteps,
+			FailFast:         t.Settings.FailFast,
+			TimeoutSeconds:   t.Settings.TimeoutSeconds,
+			SensorPreference: string(t.Settings.SensorPreference),
 		},
 		Tags:      t.Tags,
 		Steps:     steps,
