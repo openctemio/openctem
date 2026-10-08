@@ -52,10 +52,11 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject
+			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject,
+			scan_workflow_version, spec_digest
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26, NULLIF($27, 0), NULLIF($28, ''))
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -85,6 +86,8 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 		run.RefusalCode,
 		string(run.KindOrDefault()),
 		nullJSONObject(run.Subject),
+		run.ScanWorkflowVersion,
+		run.SpecDigest,
 	)
 
 	if isOccurrenceConflict(err) {
@@ -488,10 +491,11 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject
+			created_at, scheduled_for, deadline_at, freeze_override, refusal_code, kind, subject,
+			scan_workflow_version, spec_digest
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26)
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, $23, NULLIF($24, ''), $25, $26, NULLIF($27, 0), NULLIF($28, ''))
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -521,6 +525,8 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 		run.RefusalCode,
 		string(run.KindOrDefault()),
 		nullJSONObject(run.Subject),
+		run.ScanWorkflowVersion,
+		run.SpecDigest,
 	)
 	if isOccurrenceConflict(err) {
 		return scanrun.ErrOccurrenceAlreadyRun
@@ -1062,7 +1068,8 @@ func (r *ScanRunRepository) selectQuery() string {
 		       scan_profile_id, quality_gate_result, retry_attempt,
 		       created_at, scheduled_for,
 		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0), freeze_override,
-		       COALESCE(refusal_code, ''), kind, subject
+		       COALESCE(refusal_code, ''), kind, subject,
+		       COALESCE(scan_workflow_version, 0), COALESCE(spec_digest, '')
 		FROM scan_runs
 	`
 }
@@ -1212,6 +1219,8 @@ func (r *ScanRunRepository) scanRun(row *sql.Row) (*scanrun.Run, error) {
 		&run.RefusalCode,
 		&kind,
 		&subject,
+		&run.ScanWorkflowVersion,
+		&run.SpecDigest,
 	)
 	_ = retryAttempt // populated below
 
@@ -1336,6 +1345,8 @@ func (r *ScanRunRepository) scanRunFromRows(rows *sql.Rows) (*scanrun.Run, error
 		&run.RefusalCode,
 		&kind,
 		&subject,
+		&run.ScanWorkflowVersion,
+		&run.SpecDigest,
 	)
 
 	if err != nil {

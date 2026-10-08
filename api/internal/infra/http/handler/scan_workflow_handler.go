@@ -207,8 +207,14 @@ type RunResponse struct {
 	Kind string `json:"kind"`
 	// Subject names what a run that executes no scan workflow is about,
 	// e.g. {"finding_id", "retest_id"} for a retest.
-	Subject   map[string]any `json:"subject,omitempty"`
-	CreatedAt string         `json:"created_at"`
+	Subject map[string]any `json:"subject,omitempty"`
+	// ScanWorkflowVersion is the saved version of the scan workflow this run
+	// executes (settings and steps as the run started), SpecDigest its
+	// digest. Absent for runs without a workflow and runs from before
+	// versions.
+	ScanWorkflowVersion int    `json:"scan_workflow_version,omitempty"`
+	SpecDigest          string `json:"spec_digest,omitempty"`
+	CreatedAt           string `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
 	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
@@ -1268,6 +1274,9 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		Kind:           string(r.KindOrDefault()),
 		Subject:        r.Subject,
 		CreatedAt:      r.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+
+		ScanWorkflowVersion: r.ScanWorkflowVersion,
+		SpecDigest:          r.SpecDigest,
 	}
 
 	if r.AssetID != nil {
