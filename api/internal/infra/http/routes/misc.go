@@ -384,18 +384,19 @@ func registerNotificationRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerPlatformStatsRoutes registers platform stats endpoints.
-// These are tenant-scoped routes for viewing platform sensor statistics.
-func registerPlatformStatsRoutes(
+// registerPlatformScanningRoutes registers platform scanning as a tenant sees
+// it: an aggregated service, for anyone who reads sensors or scans. No tenant
+// route reads or manages a platform sensor itself (admin console, RFC-022).
+func registerPlatformScanningRoutes(
 	router Router,
-	h *handler.PlatformStatsHandler,
+	h *handler.PlatformScanningHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
 ) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
 	router.Group("/api/v1/platform", func(r Router) {
-		r.GET("/stats", h.GetStats)
+		r.GET("/scanning", h.Get, middleware.RequireAny(permission.SensorsRead, permission.ScansRead))
 	}, tenantMiddlewares...)
 }
 

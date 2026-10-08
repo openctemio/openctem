@@ -112,9 +112,6 @@ func (m *sensorSelMockSensorRepo) GetAvailableCapabilitiesForTenant(_ context.Co
 func (m *sensorSelMockSensorRepo) HasSensorForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
 	return false, nil
 }
-func (m *sensorSelMockSensorRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
-	return nil, nil
-}
 func (m *sensorSelMockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
 	return nil, nil
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	"github.com/go-chi/chi/v5"
 
@@ -1480,6 +1481,9 @@ func (h *ScanHandler) handleValidationError(w http.ResponseWriter, err error) {
 // handleServiceError converts service errors to API errors.
 func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, scanworkflow.ErrScanWorkflowRetired):
+		// The workflow of the scan was deleted (kept for its run history).
+		apierror.New(http.StatusConflict, apierror.Code(scanworkflow.ErrScanWorkflowRetired.Code), scanworkflow.ErrScanWorkflowRetired.Message).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scan").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):

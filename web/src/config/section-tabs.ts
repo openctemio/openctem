@@ -159,6 +159,14 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
+    // Origins, endpoints, path patterns and their changes (RFC-056).
+    label: 'Web surface',
+    href: '/assets/web',
+    icon: Globe,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
     label: 'Suggestions',
     href: '/assets/suggestions',
     icon: Link2,

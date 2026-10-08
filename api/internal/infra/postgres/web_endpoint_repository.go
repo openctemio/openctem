@@ -67,7 +67,7 @@ func (r *WebEndpointRepository) Record(ctx context.Context, tenantID, originAsse
 
 	kept := make([]webendpoint.Observation, 0, len(obs))
 	for _, o := range obs {
-		if existing[o.TemplateHash] {
+		if _, had := existing[o.TemplateHash]; had {
 			kept = append(kept, o)
 			res.Updated++
 			continue
@@ -94,37 +94,105 @@ func (r *WebEndpointRepository) Record(ctx context.Context, tenantID, originAsse
 	if err != nil {
 		return res, err
 	}
-	n, err := upsertParams(ctx, tx, tenantID, kept, ids)
+	n, added, err := upsertParams(ctx, tx, tenantID, kept, ids)
 	if err != nil {
 		return res, err
 	}
 	res.ParamsOverCap = n
+	events := changeEvents(kept, existing, ids)
+	for _, o := range kept {
+		if _, had := existing[o.TemplateHash]; had && added[ids[o.TemplateHash]] > 0 {
+			events = append(events, endpointEvent{ids[o.TemplateHash], webendpoint.EventParamAdded,
+				fmt.Sprintf(`{"count":%d}`, added[ids[o.TemplateHash]])})
+		}
+	}
+	if err := insertEvents(ctx, tx, tenantID, originAssetID, events, prov.RunID); err != nil {
+		return res, err
+	}
+	res.Events = len(events)
 	if err := tx.Commit(); err != nil {
 		return res, fmt.Errorf("commit: %w", err)
 	}
 	return res, nil
 }
 
-// dedupObservations merges observations of the same template (the same
-// report may name an endpoint twice), keeping the first and joining the
-// parameters.
-func existingTemplates(ctx context.Context, tx *sql.Tx, tenantID, originAssetID shared.ID, hashes []string) (map[string]bool, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT template_hash FROM web_endpoints
+// priorEndpoint is what an endpoint looked like before this sighting.
+type priorEndpoint struct {
+	status int
+	auth   string
+	state  string
+}
+
+// existingTemplates reads the origin's endpoints among hashes, as they were.
+func existingTemplates(ctx context.Context, tx *sql.Tx, tenantID, originAssetID shared.ID, hashes []string) (map[string]priorEndpoint, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT template_hash, COALESCE(last_status, 0), auth_state, state FROM web_endpoints
 		WHERE tenant_id = $1 AND origin_asset_id = $2 AND template_hash = ANY($3)`,
 		tenantID.String(), originAssetID.String(), pq.Array(hashes))
 	if err != nil {
 		return nil, fmt.Errorf("existing endpoints: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	existing := map[string]bool{}
+	existing := map[string]priorEndpoint{}
 	for rows.Next() {
 		var h string
-		if err := rows.Scan(&h); err != nil {
+		var p priorEndpoint
+		if err := rows.Scan(&h, &p.status, &p.auth, &p.state); err != nil {
 			return nil, fmt.Errorf("scan existing: %w", err)
 		}
-		existing[h] = true
+		existing[strings.TrimSpace(h)] = p
 	}
 	return existing, rows.Err()
+}
+
+// endpointEvent is one change to record.
+type endpointEvent struct {
+	endpointID string
+	kind       string
+	detail     string
+}
+
+// changeEvents compares each kept observation with what was there before.
+func changeEvents(kept []webendpoint.Observation, existing map[string]priorEndpoint, ids map[string]string) []endpointEvent {
+	var out []endpointEvent
+	for _, o := range kept {
+		id, ok := ids[o.TemplateHash]
+		if !ok {
+			continue
+		}
+		prior, had := existing[o.TemplateHash]
+		switch {
+		case !had:
+			out = append(out, endpointEvent{id, webendpoint.EventAppeared, "{}"})
+			continue
+		case prior.state == string(webendpoint.StateGone):
+			out = append(out, endpointEvent{id, webendpoint.EventReturned, "{}"})
+		}
+		if o.StatusCode != 0 && prior.status != 0 && o.StatusCode != prior.status {
+			out = append(out, endpointEvent{id, webendpoint.EventStatusChanged, fmt.Sprintf(`{"from":%d,"to":%d}`, prior.status, o.StatusCode)})
+		}
+		if o.AuthState != webendpoint.AuthUnknown && prior.auth != webendpoint.AuthUnknown && o.AuthState != prior.auth {
+			out = append(out, endpointEvent{id, webendpoint.EventAuthChanged, fmt.Sprintf(`{"from":%q,"to":%q}`, prior.auth, o.AuthState)})
+		}
+	}
+	return out
+}
+
+// insertEvents writes the change feed rows of one origin.
+func insertEvents(ctx context.Context, tx *sql.Tx, tenantID, originAssetID shared.ID, events []endpointEvent, runID *shared.ID) error {
+	if len(events) == 0 {
+		return nil
+	}
+	ids, kinds, details := make([]string, len(events)), make([]string, len(events)), make([]string, len(events))
+	for i, e := range events {
+		ids[i], kinds[i], details[i] = e.endpointID, e.kind, e.detail
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO web_endpoint_events (tenant_id, endpoint_id, origin_asset_id, kind, run_id, detail)
+		SELECT $1::uuid, u.ep::uuid, $2::uuid, u.kind, $3::uuid, u.detail::jsonb
+		FROM unnest($4::text[], $5::text[], $6::text[]) AS u(ep, kind, detail)`,
+		tenantID.String(), originAssetID.String(), nullID(runID), pq.Array(ids), pq.Array(kinds), pq.Array(details)); err != nil {
+		return fmt.Errorf("record endpoint events: %w", err)
+	}
+	return nil
 }
 
 func existingParams(ctx context.Context, tx *sql.Tx, tenantID shared.ID, epIDs []string) (map[string]map[string]bool, error) {
@@ -148,6 +216,9 @@ func existingParams(ctx context.Context, tx *sql.Tx, tenantID shared.ID, epIDs [
 	return have, rows.Err()
 }
 
+// dedupObservations merges observations of the same template (the same
+// report may name an endpoint twice), keeping the first and joining the
+// parameters.
 func dedupObservations(obs []webendpoint.Observation) []webendpoint.Observation {
 	index := map[string]int{}
 	out := make([]webendpoint.Observation, 0, len(obs))
@@ -189,6 +260,7 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 		statuses                                          = make([]int64, n)
 		inScope                                           = make([]bool, n)
 		exclusions                                        = make([]string, n)
+		catalogs                                          = make([]string, n)
 	)
 	for i, o := range obs {
 		ids[i] = shared.NewID().String()
@@ -198,6 +270,7 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 		sigs[i] = o.ResponseSig()
 		statuses[i] = int64(o.StatusCode)
 		inScope[i] = !o.OutOfScope
+		catalogs[i] = o.CatalogKey
 		if o.ExclusionID != nil {
 			exclusions[i] = o.ExclusionID.String()
 		}
@@ -211,15 +284,16 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO web_endpoints (id, tenant_id, origin_asset_id, method, path_template, template_hash, path_hash,
 			kind, sources, example_path, last_status, content_type, auth_state, technologies, response_sig, in_scope,
-			last_run_id, last_sensor_id, last_tool, exclusion_id)
+			last_run_id, last_sensor_id, last_tool, exclusion_id, catalog_key)
 		SELECT u.id::uuid, $1::uuid, $2::uuid, u.method, u.tmpl, u.thash, u.phash,
 			u.kind, string_to_array(u.source, ','), NULLIF(u.example, ''), NULLIF(u.status, 0)::smallint, NULLIF(u.ctype, ''), u.auth,
 			CASE WHEN u.tech = '' THEN '{}'::text[] ELSE string_to_array(u.tech, E'\x1f') END, u.sig, u.in_scope,
 			$17::uuid, $18::uuid, NULLIF($19, ''),
-			(SELECT x.id FROM scope_exclusions x WHERE x.id = NULLIF(u.excl, '')::uuid AND x.tenant_id = $1::uuid)
+			(SELECT x.id FROM scope_exclusions x WHERE x.id = NULLIF(u.excl, '')::uuid AND x.tenant_id = $1::uuid),
+			NULLIF(u.catalog, '')
 		FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],
-			$10::text[], $11::bigint[], $12::text[], $13::text[], $14::text[], $15::text[], $16::bool[], $20::text[])
-			AS u(id, method, tmpl, thash, phash, kind, source, example, status, ctype, auth, tech, sig, in_scope, excl)
+			$10::text[], $11::bigint[], $12::text[], $13::text[], $14::text[], $15::text[], $16::bool[], $20::text[], $21::text[])
+			AS u(id, method, tmpl, thash, phash, kind, source, example, status, ctype, auth, tech, sig, in_scope, excl, catalog)
 		ON CONFLICT (tenant_id, origin_asset_id, template_hash) DO UPDATE SET
 			sources = CASE WHEN excluded.sources <@ web_endpoints.sources THEN web_endpoints.sources
 				ELSE ARRAY(SELECT DISTINCT s FROM unnest(web_endpoints.sources || excluded.sources) s ORDER BY s) END,
@@ -233,6 +307,7 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 			response_sig = excluded.response_sig,
 			in_scope = excluded.in_scope,
 			exclusion_id = excluded.exclusion_id,
+			catalog_key = excluded.catalog_key,
 			state = CASE WHEN web_endpoints.state = 'gone' THEN 'active' ELSE web_endpoints.state END,
 			last_seen_at = now(),
 			last_run_id = COALESCE(excluded.last_run_id, web_endpoints.last_run_id),
@@ -242,13 +317,14 @@ func upsertEndpoints(ctx context.Context, tx *sql.Tx, tenantID, originAssetID sh
 			OR web_endpoints.state = 'gone'
 			OR web_endpoints.in_scope IS DISTINCT FROM excluded.in_scope
 			OR web_endpoints.exclusion_id IS DISTINCT FROM excluded.exclusion_id
+			OR web_endpoints.catalog_key IS DISTINCT FROM excluded.catalog_key
 			OR web_endpoints.response_sig IS DISTINCT FROM excluded.response_sig
 			OR NOT (excluded.sources <@ web_endpoints.sources)`,
 		tenantID.String(), originAssetID.String(),
 		pq.Array(ids), pq.Array(methods), pq.Array(tmpls), pq.Array(thash), pq.Array(phash),
 		pq.Array(kinds), pq.Array(sources), pq.Array(examples), pq.Array(statuses), pq.Array(ctypes),
 		pq.Array(auths), pq.Array(techs), pq.Array(sigs), pq.Array(inScope),
-		nullID(prov.RunID), nullID(prov.SensorID), tool, pq.Array(exclusions))
+		nullID(prov.RunID), nullID(prov.SensorID), tool, pq.Array(exclusions), pq.Array(catalogs))
 	if err != nil {
 		return fmt.Errorf("upsert endpoints: %w", err)
 	}
@@ -287,17 +363,19 @@ func endpointIDs(ctx context.Context, tx *sql.Tx, tenantID, originAssetID shared
 
 // upsertParams writes the parameter names of the endpoints, refusing new
 // ones beyond MaxParamsPerEndpoint, and refreshes each endpoint's
-// param_count. It returns the parameters refused.
-func upsertParams(ctx context.Context, tx *sql.Tx, tenantID shared.ID, obs []webendpoint.Observation, ids map[string]string) (int, error) {
+// param_count. It returns the parameters refused and the new ones per
+// endpoint id.
+func upsertParams(ctx context.Context, tx *sql.Tx, tenantID shared.ID, obs []webendpoint.Observation, ids map[string]string) (int, map[string]int, error) {
 	epIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
 		epIDs = append(epIDs, id)
 	}
 	have, err := existingParams(ctx, tx, tenantID, epIDs)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
+	added := map[string]int{}
 	var (
 		refused                                     int
 		pEp, pLoc, pName, pHint, pRisk, pSens, pSrc []string
@@ -319,6 +397,7 @@ func upsertParams(ctx context.Context, tx *sql.Tx, tenantID shared.ID, obs []web
 					have[ep] = map[string]bool{}
 				}
 				have[ep][key] = true
+				added[ep]++
 			}
 			pEp, pLoc, pName = append(pEp, ep), append(pLoc, p.Location), append(pName, p.Name)
 			pHint, pRisk = append(pHint, p.TypeHint), append(pRisk, strings.Join(p.RiskHints, ","))
@@ -346,7 +425,7 @@ func upsertParams(ctx context.Context, tx *sql.Tx, tenantID shared.ID, obs []web
 					OR (excluded.required AND NOT web_endpoint_params.required))`,
 			tenantID.String(), pq.Array(pEp), pq.Array(pLoc), pq.Array(pName), pq.Array(pHint),
 			pq.Array(pReq), pq.Array(pRisk), pq.Array(pSens), pq.Array(pSrc)); err != nil {
-			return refused, fmt.Errorf("upsert params: %w", err)
+			return refused, nil, fmt.Errorf("upsert params: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE web_endpoints e SET param_count = LEAST(c.n, 32767)
@@ -354,7 +433,7 @@ func upsertParams(ctx context.Context, tx *sql.Tx, tenantID shared.ID, obs []web
 			WHERE p.tenant_id = $1 AND p.endpoint_id = ANY($2::uuid[]) GROUP BY p.endpoint_id) c
 		WHERE e.tenant_id = $1 AND e.id = c.endpoint_id AND e.param_count <> c.n`,
 		tenantID.String(), pq.Array(epIDs)); err != nil {
-		return refused, fmt.Errorf("param counts: %w", err)
+		return refused, nil, fmt.Errorf("param counts: %w", err)
 	}
-	return refused, nil
+	return refused, added, nil
 }

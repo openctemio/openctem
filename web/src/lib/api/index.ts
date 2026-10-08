@@ -880,19 +880,16 @@ export {
 // ============================================
 
 export {
-  // Platform hooks
-  usePlatformStats,
-  usePlatformUsage,
-
-  // Cache utilities
+  // Platform scanning
+  usePlatformScanning,
   platformKeys,
-  invalidatePlatformCache,
-  invalidatePlatformStatsCache,
 } from './platform-hooks'
 
-export type { PlatformSensorTier, TierStats, PlatformStatsResponse } from './platform-types'
-
-export { PLATFORM_SENSOR_TIERS, PLATFORM_TIER_LABELS } from './platform-types'
+export type {
+  PlatformScanningResponse,
+  PlatformScanningStatus,
+  PlatformRegion,
+} from './platform-types'
 
 // ============================================
 // PLATFORM ENDPOINTS

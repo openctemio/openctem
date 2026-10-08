@@ -33,7 +33,6 @@ vi.mock('@/lib/api/sensor-hooks', () => ({
           status: 'active',
           reported: { tools: [{ name: 'tenable_sc', installed: true }] },
         },
-        { id: 'p1', name: 'shared', status: 'active', is_platform_sensor: true },
       ],
     },
     isLoading: false,

@@ -94,6 +94,14 @@ func NormalizeStepConfig(tool string, config map[string]any) (map[string]any, er
 		return nil, nil
 	}
 	out := maps.Clone(config)
+	// endpoint_selector is the platform's (incremental web scanning): it is
+	// checked and never sent to the sensor.
+	if v, ok := out[StepKeyEndpointSelector]; ok {
+		if sv, isStr := v.(string); !isStr || !validEndpointSelector(sv) {
+			return nil, fmt.Errorf("%w: %s must be all, new or changed", ErrInvalidStepSetting, StepKeyEndpointSelector)
+		}
+		delete(out, StepKeyEndpointSelector)
+	}
 	if _, ok := out[stepKeyAllowInteractsh]; ok {
 		return nil, fmt.Errorf("%w: %s cannot be set on a pipeline step", ErrInvalidStepSetting, stepKeyAllowInteractsh)
 	}
@@ -300,4 +308,28 @@ func plainArgValue(s string) error {
 		return fmt.Errorf("%q contains a control character", s)
 	}
 	return nil
+}
+
+// StepKeyEndpointSelector is the step setting of incremental web scanning
+// (RFC-056): which endpoints a template step chained after a crawl takes.
+const StepKeyEndpointSelector = "endpoint_selector"
+
+// Endpoint selector modes.
+const (
+	EndpointSelectorAll     = "all"
+	EndpointSelectorNew     = "new"
+	EndpointSelectorChanged = "changed"
+)
+
+func validEndpointSelector(v string) bool {
+	return v == EndpointSelectorAll || v == EndpointSelectorNew || v == EndpointSelectorChanged
+}
+
+// EndpointSelectorOf reads a step's endpoint_selector ("all" when unset or
+// not one of the modes; NormalizeStepConfig refuses an invalid one).
+func EndpointSelectorOf(config map[string]any) string {
+	if v, ok := config[StepKeyEndpointSelector].(string); ok && validEndpointSelector(v) {
+		return v
+	}
+	return EndpointSelectorAll
 }
