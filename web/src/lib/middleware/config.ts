@@ -31,6 +31,10 @@ export const PUBLIC_ROUTES = [
   // favicon must load without a session.
   '/icon',
   '/apple-icon',
+  // The operator's legal documents (built-in templates when
+  // LEGAL_PAGES_ENABLED=true, 404 otherwise): linked from the sign-in page.
+  '/terms',
+  '/privacy',
 ] as const
 
 export type PublicRoute = (typeof PUBLIC_ROUTES)[number]
