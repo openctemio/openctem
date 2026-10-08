@@ -64,7 +64,7 @@ export function downloadCsv(csv: string, filename: string): void {
  *
  * Generates a sanitized CSV (formula-injection safe) with a UTF-8 BOM for
  * Excel compatibility, triggers a download, and revokes the blob URL to avoid
- * a memory leak. Used by asset pages (via the `useAssetExport` alias) and the
+ * a memory leak. Used by list pages and the
  * exposures page; reach for this whenever a list view needs "Export to CSV".
  */
 /**

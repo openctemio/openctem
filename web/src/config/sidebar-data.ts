@@ -264,7 +264,8 @@ export const sidebarData: SidebarData = {
           sections: ASSETS_SECTION_TABS,
         },
         // /assets opens on the full, filterable list; the category cards are a
-        // view switch on the same page (?view=categories). /assets/all redirects.
+        // view switch on the same page (?view=categories). Every asset type is a
+        // filter of this list (/assets?types=host), never a page of its own.
         // ----------------------------------------
         // EXPOSURES (CVEs + non-CVE security issues)
         // ----------------------------------------
