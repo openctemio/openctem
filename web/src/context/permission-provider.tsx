@@ -25,6 +25,7 @@ import {
 import { devLog } from '@/lib/logger'
 import { useTenant } from './tenant-provider'
 import { useBootstrapContextSafe } from './bootstrap-provider'
+import { useWebSocket } from './websocket-provider'
 
 // ============================================
 // TYPES
@@ -296,9 +297,13 @@ export function PermissionProvider({ children }: PermissionProviderProps) {
     fetchPermissions,
   ])
 
-  // Polling for updates
+  // Polling, only as a fallback while the WebSocket is down. With the socket
+  // up, a role change reaches this tab through the X-Permission-Stale header
+  // on the next API answer (dispatchPermissionStaleEvent) and the server
+  // closes the socket of a disabled member; the focus sync below still runs.
+  const { isConnected: socketConnected } = useWebSocket()
   React.useEffect(() => {
-    if (!tenantId) return
+    if (!tenantId || socketConnected) return
 
     const intervalId = setInterval(() => {
       // A hidden tab does not need fresh permissions; the focus handler below
@@ -308,7 +313,7 @@ export function PermissionProvider({ children }: PermissionProviderProps) {
     }, POLL_INTERVAL_MS)
 
     return () => clearInterval(intervalId)
-  }, [tenantId, fetchPermissions])
+  }, [tenantId, socketConnected, fetchPermissions])
 
   // Track tab visibility and sync on focus only if hidden for a while
   // This prevents unnecessary API calls when quickly switching tabs

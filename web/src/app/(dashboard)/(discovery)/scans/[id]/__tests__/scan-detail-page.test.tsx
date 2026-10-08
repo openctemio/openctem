@@ -34,8 +34,10 @@ vi.mock('@/features/scans/components/run-detail-sheet', () => ({
   RunDetailSheet: ({ runId }: { runId: string | null }) =>
     runId ? <div data-testid="run-sheet">{runId}</div> : null,
 }))
+const breadcrumbTitles = vi.hoisted(() => [] as (string | null | undefined)[])
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+  useBreadcrumbTitle: (title: string | null | undefined) => breadcrumbTitles.push(title),
 }))
 vi.mock('@/lib/permissions', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/permissions')>()
@@ -125,6 +127,11 @@ describe('Scan page', () => {
       'href',
       '/scans/runs?scan_id=s1'
     )
+  })
+
+  it('names the scan in the header breadcrumb', () => {
+    render(<ScanDetailPage />)
+    expect(breadcrumbTitles).toContain('Nightly recon')
   })
 
   it('opens a run in the drawer', async () => {

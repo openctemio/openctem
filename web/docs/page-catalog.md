@@ -22,7 +22,7 @@ plus top-level `insights/`, `findings/`, `reports/`, `settings/`, `account/`,
 Grouped by CTEM stage in `src/config/sidebar-data.ts`:
 
 - **Dashboard** — `/`
-- **Scoping** (docs/ui/scoping-ia-2026-10.md) — Overview (`/scoping`, the
+- **Scoping** — Overview (`/scoping`, the
   readiness hub, its first row; the section header only expands), Cycles (`/cycles`, detail
   `/cycles/[id]`), Business context (tabs Crown jewels · Services · Units),
   Scope (`/scope`: Targets · Exclusions · Seeds), Threat model (tabs
@@ -61,7 +61,7 @@ That is now wrong. Each is sidebar-linked and backed by a real, domain-scoped ho
 ## 2. Reachable, intentionally NOT in the sidebar (not orphaned)
 
 - **Asset types** are filters of the one inventory, never pages: `/assets?types=host`,
-  `/assets?types=identity&sub_type=iam_user` (registry-driven typed mode, research/77).
+  `/assets?types=identity&sub_type=iam_user` (registry-driven typed mode).
   `/assets/duplicates` and every asset at `/assets/{id}` (a repository opens its workspace there) →
   reached from the **/assets** hub and its rows.
 - **Exposures / Components sub-views** `/exposures/{vulnerabilities,misconfigurations,secrets,code}`
@@ -78,7 +78,7 @@ That is now wrong. Each is sidebar-linked and backed by a real, domain-scoped ho
 
 The last pages that rendered `useDashboardStats` totals under a domain title
 (`/progress`, `/trending`, `/insights/analytics/mttr`, `/simulation/scenarios`)
-were deleted (owner decision D-31) and redirect to the real page for the same
+were deleted and redirect to the real page for the same
 question (`LEGACY_ORPHAN_ROUTE_REDIRECTS` in `src/config/legacy-routes.ts`).
 
 The wide "hidden placeholder" clusters listed in older revisions
