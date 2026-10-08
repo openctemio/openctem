@@ -33,6 +33,9 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, oauthRoutesLive, log).
 		WithTenantCreationMode(cfg.Auth.TenantCreationMode).
 		WithRegistrationEnabled(cfg.Auth.AllowRegistration)
+	if h.SignupPolicy != nil {
+		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
+	}
 
 	// Public auth routes
 	router.Group("/api/v1/auth", func(r Router) {
