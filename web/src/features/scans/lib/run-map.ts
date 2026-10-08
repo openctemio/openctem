@@ -100,7 +100,54 @@ export function nodeBadgeLines(n: RunMapNode): string[] {
   const findings = n.findings ?? 0
   if (findings > 0) parts.push(`${compactCount(findings)} findings`)
   if (parts.length) lines.push(parts.join(', '))
+  const delta = outputsDeltaLabel(n)
+  if (delta) lines.push(delta)
+  if (producedNothing(n)) lines.push('No output')
   return lines
+}
+
+/**
+ * How a step's outputs compare with the previous run of the scan:
+ * "+3 new, 1 gone", "same as last run", or null without a previous run (or
+ * when neither run produced anything).
+ */
+export function outputsDeltaLabel(n: RunMapNode): string | null {
+  const o = n.outputs
+  if (o?.previous === undefined) return null
+  const added = o.added ?? 0
+  const gone = o.gone ?? 0
+  if (added === 0 && gone === 0) {
+    return (o.total ?? 0) > 0 ? 'Same as last run' : null
+  }
+  const parts: string[] = []
+  if (added > 0) parts.push(`+${compactCount(added)} new`)
+  if (gone > 0) parts.push(`${compactCount(gone)} gone`)
+  return parts.join(', ')
+}
+
+/**
+ * A step that finished and produced nothing: no asset in the caller's scope
+ * and no finding. Worth a look: a tool that silently returns nothing looks
+ * like a clean result.
+ */
+export function producedNothing(n: RunMapNode): boolean {
+  if (n.state !== 'succeeded' && n.state !== 'partial') return false
+  return (n.outputs?.total ?? 0) === 0 && (n.findings ?? 0) === 0
+}
+
+/** The finished steps that produced nothing, and the warning to show for each. */
+export function zeroOutputWarnings(map: RunMap | undefined): { key: string; text: string }[] {
+  return (map?.nodes ?? []).filter(producedNothing).map((n) => {
+    const name = n.name || n.step_key || ''
+    const before = n.outputs?.previous ?? 0
+    return {
+      key: n.step_key ?? '',
+      text:
+        before > 0
+          ? `${name} produced nothing, while the previous run produced ${compactCount(before)}.`
+          : `${name} produced nothing.`,
+    }
+  })
 }
 
 /** Edge label: what the upstream step produced, when it produced anything. */
