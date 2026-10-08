@@ -25,8 +25,8 @@ func TestBodySnippet_BoundedAndSanitised(t *testing.T) {
 	if got := BodySnippet([]byte(long)); len([]rune(got)) != maxUpstreamSnippet+1 {
 		t.Fatalf("snippet length = %d", len([]rune(got)))
 	}
-	got := BodySnippet([]byte("line1\nline2\x1b[31m‮evil"))
-	if strings.ContainsAny(got, "\n\x1b‮") {
+	got := BodySnippet([]byte("line1\nline2\x1b[31m\u202eevil"))
+	if strings.ContainsAny(got, "\n\x1b\u202e") {
 		t.Fatalf("control or bidi characters kept: %q", got)
 	}
 }
