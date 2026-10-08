@@ -118,7 +118,7 @@ func TestIssueClient(t *testing.T) {
 	if gt, gs, ok := SensorIDs(c); !ok || gt != tid || gs != sid {
 		t.Fatalf("ids %q %q", gt, gs)
 	}
-	if d := c.NotAfter.Sub(time.Now()); d < DefaultCertTTL-time.Minute || d > DefaultCertTTL+time.Minute {
+	if d := time.Until(c.NotAfter); d < DefaultCertTTL-time.Minute || d > DefaultCertTTL+time.Minute {
 		t.Fatalf("lifetime %v", d)
 	}
 	if !c.PublicKey.(ed25519.PublicKey).Equal(pub) {
