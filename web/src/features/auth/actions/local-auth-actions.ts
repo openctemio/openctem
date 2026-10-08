@@ -1230,6 +1230,8 @@ export async function submitAccessRequestAction(input: {
   company: string
   email: string
   note: string
+  /** The Turnstile token when a CAPTCHA is configured. */
+  captcha_token?: string
 }): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
   try {
     const data = await backendFetch<{ message: string }>(authEndpoints.accessRequests(), {

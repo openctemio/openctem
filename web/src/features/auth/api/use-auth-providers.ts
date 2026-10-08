@@ -34,6 +34,8 @@ export interface AuthProvidersResponse {
   tenant_creation_mode?: string
   /** Whether people who cannot sign up may request an organization. */
   request_access?: boolean
+  /** Cloudflare Turnstile site key when a CAPTCHA protects the public forms. */
+  captcha_site_key?: string
 }
 
 // ============================================
