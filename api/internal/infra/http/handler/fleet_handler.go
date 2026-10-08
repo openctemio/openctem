@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -199,14 +198,11 @@ func (h *FleetHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows := newFleetFilter(q, role).apply(all)
 	sortFleet(rows)
 
-	page, _ := strconv.Atoi(q.Get("page"))
-	perPage, _ := strconv.Atoi(q.Get("per_page"))
-	if page < 1 {
-		page = 1
+	paging, ok := listPage(w, r, 25)
+	if !ok {
+		return
 	}
-	if perPage < 1 || perPage > MaxFleetPerPage {
-		perPage = 25
-	}
+	page, perPage := paging.Page, min(paging.PerPage, MaxFleetPerPage)
 	start := min((page-1)*perPage, len(rows))
 	end := min(start+perPage, len(rows))
 	pages := (len(rows) + perPage - 1) / perPage
