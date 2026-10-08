@@ -157,11 +157,11 @@ export default function CredentialsPage() {
     isLoading,
     mutate,
   } = useCredentialsApi({
-    // The table paginates client-side (DataTablePagination), so fetch a full
-    // working set rather than a frozen 20-row page — the server `page` state
-    // was never advanced, making rows 21+ permanently unreachable.
+    // The table paginates client-side (DataTablePagination) over one server
+    // page: the API returns at most 100 per page (it used to answer the 500
+    // asked here with 20). Server paging for this list is still to do.
     page: 1,
-    page_size: 500,
+    per_page: 100,
     state: apiStateFilter.length > 0 ? apiStateFilter : undefined,
     search: debouncedSearch || undefined,
   })
@@ -175,15 +175,15 @@ export default function CredentialsPage() {
   // cards and the table can never contradict each other.
   const { data: allCredentialsResponse, isLoading: statsLoading } = useCredentialsApi({
     page: 1,
-    page_size: 1000,
+    per_page: 100,
   })
 
   // Fetch identities (grouped by username/email) for identity view
   const { data: identitiesResponse, isLoading: identitiesLoading } = useCredentialIdentitiesApi({
-    // Client-side paginated like the credentials table above — fetch the full
-    // working set so identities beyond the first page stay reachable.
+    // Client-side paginated like the credentials table above, over at most
+    // 100 identities (the API maximum per page).
     page: 1,
-    page_size: 500,
+    per_page: 100,
     state: apiStateFilter.length > 0 ? apiStateFilter : undefined,
     search: debouncedSearch || undefined,
   })
