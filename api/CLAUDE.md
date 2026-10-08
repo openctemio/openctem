@@ -301,8 +301,8 @@ Integration credentials (access tokens, API keys) are encrypted using AES-256-GC
 - `APP_ENCRYPTION_KEY`: 32-byte key (required in production)
   - Hex format: 64 characters (`openssl rand -hex 32`)
   - Base64 format: 44 characters (`openssl rand -base64 32`)
-- If not set, credentials stored in plaintext (dev only)
-- Existing plaintext credentials remain readable (backward compatible)
+- If not set, credentials stored in plaintext (dev only, `APP_ALLOW_PLAINTEXT_CREDENTIALS=true`)
+- A stored value that does not decrypt is never used as is (fail closed); legacy plaintext rows are encrypted with `cmd/encrypt-credentials`
 
 ---
 
