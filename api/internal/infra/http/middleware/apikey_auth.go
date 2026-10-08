@@ -211,6 +211,8 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 //   - /api/v1/platform: platform scanning as the signed-in organization sees
 //     it in the console; automation has no use for it.
 //   - /api/v1/users: account management, including /users/{id}/roles.
+//   - /api/v1/oauth: answering an MCP client's consent request is a person's
+//     decision in their browser session, never automation's (RFC-062).
 //   - /api/v1/auth, /api/v1/admin, /api/v1/tenants, /api/v1/invitations:
 //     sign-in, the platform admin console, organization and membership
 //     management. These are not on the key-capable chain at all; listing them
@@ -227,6 +229,7 @@ var apiKeyDeniedPrefixes = []string{ //nolint:gochecknoglobals // fixed policy t
 	"/api/v1/admin",
 	"/api/v1/tenants",
 	"/api/v1/invitations",
+	"/api/v1/oauth",
 }
 
 // APIKeyDeniedPrefixes returns the route prefixes an API key may never reach.

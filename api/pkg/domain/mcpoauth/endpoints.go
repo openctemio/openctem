@@ -46,8 +46,8 @@ func NewEndpoints(publicURL string) (Endpoints, error) {
 	}
 	scheme := strings.ToLower(u.Scheme)
 	switch {
-	case scheme == "https":
-	case scheme == "http" && isLoopbackHost(u.Hostname()):
+	case scheme == schemeHTTPS:
+	case scheme == schemeHTTP && isLoopbackHost(u.Hostname()):
 	default:
 		return Endpoints{}, fmt.Errorf("%w: public URL must use https", shared.ErrValidation)
 	}
@@ -72,3 +72,9 @@ func isLoopbackHost(host string) bool {
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }
+
+// URI schemes.
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
+)
