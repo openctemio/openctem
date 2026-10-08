@@ -583,7 +583,7 @@ export const ACTIVITY_TYPE_CONFIG: Record<
     color: 'text-blue-400',
   },
   verified: {
-    label: 'Verified',
+    label: 'Retest verified',
     icon: 'shield-check',
     color: 'text-green-400',
   },
