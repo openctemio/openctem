@@ -1,44 +1,10 @@
-# Security Policy
+# Web Console Security Architecture
 
-## Supported Versions
+How the web console (`web/`) handles authentication, authorization, route
+protection, security headers and input. Paths are relative to `web/`. To report
+a vulnerability, follow the repository [security policy](../../SECURITY.md).
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.x.x   | :white_check_mark: |
-
-## Reporting a Vulnerability
-
-We take security seriously at OpenCTEM. If you discover a security vulnerability, please follow responsible disclosure practices.
-
-### DO NOT
-
-- Open a public GitHub issue for security vulnerabilities
-- Disclose the vulnerability publicly before it has been addressed
-- Exploit the vulnerability beyond what is necessary to demonstrate it
-
-### DO
-
-1. **Email us directly** at security@openctem.io with:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact assessment
-   - Suggested fix (if any)
-
-2. **Use our bug bounty program** (if available) through:
-   - [HackerOne](https://hackerone.com/openctemio) (coming soon)
-
-### Response Timeline
-
-| Severity | Acknowledgment  | Resolution Target |
-| -------- | --------------- | ----------------- |
-| Critical | 24 hours        | 24-72 hours       |
-| High     | 48 hours        | 1-2 weeks         |
-| Medium   | 5 business days | 2-4 weeks         |
-| Low      | 5 business days | Next release      |
-
----
-
-## Security Architecture Overview
+## Overview
 
 ```
 Browser                          Next.js Server                    Backend API
@@ -368,7 +334,7 @@ All forms use Zod schemas (`src/features/*/schemas/`) for:
 | Field            | Validation                      |
 | ---------------- | ------------------------------- |
 | Email            | Non-empty + valid email format  |
-| Password         | Minimum 8 characters            |
+| Password         | Minimum 12 characters on sign-up and reset (the API enforces the full password policy) |
 | First/Last Name  | 1-50 characters                 |
 | Confirm Password | Must match password field       |
 | Reset Token      | Non-empty string                |
@@ -432,7 +398,7 @@ Never exposed to the browser:
 
 ## 10. CI/CD Security
 
-### 10.1 Security Scanning (`security.yml`)
+### 10.1 Security Scanning (`.github/workflows/web-security.yml`, `codeql.yml`)
 
 Runs on: push/PR to main/develop + weekly (Monday 00:00 UTC)
 
@@ -446,7 +412,7 @@ Runs on: push/PR to main/develop + weekly (Monday 00:00 UTC)
 | **Snyk**              | SCA        | All                                | Optional (requires `ENABLE_SNYK` + token)                                    |
 | **Docker Image Scan** | Container  | CRITICAL, HIGH                     | Trivy on built image (main branch only)                                      |
 
-### 10.2 Quality Gates (`ci.yml`)
+### 10.2 Quality Gates (`.github/workflows/web-ci.yml`)
 
 | Check        | Tool              | Blocks PR |
 | ------------ | ----------------- | --------- |
@@ -515,39 +481,3 @@ The API error handler (`src/lib/api/error-handler.ts`) maps backend errors to us
 - Sensitive cookies: Always `httpOnly: true`, `secure: true` in production, `sameSite: 'lax'`.
 - Client-accessible cookies: Only for non-sensitive data (locale, theme, tenant display info).
 - The `authTokenCookie.set()` client-side method is deliberately blocked and logs an error.
-
----
-
-## 13. Known Trade-offs & Hardening Roadmap
-
-### Current Trade-offs
-
-| Item                              | Status      | Rationale                                                                                     |
-| --------------------------------- | ----------- | --------------------------------------------------------------------------------------------- |
-| WebSocket token in URL query      | Accepted    | WebSocket API cannot send custom headers. Token scoped to same session via httpOnly endpoint. |
-| Password policy (8 chars minimum) | Intentional | Backend enforces additional policies. Client-side strength meter provides guidance.           |
-| `img-src https:` wildcard         | Accepted    | Required for user avatars and external content.                                               |
-
-### Hardening Roadmap
-
-- [x] Nonce-based CSP to eliminate `unsafe-inline`/`unsafe-eval` from `script-src` (RFC-040)
-- [ ] Environment-conditional CSP `connect-src` (strip localhost in production)
-- [ ] Upgrade CSRF token generation to `crypto.randomBytes()`
-- [ ] Client-side rate limiting for login attempts (config exists at `SECURITY_CONFIG.MAX_LOGIN_ATTEMPTS: 5` but not yet enforced)
-- [ ] Subresource Integrity (SRI) for external resources
-
----
-
-## 14. Compliance Targets
-
-- OWASP Top 10 (actively addressed)
-- CWE/SANS Top 25 (actively addressed)
-- SOC 2 Type II (planned)
-- ISO 27001 (planned)
-
----
-
-## Contact
-
-- **Security Team**: security@openctem.io
-- **General Issues**: https://github.com/openctemio/openctem/issues

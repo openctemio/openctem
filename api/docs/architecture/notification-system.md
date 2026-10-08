@@ -563,7 +563,7 @@ permissions and the module toggle from coming back without a sender.
 ## Related Documents
 
 - [Clean Architecture](./clean-arch.md)
-- [Security Best Practices](../SECURITY.md)
+- [Security policy](../../../SECURITY.md)
 
 ## Integration safety rules (all categories)
 

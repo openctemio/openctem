@@ -484,7 +484,7 @@ The shared UI primitives worth knowing:
   `src/app/api/v1/[...path]/route.ts`. Next.js 16's **`src/proxy.ts`** (it must sit
   next to `app/`; there is no `middleware.ts`) redirects signed-out page requests
   to `/login?next=` (the admin console to `/admin/login?next=`), picks the locale
-  and sets the per-request CSP nonce (SECURITY.md §3, §4.2). It checks cookie
+  and sets the per-request CSP nonce ([security architecture](security-architecture.md) §3, §4.2). It checks cookie
   presence and shape only; the API validates the session, and the client clears
   a stale cookie on its first 401. `RouteGuard` then checks module and permission.
 
