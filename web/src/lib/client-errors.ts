@@ -10,8 +10,12 @@
  * WebClientErrors).
  *
  * Reports are throttled per page load (one per kind a minute, ten in all) and
- * sent with sendBeacon so they survive a reload; reporting never throws.
+ * sent with a keepalive fetch so they survive a reload; reporting never
+ * throws. Not sendBeacon: a beacon cannot carry the CSRF header every write
+ * to the web server needs (src/lib/server-auth-cookies.ts).
  */
+
+import { csrfHeaders } from '@/lib/csrf-client'
 
 export type ClientErrorKind = 'chunk_load' | 'render' | 'unhandled' | 'other'
 
@@ -49,19 +53,11 @@ export function reportClientError(kind: ClientErrorKind, now: number = Date.now(
   lastSent.set(kind, now)
   sentThisPage++
 
-  const body = JSON.stringify({ kind })
   try {
-    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-      const sent = navigator.sendBeacon(
-        CLIENT_ERRORS_ENDPOINT,
-        new Blob([body], { type: 'application/json' })
-      )
-      if (sent) return true
-    }
     void fetch(CLIENT_ERRORS_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
+      headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+      body: JSON.stringify({ kind }),
       keepalive: true,
       credentials: 'same-origin',
     }).catch(() => {})
