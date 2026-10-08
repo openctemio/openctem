@@ -552,7 +552,7 @@ The plane table, in code (`routes/plane`) and checked by CI:
 | self | `/api/v1/me/` | app host | session | — |
 | auth | `/api/v1/auth/` | app host | none / rate-limited | strict per-IP limits |
 | admin | `/api/v1/admin/` | `OPENCTEM_ADMIN_HOSTNAME` (new) | admin session / `X-Admin-API-Key` | IP allowlist, MFA, can be dropped at the edge |
-| sensor | `/api/v2/sensor/` (+ `/api/v1/agent/` until v1 removal) | `OPENCTEM_SENSOR_HOSTNAME` (RFC-040) | sensor key / RFC 9421 | sensor gateway, body limits per route |
+| sensor | `/api/v2/sensor/` (`/api/v1/agent/` removed 2026-10-05) | `OPENCTEM_SENSOR_HOSTNAME` (RFC-040) | sensor key / RFC 9421 | sensor gateway, body limits per route |
 | inbound | `/hooks/` (new; legacy `/api/v1/webhooks/incoming/`) | app or sensor host | HMAC per tenant | small bodies, per-provider limits |
 | scim | `/scim/v2/` | app host | SCIM bearer | — |
 | mcp | `/api/v1/mcp` | app host | `oct_` | per-key limits |
