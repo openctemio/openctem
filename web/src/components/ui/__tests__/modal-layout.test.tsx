@@ -301,5 +301,7 @@ describe('Sheet with a SheetBody', () => {
       </Sheet>
     )
     expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
+    // Without a footer the body is last and carries the bottom padding.
+    expect(document.querySelector('[data-slot="sheet-body"]')!.className).toContain('sm:last:pb-6')
   })
 })
