@@ -8,7 +8,10 @@ import {
   mapSteps,
   nodeBadgeLines,
   outputsByType,
+  outputsDeltaLabel,
+  producedNothing,
   stepTasks,
+  zeroOutputWarnings,
 } from '../run-map'
 
 function node(over: Partial<RunMapNode>): RunMapNode {
@@ -142,5 +145,39 @@ describe('run map step panel helpers', () => {
       ['ip_address', 3],
     ])
     expect(outputsByType(undefined)).toEqual([])
+  })
+})
+
+describe('comparison with the previous run', () => {
+  it('says what is new and gone, or that nothing changed', () => {
+    const o = (total: number, previous?: number, added = 0, gone = 0) =>
+      node({ state: 'succeeded', outputs: { total, by_type: {}, previous, added, gone } })
+    expect(outputsDeltaLabel(o(10))).toBeNull() // no previous run
+    expect(outputsDeltaLabel(o(10, 8, 3, 1))).toBe('+3 new, 1 gone')
+    expect(outputsDeltaLabel(o(8, 8, 0, 0))).toBe('Same as last run')
+    expect(outputsDeltaLabel(o(0, 2, 0, 2))).toBe('2 gone')
+    expect(outputsDeltaLabel(o(0, 0, 0, 0))).toBeNull()
+    expect(nodeBadgeLines(o(10, 8, 3, 1))).toEqual(['Done', '10 outputs', '+3 new, 1 gone'])
+  })
+
+  it('warns about a finished step that produced nothing', () => {
+    const quiet = node({
+      step_key: 'ports',
+      name: 'Ports',
+      state: 'succeeded',
+      outputs: { total: 0, by_type: {}, previous: 40, added: 0, gone: 40 },
+    })
+    const fresh = node({ step_key: 'dns', name: 'DNS', state: 'partial' })
+    const found = node({ step_key: 'vulns', state: 'succeeded', findings: 2 })
+    const running = node({ step_key: 'probe', state: 'running' })
+    expect([quiet, fresh, found, running].map(producedNothing)).toEqual([true, true, false, false])
+    expect(nodeBadgeLines(fresh)).toEqual(['Partly done', 'No output'])
+    expect(
+      zeroOutputWarnings({ nodes: [quiet, fresh, found, running], edges: [] } as unknown as RunMap)
+    ).toEqual([
+      { key: 'ports', text: 'Ports produced nothing, while the previous run produced 40.' },
+      { key: 'dns', text: 'DNS produced nothing.' },
+    ])
+    expect(zeroOutputWarnings(undefined)).toEqual([])
   })
 })
