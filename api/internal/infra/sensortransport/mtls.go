@@ -113,6 +113,11 @@ type MTLSConfig struct {
 	Addr string
 	// Host is the name sensors dial; the server certificate is minted for it.
 	Host string
+	// TrustedProxies are the CIDRs whose PROXY protocol header is believed
+	// (the gateway that passes the sensor host through at layer 4). From
+	// any other peer a PROXY header closes the connection. Empty: no PROXY
+	// protocol; the peer address is the TCP peer.
+	TrustedProxies []string
 }
 
 // NewMTLSServer builds the gRPC binding's server: TLS 1.3 only, a client

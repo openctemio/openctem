@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 const trigger = vi.fn(async (_arg: unknown) => ({}))
 vi.mock('../../api/use-verified-domains', () => ({
   useUpdateDomainJIT: () => ({ trigger, isMutating: false }),
+  isPendingChange: (r: { status?: string }) => r?.status === 'pending',
 }))
 
 import { DomainJITDialog, jitLabel } from '../domain-jit-dialog'

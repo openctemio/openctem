@@ -1,0 +1,18 @@
+# Files skipped by scripts/docs_check.py until the pull request that fixes them merges.
+# Remove each entry as soon as its pull request is merged.
+api/docs/architecture/agent-audit-logging.md  # fixed by #1434
+api/docs/architecture/agent-heartbeat-optimization.md  # fixed by #1434
+api/docs/architecture/asset-identity-resolution.md  # fixed by #1434
+api/docs/architecture/asset-schema.md  # fixed by #1434
+api/docs/architecture/authorization-matrix.md  # owned by open PR #1392; broken permission-realtime-sync link, fix after it merges
+api/docs/architecture/notification-system.md  # fixed by #1434
+api/docs/README.md  # fixed by #1434
+api/scripts/tests/README_notification_outbox_test.md  # fixed by #1434
+web/.claude/auth.md  # fixed by #1434
+web/.claude/patterns.md  # fixed by #1434
+web/.claude/skills/ui-ux-pro-max/SKILL.md  # fixed by #1434
+web/.claude/troubleshooting.md  # fixed by #1434
+web/docs/features/auth/README.md  # fixed by #1434
+web/docs/guides/ASSETS_API_INTEGRATION.md  # fixed by #1434
+web/docs/ops/ENVIRONMENT_VARIABLES.md  # fixed by #1434
+web/docs/ops/PRODUCTION_CHECKLIST.md  # fixed by #1434
