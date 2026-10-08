@@ -122,7 +122,7 @@ sections below.
 | F-2 | Upstream response bodies are never echoed back to the tenant. | Notifiers fixed in #1068; the rest move to the host redactor (§5.6, phase 1) |
 | F-3 | SMTP dials the validated address (no second resolution) and every session has a deadline. | **Fixed: #1069** |
 | F-4 | Private-range egress is granted per tenant, not process-wide. | Design §9.2 |
-| F-5 | TLS verification cannot be disabled by a tenant; a per-instance CA bundle replaces it. | Phase 0 follow-up (§8.3) |
+| F-5 | TLS verification cannot be disabled by a tenant; a per-instance CA bundle replaces it. | **Fixed:** tenant SMTP `skip_verify` refused and ignored when stored; the per-instance CA bundle is still a follow-up (§8.3) |
 | F-6 | A failed delivery is recorded as failed and retried or dead-lettered. | Phase 0 follow-up PR |
 | F-7 | Per-tenant transactional SMTP reads the keys the writer stores and the encrypted credential; secrets never go into metadata. | Phase 0 follow-up |
 | F-8 | A credential decrypt failure fails closed in production. | Host, `class=invalid_config` (phase 1) |
