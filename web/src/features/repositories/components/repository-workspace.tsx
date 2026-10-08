@@ -3,7 +3,7 @@
 import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
 import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
 import { useState, useMemo, useCallback } from 'react'
-import { csrfFetch } from '@/lib/api/client'
+import { csrfFetch, get } from '@/lib/api/client'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -1149,14 +1149,9 @@ function BranchesTab({
     setIsComparing(true)
     try {
       const params = new URLSearchParams({ base: baseBranch, compare: compareBranch })
-      const response = await fetch(
-        `/api/v1/repositories/${repositoryId}/branches/compare?${params}`,
-        {
-          credentials: 'include',
-        }
+      const data = await get<ComparisonResult>(
+        `/api/v1/repositories/${encodeURIComponent(repositoryId)}/branches/compare?${params}`
       )
-      if (!response.ok) throw new Error('Comparison failed')
-      const data = await response.json()
       setComparison(data)
     } catch {
       toast.error('Failed to compare branches')
