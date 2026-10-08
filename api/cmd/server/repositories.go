@@ -22,6 +22,7 @@ type Repositories struct {
 	ScopeExcl              *postgres.ScopeExclusionRepository
 	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
 	WebEndpoint            *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
+	APISpec                *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
 	RelationshipSuggestion *postgres.RelationshipSuggestionRepository // CTEM: Relationship suggestions
@@ -278,6 +279,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ScopeExcl:              postgres.NewScopeExclusionRepository(db),
 		AssetService:           postgres.NewAssetServiceRepository(db), // CTEM: Network services
 		WebEndpoint:            postgres.NewWebEndpointRepository(db),
+		APISpec:                postgres.NewAPISpecRepository(db),
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
 		RelationshipSuggestion: postgres.NewRelationshipSuggestionRepository(db), // CTEM: Relationship suggestions
