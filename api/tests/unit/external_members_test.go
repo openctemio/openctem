@@ -56,7 +56,7 @@ func TestExternalInvitation_PersonalGetsDefaultExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := inv.Access().ExpiresAt
-	if at == nil || at.Sub(time.Now()) < 89*24*time.Hour || at.Sub(time.Now()) > 91*24*time.Hour {
+	if at == nil || time.Until(*at) < 89*24*time.Hour || time.Until(*at) > 91*24*time.Hour {
 		t.Fatalf("personal invitee access expiry = %v, want about 90 days", at)
 	}
 }
