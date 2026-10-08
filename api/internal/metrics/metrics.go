@@ -12,7 +12,7 @@ var (
 	ScanRunsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "scan_runs_total",
-			Help: "Total number of pipeline runs by status",
+			Help: "Total number of scan runs by status",
 		},
 		[]string{"status"},
 	)
@@ -21,7 +21,7 @@ var (
 	ScanRunsInProgress = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "scan_runs_in_progress",
-			Help: "Number of pipeline runs currently in progress",
+			Help: "Number of scan runs currently in progress",
 		},
 		[]string{},
 	)

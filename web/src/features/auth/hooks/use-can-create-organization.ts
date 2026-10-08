@@ -1,5 +1,6 @@
 'use client'
 
+import { useBootstrapContextOptional } from '@/context/bootstrap-provider'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { canCreateOrganization } from '../lib/organization-creation'
 
@@ -27,7 +28,19 @@ function isRateLimited(error: unknown): boolean {
  * default) and the server still refuses it under `admin_only`.
  */
 export function useCanCreateOrganization(): CanCreateOrganization {
-  const { data, error, isLoading } = useAuthProviders()
+  // Inside the app shell the session bootstrap reports the policy, so the
+  // public /auth/providers (which shares the sign-in rate limit) is only
+  // asked on the auth pages, or when the bootstrap did not carry it.
+  const bootstrap = useBootstrapContextOptional()
+  const fromBootstrap = bootstrap?.data?.tenant_creation_mode
+  const waitForBootstrap = bootstrap !== null && bootstrap.isLoading
+  const skipProviders = waitForBootstrap || fromBootstrap !== undefined
+  const { data, error, isLoading } = useAuthProviders(undefined, !skipProviders)
+
+  if (fromBootstrap !== undefined) {
+    return { canCreate: canCreateOrganization(fromBootstrap), isLoading: false }
+  }
+  if (waitForBootstrap) return { canCreate: false, isLoading: true }
   const loading = !data && ((isLoading && !error) || isRateLimited(error))
   return {
     canCreate: !loading && canCreateOrganization(data?.tenant_creation_mode),

@@ -4,7 +4,7 @@ import { use, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -71,6 +71,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
 
   // Workflow data
   const [workflow, setWorkflow] = useState<ScanWorkflow | null>(null)
+  useBreadcrumbTitle(workflow?.name)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 

@@ -26,6 +26,12 @@ type FindingCounter interface {
 	Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error)
 }
 
+// FindingLister lists the findings a filter selects, one page at a time.
+// Satisfied by *postgres.FindingRepository.
+type FindingLister interface {
+	List(ctx context.Context, filter vulnerability.FindingFilter, opts vulnerability.FindingListOptions, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error)
+}
+
 // CampaignEpicCreator creates and transitions an external tracker epic for a
 // tenant. Implemented by *jira.SyncService. Declared here with primitive types
 // so this package needs no dependency on the jira package.
@@ -77,6 +83,7 @@ type RemediationCampaignService struct {
 	dataScope   *datascope.Enforcer // Layer 2: a restricted reader's progress counts (nil = unrestricted)
 	repo        remediation.CampaignRepository
 	finding     FindingCounter                       // nil → progress stays zero
+	lister      FindingLister                        // nil → a campaign lists no findings
 	resolver    CampaignFindingResolver              // nil → resolve action disabled
 	keyResolver CampaignKeyResolver                  // nil → keyed campaigns can't count/resolve
 	ticketRepo  remediation.CampaignTicketRepository // nil → ticketing disabled
@@ -186,6 +193,63 @@ func (s *RemediationCampaignService) SetFindingCounter(c FindingCounter) {
 // sees campaign progress over their own in-scope findings (ApplyViewerScope).
 func (s *RemediationCampaignService) SetDataScope(e *datascope.Enforcer) {
 	s.dataScope = e
+}
+
+// SetFindingLister wires the finding list behind ListCampaignFindings.
+func (s *RemediationCampaignService) SetFindingLister(l FindingLister) { s.lister = l }
+
+// ListCampaignFindings lists one page of the campaign's findings: the set its
+// finding count counts (campaignFindingFilter), on the caller's in-scope
+// assets when the caller is restricted. Tenant-scoped: a campaign of another
+// tenant is not found.
+func (s *RemediationCampaignService) ListCampaignFindings(ctx context.Context, tenantID, campaignID string, page pagination.Pagination) (pagination.Result[*vulnerability.Finding], error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return pagination.Result[*vulnerability.Finding]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	cid, err := shared.IDFromString(campaignID)
+	if err != nil {
+		return pagination.Result[*vulnerability.Finding]{}, shared.ErrNotFound
+	}
+	campaign, err := s.repo.GetByID(ctx, tid, cid)
+	if err != nil {
+		return pagination.Result[*vulnerability.Finding]{}, err
+	}
+	none := pagination.NewResult([]*vulnerability.Finding{}, 0, page)
+	filter, ok := campaignFindingFilter(campaign)
+	if !ok || s.lister == nil {
+		return none, nil
+	}
+	if s.dataScope != nil {
+		scope, err := s.dataScope.Resolve(ctx, tid)
+		if err != nil {
+			return pagination.Result[*vulnerability.Finding]{}, fmt.Errorf("resolve data scope: %w", err)
+		}
+		if scope != nil {
+			uid := scope.UserID
+			filter.DataScopeUserID = &uid
+		}
+	}
+	return s.lister.List(ctx, filter, vulnerability.NewFindingListOptions(), page)
+}
+
+// campaignFindingFilter is the set of findings a campaign tracks, whatever
+// their status: a keyed campaign's solution family, or its finding filter.
+// ok is false for a campaign without scope, which tracks nothing.
+func campaignFindingFilter(campaign *remediation.Campaign) (vulnerability.FindingFilter, bool) {
+	if key := campaignRemediationKey(campaign.FindingFilter()); key != "" {
+		f := vulnerability.NewFindingFilter().WithTenantID(campaign.TenantID())
+		f.RemediationKey = &key
+		return f, true
+	}
+	f := campaignFilterToFindingFilter(campaign.TenantID(), campaign.FindingFilter())
+	if !findingFilterHasScope(f) {
+		return f, false
+	}
+	// The whole scope regardless of status, so the count stays stable as
+	// findings resolve (see recomputeProgress).
+	f.Statuses = nil
+	return f, true
 }
 
 // ApplyViewerScope replaces the campaign's finding and resolved counts, in
@@ -410,18 +474,22 @@ func (s *RemediationCampaignService) CreateCampaign(ctx context.Context, input C
 		}
 		campaign.SetAssignment(toPtr, teamPtr)
 	}
-	// Start/due dates arrive as ISO/RFC3339 strings from the UI; parse them so
-	// "New Task" persists them (they were silently dropped). If no start date is
-	// chosen, Activate() auto-stamps it when the task first moves to in-progress.
+	// Start/due dates: RFC 3339 or a date alone (parseCampaignDate); anything
+	// else is refused, never dropped. If no start date is chosen, Activate()
+	// auto-stamps it when the task first moves to in-progress.
 	if input.StartDate != "" {
-		if start, derr := time.Parse(time.RFC3339, input.StartDate); derr == nil {
-			campaign.SetStartDate(&start)
+		start, derr := parseCampaignDate("start_date", input.StartDate, false)
+		if derr != nil {
+			return nil, derr
 		}
+		campaign.SetStartDate(start)
 	}
 	if input.DueDate != "" {
-		if due, derr := time.Parse(time.RFC3339, input.DueDate); derr == nil {
-			campaign.SetDueDate(&due)
+		due, derr := parseCampaignDate("due_date", input.DueDate, true)
+		if derr != nil {
+			return nil, derr
 		}
+		campaign.SetDueDate(due)
 	}
 
 	if err := s.repo.Create(ctx, campaign); err != nil {
@@ -472,6 +540,33 @@ func (s *RemediationCampaignService) GetCampaign(ctx context.Context, tenantID, 
 	return campaign, nil
 }
 
+// parseCampaignDate reads a campaign start or due date: an RFC 3339
+// timestamp, or a date alone (YYYY-MM-DD) read in UTC. A date alone is the
+// start of that day for a start date and its last second for a due date, so
+// a campaign due on a day is overdue only once the day has passed. Anything
+// else is a validation error.
+func parseCampaignDate(field, s string, endOfDay bool) (*time.Time, error) {
+	s = strings.TrimSpace(s)
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return &t, nil
+	}
+	if d, err := time.Parse(time.DateOnly, s); err == nil {
+		if endOfDay {
+			d = d.Add(24*time.Hour - time.Second)
+		}
+		return &d, nil
+	}
+	return nil, fmt.Errorf("%w: %s must be an RFC 3339 timestamp or a date (YYYY-MM-DD)", shared.ErrValidation, field)
+}
+
+// optionalCampaignDate is parseCampaignDate where "" clears the date.
+func optionalCampaignDate(field, s string, endOfDay bool) (*time.Time, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	return parseCampaignDate(field, s, endOfDay)
+}
+
 // ListCampaigns lists campaigns with filtering.
 func (s *RemediationCampaignService) ListCampaigns(ctx context.Context, tenantID string, filter remediation.CampaignFilter, page pagination.Pagination) (pagination.Result[*remediation.Campaign], error) {
 	tid, _ := shared.IDFromString(tenantID)
@@ -485,8 +580,10 @@ type UpdateRemediationCampaignInput struct {
 	Description *string
 	Priority    *string
 	Tags        []string
-	StartDate   *time.Time
-	DueDate     *time.Time
+	// StartDate and DueDate: nil = leave unchanged; ptr to "" = clear;
+	// otherwise RFC 3339 or a date alone (parseCampaignDate).
+	StartDate *string
+	DueDate   *string
 	// FindingFilter re-scopes the campaign (e.g. a task's "link to finding").
 	// nil = leave the existing scope untouched; non-nil (incl. {}) = replace it.
 	FindingFilter map[string]any
@@ -522,10 +619,18 @@ func (s *RemediationCampaignService) UpdateCampaign(ctx context.Context, tenantI
 		campaign.SetTags(input.Tags)
 	}
 	if input.StartDate != nil {
-		campaign.SetStartDate(input.StartDate)
+		start, derr := optionalCampaignDate("start_date", *input.StartDate, false)
+		if derr != nil {
+			return nil, derr
+		}
+		campaign.SetStartDate(start)
 	}
 	if input.DueDate != nil {
-		campaign.SetDueDate(input.DueDate)
+		due, derr := optionalCampaignDate("due_date", *input.DueDate, true)
+		if derr != nil {
+			return nil, derr
+		}
+		campaign.SetDueDate(due)
 	}
 	if input.FindingFilter != nil {
 		// Re-scoping the campaign (e.g. linking a finding) — apply then recompute

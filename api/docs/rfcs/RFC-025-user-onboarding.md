@@ -1,6 +1,6 @@
 # RFC-025 — User onboarding: administrators create users, SSO admits them
 
-> Status: **Accepted** (2026-10-01, product owner decision) — implemented.
+> Status: **Accepted** (2026-10-01) — implemented.
 > Scope: api + ui. Builds on RFC-022 (platform admin console) and the SSO
 > verified-domain work (`docs/architecture/sso-authentication.md`).
 > Operator guide: `docs/architecture/user-onboarding.md`.

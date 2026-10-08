@@ -519,8 +519,9 @@ export function useAsset(assetId: string | null) {
   const shouldFetch = assetId && currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<BackendAsset>(
-    shouldFetch ? ['asset', assetId] : null,
-    () => get<BackendAsset>(endpoints.assets.get(assetId!)),
+    // The endpoint URL, so a mutate() of the asset URL reaches this cache.
+    shouldFetch ? endpoints.assets.get(assetId!) : null,
+    (url: string) => get<BackendAsset>(url),
     {
       revalidateOnFocus: false,
     }
