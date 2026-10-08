@@ -3,7 +3,7 @@ package postgres
 // Command change notification for the sensor control stream
 // (docs/rfcs/RFC-059-sensor-transport-v3.md §6): after a write that can give
 // a sensor new work (a command becomes pending) or take work away (a held
-// command is cancelled), the repository tells the notifier, which wakes the
+// command is canceled), the repository tells the notifier, which wakes the
 // control streams of that tenant or sensor. The database stays the only
 // source of truth: a wake carries no data, a lost one costs latency only.
 
@@ -25,7 +25,7 @@ type CommandChangeNotifier interface {
 func (r *CommandRepository) SetChangeNotifier(n CommandChangeNotifier) { r.notify = n }
 
 // changed notifies about one command after a successful write: pending
-// work wakes the sensor it is pinned to, else the tenant; a cancelled
+// work wakes the sensor it is pinned to, else the tenant; a canceled
 // command wakes the sensor that holds it. Other states need no push.
 func (r *CommandRepository) changed(cmd *command.Command) {
 	if r.notify == nil || cmd == nil {
@@ -45,13 +45,6 @@ func (r *CommandRepository) changed(cmd *command.Command) {
 func (r *CommandRepository) changedTenant(tenantID shared.ID) {
 	if r.notify != nil {
 		r.notify.Wake(tenantID.String(), "")
-	}
-}
-
-// changedSensor wakes one sensor's streams.
-func (r *CommandRepository) changedSensor(tenantID shared.ID, sensorID string) {
-	if r.notify != nil {
-		r.notify.Wake(tenantID.String(), sensorID)
 	}
 }
 

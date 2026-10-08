@@ -26,7 +26,6 @@ import (
 
 	"connectrpc.com/connect"
 	_ "github.com/lib/pq"
-	"golang.org/x/net/http2"
 
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
@@ -172,7 +171,9 @@ func (h *v3Harness) client(s v3Sensor, grpc bool) sensorv3connect.SensorServiceC
 	base := h.srv.Client().Transport.(*http.Transport).Clone()
 	var rt http.RoundTripper = base
 	if grpc {
-		rt = &http2.Transport{TLSClientConfig: base.TLSClientConfig.Clone()}
+		p := new(http.Protocols)
+		p.SetHTTP2(true)
+		rt = &http.Transport{TLSClientConfig: base.TLSClientConfig.Clone(), Protocols: p}
 	}
 	var hc *http.Client
 	if s.signer != nil {
@@ -484,4 +485,3 @@ func TestSensorV3HTTPS_ControlStreamEndsOnRevoke(t *testing.T) {
 		t.Fatalf("%d streams left", h.v3.Hub().Streams())
 	}
 }
-

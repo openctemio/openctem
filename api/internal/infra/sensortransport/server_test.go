@@ -144,7 +144,9 @@ func (f *fakeV2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type noHints struct{}
 
-func (noHints) StreamHints(context.Context, []string) handler.StreamHints { return handler.StreamHints{Status: "ok"} }
+func (noHints) StreamHints(context.Context, []string) handler.StreamHints {
+	return handler.StreamHints{Status: "ok"}
+}
 
 type sameAuth struct{}
 
