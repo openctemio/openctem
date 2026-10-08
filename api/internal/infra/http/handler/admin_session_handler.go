@@ -58,7 +58,7 @@ type AdminSessionResponse struct {
 	Current bool `json:"current"`
 }
 
-// AdminSessionListResponse is GET /api/v1/admin/sessions.
+// AdminSessionListResponse is GET /api/v1/admin/console-sessions.
 type AdminSessionListResponse struct {
 	Data []AdminSessionResponse `json:"data"`
 }
@@ -71,14 +71,14 @@ type EndAdminSessionRequest struct {
 	TOTPCode string `json:"totp_code"`
 }
 
-// List handles GET /api/v1/admin/sessions.
+// List handles GET /api/v1/admin/console-sessions.
 //
 // @Summary      Open console sessions (platform admin)
 // @Description  Every administrator's open console session: who, how they signed in, from where, last seen. Super admin only.
 // @Tags         Admin
 // @Produce      json
 // @Success      200  {object}  AdminSessionListResponse
-// @Router       /admin/sessions [get]
+// @Router       /admin/console-sessions [get]
 func (h *AdminSessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.store.ListOpen(r.Context())
 	if err != nil {
@@ -103,23 +103,23 @@ func (h *AdminSessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// End handles DELETE /api/v1/admin/sessions/{session_id}.
+// End handles DELETE /api/v1/admin/console-sessions/{console_session_id}.
 //
 // @Summary      End an administrator's console session (platform admin)
 // @Description  Signs that console session out at once. Super admin, a reason and a fresh authenticator code; audited at high severity. Your own current session is ended with sign-out instead.
 // @Tags         Admin
 // @Accept       json
 // @Produce      json
-// @Param        session_id path  string                   true  "Session ID"
+// @Param        console_session_id path  string                   true  "Session ID"
 // @Param        request    body  EndAdminSessionRequest   true  "Reason and code"
 // @Success      204
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
-// @Router       /admin/sessions/{session_id} [delete]
+// @Router       /admin/console-sessions/{console_session_id} [delete]
 func (h *AdminSessionHandler) End(w http.ResponseWriter, r *http.Request) {
 	middleware.SetAuditAction(r.Context(), "console.session_ended", true)
-	id, err := shared.IDFromString(chi.URLParam(r, "session_id"))
+	id, err := shared.IDFromString(chi.URLParam(r, "console_session_id"))
 	if err != nil {
 		apierror.BadRequest("invalid session id").WriteJSON(w)
 		return
