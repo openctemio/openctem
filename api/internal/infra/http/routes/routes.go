@@ -947,7 +947,7 @@ func Register(
 	// ==========================================================================
 	// These routes are for OpenCTEM platform administrators only.
 	// They manage shared infrastructure that serves all tenants.
-	registerAdminRoutes(router, h, authMiddleware, userSync)
+	registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
 
 	// ==========================================================================
 	// WebSocket Routes (protected with auth)
