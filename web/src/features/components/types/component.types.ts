@@ -352,22 +352,12 @@ export interface ComponentStats {
 // SBOM Export Types
 // ============================================
 
-export type SbomFormat = 'cyclonedx-json' | 'cyclonedx-xml' | 'spdx-json' | 'spdx-tv'
+/** The formats the API writes (GET /api/v1/components/sbom?format=). */
+export type SbomFormat = 'cyclonedx' | 'spdx'
 
 export const SBOM_FORMAT_LABELS: Record<SbomFormat, string> = {
-  'cyclonedx-json': 'CycloneDX (JSON)',
-  'cyclonedx-xml': 'CycloneDX (XML)',
-  'spdx-json': 'SPDX (JSON)',
-  'spdx-tv': 'SPDX (Tag-Value)',
-}
-
-export interface SbomExportOptions {
-  format: SbomFormat
-  includeVulnerabilities: boolean
-  includeLicenses: boolean
-  includeTransitive: boolean
-  filterByEcosystem?: ComponentEcosystem[]
-  filterBySource?: string[] // Asset IDs
+  cyclonedx: 'CycloneDX 1.6 (JSON)',
+  spdx: 'SPDX 2.3 (JSON)',
 }
 
 // ============================================

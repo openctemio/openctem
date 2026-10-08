@@ -1,331 +1,72 @@
-# Environment Variables Guide
-
-## Overview
-
-Next.js has two types of environment variables with different scopes and security implications. Understanding this difference is critical for building secure applications.
-
----
-
-## NEXT_PUBLIC_* vs Server-only Variables
-
-| Property | `NEXT_PUBLIC_*` | Server-only (no prefix) |
-|----------|-----------------|-------------------------|
-| **Visible to** | Browser + Server | Server only |
-| **Used in** | Client Components, Browser JS | API Routes, Server Components, Server Actions |
-| **Security** | Public (can be seen by anyone) | Private (hidden from client) |
-| **Build time** | Bundled into client JS | Not bundled |
-| **Example** | `NEXT_PUBLIC_APP_URL` | `BACKEND_API_URL` |
-
----
-
-## API URL Variables Explained
-
-### `BACKEND_API_URL` (the only one you need)
-
-- **Purpose**: Internal URL for the Next.js server / proxy to reach the backend
-- **Visibility**: Server-only (never sent to browser)
-- **Value**: Internal Docker network URL (e.g., `http://api:8080`)
-- **Why internal?**: More secure, faster (no external network hop)
-
-### There is no browser-side API-URL variable
-
-The browser **never** reads an env var for the API host. Client code calls the
-**relative** path `/api/v1/*` and the Next.js BFF proxy (`proxy.ts`) forwards to
-`BACKEND_API_URL`. `getApiBaseUrl()` returns an empty string in the browser.
-
-> `NEXT_PUBLIC_API_URL` is **not** load-bearing — it appears only in the Vitest test
-> setup (`src/test/setup.ts`) and is not read by application code. Do not set it in
-> production.
-
----
-
-## Request Flow Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         BROWSER                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  fetch('/api/v1/users')  // relative — no env var        │   │
-│  │  getApiBaseUrl() === '' in the browser (same origin)     │   │
-│  └──────────────────────────┬───────────────────────────────┘   │
-└──────────────────────────────┼───────────────────────────────────┘
-                               │
-                               │ HTTP Request (Same Origin)
-                               │
-┌──────────────────────────────▼───────────────────────────────────┐
-│                    NEXT.JS SERVER                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  API Route: /api/v1/users/route.ts                       │   │
-│  │                                                          │   │
-│  │  // Server-side code - BACKEND_API_URL is hidden         │   │
-│  │  const response = await fetch(                           │   │
-│  │    `${process.env.BACKEND_API_URL}/api/v1/users`        │   │
-│  │  )                                                       │   │
-│  │  // Uses: http://api:8080 (internal Docker network)      │   │
-│  └──────────────────────────┬───────────────────────────────┘   │
-└──────────────────────────────┼───────────────────────────────────┘
-                               │
-                               │ Internal Network Request
-                               │ (Docker Network)
-                               │
-┌──────────────────────────────▼───────────────────────────────────┐
-│                    BACKEND API (Go)                               │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  Endpoint: /api/v1/users                                 │   │
-│  │  - Validates JWT token                                   │   │
-│  │  - Queries database                                      │   │
-│  │  - Returns JSON response                                 │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Code Examples
-
-### Client Component (Browser)
-
-```typescript
-// src/lib/api/client.ts
-// This code runs in the BROWSER
-
-// getApiBaseUrl() returns '' in the browser -> a relative, same-origin request.
-const API_BASE = getApiBaseUrl() // '' client-side
-
-export async function fetchUsers() {
-  // Browser calls the same origin: /api/v1/users
-  // The Next.js proxy forwards it to BACKEND_API_URL server-side.
-  const response = await fetch(`${API_BASE}/api/v1/users`, { credentials: 'include' })
-  return response.json()
-}
-```
-
-### API Route (Server)
-
-```typescript
-// src/app/api/v1/users/route.ts
-// This code runs on NEXT.JS SERVER
-
-export async function GET(request: Request) {
-  // Server calls backend using internal URL
-  // Browser CANNOT see this URL
-  const backendUrl = process.env.BACKEND_API_URL // http://api:8080
-
-  const response = await fetch(`${backendUrl}/api/v1/users`, {
-    headers: {
-      // Forward auth headers from original request
-      'Authorization': request.headers.get('Authorization') || '',
-    },
-  })
-
-  const data = await response.json()
-  return Response.json(data)
-}
-```
-
-### Server Component
-
-```typescript
-// src/app/users/page.tsx
-// This code runs on NEXT.JS SERVER
-
-async function UsersPage() {
-  // Can use server-only variable
-  const backendUrl = process.env.BACKEND_API_URL
-
-  const users = await fetch(`${backendUrl}/api/v1/users`, {
-    headers: { Authorization: `Bearer ${getServerToken()}` },
-    next: { revalidate: 60 }
-  })
-
-  return <UserList users={users} />
-}
-```
-
----
-
-## Security Benefits
-
-### 1. Backend URL is Hidden
-
-```
-Browser Network Tab shows:
-  Request URL: http://localhost:3000/api/v1/users   ← Frontend URL
-
-Attacker CANNOT see:
-  Backend URL: http://api:8080/api/v1/users        ← Hidden internal URL
-```
-
-### 2. Backend is Not Publicly Accessible
-
-```yaml
-# docker-compose.prod.yml
-
-api:
-  # Only expose internally within Docker network
-  expose:
-    - "8080"
-  # NO ports mapping = not accessible from host
-
-ui:
-  # Only UI is exposed to the outside world
-  ports:
-    - "3000:3000"
-```
-
-### 3. Attack Surface Reduction
-
-| Without BFF Pattern | With BFF Pattern |
-|---------------------|------------------|
-| Browser → Backend (exposed) | Browser → Next.js → Backend (internal) |
-| Backend must handle CORS | CORS handled at Next.js level |
-| Backend exposed to DDoS | Only Next.js exposed |
-| API keys visible to browser | API keys server-side only |
-
----
-
-## Environment File Example
-
-This mirrors the authoritative [`.env.example`](../../.env.example) — only variables
-the UI actually reads are shown. The UI has no database, SMTP or JWT-signing secret
-of its own; those belong to the backend, not here.
-
-```env
-# .env.local
-
-# -----------------------------------------------------------------------------
-# Public Variables (NEXT_PUBLIC_*)
-# These are bundled into client-side JavaScript and visible to users
-# -----------------------------------------------------------------------------
-
-# App URL for links, redirects, etc.
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-
-# Cookie names (browser needs to know these)
-NEXT_PUBLIC_AUTH_COOKIE_NAME=auth_token
-NEXT_PUBLIC_REFRESH_COOKIE_NAME=refresh_token
-
-# Optional: Sentry (inert until @sentry/nextjs is installed — see DOCKER_SENTRY_SETUP.md)
-NEXT_PUBLIC_SENTRY_DSN=
-
-
-# -----------------------------------------------------------------------------
-# Server-only Variables (no NEXT_PUBLIC_ prefix)
-# These are NEVER sent to browser - only available on server
-# -----------------------------------------------------------------------------
-
-# Internal backend URL (Docker network) — the single required variable
-BACKEND_API_URL=http://api:8080
-
-# CSRF secret for the double-submit token (MUST be server-only!)
-CSRF_SECRET=your-csrf-secret
-
-# HTTPS-only cookies (set true in production)
-SECURE_COOKIES=false
-```
-
-> The UI does **not** read `AUTH_JWT_SECRET`, `DB_PASSWORD`, `SMTP_PASSWORD`,
-> `NEXT_PUBLIC_AUTH_PROVIDER`, or `NEXT_PUBLIC_API_URL` — earlier revisions listed
-> these but they are phantom for this app.
-
----
-
-## Common Mistakes
-
-### Mistake 1: Using server variable in client code
-
-```typescript
-// src/components/UserCard.tsx
-"use client"
-
-// WRONG - This will be undefined in browser!
-const API_URL = process.env.BACKEND_API_URL
-
-export function UserCard() {
-  // fetch will fail because API_URL is undefined
-  const data = await fetch(`${API_URL}/api/users`)
-}
-```
-
-**Fix**: Use `NEXT_PUBLIC_*` for client-side code.
-
-### Mistake 2: Exposing secrets with NEXT_PUBLIC_
-
-```env
-# WRONG - Secret exposed to browser!
-NEXT_PUBLIC_JWT_SECRET=my-secret-key
-NEXT_PUBLIC_DB_PASSWORD=password123
-```
-
-**Fix**: Never prefix secrets with `NEXT_PUBLIC_`.
-
-### Mistake 3: Calling backend directly from browser
-
-```typescript
-"use client"
-
-// WRONG - Exposes backend URL and bypasses proxy
-const BACKEND = "http://api:8080"  // or process.env.BACKEND_API_URL
-
-export function fetchData() {
-  // This exposes your internal architecture
-  fetch(`${BACKEND}/api/users`)
-}
-```
-
-**Fix**: Always call through Next.js API routes.
-
----
-
-## Debugging Tips
-
-### Check if variable is available
-
-```typescript
-// Server-side (API route, Server Component)
-console.log('BACKEND_API_URL:', process.env.BACKEND_API_URL)
-// Output: http://api:8080
-
-// Client-side (Browser)
-console.log('BACKEND_API_URL:', process.env.BACKEND_API_URL)
-// Output: undefined (correct - not exposed)
-
-// Client code uses a relative path, not an env var:
-await fetch('/api/v1/users', { credentials: 'include' })
-```
-
-### Verify in browser DevTools
-
-1. Open DevTools → Network tab
-2. Make an API request
-3. Check Request URL - should be frontend URL, not backend URL
-4. Check Sources tab → search for backend URL → should NOT find it
-
----
-
-## Summary
-
-| Variable Type | Use For | Example |
-|---------------|---------|---------|
-| `NEXT_PUBLIC_*` | Browser-visible config | App URL, Cookie names, Feature flags |
-| Server-only | Secrets, Internal URLs | JWT secrets, Database passwords, Backend URL |
-
-**Key Rules**:
-1. Never put secrets in `NEXT_PUBLIC_*` variables
-2. Backend URL should be server-only for security
-3. Browser calls frontend URL, not backend directly
-4. API routes proxy requests to internal backend
-
----
-
-## Related Documentation
-
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture overview
-- [API_INTEGRATION.md](./API_INTEGRATION.md) - API integration patterns
-- [DEPLOYMENT.md](./DEPLOYMENT.md) - Deployment guide
-- [`.env.example`](../../.env.example) - Authoritative list of variables the app reads
-- [Docker Compose](../../docker-compose.prod.yml) - Production configuration
-
----
-
-**Last Updated**: 2025-01-14
+# Web Console Environment Variables
+
+The variables the web console (`web/`) reads. [`.env.example`](../../.env.example)
+is the template; `src/lib/env.ts` holds the typed accessors and defaults. Operator
+configuration of a whole installation is documented at
+[docs.openctem.io/configuration](https://docs.openctem.io/configuration/).
+
+## `NEXT_PUBLIC_*` vs server-only
+
+| Property   | `NEXT_PUBLIC_*`                                  | Server-only (no prefix)   |
+| ---------- | ------------------------------------------------ | ------------------------- |
+| Visible to | Browser and server                               | Server only               |
+| Bundled    | Inlined into client JavaScript at **build** time | Read at run time          |
+| Use for    | Non-secret display and behaviour settings        | Secrets and internal URLs |
+
+Never put a secret in a `NEXT_PUBLIC_*` variable.
+
+## How the browser reaches the API
+
+The browser never reads an API URL. Client code calls the relative path
+`/api/v1/*`; the console's same-origin proxy (`src/app/api/v1/[...path]/route.ts`)
+reads the httpOnly session cookie and forwards the call to `BACKEND_API_URL` with
+the token as a bearer header. The WebSocket also opens on the console's own
+origin (`/api/v1/ws`) and is proxied to the API. So the API port never has to be
+reachable from browsers.
+
+## Server-only variables
+
+| Variable                      | Default                 | Purpose                                                                                                                                                                 |
+| ----------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BACKEND_API_URL`             | `http://localhost:8080` | Where the console's server reaches the API (for example `http://api:8080` in Compose). `localhost` is rewritten to `127.0.0.1`.                                         |
+| `API_TIMEOUT`                 | `30000`                 | Request timeout to the API, in milliseconds                                                                                                                             |
+| `CSRF_SECRET`                 | (empty)                 | Secret for CSRF tokens; at least 32 characters (`npm run generate-secret`). A warning is logged when missing or short.                                                  |
+| `SECURE_COOKIES`              | `true`                  | `Secure` flag on cookies. Set `false` only for local plain-HTTP development.                                                                                            |
+| `TRUST_PROXY_HEADERS`         | `false`                 | Forward `X-Real-IP` / `X-Forwarded-For` to the API (organization IP allowlists). Set `true` only when a reverse proxy in front of the console overwrites these headers. |
+| `COOKIE_MAX_AGE`              | `604800`                | Refresh-token cookie lifetime in seconds (7 days)                                                                                                                       |
+| `ENABLE_TOKEN_REFRESH`        | `true`                  | Automatic access-token refresh                                                                                                                                          |
+| `TOKEN_REFRESH_BEFORE_EXPIRY` | `300`                   | Refresh this many seconds before the access token expires                                                                                                               |
+
+## Public variables (`NEXT_PUBLIC_*`)
+
+| Variable                                           | Default                 | Purpose                                                                                              |
+| -------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_APP_URL`                              | `http://localhost:3000` | The console's public URL (links, redirects, CSP `connect-src`)                                       |
+| `NEXT_PUBLIC_APP_NAME`                             | `OpenCTEM`              | Product name shown in the UI                                                                         |
+| `NEXT_PUBLIC_APP_DESCRIPTION`                      |                         | Page description metadata                                                                            |
+| `NEXT_PUBLIC_TERMS_URL`, `NEXT_PUBLIC_PRIVACY_URL` | (empty)                 | Legal links on the sign-in and register pages; empty shows no notice                                 |
+| `NEXT_PUBLIC_WS_BASE_URL`                          | (empty)                 | WebSocket host override. Leave empty; set only for a same-site host that receives the session cookie |
+| `NEXT_PUBLIC_AUTH_COOKIE_NAME`                     | `auth_token`            | Access-token cookie name                                                                             |
+| `NEXT_PUBLIC_REFRESH_COOKIE_NAME`                  | `refresh_token`         | Refresh-token cookie name (must match the API)                                                       |
+| `NEXT_PUBLIC_COOKIE_DOMAIN`                        | (unset)                 | Cookie `Domain` attribute, when cookies must span subdomains                                         |
+| `NEXT_PUBLIC_ENABLE_SIDEBAR_BADGES`                | `false`                 | Show live counts in the sidebar (extra API calls on page load)                                       |
+| `NEXT_PUBLIC_SENTRY_DSN`                           | (empty)                 | Sentry error reporting, see [DOCKER_SENTRY_SETUP.md](DOCKER_SENTRY_SETUP.md)                         |
+
+`NEXT_PUBLIC_APP_VERSION` and `NEXT_PUBLIC_APP_COMMIT` are set by the image build.
+
+## Build and development only
+
+| Variable                   | Purpose                                                                 |
+| -------------------------- | ----------------------------------------------------------------------- |
+| `DOCKER_BUILD`, `CI`       | Skip the environment check (`validateEnv()`) during image builds and CI |
+| `NEXT_ALLOWED_DEV_ORIGINS` | Extra origins allowed to reach `next dev`                               |
+| `ANALYZE`                  | `true` runs the bundle analyzer (`npm run analyze`)                     |
+
+## Common mistakes
+
+- Reading a server-only variable in a Client Component: it is `undefined` in the
+  browser. Call the API through `/api/v1/*` instead.
+- Calling the API host directly from the browser: it bypasses the proxy, the
+  session cookie and the CSRF header.
+- Changing a `NEXT_PUBLIC_*` value on a running container: it was inlined at build
+  time, so the image must be rebuilt.

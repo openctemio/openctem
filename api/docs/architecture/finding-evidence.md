@@ -43,7 +43,7 @@ not as revealable placeholders. Everything else in the exchange (query and
 body parameters, `Set-Cookie`, custom key headers) arrives and is masked and
 kept for reveal by the platform.
 
-## Pipeline (ingest, `internal/app/evidence`)
+## Ingest flow (`internal/app/evidence`)
 
 1. **Normalize** (`evidence.Normalize`): valid UTF-8, no NUL, single-line
    fields without control characters; caps per part (body 64 KiB, keeping

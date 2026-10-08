@@ -160,7 +160,7 @@ CREATE TABLE notification_events (
 ### Step 1: Enqueue in Transaction
 
 ```go
-// internal/app/vulnerability_service.go
+// internal/app/finding/vulnerability_service.go
 
 tx, err := s.db.BeginTx(ctx, nil)
 defer tx.Rollback()
@@ -191,7 +191,7 @@ return tx.Commit()
 The scheduler polls every 5 seconds:
 
 ```go
-// internal/app/notification_scheduler.go
+// internal/app/outbox/scheduler.go
 
 func (s *NotificationScheduler) processBatch() {
     // 1. Fetch and lock pending entries (FOR UPDATE SKIP LOCKED)
@@ -204,7 +204,7 @@ func (s *NotificationScheduler) processBatch() {
 ### Step 3: Process Each Entry
 
 ```go
-// internal/app/notification_service.go
+// internal/app/outbox/service.go
 
 func (s *NotificationService) processOutboxEntry(ctx context.Context, entry *Outbox) error {
     // 1. Get all integrations for tenant
@@ -254,7 +254,7 @@ The scheduler runs cleanup daily:
 | `notification_events` | 90 days (configurable) | Permanent audit trail |
 
 ```go
-// internal/app/notification_scheduler.go
+// internal/app/outbox/scheduler.go
 
 type NotificationSchedulerConfig struct {
     ProcessInterval        time.Duration  // 5 seconds
@@ -293,13 +293,13 @@ history) needs `integrations:manage`.
 or not a channel is configured: new findings (message, asset id, owner name
 and email), new assets, exposures, SLA and approval events, for the whole
 organization and without data scope. Members and viewers hold
-`integrations:notifications:read` for their own in-app notices; before
-research doc 15 (L-03) that also opened this stream to them. Whoever holds
+`integrations:notifications:read` for their own in-app notices; that
+permission no longer opens this stream to them. Whoever holds
 `integrations:manage` already decides which of these events leave for Slack,
 Teams or a webhook, so the history shows them nothing new. The web console
 hides *View events* and *Queue* without that permission.
 
-### Event History API (TODO)
+### Event History API (**Planned**)
 
 ```
 GET /api/v1/notification-events           # List archived events
@@ -312,7 +312,7 @@ GET /api/v1/notification-events/{id}      # Get event with send results
 ### Provider Factory Pattern
 
 ```go
-// internal/infra/notification/client.go
+// internal/infra/notifier/client.go
 
 type Client interface {
     Send(ctx context.Context, msg Message) (*SendResult, error)
@@ -357,7 +357,7 @@ func (f *ClientFactory) CreateClient(config Config) (Client, error) {
 All notification credentials are encrypted at rest using AES-256-GCM:
 
 ```go
-// internal/app/notification_service.go
+// internal/app/outbox/service.go
 
 credentials, err := s.credentialDecrypt(intg.CredentialsEncrypted())
 ```
@@ -389,7 +389,7 @@ const testNotificationRateLimit = 30 * time.Second
 Dynamic event types stored as JSONB:
 
 ```go
-// internal/domain/integration/notification_extension.go
+// pkg/domain/integration/notification_extension.go
 
 type EventType string
 
@@ -541,7 +541,7 @@ All related code (repository, service methods, API endpoints) has been removed.
 
 `/api/v1/webhooks` stored endpoint URLs and signing secrets, but no worker
 ever delivered to them. Nothing was sent, and nothing wrote
-`webhook_deliveries`. Owner decision B9 removed the feature: the routes,
+`webhook_deliveries`. Decision B9 removed the feature: the routes,
 handler, service, repository and domain package are gone. Migration `001032`
 does three things:
 
@@ -563,7 +563,7 @@ permissions and the module toggle from coming back without a sender.
 ## Related Documents
 
 - [Clean Architecture](./clean-arch.md)
-- [Security Best Practices](../SECURITY.md)
+- [Security policy](../../../SECURITY.md)
 
 ## Integration safety rules (all categories)
 

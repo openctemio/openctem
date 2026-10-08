@@ -1238,6 +1238,7 @@ type ListAssetsInput struct {
 	TenantID         string              `validate:"omitempty,uuid"`
 	Name             string              `validate:"max=255"`
 	Types            []string            `validate:"max=20,dive,asset_type"`
+	Lenses           []string            `validate:"max=10,dive,asset_lens"`
 	Criticalities    []string            `validate:"max=5,dive,criticality"`
 	Statuses         []string            `validate:"max=3,dive,status"`
 	Scopes           []string            `validate:"max=6,dive,scope"`
@@ -1301,6 +1302,15 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 			}
 		}
 		filter = filter.WithTypes(types...)
+	}
+
+	// Lens filter (validated against the registry by the input tags).
+	if len(input.Lenses) > 0 {
+		lenses := make([]assetdom.Lens, 0, len(input.Lenses))
+		for _, l := range input.Lenses {
+			lenses = append(lenses, assetdom.Lens(l))
+		}
+		filter = filter.WithLenses(lenses...)
 	}
 
 	// Criticalities filter
@@ -1503,8 +1513,9 @@ func (s *AssetService) GetInventoryOverview(ctx context.Context, tenantID, actin
 
 // GetAssetStats returns aggregated asset statistics using SQL aggregation,
 // counted only over the assets the acting user may list.
-// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types []string, tags []string, subType string, countByFields ...string) (*assetdom.AggregateStats, error) {
+// Filters: types (asset_type ANY), lenses (asset_lens ANY), tags (overlap,
+// matches List semantics).
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types, lenses, tags []string, subType string, countByFields ...string) (*assetdom.AggregateStats, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -1513,7 +1524,12 @@ func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.GetAggregateStats(ctx, parsedTenantID, access, types, tags, subType, countByFields...)
+	for _, l := range lenses {
+		if !assetdom.IsLens(l) {
+			return nil, fmt.Errorf("%w: unknown lens %q", shared.ErrValidation, l)
+		}
+	}
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, access, types, lenses, tags, subType, countByFields...)
 }
 
 // ListTags returns distinct tags across all assets for a tenant.

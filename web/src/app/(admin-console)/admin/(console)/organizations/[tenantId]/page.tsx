@@ -8,20 +8,19 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  DetailField,
-  DetailFieldGrid,
-  ErrorState,
-  PageHeader,
-  RelativeTime,
-} from '@/features/shared'
+import { ErrorState, PageHeader } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
+import { useAdminAuditLogs } from '@/features/admin-console/api/use-admin-audit'
+import { AdminActivityTable } from '@/features/admin-console/components/admin-activity-table'
+import { OrganizationSummary } from '@/features/admin-console/components/organization-summary'
 import { useOrganization } from '@/features/admin-console/api/use-admin-organizations'
 import { useAdmin } from '@/features/admin-console/components/admin-console-shell'
 import { OrganizationAuditChainPanel } from '@/features/admin-console/components/organization-audit-chain-panel'
 import { OrganizationPlanPanel } from '@/features/admin-console/components/organization-plan-panel'
 import { OrganizationUsersSection } from '@/features/admin-console/components/organization-users-section'
 import { SSOEnforcementCard } from '@/features/admin-console/components/sso-enforcement-card'
-import { SSOPostureBadges } from '@/features/admin-console/components/sso-posture-badges'
 import { adminCan } from '@/features/admin-console/types'
 import { SamlConfigForm } from '@/features/saml/components/saml-config-form'
 import { IdentityProvidersPanel } from '@/features/sso/components/identity-providers-panel'
@@ -65,6 +64,26 @@ function VerifiedDomainsSection({ tenantId, canManage }: { tenantId: string; can
   )
 }
 
+/** Every administrator action on this organization (admin audit by resource). */
+function OrganizationActivity({ tenantId }: { tenantId: string }) {
+  const list = useListParams({ filters: {} })
+  const { data, isLoading } = useAdminAuditLogs({ page: list.page, resourceId: tenantId })
+  return (
+    <AdminActivityTable
+      entries={data?.data ?? []}
+      isLoading={isLoading}
+      paging={{
+        page: list.page,
+        pageCount: data?.total_pages ?? 1,
+        rowCount: data?.total ?? 0,
+        onPageChange: list.setPage,
+      }}
+    />
+  )
+}
+
+const TABS = ['overview', 'users', 'plan', 'sso', 'activity', 'audit-chain'] as const
+
 export default function AdminOrganizationPage({
   params,
 }: {
@@ -80,13 +99,17 @@ export default function AdminOrganizationPage({
   const canRebaselineAuditChain = adminCan(admin.role, 'super_admin')
   const { data: org, error, isLoading, mutate } = useOrganization(tenantId)
   const refresh = () => void mutate()
+  const { t } = useTranslation()
+  // The tab lives in the URL, so a support link can open "SSO of org X".
+  const [rawTab, setTab] = useUrlFilter('tab', 'overview')
+  const tab = (TABS as readonly string[]).includes(rawTab) ? rawTab : 'overview'
 
   return (
     <Main>
       <Button asChild variant="ghost" size="sm" className="mb-2 -ms-2">
         <Link href="/admin/organizations">
           <ChevronLeft className="me-1 size-4" />
-          Organizations
+          {t('admin.nav.organizations', 'Organizations')}
         </Link>
       </Button>
 
@@ -103,41 +126,34 @@ export default function AdminOrganizationPage({
             title={org.name}
             description={org.description || `Organization ${org.slug}`}
           />
-          <Tabs defaultValue="overview" className="mt-5">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="users">Users</TabsTrigger>
-              <TabsTrigger value="plan">Plan</TabsTrigger>
-              <TabsTrigger value="sso">Single sign-on</TabsTrigger>
-              <TabsTrigger value="audit-chain">Audit chain</TabsTrigger>
-            </TabsList>
+          <Tabs value={tab} onValueChange={setTab} className="mt-5">
+            <div className="-mx-1 overflow-x-auto px-1">
+              <TabsList>
+                <TabsTrigger value="overview">
+                  {t('admin.org.tab.overview', 'Overview')}
+                </TabsTrigger>
+                <TabsTrigger value="users">{t('admin.org.tab.users', 'Members')}</TabsTrigger>
+                <TabsTrigger value="plan">{t('admin.org.tab.plan', 'Plan')}</TabsTrigger>
+                <TabsTrigger value="sso">{t('admin.org.tab.sso', 'Single sign-on')}</TabsTrigger>
+                <TabsTrigger value="activity">
+                  {t('admin.org.tab.activity', 'Activity')}
+                </TabsTrigger>
+                <TabsTrigger value="audit-chain">
+                  {t('admin.org.tab.auditChain', 'Audit chain')}
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="overview" className="mt-4">
-              <Card>
-                <CardContent className="pt-6">
-                  <DetailFieldGrid>
-                    <DetailField label="Slug">
-                      <code className="text-sm">{org.slug}</code>
-                    </DetailField>
-                    <DetailField label="Created">
-                      <RelativeTime date={org.created_at} />
-                    </DetailField>
-                    <DetailField label="Active members">{org.active_members}</DetailField>
-                    <DetailField label="Owners">
-                      {org.owner_emails.length ? org.owner_emails.join(', ') : 'No owner'}
-                    </DetailField>
-                    <DetailField label="Single sign-on" full>
-                      <SSOPostureBadges org={org} />
-                    </DetailField>
-                  </DetailFieldGrid>
-                </CardContent>
-              </Card>
+              <OrganizationSummary org={org} onOpenTab={setTab} />
             </TabsContent>
 
             <TabsContent value="users" className="mt-4">
               <OrganizationUsersSection
                 tenantId={org.id}
+                orgName={org.name}
                 canManage={canManageUsers}
+                canRecover={adminCan(admin.role, 'super_admin')}
                 onChanged={refresh}
               />
             </TabsContent>
@@ -175,6 +191,10 @@ export default function AdminOrganizationPage({
                 onChanged={refresh}
               />
               <VerifiedDomainsSection tenantId={org.id} canManage={canManageSSO} />
+            </TabsContent>
+
+            <TabsContent value="activity" className="mt-4">
+              <OrganizationActivity tenantId={org.id} />
             </TabsContent>
 
             <TabsContent value="audit-chain" className="mt-4">
