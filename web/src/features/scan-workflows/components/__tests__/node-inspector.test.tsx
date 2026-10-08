@@ -106,4 +106,45 @@ describe('NodeInspector', () => {
     expect(screen.getByText(/has no capability contract/)).toBeInTheDocument()
     expect(screen.queryByLabelText('rate')).toBeNull()
   })
+
+  it('shows the API issues of the step with their fixes', () => {
+    render(
+      <NodeInspector
+        step={step}
+        capability={ports}
+        issues={[
+          {
+            code: 'TOOL_UNAVAILABLE',
+            node: 'ports',
+            message: 'step "Ports": naabu is not on any online sensor',
+            fix: 'Pick "Any tool", or install naabu on a sensor.',
+          },
+        ]}
+        onChange={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
+    const list = screen.getByRole('list', { name: 'Problems of this step' })
+    expect(list).toHaveTextContent('naabu is not on any online sensor')
+    expect(list).toHaveTextContent('Pick "Any tool"')
+  })
+
+  it('lists settings outside the contract and removes one', async () => {
+    const onChange = vi.fn()
+    render(
+      <NodeInspector
+        step={{ ...step, config: { top_n: 100, top_ports: '1000', exclude: ['/x'] } }}
+        capability={ports}
+        onChange={onChange}
+        onClose={vi.fn()}
+      />
+    )
+    // A template's tool-native key is shown; the executor key is not.
+    expect(screen.getByText(/top_ports = "1000"/)).toBeInTheDocument()
+    expect(screen.queryByText(/exclude =/)).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Remove top_ports' }))
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ config: { top_n: 100, exclude: ['/x'] } })
+    )
+  })
 })

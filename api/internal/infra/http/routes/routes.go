@@ -214,6 +214,9 @@ type Handlers struct {
 	AdminOrganization *handler.AdminOrganizationHandler
 	AdminConsole      *handler.AdminConsoleHandler
 	AdminAuditChain   *handler.AdminAuditChainHandler
+	// Plan: plans and limits (console plan defaults, organization plans and
+	// overrides, the organization's own usage).
+	Plan *handler.PlanHandler
 	// AdminSignup: Console > System > Sign-up (the sign-up policy).
 	AdminSignup *handler.AdminSignupHandler
 	// SignupPolicy answers the sign-up policy to the public auth endpoints.
@@ -241,6 +244,8 @@ type Handlers struct {
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
+	// OrgTrust: trusted organizations (RFC-058); nil if not initialized.
+	OrgTrust *handler.OrgTrustHandler
 
 	// Platform Stats handler (tenant-scoped platform sensor stats)
 	PlatformScanning *handler.PlatformScanningHandler
@@ -452,6 +457,7 @@ func Register(
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
 		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange)
+		registerOrganizationPlanRoutes(router, h.Plan, authMiddleware, userSync)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized
@@ -526,6 +532,7 @@ func Register(
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
+	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
@@ -1073,6 +1080,24 @@ func (a tenantSSOEnforcedAdapter) IsSSOEnforced(ctx context.Context, tenantID st
 		return false, err
 	}
 	return sec.SSOEnforced, nil
+}
+
+// HasSSOException reports whether the member has an unexpired SSO exception
+// (RFC-058), read fresh from the tenant settings.
+func (a tenantSSOEnforcedAdapter) HasSSOException(ctx context.Context, tenantID, userID string) (bool, error) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, err
+	}
+	t, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return false, err
+	}
+	return sec.HasSSOException(userID, time.Now().UTC()), nil
 }
 
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.

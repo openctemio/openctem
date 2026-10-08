@@ -53,11 +53,13 @@ import (
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
+	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/jira"
+	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
@@ -785,9 +787,16 @@ type Services struct {
 
 	// Domain-ownership verification (SSO P1) — the verified-domain JIT gate.
 	DomainVerify *domainverify.Service
+	// AddressClassifier decides whether an invitee is internal or external
+	// (RFC-058).
+	AddressClassifier *tenantapp.AddressClassifier
+	// OrgTrust manages trusted organizations (RFC-058).
+	OrgTrust *orgtrustapp.Service
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// Plans and limits.
+	Entitlement *entitlementapp.Service
 
 	// SAML 2.0 SP (RFC-009 9d/9e)
 	SAML *auth.SAMLService
@@ -874,6 +883,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize audit service first (used by others)
 	s.Audit = audit.NewAuditService(repos.Audit, log)
+
+	// Plans and limits (docs/architecture/plans-and-limits.md), with or
+	// without local auth.
+	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
 
 	// Initialize core services
 	s.User = tenantapp.NewUserService(repos.User, log)
@@ -1885,6 +1898,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithDB(deps.DB),
 		scanrun.WithSensorSelector(scanRunSensorSelectorAdapter),
 		scanrun.WithToolRepo(repos.Tool),
+		// A draft check warns about steps no online sensor can run now.
+		scanrun.WithRunnableTools(s.Tool),
+		// The builder saves drafts; a publish makes them the steps runs use.
+		scanrun.WithDraftStore(repos.ScanWorkflow),
 		scanrun.WithQualityGate(repos.ScanProfile, repos.Finding),
 		scanrun.WithScanDeactivator(s.Scan),     // Cascade pause scans when scan workflow is deactivated
 		scanrun.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
@@ -1897,6 +1914,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Chained steps take what their predecessors produced, through the
 		// per-hop gate (hop_router.go).
 		scanrun.WithHopStore(scanHops),
+		// A run executes the workflow version it started with (research/62 P0-10).
+		scanrun.WithVersionStore(repos.ScanWorkflow),
 		// Web steps carry the path exclusions of their hosts (RFC-056).
 		scanrun.WithWebScope(s.Scope),
 		// Incremental web scanning: new or changed endpoints only (RFC-056).
@@ -1906,6 +1925,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
 	s.Scan.SetStepQueuer(s.ScanRun)
+	s.Scan.SetWorkflowVersions(repos.ScanWorkflow)
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
 	if s.Retest != nil {
 		s.Retest.SetRunRecorder(s.ScanRun)
@@ -2269,6 +2289,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
+	// Plans and limits: self-service organizations are Free.
+	s.Auth.SetFreePlan(s.Entitlement)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -2343,9 +2365,43 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		}
 	}
 	s.SSO.SetDomainVerifier(s.DomainVerify)
+	// Email-first sign-in asks which organization holds an email's SSO
+	// domain (domainverify.Service.OwnerOfDomain).
+	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
+		s.SSO.SetDomainOwnerLookup(owners)
+	} else {
+		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
+	}
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
 	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)
+
+	// External members (RFC-058): the holder of a verified SSO domain is the
+	// home organization of its addresses.
+	s.AddressClassifier = tenantapp.NewAddressClassifier(s.DomainVerify, func(ctx context.Context, tenantID shared.ID) (bool, error) {
+		return domainverify.OwnsAnySSODomain(ctx, repos.VerifiedDomain, tenantID)
+	})
+	s.Tenant.SetAddressClassifier(s.AddressClassifier)
+	// A domain the home organization stops holding suspends the members it
+	// managed elsewhere; proving it again restores them (RFC-058).
+	s.DomainVerify.SetClaimListener(s.Tenant)
+	s.Auth.SetInviteeClassifier(s.Tenant)
+
+	// Trusted organizations (RFC-058): home-realm sign-in for external
+	// members, the role ceiling, proposed end of access and API keys.
+	s.OrgTrust = orgtrustapp.NewService(repos.OrgTrust, s.DomainVerify, s.Tenant, s.Audit, log)
+	trustPolicy := orgtrustapp.NewPolicy(repos.OrgTrust, repos.Tenant)
+	s.Tenant.SetTrustPolicy(trustPolicy)
+	s.Auth.SetHomeRealm(repos.OrgTrust, s.DomainVerify)
+	if s.Role != nil {
+		s.Role.SetExternalRoleCeiling(func(ctx context.Context, host, home shared.ID) (string, error) {
+			r, err := trustPolicy.MaxRoleFor(ctx, host, home)
+			return string(r), err
+		})
+	}
+	if s.APIKey != nil {
+		s.APIKey.SetExternalKeyPolicy(trustPolicy)
+	}
 
 	// Social OAuth (Google / GitHub / Microsoft). Built only when at least one
 	// provider actually has credentials, so the login surface the API advertises

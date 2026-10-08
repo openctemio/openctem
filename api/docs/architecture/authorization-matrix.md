@@ -617,6 +617,7 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
 | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
+| `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
 
 > **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
@@ -761,6 +762,10 @@ Authorization is enforced at the **route layer** in
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |
 | `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** (audited high) |
 | `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
+| `GET /api/v1/admin/settings/plans` | any admin |
+| `PUT /api/v1/admin/settings/plans` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
+| `GET /api/v1/admin/tenants/{tenantId}/plan` | any admin (limits, usage, over-limit flag) |
+| `PUT /api/v1/admin/tenants/{tenantId}/plan`, `PUT/DELETE .../plan/overrides/{key}` | **ops_admin+** (audited high; an override needs a reason, an expiry is optional) |
 | `GET /api/v1/admin/settings/signup` | any admin |
 | `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
@@ -1207,6 +1212,36 @@ disables and asks administrators to finish. A re-invite, admin add, SCIM
 provisioning or SSO JIT re-activates a tombstone from zero (only the new
 role). Tombstones yield no token, no tenant-switcher entry, are left out of
 the default member list (`?status=offboarded|all` shows them) and out of SCIM.
+
+### External members (RFC-058)
+
+A member whose email domain the organization does not hold is **external**.
+The domain may belong to another organization (their home organization), be
+a personal address, or be a work domain nobody has verified.
+
+- They join only by accepting an invitation addressed to them. Adding an
+  existing account or creating an account for them is refused
+  (`ErrExternalNeedsInvitation`).
+- They join as a **viewer** with no data scope until added to a team.
+  An invitation offering more is refused.
+- They never hold the owner role (DB CHECK and triggers on `tenant_members`
+  and `user_roles`). They are never granted the admin role or a role with full
+  data access (`RoleService.capExternalTarget`, every grant path, system paths
+  included; `ErrExternalRoleCeiling`, 403).
+- Without a home organization, their access must end:
+  - 90 days by default, 365 at most;
+  - `MemberAccessExpiryController` suspends the membership within a minute
+    (`suspended_reason = expired`), in that organization only;
+  - `PATCH /api/v1/organization/members/{member_id}/access` (owner/admin,
+    `members:write`) sets a new end date and re-enables them;
+  - a plain reactivation is refused.
+- The host sees the home organization's name only.
+- **Trusted organizations** (`/api/v1/organization/trusts`):
+  - reading needs owner/admin plus `members:read`; every change needs an owner with step-up;
+  - the service checks the caller's side: the host asks and changes settings, the home accepts, either ends;
+  - a third organization gets 404.
+- **Home-realm sign-in:** an active trust lets a home organization's identity provider sign its people in to the host, within the trust's role ceiling (viewer or member). This is never weaker than the host's SSO and 2FA policy.
+- **Ending a trust** suspends the host's external members homed there.
 
 ### Coverage
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -1135,6 +1136,14 @@ func (h *LocalAuthHandler) Info(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// minPasswordLength is the configured minimum (the default when unset).
+func (h *LocalAuthHandler) minPasswordLength() int {
+	if h.authConfig.PasswordMinLength > 0 {
+		return h.authConfig.PasswordMinLength
+	}
+	return password.MinLengthDefault
+}
+
 // handleAuthError handles authentication errors and returns appropriate HTTP responses.
 func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	switch {
@@ -1146,6 +1155,7 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Forbidden("Account is suspended").WriteJSON(w)
 	case errors.Is(err, auth.ErrEmailNotVerified):
 		apierror.Forbidden("Email is not verified").WriteJSON(w)
+	case WritePlanLimitError(w, err):
 	case errors.Is(err, auth.ErrRegistrationDisabled):
 		apierror.Forbidden("Registration is not available").WriteJSON(w)
 	case errors.Is(err, auth.ErrTenantCreationDisabled):
@@ -1214,7 +1224,9 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Unauthorized("Invalid token (possible replay attack detected)").WriteJSON(w)
 	// Password validation errors
 	case errors.Is(err, password.ErrPasswordTooShort):
-		apierror.BadRequest("Password is too short (minimum 8 characters)").WriteJSON(w)
+		apierror.BadRequest(fmt.Sprintf("Password is too short (minimum %d characters)", h.minPasswordLength())).WriteJSON(w)
+	case errors.Is(err, password.ErrPasswordCommon):
+		apierror.BadRequest("This password appears in lists of breached passwords. Choose another one.").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoUppercase):
 		apierror.BadRequest("Password must contain at least one uppercase letter").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoLowercase):

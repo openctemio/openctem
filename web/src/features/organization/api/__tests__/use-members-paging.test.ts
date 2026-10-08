@@ -28,11 +28,20 @@ function lastParams(): URLSearchParams {
 describe('useMembers server paging', () => {
   beforeEach(() => vi.mocked(useSWR).mockClear())
 
-  it('sends limit/offset so the 6th page of 20 asks for members 101-120', () => {
+  it('sends page/per_page so the 6th page of 20 asks for members 101-120', () => {
     renderHook(() => useMembers('acme', { limit: 20, offset: 100 }))
     const p = lastParams()
-    expect(p.get('limit')).toBe('20')
-    expect(p.get('offset')).toBe('100')
+    expect(p.get('per_page')).toBe('20')
+    expect(p.get('page')).toBe('6')
+    expect(p.has('limit')).toBe(false)
+    expect(p.has('offset')).toBe(false)
+  })
+
+  it('leaves page out on the first page', () => {
+    renderHook(() => useMembers('acme', { limit: 500 }))
+    const p = lastParams()
+    expect(p.get('per_page')).toBe('500')
+    expect(p.has('page')).toBe(false)
   })
 
   it('sends status, role and search to the server', () => {

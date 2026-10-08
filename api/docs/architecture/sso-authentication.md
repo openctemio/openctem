@@ -50,6 +50,26 @@ governs the global social sign-in buttons). JIT members get the provider's
 `default_role` (`admin|member|viewer`, default **viewer**, set by the platform
 administrator); only the display name is re-synced on later logins.
 
+### Email-first sign-in
+
+The sign-in page does not need `?org=`: once the typed email looks complete,
+it asks `POST /api/v1/auth/discover {"email"}` (public, its own 20/min budget,
+the email in the body). The answer always has the same two fields:
+
+- `{"next":"sso","org":"<slug>"}` when the email's domain is claimed (DNS
+  proof, exclusive; see below) by an organization that has an active SSO
+  provider. The page then shows that organization's SSO buttons, exactly as
+  `?org=` does.
+- `{"next":"password","org":""}` for everything else: an unclaimed, consumer
+  or invalid domain, a claimed domain without SSO, a claim conflict, or any
+  error.
+
+It says nothing about the email itself (account or not); the organization is
+shown only for a domain that organization proved it owns, which is what lets
+its SSO speak for the domain. The lookup runs the same queries whether or not
+the domain is claimed. The domain owner comes from
+`domainverify.Service.OwnerOfDomain`.
+
 ### Domain claims are exclusive
 
 A DNS-verified SSO domain is what lets an organization's IdP speak for the
@@ -374,6 +394,27 @@ Every federated login:
 The identity store is required: a login that carries an identity is refused
 when it is not wired. Erasing a member's personal data deletes their
 identities, so a later sign-in never finds the anonymised account.
+
+## Home-realm sign-in for external members (RFC-058)
+
+A session counts as an SSO sign-in only of the organization whose identity
+provider issued it (`Session.FederatedFor`). There is one exception: an
+**external member** of a host organization whose **home organization**
+(the holder of their email domain) is trusted by the host, with the trust
+accepted by the home. Such a member may use a session from the home's
+identity provider. The check runs at token exchange and refresh
+(`AuthService.assuranceAt`). The token then carries `auth_method=sso`, so
+the per-request gate agrees.
+
+- **Conditions:** the trust accepts home sign-in; the home still holds the
+  member's domain; MFA evidence is present when the trust requires it.
+- **Never accepted:** a password session, social login, a third
+  organization's IdP, or a trust that is not accepted.
+- **Hosts that require 2FA** additionally need MFA evidence on the session, or the home
+  owner's attestation that its IdP enforces MFA.
+- **MFA evidence** (`sessions.mfa_evidence`) is recorded at SSO callback, only
+  from the verified id_token (`amr` contains `mfa`) or from the validated SAML
+  assertion (a multi-factor `AuthnContextClassRef`).
 
 ## Enforce SSO per-tenant (with owner break-glass)
 

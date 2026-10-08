@@ -117,6 +117,7 @@ scan_run_stage_plans
 scan_run_targets
 scan_runs
 scan_step_outputs
+scan_workflow_versions
 scan_workflows
 scan_zone_sensors
 scan_zones
@@ -148,6 +149,8 @@ tenant_identity_providers
 tenant_invitations
 tenant_members
 tenant_modules
+tenant_plan_overrides
+tenant_plans
 tenant_tool_configs
 threat_actors
 threat_model_threats

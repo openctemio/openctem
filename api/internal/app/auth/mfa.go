@@ -627,6 +627,16 @@ func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Ses
 			return nil
 		}
 	}
+	// An external member signed in at their trusted home organization
+	// passes only with a proven or attested second factor (RFC-058).
+	if fed, mfaOK := s.assuranceAt(ctx, sess, userID, tenantID); fed {
+		if mfaOK {
+			return nil
+		}
+		s.logger.Warn("blocked home-organization session without MFA evidence from 2FA-required tenant",
+			"tenant_id", tid.String(), "user_id", userID.String())
+		return ErrMFAEnrollmentRequired
+	}
 	if sess.AuthMethod().IsFederated() {
 		s.logger.Warn("blocked federated session not issued by this tenant's IdP from 2FA-required tenant",
 			"tenant_id", tid.String(), "user_id", userID.String())
