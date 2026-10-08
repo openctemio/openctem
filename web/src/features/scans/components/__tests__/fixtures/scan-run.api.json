@@ -1,0 +1,46 @@
+{
+  "id": "11111111-1111-4111-8111-111111111111",
+  "tenant_id": "22222222-2222-4222-8222-222222222222",
+  "scan_workflow_id": "33333333-3333-4333-8333-333333333333",
+  "trigger_type": "manual",
+  "trigger": {
+    "type": "system"
+  },
+  "status": "running",
+  "started_at": "2026-10-08T09:00:00Z",
+  "total_steps": 2,
+  "completed_steps": 1,
+  "failed_steps": 0,
+  "skipped_steps": 0,
+  "total_findings": 3,
+  "scan_run_steps": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "step_id": "55555555-5555-4555-8555-555555555555",
+      "step_key": "ports",
+      "step_name": "Port scan",
+      "tool": "naabu",
+      "capability": "scan.ports@1",
+      "status": "completed",
+      "started_at": "2026-10-08T09:00:00Z",
+      "completed_at": "2026-10-08T09:01:30Z",
+      "attempt": 1,
+      "max_attempts": 3,
+      "findings_count": 3
+    },
+    {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "step_id": "77777777-7777-4777-8777-777777777777",
+      "step_key": "vulns",
+      "step_name": "Vulnerability scan",
+      "tool": "nuclei",
+      "status": "running",
+      "started_at": "2026-10-08T09:01:30Z",
+      "attempt": 1,
+      "max_attempts": 3,
+      "findings_count": 0
+    }
+  ],
+  "kind": "scan",
+  "created_at": "2026-10-08T09:00:00Z"
+}
