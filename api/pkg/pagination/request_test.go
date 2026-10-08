@@ -38,6 +38,26 @@ func TestFromRequest(t *testing.T) {
 	}
 }
 
+// A list with its own cap (members, 500) keeps it above MaxPerPage and
+// validates exactly like every other list.
+func TestFromRequestMax(t *testing.T) {
+	q, _ := url.ParseQuery("page=2&per_page=400")
+	if p, err := FromRequestMax(q, 100, 500); err != nil || p.Page != 2 || p.PerPage != 400 || p.Offset() != 400 {
+		t.Fatalf("got %+v, %v", p, err)
+	}
+	q, _ = url.ParseQuery("per_page=9000")
+	if p, _ := FromRequestMax(q, 100, 500); p.PerPage != 500 {
+		t.Fatalf("per_page = %d, want the cap 500", p.PerPage)
+	}
+	q, _ = url.ParseQuery("page=0")
+	if _, err := FromRequestMax(q, 100, 500); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("page=0: err = %v, want ErrInvalid", err)
+	}
+	if p, _ := FromRequestMax(url.Values{}, 100, 500); p.Page != 1 || p.PerPage != 100 {
+		t.Fatalf("defaults = %+v", p)
+	}
+}
+
 func TestMapKeepsPaging(t *testing.T) {
 	r := NewResult([]int{1, 2}, 12, New(2, 2))
 	got := Map(r, func(i int) string { return string(rune('a' + i)) })

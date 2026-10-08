@@ -70,7 +70,7 @@ func (r *ScanWorkflowRepository) Create(ctx context.Context, t *scanworkflow.Wor
 
 	if err != nil {
 		if isUniqueViolation(err) {
-			return shared.NewDomainError("ALREADY_EXISTS", "pipeline template already exists", shared.ErrAlreadyExists)
+			return shared.NewDomainError("ALREADY_EXISTS", "a scan workflow with this name already exists", shared.ErrAlreadyExists)
 		}
 		return fmt.Errorf("failed to create pipeline template: %w", err)
 	}
@@ -158,7 +158,7 @@ func (r *ScanWorkflowRepository) List(ctx context.Context, filter scanworkflow.F
 
 		stepRows, err := r.db.QueryContext(ctx, stepsQuery, pq.Array(templateIDs))
 		if err != nil {
-			return result, fmt.Errorf("failed to load pipeline steps: %w", err)
+			return result, fmt.Errorf("failed to load scan workflow steps: %w", err)
 		}
 		defer stepRows.Close()
 
@@ -336,7 +336,7 @@ func (r *ScanWorkflowRepository) GetWithSteps(ctx context.Context, id shared.ID)
 
 	rows, err := r.db.QueryContext(ctx, stepsQuery, id.String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to load pipeline steps: %w", err)
+		return nil, fmt.Errorf("failed to load scan workflow steps: %w", err)
 	}
 	defer rows.Close()
 
@@ -441,7 +441,7 @@ func (r *ScanWorkflowRepository) ListWithSystemTemplates(ctx context.Context, te
 
 		stepRows, err := r.db.QueryContext(ctx, stepsQuery, pq.Array(templateIDs))
 		if err != nil {
-			return result, fmt.Errorf("failed to load pipeline steps: %w", err)
+			return result, fmt.Errorf("failed to load scan workflow steps: %w", err)
 		}
 		defer stepRows.Close()
 
@@ -688,7 +688,7 @@ func scanStep(rows *sql.Rows) (*scanworkflow.Step, error) {
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan pipeline step: %w", err)
+		return nil, fmt.Errorf("failed to scan scan workflow step: %w", err)
 	}
 	s.PreferTools = preferTools
 	s.Description = description.String
@@ -819,7 +819,7 @@ func (r *ScanWorkflowStepRepository) CreateBatch(ctx context.Context, steps []*s
 		if isUniqueViolation(err) {
 			return shared.NewDomainError("ALREADY_EXISTS", "step already exists", shared.ErrAlreadyExists)
 		}
-		return fmt.Errorf("failed to batch create pipeline steps: %w", err)
+		return fmt.Errorf("failed to batch create scan workflow steps: %w", err)
 	}
 
 	return nil

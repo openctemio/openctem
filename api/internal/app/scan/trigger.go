@@ -281,7 +281,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// Get workflow steps
 	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, template.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pipeline steps: %w", err)
+		return nil, fmt.Errorf("failed to get scan workflow steps: %w", err)
 	}
 
 	// Validate scan workflow has steps
@@ -367,6 +367,11 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 	run.FreezeOverride = override
 	run.SetTotalSteps(len(steps))
+	pinned := *template
+	pinned.Steps = steps
+	if err := scanrun.PinWorkflow(ctx, s.workflowVersions, run, &pinned); err != nil {
+		return nil, err
+	}
 	run.RetryAttempt = retryAttempt
 	run.ScheduledFor = scheduledFor
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
@@ -1187,7 +1192,7 @@ func (s *Service) validateWorkflowStepTools(ctx context.Context, sc *scan.Scan) 
 
 	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, *sc.ScanWorkflowID)
 	if err != nil {
-		return fmt.Errorf("failed to get pipeline steps: %w", err)
+		return fmt.Errorf("failed to get scan workflow steps: %w", err)
 	}
 
 	for _, step := range steps {

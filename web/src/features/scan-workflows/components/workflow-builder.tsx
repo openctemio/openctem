@@ -78,6 +78,8 @@ export interface WorkflowBuilderProps {
   capabilityTable?: CapabilityTable
   // API graph-check messages per step key
   issuesByStep?: Record<string, string[]>
+  // Warnings by step key: the step can be saved, but may not run now
+  warningsByStep?: Record<string, string[]>
   // Insert the adapter capability between two steps that cannot be wired
   onInsertAdapter?: (sourceId: string, targetId: string, capability: string) => void
   // The selected step (for its settings panel), null when none
@@ -291,6 +293,7 @@ function WorkflowBuilderInner({
   onAddNode,
   capabilityTable = EMPTY_TABLE,
   issuesByStep,
+  warningsByStep,
   onInsertAdapter,
   onSelectionChange,
   readOnly = false,
@@ -390,9 +393,10 @@ function WorkflowBuilderInner({
 
         const capability = capabilityForStep(capabilityTable, step)
         const issues = issuesByStep?.[step.step_key] ?? []
+        const warnings = warningsByStep?.[step.step_key] ?? []
 
         // Create a unique key based on data that should trigger re-render
-        const dataKey = `${step.tool || ''}-${JSON.stringify(step.capabilities || [])}-${capability?.key ?? ''}-${issues.join('|')}`
+        const dataKey = `${step.tool || ''}-${JSON.stringify(step.capabilities || [])}-${capability?.key ?? ''}-${issues.join('|')}-${warnings.join('|')}`
 
         return {
           id: step.id,
@@ -420,6 +424,7 @@ function WorkflowBuilderInner({
             outPorts: capability?.outPorts,
             portLabels: capabilityTable.portLabels,
             issues,
+            warnings,
             ...(issues.length > 0 ? { isValid: false, validationMessage: undefined } : {}),
             // Add callbacks if not readOnly
             ...(!readOnly && onStepUpdate
@@ -463,6 +468,7 @@ function WorkflowBuilderInner({
     availableTools,
     capabilityTable,
     issuesByStep,
+    warningsByStep,
     readOnly,
     onStepUpdate,
     setNodes,
