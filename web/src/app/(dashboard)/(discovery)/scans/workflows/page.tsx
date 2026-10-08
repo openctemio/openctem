@@ -537,7 +537,7 @@ export default function ScanWorkflowsPage() {
             <SheetDescription>
               {editingWorkflow
                 ? 'Modify the workflow configuration'
-                : 'Configure a new scan workflow with triggers and steps'}
+                : 'Name the workflow and choose what each step does'}
             </SheetDescription>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4">
