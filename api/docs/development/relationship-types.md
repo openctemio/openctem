@@ -126,7 +126,7 @@ git commit -m "feat(assets): add audited_by relationship type"
 
 That's it. The new type is now:
 - A Go constant `asset.RelTypeAuditedBy` you can use in services and
-  ingest pipelines
+  ingest paths
 - A TS literal `'audited_by'` in the `RelationshipType` union
 - An entry in the Add Relationship dialog dropdown under
   `Control & Observability`
@@ -271,7 +271,7 @@ The safe operations on an existing type:
 | Edit `description` | ✅ totally safe | Just regen + commit. |
 | Edit `direct` / `inverse` labels | ✅ safe | Existing rows are unaffected; UI just shows the new label. |
 | Add a constraint tuple | ✅ safe | Widens what's pickable. |
-| Remove a constraint tuple | ⚠ careful | New edges of the removed combination can no longer be created. **Existing rows in the DB stay valid** (no migration). Make sure no ingest pipelines rely on the removed combination. |
+| Remove a constraint tuple | ⚠ careful | New edges of the removed combination can no longer be created. **Existing rows in the DB stay valid** (no migration). Make sure no ingest paths rely on the removed combination. |
 | Change `category` | ✅ safe (UI-only) | Type moves to a different dropdown section. |
 | **Rename `id`** | 💣 BREAKS DATA | The ID is stored verbatim in `asset_relationships.relationship_type`. Renaming requires a backfill migration. **Don't do this without a plan.** |
 
@@ -302,7 +302,7 @@ Removing a type from the YAML is a **breaking change** because:
    the UI can't render them and the backend can't accept new ones.
 2. **Code references** to the deleted constant (e.g.
    `asset.RelTypeFoo`) will fail to compile.
-3. **Ingest pipelines** that create the type will break.
+3. **Ingest paths** that create the type will break.
 
 The safe procedure:
 
@@ -555,7 +555,7 @@ This is the only honest way to converge on a registry tuned to YOUR
 data instead of theoretical CMDB best practice.
 
 The implementation lives in
-`internal/app/asset_relationship_service.go:GetRelationshipTypeUsage`
+`internal/app/asset/relationship.go:GetRelationshipTypeUsage`
 and `internal/infra/postgres/asset_relationship_repository.go:CountByType`.
 
 ## Limitations and known footguns
@@ -591,7 +591,7 @@ They're "virtual" types — not real `AssetType` enum values in Go.
 Consequence: **the backend cannot enforce the constraint table** for
 those types. The frontend filter is advisory only. The only
 server-side rule we enforce is the `runs_on`/`deployed_to` placement
-mutex (in `internal/app/asset_relationship_service.go`).
+mutex (in `internal/app/asset/relationship.go`).
 
 **Long-term fix**: either add those types as real `AssetType` enum
 values in the backend, or add an alias map in the YAML/codegen that

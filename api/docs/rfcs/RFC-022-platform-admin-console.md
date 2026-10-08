@@ -486,7 +486,12 @@ nothing in the console showed it. It is now the platform setting
 - a read failure means `admin_only`; a change never touches existing
   organizations, users or sessions.
 
-Details: `docs/architecture/user-onboarding.md`, "Sign-up policy".
+With request access on, people who cannot sign up may ask for an
+organization; Organizations > Access requests lists them, and approving one
+creates the organization with the requester as owner (ops_admin+, audited).
+
+Details: `docs/architecture/user-onboarding.md`, "Sign-up policy" and
+"Request access".
 
 ## Revision 11: plans and limits
 
@@ -560,6 +565,35 @@ The organization list shows each organization's plan and filters by owner
 to) and by plan. Owner recovery gained a reason and step-up (revision 7).
 Nothing from inside an organization (findings, assets) is shown: the console
 never reads it.
+
+## Revision 15: Users (cross-organization account support)
+
+Customers > Users finds an account in any organization and helps it sign in
+again, without touching what an organization holds:
+
+- `GET /api/v1/admin/platform-users?q=` (any admin): accounts whose email or
+  name contains `q` (3 characters at least; the directory is looked up, not
+  browsed), or whose id is `q`. Each shows its sign-in state: provider,
+  verified email, lockout, failed sign-ins, MFA, last sign-in, how many
+  organizations it is in, and whether it is a platform administrator or
+  erased.
+- `GET /api/v1/admin/platform-users/{user_id}` (any admin, **audited** as
+  `platform_user.view`): the account, its organizations (name, role,
+  membership status), its federated identities (issuer, subject) and its
+  active sessions (IP, method, started, last seen).
+- Support actions, **ops_admin+**, a `reason` of 10 to 500 characters
+  (kept in the admin audit row), 20 per minute per administrator, audited as
+  `platform_user.<action>` with the account as resource:
+  `revoke-sessions` (every session, every organization), `unlock` (clears
+  the failed-sign-in lockout), `password-reset` (the forgot-password link,
+  emailed to the account; accounts with a password only), and
+  `verification-emails` (a new link; the old one stops working). Links go to
+  the account's own mailbox and are never returned; without SMTP the email
+  actions answer 409 `EMAIL_UNAVAILABLE`.
+- Refused with 409 for a platform administrator's account (managed in
+  Security > Administrators, so an operations administrator cannot sign a
+  super admin out) and for an erased account.
+- Ctrl/Cmd+K also finds accounts.
 
 ## Later phases
 
