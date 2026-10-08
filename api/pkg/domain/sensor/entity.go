@@ -142,7 +142,7 @@ const (
 // Sensor represents a registered sensor (runner, worker, collector, or sensor).
 type Sensor struct {
 	ID            shared.ID
-	TenantID      *shared.ID // nil for platform sensors (is_platform_sensor = true)
+	TenantID      *shared.ID // the owning row's tenant; a platform sensor is never that tenant's own sensor
 	Name          string
 	Type          SensorType
 	Description   string
@@ -152,9 +152,11 @@ type Sensor struct {
 	Health        SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
 	StatusMessage string
 
-	// Platform sensor flag (SaaS model)
-	// Platform sensors are managed by OpenCTEM and don't count towards tenant's sensor limit.
-	// Tenants can use platform sensors for their scans without provisioning their own.
+	// Platform sensor flag (SaaS model): shared infrastructure the platform
+	// operator runs. It never counts towards, is listed as, or is managed as
+	// one of a tenant's sensors (the tenant plane answers 404 for it);
+	// tenants see platform scanning only as an aggregated service
+	// (GET /api/v1/platform/scanning).
 	IsPlatformSensor bool
 
 	// Inline API key: the credential stored on the sensor row itself (the
@@ -781,25 +783,30 @@ func (a *Sensor) CanExecutePlatformJob(capabilities []string, tool, preferredReg
 }
 
 // =============================================================================
-// Platform Sensor Statistics
+// Platform scanning (what a tenant sees of platform sensors)
 // =============================================================================
 
-// TierBreakdown holds statistics for a single sensor tier.
-type TierBreakdown struct {
-	TotalSensors  int
-	OnlineSensors int
-	TotalCapacity int
-	CurrentLoad   int
+// PlatformRegionState is how one region of platform scanning stands, as a
+// tenant may see it: a state, never node counts, capacity or other tenants'
+// load.
+type PlatformRegionState struct {
+	Region string
+	// Online: at least one active platform sensor of the region can take work.
+	Online bool
+	// FreeSlot: one of them has a free job slot now.
+	FreeSlot bool
 }
 
-// PlatformSensorStatsResult holds aggregate platform sensor statistics.
-type PlatformSensorStatsResult struct {
-	TotalSensors      int
-	OnlineSensors     int
-	TotalCapacity     int
-	CurrentActiveJobs int
-	CurrentQueuedJobs int
-	TierBreakdown     map[string]TierBreakdown
+// PlatformScanningSummary is the platform scanning service seen by one
+// tenant: per-region states, the tools online platform sensors offer, and the
+// tenant's own platform jobs. It carries nothing that identifies a platform
+// sensor (id, name, host, address, version) and no other tenant's numbers.
+type PlatformScanningSummary struct {
+	Regions []PlatformRegionState
+	Tools   []string
+	// Queued and Running count the tenant's own platform jobs only.
+	Queued  int
+	Running int
 }
 
 // TenantSensorStats holds aggregate statistics for a tenant's sensors,

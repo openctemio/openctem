@@ -76,6 +76,12 @@ func registerSensorManagementRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
+	// Every route on one sensor (/{id}...) ends with own: the sensor must be
+	// one of the organization's own sensors. Another organization's sensor
+	// and a shared platform sensor both answer 404 (platform sensors are
+	// managed from the admin console only, RFC-022).
+	own := h.OwnSensor
+
 	// Sensor management routes - tenant from JWT token
 	router.Group("/api/v1/sensors", func(r Router) {
 		// Read operations
@@ -90,7 +96,7 @@ func registerSensorManagementRoutes(
 			r.GET("/content-policy", content.GetPolicy, middleware.Require(permission.SensorsRead))
 			r.PUT("/content-policy", content.UpdatePolicy, middleware.Require(permission.SensorsWrite))
 			r.POST("/content/refresh", content.RefreshFleet, middleware.Require(permission.SensorsWrite))
-			r.POST("/{id}/content/refresh", content.RefreshSensor, middleware.Require(permission.SensorsWrite))
+			r.POST("/{id}/content/refresh", content.RefreshSensor, middleware.Require(permission.SensorsWrite), own)
 		}
 		// Results without a command (RFC-040 §5.3): the tenant policy and
 		// the quarantine review. Accepting applies sensor data to the
@@ -113,24 +119,24 @@ func registerSensorManagementRoutes(
 		// sensors:grant:widen (the service decides). Before /{id}.
 		r.GET("/grant-profiles", h.ListGrantProfiles, middleware.Require(permission.SensorsRead))
 		r.GET("/grant-summaries", h.ListGrantSummaries, middleware.Require(permission.SensorsRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead), own)
 		// Signing keys of key-bound sensors (RFC-052).
-		r.GET("/{id}/keys", h.ListSigningKeys, middleware.Require(permission.SensorsRead))
-		r.POST("/{id}/keys/{key_id}/revoke", h.RevokeSigningKey, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke))
-		r.GET("/{id}/grant", h.GetGrant, middleware.Require(permission.SensorsRead))
-		r.PUT("/{id}/grant", h.UpdateGrant, middleware.RequireAny(permission.SensorsGrantNarrow, permission.SensorsGrantWiden))
-		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead))
+		r.GET("/{id}/keys", h.ListSigningKeys, middleware.Require(permission.SensorsRead), own)
+		r.POST("/{id}/keys/{key_id}/revoke", h.RevokeSigningKey, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke), own)
+		r.GET("/{id}/grant", h.GetGrant, middleware.Require(permission.SensorsRead), own)
+		r.PUT("/{id}/grant", h.UpdateGrant, middleware.RequireAny(permission.SensorsGrantNarrow, permission.SensorsGrantWiden), own)
+		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead), own)
 		// Activity timeline. Audit-log items are added only for callers that
 		// also hold audit:read (the handler checks it).
-		r.GET("/{id}/activity", h.Activity, middleware.Require(permission.SensorsRead))
+		r.GET("/{id}/activity", h.Activity, middleware.Require(permission.SensorsRead), own)
 		// Heartbeat history (RFC-035): the Control channel sparkline.
-		r.GET("/{id}/heartbeat-history", h.HeartbeatHistory, middleware.Require(permission.SensorsRead))
+		r.GET("/{id}/heartbeat-history", h.HeartbeatHistory, middleware.Require(permission.SensorsRead), own)
 		// Manifest (RFC-033): the current one and its history.
-		r.GET("/{id}/manifest", h.Manifest, middleware.Require(permission.SensorsRead))
-		r.GET("/{id}/manifests", h.Manifests, middleware.Require(permission.SensorsRead))
+		r.GET("/{id}/manifest", h.Manifest, middleware.Require(permission.SensorsRead), own)
+		r.GET("/{id}/manifests", h.Manifests, middleware.Require(permission.SensorsRead), own)
 		// Setup checklist (research/26): the sensor's config report, explained
 		// from the platform catalog.
-		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsRead))
+		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsRead), own)
 
 		// Available capabilities for tenant (aggregated from all accessible sensors)
 		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.SensorsRead))
@@ -144,17 +150,17 @@ func registerSensorManagementRoutes(
 		// credential, so they need a recent sign-in (step-up), as an API key
 		// does. Revoking and deleting stay one click.
 		r.POST("/", h.Create, middleware.Require(permission.SensorsWrite), requireStepUp())
-		r.PUT("/{id}", h.Update, middleware.Require(permission.SensorsWrite))
-		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.SensorsWrite), own)
+		r.POST("/{id}/regenerate-key", h.RegenerateAPIKey, middleware.Require(permission.SensorsWrite), requireStepUp(), own)
 
 		// Status operations (admin-controlled)
-		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.SensorsWrite))
-		r.POST("/{id}/deactivate", h.Disable, middleware.Require(permission.SensorsWrite))
+		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.SensorsWrite), own)
+		r.POST("/{id}/deactivate", h.Disable, middleware.Require(permission.SensorsWrite), own)
 		// Revoking only narrows: sensors:revoke suffices (RFC-052).
-		r.POST("/{id}/revoke", h.Revoke, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke))
+		r.POST("/{id}/revoke", h.Revoke, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke), own)
 
 		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete), own)
 	}, tenantMiddlewares...)
 
 }

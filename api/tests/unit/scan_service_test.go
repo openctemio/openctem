@@ -244,6 +244,7 @@ func (m *mockTemplateRepo) List(_ context.Context, _ scanworkflow.Filter, _ pagi
 
 func (m *mockTemplateRepo) Update(_ context.Context, _ *scanworkflow.Workflow) error { return nil }
 func (m *mockTemplateRepo) Delete(_ context.Context, _ shared.ID) error              { return nil }
+func (m *mockTemplateRepo) Remove(_ context.Context, _, _ shared.ID) (bool, error)   { return false, nil }
 func (m *mockTemplateRepo) DeleteInTx(_ context.Context, _ *sql.Tx, _ shared.ID) error {
 	return nil
 }

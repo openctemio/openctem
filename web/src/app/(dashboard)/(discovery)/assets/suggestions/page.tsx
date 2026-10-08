@@ -43,7 +43,8 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useDebounce } from '@/hooks/use-debounce'
-import { useUrlFilter, useUrlFilterNumber } from '@/hooks/use-url-param'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   useRelationshipSuggestions,
@@ -96,8 +97,8 @@ function AssetCell({ type, name, id }: { type: string; name: string; id: string 
 export default function RelationshipSuggestionsPage() {
   // Search and page live in the URL so a review queue position can be linked to.
   const [searchParam, setSearchParam] = useUrlFilter('q', '')
-  const [page, setPage] = useUrlFilterNumber('page', 1)
-  const [perPage, setPerPage] = useUrlFilterNumber('per_page', 20)
+  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const { page, setPage } = list
   const [searchValue, setSearchValue] = useState(searchParam)
   const debouncedSearch = useDebounce(searchValue, 300)
   // Only the debounced input triggers a URL write. The URL value is read as an
@@ -121,7 +122,7 @@ export default function RelationshipSuggestionsPage() {
   }, [])
   const [editingType, setEditingType] = useState<string | null>(null)
 
-  const pageSize = PAGE_SIZES.includes(perPage) ? perPage : 20
+  const pageSize = list.perPage
   const { data, error, isLoading, isValidating } = useRelationshipSuggestions(
     'pending',
     page,
@@ -437,15 +438,7 @@ export default function RelationshipSuggestionsPage() {
             manualPagination
             rowCount={total}
             pagination={{ pageIndex: page - 1, pageSize }}
-            onPaginationChange={(p) => {
-              if (p.pageSize !== pageSize) {
-                setPerPage(p.pageSize)
-                setPage(1)
-              } else {
-                setPage(p.pageIndex + 1)
-              }
-              clearSelection()
-            }}
+            onPaginationChange={list.setPagination}
             pageSizeOptions={PAGE_SIZES}
             onSelectionChange={(rows) => setSelected(rows.map((r) => r.id))}
             resetSelectionKey={selectionEpoch}

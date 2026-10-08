@@ -253,8 +253,6 @@ type SensorResponse struct {
 	// UptimeSeconds is the process uptime at the last heartbeat; null unless
 	// the sensor is heartbeating and reports its uptime.
 	UptimeSeconds *int64 `json:"uptime_seconds"`
-	// IsPlatformSensor marks shared platform infrastructure.
-	IsPlatformSensor bool `json:"is_platform_sensor"`
 
 	// capabilities and max_concurrent_jobs above are the administrator's
 	// settings (limits). Reported is what the sensor last reported it has
@@ -1031,7 +1029,6 @@ func sensorResponseAt(a *sensor.Sensor, policy sensor.HealthPolicy, now time.Tim
 		LastErrorAt:      rfc3339Ptr(a.LastErrorAt),
 		StartedAt:        rfc3339Ptr(a.StartedAt),
 		UptimeSeconds:    health.UptimeSeconds,
-		IsPlatformSensor: a.IsPlatformSensor,
 		SDKName:          a.Build.SDKName,
 		SDKVersion:       a.Build.SDKVersion,
 		SDKStatus:        string(health.SDKStatus),

@@ -238,12 +238,6 @@ func (m *mockSensorRepo) HasSensorForCapability(_ context.Context, _ shared.ID, 
 	return false, nil
 }
 
-func (m *mockSensorRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
-	return &sensor.PlatformSensorStatsResult{
-		TierBreakdown: make(map[string]sensor.TierBreakdown),
-	}, nil
-}
-
 func (m *mockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
 	return &sensor.TenantSensorStats{
 		ByStatus: make(map[string]int),
