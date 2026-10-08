@@ -1,6 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import useSWR from 'swr'
 import { CircleAlert, Hash } from 'lucide-react'
 import { toast } from 'sonner'
@@ -27,7 +28,13 @@ import type { ScanRun } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { formatScanDuration } from '@/features/scans/lib/format'
-import { elapsedMs, runRefreshInterval, runTaskProgress } from '@/features/scans/lib/run-display'
+import {
+  elapsedMs,
+  runKindLabel,
+  runRefreshInterval,
+  runSubjectFindingId,
+  runTaskProgress,
+} from '@/features/scans/lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
 import { RunStageLanes } from './run-stage-lanes'
 
@@ -100,6 +107,10 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
   )
   const duration = run ? durationOf(run) : null
   const progress = run ? runTaskProgress(run.task_summary) : null
+  // A run that executes no scan workflow (a retest) has no stages or
+  // dispatch plan; it is about a finding instead.
+  const isScanRun = !run?.kind || run.kind === 'scan' || run.kind === 'quick'
+  const findingId = run ? runSubjectFindingId(run) : null
 
   return (
     <DetailSheet
@@ -107,7 +118,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
       onOpenChange={onOpenChange}
       header={
         <DetailHeader
-          title="Scan run"
+          title={run && !isScanRun ? `${runKindLabel(run.kind)} run` : 'Scan run'}
           badges={run ? <RunStatusBadge status={run.status} /> : undefined}
           meta={[run?.started_at ? `started ${formatTime(run.started_at)}` : null, duration]}
           menu={
@@ -156,6 +167,18 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
             </DetailCallout>
           )}
 
+          {findingId && (
+            <p className="text-sm">
+              About{' '}
+              <Link
+                href={`/findings/${encodeURIComponent(findingId)}`}
+                className="font-medium underline-offset-2 hover:underline"
+              >
+                this finding
+              </Link>
+            </p>
+          )}
+
           <DetailStatGrid aria-label="Key numbers">
             <DetailStat label="Findings" value={run.total_findings} />
             {progress && <DetailStat label="Tasks" value={progress.label} />}
@@ -173,9 +196,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                 />
               </DetailSection>
             )}
-            <DetailSection title="Stages">
-              <RunStageLanes runId={run.id} refreshInterval={runRefreshInterval(run)} />
-            </DetailSection>
+            {isScanRun && (
+              <DetailSection title="Stages">
+                <RunStageLanes runId={run.id} refreshInterval={runRefreshInterval(run)} />
+              </DetailSection>
+            )}
             <DetailSection title="Tasks" count={run.task_summary?.total}>
               {run.tasks && run.tasks.length > 0 ? (
                 <RunTasksTable
@@ -190,15 +215,17 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                 </p>
               )}
             </DetailSection>
-            <DetailSection title="Dispatch">
-              {run.dispatch ? (
-                <RunDispatchPanel dispatch={run.dispatch} />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  This run recorded no dispatch details (runs from before target routing).
-                </p>
-              )}
-            </DetailSection>
+            {isScanRun && (
+              <DetailSection title="Dispatch">
+                {run.dispatch ? (
+                  <RunDispatchPanel dispatch={run.dispatch} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    This run recorded no dispatch details (runs from before target routing).
+                  </p>
+                )}
+              </DetailSection>
+            )}
             <DetailSection title="Timing">
               <DetailFieldGrid>
                 {run.scheduled_for && (
