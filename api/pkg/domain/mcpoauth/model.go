@@ -153,6 +153,8 @@ type Repository interface {
 	GetClientByClientID(ctx context.Context, clientID string) (*Client, error)
 
 	CreateRequest(ctx context.Context, r *AuthRequest) error
+	// Authorization requests exist before any organization is chosen: they
+	// are found by a random id and bound to the user who claims them.
 	GetRequest(ctx context.Context, id shared.ID) (*AuthRequest, error)
 	// ClaimRequest binds a pending, unexpired request to userID; a request
 	// already claimed by someone else is ErrRequestState.
@@ -176,9 +178,9 @@ type Repository interface {
 	// RotateRefresh marks the refresh token used and stores the new tokens,
 	// in one transaction; the token must be unused (else ErrRefreshReused).
 	// scopes, when non-nil, narrows the grant.
-	RotateRefresh(ctx context.Context, oldHash string, scopes []Scope, now time.Time, tokens ...Token) error
+	RotateRefresh(ctx context.Context, tenantID shared.ID, oldHash string, scopes []Scope, now time.Time, tokens ...Token) error
 	// RevokeGrant revokes the grant and deletes its tokens.
-	RevokeGrant(ctx context.Context, grantID shared.ID, reason string, now time.Time) error
+	RevokeGrant(ctx context.Context, tenantID, grantID shared.ID, reason string, now time.Time) error
 	// TouchGrant records the last use of a grant.
-	TouchGrant(ctx context.Context, grantID shared.ID, ip string, now time.Time) error
+	TouchGrant(ctx context.Context, tenantID, grantID shared.ID, ip string, now time.Time) error
 }

@@ -406,7 +406,9 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, actor Actor
 		// RFC 9700 §4.2.4: a code presented twice; revoke what the first
 		// redemption issued.
 		if req.GrantID != nil {
-			_ = s.repo.RevokeGrant(ctx, *req.GrantID, mcpoauth.RevokedCodeReuse, now)
+			if req.TenantID != nil {
+				_ = s.repo.RevokeGrant(ctx, *req.TenantID, *req.GrantID, mcpoauth.RevokedCodeReuse, now)
+			}
 		}
 		s.logAudit(ctx, idString(req.TenantID), idString(req.UserID), actor,
 			auditapp.NewDeniedEvent(auditdom.ActionMCPCodeReused, auditdom.ResourceTypeMCPGrant, idString(req.GrantID), "authorization code reused").
@@ -473,7 +475,7 @@ func (s *Service) refresh(ctx context.Context, form url.Values, actor Actor) (*T
 	}
 	if ok, err := s.members.IsActiveMember(ctx, grant.TenantID, grant.UserID); err != nil || !ok {
 		if err == nil {
-			_ = s.repo.RevokeGrant(ctx, grant.ID, mcpoauth.RevokedMembershipGone, now)
+			_ = s.repo.RevokeGrant(ctx, grant.TenantID, grant.ID, mcpoauth.RevokedMembershipGone, now)
 		}
 		return nil, invalid
 	}
@@ -489,7 +491,7 @@ func (s *Service) refresh(ctx context.Context, form url.Values, actor Actor) (*T
 	if err != nil {
 		return nil, oauthErr("server_error", "try again")
 	}
-	if err := s.repo.RotateRefresh(ctx, hash, narrowed, now, tokens...); err != nil {
+	if err := s.repo.RotateRefresh(ctx, grant.TenantID, hash, narrowed, now, tokens...); err != nil {
 		if errors.Is(err, mcpoauth.ErrRefreshReused) {
 			// Lost a race with another use of the same token: someone else
 			// holds a copy.
@@ -506,7 +508,7 @@ func (s *Service) revokeForReuse(ctx context.Context, grant *mcpoauth.Grant, act
 	if grant == nil {
 		return
 	}
-	_ = s.repo.RevokeGrant(ctx, grant.ID, mcpoauth.RevokedRefreshReuse, now)
+	_ = s.repo.RevokeGrant(ctx, grant.TenantID, grant.ID, mcpoauth.RevokedRefreshReuse, now)
 	s.logAudit(ctx, grant.TenantID.String(), grant.UserID.String(), actor,
 		auditapp.NewDeniedEvent(auditdom.ActionMCPRefreshReused, auditdom.ResourceTypeMCPGrant, grant.ID.String(), "refresh token reused").
 			WithResourceName(grant.Client.Name).
@@ -562,7 +564,7 @@ func (s *Service) Revoke(ctx context.Context, raw, clientID string, actor Actor)
 	if grant.RevokedAt != nil {
 		return
 	}
-	if err := s.repo.RevokeGrant(ctx, grant.ID, mcpoauth.RevokedByClient, now); err != nil {
+	if err := s.repo.RevokeGrant(ctx, grant.TenantID, grant.ID, mcpoauth.RevokedByClient, now); err != nil {
 		s.log.Error("mcp oauth: revoke grant", "error", err.Error())
 		return
 	}
@@ -626,7 +628,7 @@ func (s *Service) AuthenticateAccessToken(ctx context.Context, raw, ip string) (
 	if !all {
 		effective = intersect(scopePerms, held)
 	}
-	if err := s.repo.TouchGrant(ctx, grant.ID, ip, now); err != nil {
+	if err := s.repo.TouchGrant(ctx, grant.TenantID, grant.ID, ip, now); err != nil {
 		s.log.Debug("mcp oauth: touch grant", "error", err.Error())
 	}
 	return &Principal{
