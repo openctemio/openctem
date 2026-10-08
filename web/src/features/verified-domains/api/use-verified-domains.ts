@@ -13,6 +13,7 @@ import useSWRMutation from 'swr/mutation'
 import { adminFetch, AdminApiError } from '@/features/admin-console/api/admin-client'
 import type {
   CreateVerifiedDomainRequest,
+  UpdateDomainJITRequest,
   VerifiedDomain,
   VerifiedDomainListResponse,
 } from '../types/verified-domain.types'
@@ -60,5 +61,17 @@ export function useDeleteVerifiedDomain(tenantId: string | null) {
     tenantId ? base(tenantId) : null,
     async (p: string, { arg }: { arg: string }) =>
       adminFetch<void>(`${p}/${arg}`, { method: 'DELETE' })
+  )
+}
+
+/** Change a domain's just-in-time provisioning (RFC-058). */
+export function useUpdateDomainJIT(tenantId: string | null) {
+  return useSWRMutation(
+    tenantId ? base(tenantId) : null,
+    async (p: string, { arg }: { arg: { id: string } & UpdateDomainJITRequest }) =>
+      adminFetch<VerifiedDomain>(`${p}/${arg.id}`, {
+        method: 'PATCH',
+        body: { jit_enabled: arg.jit_enabled, jit_role: arg.jit_role },
+      })
   )
 }
