@@ -400,6 +400,11 @@ func TestAdminSSOChange_RequiresOwnerApproval_DB(t *testing.T) {
 		}
 		var created map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &created)
+		// The owner approves what the summary says: the provider by name.
+		if sum, _ := created["summary"].(string); !strings.Contains(sum, `Google Workspace identity provider "Attacker IdP"`) ||
+			strings.Contains(sum, "google_workspace") {
+			t.Fatalf("create summary %q does not name the provider", sum)
+		}
 		var payload string
 		_ = raw.QueryRow(`SELECT payload::text FROM sso_pending_changes WHERE id = $1`, created["id"]).Scan(&payload)
 		if strings.Contains(payload, secret) {
@@ -436,6 +441,10 @@ func TestAdminSSOChange_RequiresOwnerApproval_DB(t *testing.T) {
 		}
 		var updated map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &updated)
+		if sum, _ := updated["summary"].(string); !strings.Contains(sum, `the Google Workspace identity provider "Attacker IdP" (client ID)`) ||
+			strings.Contains(sum, ipID) {
+			t.Fatalf("update summary %q does not name the provider", sum)
+		}
 		var clientID string
 		_ = raw.QueryRow(`SELECT client_id FROM tenant_identity_providers WHERE id = $1`, ipID).Scan(&clientID)
 		if clientID != "cid-1" {
