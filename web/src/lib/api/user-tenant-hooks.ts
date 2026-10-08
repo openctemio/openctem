@@ -132,6 +132,10 @@ export function useMyTenants(options?: UseMyTenantsOptions) {
 
   const result = useSWR<TenantMembership[]>(swrKey, (url: string) => get<TenantMembership[]>(url), {
     ...defaultConfig,
+    // Inside the app shell the session bootstrap seeds this key
+    // (context/bootstrap-session.ts); a cached list is not fetched again on
+    // mount. refreshTenants / invalidateMyTenantsCache still refetch it.
+    revalidateIfStale: false,
     ...config,
   })
 

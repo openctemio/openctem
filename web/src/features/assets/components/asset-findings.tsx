@@ -90,10 +90,9 @@ function mapApiFinding(f: ApiFinding): AssetFinding {
     duplicate: 'resolved',
     draft: 'open',
     in_review: 'in_progress',
-    remediation: 'in_progress',
-    retest: 'in_progress',
-    verified: 'resolved',
-    accepted_risk: 'accepted',
+    fix_applied: 'in_progress',
+    validated_fixed: 'in_progress',
+    not_observed: 'in_progress',
   }
   const status: AssetFinding['status'] = statusMap[f.status] || 'open'
 

@@ -24,6 +24,7 @@
  * open it too). See web/docs/ui/activity-panel.md.
  */
 
+import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import { useParams, useRouter } from 'next/navigation'
 import { useSWRConfig } from 'swr'
 import { AlertTriangle } from 'lucide-react'
@@ -57,14 +58,7 @@ import { PentestDetailsTab } from '@/features/findings/components/detail/pentest
 import { getSourceLayout, getOrderedTabs } from '@/features/findings/config/source-layout'
 import '@/features/findings/config/register-layouts'
 
-const CLOSED = new Set([
-  'resolved',
-  'verified',
-  'false_positive',
-  'accepted',
-  'accepted_risk',
-  'duplicate',
-])
+const CLOSED = new Set<string>(findingStatusesInCategory('closed'))
 
 const TAB_LABEL: Record<string, string> = {
   overview: 'Overview',

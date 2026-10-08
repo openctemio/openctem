@@ -1124,7 +1124,7 @@ func (s *Service) DeactivateScansByScanWorkflow(ctx context.Context, scanWorkflo
 	// Find all scans using this scan workflow
 	scans, err := s.scanRepo.ListByScanWorkflowID(ctx, scanWorkflowID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to list scans by pipeline: %w", err)
+		return 0, fmt.Errorf("failed to list scans by scan workflow: %w", err)
 	}
 
 	pausedCount := 0
@@ -1136,7 +1136,7 @@ func (s *Service) DeactivateScansByScanWorkflow(ctx context.Context, scanWorkflo
 
 		// Pause the scan (not disable - so it can be resumed)
 		if err := sc.Pause(); err != nil {
-			s.logger.Warn("failed to pause scan for pipeline",
+			s.logger.Warn("failed to pause scan for scan workflow",
 				"scan_id", sc.ID.String(),
 				"scan_workflow_id", scanWorkflowID.String(),
 				"error", err)
@@ -1144,14 +1144,14 @@ func (s *Service) DeactivateScansByScanWorkflow(ctx context.Context, scanWorkflo
 		}
 
 		if err := s.scanRepo.Update(ctx, sc); err != nil {
-			s.logger.Warn("failed to save paused scan for pipeline",
+			s.logger.Warn("failed to save paused scan for scan workflow",
 				"scan_id", sc.ID.String(),
 				"scan_workflow_id", scanWorkflowID.String(),
 				"error", err)
 			continue
 		}
 
-		s.logger.Info("scan paused due to pipeline deactivation",
+		s.logger.Info("scan paused due to scan workflow deactivation",
 			"scan_id", sc.ID.String(),
 			"scan_name", sc.Name,
 			"scan_workflow_id", scanWorkflowID.String())

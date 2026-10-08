@@ -21,10 +21,11 @@ import { cn } from '@/lib/utils'
 import { GroupedNav, type GroupedNavSection } from '@/components/layout/grouped-nav'
 import { NAV_BUTTON_CLASS, NAV_COLUMN_CLASS } from '@/components/layout/nav-group'
 import { SidebarFooterLinks } from '@/components/layout/sidebar-footer-links'
-import { adminNav } from '../config/admin-nav'
-import { adminCan, type AdminIdentity } from '../types'
+import { useTranslation } from '@/context/i18n-provider'
+import { visibleAdminNav } from '../lib/admin-nav-visibility'
+import type { AdminIdentity } from '../types'
 
-const ROLE_LABELS: Record<AdminIdentity['role'], string> = {
+export const ROLE_LABELS: Record<AdminIdentity['role'], string> = {
   super_admin: 'Super admin',
   ops_admin: 'Operations admin',
   readonly: 'Read-only admin',
@@ -47,12 +48,16 @@ interface AdminConsoleSidebarProps {
  */
 export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarProps) {
   const pathname = usePathname()
-  const sections: GroupedNavSection[] = adminNav.map((section, i) => ({
+  const { t } = useTranslation()
+  const sections: GroupedNavSection[] = visibleAdminNav(admin.role).map((section, i) => ({
     key: section.title ?? String(i),
-    label: section.title,
-    items: section.items
-      .filter((item) => !item.minRole || adminCan(admin.role, item.minRole))
-      .map((item) => ({ key: item.url, title: item.title, url: item.url, icon: item.icon })),
+    label: section.i18nKey ? t(section.i18nKey, section.title) : section.title,
+    items: section.items.map((item) => ({
+      key: item.url,
+      title: t(item.i18nKey, item.title),
+      url: item.url,
+      icon: item.icon,
+    })),
   }))
   // The deepest entry that owns the current path is the one marked current.
   const activeUrl = sections
@@ -76,7 +81,7 @@ export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarPro
               <div className="grid flex-1 text-start text-sm leading-tight">
                 <span className="truncate font-semibold">Platform admin</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {ROLE_LABELS[admin.role]}
+                  {t(`admin.role.${admin.role}`, ROLE_LABELS[admin.role])}
                 </span>
               </div>
             </SidebarMenuButton>

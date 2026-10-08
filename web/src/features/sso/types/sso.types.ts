@@ -4,6 +4,8 @@
  * Types for tenant-scoped SSO identity provider configuration
  */
 
+import { identityProviderLabel } from '@/lib/identity-provider-label'
+
 // ============================================
 // PROVIDER TYPES
 // ============================================
@@ -17,23 +19,23 @@ export const SSO_PROVIDERS: {
 }[] = [
   {
     value: 'entra_id',
-    label: 'Microsoft Entra ID',
+    label: identityProviderLabel('entra_id'),
     description: 'Azure Active Directory / Microsoft 365',
   },
   {
     value: 'okta',
-    label: 'Okta',
+    label: identityProviderLabel('okta'),
     description: 'Okta Identity Platform',
   },
   {
     value: 'google_workspace',
-    label: 'Google Workspace',
+    label: identityProviderLabel('google_workspace'),
     description: 'Google Cloud Identity',
   },
 ]
 
 export function getProviderLabel(provider: SSOProviderType): string {
-  return SSO_PROVIDERS.find((p) => p.value === provider)?.label ?? provider
+  return identityProviderLabel(provider)
 }
 
 // ============================================

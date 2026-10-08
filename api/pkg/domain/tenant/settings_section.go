@@ -31,6 +31,7 @@ const (
 	SectionEvidence       = "evidence"
 	SectionEASM           = "easm"
 	SectionScope          = "scope"
+	SectionMCP            = "mcp"
 )
 
 // settingsSectionTargets maps each section key to the field of s it decodes
@@ -51,6 +52,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionEvidence:       &s.Evidence,
 		SectionEASM:           &s.EASM,
 		SectionScope:          &s.Scope,
+		SectionMCP:            &s.MCP,
 	}
 }
 

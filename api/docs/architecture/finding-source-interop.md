@@ -47,13 +47,13 @@ location)*. CTIS 1.4 feeds them without changing any stored key:
   (`TestInterop_IdentityUnchanged`).
 - Cross-tool correlation therefore happens on the CVE (network and SCA
   recipes key on the canonical vulnerability id, so Nessus, Qualys and an
-  agent that name the same CVE on the same host and port merge), on the
+  sensor that name the same CVE on the same host and port merge), on the
   version-less package URL (SCA recipe), and on the host identity: asset
   `identity_hints` count in asset matching like the same value under its
   usual property name. FQDN and NetBIOS name are host names, MACs and the
   cloud resource id are identifiers, and a typed `identifiers` block still
   wins ([asset identity resolution](asset-identity-resolution.md)). The OS CPE
-  and agent id are kept in the asset property `identity_hints` for display.
+  and sensor id are kept in the asset property `identity_hints` for display.
 - `native_vuln_id` and `vulnerability_ids` are stored for correlation queries;
   they are never used as a producer-chosen key.
 

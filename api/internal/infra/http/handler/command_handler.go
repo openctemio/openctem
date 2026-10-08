@@ -156,6 +156,16 @@ func (h *CommandHandler) settleValidationRun(cmd *commanddom.Command, succeeded 
 	}()
 }
 
+// OnCommandFailed settles what waits on a failed command: its scan step,
+// its retest (now, as unknown, instead of at the next sweep) and its
+// validation run. The v2 fail transition and the claim-time scope re-check
+// (command.FailureObserver) both call it.
+func (h *CommandHandler) OnCommandFailed(ctx context.Context, cmd *commanddom.Command, message, code string) {
+	h.triggerScanRunFailed(ctx, cmd, message, code)
+	h.triggerRetestSettle(cmd)
+	h.settleValidationRun(cmd, false, sensordom.RedactPlatformText(message), code)
+}
+
 // retestSettler settles a pending retest when one of its commands finishes.
 type retestSettler interface {
 	OnCommandFinished(ctx context.Context, tenantID, commandID shared.ID)
@@ -353,6 +363,9 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		input.Payload = gated.Payload
 		input.ScanZoneID = gated.ScanZoneID
+		// The claim re-checks the targets as GateCommandPayload checked
+		// them: the scanner's tier ceiling and the caller's act scope.
+		input.DispatchGate = &commanddom.DispatchGate{Tier: int(gated.Tier), ActScope: true, Actor: requestUserID(r.Context())}
 		targets = gated.Targets
 	}
 
@@ -379,6 +392,17 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(commandResponseFor(r.Context(), cmd))
+}
+
+// requestUserID is the id of the user who makes the request ("" for none).
+func requestUserID(ctx context.Context) string {
+	if id := middleware.GetLocalUserID(ctx); !id.IsZero() {
+		return id.String()
+	}
+	if id, err := shared.IDFromString(middleware.GetUserID(ctx)); err == nil && !id.IsZero() {
+		return id.String()
+	}
+	return ""
 }
 
 // maxAuditedTargets bounds the target list copied into one audit entry.
