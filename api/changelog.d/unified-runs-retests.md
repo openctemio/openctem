@@ -2,7 +2,7 @@
 
 - A scan run now has a `kind` (`scan`, `quick`, `retest`, `validation`, `test`,
   `connector`, `system`) and a `subject`. A run that executes no scan workflow
-  (a retest) has no `scan_workflow_id`. Migration `001298`.
+  (a retest) has no `scan_workflow_id`. Migration `001301`.
 - Requesting a retest records a run of kind `retest` with one step. Both of the
   retest's sensor commands are tasks of that run, so their status and logs are
   read from the run page. The run ends when the retest reaches its verdict.
