@@ -3,6 +3,7 @@ package scanworkflow
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -119,3 +120,12 @@ var ErrScanWorkflowRetired = shared.NewDomainError("WORKFLOW_RETIRED",
 // rest of that run does.
 var ErrScanWorkflowRunActive = shared.NewDomainError("PIPELINE_RUN_ACTIVE",
 	"this pipeline has a run in progress; wait for it to finish or cancel it, then save the steps", shared.ErrConflict)
+
+// StepKeyHasRunsError refuses a change of a saved step's key once the scan
+// workflow has a run: the run history (scan_run_steps.step_key) and the data
+// hops between steps (scan_step_outputs) refer to the key. The step's name
+// can change freely.
+func StepKeyHasRunsError(oldKey, newKey string) error {
+	return fmt.Errorf("%w: step key %q cannot change to %q: this workflow has runs, and their history refers to the key. Keep the key (the step name can change), or add a new step",
+		shared.ErrValidation, oldKey, newKey)
+}

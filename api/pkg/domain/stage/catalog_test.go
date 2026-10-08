@@ -273,3 +273,31 @@ func TestPassiveTools(t *testing.T) {
 		t.Error("tool names are compared in registry spelling")
 	}
 }
+
+func TestToolCanRun(t *testing.T) {
+	for _, tc := range []struct {
+		tool  string
+		caps  []string
+		word  string
+		allow bool
+	}{
+		{"dnsx", []string{"recon", "dns"}, "resolve.dns", true},
+		{"dnsx", []string{"recon", "dns"}, "dns", true},
+		{"dnsx", nil, "resolve.dns", true}, // the catalog has dnsx implement it
+		{"dnsx", []string{"recon", "dns"}, "scan", false},
+		{"dnsx", []string{"recon", "dns"}, "scan.ports", false},
+		{"custom", []string{"dns"}, "resolve.dns", true},
+		{"custom", []string{"resolve.dns"}, "dns", true},
+		{"custom", []string{"dns"}, "probe.http", false},
+		{"custom", []string{"dns"}, "", false},
+	} {
+		if got := ToolCanRun(tc.tool, tc.caps, tc.word); got != tc.allow {
+			t.Errorf("ToolCanRun(%s, %v, %q) = %v, want %v", tc.tool, tc.caps, tc.word, got, tc.allow)
+		}
+	}
+	// The mapping never places a tool the catalog does not know on a stage:
+	// such a tool gains no contract and never chains.
+	if _, ok := ForStep("custom", []string{"resolve.dns"}); ok {
+		t.Error("a tool the catalog does not know was placed on a stage")
+	}
+}
