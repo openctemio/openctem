@@ -1,6 +1,6 @@
 # Asset ownership
 
-**Status: SHIPPED.** Owner decision O2 (2026-10-03, assets area review §4).
+**Status: SHIPPED.** Decision O2.
 
 An asset has owners: the people and groups accountable for it. There is one
 owner model, the RACI table `asset_owners`. Every reader and writer of "who
@@ -65,7 +65,7 @@ team name, a cost center). It is a hint, not an owner:
 
 ## Ownership and data access
 
-Ownership is accountability, not access (owner decision O1, 2026-10-03). A
+Ownership is accountability, not access (decision O1). A
 **user** owner row, of any type or source, never puts the asset in that user's
 data scope. A user who should see an asset gets it from a group that holds the
 asset, or from an explicit grant (`asset_access_grants`,
