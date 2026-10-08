@@ -18,6 +18,39 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
 | Self-registration | `POST /api/v1/auth/register` | `AUTH_ALLOW_REGISTRATION=true` only (default false) |
 
+## Sign-up policy (Console > System > Sign-up)
+
+Who may create an organization on this deployment is **one platform setting**,
+`signup_policy` in `platform_settings` (migration 001304), edited in the admin
+console:
+
+| Mode | Meaning |
+|------|---------|
+| `admin_only` (default) | Only a platform administrator creates organizations (console, `bootstrap-admin -org-*`). People sign in only to organizations that exist. |
+| `self_service` | Anyone signed in may create their own organization (create-first-team, `POST /tenants`). |
+
+Plus `request_access`: whether people who cannot sign up may ask for an
+organization (the request queue follows in its own change).
+
+- **Who reads it.** create-first-team, `POST /tenants` and
+  `GET /auth/providers` (`tenant_creation_mode`, which the web uses to offer
+  "create organization") read it per request (`signup.Service.Current`,
+  cached 15 s per replica).
+- **Fail-closed.** Nothing stored or a read error means `admin_only`.
+- **Seeding.** `TENANT_CREATION_MODE` seeds the first value at start-up when
+  no row exists (`source: environment`). After that the stored value wins and
+  the environment is ignored; the console shows where the value came from.
+- **Changing it.** `PUT /api/v1/admin/settings/signup` with the version that
+  was read (409 when another administrator saved since) needs a **super admin**
+  and a **fresh authenticator code** (`STEP_UP_REQUIRED` / 401 without or with
+  a wrong one). Every change writes a **critical** admin audit row
+  (`platform.signup_policy_changed`, before and after), a WARN line with
+  `alert=signup_policy_changed`, and emails every other active administrator.
+  Any administrator may read it (`GET`).
+- **No lock-out.** A mode change never touches existing organizations,
+  members, invitations or sessions; it decides only who may create a new
+  organization from then on.
+
 ### Invitation tokens stay out of URLs
 
 The invitation token is a bearer credential (whoever holds it can see and
@@ -169,7 +202,7 @@ UPDATE tenants
 | Setting | Default | Meaning |
 |---------|---------|---------|
 | `AUTH_ALLOW_REGISTRATION` | `false` | Open self-registration. Invited people can register either way. |
-| `TENANT_CREATION_MODE` | `admin_only` | Only the platform administrator creates organizations (console, `bootstrap-admin -org-*`). `self_service` (opt-in, SaaS/trial): any signed-in user may, through create-first-team and `POST /tenants`. Anything else fails startup. |
+| `TENANT_CREATION_MODE` | `admin_only` | **Seeds** the sign-up policy on the first start only (see [Sign-up policy](#sign-up-policy-console--system--sign-up)); afterwards the console value applies. Anything but `admin_only`/`self_service` fails startup. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password?token=`). |
 | `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). |
@@ -184,5 +217,6 @@ UPDATE tenants
 | Domain / IP policy | `pkg/domain/tenant/security_policy.go` |
 | IP allowlist middleware | `internal/infra/http/middleware/ip_allowlist.go` (wired in `routes/routes.go`, `routes/tenant.go`) |
 | Registration gate | `AuthService.Register` / `pendingInvitationFor` (`internal/app/auth/service.go`) |
+| Sign-up policy | `internal/app/signup`, `pkg/domain/signup`, `internal/infra/postgres/signup_policy_repository.go`, `handler/admin_signup_handler.go` |
 | SSO admission | `SSOService.jitProvisioningAllowed` (`internal/app/auth/sso.go`) |
 | Set-password email | `EmailService.SendAccountSetupEmail`, template `account_setup` |

@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/jwt"
@@ -84,6 +85,10 @@ func ssoEnforcementDenied(method sessiondom.AuthMethod, role string, ssoEnforced
 
 // AuthService handles authentication operations.
 type AuthService struct {
+	// signupPolicy decides who may create an organization (the console
+	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
+	signupPolicy signupdom.PolicySource
+
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
 	refreshTokenRepo sessiondom.RefreshTokenRepository
@@ -1634,10 +1639,22 @@ type CreateFirstTeamResult struct {
 	Tenant       TenantMembershipInfo `json:"tenant"`
 }
 
+// SetSignupPolicy wires the platform sign-up policy (the console setting).
+func (s *AuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
+
+// selfServiceTenantCreation reports whether people may create their own
+// organization: the console sign-up policy when wired, else the config.
+func (s *AuthService) selfServiceTenantCreation(ctx context.Context) bool {
+	if s.signupPolicy != nil {
+		return s.signupPolicy.Current(ctx).AllowsSelfService()
+	}
+	return s.config.SelfServiceTenantCreation()
+}
+
 // CreateFirstTeam creates the first team for a user who has no tenants.
 // This endpoint uses refresh_token for authentication since user has no access_token yet.
 func (s *AuthService) CreateFirstTeam(ctx context.Context, input CreateFirstTeamInput) (*CreateFirstTeamResult, error) {
-	if !s.config.SelfServiceTenantCreation() {
+	if !s.selfServiceTenantCreation(ctx) {
 		return nil, ErrTenantCreationDisabled
 	}
 

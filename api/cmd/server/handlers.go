@@ -136,6 +136,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
 	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+	if svc.Signup != nil {
+		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+	}
 
 	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
 	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, log)
@@ -194,6 +197,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
+	if svc.Signup != nil {
+		tenantHandler.SetSignupPolicy(svc.Signup)
+	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}
@@ -584,6 +590,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.CredentialImport.SetAuditService(svc.Audit)
 	}
 
+	// The sign-up policy exists with local auth (InitAuthServices).
+	if svc.Signup != nil {
+		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
+		handlers.SignupPolicy = svc.Signup
+	}
 	return handlers
 }
 
