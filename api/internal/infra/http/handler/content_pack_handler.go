@@ -99,8 +99,8 @@ func toContentPackResponse(p *contentpack.Pack) ContentPackResponse {
 // @Param        kind    query     string  false  "Kind (nuclei-templates, semgrep-rules, wordlist, x-<namespace>/<kind>)"
 // @Param        name    query     string  false  "Pack name"
 // @Param        status  query     string  false  "Status"  Enums(active,revoked)
-// @Param        limit   query     int     false  "Page size (max 100)"
-// @Param        offset  query     int     false  "Offset"
+// @Param        page      query     int     false  "Page (from 1)"
+// @Param        per_page  query     int     false  "Page size (default 50, max 100)"
 // @Success      200  {object}  ContentPackListResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
@@ -109,12 +109,14 @@ func toContentPackResponse(p *contentpack.Pack) ContentPackResponse {
 // @Router       /content-packs [get]
 func (h *ContentPackHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	limit, _ := strconv.Atoi(q.Get("limit"))
-	offset, _ := strconv.Atoi(q.Get("offset"))
+	page, ok := listPageMax(w, r, 50, 100)
+	if !ok {
+		return
+	}
 	packs, total, err := h.service.List(r.Context(), contentpackapp.ListInput{
 		TenantID: middleware.GetTenantID(r.Context()),
 		Kind:     q.Get("kind"), Name: q.Get("name"), Status: q.Get("status"),
-		Limit: limit, Offset: offset,
+		Limit: page.Limit(), Offset: page.Offset(),
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -282,7 +284,7 @@ func (h *ContentPackHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	writeScanZoneJSON(w, http.StatusOK, toContentPackResponse(p))
 }
 
-// Archive handles GET /api/v1/content-packs/{id}/archive
+// Download handles GET /api/v1/content-packs/{id}/download
 // @Summary      Download content pack archive
 // @Description  The canonical tar, checked against the pack digest before it is sent. The digest is in the Digest header.
 // @Tags         Content Packs
@@ -293,8 +295,8 @@ func (h *ContentPackHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /content-packs/{id}/archive [get]
-func (h *ContentPackHandler) Archive(w http.ResponseWriter, r *http.Request) {
+// @Router       /content-packs/{id}/download [get]
+func (h *ContentPackHandler) Download(w http.ResponseWriter, r *http.Request) {
 	p, data, err := h.service.Archive(r.Context(), middleware.GetTenantID(r.Context()), chi.URLParam(r, "id"))
 	if err != nil {
 		h.handleError(w, err)

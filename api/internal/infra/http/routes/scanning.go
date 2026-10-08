@@ -542,7 +542,7 @@ func registerContentPackRoutes(
 		r.GET("/signing-key", h.SigningKey, middleware.Require(permission.ContentPacksRead))
 		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
-		r.GET("/{id}/archive", h.Archive, middleware.Require(permission.ContentPacksRead))
+		r.GET("/{id}/download", h.Download, middleware.Require(permission.ContentPacksRead))
 		r.POST("/", h.Upload, middleware.Require(permission.ContentPacksWrite), requireStepUp())
 		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.ContentPacksWrite), requireStepUp())
 	}, tenantMiddlewares...)
