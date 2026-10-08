@@ -55,9 +55,11 @@ describe('NodeInspector', () => {
     render(<NodeInspector step={step} capability={ports} onChange={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByLabelText('rate')).toBeInTheDocument()
     expect(screen.getByLabelText('top_n')).toBeInTheDocument()
-    // Exactly the contract params plus the two run fields are text inputs.
+    // Exactly the contract params are text inputs; the one run field is the
+    // timeout (step retries are not applied yet, so they are not offered).
     expect(screen.getAllByRole('textbox')).toHaveLength(2)
-    expect(screen.getAllByRole('spinbutton')).toHaveLength(2)
+    expect(screen.getAllByRole('spinbutton')).toHaveLength(1)
+    expect(screen.queryByLabelText(/Retries/i)).not.toBeInTheDocument()
     expect(screen.getByText('scan.ports@1')).toBeInTheDocument()
   })
 

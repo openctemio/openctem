@@ -264,6 +264,8 @@ func registerScanWorkflowRoutes(
 		r.GET("/{id}/tasks/{task_id}/logs", h.GetRunTaskLogs, middleware.Require(permission.ScansRead))
 		// How each stage of the run was planned (counts by reason).
 		r.GET("/{id}/stages", h.ListRunStages, middleware.Require(permission.ScansRead))
+		// What happened to each task of the run, in order (research/62 P0-4).
+		r.GET("/{id}/events", h.ListRunEvents, middleware.Require(permission.ScansRead))
 
 		r.POST("/{id}/cancel", h.CancelRun, middleware.Require(permission.ScansWrite))
 	}, runMiddlewares...)
