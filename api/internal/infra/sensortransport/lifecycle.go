@@ -3,8 +3,12 @@ package sensortransport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"time"
+
+	proxyproto "github.com/pires/go-proxyproto"
 )
 
 // EnableMTLS prepares the gRPC binding (Start starts it).
@@ -13,7 +17,12 @@ func (s *Server) EnableMTLS(cfg MTLSConfig, ca *CA, keys KeyResolver) error {
 	if err != nil {
 		return err
 	}
-	s.mtls = srv
+	if len(cfg.TrustedProxies) > 0 {
+		if _, err := proxyproto.PolicyFromRanges(cfg.TrustedProxies, proxyproto.USE, proxyproto.REJECT); err != nil {
+			return fmt.Errorf("SENSOR_MTLS_TRUSTED_PROXIES: %w", err)
+		}
+	}
+	s.mtls, s.mtlsProxies = srv, cfg.TrustedProxies
 	return nil
 }
 
@@ -40,6 +49,14 @@ func (s *Server) Start(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.mtls.Addr)
 	if err != nil {
 		return err
+	}
+	if len(s.mtlsProxies) > 0 {
+		policy, err := proxyproto.PolicyFromRanges(s.mtlsProxies, proxyproto.USE, proxyproto.REJECT)
+		if err != nil {
+			_ = ln.Close()
+			return err
+		}
+		ln = &proxyproto.Listener{Listener: ln, ConnPolicy: policy, ReadHeaderTimeout: 5 * time.Second}
 	}
 	s.log.Info("sensor protocol v3 gRPC binding listening", "addr", ln.Addr().String())
 	go func() {
