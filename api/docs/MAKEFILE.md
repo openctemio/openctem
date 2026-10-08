@@ -1,6 +1,8 @@
 # Makefile Commands Guide
 
-This document provides a comprehensive guide to using Makefile commands for the OpenCTEM API project.
+The targets of `api/Makefile` (run them in `api/`). The repository root `Makefile`
+has thin targets for both components (`make setup`, `make generate`, `make check`,
+`make dev-api`, `make dev-web`, `make api-<target>`); run `make help` there.
 
 ## Quick Start
 
@@ -30,12 +32,15 @@ make dev
 
 | Command | Description |
 |---------|-------------|
-| `make lint` | Run linter (golangci-lint) |
+| `make lint` | Run golangci-lint (pinned version) over the whole tree |
+| `make lint-new` | golangci-lint on code this branch adds (`BASE_REF`, default `origin/develop`) |
+| `make lint-ci` | Exactly what the CI Lint job gates on (go vet + staticcheck + `lint-new`) |
 | `make fmt` | Format code with gofmt |
 | `make tidy` | Tidy Go dependencies |
 | `make test` | Run all tests (DB-backed tests skip unless `TEST_DATABASE_URL` names a `*_test` database) |
 | `make test-db` | Run all tests against `TEST_DATABASE_URL`; a missing or unreachable database fails instead of skipping |
 | `make test-coverage` | Run tests with coverage report |
+| `make test-load`, `make test-load-bench` | Load tests and benchmarks for the platform queue |
 
 ### Documentation
 
@@ -43,7 +48,18 @@ make dev
 |---------|-------------|
 | `make swagger` | Generate the OpenAPI spec (not committed) |
 | `make contract` | Generate the spec, the route manifest and the web route permission map |
-| `make swagger-install` | Install Swagger CLI tool |
+| `make swagger-check` | Generate the spec, then fail if the annotations, the spec and the routes disagree |
+| `make swagger-install` | Install the pinned swag CLI |
+
+### Code generation
+
+| Command | Description |
+|---------|-------------|
+| `make generate` | `go generate ./...` (mocks) |
+| `make generate-relationships` | Regenerate relationship types (Go + TS) from `configs/relationship-types.yaml` |
+| `make generate-asset-types` | Regenerate the asset type registry (Go + TS) from `configs/asset-types.yaml` |
+| `make asset-types-sql` | Print the SQL block that seeds `asset_types` (the body of a registry migration) |
+| `make asset-types-check` | Fail if the YAML, the generated files and the newest registry migration disagree |
 
 ## Docker Commands
 
@@ -63,6 +79,7 @@ make dev
 | Command | Description |
 |---------|-------------|
 | `make docker-build` | Build production image |
+| `make docker-build-dev` | Build development image |
 | `make docker-prod` | Start production environment |
 | `make docker-clean` | Remove containers, volumes, images |
 
@@ -79,6 +96,7 @@ make dev
 | `make docker-migrate-up` | Run migrations in Docker |
 | `make docker-migrate-down` | Rollback in Docker |
 | `make docker-migrate-version` | Show migration version |
+| `make docker-migrate-force version=<n>` | Force the recorded migration version (dirty-migration recovery only) |
 
 ### Database Setup
 
@@ -133,6 +151,15 @@ This installs (if missing) `pip` (Ubuntu/Debian), `pre-commit`, Go, `betterleaks
 | `make security-scan` | Full security scan (betterleaks + gosec + trivy) |
 | `make secrets` | Run betterleaks only |
 
+## Plans and releases
+
+| Command | Description |
+|---------|-------------|
+| `make assign-plan tenant=<uuid> plan=<plan>` | Assign a plan to an organization |
+| `make list-tenants` | List organizations with their plans |
+| `make list-plans` | List the available plans |
+| `make release-branch VERSION=vX.Y.Z` | Build a release branch that merges cleanly into `main` (add `PUSH=--push`) |
+
 ## Tool Installation
 
 ```bash
@@ -141,7 +168,8 @@ make install-tools
 ```
 
 Installs:
-- golangci-lint
+- golangci-lint (pinned version)
+- staticcheck
 - air (hot reload)
 - migrate (database migrations)
 - mockgen (mock generation)
@@ -188,7 +216,7 @@ make fmt
 make lint
 make test
 
-# Pre-commit hooks will run automatically on git commit
+# The .githooks pre-commit hook runs gofmt on staged files at git commit
 ```
 
 ### Docker Development
