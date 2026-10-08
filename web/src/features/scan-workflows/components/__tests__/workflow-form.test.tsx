@@ -1,25 +1,60 @@
 /**
- * research/62 P0-9 (SG-7/SG-8): the workflow form shows only settings that
- * work, and editing a workflow never rewrites its steps.
- * - no Triggers tab, no "Notify on failure": both were stored and never used
- * - editing sends no `steps`: the form showed a few fields of each step and
- *   saving replaced the rest (prefer_tools, conditions, config...)
- * - creating still sends the steps entered
+ * The workflow form is capability-first and never hardcodes a capability.
+ * Owner bug 2026-10-08: one step "recon" with the tool DNSX was saved as
+ * capabilities ["scan"], and the API refused it ("capability 'scan' is not
+ * supported by tool 'dnsx'"). Editing must also send every step field back.
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { ScanWorkflowForm } from '../workflow-form'
-import type { ScanWorkflow } from '@/lib/api'
+import type { ScanWorkflow, CreateScanWorkflowRequest } from '@/lib/api'
+import type { CapabilityTable, Capability } from '../../lib/capability-graph'
+
+const cap = (key: string, name: string, tools: string[]): Capability => ({
+  key,
+  id: `${key}@1`,
+  name,
+  tier: 'T0',
+  available: true,
+  crossCutting: false,
+  inPorts: [],
+  outPorts: [],
+  tools,
+  defaultTool: tools[0],
+  params: [],
+  toolParams: {},
+})
+
+const table: CapabilityTable = {
+  capabilities: [
+    cap('resolve.dns', 'DNS resolution', ['dnsx']),
+    cap('scan.ports', 'Port scan', ['naabu']),
+  ],
+  adapters: [],
+  portLabels: {},
+}
+
+const tool = (name: string, display: string, capabilities: string[]) => ({
+  tool: { id: name, name, display_name: display, capabilities, is_active: true },
+  is_enabled: true,
+  is_available: true,
+})
 
 vi.mock('@/lib/api/tool-hooks', () => ({
-  useToolsWithConfig: () => ({ data: { items: [] }, isLoading: false }),
+  useToolsWithConfig: () => ({
+    data: { items: [tool('dnsx', 'DNSX', ['recon', 'dns']), tool('naabu', 'Naabu', ['portscan'])] },
+    isLoading: false,
+  }),
   useToolAvailability: () => ({ data: undefined }),
 }))
 vi.mock('@/lib/api/platform-hooks', () => ({
   usePlatformScanning: () => ({ offered: false }),
+}))
+vi.mock('../../lib/use-capability-table', () => ({
+  useCapabilityTable: () => ({ table, isLoading: false }),
 }))
 
 globalThis.ResizeObserver ??= class {
@@ -27,8 +62,81 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 }
+// Radix Select calls these; jsdom does not implement them.
+Element.prototype.scrollIntoView ??= () => {}
+Element.prototype.releasePointerCapture ??= () => {}
 
-const workflow = {
+async function pick(trigger: HTMLElement, option: RegExp) {
+  await userEvent.click(trigger)
+  await userEvent.click(await screen.findByRole('option', { name: option }))
+}
+
+async function toSettingsAndSave(onSubmit?: ReturnType<typeof vi.fn>) {
+  await userEvent.click(screen.getByRole('button', { name: /next/i }))
+  // Reaching the last tab never submits: the user still sees the settings.
+  if (onSubmit) expect(onSubmit).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: /create workflow|update workflow/i }))
+}
+
+describe('ScanWorkflowForm: create', () => {
+  it('saves a DNSX step as the capability it runs, with a key made from it', async () => {
+    const onSubmit = vi.fn()
+    render(<ScanWorkflowForm onSubmit={onSubmit} onCancel={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText(/workflow name/i), 'DNS only')
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+
+    await userEvent.type(screen.getByLabelText('Name *'), 'recon')
+    await pick(screen.getByRole('combobox', { name: 'Tool of step 1' }), /DNSX/)
+    // The name typed stays; the capability shows instead of the tool picker.
+    expect(screen.getByLabelText('Name *')).toHaveValue('recon')
+    expect(screen.getByLabelText('Step key')).toHaveValue('resolve-dns')
+
+    await toSettingsAndSave(onSubmit)
+    const data = onSubmit.mock.calls[0][0] as CreateScanWorkflowRequest
+    expect(data.steps).toHaveLength(1)
+    expect(data.steps[0]).toMatchObject({
+      step_key: 'resolve-dns',
+      name: 'recon',
+      tool: 'dnsx',
+      capabilities: ['resolve.dns'],
+      prefer_tools: [],
+    })
+    expect(data.steps[0].capabilities).not.toContain('scan')
+    expect(data.steps[0].id).toBeUndefined()
+    expect(data).not.toHaveProperty('triggers')
+  })
+
+  it('a capability step runs on any tool; keys stay unique and follow the capability', async () => {
+    const onSubmit = vi.fn()
+    render(<ScanWorkflowForm onSubmit={onSubmit} onCancel={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText(/workflow name/i), 'Two')
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+
+    await pick(screen.getByRole('combobox', { name: 'What step 1 does' }), /DNS resolution/)
+    await userEvent.click(screen.getByRole('button', { name: /add step/i }))
+    await pick(screen.getByRole('combobox', { name: 'What step 2 does' }), /DNS resolution/)
+
+    await toSettingsAndSave()
+    const steps = (onSubmit.mock.calls[0][0] as CreateScanWorkflowRequest).steps
+    expect(steps.map((s) => [s.step_key, s.name, s.tool, s.capabilities])).toEqual([
+      ['resolve-dns', 'DNS resolution', '', ['resolve.dns']],
+      ['resolve-dns-2', 'DNS resolution', '', ['resolve.dns']],
+    ])
+  })
+
+  it('refuses a step that does nothing and a duplicate key', async () => {
+    const onSubmit = vi.fn()
+    render(<ScanWorkflowForm onSubmit={onSubmit} onCancel={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText(/workflow name/i), 'Bad')
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.type(screen.getByLabelText('Name *'), 'x')
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(screen.getByText('Fix the highlighted steps.')).toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+})
+
+const workflow: ScanWorkflow = {
   id: 'w1',
   tenant_id: 't1',
   name: 'Recon',
@@ -45,57 +153,80 @@ const workflow = {
   },
   steps: [
     {
-      id: 's1',
+      id: '0192f0b4-0000-7000-8000-000000000001',
       step_key: 'ports',
       name: 'Ports',
       order: 1,
-      ui_position: { x: 0, y: 0 },
+      ui_position: { x: 400, y: 120 },
+      tool: '',
       capabilities: ['scan.ports'],
       prefer_tools: ['naabu'],
-      max_retries: 0,
-      retry_delay_seconds: 0,
+      config: { top_n: 100 },
+      timeout_seconds: 900,
+      depends_on: [],
+      condition: { type: 'always' },
+      max_retries: 2,
+      retry_delay_seconds: 30,
     },
   ],
   created_at: '2026-10-01T00:00:00Z',
   updated_at: '2026-10-01T00:00:00Z',
-} as unknown as ScanWorkflow
+}
 
-describe('ScanWorkflowForm', () => {
-  it('shows no Triggers tab and no failure notification switch', () => {
-    render(<ScanWorkflowForm onSubmit={vi.fn()} onCancel={vi.fn()} />)
-    expect(screen.queryByRole('tab', { name: /Triggers/i })).not.toBeInTheDocument()
-    expect(screen.queryByText(/Notify on Failure/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Steps/i })).toBeInTheDocument()
+describe('ScanWorkflowForm: edit', () => {
+  it('shows only settings that take effect: no triggers, no notify switch', async () => {
+    render(<ScanWorkflowForm workflow={workflow} onSubmit={vi.fn()} onCancel={vi.fn()} />)
+    expect(screen.queryByRole('tab', { name: /triggers/i })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: /settings/i }))
+    expect(screen.queryByText(/notify on failure/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/max parallel steps/i)).toHaveValue(3)
   })
 
-  it('edits a workflow without its steps, keeping its other settings', async () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined)
+  it('a save that changed no step sends no steps', async () => {
+    const onSubmit = vi.fn()
     render(<ScanWorkflowForm workflow={workflow} onSubmit={onSubmit} onCancel={vi.fn()} />)
-    expect(screen.queryByRole('tab', { name: /Steps/i })).not.toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
-    await userEvent.click(screen.getByRole('button', { name: /Update Workflow/i }))
-
-    expect(onSubmit).toHaveBeenCalledTimes(1)
-    const sent = onSubmit.mock.calls[0][0]
-    expect(sent).not.toHaveProperty('steps')
-    expect(sent).not.toHaveProperty('triggers')
-    expect(sent.settings).toMatchObject({ fail_fast: true, timeout_seconds: 1800 })
-    expect(sent.settings).not.toHaveProperty('notify_on_failure')
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.click(screen.getByRole('button', { name: /update workflow/i }))
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('steps')
+    expect(onSubmit.mock.calls[0][0].settings).toMatchObject({
+      fail_fast: true,
+      timeout_seconds: 1800,
+    })
   })
 
-  it('creates a workflow with the steps entered', async () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined)
-    render(<ScanWorkflowForm onSubmit={onSubmit} onCancel={vi.fn()} />)
-    await userEvent.type(screen.getByLabelText(/Workflow Name/i), 'New one')
-    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Next' }))
-    await userEvent.click(screen.getByRole('button', { name: /Create Workflow/i }))
+  it('renaming a step keeps its id, key, preferences, retries, condition, config and layout', async () => {
+    const onSubmit = vi.fn()
+    render(<ScanWorkflowForm workflow={workflow} onSubmit={onSubmit} onCancel={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    const key = screen.getByLabelText('Step key')
+    expect(key).toHaveAttribute('readonly')
+    const name = screen.getByLabelText('Name *')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Open ports')
+    expect(key).toHaveValue('ports')
+    // The preferred tool shows as the capability's tool selection.
+    expect(within(screen.getByRole('radiogroup')).getByLabelText('Preferred tools')).toBeChecked()
 
-    expect(onSubmit).toHaveBeenCalledTimes(1)
-    const sent = onSubmit.mock.calls[0][0]
-    expect(sent.name).toBe('New one')
-    expect(sent.steps).toHaveLength(1)
-    expect(sent).not.toHaveProperty('triggers')
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.click(screen.getByRole('button', { name: /update workflow/i }))
+    expect(onSubmit.mock.calls[0][0].steps).toEqual([
+      {
+        id: '0192f0b4-0000-7000-8000-000000000001',
+        step_key: 'ports',
+        name: 'Open ports',
+        order: 1,
+        tool: '',
+        capabilities: ['scan.ports'],
+        prefer_tools: ['naabu'],
+        timeout_seconds: 900,
+        depends_on: [],
+        max_retries: 2,
+        retry_delay_seconds: 30,
+        condition: { type: 'always' },
+        ui_position: { x: 400, y: 120 },
+        config: { top_n: 100 },
+      },
+    ])
   })
 })

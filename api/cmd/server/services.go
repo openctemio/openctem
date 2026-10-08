@@ -1911,6 +1911,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Retest != nil {
 		s.Retest.SetRunRecorder(s.ScanRun)
 	}
+	// Every finding validation is a run too (kind validation).
+	if s.ValidationRun != nil {
+		s.ValidationRun.SetRunRecorder(s.ScanRun)
+	}
 	// Ingest records what each step's reports wrote and tells the scan run service
 	// service when a v2 report of a command finished, so a chained step
 	// waiting for it is planned.

@@ -10,6 +10,7 @@ package signup
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"time"
 
@@ -218,8 +219,8 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev signu
 	s.log.Warn("sign-up policy changed",
 		"alert", AlertPolicyChanged,
 		"admin_id", actor.ID().String(),
-		"from_mode", string(prev.Mode), "to_mode", string(next.Policy.Mode),
-		"request_access", next.Policy.RequestAccess,
+		"from_mode", logger.SanitizeValue(string(prev.Mode)), "to_mode", logger.SanitizeValue(string(next.Policy.Mode)),
+		"request_access", strconv.FormatBool(next.Policy.RequestAccess),
 		"notified", len(recipients),
 	)
 	if s.notifier == nil || len(recipients) == 0 {

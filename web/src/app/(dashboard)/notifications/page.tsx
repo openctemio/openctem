@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
+import { useListParams } from '@/hooks/use-list-params'
 import Link from 'next/link'
 import { formatRelative } from '@/lib/format-date'
 import {
@@ -164,9 +165,14 @@ function NotificationRow({
 }
 
 export default function NotificationsPage() {
-  const [page, setPage] = useState(1)
-  const [severityFilter, setSeverityFilter] = useState<string>('all')
-  const [readFilter, setReadFilter] = useState<string>('all')
+  // The list lives in the URL (one list convention): page, severity, read.
+  const list = useListParams({
+    defaultPageSize: PER_PAGE,
+    filters: { severity: 'all', read: 'all' },
+  })
+  const { page, setPage } = list
+  const severityFilter = list.filters.severity
+  const readFilter = list.filters.read
 
   // Build server-side filters
   const filters = useMemo<NotificationListFilters>(() => {
@@ -226,15 +232,9 @@ export default function NotificationsPage() {
   }, [])
 
   // Reset page when filters change
-  const handleSeverityChange = (value: string) => {
-    setSeverityFilter(value)
-    setPage(1)
-  }
+  const handleSeverityChange = (value: string) => list.setFilter('severity', value)
 
-  const handleReadFilterChange = (value: string) => {
-    setReadFilter(value)
-    setPage(1)
-  }
+  const handleReadFilterChange = (value: string) => list.setFilter('read', value)
 
   return (
     <Main>
@@ -372,7 +372,7 @@ export default function NotificationsPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setPage(Math.max(1, page - 1))}
               disabled={page <= 1}
             >
               <ChevronLeft className="h-4 w-4 me-1" />
@@ -381,7 +381,7 @@ export default function NotificationsPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => setPage(Math.min(totalPages, page + 1))}
               disabled={page >= totalPages}
             >
               Next
