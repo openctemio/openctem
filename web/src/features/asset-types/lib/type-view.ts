@@ -6,7 +6,7 @@
  */
 import type { AssetTypeDefinition } from '@/lib/api/generated'
 import type { AssetTypeRegistry } from './asset-registry'
-import { isPropertyKey, type AssetPropertyKey } from './property-schema'
+import { isExpiryKey, isPropertyKey, type AssetPropertyKey } from './property-schema'
 
 export type AttributeKind =
   'string' | 'int' | 'number' | 'bool' | 'time' | 'enum' | 'list' | 'object'
@@ -45,6 +45,15 @@ export function inSentence(label: string): string {
     .split(' ')
     .map((w) => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase()))
     .join(' ')
+}
+
+/**
+ * Whether a list can hold assets with an expiry (format expiry): every list
+ * without a type can (certificates, domains); a typed one when the type has
+ * such an attribute.
+ */
+export function viewHasExpiry(view: TypeView | null | undefined): boolean {
+  return !view || view.attributes.some((a) => isExpiryKey(a.key))
 }
 
 const FACET_KINDS: ReadonlySet<AttributeKind> = new Set(['enum', 'bool', 'string', 'int'])

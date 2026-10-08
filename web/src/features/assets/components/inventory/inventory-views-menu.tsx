@@ -9,7 +9,18 @@
  * URL. The trigger names the active view when exactly one is on.
  */
 
-import { ChevronDown, Clock, Flame, Gem, Globe, Network, UserX, Bookmark } from 'lucide-react'
+import {
+  CalendarClock,
+  CalendarX,
+  ChevronDown,
+  Clock,
+  Flame,
+  Gem,
+  Globe,
+  Network,
+  UserX,
+  Bookmark,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -29,15 +40,24 @@ const PRESET_ICONS: Record<string, React.ElementType> = {
   unowned: UserX,
   'control-planes': Network,
   stale: Clock,
+  expired: CalendarX,
+  'expiring-30d': CalendarClock,
 }
 
 interface InventoryViewsMenuProps {
   filters: InventoryFilters
   onToggle: (preset: QuickPreset) => void
+  /** Views that apply to this list only (the expiry views). */
+  extraPresets?: QuickPreset[]
 }
 
-export function InventoryViewsMenu({ filters, onToggle }: InventoryViewsMenuProps) {
-  const active = QUICK_PRESETS.filter((p) => p.isActive(filters))
+export function InventoryViewsMenu({
+  filters,
+  onToggle,
+  extraPresets = [],
+}: InventoryViewsMenuProps) {
+  const presets = [...QUICK_PRESETS, ...extraPresets]
+  const active = presets.filter((p) => p.isActive(filters))
   const triggerLabel =
     active.length === 0 ? 'Views' : active.length === 1 ? active[0].label : `${active.length} views`
 
@@ -70,7 +90,7 @@ export function InventoryViewsMenu({ filters, onToggle }: InventoryViewsMenuProp
           Quick views
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {QUICK_PRESETS.map((preset) => {
+        {presets.map((preset) => {
           const Icon = PRESET_ICONS[preset.id] ?? Gem
           return (
             <DropdownMenuCheckboxItem

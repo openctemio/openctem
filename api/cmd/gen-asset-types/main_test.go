@@ -220,6 +220,7 @@ func TestResolve_RejectsInvalidRegistries(t *testing.T) {
 		{"attribute missing from properties", "{ name: provider, type: enum, values: [github], facet: true }", "{ name: provider, type: enum, values: [github], facet: true }\n      - { name: stars, type: int }", "", "not in properties"},
 		{"property without a Vietnamese label", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider }", "", "label_vi"},
 		{"unknown format", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp, format: html }", "", "unknown format"},
+		{"expiry format on a non-time attribute", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp, format: expiry }", "", "expiry property must be a time attribute"},
 		{"unused property", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp }\n  orphan: { label: Orphan, label_vi: Mồ côi }", "", "no type declares it"},
 		{"synonym that is an attribute", "synonyms: [tool]", "synonyms: [provider]", "", "is an attribute of a type"},
 		// Property names (docs/architecture/asset-inventory-v2.md, "Property names").

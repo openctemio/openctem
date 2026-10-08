@@ -155,7 +155,12 @@ An asset's free-form `properties` follow one schema per type
 declared in `api/configs/asset-types.yaml`:
 
 - `properties`: every key once, with `label`, `label_vi`, `format` (`ip`,
-  `url`, `code`), `synonyms` and, when restricted, `classes`;
+  `url`, `code`, `expiry`), `synonyms` and, when restricted, `classes`;
+  `expiry` marks the timestamp after which an asset is no longer valid
+  (`not_after`, `expires_at`; a time attribute only): the web shows it
+  against today and the list filters it with `expires_before` /
+  `expires_after` (the inventory's "Expired" and "Expiring in 30 days"
+  views), a malformed value never matching;
 - each type's `attributes`, plus `common_properties` for every type.
 
 | Concept | Canonical key | Folded synonyms |

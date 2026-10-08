@@ -571,6 +571,8 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Security     BearerAuth
 // @Param        name          query     string  false  "Filter by name (partial match)"
 // @Param        types         query     string  false  "Filter by types (comma-separated)"
+// @Param        expires_after   query   string  false  "Expiry (certificate not_after, domain expires_at) after this time (RFC 3339 or YYYY-MM-DD)"
+// @Param        expires_before  query   string  false  "Expiry before this time (RFC 3339 or YYYY-MM-DD)"
 // @Param        criticalities query     string  false  "Filter by criticalities (comma-separated)"
 // @Param        statuses      query     string  false  "Filter by statuses (comma-separated)"
 // @Param        scopes        query     string  false  "Filter by scopes (comma-separated)"
@@ -637,6 +639,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Providers:            parseQueryArray(query.Get("providers")),
 		LastSeenAfter:        parseQueryTimePtr(query.Get("last_seen_after")),
 		LastSeenBefore:       parseQueryTimePtr(query.Get("last_seen_before")),
+		ExpiresAfter:         parseQueryTimePtr(query.Get("expires_after")),
+		ExpiresBefore:        parseQueryTimePtr(query.Get("expires_before")),
 		Attribution:          parseQueryArray(query.Get("attribution")),
 		CoveredBy:            query.Get("covered_by"),
 		Sort:                 query.Get("sort"),

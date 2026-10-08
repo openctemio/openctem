@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deactivatePreset, QUICK_PRESETS } from './inventory-facets'
+import { deactivatePreset, expiryPresets, QUICK_PRESETS } from './inventory-facets'
 import type { InventoryFilters } from './inventory-url'
 
 const preset = (id: string) => {
@@ -78,5 +78,27 @@ describe('deactivatePreset', () => {
     const off = deactivatePreset(on, p)
     expect(off.criticalities).toEqual(['high'])
     expect(off.hasFindings).toBeUndefined()
+  })
+})
+
+describe('expiryPresets', () => {
+  const now = Date.parse('2026-10-08T00:00:00Z')
+  const [expired, soon] = expiryPresets(now)
+
+  it('expired is before now; expiring is the next 30 days', () => {
+    expect(expired.apply.expiresBefore).toBe('2026-10-08T00:00:00.000Z')
+    expect(soon.apply).toEqual({
+      expiresAfter: '2026-10-08T00:00:00.000Z',
+      expiresBefore: '2026-11-07T00:00:00.000Z',
+    })
+  })
+
+  it('switching from expiring to expired drops the lower bound', () => {
+    const f: InventoryFilters = { ...soon.apply }
+    expect(soon.isActive(f)).toBe(true)
+    const next = { ...f, ...expired.apply }
+    expect(expired.isActive(next)).toBe(true)
+    expect(soon.isActive(next)).toBe(false)
+    expect(deactivatePreset(next, expired)).toEqual({})
   })
 })

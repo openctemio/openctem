@@ -25,7 +25,12 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Download, Lock, RefreshCw, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
-import { inSentence, typeViewOf, type TypeView } from '@/features/asset-types/lib/type-view'
+import {
+  inSentence,
+  typeViewOf,
+  viewHasExpiry,
+  type TypeView,
+} from '@/features/asset-types/lib/type-view'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
 import { exportInventory } from '../../lib/inventory-export'
 import { useInventoryAssetForms } from './inventory-asset-forms'
@@ -43,7 +48,12 @@ import { useDebounce } from '@/hooks/use-debounce'
 import { useAssets, useAssetStats, type AssetSearchFilters } from '../../hooks/use-assets'
 import type { Asset } from '../../types/asset.types'
 import { useBusinessUnits } from '@/features/business-units/api/use-business-units'
-import { buildFacetGroups, deactivatePreset, type QuickPreset } from '../../lib/inventory-facets'
+import {
+  buildFacetGroups,
+  deactivatePreset,
+  expiryPresets,
+  type QuickPreset,
+} from '../../lib/inventory-facets'
 import {
   parseInventoryFilters,
   attributionQuery,
@@ -85,6 +95,8 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     hasFindings: f.hasFindings,
     lastSeenBefore: f.lastSeenBefore,
     lastSeenAfter: f.lastSeenAfter,
+    expiresAfter: f.expiresAfter,
+    expiresBefore: f.expiresBefore,
     attribution: attributionQuery(f),
     sort: f.sort,
     page: f.page ?? 1,
@@ -266,6 +278,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   }, [buData])
 
   const facetGroups = useMemo(() => buildFacetGroups(businessUnitLabels), [businessUnitLabels])
+  // The expiry views, for a list that can hold expiring assets. Built on
+  // every render (two small objects) so their "now" is never stale.
+  const extraPresets = viewHasExpiry(typeView) ? expiryPresets() : []
 
   const togglePreset = useCallback(
     (preset: QuickPreset) => {
@@ -499,7 +514,11 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
               }
               toolbarEnd={
                 <>
-                  <InventoryViewsMenu filters={filters} onToggle={togglePreset} />
+                  <InventoryViewsMenu
+                    filters={filters}
+                    onToggle={togglePreset}
+                    extraPresets={extraPresets}
+                  />
                   {refreshButton}
                 </>
               }

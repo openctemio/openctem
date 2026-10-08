@@ -7,8 +7,8 @@
  *
  *  - bool: Yes / No;
  *  - enum: a badge;
- *  - time: a relative date; an expiry (`expires_at`, `not_after`) is red once
- *    past and amber within 30 days;
+ *  - time: a relative date; an expiry (format `expiry`: `not_after`,
+ *    `expires_at`) is red once past and amber within 30 days;
  *  - list: the first value and "+N" (IPs in mono);
  *  - int / number: tabular figures;
  *  - string: text, a safe external link for `url`, mono for `code` and `ip`;
@@ -26,9 +26,6 @@ import type { Asset } from '../../types'
 import { attributeStrings, attributeValue } from '../../lib/attribute-value'
 import { OverflowChips } from '../service-cells/overflow-chips'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
-
-/** Attributes that are an expiry date: shown with how close it is. */
-const EXPIRY_KEYS: ReadonlySet<string> = new Set(['expires_at', 'not_after'])
 
 /** Days before an expiry turns amber (the certificate-health window). */
 const EXPIRY_WARN_DAYS = 30
@@ -86,7 +83,7 @@ export function AttributeCell({ asset, attribute }: { asset: Asset; attribute: T
 
   const text = String(v)
   if (kind === 'time') {
-    return EXPIRY_KEYS.has(key) ? (
+    return format === 'expiry' ? (
       <ExpiryCell value={text} />
     ) : (
       <RelativeTime date={text} className="whitespace-nowrap" />
