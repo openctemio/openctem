@@ -82,8 +82,8 @@ quarantine at the bearer-key sunset.
 
 `sensor_result_quarantine` stores the CTIS report (one row per v1 request or
 v2 segment) as JSON, with the sensor, route, report id, tool and counts. At
-most 1000 pending items per tenant, 200 per sensor, 16 MiB per item; beyond
-that the report is refused (`422 RESULTS_QUARANTINE_FULL`, v2 item error
+most 1000 pending items per tenant, 200 per sensor, 16 MiB per item and 512 MiB
+of pending payload per tenant; beyond that the report is refused (`422 RESULTS_QUARANTINE_FULL`, v2 item error
 `quarantine_full`), so a stolen key cannot fill the database.
 
 | Endpoint | Permission | |
