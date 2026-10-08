@@ -272,6 +272,9 @@ type Claims struct {
 	AZP     string   `json:"azp"`
 	// TID is the Entra directory id; EntraIssuer checks it against iss.
 	TID string `json:"tid"`
+	// OID is the Entra user's object id: the same for every application in
+	// the directory, unlike sub, which is pairwise per application.
+	OID string `json:"oid"`
 	// SID is the provider's session id (OIDC back-channel logout).
 	SID string `json:"sid"`
 	// AuthTime is when the provider last authenticated the user.
