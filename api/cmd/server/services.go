@@ -1825,6 +1825,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A tool no online sensor may run refuses the trigger with the
 		// reason (docs/architecture/tool-availability.md).
 		scan.WithToolAvailability(s.Tool),
+		// Workflow readiness: the New Scan picker, the workflow list and
+		// the refusal of a workflow no sensor here can run.
+		scan.WithReadinessSources(readinessSources(s.Tool, repos.Sensor)),
 		// research/25 D3: interactsh and custom templates only when the
 		// organization enabled them (default off).
 		scan.WithOptInPolicy(s.Tenant),
@@ -1900,6 +1903,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithToolRepo(repos.Tool),
 		// A draft check warns about steps no online sensor can run now.
 		scanrun.WithRunnableTools(s.Tool),
+		// The builder saves drafts; a publish makes them the steps runs use.
+		scanrun.WithDraftStore(repos.ScanWorkflow),
 		scanrun.WithQualityGate(repos.ScanProfile, repos.Finding),
 		scanrun.WithScanDeactivator(s.Scan),     // Cascade pause scans when scan workflow is deactivated
 		scanrun.WithScanRunRecorder(repos.Scan), // Record run outcome back onto the scan (last_run_status/counters)
@@ -2363,6 +2368,13 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		}
 	}
 	s.SSO.SetDomainVerifier(s.DomainVerify)
+	// Email-first sign-in asks which organization holds an email's SSO
+	// domain (domainverify.Service.OwnerOfDomain).
+	if owners, ok := any(s.DomainVerify).(auth.DomainOwnerLookup); ok {
+		s.SSO.SetDomainOwnerLookup(owners)
+	} else {
+		log.Warn("email-first sign-in discovery is off: no domain owner lookup")
+	}
 	// SCIM attaches an EXISTING account only on a domain the organization has
 	// DNS-verified; anyone else must be invited (their consent).
 	s.SCIMProvisioning.SetDomainVerifier(s.DomainVerify)
