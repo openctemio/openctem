@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { legalConfig } from '@/lib/legal'
 import {
   Card,
   CardContent,
@@ -41,6 +42,7 @@ interface LoginPageProps {
 }
 
 export default async function SignIn({ searchParams }: LoginPageProps) {
+  const legal = legalConfig()
   const params = await searchParams
   const returnTo = params.returnTo || params.next || params.redirect
   const redirectTo = validateRedirectUrl(returnTo, '/')
@@ -99,7 +101,11 @@ export default async function SignIn({ searchParams }: LoginPageProps) {
         <LoginForm redirectTo={redirectTo} orgSlug={params.org} reauth={params.reauth === '1'} />
       </CardContent>
       <CardFooter className="justify-center empty:hidden">
-        <LegalNotice action="clicking sign in" />
+        <LegalNotice
+          action="clicking sign in"
+          termsUrl={legal.termsUrl}
+          privacyUrl={legal.privacyUrl}
+        />
       </CardFooter>
     </Card>
   )

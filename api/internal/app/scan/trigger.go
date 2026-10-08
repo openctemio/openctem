@@ -284,6 +284,13 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 		return nil, fmt.Errorf("failed to get scan workflow steps: %w", err)
 	}
 
+	// Re-evaluated at run start: sensors can go away after the scan was
+	// created.
+	template.Steps = steps
+	if err := s.requireWorkflowRunnable(ctx, sc.TenantID, template); err != nil {
+		return nil, err
+	}
+
 	// Validate scan workflow has steps
 	if len(steps) == 0 {
 		return nil, shared.NewDomainError(
