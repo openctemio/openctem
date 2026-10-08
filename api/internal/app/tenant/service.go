@@ -2262,6 +2262,46 @@ func (s *TenantService) GetEASMSettings(ctx context.Context, tenantID string) (*
 	return &es, nil
 }
 
+// GetMCPSettings returns the tenant's MCP policy (RFC-062 §8).
+func (s *TenantService) GetMCPSettings(ctx context.Context, tenantID string) (*tenantdom.MCPSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	ms := t.TypedSettings().MCP
+	return &ms, nil
+}
+
+// UpdateMCPSettings replaces the tenant's MCP policy and audits the change.
+// The new policy applies to the next MCP request of every connection.
+func (s *TenantService) UpdateMCPSettings(
+	ctx context.Context,
+	tenantID string,
+	ms tenantdom.MCPSettings,
+	actx auditapp.AuditContext,
+) (*tenantdom.MCPSettings, error) {
+	var before tenantdom.MCPSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionMCP, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().MCP
+		return t.UpdateMCPSettings(ms)
+	})
+	if err != nil {
+		return nil, err
+	}
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionMCPSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().MCP)).
+		WithMessage("AI application (MCP) policy updated").
+		WithSeverity(audit.SeverityHigh)
+	s.logAudit(ctx, actx, event)
+	out := t.TypedSettings().MCP
+	return &out, nil
+}
+
 // GetScopeSettings returns the tenant's scope settings (RFC-054 §6.3).
 func (s *TenantService) GetScopeSettings(ctx context.Context, tenantID string) (*tenantdom.ScopeSettings, error) {
 	parsedID, err := shared.IDFromString(tenantID)

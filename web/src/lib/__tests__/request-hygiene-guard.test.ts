@@ -35,7 +35,6 @@ const RAW_FETCH_EXEMPT_DIRS = ['lib/api/', 'app/api/']
 
 /** Reviewed raw `fetch('/api/v1/…')` call sites, file → count. */
 const RAW_FETCH_BASELINE: Record<string, number> = {
-  'features/repositories/components/repository-workspace.tsx': 1,
   'context/tenant-provider.tsx': 1,
   'features/findings/components/detail/evidence-tab.tsx': 1,
   'features/pentest/components/attachment-upload.tsx': 2,
@@ -60,6 +59,7 @@ const TUPLE_KEY_BASELINE: Record<string, number> = {
 const POLLING_BASELINE: Record<string, number> = {
   'app/(dashboard)/(discovery)/scans/[id]/page.tsx': 2,
   'app/(dashboard)/notifications/page.tsx': 1,
+  'features/admin-console/api/use-admin-overview.ts': 1,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
   'features/ci-runners/api/use-ci.ts': 2,
   'features/findings/api/use-finding-retests.ts': 1,

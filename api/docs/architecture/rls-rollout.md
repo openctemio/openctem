@@ -88,7 +88,7 @@ Two properties worth understanding:
 | 14 | priority_class_audit_log | CTEM |
 | 15 | compensating_controls | CTEM |
 | 16 | scans | scanning |
-| 17 | pipelines | scanning |
+| 17 | scan_workflows | scanning |
 | 18 | tool_executions | scanning |
 | 19 | audit_logs | audit |
 | 20 | notification_outbox | notifications |

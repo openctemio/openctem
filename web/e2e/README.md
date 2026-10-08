@@ -22,24 +22,24 @@ tests that cover the console's most user-visible flows.
 
 ## Specs
 
-| Spec file (`specs/`) | What it covers |
-| --- | --- |
-| `01-login-and-invitation.spec.ts` | Login form rejection, successful login, invitation preview |
-| `02-asset-relationship-multiselect.spec.ts` | Asset list, relationships tab, multi-select picker |
-| `03-tag-crud.spec.ts` | Add and remove tags from an asset |
-| `04-findings-asset-filter.spec.ts` | `?assetId=` filter on /findings |
-| `05-owner-picker.spec.ts` | Asset owner picker open + search |
-| `06-finding-picker.spec.ts` | Remediation findings picker |
-| `07-finding-drawer-writes-once.spec.ts` | Finding drawer saves each change once |
-| `07-sensor-row-actions.spec.ts` | Sensor list row actions |
-| `08-finding-detail-header.spec.ts` | Finding detail page header |
-| `09-landmarks-and-names.spec.ts` | Page landmarks and accessible names |
-| `10-scan-detail-runs.spec.ts` | Scan detail and its runs |
-| `11-settings-access.spec.ts` | Settings pages respect permissions |
-| `12-settings-reachability.spec.ts` | Every settings page is reachable |
-| `13-validation-reachability.spec.ts` | Validation pages are reachable |
-| `14-remediation-drawer-status.spec.ts` | Remediation drawer status changes |
-| `15-route-protection.spec.ts` | Signed-out redirects and public routes |
+| Spec file (`specs/`)                        | What it covers                                             |
+| ------------------------------------------- | ---------------------------------------------------------- |
+| `01-login-and-invitation.spec.ts`           | Login form rejection, successful login, invitation preview |
+| `02-asset-relationship-multiselect.spec.ts` | Asset list, relationships tab, multi-select picker         |
+| `03-tag-crud.spec.ts`                       | Add and remove tags from an asset                          |
+| `04-findings-asset-filter.spec.ts`          | `?assetId=` filter on /findings                            |
+| `05-owner-picker.spec.ts`                   | Asset owner picker open + search                           |
+| `06-finding-picker.spec.ts`                 | Remediation findings picker                                |
+| `07-finding-drawer-writes-once.spec.ts`     | Finding drawer saves each change once                      |
+| `07-sensor-row-actions.spec.ts`             | Sensor list row actions                                    |
+| `08-finding-detail-header.spec.ts`          | Finding detail page header                                 |
+| `09-landmarks-and-names.spec.ts`            | Page landmarks and accessible names                        |
+| `10-scan-detail-runs.spec.ts`               | Scan detail and its runs                                   |
+| `11-settings-access.spec.ts`                | Settings pages respect permissions                         |
+| `12-settings-reachability.spec.ts`          | Every settings page is reachable                           |
+| `13-validation-reachability.spec.ts`        | Validation pages are reachable                             |
+| `14-remediation-drawer-status.spec.ts`      | Remediation drawer status changes                          |
+| `15-route-protection.spec.ts`               | Signed-out redirects and public routes                     |
 
 Each spec is designed to:
 

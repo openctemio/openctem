@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -179,6 +180,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	commandHandler.SetScanRunService(svc.ScanRun)
 	commandHandler.SetAuditService(svc.Audit)
 	commandHandler.SetScanCommandGate(svc.Scan)
+	// A job the claim-time scope re-check fails settles what waits on it
+	// (scan step, validation run, retest) as a sensor's failure would.
+	svc.Command.SetFailureObserver(commandHandler)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
@@ -301,13 +305,41 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpHandler.SetAuditService(svc.Audit)
 		mcpAuth = apiKeyAuth.Handler
 	}
+	// The organization MCP policy applies to oct_ keys on the MCP endpoint
+	// (access tokens are checked by the authorization server).
+	var mcpPolicies middleware.MCPPolicyReader
+	var mcpSettings *handler.MCPSettingsHandler
+	if svc.Tenant != nil {
+		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
+		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
+	}
+	mcpDiscovery := newMCPDiscovery(cfg, log)
+	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
+	// endpoint also accepts its access tokens, and a refused call that
+	// another scope would allow gets a step-up challenge.
+	var mcpOAuthHandler *handler.MCPOAuthHandler
+	var mcpConnections *handler.MCPConnectionsHandler
+	if mcpOAuth := newMCPOAuthService(mcpDiscovery, deps, log); mcpOAuth != nil && mcpHandler != nil {
+		mcpOAuthHandler = handler.NewMCPOAuthHandler(mcpOAuth, log)
+		mcpConnections = handler.NewMCPConnectionsHandler(mcpOAuth, log)
+		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
+		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
+	}
+	if mcpAuth != nil && mcpPolicies != nil {
+		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)
+		mcpAuth = func(next http.Handler) http.Handler { return auth(gate(next)) }
+	}
 
 	handlers := routes.Handlers{
-		ModuleGate: moduleGate,
-		DataScope:  svc.DataScope,
-		MCP:        mcpHandler,
-		MCPAuth:    mcpAuth,
-		APIKeyAuth: apiKeyAuth,
+		ModuleGate:     moduleGate,
+		DataScope:      svc.DataScope,
+		MCP:            mcpHandler,
+		MCPAuth:        mcpAuth,
+		MCPDiscovery:   mcpDiscovery,
+		MCPOAuth:       mcpOAuthHandler,
+		MCPSettings:    mcpSettings,
+		MCPConnections: mcpConnections,
+		APIKeyAuth:     apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),
@@ -493,11 +525,24 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Docs: handler.NewDocsHandler("api/openapi/swagger.yaml"),
 
 		// Admin Auth (API Key authentication for Admin UI)
-		AdminAuth:           handler.NewAdminAuthHandler(log),
-		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
-		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
-		AdminAuditChain:     handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
-		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminAuth:         handler.NewAdminAuthHandler(log),
+		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning).WithStepUp(adminConsoleSvc),
+		AdminOverview: handler.NewAdminOverviewHandler(
+			func(ctx context.Context, now time.Time) (postgres.AdminOverviewCounts, error) {
+				return postgres.ReadAdminOverview(ctx, deps.DB.DB, now)
+			},
+			func(ctx context.Context) (postgres.OpsSnapshot, error) {
+				return postgres.ReadOpsSnapshot(ctx, deps.DB.DB)
+			},
+			repos.Admin, shippedSchemaVersion(log), log),
+		AdminPlatformUser: handler.NewAdminPlatformUserHandler(
+			postgres.NewPlatformUserDirectory(deps.DB),
+			newPlatformUserService(repos, svc, cfg, deps.DB),
+			log),
+		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
+		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
+		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
+		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
 
 		// Admin Audit middleware (audit logging for admin operations)
 		AdminAuditMiddleware: middleware.NewAuditMiddleware(repos.AdminAuditLog, log),
@@ -624,6 +669,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.CredentialImport.SetAuditService(svc.Audit)
 	}
 
+	if svc.AccessRequest != nil {
+		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
+	}
 	if svc.Entitlement != nil {
 		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
 		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})

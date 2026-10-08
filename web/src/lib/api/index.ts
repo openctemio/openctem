@@ -336,7 +336,7 @@ export type {
   FindingStats,
 } from './finding-types'
 
-export { SEVERITY_CONFIG, STATUS_CONFIG, SOURCE_CONFIG } from './finding-types'
+export { SEVERITY_CONFIG, SOURCE_CONFIG } from './finding-types'
 
 // ============================================
 // AUDIT LOG TYPES

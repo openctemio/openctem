@@ -32,6 +32,7 @@ type Config struct {
 	OAuth        OAuthConfig
 	Keycloak     KeycloakConfig
 	CORS         CORSConfig
+	MCP          MCPConfig
 	RateLimit    RateLimitConfig
 	SMTP         SMTPConfig
 	Worker       SensorConfig
@@ -553,6 +554,11 @@ type AuthConfig struct {
 	// (internal/app/signup), not a config flag.
 	RequireEmailVerification bool // Require email verification (default: true)
 
+	// CAPTCHA (Cloudflare Turnstile) on the public request-access form. Unset:
+	// no CAPTCHA (the rate limits still apply).
+	CaptchaTurnstileSecret  string
+	CaptchaTurnstileSiteKey string
+
 	// Email verification/reset token settings
 	EmailVerificationDuration time.Duration // Email verification token lifetime (default: 24h)
 	PasswordResetDuration     time.Duration // Password reset token lifetime (default: 1h)
@@ -715,6 +721,14 @@ func (c *KeycloakConfig) JWKSURL() string {
 // IssuerURL returns the expected token issuer URL.
 func (c *KeycloakConfig) IssuerURL() string {
 	return fmt.Sprintf("%s/realms/%s", c.BaseURL, c.Realm)
+}
+
+// MCPConfig is the authorization server of the MCP endpoint (RFC-062).
+type MCPConfig struct {
+	// TrustedClientHosts are hosts whose Client ID Metadata Documents every
+	// organization treats as verified (MCP_OAUTH_TRUSTED_CLIENT_HOSTS,
+	// comma-separated). Organizations add their own on top.
+	TrustedClientHosts []string
 }
 
 // CORSConfig holds CORS configuration.
@@ -1205,6 +1219,8 @@ func Load() (*Config, error) {
 			LockoutDuration:           getEnvDuration("AUTH_LOCKOUT_DURATION", 15*time.Minute),
 			MaxActiveSessions:         getEnvInt("AUTH_MAX_ACTIVE_SESSIONS", 10),
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
+			CaptchaTurnstileSecret:    getEnv("CAPTCHA_TURNSTILE_SECRET", ""),
+			CaptchaTurnstileSiteKey:   getEnv("CAPTCHA_TURNSTILE_SITE_KEY", ""),
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
 			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(appEnv())),
@@ -1233,6 +1249,9 @@ func Load() (*Config, error) {
 			ClientID:            getEnv("KEYCLOAK_CLIENT_ID", ""),
 			JWKSRefreshInterval: getEnvDuration("KEYCLOAK_JWKS_REFRESH_INTERVAL", 1*time.Hour),
 			HTTPTimeout:         getEnvDuration("KEYCLOAK_HTTP_TIMEOUT", 10*time.Second),
+		},
+		MCP: MCPConfig{
+			TrustedClientHosts: getEnvSlice("MCP_OAUTH_TRUSTED_CLIENT_HOSTS", nil),
 		},
 		CORS: CORSConfig{
 			// F-12: Default to localhost dev origin instead of wildcard. Production

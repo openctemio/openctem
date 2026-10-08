@@ -17,19 +17,19 @@ engineering docs (API architecture, RFCs, CI/CD) are in
 
 ## Contents
 
-| Document | What it covers |
-|---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Request path, authentication flow, data patterns, design system, dashboard header |
-| [security-architecture.md](security-architecture.md) | Sessions and cookies, permissions, route protection, CSP, safe links, WebSocket, CSRF |
-| [ui-style-contract.md](ui-style-contract.md) | The rules every screen follows: page anatomy, lists, drawers, empty states |
-| [finding-detail.md](finding-detail.md) | Finding page and drawer layout |
-| [ui/activity-panel.md](ui/activity-panel.md) | Activity and comments panel |
-| [nav-coverage.md](nav-coverage.md) | No scaffold pages in the sidebar, and the test that enforces it |
-| [guides/API_INTEGRATION.md](guides/API_INTEGRATION.md) | Calling the API from the console |
-| [ops/ENVIRONMENT_VARIABLES.md](ops/ENVIRONMENT_VARIABLES.md) | Every environment variable the console reads |
-| [ops/DOCKER_SENTRY_SETUP.md](ops/DOCKER_SENTRY_SETUP.md) | Docker files, running in Docker, enabling Sentry |
-| [MAKEFILE.md](MAKEFILE.md) | `web/Makefile` targets |
-| [../e2e/README.md](../e2e/README.md) | Playwright end-to-end tests |
+| Document                                                     | What it covers                                                                        |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| [ARCHITECTURE.md](ARCHITECTURE.md)                           | Request path, authentication flow, data patterns, design system, dashboard header     |
+| [security-architecture.md](security-architecture.md)         | Sessions and cookies, permissions, route protection, CSP, safe links, WebSocket, CSRF |
+| [ui-style-contract.md](ui-style-contract.md)                 | The rules every screen follows: page anatomy, lists, drawers, empty states            |
+| [finding-detail.md](finding-detail.md)                       | Finding page and drawer layout                                                        |
+| [ui/activity-panel.md](ui/activity-panel.md)                 | Activity and comments panel                                                           |
+| [nav-coverage.md](nav-coverage.md)                           | No scaffold pages in the sidebar, and the test that enforces it                       |
+| [guides/API_INTEGRATION.md](guides/API_INTEGRATION.md)       | Calling the API from the console                                                      |
+| [ops/ENVIRONMENT_VARIABLES.md](ops/ENVIRONMENT_VARIABLES.md) | Every environment variable the console reads                                          |
+| [ops/DOCKER_SENTRY_SETUP.md](ops/DOCKER_SENTRY_SETUP.md)     | Docker files, running in Docker, enabling Sentry                                      |
+| [MAKEFILE.md](MAKEFILE.md)                                   | `web/Makefile` targets                                                                |
+| [../e2e/README.md](../e2e/README.md)                         | Playwright end-to-end tests                                                           |
 
 Coding conventions for contributors and AI assistants are in
 [`web/CLAUDE.md`](../CLAUDE.md) and [`web/.claude/`](../.claude/).

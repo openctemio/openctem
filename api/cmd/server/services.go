@@ -47,6 +47,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	"github.com/openctemio/openctem/api/internal/app/attack"
@@ -804,6 +805,8 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// The request-access queue (sign-up closed, requests allowed).
+	AccessRequest *accessrequestapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
@@ -1957,8 +1960,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
 	s.Scan.SetStepQueuer(s.ScanRun)
-	// A job the claim-time scope re-check fails settles its step.
-	s.Command.SetStepFailer(s.ScanRun)
 	s.Scan.SetWorkflowVersions(repos.ScanWorkflow)
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
 	if s.Retest != nil {

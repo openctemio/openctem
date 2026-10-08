@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -48,7 +49,7 @@ func (g *recheckGate) ResolveDispatchTargets(_ context.Context, in scanapp.Dispa
 			out.Refused = append(out.Refused, scanapp.RefusedTarget{Target: t, Code: g.refused[t], Reason: "refused"})
 		default:
 			out.Allowed = append(out.Allowed, t)
-			if z := g.zones[t]; z != nil {
+			if z := g.zones[t]; z != nil && !in.SkipZoneRouting {
 				out.ZoneOf[t] = &scanzone.Zone{ID: *z}
 			}
 		}
@@ -62,7 +63,8 @@ func (g *recheckGate) callCount() int {
 	return len(g.calls)
 }
 
-// stepFailures records the steps a re-check failed.
+// stepFailures records the commands a re-check failed (the failure
+// observer: the command handler settles the step, validation run, retest).
 type stepFailures struct {
 	mu    sync.Mutex
 	calls []string
@@ -71,12 +73,15 @@ type stepFailures struct {
 
 func newStepFailures() *stepFailures { return &stepFailures{done: make(chan struct{}, 16)} }
 
-func (f *stepFailures) OnStepFailed(_ context.Context, runID, stepKey, msg, code string) error {
+func (f *stepFailures) OnCommandFailed(_ context.Context, cmd *commanddom.Command, msg, code string) {
+	var p struct {
+		StepKey string `json:"step_key"`
+	}
+	_ = json.Unmarshal(cmd.Payload, &p)
 	f.mu.Lock()
-	f.calls = append(f.calls, runID+"|"+stepKey+"|"+code+"|"+msg)
+	f.calls = append(f.calls, string(cmd.Type)+"|"+p.StepKey+"|"+code+"|"+string(cmd.Status)+"|"+msg)
 	f.mu.Unlock()
 	f.done <- struct{}{}
-	return nil
 }
 
 func (f *stepFailures) wait(t *testing.T) {
@@ -177,7 +182,7 @@ func newRecheckFixture() *recheckFixture {
 		gate:  &recheckGate{excluded: map[string]bool{}, refused: map[string]string{}, zones: map[string]*shared.ID{}},
 		steps: newStepFailures()}
 	f.svc = command.NewService(f.repo, newCmdTestLogger(), command.WithScopeRecheck(f.gate))
-	f.svc.SetStepFailer(f.steps)
+	f.svc.SetFailureObserver(f.steps)
 	return f
 }
 
@@ -303,7 +308,7 @@ func TestScopeRecheck_FailsAJobWithNothingLeft(t *testing.T) {
 				t.Fatalf("stored %s %q", stored.Status, stored.ErrorMessage)
 			}
 			f.steps.wait(t)
-			if f.steps.count() != 1 || !strings.Contains(f.steps.calls[0], "|probe|SCOPE_CHANGED|SCOPE_CHANGED: ") {
+			if f.steps.count() != 1 || !strings.Contains(f.steps.calls[0], "scan|probe|SCOPE_CHANGED|failed|SCOPE_CHANGED: ") {
 				t.Fatalf("step failures %v", f.steps.calls)
 			}
 
@@ -491,5 +496,147 @@ func TestScopeRecheck_SingleTargetFieldFollowsTheNarrowing(t *testing.T) {
 	targets, target, _ := payloadTargetList(t, got.Payload)
 	if strings.Join(targets, ",") != "b.example.com" || target != "b.example.com" {
 		t.Fatalf("targets %v target %v", targets, target)
+	}
+}
+
+// Validate, retest and connector_scan commands are re-checked with the
+// record their dispatcher stored: an excluded target fails the job with
+// SCOPE_CHANGED and the failure observer settles what waits on it.
+func TestScopeRecheck_ProbeAndConnectorCommands(t *testing.T) {
+	probe := commanddom.ProbeDispatchGate
+	connector := commanddom.DispatchGate{Tier: 1, Validated: true, NoZoneRouting: true, ActScope: true,
+		Actor: "33333333-3333-3333-3333-333333333333"}
+	for _, tc := range []struct {
+		typ     commanddom.CommandType
+		payload string
+		gate    *commanddom.DispatchGate
+	}{
+		{commanddom.CommandTypeValidate,
+			`{"job_id":"j","executor_kind":"safe_check","target":{"asset_id":"a","type":"domain","address":"gone.example.com"}}`, &probe},
+		{commanddom.CommandTypeRetest,
+			`{"scanner":"nuclei","retest_id":"r","targets":["gone.example.com"],"items":[{"ref":"f","target":"gone.example.com"}]}`, &probe},
+		{commanddom.CommandTypeConnectorScan,
+			`{"scanner":"tenable_sc","targets":["gone.example.com"]}`, &connector},
+	} {
+		t.Run(string(tc.typ), func(t *testing.T) {
+			for _, path := range handOutPaths {
+				f := newRecheckFixture()
+				f.gate.excluded["gone.example.com"] = true
+				c := f.repo.add(f.tenant, tc.typ, tc.payload, tc.gate)
+				if got, _ := path.run(f, c); got != nil {
+					t.Fatalf("%s: a job with no target left was handed out", path.name)
+				}
+				stored := f.repo.commands[c.ID.String()]
+				if stored.Status != commanddom.CommandStatusFailed || !strings.Contains(stored.ErrorMessage, "gone.example.com (excluded)") {
+					t.Fatalf("%s: stored %s %q", path.name, stored.Status, stored.ErrorMessage)
+				}
+				f.steps.wait(t)
+				if !strings.HasPrefix(f.steps.calls[0], string(tc.typ)+"||SCOPE_CHANGED|failed|") {
+					t.Fatalf("%s: observer %v", path.name, f.steps.calls)
+				}
+				in := f.gate.calls[0]
+				if in.AllowNonNetworkTargets || in.Tier == nil || *in.Tier != scopedom.TierActive || in.PassiveOnly ||
+					in.SkipZoneRouting != tc.gate.NoZoneRouting || in.ActScope != tc.gate.ActScope {
+					t.Fatalf("%s: gate input %+v", path.name, in)
+				}
+			}
+		})
+	}
+}
+
+// A connector scan runs outside every zone: a target that routes into a
+// zone is not refused as a zone change; an unchanged probe is handed out.
+func TestScopeRecheck_ConnectorIgnoresZonesAndProbeKept(t *testing.T) {
+	f := newRecheckFixture()
+	zone := shared.NewID()
+	f.gate.zones["10.0.0.5"] = &zone
+	c := f.repo.add(f.tenant, commanddom.CommandTypeConnectorScan, `{"scanner":"tenable_sc","targets":["10.0.0.5"]}`,
+		&commanddom.DispatchGate{Tier: 1, Validated: true, NoZoneRouting: true})
+	v := f.repo.add(f.tenant, commanddom.CommandTypeValidate,
+		`{"job_id":"j","target":{"asset_id":"a","type":"domain","address":"ok.example.com"}}`, &commanddom.DispatchGate{Tier: 1, Validated: true})
+	cmds, err := f.svc.Poll(context.Background(), command.PollInput{TenantID: f.tenant.String(), SensorID: f.sensor.String(), Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if find(cmds, c) == nil || find(cmds, v) == nil {
+		t.Fatalf("handed out %d commands, want the connector scan and the probe", len(cmds))
+	}
+	if got := find(cmds, v); string(got.Payload) != string(v.Payload) {
+		t.Fatal("an unchanged probe was rewritten")
+	}
+}
+
+// Validate, retest and connector_scan commands queued before dispatch-gate
+// records existed are re-checked with their type's strict defaults (the full
+// gate at t1, no act scope; no zone routing for a connector scan); one whose
+// targets cannot be read is refused with GATE_RECORD_MISSING. Nothing from
+// before the records goes out unchecked.
+func TestScopeRecheck_ProbesWithoutRecord(t *testing.T) {
+	for _, tc := range []struct {
+		typ                commanddom.CommandType
+		withTarget, noRead string
+		noZoneRouting      bool
+	}{
+		{commanddom.CommandTypeValidate,
+			`{"job_id":"j","target":{"asset_id":"a","type":"domain","address":"%s"}}`,
+			`{"job_id":"j","target":{"asset_id":"a","type":"domain"}}`, false},
+		{commanddom.CommandTypeRetest,
+			`{"scanner":"nuclei","retest_id":"r","targets":["%s"]}`,
+			`{"scanner":"nuclei","retest_id":"r","targets":[]}`, false},
+		{commanddom.CommandTypeConnectorScan,
+			`{"scanner":"tenable_sc","targets":["%s"]}`,
+			`{"scanner":"tenable_sc"}`, true},
+	} {
+		t.Run(string(tc.typ), func(t *testing.T) {
+			for _, path := range handOutPaths {
+				// Still in scope: handed out unchanged, after a strict check.
+				f := newRecheckFixture()
+				ok := f.repo.add(f.tenant, tc.typ, fmt.Sprintf(tc.withTarget, "ok.example.com"), nil)
+				got, err := path.run(f, ok)
+				if err != nil || got == nil || string(got.Payload) != string(ok.Payload) {
+					t.Fatalf("%s: in-scope legacy job: %v %v", path.name, got, err)
+				}
+				in := f.gate.calls[0]
+				if in.AllowNonNetworkTargets || in.Tier == nil || *in.Tier != scopedom.TierActive || in.PassiveOnly ||
+					in.ActScope || in.SkipZoneRouting != tc.noZoneRouting {
+					t.Fatalf("%s: strict defaults not applied: %+v", path.name, in)
+				}
+
+				// Scope changed: failed with SCOPE_CHANGED.
+				f = newRecheckFixture()
+				f.gate.excluded["gone.example.com"] = true
+				gone := f.repo.add(f.tenant, tc.typ, fmt.Sprintf(tc.withTarget, "gone.example.com"), nil)
+				if got, _ := path.run(f, gone); got != nil {
+					t.Fatalf("%s: an out-of-scope legacy job was handed out", path.name)
+				}
+				if st := f.repo.commands[gone.ID.String()]; st.Status != commanddom.CommandStatusFailed ||
+					!strings.HasPrefix(st.ErrorMessage, "SCOPE_CHANGED: ") {
+					t.Fatalf("%s: stored %s %q", path.name, st.Status, st.ErrorMessage)
+				}
+
+				// Targets unreadable: refused with GATE_RECORD_MISSING, settled.
+				f = newRecheckFixture()
+				blind := f.repo.add(f.tenant, tc.typ, tc.noRead, nil)
+				if got, _ := path.run(f, blind); got != nil {
+					t.Fatalf("%s: a legacy job with unreadable targets was handed out", path.name)
+				}
+				if st := f.repo.commands[blind.ID.String()]; st.Status != commanddom.CommandStatusFailed ||
+					!strings.HasPrefix(st.ErrorMessage, "GATE_RECORD_MISSING: ") {
+					t.Fatalf("%s: stored %s %q", path.name, st.Status, st.ErrorMessage)
+				}
+				f.steps.wait(t)
+				if !strings.HasPrefix(f.steps.calls[0], string(tc.typ)+"||GATE_RECORD_MISSING|failed|") {
+					t.Fatalf("%s: observer %v", path.name, f.steps.calls)
+				}
+				if f.gate.callCount() != 0 {
+					t.Fatalf("%s: the gate ran for a job with no target", path.name)
+				}
+				// A second claim records nothing more.
+				_, _ = path.run(f, blind)
+				if f.repo.fails != 1 {
+					t.Fatalf("%s: recorded %d failures", path.name, f.repo.fails)
+				}
+			}
+		})
 	}
 }

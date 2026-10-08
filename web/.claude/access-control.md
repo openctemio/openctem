@@ -76,12 +76,13 @@ Determines user's organizational status within a tenant.
 - All invited users start as "member" with permissions from assigned RBAC roles
 
 **Owner-only Operations** (Admin cannot do):
-| Permission | Description |
-|------------|-------------|
-| `TeamDelete` | Delete the tenant |
-| `BillingManage` | Manage billing settings |
-| `GroupsDelete` | Delete access control groups |
-| `AssignmentRulesDelete` | Delete assignment rules |
+
+| Permission              | Description                  |
+| ----------------------- | ---------------------------- |
+| `TeamDelete`            | Delete the tenant            |
+| `BillingManage`         | Manage billing settings      |
+| `GroupsDelete`          | Delete access control groups |
+| `AssignmentRulesDelete` | Delete assignment rules      |
 
 ### 2. RBAC Roles (Layer 2 - Feature Permissions)
 
@@ -131,15 +132,16 @@ User's permissions = Union of selected role permissions
 Organize users and control access to **data** (assets, findings).
 
 **Group Types:**
-| Type | Purpose |
-|------|---------|
-| `security_team` | SOC, AppSec, Pentest teams |
-| `asset_owner` | Teams owning specific assets |
-| `team` | Development teams |
-| `department` | Organizational departments |
-| `project` | Project-specific access |
-| `external` | Vendors, contractors |
-| `custom` | Other use cases |
+
+| Type            | Purpose                      |
+| --------------- | ---------------------------- |
+| `security_team` | SOC, AppSec, Pentest teams   |
+| `asset_owner`   | Teams owning specific assets |
+| `team`          | Development teams            |
+| `department`    | Organizational departments   |
+| `project`       | Project-specific access      |
+| `external`      | Vendors, contractors         |
+| `custom`        | Other use cases              |
 
 **Group Features:**
 
@@ -148,7 +150,7 @@ Organize users and control access to **data** (assets, findings).
 - **Data Scope**: Members can only see data related to group's assets
 
 A member's data scope is the assets of their active groups plus explicit
-per-user asset access grants (`asset_access_grants`). Naming a *user* as an asset
+per-user asset access grants (`asset_access_grants`). Naming a _user_ as an asset
 owner is an assignment, not a scope grant. Owners, admins and roles with
 `has_full_data_access` are not restricted; a member with no scope sees nothing.
 The API enforces this (`api/docs/architecture/authorization-matrix.md`, "Data scope").

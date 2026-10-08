@@ -244,8 +244,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"finding_rekey_runs": func(*schemaSeeder) map[string]any { return map[string]any{"target_version": "2"} },
 	// emoji has a length CHECK.
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
-	"scan_zones":        func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
-	"sensors":           func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	// kind is a closed set and redirect_uris must list 1 to 20 URIs (RFC-062).
+	"mcp_oauth_clients": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "organization", "redirect_uris": "{https://client.example/cb}"}
+	},
+	"scan_zones": func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
+	"sensors":    func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
 	"scan_freeze_windows": func(*schemaSeeder) map[string]any {
 		return map[string]any{"timezone": "UTC", "recurrence": "weekly", "days": "{1}", "start_minute": "0", "end_minute": "60"}
 	},

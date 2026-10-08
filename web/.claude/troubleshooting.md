@@ -19,17 +19,19 @@
 ### Issue: "use client" not working
 
 **Problem:**
+
 ```tsx
-"use client"
+'use client'
 export default function Component() {
   const [state, setState] = useState() // Error: useState is not defined
 }
 ```
 
 **Solution:**
+
 ```tsx
-"use client"
-import { useState } from "react" // ✅ Import React first
+'use client'
+import { useState } from 'react' // ✅ Import React first
 
 export default function Component() {
   const [state, setState] = useState()
@@ -41,16 +43,18 @@ export default function Component() {
 ### Issue: Metadata not showing
 
 **Problem:**
+
 ```tsx
-"use client"
-export const metadata = { title: "Page" } // Ignored!
+'use client'
+export const metadata = { title: 'Page' } // Ignored!
 ```
 
 **Solution:**
 Metadata only works in Server Components:
+
 ```tsx
 // Remove "use client" or move to separate file
-export const metadata = { title: "Page" }
+export const metadata = { title: 'Page' }
 
 export default function Page() {
   return <ClientComponent />
@@ -62,6 +66,7 @@ export default function Page() {
 ### Issue: Page not found (404)
 
 **Problem:**
+
 ```
 app/
 ├── users/
@@ -70,6 +75,7 @@ app/
 
 **Solution:**
 File must be named exactly `page.tsx` (lowercase):
+
 ```
 app/
 ├── users/
@@ -84,6 +90,7 @@ app/
 Route group layout not working.
 
 **Solution:**
+
 ```
 app/
 ├── (dashboard)/
@@ -99,6 +106,7 @@ app/
 ### Issue: Can't use hooks in Server Component
 
 **Problem:**
+
 ```tsx
 export default function Page() {
   const [state, setState] = useState() // Error!
@@ -108,18 +116,19 @@ export default function Page() {
 
 **Solution:**
 Either add "use client" or use Server Component alternatives:
+
 ```tsx
 // Option 1: Make it Client Component
-"use client"
+'use client'
 export default function Page() {
   const [state, setState] = useState() // ✅
 }
 
 // Option 2: Use Server alternatives
-import { redirect } from "next/navigation"
+import { redirect } from 'next/navigation'
 
 export default function Page() {
-  redirect("/login") // ✅ Server-side redirect
+  redirect('/login') // ✅ Server-side redirect
 }
 ```
 
@@ -128,6 +137,7 @@ export default function Page() {
 ### Issue: Promise returned instead of data
 
 **Problem:**
+
 ```tsx
 export default function Page() {
   const data = fetch('/api/data') // Returns Promise!
@@ -137,6 +147,7 @@ export default function Page() {
 
 **Solution:**
 Add `async/await`:
+
 ```tsx
 export default async function Page() {
   const res = await fetch('/api/data')
@@ -150,8 +161,9 @@ export default async function Page() {
 ### Issue: Cannot read headers/cookies
 
 **Problem:**
+
 ```tsx
-import { headers } from "next/headers"
+import { headers } from 'next/headers'
 
 export default function Page() {
   const headersList = headers() // Error: headers is not a function
@@ -160,8 +172,9 @@ export default function Page() {
 
 **Solution:**
 Use async function:
+
 ```tsx
-import { headers } from "next/headers"
+import { headers } from 'next/headers'
 
 export default async function Page() {
   const headersList = await headers() // ✅
@@ -175,19 +188,22 @@ export default async function Page() {
 ### Issue: Hydration mismatch
 
 **Problem:**
+
 ```
 Error: Text content does not match server-rendered HTML
 ```
 
 **Common causes:**
+
 1. Using `window` or `localStorage` during render
 2. Random values without seed
 3. Date formatting differences
 
 **Solution:**
+
 ```tsx
-"use client"
-import { useEffect, useState } from "react"
+'use client'
+import { useEffect, useState } from 'react'
 
 export function Component() {
   const [mounted, setMounted] = useState(false)
@@ -205,9 +221,10 @@ export function Component() {
 ```
 
 Or use custom hook:
+
 ```tsx
 // hooks/use-mounted.ts
-import { useEffect, useState } from "react"
+import { useEffect, useState } from 'react'
 
 export function useMounted() {
   const [mounted, setMounted] = useState(false)
@@ -222,9 +239,9 @@ export function useMounted() {
 // Usage
 function Component() {
   const mounted = useMounted()
-  
+
   if (!mounted) return null
-  
+
   return <div>{window.location.href}</div>
 }
 ```
@@ -234,19 +251,21 @@ function Component() {
 ### Issue: Event handlers not working
 
 **Problem:**
+
 ```tsx
 export default function Page() {
-  const handleClick = () => console.log("clicked")
+  const handleClick = () => console.log('clicked')
   return <button onClick={handleClick}>Click</button> // Not working
 }
 ```
 
 **Solution:**
 Add "use client":
+
 ```tsx
-"use client"
+'use client'
 export default function Page() {
-  const handleClick = () => console.log("clicked")
+  const handleClick = () => console.log('clicked')
   return <button onClick={handleClick}>Click</button> // ✅
 }
 ```
@@ -258,8 +277,9 @@ export default function Page() {
 ### Issue: Server Action not revalidating
 
 **Problem:**
+
 ```tsx
-"use server"
+'use server'
 export async function createUser(data) {
   await db.user.create({ data })
   // Page not updating!
@@ -268,13 +288,14 @@ export async function createUser(data) {
 
 **Solution:**
 Call `revalidatePath`:
+
 ```tsx
-"use server"
-import { revalidatePath } from "next/cache"
+'use server'
+import { revalidatePath } from 'next/cache'
 
 export async function createUser(data) {
   await db.user.create({ data })
-  revalidatePath("/users") // ✅
+  revalidatePath('/users') // ✅
 }
 ```
 
@@ -283,9 +304,10 @@ export async function createUser(data) {
 ### Issue: Can't call Server Action from Client
 
 **Problem:**
+
 ```tsx
-"use client"
-import { createUser } from "./actions" // Error: Server actions must be async
+'use client'
+import { createUser } from './actions' // Error: Server actions must be async
 
 export function Form() {
   return <button onClick={createUser}>Submit</button>
@@ -294,15 +316,16 @@ export function Form() {
 
 **Solution:**
 Wrap in async function:
+
 ```tsx
-"use client"
-import { createUser } from "./actions"
+'use client'
+import { createUser } from './actions'
 
 export function Form() {
   const handleClick = async () => {
     await createUser() // ✅
   }
-  
+
   return <button onClick={handleClick}>Submit</button>
 }
 ```
@@ -312,15 +335,17 @@ export function Form() {
 ### Issue: FormData not working
 
 **Problem:**
+
 ```tsx
-"use server"
+'use server'
 export async function action(formData: FormData) {
-  const name = formData.get("name") // null
+  const name = formData.get('name') // null
 }
 ```
 
 **Solution:**
 Ensure form has proper name attributes:
+
 ```tsx
 <form action={action}>
   <input name="name" /> {/* ✅ name attribute required */}
@@ -335,17 +360,19 @@ Ensure form has proper name attributes:
 ### Issue: Build fails with "Module not found"
 
 **Problem:**
+
 ```
 Error: Cannot find module '@/components/ui/button'
 ```
 
 **Solution:**
 Check `tsconfig.json` paths:
+
 ```json
 {
   "compilerOptions": {
     "paths": {
-      "@/*": ["./*"]  // ✅ Ensure this is set
+      "@/*": ["./*"] // ✅ Ensure this is set
     }
   }
 }
@@ -356,12 +383,14 @@ Check `tsconfig.json` paths:
 ### Issue: Static export error
 
 **Problem:**
+
 ```
 Error: Page /users/[id] couldn't be rendered statically
 ```
 
 **Solution:**
 Add `generateStaticParams`:
+
 ```tsx
 export async function generateStaticParams() {
   const users = await db.user.findMany()
@@ -370,6 +399,7 @@ export async function generateStaticParams() {
 ```
 
 Or force dynamic:
+
 ```tsx
 export const dynamic = 'force-dynamic'
 ```
@@ -379,12 +409,14 @@ export const dynamic = 'force-dynamic'
 ### Issue: Environment variables not working
 
 **Problem:**
+
 ```tsx
 const API_KEY = process.env.API_KEY // undefined
 ```
 
 **Solution:**
 For client-side, use `NEXT_PUBLIC_` prefix:
+
 ```env
 # .env.local
 NEXT_PUBLIC_API_KEY=xxx  # ✅ Accessible in browser
@@ -406,6 +438,7 @@ const secret = process.env.API_SECRET
 ### Issue: Slow page loads
 
 **Diagnosis:**
+
 ```bash
 npm run build
 
@@ -417,6 +450,7 @@ npm run build
 **Solutions:**
 
 1. **Use Static Generation** when possible:
+
 ```tsx
 // Force static
 export const dynamic = 'force-static'
@@ -426,8 +460,9 @@ export const revalidate = 3600 // 1 hour
 ```
 
 2. **Implement Streaming**:
+
 ```tsx
-import { Suspense } from "react"
+import { Suspense } from 'react'
 
 export default function Page() {
   return (
@@ -439,14 +474,15 @@ export default function Page() {
 ```
 
 3. **Optimize Images**:
-```tsx
-import Image from "next/image"
 
-<Image
+```tsx
+import Image from 'next/image'
+
+;<Image
   src="/hero.jpg"
   width={1200}
   height={600}
-  priority  // For above-fold images
+  priority // For above-fold images
   alt="Hero"
 />
 ```
@@ -458,16 +494,18 @@ import Image from "next/image"
 **Solution:**
 
 1. **Use Dynamic Imports**:
-```tsx
-import dynamic from "next/dynamic"
 
-const HeavyComponent = dynamic(() => import("./heavy-component"), {
+```tsx
+import dynamic from 'next/dynamic'
+
+const HeavyComponent = dynamic(() => import('./heavy-component'), {
   loading: () => <Skeleton />,
   ssr: false, // Skip SSR if not needed
 })
 ```
 
 2. **Check bundle size**:
+
 ```bash
 npm run build
 
@@ -482,8 +520,9 @@ npm run build
 ### Issue: Type errors in Server Actions
 
 **Problem:**
+
 ```tsx
-"use server"
+'use server'
 export async function action(data: FormData) {
   // Type error on FormData
 }
@@ -491,6 +530,7 @@ export async function action(data: FormData) {
 
 **Solution:**
 Update `tsconfig.json`:
+
 ```json
 {
   "compilerOptions": {
@@ -505,17 +545,19 @@ Update `tsconfig.json`:
 ### Issue: Import type errors
 
 **Problem:**
+
 ```tsx
-import { User } from "@/types/user" // Cannot find module
+import { User } from '@/types/user' // Cannot find module
 ```
 
 **Solution:**
 Check file extension and paths:
+
 ```tsx
 // Correct
-import { User } from "@/types/user.types"
+import { User } from '@/types/user.types'
 // Or
-import type { User } from "@/types/user.types"
+import type { User } from '@/types/user.types'
 ```
 
 ---
@@ -565,6 +607,7 @@ export const revalidate = 3600 // seconds
 ## Common Patterns That Work
 
 ### Pattern 1: Hybrid Rendering
+
 ```tsx
 // Server Component (default)
 export default async function Page() {
@@ -573,7 +616,7 @@ export default async function Page() {
 }
 
 // Client Component
-"use client"
+;('use client')
 export function ClientList({ data }) {
   const [filtered, setFiltered] = useState(data)
   // Client interactivity
@@ -581,24 +624,26 @@ export function ClientList({ data }) {
 ```
 
 ### Pattern 2: Progressive Enhancement
+
 ```tsx
 <form action={serverAction}>
   <input name="email" />
-  <SubmitButton />  {/* Works without JS */}
+  <SubmitButton /> {/* Works without JS */}
 </form>
 ```
 
 ### Pattern 3: Optimistic Updates
+
 ```tsx
-"use client"
-import { useOptimistic } from "react"
+'use client'
+import { useOptimistic } from 'react'
 
 export function Component({ data }) {
   const [optimisticData, addOptimistic] = useOptimistic(data)
-  
+
   async function action(formData) {
     addOptimistic({ ...newData }) // Instant UI update
-    await serverAction(formData)  // Then persist
+    await serverAction(formData) // Then persist
   }
 }
 ```
@@ -614,5 +659,6 @@ export function Component({ data }) {
 ---
 
 **See also:**
+
 - [patterns.md](patterns.md) - Working code examples
 - [architecture.md](architecture.md) - Project structure

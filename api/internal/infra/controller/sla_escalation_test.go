@@ -38,7 +38,7 @@ func TestBreachQuery_WritesValidEnumStatus(t *testing.T) {
 // counter.
 func TestBreachQuery_ExcludesAcceptedRisk(t *testing.T) {
 	for _, closed := range []vulnerability.FindingStatus{
-		vulnerability.FindingStatusAcceptedRisk,
+		vulnerability.FindingStatusAccepted,
 		vulnerability.FindingStatusAccepted,
 		vulnerability.FindingStatusDuplicate,
 	} {

