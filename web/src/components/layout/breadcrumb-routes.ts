@@ -36,6 +36,8 @@ export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
   '/auth/sso/callback',
   '/insights',
   '/insights/reports',
+  '/mcp',
+  '/mcp/confirm',
   '/oauth',
   '/onboarding',
   '/pentest',
