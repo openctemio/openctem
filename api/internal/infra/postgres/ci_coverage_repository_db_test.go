@@ -192,7 +192,7 @@ func TestCICoverageRepository(t *testing.T) {
 	finding := func(tid, asset shared.ID, fp, source string, lastSeen time.Time) shared.ID {
 		id := shared.NewID()
 		if _, err := db.ExecContext(ctx, `INSERT INTO findings (id, tenant_id, asset_id, fingerprint, source, tool_name,
-			title, message, severity, status, last_seen_at) VALUES ($1, $2, $3, $4, $5, 'semgrep', 't', 'm', 'high', 'open', $6)`,
+			title, message, severity, status, last_seen_at) VALUES ($1, $2, $3, $4, $5, 'semgrep', 't', 'm', 'high', 'new', $6)`,
 			id.String(), tid.String(), asset.String(), fp, source, lastSeen); err != nil {
 			t.Fatal(err)
 		}
@@ -218,11 +218,11 @@ func TestCICoverageRepository(t *testing.T) {
 		t.Fatalf("only-A finding = %s/%s", st, res)
 	}
 	for _, id := range []shared.ID{shared1, seenLater, manual} {
-		if st, _ := status(id); st != "open" {
+		if st, _ := status(id); st != "new" {
 			t.Fatalf("finding %v with another source changed to %s", id, st)
 		}
 	}
-	if st, _ := status(otherFinding); st != "open" {
+	if st, _ := status(otherFinding); st != "new" {
 		t.Fatal("another tenant's finding changed")
 	}
 	// Idempotent.
@@ -242,7 +242,7 @@ func TestCICoverageRepository(t *testing.T) {
 	if st, res := status(onlyA); st != "resolved" || res != "source_retired" {
 		t.Fatalf("retired-source finding = %s/%s", st, res)
 	}
-	if st, _ := status(shared1); st != "open" {
+	if st, _ := status(shared1); st != "new" {
 		t.Fatal("a finding another pipeline reports was closed")
 	}
 	if _, _, err := repo.RetirePipeline(ctx, tenant, pA.ID, nil, "workflow deleted again", now); !errors.Is(err, cirun.ErrPipelineRetired) {

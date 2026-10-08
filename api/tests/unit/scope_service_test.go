@@ -1574,3 +1574,7 @@ func TestScopeServiceExclusion_ReducingProtectionNeedsSecondApprover(t *testing.
 		}
 	})
 }
+
+func (m *mockAssetRepo) GetInventoryOverview(_ context.Context, _ shared.ID, _ asset.AccessScope) ([]asset.InventoryOverviewRow, error) {
+	return nil, nil
+}
