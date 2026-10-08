@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// AccessRequestRepository stores access requests (migration 001323). Platform
+// AccessRequestRepository stores access requests (migration 001328). Platform
 // data: requests belong to no organization.
 type AccessRequestRepository struct {
 	db *DB
