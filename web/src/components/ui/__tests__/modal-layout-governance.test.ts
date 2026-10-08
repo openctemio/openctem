@@ -9,13 +9,13 @@
  *   - a DialogContent / AlertDialogContent / SheetContent sets its own scroll
  *     or layout (`overflow-*`, `max-h-*`, `flex`, `grid`, `p-0`, `gap-*`), or a
  *     DialogContent / AlertDialogContent its own width (`max-w-*`: use `size`);
- *   - a file renders DialogContent without DialogHeader + DialogBody, or
- *     SheetContent without SheetHeader + SheetBody, or AlertDialogContent
- *     without AlertDialogHeader + AlertDialogFooter.
+ *   - a surface has no Header, or has content outside its Body (anything
+ *     but Header, Body and Footer, looking through one wrapping form).
  */
 import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import ts from 'typescript'
 
 const SRC = join(__dirname, '../../..')
 
@@ -38,19 +38,23 @@ const PENDING = new Set<string>([
   'app/(dashboard)/(discovery)/assets/groups/page.tsx',
   'app/(dashboard)/(discovery)/components/ecosystems/page.tsx',
   'app/(dashboard)/(discovery)/scans/workflows/page.tsx',
-  'app/(dashboard)/findings/approvals/page.tsx',
   'app/(dashboard)/(mobilization)/automations/page.tsx',
   'app/(dashboard)/(mobilization)/exceptions/page.tsx',
   'app/(dashboard)/(mobilization)/remediation/page.tsx',
   'app/(dashboard)/(prioritization)/priority-rules/dry-run-dialog.tsx',
   'app/(dashboard)/(prioritization)/priority-rules/page.tsx',
-  'app/(dashboard)/(scoping)/attacker-profiles/page.tsx',
   'app/(dashboard)/(scoping)/attack-surface/external/page.tsx',
+  'app/(dashboard)/(scoping)/attacker-profiles/page.tsx',
   'app/(dashboard)/(scoping)/business-services/page.tsx',
   'app/(dashboard)/(scoping)/business-units/page.tsx',
   'app/(dashboard)/(scoping)/compliance/page.tsx',
   'app/(dashboard)/(scoping)/crown-jewels/page.tsx',
   'app/(dashboard)/(scoping)/cycles/page.tsx',
+  'app/(dashboard)/(validation)/control-testing/page.tsx',
+  'app/(dashboard)/(validation)/controls/page.tsx',
+  'app/(dashboard)/(validation)/pentest/campaigns/page.tsx',
+  'app/(dashboard)/(validation)/pentest/findings/new/page.tsx',
+  'app/(dashboard)/findings/approvals/page.tsx',
   'app/(dashboard)/settings/api-keys/page.tsx',
   'app/(dashboard)/settings/integrations/siem/page.tsx',
   'app/(dashboard)/settings/integrations/ticketing/page.tsx',
@@ -59,10 +63,6 @@ const PENDING = new Set<string>([
   'app/(dashboard)/settings/modules/page.tsx',
   'app/(dashboard)/settings/roles/page.tsx',
   'app/(dashboard)/settings/scim/page.tsx',
-  'app/(dashboard)/(validation)/controls/page.tsx',
-  'app/(dashboard)/(validation)/control-testing/page.tsx',
-  'app/(dashboard)/(validation)/pentest/campaigns/page.tsx',
-  'app/(dashboard)/(validation)/pentest/findings/new/page.tsx',
   'components/layout/about-dialog.tsx',
   'components/layout/keyboard-shortcuts-dialog.tsx',
   'components/step-up-dialog.tsx',
@@ -71,12 +71,12 @@ const PENDING = new Set<string>([
   'features/access-control/components/assignment-rules-section.tsx',
   'features/access-control/components/create-role-sheet.tsx',
   'features/access-control/components/edit-role-sheet.tsx',
+  'features/access-control/components/group-detail-sheet.tsx',
   'features/access-control/components/group-detail-sheet/add-asset-dialog.tsx',
   'features/access-control/components/group-detail-sheet/add-member-dialog.tsx',
   'features/access-control/components/group-detail-sheet/bulk-add-assets-dialog.tsx',
   'features/access-control/components/group-detail-sheet/scope-rule-dialog.tsx',
   'features/access-control/components/group-detail-sheet/scope-rules-tab.tsx',
-  'features/access-control/components/group-detail-sheet.tsx',
   'features/access-control/components/teams-section.tsx',
   'features/account/components/password-card.tsx',
   'features/account/components/two-factor-card.tsx',
@@ -130,20 +130,23 @@ const PENDING = new Set<string>([
   'features/pentest/components/pentest-retests-section.tsx',
   'features/pentest/components/report-builder.tsx',
   'features/pentest/components/template-manager.tsx',
+  'features/remediation-groups/components/create-campaign-from-group-dialog.tsx',
+  'features/remediation-groups/components/resolve-group-dialog.tsx',
   'features/remediation/components/create-jira-epic-dialog.tsx',
   'features/remediation/components/link-findings-dialog.tsx',
   'features/remediation/components/resolve-campaign-dialog.tsx',
-  'features/remediation-groups/components/create-campaign-from-group-dialog.tsx',
-  'features/remediation-groups/components/resolve-group-dialog.tsx',
   'features/reports/components/new-schedule-dialog.tsx',
   'features/saved-views/components/saved-views-menu.tsx',
   'features/scan-freeze/components/freeze-window-dialog.tsx',
   'features/scan-freeze/components/zone-freeze-windows-dialog.tsx',
-  'features/scanner-templates/components/add-scanner-template-dialog.tsx',
   'features/scan-profiles/components/add-preset-dialog.tsx',
   'features/scan-profiles/components/add-scan-profile-dialog.tsx',
   'features/scan-profiles/components/clone-scan-profile-dialog.tsx',
   'features/scan-profiles/components/edit-scan-profile-dialog.tsx',
+  'features/scan-workflows/components/visual-builder-dialog.tsx',
+  'features/scan-zones/components/scan-zone-dialog.tsx',
+  'features/scan-zones/components/zone-sensors-dialog.tsx',
+  'features/scanner-templates/components/add-scanner-template-dialog.tsx',
   'features/scans/components/clone-scan-dialog.tsx',
   'features/scans/components/edit-scan-dialog.tsx',
   'features/scans/components/new-scan/new-scan-dialog.tsx',
@@ -151,9 +154,6 @@ const PENDING = new Set<string>([
   'features/scans/components/run-task-logs-dialog.tsx',
   'features/scans/components/scan-assets-dialog.tsx',
   'features/scans/hooks/use-scan-trigger.tsx',
-  'features/scan-workflows/components/visual-builder-dialog.tsx',
-  'features/scan-zones/components/scan-zone-dialog.tsx',
-  'features/scan-zones/components/zone-sensors-dialog.tsx',
   'features/scm-connections/components/add-connection-dialog.tsx',
   'features/scm-connections/components/edit-connection-dialog.tsx',
   'features/scm-connections/components/sync-repositories-dialog.tsx',
@@ -170,8 +170,6 @@ const PENDING = new Set<string>([
   'features/sensors/components/sensor-grant-edit-dialog.tsx',
   'features/sensors/components/sensors-section.tsx',
   'features/shared/components/filter-sheet.tsx',
-  'features/shared/components/sheet-detail-toolbar.tsx',
-  'features/shared/components/sheet-primitives.tsx',
   'features/sla/components/sla-policy-dialog.tsx',
   'features/template-sources/components/add-template-source-dialog.tsx',
   'features/template-sources/components/edit-template-source-dialog.tsx',
@@ -193,7 +191,12 @@ function* tsxFiles(dir: string): Generator<string> {
   }
 }
 
-const CONTENT_TAG = /<(DialogContent|AlertDialogContent|SheetContent)\b([\s\S]*?)>/g
+const SURFACES: Record<string, string> = {
+  DialogContent: 'Dialog',
+  SheetContent: 'Sheet',
+  AlertDialogContent: 'AlertDialog',
+}
+
 // A class token, with any variant prefix (`sm:max-w-lg`).
 const token = (body: string) =>
   new RegExp(`(?:^|[\\s'"\`])((?:[\\w-]+:)*(?:${body}))(?=$|[\\s'"\`])`)
@@ -202,33 +205,87 @@ const LAYOUT_CLASS = token(
 )
 const WIDTH_CLASS = token('max-w-[^\\s\'"`]+')
 
-const REQUIRED: Record<string, string[]> = {
-  DialogContent: ['<DialogHeader', '<DialogBody'],
-  SheetContent: ['<SheetHeader', '<SheetBody'],
-  AlertDialogContent: ['<AlertDialogHeader', '<AlertDialogFooter'],
+function tagOf(n: ts.Node): string | null {
+  if (ts.isJsxElement(n)) return n.openingElement.tagName.getText()
+  if (ts.isJsxSelfClosingElement(n)) return n.tagName.getText()
+  if (ts.isJsxFragment(n)) return '<>'
+  return null
+}
+
+function hasTag(n: ts.Node, name: string): boolean {
+  if (tagOf(n) === name) return true
+  return ts.forEachChild(n, (c) => (hasTag(c, name) ? true : undefined)) ?? false
+}
+
+function meaningful(children: ts.NodeArray<ts.JsxChild>) {
+  return children.filter((c) =>
+    ts.isJsxText(c) ? c.getText().trim() !== '' : ts.isJsxExpression(c) ? !!c.expression : true
+  )
+}
+
+/**
+ * Is there content outside Header / Body / Footer? Looks at the content's
+ * children, through one wrapping `<form>`, react-hook-form `<Form>` or
+ * fragment, as the body sits there.
+ */
+function looseContent(el: ts.JsxElement, P: string): boolean {
+  let level = el.children
+  for (let depth = 0; depth < 4; depth++) {
+    const m = meaningful(level)
+    // A branch that renders the body (`{cond ? <Body>…</Body> : null}`) is fine.
+    const rest = m.filter(
+      (c) =>
+        ![`${P}Header`, `${P}Footer`, `${P}Body`].includes(tagOf(c) ?? '') &&
+        !(ts.isJsxExpression(c) && hasTag(c, `${P}Body`))
+    )
+    const wrapper =
+      rest.length === 1 && ['form', 'Form', '<>', `${P}Form`].includes(tagOf(rest[0]) ?? '')
+    if (wrapper && (ts.isJsxElement(rest[0]) || ts.isJsxFragment(rest[0]))) {
+      level = (rest[0] as ts.JsxElement | ts.JsxFragment).children
+      continue
+    }
+    return rest.length > 0
+  }
+  return false
+}
+
+function classText(el: ts.JsxElement): string {
+  const attr = el.openingElement.attributes.properties.find(
+    (a) => ts.isJsxAttribute(a) && a.name.getText() === 'className'
+  ) as ts.JsxAttribute | undefined
+  if (!attr?.initializer) return ''
+  // Every string literal in the value (a plain string, or the parts of cn(...)).
+  const parts: string[] = []
+  const visit = (n: ts.Node) => {
+    if (ts.isStringLiteralLike(n)) parts.push(n.text)
+    ts.forEachChild(n, visit)
+  }
+  if (ts.isStringLiteral(attr.initializer)) parts.push(attr.initializer.text)
+  else visit(attr.initializer)
+  return parts.join(' ')
 }
 
 /** What is wrong with one file's modal surfaces (empty: nothing). */
 function problems(src: string): string[] {
+  const sf = ts.createSourceFile('x.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const out: string[] = []
-  const surfaces = new Set<string>()
-  for (const m of src.matchAll(CONTENT_TAG)) {
-    const [, tag, attrs] = m
-    surfaces.add(tag)
-    const cls = attrs.match(/className=(?:"([^"]*)"|\{([\s\S]*?)\}\s*(?:\w+=|\/?$))/)
-    const value = cls ? (cls[1] ?? cls[2] ?? '') : ''
-    const layout = value.match(LAYOUT_CLASS)
-    if (layout) out.push(`${tag} sets "${layout[1]}" (the frame owns scroll and layout)`)
-    if (tag !== 'SheetContent') {
-      const width = value.match(WIDTH_CLASS)
-      if (width) out.push(`${tag} sets "${width[1]}" (use size="sm|md|lg|xl|full")`)
+  const visit = (n: ts.Node) => {
+    if (ts.isJsxElement(n) && SURFACES[n.openingElement.tagName.getText()]) {
+      const tag = n.openingElement.tagName.getText()
+      const P = SURFACES[tag]
+      const value = classText(n)
+      const layout = value.match(LAYOUT_CLASS)
+      if (layout) out.push(`${tag} sets "${layout[1]}" (the frame owns scroll and layout)`)
+      if (tag !== 'SheetContent') {
+        const width = value.match(WIDTH_CLASS)
+        if (width) out.push(`${tag} sets "${width[1]}" (use size="sm|md|lg|xl|full")`)
+      }
+      if (!hasTag(n, `${P}Header`)) out.push(`${tag} without ${P}Header`)
+      if (looseContent(n, P)) out.push(`${tag} has content outside ${P}Body`)
     }
+    ts.forEachChild(n, visit)
   }
-  for (const tag of surfaces) {
-    for (const part of REQUIRED[tag]) {
-      if (!src.includes(part)) out.push(`${tag} without ${part.slice(1)}`)
-    }
-  }
+  visit(sf)
   return out
 }
 
@@ -260,20 +317,37 @@ describe('modal surfaces', () => {
   it('catches the patterns it is meant to catch', () => {
     expect(
       problems(
-        '<DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto"><DialogHeader/></DialogContent>'
+        '<DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto"><DialogHeader/><p/></DialogContent>'
       )
     ).toEqual([
       'DialogContent sets "max-h-[90vh]" (the frame owns scroll and layout)',
       'DialogContent sets "sm:max-w-lg" (use size="sm|md|lg|xl|full")',
-      'DialogContent without DialogBody',
+      'DialogContent has content outside DialogBody',
     ])
     expect(
-      problems('<DialogContent size="lg"><DialogHeader/><DialogBody/></DialogContent>')
+      problems(
+        '<DialogContent size="lg"><DialogHeader/><DialogForm><DialogBody/><DialogFooter/></DialogForm></DialogContent>'
+      )
     ).toEqual([])
-    expect(problems('<SheetContent className="w-full sm:max-w-xl">')).toEqual([
+    // A confirmation with nothing between header and footer needs no body.
+    expect(problems('<DialogContent><DialogHeader/><DialogFooter/></DialogContent>')).toEqual([])
+    // Fields in a form between header and footer still count.
+    expect(
+      problems('<DialogContent><DialogHeader/><form><input/><DialogFooter/></form></DialogContent>')
+    ).toEqual(['DialogContent has content outside DialogBody'])
+    expect(
+      problems(
+        '<AlertDialogContent><AlertDialogHeader/>{x ? <AlertDialogBody/> : null}</AlertDialogContent>'
+      )
+    ).toEqual([])
+    expect(problems('<SheetContent className="w-full sm:max-w-xl"><p/></SheetContent>')).toEqual([
       'SheetContent without SheetHeader',
-      'SheetContent without SheetBody',
+      'SheetContent has content outside SheetBody',
     ])
-    expect(problems('<SheetContent className="flex flex-col p-0">')[0]).toContain('"flex"')
+    expect(
+      problems(
+        '<SheetContent className={cn("flex flex-col p-0", x)}><SheetHeader/></SheetContent>'
+      )[0]
+    ).toContain('"flex"')
   })
 })
