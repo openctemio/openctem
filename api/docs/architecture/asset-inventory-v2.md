@@ -220,7 +220,7 @@ mechanical ones.
 7. **Old names are synonyms, or gone.** A renamed key keeps its old name as
    a synonym only where stored data or a scanner writes it; every write path
    folds it (`asset.NormalizeProperties`: a list merges, a scalar moves with
-   its type kept) and migration `001331` folded the rows written before.
+   its type kept) and migration `001333` folded the rows written before.
    A name nobody writes is deleted, not aliased.
 8. **Custom and third-party keys** use the `x_` prefix, show under "Other"
    and are never read by name in platform code.

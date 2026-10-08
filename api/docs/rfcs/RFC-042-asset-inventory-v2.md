@@ -1056,7 +1056,7 @@ What this amendment changes:
    `is_self_signed`, `encryption` → `is_encrypted`.
 3. Network devices gain `vendor`, `model`, `firmware_version`,
    `management_ip`, `serial_number`; HTTP services `chain_status_codes`.
-4. Migration `001331` folds stored synonyms (and a certificate's
+4. Migration `001333` folds stored synonyms (and a certificate's
    `fingerprint` into `fingerprint_sha256`, once: the word is too generic
    to be a synonym). Its down is a documented no-op: a fold is not
    reversible.
