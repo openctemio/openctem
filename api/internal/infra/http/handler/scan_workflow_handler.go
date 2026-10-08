@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -37,6 +38,8 @@ type ScanWorkflowHandler struct {
 	findingScope runFindingScope
 	// runLookup reads a run for the access check (the service when unset).
 	runLookup runReader
+	// runEvents reads the run timeline (nil: an empty timeline).
+	runEvents command.EventReader
 }
 
 // NewScanWorkflowHandler creates a new ScanWorkflowHandler.

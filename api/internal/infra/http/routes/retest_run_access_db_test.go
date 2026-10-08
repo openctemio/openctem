@@ -105,7 +105,7 @@ func TestRetestRuns_NeedFindingsRead(t *testing.T) {
 	scansOnly := []string{permission.ScansRead.String()}
 	withFindings := []string{permission.ScansRead.String(), permission.FindingsRead.String()}
 
-	for _, p := range []string{"", "/tasks", "/stages", "/tasks/" + shared.NewID().String() + "/logs"} {
+	for _, p := range []string{"", "/tasks", "/stages", "/events", "/tasks/" + shared.NewID().String() + "/logs"} {
 		if code, body := serve(scansOnly, "/api/v1/scan-runs/"+retestRun+p); code != http.StatusNotFound {
 			t.Errorf("retest run%s without findings:read: %d %s, want 404", p, code, body)
 		}
