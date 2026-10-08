@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
@@ -103,15 +102,11 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 		"client_ip", getClientIP(r),
 	)
 
-	// Parse pagination
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 0 {
-		page = 0
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 20
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	// Parse activity type filter
 	var activityTypes []string
