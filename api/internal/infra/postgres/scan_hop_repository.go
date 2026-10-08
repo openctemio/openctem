@@ -199,7 +199,7 @@ func (r *ScanHopRepository) PreviewStepOutputs(ctx context.Context, tenantID, ru
 		return nil, 0, fmt.Errorf("preview step outputs: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]scanrun.StepOutput, 0, min(limit, maxStepOutputPreview))
+	out := make([]scanrun.StepOutput, 0, maxStepOutputPreview)
 	total := 0
 	for rows.Next() {
 		var id string
