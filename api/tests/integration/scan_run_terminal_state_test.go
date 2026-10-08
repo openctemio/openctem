@@ -12,6 +12,7 @@ import (
 
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -125,8 +126,14 @@ func TestScanRun_CancelStopsTheDispatchedCommand(t *testing.T) {
 		t.Fatalf("mark command running: %v", err)
 	}
 
+	// research/62 P0-11: a canceled run fires the run-finished event too.
+	var finished []scanrundom.RunStatus
+	pipeSvc.SetRunCompletedCallback(func(_ context.Context, r *scanrundom.Run) { finished = append(finished, r.Status) })
 	if err := pipeSvc.CancelRun(ctx, tenantID.String(), run.ID.String()); err != nil {
 		t.Fatalf("CancelRun: %v", err)
+	}
+	if len(finished) != 1 || finished[0] != scanrundom.RunStatusCanceled {
+		t.Errorf("run-finished callback heard %v, want [canceled]", finished)
 	}
 
 	if got := commandStatusForRun(ctx, t, db, run.ID.String()); got != "canceled" {

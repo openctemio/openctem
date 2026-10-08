@@ -220,7 +220,7 @@ export interface ScanCompletedTriggerConfig {
    * Scan run outcomes the automation runs on. Without it, only completed
    * runs fire it (an unknown outcome is refused on save).
    */
-  status_filter?: Array<'completed' | 'partial' | 'failed'>
+  status_filter?: Array<'completed' | 'partial' | 'failed' | 'timeout' | 'canceled'>
 }
 
 /**

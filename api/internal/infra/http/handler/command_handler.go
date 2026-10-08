@@ -65,6 +65,7 @@ type CommandHandler struct {
 	retestEvidence   retestEvidenceRecorder
 	retestSettler    retestSettler
 	simFinalizer     simulationRunFinalizer
+	validationRuns   validationRunSettler
 	coverage         commandCoverageEvaluator
 	validator        *validator.Validator
 	logger           *logger.Logger
@@ -121,6 +122,38 @@ func (h *CommandHandler) SetValidationIngest(svc validationEvidenceIngester) {
 // by one by the validation verdict rule (RFC-039 §6.2).
 type retestEvidenceRecorder interface {
 	IngestAdvisory(ctx context.Context, tenantID, findingID shared.ID, simRunID *shared.ID, ev validation.Evidence) (validation.IngestResult, error)
+}
+
+// validationRunSettler settles the run of a finding validation.
+type validationRunSettler interface {
+	FinishValidationRun(ctx context.Context, tenantID, runID shared.ID, succeeded bool, message, code string) error
+}
+
+// SetValidationRuns settles finding-validation runs when their command ends.
+func (h *CommandHandler) SetValidationRuns(s validationRunSettler) { h.validationRuns = s }
+
+// settleValidationRun ends the run of a finding validation (not a retest's:
+// the retest service settles those) when its command ends.
+func (h *CommandHandler) settleValidationRun(cmd *commanddom.Command, succeeded bool, message, code string) {
+	if h.validationRuns == nil || cmd == nil || cmd.Type != commanddom.CommandTypeValidate {
+		return
+	}
+	var payload validation.ValidateCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil || payload.ScanRunID == "" || payload.RetestID != "" {
+		return
+	}
+	runID, err := shared.IDFromString(payload.ScanRunID)
+	if err != nil {
+		return
+	}
+	tenantID := cmd.TenantID
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.validationRuns.FinishValidationRun(bgCtx, tenantID, runID, succeeded, message, code); err != nil {
+			h.logger.Warn("failed to settle the validation run", "run_id", runID.String(), "error", err)
+		}
+	}()
 }
 
 // retestSettler settles a pending retest when one of its commands finishes.
@@ -661,8 +694,11 @@ func (h *CommandHandler) triggerValidationEvidence(cmd *commanddom.Command) {
 		h.logger.Warn("validate command completed without an outcome",
 			"command_id", cmd.ID.String(), "finding_id", payload.FindingID)
 		h.triggerRetestSettle(cmd)
+		h.settleValidationRun(cmd, false, "the sensor reported no verdict", "NO_RESULT")
 		return
 	}
+	// The validation produced its answer: its run is done.
+	h.settleValidationRun(cmd, true, "", "")
 
 	ev := validation.Evidence{
 		ExecutorKind: payload.ExecutorKind,

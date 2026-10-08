@@ -89,7 +89,7 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 				"template_id", templateID.String(),
 				"step_key", sanitizeLogValue(input.StepKey),
 				"errors", len(result.Errors))
-			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, result.Errors[0].Message)
+			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, stepMessage(input, result.Errors[0].Message))
 		}
 	}
 
@@ -101,7 +101,9 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 		step.Description = input.Description
 	}
 	if input.UIPositionX != nil && input.UIPositionY != nil {
-		step.SetUIPosition(*input.UIPositionX, *input.UIPositionY)
+		if err := step.SetUIPosition(*input.UIPositionX, *input.UIPositionY); err != nil {
+			return nil, err
+		}
 	}
 	if input.Tool != "" {
 		step.SetTool(input.Tool)
@@ -130,6 +132,19 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 		return nil, err
 	}
 	return step, nil
+}
+
+// stepMessage names the step a validation message is about, so a save of a
+// whole workflow says which step to fix.
+func stepMessage(input AddStepInput, msg string) string {
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		name = input.StepKey
+	}
+	if name == "" {
+		return msg
+	}
+	return fmt.Sprintf("step %q: %s", name, msg)
 }
 
 // normalizeToolList lowercases and de-duplicates tool names, in order.
@@ -404,7 +419,11 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 			s.logger.Warn("step config validation failed",
 				"step_id", sid.String(),
 				"errors", len(result.Errors))
-			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, result.Errors[0].Message)
+			name := input
+			if name.Name == "" {
+				name.Name, name.StepKey = step.Name, step.StepKey
+			}
+			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, stepMessage(name, result.Errors[0].Message))
 		}
 	}
 
@@ -447,7 +466,9 @@ func applyStepUpdate(step *scanworkflow.Step, input AddStepInput) error {
 		step.StepOrder = input.Order
 	}
 	if input.UIPositionX != nil && input.UIPositionY != nil {
-		step.SetUIPosition(*input.UIPositionX, *input.UIPositionY)
+		if err := step.SetUIPosition(*input.UIPositionX, *input.UIPositionY); err != nil {
+			return err
+		}
 	}
 	if input.Tool != "" {
 		step.SetTool(input.Tool)

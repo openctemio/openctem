@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
@@ -1669,5 +1670,53 @@ func TestSecValValidateStepConfig_CatalogCapabilityKeys(t *testing.T) {
 	}
 	if r := sv.ValidateStepConfig(ctx, shared.NewID(), "", []string{"check.tls"}, nil); r.Valid || !hasCode(r, "INVALID_CAPABILITY") {
 		t.Fatalf("planned capability accepted: %v", r.Errors)
+	}
+}
+
+// The workflow form saves a step as a capability (the catalog key) with a
+// pinned tool; the builder saves the tool with its own declared words. Both
+// vocabularies are accepted and mapped onto each other through the catalog.
+// A word the tool cannot run is refused with a message that says what the
+// tool can run instead.
+func TestSecValValidateStepConfig_TaxonomyAndLegacyWordsMap(t *testing.T) {
+	repo := newSecValMockToolRepo()
+	makeActivePlatformTool(repo, "dnsx", []string{"recon", "dns"})
+	// Tenant-style tools: the catalog has them implement nothing.
+	makeActivePlatformTool(repo, "mydns", []string{"dns"})
+	makeActivePlatformTool(repo, "myports", []string{"scan.ports"})
+	sv := newSecValValidator(repo)
+	ctx := context.Background()
+	tenant := shared.NewID()
+
+	for _, tc := range []struct {
+		tool string
+		cap  string
+	}{
+		{"dnsx", "resolve.dns"},  // taxonomy key; the catalog has dnsx implement it
+		{"dnsx", "dns"},          // a word the tool declares
+		{"dnsx", "RECON"},        // a word the tool declares, any case
+		{"mydns", "resolve.dns"}, // taxonomy key mapped to the declared legacy word
+		{"myports", "portscan"},  // legacy word mapped to the declared taxonomy key
+	} {
+		if r := sv.ValidateStepConfig(ctx, tenant, tc.tool, []string{tc.cap}, nil); !r.Valid {
+			t.Errorf("%s on %q refused: %v", tc.tool, tc.cap, r.Errors)
+		}
+	}
+
+	r := sv.ValidateStepConfig(ctx, tenant, "dnsx", []string{"scan"}, nil)
+	if r.Valid || !hasCode(r, "CAPABILITY_TOOL_MISMATCH") {
+		t.Fatalf("dnsx on scan accepted: %v", r.Errors)
+	}
+	msg := r.Errors[0].Message
+	for _, want := range []string{`dnsx cannot run "scan"`, "DNS resolution (resolve.dns)", "recon", "pick a tool"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q lacks %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "[") {
+		t.Errorf("message prints a Go slice: %q", msg)
+	}
+	if r := sv.ValidateStepConfig(ctx, tenant, "mydns", []string{"scan.ports"}, nil); r.Valid {
+		t.Fatal("a dns tool accepted for scan.ports")
 	}
 }

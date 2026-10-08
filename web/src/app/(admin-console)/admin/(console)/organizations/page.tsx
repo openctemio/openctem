@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useListParams } from '@/hooks/use-list-params'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Search } from 'lucide-react'
@@ -57,14 +57,13 @@ const columns: ColumnDef<AdminOrganization>[] = [
 export default function AdminOrganizationsPage() {
   const admin = useAdmin()
   const router = useRouter()
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
-  const debounced = useDebounce(search, 300)
+  // The list lives in the URL (one list convention): page, per_page, q.
+  const list = useListParams({ defaultPageSize: 20 })
+  const debounced = useDebounce(list.q, 300)
   const { data, error, isLoading, mutate } = useOrganizations({
-    search: debounced,
-    page,
-    perPage: pageSize,
+    search: debounced.trim(),
+    page: list.page,
+    perPage: list.perPage,
   })
 
   return (
@@ -99,26 +98,15 @@ export default function AdminOrganizationsPage() {
             manualPagination
             pageCount={data?.total_pages ?? 1}
             rowCount={data?.total ?? 0}
-            pagination={{ pageIndex: page - 1, pageSize }}
-            onPaginationChange={(p) => {
-              // A new page size starts from the first page.
-              if (p.pageSize !== pageSize) {
-                setPageSize(p.pageSize)
-                setPage(1)
-              } else {
-                setPage(p.pageIndex + 1)
-              }
-            }}
+            pagination={list.pagination}
+            onPaginationChange={list.setPagination}
             toolbarStart={
               <div className="relative w-full sm:max-w-xs">
                 <Search className="absolute start-2.5 top-2.5 size-4 text-muted-foreground" />
                 <Input
                   placeholder="Search name or slug..."
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value)
-                    setPage(1)
-                  }}
+                  value={list.q}
+                  onChange={(e) => list.setSearch(e.target.value)}
                   className="ps-8"
                   aria-label="Search organizations"
                 />

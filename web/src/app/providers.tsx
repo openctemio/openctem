@@ -7,6 +7,7 @@ import { I18nProvider } from '@/context/i18n-provider'
 import { SWRProvider } from '@/lib/swr-config'
 import { Toaster } from 'sonner'
 import { config as zodConfig } from 'zod/v4/core'
+import { installClientErrorListeners } from '@/lib/client-errors'
 
 // The CSP has no 'unsafe-eval' (src/lib/middleware/csp.ts). Zod probes for
 // `new Function` on its first parse to pick its JIT path; the probe is caught,
@@ -31,6 +32,10 @@ export function Providers({
   /** CSP nonce for the theme script (see src/proxy.ts). */
   nonce?: string
 }) {
+  // Count uncaught errors and chunk-load failures for operator alerting
+  // (kind only; see src/lib/client-errors.ts).
+  useEffect(() => installClientErrorListeners(), [])
+
   // Initialize Web Vitals reporting (lazy load to avoid bundling optional dependencies)
   useEffect(() => {
     // Only load web-vitals module if Sentry DSN is configured
