@@ -163,7 +163,7 @@ See [auth.md](.claude/auth.md) for details.
 
 ### CSRF (double-submit cookie)
 
-All state-changing requests from the browser must carry an `X-CSRF-Token` header matching the `csrf_token` cookie. `src/lib/api/client.ts` does this automatically (reads cookie, attaches header on POST/PUT/PATCH/DELETE). The Next.js proxy route `src/app/api/v1/[...path]/route.ts` forwards both `refresh_token` and `csrf_token` cookies to the backend. If you bypass the shared client (raw `fetch`) on a mutating endpoint, you MUST add the header yourself — otherwise the backend returns `403 csrf_token_missing_header`.
+Every state-changing request (POST/PUT/PATCH/DELETE) to the web server, signed in or not, must be same-origin and carry an `X-CSRF-Token` header equal to the `csrf_token` cookie, or it gets `403 CSRF_INVALID` (`csrfRejection` in `src/lib/server-auth-cookies.ts`). `src/proxy.ts` sets the cookie on every page (so the sign-in, registration, password-reset, invitation and second-factor forms have one before a session exists) and checks Server Actions; every route handler under `src/app/api` calls `csrfRejection` itself (`csrf-route-guard.test.ts` fails on one that does not). In the browser, `src/instrumentation-client.ts` wraps `fetch` (`src/lib/csrf-client.ts`) so every same-origin write, Next's Server Action requests and raw `fetch` included, carries the header. `navigator.sendBeacon` and `XMLHttpRequest` do not go through that wrapper: never use a beacon for a write, and set the header on an XHR yourself. The `/api/v1` proxy forwards the pair to the API, which checks it again.
 
 ### Markdown sanitisation
 

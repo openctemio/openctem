@@ -171,8 +171,14 @@ zero `keycloak` references. Social/SSO callbacks land on
 Tokens live in **httpOnly cookies** set by the Next.js BFF proxy — the browser
 never sees a Bearer token. The browser calls the relative proxy path `/api/v1/*`
 with `credentials: 'include'`; the proxy attaches the cookie-borne auth when it
-forwards to `BACKEND_API_URL`. A double-submit `csrf_token` cookie (JS-readable,
-backend-set) is echoed as the `X-CSRF-Token` header on mutations.
+forwards to `BACKEND_API_URL`. A double-submit `csrf_token` cookie (JS-readable)
+is set on every page, before sign-in too, and echoed as the `X-CSRF-Token`
+header on every state-changing request. The web server refuses (403) any
+POST/PUT/PATCH/DELETE, signed in or not, that is not same-origin
+(`Sec-Fetch-Site`, `Origin`, else `Referer`) or lacks the matching pair:
+the Server Actions behind the sign-in, registration, password-reset,
+invitation and second-factor forms (`src/proxy.ts`) and every route handler
+under `src/app/api` (see `src/lib/server-auth-cookies.ts`).
 
 ```
 1. User signs in (email/password, OAuth social, or SAML SSO)
@@ -182,7 +188,8 @@ backend-set) is echoed as the `X-CSRF-Token` header on mutations.
 
 2. Server (proxy / route handler) exchanges credentials for tokens
    └─> Sets access + refresh tokens as httpOnly cookies
-   └─> Sets a JS-readable csrf_token cookie (double-submit)
+   └─> The csrf_token cookie (double-submit) was already set with the
+       sign-in page; the sign-in request echoed it in X-CSRF-Token
 
 3. Browser makes API calls to the relative proxy path
    └─> fetch('/api/v1/...', { credentials: 'include' })
