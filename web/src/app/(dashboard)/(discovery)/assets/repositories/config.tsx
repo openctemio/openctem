@@ -95,9 +95,9 @@ function VisibilityCell({ visibility }: { visibility?: string }) {
 }
 
 function LanguageCell({ asset }: { asset: Asset }) {
-  const primaryLang = asset.metadata.language || asset.repository?.language
+  const primaryLang = (asset.metadata.language as string | undefined) || asset.repository?.language
   const languages: Record<string, number> | undefined =
-    asset.metadata.languages || asset.repository?.languages
+    (asset.metadata.languages as Record<string, number> | undefined) || asset.repository?.languages
 
   if (languages && Object.keys(languages).length > 0) {
     const totalBytes = Object.values(languages).reduce(
@@ -367,7 +367,10 @@ export const repositoriesConfig: AssetPageConfig = {
       header: 'Visibility',
       cell: ({ row }) => (
         <VisibilityCell
-          visibility={row.original.metadata.visibility || row.original.repository?.visibility}
+          visibility={
+            (row.original.metadata.visibility as string | undefined) ||
+            row.original.repository?.visibility
+          }
         />
       ),
     },
@@ -615,14 +618,17 @@ export const repositoriesConfig: AssetPageConfig = {
           label: 'Visibility',
           getValue: (asset) => (
             <VisibilityCell
-              visibility={asset.metadata.visibility || asset.repository?.visibility}
+              visibility={
+                (asset.metadata.visibility as string | undefined) || asset.repository?.visibility
+              }
             />
           ),
         },
         {
           label: 'Language',
           getValue: (asset) => {
-            const lang = asset.metadata.language || asset.repository?.language
+            const lang =
+              (asset.metadata.language as string | undefined) || asset.repository?.language
             return lang ? <Badge variant="secondary">{lang}</Badge> : '-'
           },
         },

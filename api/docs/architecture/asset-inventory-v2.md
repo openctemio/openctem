@@ -179,6 +179,56 @@ The web Properties section renders from the generated schema: labels in
 the viewer's language, addresses linked to their IP assets, unknown keys
 under "Other".
 
+### Property names
+
+Every property key is named by these rules
+([RFC-042 §6.3.10](../rfcs/RFC-042-asset-inventory-v2.md#6310-property-names-amendment-2026-10-08)).
+The generator (`cmd/gen-asset-types`) refuses a registry that breaks the
+mechanical ones.
+
+1. **The registry is the only source.** A key exists because
+   `asset-types.yaml` declares it. The web names a key through the generated
+   `AssetPropertyKey` type (`propertyValue`, `propertyStrings`, the facts
+   helpers): a key outside the registry does not compile, and
+   `property-key-guard.test.ts` fails on any `asset.metadata.<key>` read in
+   asset code. A new key is one YAML line plus `make generate-asset-types`;
+   its labels, format and facet/group flags live on that line.
+2. **English `snake_case`, flat.** Keys sit directly in `properties`, never
+   nested or dotted, so JSONB predicates, facets and group-by stay one
+   lookup. Enum values are lowercase.
+3. **Meaning follows open schemas, flattened.** Where OCSF, ECS or
+   OpenTelemetry has the field, the key takes its meaning and its name with
+   the dots folded (`os.name` → `os_name`, `host.architecture` →
+   `architecture`, `cpu.count` → `cpu_count`). A field from a protocol spec
+   keeps the spec's term (X.509 `not_before`, `not_after`, `sans`; DNS
+   record names).
+4. **No type prefix.** The type is the namespace: a certificate's issuer is
+   `issuer_cn`, not `cert_issuer`; a host's OS is `os_name`, not `host_os`.
+5. **Suffixes say what the value is.**
+   | Kind | Rule | Examples |
+   |---|---|---|
+   | boolean | `is_<state>` or `has_<thing>` (enforced) | `is_virtual`, `is_public`, `has_mfa`, `has_tls` |
+   | timestamp | `<event>_at`, RFC 3339 UTC (enforced; spec terms excepted) | `expires_at`, `last_login_at` |
+   | count | `<thing>_count` | `cpu_count`, `node_count` |
+   | identifier | `<thing>_id` | `account_id`, `vpc_id` |
+   | quantity | the unit in the name; new keys use `_bytes` / `_seconds` | `memory_gb`, `timeout_seconds` |
+   | list | plural, always an array, even with one value (enforced) | `ip_addresses`, `technologies` |
+6. **Relations are not properties.** A host's open ports, its services or a
+   domain's addresses are other assets and relationships (a port is a
+   `host:port/proto` service, `exposes`); lists show them as computed
+   columns (`findings.open`, a service count), never as a stored property.
+7. **Old names are synonyms, or gone.** A renamed key keeps its old name as
+   a synonym only where stored data or a scanner writes it; every write path
+   folds it (`asset.NormalizeProperties`: a list merges, a scalar moves with
+   its type kept) and migration `001331` folded the rows written before.
+   A name nobody writes is deleted, not aliased.
+8. **Custom and third-party keys** use the `x_` prefix, show under "Other"
+   and are never read by name in platform code.
+
+The CTIS technical blocks (`domain`, `ip_address`, `service`, `certificate`)
+are objects under common keys; their field names are the CTIS ones and they
+are read only by the facts helpers next to the flat keys.
+
 ## Three layers: source record, link, canonical row
 
 | Layer | Asset | Service |
