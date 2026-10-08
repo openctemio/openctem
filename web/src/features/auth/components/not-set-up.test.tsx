@@ -36,9 +36,24 @@ describe('not set up page', () => {
   })
 
   it('names no organization and offers the way back', () => {
+    vi.mocked(useAuthProviders).mockReturnValue({
+      data: { social: {}, request_access: false },
+    } as unknown as ReturnType<typeof useAuthProviders>)
     render(<NotSetUpNotice />)
+    expect(screen.queryByRole('link', { name: /request access/i })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /isn't set up yet/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /back to sign in/i })).toHaveAttribute('href', '/login')
+  })
+
+  it('offers to request access when the platform takes requests', () => {
+    vi.mocked(useAuthProviders).mockReturnValue({
+      data: { social: {}, request_access: true },
+    } as unknown as ReturnType<typeof useAuthProviders>)
+    render(<NotSetUpNotice />)
+    expect(screen.getByRole('link', { name: /request access/i })).toHaveAttribute(
+      'href',
+      '/request-access'
+    )
   })
 
   it('recognizes only the API refusal code', () => {

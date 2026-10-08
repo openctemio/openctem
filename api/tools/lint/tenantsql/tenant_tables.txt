@@ -88,6 +88,9 @@ ingest_reports
 integrations
 ioc_matches
 iocs
+mcp_oauth_clients
+mcp_oauth_grants
+mcp_oauth_requests
 notification_events
 notification_outbox
 notification_preferences

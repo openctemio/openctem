@@ -20,7 +20,7 @@ import (
 // A finding is considered OPEN (a live exposure) when its status is NOT in
 // this set. Matches the closed-category set used by the dashboard finding
 // stats (see FindingRepository stats query). Applied with the "f" table alias.
-const openFindingStatusClause = `f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')`
+const openFindingStatusClause = `f.status NOT IN ('resolved','false_positive','accepted','duplicate')`
 
 // ThreatIntelRepository implements threatintel.ThreatIntelRepository using PostgreSQL.
 type ThreatIntelRepository struct {

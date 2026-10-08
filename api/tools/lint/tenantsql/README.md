@@ -1,6 +1,6 @@
 # tenantsql: no tenantless by-id statements
 
-Owner decision D-11 (research/14, SEC-15). A repository statement such as
+Decision D-11. A repository statement such as
 
 ```sql
 DELETE FROM integrations WHERE id = $1

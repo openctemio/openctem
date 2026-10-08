@@ -3,8 +3,8 @@ package scan
 // Tier ceilings at dispatch (RFC-054 §4.2 step 6): a scope entry authorizes
 // probes up to its max_tier; nothing else authorizes (verified domains prove).
 // A target the tenant's authority covers only below the probe's tier is
-// refused with tier_exceeds on every dispatch path: scan create and quick
-// scan refuse the request, a run leaves the target out with a warning, a
+// refused with tier_exceeds on every dispatch path: scan create, quick
+// scan and a POST /commands scan command refuse the request, a run leaves the target out with a warning, a
 // workflow step leaves it out of that step, and the dispatch gate
 // (POST /scan-workflows/runs, chained hops, coverage, validation, the dry run)
 // reports it refused. Intrusive (t2) workflow steps also need proof per
@@ -74,7 +74,12 @@ func (s *Service) refuseTierExceeded(ctx context.Context, tenantID shared.ID, sc
 	if scanner == "" {
 		return nil // a workflow: each step is checked at its dispatch
 	}
-	tier := ProbeTier(scanner)
+	return s.refuseTargetsOverTier(ctx, tenantID, ProbeTier(scanner), targets)
+}
+
+// refuseTargetsOverTier refuses targets as a whole when one is covered only
+// below tier (TARGET_OUT_OF_SCOPE with each tier_exceeds refusal and fixes).
+func (s *Service) refuseTargetsOverTier(ctx context.Context, tenantID shared.ID, tier scopedom.Tier, targets []string) error {
 	over, err := s.tierExceeded(ctx, tenantID, targets, tier)
 	if err != nil {
 		return fmt.Errorf("tier check failed, nothing saved or dispatched: %w", err)

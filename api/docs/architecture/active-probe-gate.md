@@ -77,7 +77,8 @@ Operator settings, never tenant settings:
   entry authorizes probes up to its `max_tier` (verified domains authorize
   nothing). The probe's tier is the tool's highest stage tier (`stage.ProbeTier`,
   unknown tools T1). A target covered only below it is refused `tier_exceeds`
-  (fix `raise_tier`): scan create and quick scan refuse the request, a run
+  (fix `raise_tier`): scan create, quick scan and a `POST /commands` scan
+  command (at the tier of the scanner it names) refuse the request, a run
   skips the target with a warning (`TIER_EXCEEDS` when nothing is left), a
   workflow step skips it for that step, and `ResolveDispatchTargets` refuses
   it at `DispatchTargetsInput.Tier` (T1 when unset; passive dispatches are
@@ -252,10 +253,11 @@ dispatch did not route over zones:
 |---|---|
 | Workflow step (`scanrun` `QueueRunStep`, seeds and chained hops) | the stage's tier and passive flag (the tool's tier outside the stage catalog); act scope of the run actor (`runActor`) |
 | Single-scanner run (`scan/trigger.go`, `scan/zones.go`) | the scanner's tier (`ProbeTier`); passive for a passive or takeover-only probe; act scope of the person who triggered it, else the scan owner |
-| `POST /commands` | act scope of the caller; no tier ceiling (as `GateCommandPayload` checks) |
+| `POST /commands` | the tier of the scanner it names (`ProbeTier`, T1 for an unknown one), as `GateCommandPayload` checks it; act scope of the caller |
 | Validate and retest commands (`validation.CommandDispatcher`, `CheckTarget`) | the full gate at t1, no act scope (`ProbeDispatchGate`); the zone routing that stamped `scan_zone_id` |
 | `connector_scan` (`tenablesc.NewScanCommand`: scan runs and coverage batches) | the full gate at t1 outside every zone (`no_zone_routing`); a scan run adds the act scope of who triggered it, else the scan owner (`connectorDispatchGate`) |
 | A scan command without a record (queued before the upgrade) | the baseline: passive, no tier, no act scope (exclusions, rejected names, the private-address and zone rules) |
+| A validate, retest or `connector_scan` command without a record (queued before the upgrade) | its type's strict defaults (`StrictDispatchGateFor`): the full gate at t1, no act scope, zone routing as for its type (none for a connector scan); one whose targets cannot be read from its payload is refused with `GATE_RECORD_MISSING` (settled like `SCOPE_CHANGED`) and has to be created again |
 
 Other commands without a record (health checks, config updates, content
 refreshes, connector syncs) are not re-checked. A validate command names its

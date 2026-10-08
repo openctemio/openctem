@@ -49,6 +49,17 @@ type Handlers struct {
 	// MCPAuth is the tenant-scoped `oct_` API-key auth middleware guarding the
 	// MCP endpoint. Set alongside MCP; nil disables the endpoint.
 	MCPAuth Middleware
+	// MCPDiscovery is the OAuth discovery of the MCP endpoint (Protected
+	// Resource Metadata, 401 challenge, Origin guard). nil without a public URL.
+	MCPDiscovery *MCPDiscovery
+	// MCPOAuth is the authorization server of the MCP endpoint (RFC-062);
+	// nil without discovery or a database.
+	MCPOAuth *handler.MCPOAuthHandler
+	// MCPSettings is the organization MCP policy (RFC-062 §8).
+	MCPSettings *handler.MCPSettingsHandler
+	// MCPConnections is the connected applications (RFC-062 §12), tenant
+	// and platform console; nil without the authorization server.
+	MCPConnections *handler.MCPConnectionsHandler
 	// APIKeyAuth authenticates `oct_` API keys on the tenant REST routes (the
 	// token-tenant chains), read-only. Share the instance behind MCPAuth so a
 	// key has one rate-limit budget. nil leaves the REST API JWT-only.
@@ -219,8 +230,13 @@ type Handlers struct {
 	AdminAuth         *handler.AdminAuthHandler
 	AdminOrganization *handler.AdminOrganizationHandler
 	AdminOverview     *handler.AdminOverviewHandler
-	AdminConsole      *handler.AdminConsoleHandler
-	AdminAuditChain   *handler.AdminAuditChainHandler
+	AdminPlatformUser *handler.AdminPlatformUserHandler
+	// AdminSupportRateLimiter caps console support actions per administrator.
+	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
+	AdminConsole            *handler.AdminConsoleHandler
+	AdminAuditChain         *handler.AdminAuditChainHandler
+	// AccessRequest: the request-access queue (public form + console).
+	AccessRequest *handler.AccessRequestHandler
 	// Plan: plans and limits (console plan defaults, organization plans and
 	// overrides, the organization's own usage).
 	Plan *handler.PlanHandler
@@ -644,11 +660,23 @@ func Register(
 		registerIOCRoutes(router, h.IOC, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleIOCs))
 	}
 
+	// Organization MCP policy (RFC-062 §8).
+	if h.MCPSettings != nil {
+		registerMCPSettingsRoutes(router, h.MCPSettings, authMiddleware, userSync)
+	}
+	// Connected AI applications (RFC-062 §12).
+	if h.MCPConnections != nil {
+		registerMCPConnectionRoutes(router, h.MCPConnections, authMiddleware, userSync)
+	}
+
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
 	// Per-IP rate limit runs before auth to throttle junk-token floods; the
 	// organization IP allowlist runs after it (mcpMiddlewares).
 	if h.MCP != nil && h.MCPAuth != nil {
-		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth)
+		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth, h.MCPDiscovery)
+		if h.MCPOAuth != nil {
+			registerMCPOAuthRoutes(router, h.MCPOAuth, middleware.RateLimit(&cfg.RateLimit, log), authMiddleware, userSync)
+		}
 	}
 
 	// Remediation Campaign routes
