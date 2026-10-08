@@ -241,7 +241,7 @@ func (h *harness) exchange(code, v string, overrides map[string]string) (*mcpoau
 	for k, val := range overrides {
 		f.Set(k, val)
 	}
-	return h.svc.Token(context.Background(), f, mcpoauth.Actor{})
+	return h.svc.Token(context.Background(), f, "", mcpoauth.Actor{})
 }
 
 func (h *harness) refresh(rt string, extra map[string]string) (*mcpoauth.TokenResponse, *mcpoauth.OAuthError) {
@@ -249,11 +249,11 @@ func (h *harness) refresh(rt string, extra map[string]string) (*mcpoauth.TokenRe
 	for k, v := range extra {
 		f.Set(k, v)
 	}
-	return h.svc.Token(context.Background(), f, mcpoauth.Actor{})
+	return h.svc.Token(context.Background(), f, "", mcpoauth.Actor{})
 }
 
 func (h *harness) principal(at string) (*mcpoauth.Principal, error) {
-	return h.svc.AuthenticateAccessToken(context.Background(), at, "198.51.100.1")
+	return h.svc.AuthenticateAccessToken(context.Background(), at, "198.51.100.1", mcpoauth.DPoPRequest{Scheme: "Bearer", Method: "POST"})
 }
 
 func TestFullFlowBindsTenantUserAndIntersectsPermissions(t *testing.T) {
