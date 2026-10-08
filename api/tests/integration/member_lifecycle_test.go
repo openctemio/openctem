@@ -445,6 +445,10 @@ func TestMemberLifecycle_EraseAnonymisesAndKeepsReferences(t *testing.T) {
 		t.Fatalf("drop other membership: %v", err)
 	}
 
+	// An IdP identity bound to the account.
+	if _, err := f.db.ExecContext(ctx, `INSERT INTO user_identities (user_id, issuer, subject) VALUES ($1, $2, $3)`, uid, "https://idp.erase.example", uid); err != nil {
+		t.Fatalf("bind identity: %v", err)
+	}
 	// A row that points at the person: the finding they created.
 	if _, err := f.db.ExecContext(ctx, `UPDATE findings SET created_by = $1 WHERE id = $2 AND tenant_id = $3`, uid, f.findingID.String(), tid); err != nil {
 		t.Fatalf("set created_by: %v", err)
@@ -471,5 +475,8 @@ func TestMemberLifecycle_EraseAnonymisesAndKeepsReferences(t *testing.T) {
 	_ = f.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_mfa WHERE user_id = $1`, uid).Scan(&mfaLeft)
 	if mfaLeft != 0 {
 		t.Error("erase left a second factor")
+	}
+	if got := f.count(t, `SELECT COUNT(*) FROM user_identities WHERE user_id = $1`, uid); got != 0 {
+		t.Error("erase left a federated identity: a later sign-in would find the anonymised account")
 	}
 }

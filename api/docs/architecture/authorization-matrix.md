@@ -1176,10 +1176,29 @@ positive check (`Membership.IsActive()`), never `!IsSuspended()`, and
 
 | Action | Access | Held sources | Owned work |
 |---|---|---|---|
-| Disable (`/suspend`, SCIM `active=false`) | cut at once: sessions, refresh tokens, sockets, keys `suspended`, scope rows dropped | frozen (groups, grants, ownership kept) | scan schedules `paused`, report schedules and workflows deactivated, administrators notified |
+| Disable (`/suspend`, SCIM `active=false`) | cut at once in this organization: tenant tokens refused per request and at exchange, sockets closed, keys `suspended`, scope rows dropped; sessions as below | frozen (groups, grants, ownership kept) | scan schedules `paused`, report schedules and workflows deactivated, administrators notified |
 | Re-enable (`/reactivate`) | restored: keys re-activated, scope recomputed | unchanged | stays paused until an administrator resumes it |
-| Offboard (`/offboard`, `DELETE`, SCIM delete) | gone: keys `revoked` | stripped: groups, grants, engagement memberships, roles, invitations; membership kept as an `offboarded` tombstone | reassigned (mandatory) to another active member of the tenant; open findings may go back to the queue |
+| Offboard (`/offboard`, `DELETE`, SCIM delete) | gone: keys `revoked`; sessions as below | stripped: groups, grants, engagement memberships, roles, invitations; membership kept as an `offboarded` tombstone | reassigned (mandatory) to another active member of the tenant; open findings may go back to the queue |
 | Erase (`/erase`, owner) | — | — | — ; name and email anonymised, rows and foreign keys kept |
+
+**Sessions on disable and offboard.** Accounts are global, so one session
+serves every organization of the person. Cutting a member in one
+organization ends only that organization's access:
+
+- the organization's own data is closed at once without touching sessions:
+  every tenant route and the WebSocket upgrade re-check the membership
+  (`RequireMembership`, `RequireActiveMembershipFromJWT`), the membership and
+  permission caches are dropped, and token exchange and refresh mint tokens
+  only for active memberships;
+- the sessions that this organization's IdP signed in end (`sessions.idp_tenant_id`):
+  the organization's assertion was their only proof of identity;
+- every other session stays (password, social login, another organization's
+  IdP), so an administrator of one organization cannot sign a member of
+  another out;
+- a person with no other organization left loses every session.
+
+Account-wide actions still end every session: erasing personal data, a
+password reset or change, and a platform administrator disabling the account.
 
 SCIM delete offboards when the member owns nothing to reassign; otherwise it
 disables and asks administrators to finish. A re-invite, admin add, SCIM

@@ -16,8 +16,7 @@ import (
 // userColumns is the list of columns to select for a user.
 const userColumns = `id, keycloak_id, email, name, avatar_url, phone, status, preferences, last_login_at, created_at, updated_at,
 	auth_provider, password_hash, email_verified, email_verification_token, email_verification_expires_at,
-	password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until,
-	federated_issuer, federated_subject`
+	password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until`
 
 // UserRepository implements user.Repository using PostgreSQL.
 type UserRepository struct {
@@ -40,10 +39,9 @@ func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 		INSERT INTO users (
 			id, keycloak_id, email, name, avatar_url, phone, status, preferences, last_login_at, created_at, updated_at,
 			auth_provider, password_hash, email_verified, email_verification_token, email_verification_expires_at,
-			password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until,
-			federated_issuer, federated_subject
+			password_reset_token, password_reset_expires_at, failed_login_attempts, locked_until
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -67,8 +65,6 @@ func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 		nullTime(u.PasswordResetExpiresAt()),
 		u.FailedLoginAttempts(),
 		nullTime(u.LockedUntil()),
-		u.FederatedIssuer(),
-		u.FederatedSubject(),
 	)
 
 	if err != nil {
@@ -198,8 +194,7 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		    status = $7, preferences = $8, last_login_at = $9, updated_at = $10,
 		    auth_provider = $11, email_verified = $12,
 		    email_verification_token = $13, email_verification_expires_at = $14,
-		    password_reset_token = $15, password_reset_expires_at = $16,
-		    federated_issuer = $17, federated_subject = $18
+		    password_reset_token = $15, password_reset_expires_at = $16
 		WHERE id = $1
 	`
 	// password_hash, failed_login_attempts and locked_until are not written
@@ -222,8 +217,6 @@ func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 		nullTime(u.EmailVerificationExpiresAt()),
 		u.PasswordResetToken(),
 		nullTime(u.PasswordResetExpiresAt()),
-		u.FederatedIssuer(),
-		u.FederatedSubject(),
 	)
 
 	if err != nil {
@@ -467,8 +460,6 @@ type userScanFields struct {
 	passwordResetExpiresAt     sql.NullTime
 	failedLoginAttempts        int
 	lockedUntil                sql.NullTime
-	federatedIssuer            sql.NullString
-	federatedSubject           sql.NullString
 }
 
 func (r *UserRepository) scanUser(row *sql.Row) (*user.User, error) {
@@ -481,7 +472,6 @@ func (r *UserRepository) scanUser(row *sql.Row) (*user.User, error) {
 		&f.emailVerificationToken, &f.emailVerificationExpiresAt,
 		&f.passwordResetToken, &f.passwordResetExpiresAt,
 		&f.failedLoginAttempts, &f.lockedUntil,
-		&f.federatedIssuer, &f.federatedSubject,
 	)
 	if err != nil {
 		return nil, err
@@ -500,7 +490,6 @@ func (r *UserRepository) scanUserFromRows(rows *sql.Rows) (*user.User, error) {
 		&f.emailVerificationToken, &f.emailVerificationExpiresAt,
 		&f.passwordResetToken, &f.passwordResetExpiresAt,
 		&f.failedLoginAttempts, &f.lockedUntil,
-		&f.federatedIssuer, &f.federatedSubject,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan user: %w", err)
@@ -573,16 +562,6 @@ func (r *UserRepository) reconstructUser(f userScanFields) (*user.User, error) {
 		lockedUntil = &f.lockedUntil.Time
 	}
 
-	var federatedIssuer *string
-	if f.federatedIssuer.Valid {
-		federatedIssuer = &f.federatedIssuer.String
-	}
-
-	var federatedSubject *string
-	if f.federatedSubject.Valid {
-		federatedSubject = &f.federatedSubject.String
-	}
-
 	return user.Reconstitute(
 		parsedID,
 		kcID,
@@ -604,8 +583,6 @@ func (r *UserRepository) reconstructUser(f userScanFields) (*user.User, error) {
 		passwordResetExpiresAt,
 		f.failedLoginAttempts,
 		lockedUntil,
-		federatedIssuer,
-		federatedSubject,
 	), nil
 }
 
