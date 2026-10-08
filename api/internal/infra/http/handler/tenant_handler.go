@@ -482,6 +482,12 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
 		return
 	}
+	if errors.Is(err, tenantapp.ErrStoredFilesNotErased) {
+		// The service logged the cause (it can name storage endpoints).
+		apierror.ServiceUnavailable("The organization was not deleted: its stored files could not be deleted. " +
+			"Try again later. If the organization stores attachments in its own bucket, check that bucket's access keys in the storage settings.").WriteJSON(w)
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Tenant").WriteJSON(w)

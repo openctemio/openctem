@@ -103,7 +103,27 @@ type TenantService struct {
 	// trustPolicy reads the trusts with members' home organizations: role
 	// ceiling and proposed end of access (RFC-058). Optional.
 	trustPolicy TrustPolicy
-	logger      *logger.Logger
+	// blobEraser deletes the stored files (attachments, evidence) of a
+	// tenant being deleted. Wired at startup; nil only in tests.
+	blobEraser TenantBlobEraser
+	logger     *logger.Logger
+}
+
+// TenantBlobEraser deletes every stored file of one tenant from every storage
+// backend it uses (AttachmentService.EraseTenant). Idempotent.
+type TenantBlobEraser interface {
+	EraseTenant(ctx context.Context, tenantID string) (int, error)
+}
+
+// ErrStoredFilesNotErased: the organization was not deleted because its stored
+// files could not all be deleted (storage unreachable, or the organization's
+// own bucket refused). Nothing about the organization's rows changed; the
+// owner retries, and files already deleted stay deleted.
+var ErrStoredFilesNotErased = errors.New("the organization's stored files could not be deleted")
+
+// SetBlobEraser wires the stored-file erasure that organization deletion runs.
+func (s *TenantService) SetBlobEraser(e TenantBlobEraser) {
+	s.blobEraser = e
 }
 
 // UserInfoProvider defines methods to fetch user information for emails.
@@ -528,8 +548,46 @@ func (s *TenantService) DeleteTenant(ctx context.Context, actx auditapp.AuditCon
 		tenantSlug = t.Slug()
 	}
 
+	// Stored files first, rows second. Files are erased while the tenant row
+	// still exists, so if storage is down the deletion is refused and the
+	// obligation stays visible (the tenant and its attachment rows remain;
+	// the owner retries, erasure is idempotent). Deleting rows first would
+	// lose the only record of where the files are, and a tenant's own
+	// bucket keys with it.
+	filesErased := 0
+	if s.blobEraser != nil {
+		n, eraseErr := s.blobEraser.EraseTenant(ctx, parsedID.String())
+		if eraseErr != nil {
+			// The cause can name operator paths or endpoints: log it, keep it
+			// out of the response and the tenant's audit log.
+			s.logger.Error("organization deletion refused: stored files not erased",
+				"tenant_id", tenantID, "files_erased", n, "error", eraseErr)
+			failCtx := actx
+			failCtx.TenantID = tenantID
+			s.logAudit(ctx, failCtx, auditapp.NewFailureEvent(audit.ActionTenantDeleted, audit.ResourceTypeTenant, tenantID, ErrStoredFilesNotErased).
+				WithResourceName(tenantName).
+				WithSeverity(audit.SeverityHigh).
+				WithMessage("Organization deletion refused: its stored files could not be deleted").
+				WithMetadata("files_erased", n))
+			return ErrStoredFilesNotErased
+		}
+		filesErased = n
+	}
+
 	if err := s.repo.Delete(ctx, parsedID); err != nil {
 		return err
+	}
+
+	// A file uploaded between the erasure and the row delete has no row left
+	// to name it: erase the namespace once more. Uploads after this point
+	// fail on the missing tenant and remove their own file.
+	if s.blobEraser != nil {
+		n, eraseErr := s.blobEraser.EraseTenant(ctx, parsedID.String())
+		filesErased += n
+		if eraseErr != nil {
+			s.logger.Error("files uploaded during organization deletion may remain",
+				"tenant_id", tenantID, "error", eraseErr)
+		}
 	}
 
 	// The tenant row is gone, so the event cannot carry its tenant_id
@@ -542,7 +600,8 @@ func (s *TenantService) DeleteTenant(ctx context.Context, actx auditapp.AuditCon
 		WithSeverity(audit.SeverityCritical).
 		WithMessage(fmt.Sprintf("Tenant %q deleted (all tenant data cascaded)", tenantName)).
 		WithMetadata("slug", tenantSlug).
-		WithMetadata("deleted_tenant_id", tenantID)
+		WithMetadata("deleted_tenant_id", tenantID).
+		WithMetadata("files_erased", filesErased)
 	platformCtx := actx
 	platformCtx.TenantID = ""
 	s.logAudit(ctx, platformCtx, event)
