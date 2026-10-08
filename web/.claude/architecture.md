@@ -49,7 +49,7 @@ web/
 └── docs/                            # Developer documentation
 ```
 
-## 🎯 Folder Responsibilities
+## Folder Responsibilities
 
 ### `/app` - Routing Only
 **Purpose**: Handle routing, layouts, loading states
@@ -107,7 +107,7 @@ components/product-card.tsx  // → features/products/components/
 **Contains**: The API client and hooks (`lib/api/`), permissions, proxy helpers, i18n, shared helpers. The console has no database: all data comes from the API.
 **Does NOT contain**: Business logic, feature-specific code
 
-## 📋 Decision Tree: Where Does Code Go?
+## Decision Tree: Where Does Code Go?
 
 ### For Components:
 ```
@@ -145,7 +145,7 @@ Is it used in ONLY ONE feature?
 └── NO → hooks/use-[name].ts
 ```
 
-## 🚀 Creating a New Feature
+## Creating a New Feature
 
 ### Step 1: Decide if it's a feature
 **Ask:**
@@ -182,7 +182,7 @@ export type { Type1, Type2 } from "./types/[name].types"
 4. Add actions in `actions/`
 5. Create hooks if needed in `hooks/`
 
-## 🔄 Feature Dependencies
+## Feature Dependencies
 
 ### Rule: Minimize Feature-to-Feature Dependencies
 
@@ -215,7 +215,7 @@ features/[any]/
 └── ❌ Never import from: app/ (creates circular dependency)
 ```
 
-## 🎨 Styling Organization
+## Styling Organization
 
 ### CSS Variables
 ```css
@@ -248,7 +248,7 @@ features/[any]/
 }
 ```
 
-## 📊 Import Path Mapping
+## Import Path Mapping
 
 ```json
 // tsconfig.json
@@ -283,7 +283,7 @@ Pages under `src/app/` import from the feature's barrel
 (`@/features/scans`) and stay thin; API calls go through `src/lib/api/client.ts`
 (see `docs/guides/API_INTEGRATION.md`).
 
-## 🎯 Key Principles
+## Key Principles
 
 1. **Colocate by feature** - Keep related code together
 2. **Minimize coupling** - Features should be independent
