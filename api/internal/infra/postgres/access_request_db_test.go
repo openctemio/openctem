@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Access requests (migration 001319) as the application role: round trip,
+// Access requests (migration 001323) as the application role: round trip,
 // the conditional decision update, counts, listing and retention.
 // Requires DATABASE_URL.
 func TestAccessRequestRepository(t *testing.T) {
