@@ -31,4 +31,11 @@ describe('Credentials page is read-only', () => {
     expect(source).toMatch(/Mark resolved/)
     expect(source).toMatch(/useCredentialsApi\(/)
   })
+
+  // POST /credentials/{id}/resolve needs credentials write; the button is
+  // shown only with that permission.
+  it('offers Mark resolved only with the credentials write permission', () => {
+    expect(source).toMatch(/const canResolve = can\(Permission\.CredentialsWrite\)/)
+    expect(source).toMatch(/selectedCredential\?\.status === 'active' && canResolve/)
+  })
 })

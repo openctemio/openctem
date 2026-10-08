@@ -2266,6 +2266,58 @@ const (
 // in Go — replacing the previous 1+N query pattern. It reads only the assets
 // the caller may list (access = the list's data scope) and is bounded by the
 // facet* constants above.
+// GetInventoryOverview counts the tenant's assets the caller may list per
+// (lens, type, sub_type) in one GROUP BY: the in-inventory total, the
+// unowned, high-risk (>= 70) and first-seen-this-week ones among them, and
+// the names in the attribution review queue. The output has one row per
+// stored (type, sub_type) pair, never one per asset.
+func (r *AssetRepository) GetInventoryOverview(ctx context.Context, tenantID shared.ID, access asset.AccessScope) ([]asset.InventoryOverviewRow, error) {
+	where := "a.deleted_at IS NULL AND a.tenant_id = $1"
+	args := []any{tenantID.String()}
+	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), 2); cond != "" {
+		where += " AND " + cond
+		args = append(args, scopeArgs...)
+	}
+	query := `
+WITH scoped AS (
+  SELECT a.id, a.asset_type, COALESCE(a.sub_type, '') AS sub_type, COALESCE(a.asset_lens, '') AS lens,
+         a.risk_score, a.first_seen,
+         NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = a.id AND iv.tenant_id = a.tenant_id
+                     AND iv.state IN ('needs_review', 'candidate', 'rejected')) AS in_inventory,
+         EXISTS (SELECT 1 FROM asset_attributions rq WHERE rq.asset_id = a.id AND rq.tenant_id = a.tenant_id
+                 AND rq.state IN ('needs_review', 'candidate')) AS in_review,
+         EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = a.id
+                 AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $1))
+                 AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $1))) AS owned
+  FROM assets a
+  WHERE ` + where + `
+)
+SELECT lens, asset_type, sub_type,
+       COUNT(*) FILTER (WHERE in_inventory),
+       COUNT(*) FILTER (WHERE in_inventory AND NOT owned),
+       COUNT(*) FILTER (WHERE in_inventory AND risk_score >= 70),
+       COUNT(*) FILTER (WHERE in_inventory AND first_seen >= now() - interval '7 days'),
+       COUNT(*) FILTER (WHERE in_review)
+FROM scoped
+GROUP BY lens, asset_type, sub_type
+ORDER BY lens, asset_type, sub_type`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get inventory overview: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []asset.InventoryOverviewRow
+	for rows.Next() {
+		var row asset.InventoryOverviewRow
+		if err := rows.Scan(&row.Lens, &row.Type, &row.SubType, &row.Total, &row.Unowned,
+			&row.HighRisk, &row.New7d, &row.NeedsReview); err != nil {
+			return nil, fmt.Errorf("failed to scan inventory overview row: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared.ID, access asset.AccessScope, types []string, subType string) ([]asset.PropertyFacet, error) {
 	// Build optional extra filter clauses (applied inside the sample CTE).
 	extraWhere := ""

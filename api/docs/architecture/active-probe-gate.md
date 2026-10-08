@@ -2,8 +2,8 @@
 
 Every path that makes a sensor send traffic at a tenant's target passes one
 fail-closed gate before a command exists. The gate is
-`scan.Service.ResolveDispatchTargets` (`internal/app/scan/dispatch_gate.go`),
-the same checks a scan trigger applies.
+`scan.Service.ResolveDispatchTargets` (`internal/app/scan/dispatch_gate.go`):
+one function holds every target decision, the scan trigger included.
 
 ## Scope patterns
 
@@ -174,11 +174,36 @@ targets say so in their warnings; `GET /assets/{id}/attribution` answers
 
 | Path | Where | Notes |
 |---|---|---|
-| Scan trigger | `scan/trigger.go`, `scan/targets.go` | Same checks inline (`resolveScanTargets` + zone planning). Folding it into the gate is RFC-042 S5 (`scope.Gate`). |
+| Scan trigger | `scan/targets.go` `resolveScanTargets` | Builds the candidates (direct targets, asset-group members by asset id, the scanner type gate, archived members, deduplication), then calls the gate once with the trigger options below. Zone routing, batching and pinning stay in the trigger (`planZoneDispatch`), as does the per-run cap after the checks. |
 | `POST /scan-workflows/runs` | `pipeline/run_targets.go` | Typed targets; no assets. |
 | Coverage dispatcher | `scancoverage/scheduler.go` `gateBatch` | Each candidate passes its asset id, so unconfirmed assets are skipped. |
 | Every `validate` command | `validation/dispatcher.go` `CommandDispatcher.Dispatch` | Finding re-check (`POST /findings/{id}/validate`, proof-of-fix fallback, Jira "Done"), continuous retest (both checks), attack-simulation safe-check. |
 | `POST /commands` | `scan/command_gate.go` | Member-created scan commands (RFC-040 group A). |
+
+### Gate order and the trigger options
+
+The checks run in one order on every path, each on what the previous ones kept;
+a target is refused once, under the first check that refused it: the target
+validator, scope exclusions, ownership, the act scope, the private-range rule
+(trigger only, see below), the tier ceiling, zone routing. The act scope comes
+before the tier ceiling, so an actor never learns the scope entries of a target
+they may not scan.
+
+The scan trigger sets options on `DispatchTargetsInput` where it legitimately
+differs; each defaults to the strict behaviour every other path gets:
+
+| Option | Why the trigger sets it |
+|---|---|
+| `AllowNonNetworkTargets` | Group members can be repositories or container images, which the target validator refuses as not network targets. Only the private-range rule stays: an internal address is refused while the tenant has no scan zone (`zone_none`, counted as `internal_outside_zones_target_count`). |
+| `SkipZoneRouting` | The trigger routes, batches and pins per zone itself (`planZoneDispatch`) and refuses what no zone covers there. |
+| `TakeoverOnly` | A nuclei scan of exactly the `takeover` tag may probe a dependency with an open dangling_cname (research/22 E13, `IsTakeoverOnlyProbe`). |
+| `ActScopeAssetsByID` | A group member is the asset: its act scope is decided by asset id, not also by its name as free text. |
+| `MaxTargets` | Exclusions only remove: the trigger passes twice the per-run cap and caps what is left itself. |
+| `Path` | Refusal logs name `scan_run`. |
+
+A `DispatchAsset` with only `AlsoMatch` (no ids) is a typed target with more
+names for the exclusion match: a direct target that is also a group member is
+decided by name, and excluded when an address of the member is.
 
 `validation.CommandDispatcher` is the only producer of validate commands. It
 runs `validation.CheckTarget` on every job; with a nil gate it refuses every
@@ -224,7 +249,8 @@ system, which is unrestricted.
 | `POST /commands` | refused as a whole |
 
 Every lookup error refuses (fail closed). A dispatch that asks for the check
-when none is wired gets `ErrActScopeUnavailable`.
+when none is wired gets `ErrActScopeUnavailable`; the scan trigger always asks,
+so an unwired exclusion filter, ownership gate or act-scope check stops a run.
 
 **Live impact.** A scan of free text that no scope entry or verified
 domain covers has nothing to scan. Add the ranges and domains to Scoping ›

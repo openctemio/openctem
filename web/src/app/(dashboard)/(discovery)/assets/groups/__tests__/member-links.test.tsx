@@ -26,6 +26,12 @@ vi.mock('next/navigation', () => ({
 // The detail page's own data sections (identity, attribution, ...) fetch on
 // their own; stub every `*Section(s)` export so a section added later does not
 // need this test to change. The page shell under test stays real.
+// The repository workspace fetches its own data; a stub shows it rendered.
+vi.mock('@/features/repositories/components/repository-workspace', () => ({
+  RepositoryWorkspace: ({ repositoryId }: { repositoryId: string }) => (
+    <div>repository workspace {repositoryId}</div>
+  ),
+}))
 vi.mock('@/features/assets', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
   const sections = Object.keys(actual)
@@ -136,12 +142,11 @@ describe('asset group member links', () => {
     }
   )
 
-  it('/assets/{id} sends a repository on to its page, which exists', () => {
+  it('/assets/{id} opens a repository in its workspace, at the same URL', () => {
     current = asset('repository')
     render(<AssetDetailPage />)
-    expect(replace).toHaveBeenCalledWith(`/assets/repositories/${ID}`)
-    expect(resolvePage(`/assets/repositories/${ID}`)).toBe(
-      join('(dashboard)', '(discovery)', 'assets', 'repositories', '[id]', 'page.tsx')
-    )
+    expect(screen.getByText(`repository workspace ${ID}`)).toBeInTheDocument()
+    expect(replace).not.toHaveBeenCalled()
+    expect(resolvePage(`/assets/repositories/${ID}`)).toBeNull()
   })
 })
