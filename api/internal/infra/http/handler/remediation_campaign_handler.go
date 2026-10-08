@@ -35,13 +35,10 @@ func NewRemediationCampaignHandler(svc *exposure.RemediationCampaignService, log
 func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 
 	filter := remediation.CampaignFilter{}
 	if s := r.URL.Query().Get("status"); s != "" {

@@ -120,7 +120,22 @@ type AuthService struct {
 	// revocations records revoked session ids so their access tokens stop
 	// working immediately (nil = they expire naturally).
 	revocations SessionRevocationStore
+	// inviteeClassifier classifies an invitee at acceptance (external
+	// members join as viewers with an expiry, RFC-058).
+	inviteeClassifier InviteeClassifier
+	// Home-realm sign-in for external members (home_realm.go, RFC-058).
+	homeTrusts TrustLookup
+	homeOwners HomeDomainOwnerLookup
 }
+
+// InviteeClassifier classifies an invitee at acceptance and applies the outcome
+// to the new membership (TenantService.ClassifyAcceptedInvitation).
+type InviteeClassifier interface {
+	ClassifyAcceptedInvitation(ctx context.Context, inv *tenantdom.Invitation, m *tenantdom.Membership, now time.Time) error
+}
+
+// SetInviteeClassifier wires external-member classification at acceptance.
+func (s *AuthService) SetInviteeClassifier(c InviteeClassifier) { s.inviteeClassifier = c }
 
 // SMTPAvailabilityCheck reports whether outbound email is available, either via
 // the system SMTP config or for a specific tenant. Used by smart email
@@ -833,7 +848,7 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 		// Fail closed: an unreadable security section never admits a session.
 		return fmt.Errorf("failed to read SSO enforcement policy: %w", err)
 	}
-	if ssoEnforcementDenied(sess.AuthMethodFor(tenantID), role, sec.SSOEnforced) {
+	if ssoEnforcementDenied(s.authMethodAt(ctx, sess, sess.UserID(), tenantID), role, sec.SSOEnforced) {
 		// Log the parsed tenant id (a CodeQL-recognized barrier) + the parsed
 		// user id; omit the raw role string to keep no user-derived value in the
 		// log entry (CWE-117). The blocked event is fully identified by tenant+user.
@@ -1080,7 +1095,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		isAdminRole,
 		// The claim carries the method as seen by this tenant, so the
 		// per-request SSO gate decides exactly as token mint did.
-		sess.AuthMethodFor(targetMembership.TenantID).String(),
+		s.authMethodAt(ctx, sess, u.ID(), targetMembership.TenantID).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1354,7 +1369,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 			Role:       targetMembership.Role,
 		},
 		isRefreshAdminRole,
-		sess.AuthMethodFor(targetMembership.TenantID).String(),
+		s.authMethodAt(ctx, sess, u.ID(), targetMembership.TenantID).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
@@ -1953,6 +1968,13 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 	if err != nil {
 		return nil, err
 	}
+	// Someone outside the organization joins as a viewer, with an expiry when
+	// no organization manages their address (RFC-058).
+	if s.inviteeClassifier != nil {
+		if err := s.inviteeClassifier.ClassifyAcceptedInvitation(ctx, invitation, membership, time.Now().UTC()); err != nil {
+			return nil, err
+		}
+	}
 
 	// Use transaction to ensure atomicity
 	if err := s.tenantRepo.AcceptInvitationTx(ctx, invitation, membership); err != nil {
@@ -2033,7 +2055,7 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 			Role:       membership.Role().String(),
 		},
 		isAdminRole,
-		sess.AuthMethodFor(t.ID().String()).String(),
+		s.authMethodAt(ctx, sess, u.ID(), t.ID().String()).String(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)

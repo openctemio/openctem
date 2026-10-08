@@ -119,7 +119,7 @@ var ErrScanWorkflowRetired = shared.NewDomainError("WORKFLOW_RETIRED",
 // definitions as it advances, so editing them mid-run would change what the
 // rest of that run does.
 var ErrScanWorkflowRunActive = shared.NewDomainError("PIPELINE_RUN_ACTIVE",
-	"this pipeline has a run in progress; wait for it to finish or cancel it, then save the steps", shared.ErrConflict)
+	"this scan workflow has a run in progress; wait for it to finish or cancel it, then save the steps", shared.ErrConflict)
 
 // StepKeyHasRunsError refuses a change of a saved step's key once the scan
 // workflow has a run: the run history (scan_run_steps.step_key) and the data

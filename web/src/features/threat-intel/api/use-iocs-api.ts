@@ -4,7 +4,7 @@
  * IOC (Indicator of Compromise) API hooks.
  *
  * Wraps the tenant-scoped IOC catalogue backend:
- *   GET    /api/v1/iocs        (list, paginated: limit/offset -> {items, limit, offset})
+ *   GET    /api/v1/iocs        (list, paginated: page/per_page -> {items, page, per_page})
  *   POST   /api/v1/iocs        (create)
  *   GET    /api/v1/iocs/{id}   (get one)
  *   DELETE /api/v1/iocs/{id}   (soft-deactivate)
@@ -79,19 +79,24 @@ export interface CreateIOCInput {
 /** Wire shape of GET /api/v1/iocs. */
 export interface IOCListResponse {
   items: IOC[]
-  limit: number
-  offset: number
+  page: number
+  per_page: number
 }
 
 export interface IOCFilters {
+  /** Page size (per_page, max 200). */
   limit?: number
+  /** Offset of the first indicator (sent as a 1-based page). */
   offset?: number
 }
 
-function buildListUrl(filters?: IOCFilters): string {
-  const params = new URLSearchParams()
-  params.set('limit', String(filters?.limit ?? 200))
-  if (filters?.offset) params.set('offset', String(filters.offset))
+/** The list URL: page / per_page (one list convention). Exported for tests. */
+export function buildListUrl(filters?: IOCFilters): string {
+  const perPage = filters?.limit ?? 200
+  const params = new URLSearchParams({ per_page: String(perPage) })
+  if (filters?.offset && filters.offset > 0) {
+    params.set('page', String(Math.floor(filters.offset / perPage) + 1))
+  }
   return `${BASE}?${params.toString()}`
 }
 
@@ -128,8 +133,8 @@ export interface IOCMatch {
 
 export interface IOCMatchListResponse {
   items: IOCMatch[]
-  limit: number
-  offset: number
+  page: number
+  per_page: number
 }
 
 /**
@@ -139,7 +144,7 @@ export interface IOCMatchListResponse {
  * not yet live shows "no matches" rather than an error.
  */
 export function useIOCMatches(id: string | null) {
-  return useSWR<IOCMatchListResponse>(id ? `${BASE}/${id}/matches?limit=50` : null, get, {
+  return useSWR<IOCMatchListResponse>(id ? `${BASE}/${id}/matches?per_page=50` : null, get, {
     revalidateOnFocus: false,
     shouldRetryOnError: false,
   })
@@ -152,7 +157,7 @@ export function useIOCMatches(id: string | null) {
  * Detect/Respond view. Degrades to an empty list where the endpoint is not live.
  */
 export function useRecentDetections(limit = 100) {
-  return useSWR<IOCMatchListResponse>(`${BASE}/matches?limit=${limit}`, get, {
+  return useSWR<IOCMatchListResponse>(`${BASE}/matches?per_page=${limit}`, get, {
     revalidateOnFocus: false,
     shouldRetryOnError: false,
   })

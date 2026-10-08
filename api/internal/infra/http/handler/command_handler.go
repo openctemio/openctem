@@ -842,7 +842,7 @@ func (h *CommandHandler) triggerScanRunStarted(ctx context.Context, cmd *command
 		return
 	}
 	if err := h.scanRunService.OnStepStarted(ctx, payload.ScanRunID, payload.StepKey, *cmd.SensorID, cmd.ID); err != nil {
-		h.logger.Warn("failed to mark pipeline step started",
+		h.logger.Warn("failed to mark scan workflow step started",
 			"scan_run_id", payload.ScanRunID,
 			"step_key", payload.StepKey,
 			"error", err,

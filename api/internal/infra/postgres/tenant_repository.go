@@ -256,12 +256,16 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 	// because the offboarding stripped every access source. An active or
 	// suspended row is left alone and reported as a conflict.
 	memberQuery := `
-		INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at,
+		                            kind, home_tenant_id, home_domain, expires_at, expiry_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (user_id, tenant_id) DO UPDATE
 		SET id = EXCLUDED.id, role = EXCLUDED.role, invited_by = EXCLUDED.invited_by,
 		    joined_at = EXCLUDED.joined_at, status = 'active',
-		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = NULL, suspended_by = NULL
+		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = NULL, suspended_by = NULL,
+		    suspended_reason = NULL, kind = EXCLUDED.kind, home_tenant_id = EXCLUDED.home_tenant_id,
+		    home_domain = EXCLUDED.home_domain, expires_at = EXCLUDED.expires_at,
+		    expiry_reason = EXCLUDED.expiry_reason
 		WHERE tenant_members.status = 'offboarded'
 	`
 
@@ -270,14 +274,14 @@ func (r *TenantRepository) CreateMembership(ctx context.Context, m *tenant.Membe
 		invitedBy = sql.NullString{String: m.InvitedBy().String(), Valid: true}
 	}
 
-	res, err := r.db.ExecContext(ctx, memberQuery,
+	res, err := r.db.ExecContext(ctx, memberQuery, append([]any{
 		m.ID().String(),
 		m.UserID().String(),
 		m.TenantID().String(),
 		m.Role().String(),
 		invitedBy,
 		m.JoinedAt(),
-	)
+	}, memberAccessArgs(m)...)...)
 	if err != nil {
 		if isCheckViolation(err) {
 			return tenant.ErrPlatformAdminMembership
@@ -391,7 +395,8 @@ func (r *TenantRepository) GetMembership(ctx context.Context, userID shared.ID, 
 	query := `
 		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
 		       m.invited_by, m.joined_at,
-		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by,
+		       m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.expiry_reason, m.suspended_reason
 		FROM tenant_members m
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.user_id = $1 AND m.tenant_id = $2
@@ -407,7 +412,8 @@ func (r *TenantRepository) GetMembershipByID(ctx context.Context, tenantID, id s
 	query := `
 		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
 		       m.invited_by, m.joined_at,
-		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by,
+		       m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.expiry_reason, m.suspended_reason
 		FROM tenant_members m
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.id = $1 AND m.tenant_id = $2
@@ -504,7 +510,8 @@ func (r *TenantRepository) UpdateMembership(ctx context.Context, m *tenant.Membe
 func (r *TenantRepository) UpdateMembershipStatus(ctx context.Context, m *tenant.Membership) error {
 	query := `
 		UPDATE tenant_members
-		SET status = $2, suspended_at = $3, suspended_by = $4
+		SET status = $2, suspended_at = $3, suspended_by = $4, suspended_reason = $6,
+		    expires_at = $7, expiry_reason = $8
 		WHERE id = $1 AND tenant_id = $5
 	`
 	result, err := r.db.ExecContext(ctx, query,
@@ -513,6 +520,9 @@ func (r *TenantRepository) UpdateMembershipStatus(ctx context.Context, m *tenant
 		nullTime(m.SuspendedAt()),
 		nullIDPtr(m.SuspendedBy()),
 		m.TenantID().String(),
+		nullString(m.SuspendedReason()),
+		nullTime(m.ExpiresAt()),
+		nullString(m.ExpiryReason()),
 	)
 	if err != nil {
 		return fmt.Errorf("update membership status: %w", err)
@@ -574,7 +584,8 @@ func (r *TenantRepository) DeleteMembership(ctx context.Context, memberTenantID,
 func (r *TenantRepository) ListMembersByTenant(ctx context.Context, tenantID shared.ID) ([]*tenant.Membership, error) {
 	query := `
 		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
-		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by,
+		       m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.expiry_reason, m.suspended_reason
 		FROM tenant_members m
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 		WHERE m.tenant_id = $1 AND m.status <> 'offboarded'
@@ -683,10 +694,12 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 		SELECT
 			m.id, m.user_id, COALESCE(ver.role, 'member') as role, m.invited_by, m.joined_at,
 			u.email, u.name, u.avatar_url, COALESCE(m.status, 'active') as status, u.last_login_at,
-			(u.auth_provider = 'local' AND u.password_hash IS NULL AND u.last_login_at IS NULL) AS pending_setup
+			(u.auth_provider = 'local' AND u.password_hash IS NULL AND u.last_login_at IS NULL) AS pending_setup,
+			m.kind, m.home_domain, ht.name, m.expires_at, m.suspended_reason
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		LEFT JOIN tenants ht ON ht.id = m.home_tenant_id
 		WHERE m.tenant_id = $1 AND m.status <> 'offboarded'
 		ORDER BY m.joined_at ASC
 	`
@@ -708,11 +721,16 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 			status                    string
 			lastLoginAt               sql.NullTime
 			pendingSetup              bool
+			kind                      string
+			homeDomain, homeName      sql.NullString
+			expiresAt                 sql.NullTime
+			suspendedReason           sql.NullString
 		)
 
 		if err := rows.Scan(
 			&idStr, &userIDStr, &roleStr, &invitedByStr, &joinedAt,
 			&email, &name, &avatarURL, &status, &lastLoginAt, &pendingSetup,
+			&kind, &homeDomain, &homeName, &expiresAt, &suspendedReason,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan member with user: %w", err)
 		}
@@ -735,17 +753,22 @@ func (r *TenantRepository) ListMembersWithUserInfo(ctx context.Context, tenantID
 		}
 
 		members = append(members, &tenant.MemberWithUser{
-			ID:           id,
-			UserID:       userID,
-			Role:         role,
-			InvitedBy:    invitedBy,
-			JoinedAt:     joinedAt,
-			Email:        email,
-			Name:         name,
-			AvatarURL:    avatarURL.String,
-			Status:       status,
-			LastLoginAt:  lastLogin,
-			PendingSetup: pendingSetup,
+			ID:              id,
+			UserID:          userID,
+			Role:            role,
+			InvitedBy:       invitedBy,
+			JoinedAt:        joinedAt,
+			Email:           email,
+			Name:            name,
+			AvatarURL:       avatarURL.String,
+			Status:          status,
+			LastLoginAt:     lastLogin,
+			PendingSetup:    pendingSetup,
+			Kind:            tenant.MemberKind(kind),
+			HomeDomain:      homeDomain.String,
+			HomeTenantName:  homeName.String,
+			ExpiresAt:       nullTimeValue(expiresAt),
+			SuspendedReason: suspendedReason.String,
 		})
 	}
 
@@ -805,10 +828,12 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 				ELSE 'disabled'
 			END as mfa_status,
 			(u.auth_provider = 'local' AND u.password_hash IS NULL AND u.last_login_at IS NULL) AS pending_setup,
+			m.kind, m.home_domain, ht.name, m.expires_at, m.suspended_reason,
 			COUNT(*) OVER() as total_count
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
 		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		LEFT JOIN tenants ht ON ht.id = m.home_tenant_id
 		%s
 		ORDER BY u.name ASC, m.joined_at ASC
 	`, whereClause)
@@ -853,12 +878,18 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			mfaStatus                 string
 			pendingSetup              bool
 			totalCount                int
+			kind                      string
+			homeDomain, homeName      sql.NullString
+			expiresAt                 sql.NullTime
+			suspendedReason           sql.NullString
 		)
 
 		if err := rows.Scan(
 			&idStr, &userIDStr, &roleStr, &invitedByStr, &joinedAt,
 			&email, &name, &avatarURL, &status, &lastLoginAt,
-			&mfaStatus, &pendingSetup, &totalCount,
+			&mfaStatus, &pendingSetup,
+			&kind, &homeDomain, &homeName, &expiresAt, &suspendedReason,
+			&totalCount,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan member: %w", err)
 		}
@@ -886,18 +917,23 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 		}
 
 		members = append(members, &tenant.MemberWithUser{
-			ID:           id,
-			UserID:       userID,
-			Role:         role,
-			InvitedBy:    invitedBy,
-			JoinedAt:     joinedAt,
-			Email:        email,
-			Name:         name,
-			AvatarURL:    avatarURL.String,
-			Status:       status,
-			LastLoginAt:  lastLogin,
-			MFAStatus:    mfaStatus,
-			PendingSetup: pendingSetup,
+			ID:              id,
+			UserID:          userID,
+			Role:            role,
+			InvitedBy:       invitedBy,
+			JoinedAt:        joinedAt,
+			Email:           email,
+			Name:            name,
+			AvatarURL:       avatarURL.String,
+			Status:          status,
+			LastLoginAt:     lastLogin,
+			MFAStatus:       mfaStatus,
+			PendingSetup:    pendingSetup,
+			Kind:            tenant.MemberKind(kind),
+			HomeDomain:      homeDomain.String,
+			HomeTenantName:  homeName.String,
+			ExpiresAt:       nullTimeValue(expiresAt),
+			SuspendedReason: suspendedReason.String,
 		})
 	}
 
@@ -1201,8 +1237,9 @@ func (r *TenantRepository) GetUserMemberships(ctx context.Context, userID shared
 // CreateInvitation creates a new invitation.
 func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Invitation) error {
 	query := `
-		INSERT INTO tenant_invitations (id, tenant_id, email, role, role_ids, token, invited_by, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO tenant_invitations (id, tenant_id, email, role, role_ids, token, invited_by, expires_at, created_at,
+		                                access_expires_at, access_expiry_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -1215,6 +1252,8 @@ func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Inv
 		inv.InvitedBy().String(),
 		inv.ExpiresAt(),
 		inv.CreatedAt(),
+		nullTime(inv.Access().ExpiresAt),
+		nullString(inv.Access().Reason),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create invitation: %w", err)
@@ -1226,7 +1265,8 @@ func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Inv
 // GetInvitationByToken retrieves an invitation by token.
 func (r *TenantRepository) GetInvitationByToken(ctx context.Context, token string) (*tenant.Invitation, error) {
 	query := `
-		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at
+		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
+		       access_expires_at, access_expiry_reason
 		FROM tenant_invitations
 		WHERE token = $1
 	`
@@ -1237,7 +1277,8 @@ func (r *TenantRepository) GetInvitationByToken(ctx context.Context, token strin
 // GetInvitationByID retrieves an invitation by ID.
 func (r *TenantRepository) GetInvitationByID(ctx context.Context, tenantID, id shared.ID) (*tenant.Invitation, error) {
 	query := `
-		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at
+		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
+		       access_expires_at, access_expiry_reason
 		FROM tenant_invitations
 		WHERE id = $1 AND tenant_id = $2
 	`
@@ -1294,7 +1335,8 @@ func (r *TenantRepository) DeleteInvitation(ctx context.Context, tenantID, id sh
 // ListPendingInvitationsByTenant lists pending invitations for a tenant.
 func (r *TenantRepository) ListPendingInvitationsByTenant(ctx context.Context, tenantID shared.ID) ([]*tenant.Invitation, error) {
 	query := `
-		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at
+		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
+		       access_expires_at, access_expiry_reason
 		FROM tenant_invitations
 		WHERE tenant_id = $1 AND accepted_at IS NULL AND expires_at > NOW()
 		ORDER BY created_at DESC
@@ -1321,7 +1363,8 @@ func (r *TenantRepository) ListPendingInvitationsByTenant(ctx context.Context, t
 // GetPendingInvitationByEmail gets a pending invitation by email for a tenant.
 func (r *TenantRepository) GetPendingInvitationByEmail(ctx context.Context, tenantID shared.ID, email string) (*tenant.Invitation, error) {
 	query := `
-		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at
+		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
+		       access_expires_at, access_expiry_reason
 		FROM tenant_invitations
 		WHERE tenant_id = $1 AND email = $2 AND accepted_at IS NULL AND expires_at > NOW()
 	`
@@ -1406,12 +1449,16 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 		// Create membership in tenant_members with role (an offboarded
 		// tombstone is re-activated from zero, see CreateMembership).
 		insertQuery := `
-			INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at)
-			VALUES ($1, $2, $3, $4, $5, $6)
+			INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at,
+		                            kind, home_tenant_id, home_domain, expires_at, expiry_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (user_id, tenant_id) DO UPDATE
 		SET id = EXCLUDED.id, role = EXCLUDED.role, invited_by = EXCLUDED.invited_by,
 		    joined_at = EXCLUDED.joined_at, status = 'active',
-		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = NULL, suspended_by = NULL
+		    offboarded_at = NULL, offboarded_by = NULL, suspended_at = NULL, suspended_by = NULL,
+		    suspended_reason = NULL, kind = EXCLUDED.kind, home_tenant_id = EXCLUDED.home_tenant_id,
+		    home_domain = EXCLUDED.home_domain, expires_at = EXCLUDED.expires_at,
+		    expiry_reason = EXCLUDED.expiry_reason
 		WHERE tenant_members.status = 'offboarded'
 		`
 
@@ -1420,14 +1467,14 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 			invitedBy = sql.NullString{String: m.InvitedBy().String(), Valid: true}
 		}
 
-		insRes, err := tx.ExecContext(ctx, insertQuery,
+		insRes, err := tx.ExecContext(ctx, insertQuery, append([]any{
 			m.ID().String(),
 			m.UserID().String(),
 			m.TenantID().String(),
 			m.Role().String(),
 			invitedBy,
 			m.JoinedAt(),
-		)
+		}, memberAccessArgs(m)...)...)
 		if err != nil {
 			if isCheckViolation(err) {
 				return tenant.ErrPlatformAdminMembership
@@ -1509,10 +1556,12 @@ func (r *TenantRepository) scanMembership(row *sql.Row) (*tenant.Membership, err
 		suspendedByStr                         sql.NullString
 	)
 
+	var acc memberAccessCols
 	err := row.Scan(
 		&idStr, &userIDStr, &tenantIDStr, &roleStr,
 		&invitedByStr, &joinedAt,
 		&statusStr, &suspendedAt, &suspendedByStr,
+		&acc.kind, &acc.home, &acc.domain, &acc.expiresAt, &acc.reason, &acc.suspendedReason,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1548,10 +1597,10 @@ func (r *TenantRepository) scanMembership(row *sql.Row) (*tenant.Membership, err
 		}
 	}
 
-	return tenant.ReconstituteMembershipWithStatus(
+	return acc.apply(tenant.ReconstituteMembershipWithStatus(
 		id, userID, tenantID, role, invitedBy, joinedAt,
 		tenant.MemberStatus(statusStr), suspendedAtPtr, suspendedBy,
-	), nil
+	)), nil
 }
 
 func (r *TenantRepository) scanMembershipRow(rows *sql.Rows) (*tenant.Membership, error) {
@@ -1564,8 +1613,10 @@ func (r *TenantRepository) scanMembershipRow(rows *sql.Rows) (*tenant.Membership
 		suspendedByStr                         sql.NullString
 	)
 
+	var acc memberAccessCols
 	err := rows.Scan(&idStr, &userIDStr, &tenantIDStr, &roleStr, &invitedByStr, &joinedAt,
-		&statusStr, &suspendedAt, &suspendedByStr)
+		&statusStr, &suspendedAt, &suspendedByStr,
+		&acc.kind, &acc.home, &acc.domain, &acc.expiresAt, &acc.reason, &acc.suspendedReason)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan membership: %w", err)
 	}
@@ -1594,8 +1645,35 @@ func (r *TenantRepository) scanMembershipRow(rows *sql.Rows) (*tenant.Membership
 			suspendedBy = &parsed
 		}
 	}
-	return tenant.ReconstituteMembershipWithStatus(id, userID, tenantID, role, invitedBy, joinedAt,
-		tenant.MemberStatus(statusStr), suspendedAtPtr, suspendedBy), nil
+	return acc.apply(tenant.ReconstituteMembershipWithStatus(id, userID, tenantID, role, invitedBy, joinedAt,
+		tenant.MemberStatus(statusStr), suspendedAtPtr, suspendedBy)), nil
+}
+
+// memberAccessCols are the external-member columns of tenant_members.
+type memberAccessCols struct {
+	kind            string
+	home            sql.NullString
+	domain          sql.NullString
+	expiresAt       sql.NullTime
+	reason          sql.NullString
+	suspendedReason sql.NullString
+}
+
+func (c memberAccessCols) apply(m *tenant.Membership) *tenant.Membership {
+	var home *shared.ID
+	if c.home.Valid {
+		if id, err := shared.IDFromString(c.home.String); err == nil {
+			home = &id
+		}
+	}
+	return m.WithAccessState(tenant.MemberKind(c.kind), home, c.domain.String,
+		nullTimeValue(c.expiresAt), c.reason.String, c.suspendedReason.String)
+}
+
+// memberAccessArgs are the insert values of the external-member columns.
+func memberAccessArgs(m *tenant.Membership) []any {
+	return []any{string(m.Kind()), nullID(m.HomeTenantID()), nullString(m.HomeDomain()),
+		nullTime(m.ExpiresAt()), nullString(m.ExpiryReason())}
 }
 
 func (r *TenantRepository) scanInvitation(row *sql.Row) (*tenant.Invitation, error) {
@@ -1606,7 +1684,10 @@ func (r *TenantRepository) scanInvitation(row *sql.Row) (*tenant.Invitation, err
 		acceptedAt                                              sql.NullTime
 	)
 
-	err := row.Scan(&idStr, &tenantIDStr, &email, &roleStr, &roleIDs, &token, &invitedByStr, &expiresAt, &acceptedAt, &createdAt)
+	var accessAt sql.NullTime
+	var accessReason sql.NullString
+	err := row.Scan(&idStr, &tenantIDStr, &email, &roleStr, &roleIDs, &token, &invitedByStr, &expiresAt, &acceptedAt, &createdAt,
+		&accessAt, &accessReason)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -1624,9 +1705,11 @@ func (r *TenantRepository) scanInvitation(row *sql.Row) (*tenant.Invitation, err
 		acceptedAtPtr = &acceptedAt.Time
 	}
 
-	return tenant.ReconstituteInvitation(
+	inv := tenant.ReconstituteInvitation(
 		id, tenantID, email, role, []string(roleIDs), token, invitedBy, expiresAt, acceptedAtPtr, createdAt,
-	), nil
+	)
+	inv.SetAccess(tenant.ExternalAccess{ExpiresAt: nullTimeValue(accessAt), Reason: accessReason.String})
+	return inv, nil
 }
 
 func (r *TenantRepository) scanInvitationRow(rows *sql.Rows) (*tenant.Invitation, error) {
@@ -1637,7 +1720,10 @@ func (r *TenantRepository) scanInvitationRow(rows *sql.Rows) (*tenant.Invitation
 		acceptedAt                                              sql.NullTime
 	)
 
-	err := rows.Scan(&idStr, &tenantIDStr, &email, &roleStr, &roleIDs, &token, &invitedByStr, &expiresAt, &acceptedAt, &createdAt)
+	var accessAt sql.NullTime
+	var accessReason sql.NullString
+	err := rows.Scan(&idStr, &tenantIDStr, &email, &roleStr, &roleIDs, &token, &invitedByStr, &expiresAt, &acceptedAt, &createdAt,
+		&accessAt, &accessReason)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan invitation: %w", err)
 	}
@@ -1652,9 +1738,11 @@ func (r *TenantRepository) scanInvitationRow(rows *sql.Rows) (*tenant.Invitation
 		acceptedAtPtr = &acceptedAt.Time
 	}
 
-	return tenant.ReconstituteInvitation(
+	inv := tenant.ReconstituteInvitation(
 		id, tenantID, email, role, []string(roleIDs), token, invitedBy, expiresAt, acceptedAtPtr, createdAt,
-	), nil
+	)
+	inv.SetAccess(tenant.ExternalAccess{ExpiresAt: nullTimeValue(accessAt), Reason: accessReason.String})
+	return inv, nil
 }
 
 // AllowedRecipients reports, for each (lower-cased) address, whether it may
@@ -1697,4 +1785,67 @@ func (r *TenantRepository) AllowedRecipients(ctx context.Context, tenantID share
 		}
 	}
 	return out, nil
+}
+
+// ListExpiredMemberships returns active memberships whose access expired at or
+// before now, across tenants, for the expiry controller (a system path; each
+// row carries its own tenant id and is suspended in that tenant only).
+func (r *TenantRepository) ListExpiredMemberships(ctx context.Context, now time.Time, limit int) ([]*tenant.Membership, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	query := `
+		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
+		       m.invited_by, m.joined_at,
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by,
+		       m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.expiry_reason, m.suspended_reason
+		FROM tenant_members m
+		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.status = 'active' AND m.expires_at IS NOT NULL AND m.expires_at <= $1
+		ORDER BY m.expires_at ASC
+		LIMIT $2
+	`
+	rows, err := r.db.QueryContext(ctx, query, now, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list expired memberships: %w", err)
+	}
+	defer rows.Close()
+	var out []*tenant.Membership
+	for rows.Next() {
+		m, err := r.scanMembershipRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// ListActiveExternalFromHome returns the active external memberships of host
+// whose home organization is home (trust revocation).
+func (r *TenantRepository) ListActiveExternalFromHome(ctx context.Context, host, home shared.ID) ([]*tenant.Membership, error) {
+	query := `
+		SELECT m.id, m.user_id, m.tenant_id, COALESCE(ver.role, 'member') as role,
+		       m.invited_by, m.joined_at,
+		       COALESCE(m.status, 'active') as status, m.suspended_at, m.suspended_by,
+		       m.kind, m.home_tenant_id, m.home_domain, m.expires_at, m.expiry_reason, m.suspended_reason
+		FROM tenant_members m
+		LEFT JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+		WHERE m.tenant_id = $1 AND m.kind = 'external' AND m.home_tenant_id = $2 AND m.status = 'active'
+		LIMIT 5000
+	`
+	rows, err := r.db.QueryContext(ctx, query, host.String(), home.String())
+	if err != nil {
+		return nil, fmt.Errorf("list external members from home: %w", err)
+	}
+	defer rows.Close()
+	var out []*tenant.Membership
+	for rows.Next() {
+		m, err := r.scanMembershipRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
