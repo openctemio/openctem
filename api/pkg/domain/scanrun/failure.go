@@ -140,6 +140,9 @@ const (
 	FailureCanceled            = "CANCELED"
 	FailureBatchFailed         = "BATCH_FAILED"
 	FailureQueueError          = "QUEUE_ERROR"
+	// FailureScopeChanged: the scope changed while the job was queued and
+	// the claim-time re-check refused every target.
+	FailureScopeChanged = "SCOPE_CHANGED"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -153,6 +156,7 @@ var failureClasses = map[string]FailureClass{
 	FailureStepTargetsRefused:  FailureClassScope,
 	FailureAllTargetsExcluded:  FailureClassScope,
 	FailureAllTargetsUnconfirm: FailureClassScope,
+	FailureScopeChanged:        FailureClassScope,
 	FailureNoSensor:            FailureClassPlacement,
 	FailureNoSensorForTool:     FailureClassPlacement,
 	FailureNoSensorAvailable:   FailureClassPlacement,
