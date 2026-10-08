@@ -90,44 +90,51 @@ jobs:
       - name: Generate checksums
         working-directory: /tmp/artifacts
         run: sha256sum ./*.tar.gz ./*.zip > checksums-sha256.txt
-      - name: Create Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          generate_release_notes: true
-          append_body: true
-          body: |
-            ## Container images (multi-arch: amd64 + arm64)
-
-            ```bash
-            docker pull ghcr.io/openctemio/openctem:${{ github.ref_name }}      # all-in-one (API + web + gateway)
-            docker pull ghcr.io/openctemio/openctem-api:${{ github.ref_name }}
-            docker pull ghcr.io/openctemio/openctem-web:${{ github.ref_name }}
-            docker pull ghcr.io/openctemio/migrations:${{ github.ref_name }}
-            docker pull ghcr.io/openctemio/seed:${{ github.ref_name }}
-            docker pull ghcr.io/openctemio/admin-cli:${{ github.ref_name }}
-            ```
-
-            Images are signed with cosign (keyless) and have SPDX SBOMs attached
-            to this release.
-
-            The previous names `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui`
-            receive the same images during the transition window.
-
-            ## Deployment
-
-            ```bash
-            # .env.versions — API and web always share one version now
-            API_VERSION=${{ github.ref_name }}
-            UI_VERSION=${{ github.ref_name }}
-            MIGRATIONS_VERSION=${{ github.ref_name }}
-            docker compose pull && docker compose up -d
-            ```
-          files: |
-            /tmp/artifacts/*.tar.gz
-            /tmp/artifacts/*.zip
-            /tmp/artifacts/checksums-sha256.txt
+      - name: Release notes header
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cat > /tmp/release-header.md <<EOF
+          ## Container images (multi-arch: amd64 + arm64)
+
+          \`\`\`bash
+          docker pull ghcr.io/openctemio/openctem:${TAG}      # all-in-one (API + web + gateway)
+          docker pull ghcr.io/openctemio/openctem-api:${TAG}
+          docker pull ghcr.io/openctemio/openctem-web:${TAG}
+          docker pull ghcr.io/openctemio/migrations:${TAG}
+          docker pull ghcr.io/openctemio/seed:${TAG}
+          docker pull ghcr.io/openctemio/admin-cli:${TAG}
+          \`\`\`
+
+          Every image is signed with cosign (keyless, GitHub OIDC) and carries a
+          signed SPDX SBOM attestation; the SBOMs are also attached to this release.
+          Verify an image before deploying it:
+
+          \`\`\`bash
+          cosign verify ghcr.io/openctemio/openctem-api:${TAG} \\
+            --certificate-identity-regexp '^https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          cosign verify-attestation --type spdxjson ghcr.io/openctemio/openctem-api:${TAG} \\
+            --certificate-identity-regexp '^https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          \`\`\`
+
+          ## Upgrading (Compose deployment, api/deploy)
+
+          Read the upgrade notes below first. Then set \`OPENCTEM_VERSION=${TAG}\` in
+          \`api/deploy/.env\` and run \`docker compose pull && docker compose up -d\`:
+          the one-shot \`migrate\` service applies the database migrations before the
+          API starts (the API refuses to start on an older schema). Back up the
+          database and the \`api-data\` volume before upgrading.
+          EOF
+          sed -i 's/^          //' /tmp/release-header.md
+      - name: Create the release (retried on GitHub API errors)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          bash .github/scripts/release/publish-release.sh "$TAG" /tmp/release-header.md \
+            /tmp/artifacts/*.tar.gz /tmp/artifacts/*.zip /tmp/artifacts/checksums-sha256.txt
       - name: Sanitize release notes
         # Escape @mentions that are not "by @login" credits; drop raw emails
         # (.github/scripts/release/sanitize-notes.py).
@@ -135,6 +142,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          bash .github/scripts/release/gh-retry.sh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
           python3 .github/scripts/release/sanitize-notes.py notes.md
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+          bash .github/scripts/release/gh-retry.sh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
