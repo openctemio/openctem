@@ -818,18 +818,6 @@ func (h *CredentialImportHandler) handleValidationError(w http.ResponseWriter, e
 	apierror.BadRequest("Validation error").WriteJSON(w)
 }
 
-// parseIntParam parses an integer from a string query parameter.
-func parseIntParam(s string) (int, error) {
-	var result int
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, errors.New("invalid integer")
-		}
-		result = result*10 + int(c-'0')
-	}
-	return result, nil
-}
-
 // splitCommaSeparated splits a comma-separated string into a slice.
 func splitCommaSeparated(s string) []string {
 	if s == "" {
