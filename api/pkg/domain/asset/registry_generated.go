@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "5e0c760d52f5af20"
+const RegistryVersion = "2532dc2f6acb4051"
 
 // Lenses.
 const (
@@ -67,23 +67,23 @@ var registryLenses = []LensDefinition{
 }
 
 var registryClasses = []ClassDefinition{
-	{ID: ClassDomain, Label: "Domain", Lens: LensExternalSurface, JupiterOne: "Domain / DomainRecord", Types: []AssetType{"domain", "subdomain"}},
-	{ID: ClassIPAddress, Label: "IP address", Lens: LensExternalSurface, JupiterOne: "IpAddress", Types: []AssetType{"ip_address"}},
-	{ID: ClassCertificate, Label: "Certificate", Lens: LensExternalSurface, JupiterOne: "Certificate", Types: []AssetType{"certificate"}},
-	{ID: ClassService, Label: "Service", Lens: LensExternalSurface, JupiterOne: "Port / NetworkEndpoint", Types: []AssetType{"service", "http_service", "open_port"}},
-	{ID: ClassWebEndpoint, Label: "Web endpoint", Lens: LensExternalSurface, JupiterOne: "ApplicationEndpoint", Types: []AssetType{"discovered_url"}},
-	{ID: ClassApplication, Label: "Application", Lens: LensApplications, JupiterOne: "Application", Types: []AssetType{"application", "website", "api", "mobile_app"}},
-	{ID: ClassHost, Label: "Host", Lens: LensCloudInfra, JupiterOne: "Host / Device", Types: []AssetType{"host", "compute", "endpoint"}},
-	{ID: ClassFunction, Label: "Function", Lens: LensCloudInfra, JupiterOne: "Function", Types: []AssetType{"serverless"}},
-	{ID: ClassCloudAccount, Label: "Cloud account", Lens: LensCloudInfra, JupiterOne: "Account", Types: []AssetType{"cloud_account"}},
-	{ID: ClassContainer, Label: "Container", Lens: LensContainersK8s, JupiterOne: "Container / Workload", Types: []AssetType{"container"}},
-	{ID: ClassCluster, Label: "Cluster", Lens: LensContainersK8s, JupiterOne: "Cluster", Types: []AssetType{"kubernetes", "kubernetes_cluster", "kubernetes_namespace"}},
-	{ID: ClassArtifactRegistry, Label: "Artifact registry", Lens: LensContainersK8s, JupiterOne: "Repository (artifact)", Types: []AssetType{"container_registry"}},
-	{ID: ClassCodeRepo, Label: "Code repository", Lens: LensCode, JupiterOne: "CodeRepo", Types: []AssetType{"repository"}},
-	{ID: ClassIdentity, Label: "Identity", Lens: LensIdentities, JupiterOne: "User / AccessRole / NHI", Types: []AssetType{"identity", "iam_user", "iam_role", "service_account"}},
-	{ID: ClassDataStore, Label: "Data store", Lens: LensData, JupiterOne: "DataStore / Database", Types: []AssetType{"database", "data_store", "storage", "s3_bucket"}},
-	{ID: ClassNetwork, Label: "Network", Lens: LensNetwork, JupiterOne: "Network / Firewall / Gateway", Types: []AssetType{"network", "vpc", "subnet", "firewall", "load_balancer"}},
-	{ID: ClassOther, Label: "Other", Lens: "", JupiterOne: "Entity", Types: []AssetType{"unclassified"}},
+	{ID: ClassDomain, Label: "Domain", Lens: LensExternalSurface, Types: []AssetType{"domain", "subdomain"}},
+	{ID: ClassIPAddress, Label: "IP address", Lens: LensExternalSurface, Types: []AssetType{"ip_address"}},
+	{ID: ClassCertificate, Label: "Certificate", Lens: LensExternalSurface, Types: []AssetType{"certificate"}},
+	{ID: ClassService, Label: "Service", Lens: LensExternalSurface, Types: []AssetType{"service", "http_service", "open_port"}},
+	{ID: ClassWebEndpoint, Label: "Web endpoint", Lens: LensExternalSurface, Types: []AssetType{"discovered_url"}},
+	{ID: ClassApplication, Label: "Application", Lens: LensApplications, Types: []AssetType{"application", "website", "api", "mobile_app"}},
+	{ID: ClassHost, Label: "Host", Lens: LensCloudInfra, Types: []AssetType{"host", "compute", "endpoint"}},
+	{ID: ClassFunction, Label: "Function", Lens: LensCloudInfra, Types: []AssetType{"serverless"}},
+	{ID: ClassCloudAccount, Label: "Cloud account", Lens: LensCloudInfra, Types: []AssetType{"cloud_account"}},
+	{ID: ClassContainer, Label: "Container", Lens: LensContainersK8s, Types: []AssetType{"container"}},
+	{ID: ClassCluster, Label: "Cluster", Lens: LensContainersK8s, Types: []AssetType{"kubernetes", "kubernetes_cluster", "kubernetes_namespace"}},
+	{ID: ClassArtifactRegistry, Label: "Artifact registry", Lens: LensContainersK8s, Types: []AssetType{"container_registry"}},
+	{ID: ClassCodeRepo, Label: "Code repository", Lens: LensCode, Types: []AssetType{"repository"}},
+	{ID: ClassIdentity, Label: "Identity", Lens: LensIdentities, Types: []AssetType{"identity", "iam_user", "iam_role", "service_account"}},
+	{ID: ClassDataStore, Label: "Data store", Lens: LensData, Types: []AssetType{"database", "data_store", "storage", "s3_bucket"}},
+	{ID: ClassNetwork, Label: "Network", Lens: LensNetwork, Types: []AssetType{"network", "vpc", "subnet", "firewall", "load_balancer"}},
+	{ID: ClassOther, Label: "Other", Lens: "", Types: []AssetType{"unclassified"}},
 }
 
 var registryTypes = []TypeDefinition{
