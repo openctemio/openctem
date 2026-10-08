@@ -589,6 +589,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			handlers.OrgTrust = handler.NewOrgTrustHandler(svc.OrgTrust, log)
 		}
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
+		handlers.VerifiedDomain.SetChangeApproval(svc.SSOChange)
 		// Tenant self-service verification for EASM (research/22 P0-10, E6).
 		var audit handler.AttributionAuditor
 		if svc.Audit != nil {
@@ -631,15 +632,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
 		handlers.SignupPolicy = svc.Signup
 	}
-	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, handlers.SensorResultsV2, log)
+	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
 	return handlers
 }
 
 // newSensorV3Server builds the sensor protocol v3 server (RFC-059) when
 // SENSOR_TRANSPORT_V3_ENABLED is on and protocol v2 is served (v3 runs every
 // call through the v2 routes). Command writes wake its control streams.
-func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, v2 *handler.SensorResultsV2Handler,
-	log *logger.Logger,
+func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, redisClient *redis.Client,
+	v2 *handler.SensorResultsV2Handler, log *logger.Logger,
 ) *sensortransport.Server {
 	tc := cfg.SensorConfig.TransportV3
 	if !tc.Enabled {
@@ -650,8 +651,17 @@ func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, v
 		return nil
 	}
 	srv := sensortransport.NewServer(sensortransport.Config{MaxContentBytes: v2.Limits().MaxContentBytes}, nil, log)
-	repos.Command.SetChangeNotifier(srv.Hub())
-	svc.Sensor.SetStatusNotifier(srv.Hub().Wake)
+	// Command and sensor changes wake the control streams: this replica's
+	// directly, the other replicas' through Redis (T12).
+	if redisClient != nil {
+		bus := redis.NewSensorWakeBus(redisClient, srv.Hub(), log)
+		srv.SetWakeBus(bus)
+		repos.Command.SetChangeNotifier(bus)
+		svc.Sensor.SetStatusNotifier(bus.Wake)
+	} else {
+		repos.Command.SetChangeNotifier(srv.Hub())
+		svc.Sensor.SetStatusNotifier(srv.Hub().Wake)
+	}
 
 	// The sensor CA: certificates for the gRPC binding. Without it the
 	// HTTPS binding still serves (IssueCertificate answers Unimplemented).
@@ -662,7 +672,8 @@ func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, v
 	} else {
 		srv.SetCertificateIssuer(sensortransport.NewIssuer(ca, svc.Sensor, svc.Sensor, tc.CertTTL, tc.PublicHost, log))
 		if tc.PublicHost != "" {
-			if err := srv.EnableMTLS(sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: tc.PublicHost}, ca, svc.Sensor); err != nil {
+			mcfg := sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: tc.PublicHost, TrustedProxies: tc.MTLSTrustedProxies}
+			if err := srv.EnableMTLS(mcfg, ca, svc.Sensor); err != nil {
 				log.Error("sensor protocol v3 gRPC binding not served", "error", err)
 			} else {
 				grpcEndpoint = tc.PublicHost

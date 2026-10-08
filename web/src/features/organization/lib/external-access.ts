@@ -19,6 +19,7 @@ const BLOCKED_REASON_TEXT: Record<string, string> = {
   home_domain_lapsed: 'Your organization no longer holds your email domain',
   trust_revoked: 'The partnership with your organization ended',
   personal_accounts_blocked: 'This organization does not accept personal email accounts',
+  awaiting_approval: 'Waiting for an administrator to approve your access',
 }
 
 /** Why an organization cannot be opened, in words ("" when it can). */
@@ -32,6 +33,7 @@ const SUSPENDED_REASON_TEXT: Record<string, string> = {
   home_access_ended: 'Left their organization',
   home_domain_lapsed: 'Their organization lost the domain',
   trust_revoked: 'Trust ended',
+  awaiting_approval: 'Waiting for approval',
 }
 
 /** Why a member is disabled, for the members list ("" when unknown). */

@@ -58,6 +58,24 @@ http)
 	;;
 esac
 
+# Sensor protocol v3 gRPC binding (RFC-059 T14): layer-4 passthrough of the
+# sensor host name to the API's mTLS listener.
+case "${OPENCTEM_SENSOR_GATEWAY:-off}" in
+off) ;;
+passthrough)
+	sensor_host="${SENSOR_PUBLIC_HOSTNAME:-}"
+	[ -n "$sensor_host" ] || die "OPENCTEM_SENSOR_GATEWAY=passthrough needs SENSOR_PUBLIC_HOSTNAME (the DNS name sensors dial for gRPC, without a port)"
+	case "$sensor_host" in
+	*:* | */* | *" "*) die "SENSOR_PUBLIC_HOSTNAME=$sensor_host must be a host name only (no port, path or space)" ;;
+	esac
+	[ "$sensor_host" != "${OPENCTEM_HOSTNAME:-}" ] || die "SENSOR_PUBLIC_HOSTNAME must differ from OPENCTEM_HOSTNAME: the gateway routes the sensor host by its name (SNI)"
+	[ "$mode" != http ] || die "OPENCTEM_SENSOR_GATEWAY=passthrough needs a TLS mode (the gateway must see TLS to route by SNI)"
+	caddy list-modules 2>/dev/null | grep -q '^layer4$' ||
+		die "OPENCTEM_SENSOR_GATEWAY=passthrough needs the gateway image with the layer4 module (deploy/gateway/Dockerfile, docker-compose.sensor-passthrough.yml)"
+	;;
+*) die "OPENCTEM_SENSOR_GATEWAY=${OPENCTEM_SENSOR_GATEWAY} is not one of: off, passthrough" ;;
+esac
+
 # The internal CA's root certificate, copied where the operator (and sensors)
 # can read it. Caddy writes its copy 0600 under /data; sensors need a
 # world-readable file. Written atomically, refreshed if the CA changes.
