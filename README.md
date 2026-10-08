@@ -15,11 +15,12 @@ the two parts that ship together:
 | [`deploy/allinone/`](deploy/allinone/) | API + web + gateway in one container (Postgres/Redis external) | `ghcr.io/openctemio/openctem` |
 
 Released separately, in their own repositories:
-[sensor](https://github.com/openctemio/sensor) (scanning agent),
+[sensor](https://github.com/openctemio/sensor) (runs scans and collectors),
 [sdk-go](https://github.com/openctemio/sdk-go),
 [ctis](https://github.com/openctemio/ctis) (shared contract),
 [helm-charts](https://github.com/openctemio/helm-charts),
-[docs](https://github.com/openctemio/docs) (public documentation).
+[docs](https://github.com/openctemio/docs) (public documentation, published at
+[docs.openctem.io](https://docs.openctem.io)).
 
 ## Repository layout & history
 
@@ -69,6 +70,9 @@ make check     # what CI runs, both components
   gateway's CA: mount a volume.
 - **Kubernetes:** [helm-charts](https://github.com/openctemio/helm-charts).
 
+Installation, configuration and operations are documented at
+[docs.openctem.io/install](https://docs.openctem.io/install/).
+
 ## Releases
 
 One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-api`,
@@ -89,6 +93,13 @@ contract a pull request produces, so a change to the API contract and the web
 code that consumes it land in one pull request, and it posts the contract
 changes (breaking changes, route gate changes) on the pull request.
 
+## Documentation
+
+- User and operator documentation: [docs.openctem.io](https://docs.openctem.io)
+- Engineering documentation (architecture, development, RFCs): [`api/docs/`](api/docs/README.md)
+  and [`web/docs/`](web/docs/README.md)
+
 ## Contributing / security
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately as described
+in [SECURITY.md](SECURITY.md), never in a public issue.
