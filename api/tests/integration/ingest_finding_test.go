@@ -541,14 +541,14 @@ func TestIngestFinding_StatusTransitions(t *testing.T) {
 	})
 
 	t.Run("TransitionToConfirmed", func(t *testing.T) {
-		finding.UpdateStatus(vulnerability.FindingStatusConfirmed, "", nil)
+		_ = finding.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil)
 		if finding.Status() != vulnerability.FindingStatusConfirmed {
 			t.Errorf("Expected status confirmed, got %s", finding.Status())
 		}
 	})
 
 	t.Run("TransitionToResolved", func(t *testing.T) {
-		finding.UpdateStatus(vulnerability.FindingStatusResolved, "Fixed in commit abc123", &actorID)
+		_ = finding.TransitionStatus(vulnerability.FindingStatusResolved, "Fixed in commit abc123", &actorID)
 		if finding.Status() != vulnerability.FindingStatusResolved {
 			t.Errorf("Expected status resolved, got %s", finding.Status())
 		}
