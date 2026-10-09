@@ -63,6 +63,13 @@ const (
 	// scope entry (RFC-054 §6.1).
 	ActionScopeTargetApproved Action = "scope_target.approved"
 	ActionScopeTargetRejected Action = "scope_target.rejected"
+	// ActionScopeTargetSelfApproved: an owner approved their own pending
+	// scope entry because no other approver existed, with a fresh
+	// authenticator code and a reason (RFC-054 §7). High severity.
+	ActionScopeTargetSelfApproved Action = "scope_target.self_approved"
+	// ActionScopeTargetApproversReminded: someone reminded the approvers of
+	// a pending scope entry.
+	ActionScopeTargetApproversReminded Action = "scope_target.approvers_reminded"
 	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
 	// existing repository asset and attached its SCM data to it. POST
 	// /assets no longer merges (a duplicate is a 409); older rows from it
@@ -576,6 +583,7 @@ func (a Action) IsValid() bool {
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionScopeSettingsUpdated,
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
+		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
@@ -748,6 +756,7 @@ func (a Action) Category() string {
 		return "tool"
 	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
 		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
@@ -975,7 +984,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
-		ActionScopeTargetApproved, ActionScopeSettingsUpdated,
+		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
 		// Deleting an asset also deletes its findings.
