@@ -1036,3 +1036,46 @@ func TestDataScope_DedupReviewPermissions(t *testing.T) {
 		t.Errorf("assets:delete POST reject = %d, want 200", got)
 	}
 }
+
+// L-18: the group list, a group read and the group stats carry counts.
+// memberA sees asset A1 of the two members, so every count they get covers A1
+// only (1 asset, 1 finding), while the owner and a full-data role still get
+// the whole group (2 and 2).
+func TestDataScope_AssetGroupCounts_FollowReaderScope(t *testing.T) {
+	h := newDSHarness(t)
+	if err := postgres.NewAssetGroupRepository(&postgres.DB{DB: h.db}).RecalculateCounts(context.Background(), h.group); err != nil {
+		t.Fatal(err)
+	}
+	g := h.group.String()
+	for _, c := range []struct {
+		path        string
+		assets      string
+		findings    string
+		ownerAssets string
+		ownerFinds  string
+	}{
+		{"/api/v1/asset-groups", `"asset_count":1`, `"finding_count":1`, `"asset_count":2`, `"finding_count":2`},
+		{"/api/v1/asset-groups/" + g, `"asset_count":1`, `"finding_count":1`, `"asset_count":2`, `"finding_count":2`},
+		{"/api/v1/asset-groups/stats", `"total_assets":1`, `"total_findings":1`, `"total_assets":2`, `"total_findings":2`},
+	} {
+		status, body := h.do(h.memberA, false, http.MethodGet, c.path, nil)
+		if status != http.StatusOK || !strings.Contains(body, c.assets) || !strings.Contains(body, c.findings) {
+			t.Errorf("memberA GET %s = %d, want %s and %s (body %.400s)", c.path, status, c.assets, c.findings, body)
+		}
+		for _, who := range []struct {
+			name  string
+			user  shared.ID
+			admin bool
+		}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
+			status, body := h.do(who.user, who.admin, http.MethodGet, c.path, nil)
+			if status != http.StatusOK || !strings.Contains(body, c.ownerAssets) || !strings.Contains(body, c.ownerFinds) {
+				t.Errorf("%s GET %s = %d, want %s and %s (body %.400s)", who.name, c.path, status, c.ownerAssets, c.ownerFinds, body)
+			}
+		}
+	}
+	// A member with no scope row sees the group with nothing in it.
+	_, body := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/asset-groups/"+g, nil)
+	if !strings.Contains(body, `"asset_count":0`) || !strings.Contains(body, `"finding_count":0`) {
+		t.Errorf("scopeless member GET group: want zero counts (body %.400s)", body)
+	}
+}
