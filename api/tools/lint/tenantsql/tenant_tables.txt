@@ -29,6 +29,7 @@ audit_chain_rebaseline_entries
 audit_chain_rebaselines
 audit_log_chain
 audit_logs
+authorization_letters
 bounty_program_exclusions
 bounty_programs
 business_service_assets

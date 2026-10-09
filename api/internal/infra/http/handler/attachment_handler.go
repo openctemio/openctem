@@ -274,6 +274,13 @@ func (h *AttachmentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
+	// An authorization letter's file is evidence (RFC-065 §13): the letter
+	// is revoked, its file never deleted.
+	if att, aerr := h.service.GetByID(r.Context(), tenantID, id); aerr == nil && att.ContextType() == "authorization_letter" {
+		apierror.Conflict("An authorization letter's file is kept; revoke the letter instead").WriteJSON(w)
+		return
+	}
+
 	// Campaign membership check before deletion
 	if h.accessChecker != nil {
 		att, aerr := h.service.GetByID(r.Context(), tenantID, id)

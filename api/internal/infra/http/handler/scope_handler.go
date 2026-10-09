@@ -267,6 +267,7 @@ type ScopeTargetResponse struct {
 	// self_attestation (RFC-065). ProgramID is set for a program entry.
 	AuthorizationSource string  `json:"authorization_source"`
 	ProgramID           *string `json:"program_id,omitempty"`
+	LetterID            *string `json:"letter_id,omitempty"`
 	// Discovery: names under the entry are discovered (Certificate
 	// Transparency) and join the inventory; only a permanent domain entry
 	// discovers.
@@ -374,6 +375,8 @@ type CreateScopeTargetRequest struct {
 	// (default) or self_attestation. Program entries come from Programs
 	// (400 PROGRAM_ENTRY_VIA_PROGRAMS).
 	AuthorizationSource string `json:"authorization_source" validate:"omitempty,max=40"`
+	// LetterID names the letter of an authorization_letter entry (RFC-065 §13).
+	LetterID string `json:"letter_id" validate:"omitempty,uuid"`
 }
 
 // UpdateScopeTargetRequest represents the request to update a scope target.
@@ -444,8 +447,14 @@ func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 		v := pid.String()
 		programID = &v
 	}
+	var letterID *string
+	if lid := t.LetterID(); lid != nil {
+		v := lid.String()
+		letterID = &v
+	}
 	return ScopeTargetResponse{
 		ProgramID:           programID,
+		LetterID:            letterID,
 		ID:                  t.ID().String(),
 		TenantID:            t.TenantID().String(),
 		TargetType:          t.TargetType().String(),
@@ -707,6 +716,7 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		Discovery:     req.Discovery,
 
 		AuthorizationSource: req.AuthorizationSource,
+		LetterID:            req.LetterID,
 	}
 
 	target, err := h.service.CreateTarget(r.Context(), input)

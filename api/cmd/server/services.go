@@ -590,6 +590,8 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
+	// ScopeLetters manages authorization letters (RFC-065 §13).
+	ScopeLetters  *scope.LetterService
 	AttackSurface *attack.SurfaceService
 	ThreatModel   *threatmodel.Service
 
@@ -972,6 +974,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetProgramExclusions(programRepo)
+	letterRepo := postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB})
+	s.Scope.SetLetters(letterRepo)
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
@@ -1281,6 +1285,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		return nil, fmt.Errorf("unsupported STORAGE_PROVIDER %q (local, s3 or minio)", cfg.Storage.Provider)
 	}
 	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
+	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
+	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),
+		letterFiles{svc: s.Attachment}, s.Scope.NotifyAdmins)
 	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
 	storageResolver := auth.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
 	// "local" is always the operator storage above, never a tenant-chosen
