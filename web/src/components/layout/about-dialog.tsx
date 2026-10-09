@@ -7,6 +7,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
@@ -36,31 +37,33 @@ export function AboutDialog({ open, onOpenChange, shell = 'app' }: AboutDialogPr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>{t('help.about', 'About OpenCTEM')}</DialogTitle>
           <DialogDescription>
             {t('help.about.description', 'Continuous threat exposure management platform.')}
           </DialogDescription>
         </DialogHeader>
-        <dl className="divide-y rounded-md border text-sm">
-          <VersionRow
-            label={t('help.about.webApp', 'Web app')}
-            info={web}
-            testId="about-ui-version"
-          />
-          <VersionRow label={t('help.about.api', 'API')} info={api} testId="about-api-version" />
-        </dl>
-        <a
-          href={DOCS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
-        >
-          {t('help.documentation', 'Documentation')}
-          <ExternalLink className="size-3.5" aria-hidden />
-          <span className="sr-only">{t('help.opensInNewTab', '(opens in a new tab)')}</span>
-        </a>
+        <DialogBody className="grid gap-4">
+          <dl className="divide-y rounded-md border text-sm">
+            <VersionRow
+              label={t('help.about.webApp', 'Web app')}
+              info={web}
+              testId="about-ui-version"
+            />
+            <VersionRow label={t('help.about.api', 'API')} info={api} testId="about-api-version" />
+          </dl>
+          <a
+            href={DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
+          >
+            {t('help.documentation', 'Documentation')}
+            <ExternalLink className="size-3.5" aria-hidden />
+            <span className="sr-only">{t('help.opensInNewTab', '(opens in a new tab)')}</span>
+          </a>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   )

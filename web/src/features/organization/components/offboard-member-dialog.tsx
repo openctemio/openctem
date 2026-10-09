@@ -20,6 +20,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -118,7 +119,7 @@ export function OffboardMemberDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Offboard {name}?</DialogTitle>
           <DialogDescription>
@@ -129,49 +130,51 @@ export function OffboardMemberDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <MemberAccessReportView report={report} isLoading={isLoading} />
+        <DialogBody className="grid gap-4">
+          <MemberAccessReportView report={report} isLoading={isLoading} />
 
-        {report && required.length > 0 && (
-          <div className="space-y-4 border-t pt-4" data-testid="offboard-reassignment">
-            <p className="text-sm font-medium">Hand their work to someone else</p>
-            {required.map((category) => {
-              const key = DRAFT_KEY[category]
-              const id = `offboard-${category}`
-              return (
-                <div key={category} className="grid gap-1.5">
-                  <Label htmlFor={id}>{OFFBOARD_CATEGORY_LABEL[category]}</Label>
-                  <Select
-                    value={draft[key] ?? ''}
-                    onValueChange={(v) => setDraft((d) => ({ ...d, [key]: v }))}
-                  >
-                    <SelectTrigger id={id} aria-label={OFFBOARD_CATEGORY_LABEL[category]}>
-                      <SelectValue placeholder="Choose a new owner" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {category === 'findings' && (
-                        <SelectItem value={FINDINGS_TO_QUEUE}>
-                          Return to the queue (unassigned)
-                        </SelectItem>
-                      )}
-                      {candidates.map((c) => (
-                        <SelectItem key={c.user_id} value={c.user_id}>
-                          {c.name || c.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )
-            })}
-          </div>
-        )}
+          {report && required.length > 0 && (
+            <div className="space-y-4 border-t pt-4" data-testid="offboard-reassignment">
+              <p className="text-sm font-medium">Hand their work to someone else</p>
+              {required.map((category) => {
+                const key = DRAFT_KEY[category]
+                const id = `offboard-${category}`
+                return (
+                  <div key={category} className="grid gap-1.5">
+                    <Label htmlFor={id}>{OFFBOARD_CATEGORY_LABEL[category]}</Label>
+                    <Select
+                      value={draft[key] ?? ''}
+                      onValueChange={(v) => setDraft((d) => ({ ...d, [key]: v }))}
+                    >
+                      <SelectTrigger id={id} aria-label={OFFBOARD_CATEGORY_LABEL[category]}>
+                        <SelectValue placeholder="Choose a new owner" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {category === 'findings' && (
+                          <SelectItem value={FINDINGS_TO_QUEUE}>
+                            Return to the queue (unassigned)
+                          </SelectItem>
+                        )}
+                        {candidates.map((c) => (
+                          <SelectItem key={c.user_id} value={c.user_id}>
+                            {c.name || c.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
-        {serverMissing.length > 0 && (
-          <DetailCallout tone="warning" title="Something still needs a new owner">
-            {serverMissing.map((c) => OFFBOARD_CATEGORY_LABEL[c]).join(', ')}. Their holdings
-            changed while this dialog was open; choose a new owner and try again.
-          </DetailCallout>
-        )}
+          {serverMissing.length > 0 && (
+            <DetailCallout tone="warning" title="Something still needs a new owner">
+              {serverMissing.map((c) => OFFBOARD_CATEGORY_LABEL[c]).join(', ')}. Their holdings
+              changed while this dialog was open; choose a new owner and try again.
+            </DetailCallout>
+          )}
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => close(false)} disabled={submitting}>

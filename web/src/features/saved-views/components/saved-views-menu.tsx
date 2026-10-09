@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   DropdownMenu,
@@ -215,33 +216,35 @@ export function SavedViewsMenu({
               the results: everyone sees the findings they are allowed to see.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="saved-view-name">Name</Label>
-              <Input
-                id="saved-view-name"
-                value={name}
-                maxLength={120}
-                onChange={(e) => setName(e.target.value)}
-              />
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="saved-view-name">Name</Label>
+                <Input
+                  id="saved-view-name"
+                  value={name}
+                  maxLength={120}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="saved-view-share">Visible to</Label>
+                <Select value={share} onValueChange={setShare}>
+                  <SelectTrigger id="saved-view-share">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={PERSONAL}>Only me</SelectItem>
+                    {groups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="saved-view-share">Visible to</Label>
-              <Select value={share} onValueChange={setShare}>
-                <SelectTrigger id="saved-view-share">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={PERSONAL}>Only me</SelectItem>
-                  {groups.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveOpen(false)}>
               Cancel

@@ -807,13 +807,30 @@ func (p *FindingProcessor) CheckFingerprints(
 	tenantID shared.ID,
 	fingerprints []string,
 ) (existing, missing []string, err error) {
-	if len(fingerprints) == 0 {
-		return []string{}, []string{}, nil
+	known, err := p.knownFingerprints(ctx, tenantID, fingerprints)
+	if err != nil {
+		return nil, nil, err
 	}
-
 	existing = make([]string, 0, len(fingerprints))
 	missing = make([]string, 0, len(fingerprints))
+	for _, fp := range fingerprints {
+		if _, ok := known[fp]; ok {
+			existing = append(existing, fp)
+		} else {
+			missing = append(missing, fp)
+		}
+	}
+	return existing, missing, nil
+}
 
+// knownFingerprints maps each given fingerprint that is a finding's key,
+// current or former (RFC-043 §6), to that finding's current key.
+func (p *FindingProcessor) knownFingerprints(
+	ctx context.Context,
+	tenantID shared.ID,
+	fingerprints []string,
+) (map[string]string, error) {
+	known := make(map[string]string, len(fingerprints))
 	// Check in batches so a single query stays bounded, but check ALL
 	// fingerprints — the previous code truncated to the first 100, so a caller
 	// that sent >100 and used `missing` to decide what to upload silently lost
@@ -821,36 +838,27 @@ func (p *FindingProcessor) CheckFingerprints(
 	// upstream, so the batch count is bounded.
 	const batchSize = 100
 	for start := 0; start < len(fingerprints); start += batchSize {
-		end := start + batchSize
-		if end > len(fingerprints) {
-			end = len(fingerprints)
-		}
+		end := min(start+batchSize, len(fingerprints))
 		batch := fingerprints[start:end]
 
 		existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, batch)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to check fingerprints: %w", err)
+			return nil, fmt.Errorf("failed to check fingerprints: %w", err)
 		}
 		// A former key of a finding (RFC-043 §6) is known too.
 		var unknown []string
 		for _, fp := range batch {
-			if !existsMap[fp] {
+			if existsMap[fp] {
+				known[fp] = fp
+			} else {
 				unknown = append(unknown, fp)
 			}
 		}
-		for alias := range resolveFingerprintAliasesOf(ctx, p, tenantID, unknown, func(fp string) string { return fp }) {
-			existsMap[alias] = true
-		}
-		for _, fp := range batch {
-			if existsMap[fp] {
-				existing = append(existing, fp)
-			} else {
-				missing = append(missing, fp)
-			}
+		for alias, current := range resolveFingerprintAliasesOf(ctx, p, tenantID, unknown, func(fp string) string { return fp }) {
+			known[alias] = current
 		}
 	}
-
-	return existing, missing, nil
+	return known, nil
 }
 
 // generateFindingFingerprint generates a fingerprint for a CTIS finding.
