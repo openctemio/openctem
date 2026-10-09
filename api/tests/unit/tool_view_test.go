@@ -38,16 +38,6 @@ func (m *viewCatalogRepo) ListToolsWithConfig(_ context.Context, _ shared.ID, _ 
 	return pagination.NewResult(m.tools[start:end], int64(len(m.tools)), page), nil
 }
 
-type viewStatsRepo struct {
-	*toolSvcMockExecutionRepo
-	reads int
-}
-
-func (m *viewStatsRepo) GetTenantStats(_ context.Context, tenantID shared.ID, _ int) (*tooldom.TenantToolStats, error) {
-	m.reads++
-	return &tooldom.TenantToolStats{TenantID: tenantID}, nil
-}
-
 type viewSensors struct{ reads int }
 
 func (s *viewSensors) ListAllSensors(_ context.Context, _ string) ([]*sensor.Sensor, error) {
@@ -55,7 +45,7 @@ func (s *viewSensors) ListAllSensors(_ context.Context, _ string) ([]*sensor.Sen
 	return nil, nil
 }
 
-func newViewService(n int) (*tool.Service, *viewCatalogRepo, *viewStatsRepo, *viewSensors) {
+func newViewService(n int) (*tool.Service, *viewCatalogRepo, *viewSensors) {
 	catalog := &viewCatalogRepo{toolSvcMockConfigRepo: newToolSvcMockConfigRepo()}
 	for i := 0; i < n; i++ {
 		t, _ := tooldom.NewTool(fmt.Sprintf("tool-%03d", i), fmt.Sprintf("Tool %03d", n-i), nil, tooldom.InstallBinary)
@@ -65,22 +55,21 @@ func newViewService(n int) (*tool.Service, *viewCatalogRepo, *viewStatsRepo, *vi
 		}
 		catalog.tools = append(catalog.tools, &tooldom.ToolWithConfig{Tool: t, IsEnabled: i%3 != 0})
 	}
-	stats := &viewStatsRepo{toolSvcMockExecutionRepo: newToolSvcMockExecutionRepo()}
 	sensors := &viewSensors{}
-	svc := tool.NewService(newToolSvcMockToolRepo(), catalog, stats, logger.NewNop())
+	svc := tool.NewService(newToolSvcMockToolRepo(), catalog, logger.NewNop())
 	svc.SetAvailabilitySources(sensors, nil, nil)
-	return svc, catalog, stats, sensors
+	return svc, catalog, sensors
 }
 
 // The reads behind a page do not grow with the page size: one catalog read
-// per 100 tools, one availability computation, one statistics query.
+// per 100 tools and one availability computation.
 func TestToolView_QueryCountIndependentOfPageSize(t *testing.T) {
-	counts := map[int][3]int{}
+	counts := map[int][2]int{}
 	for _, perPage := range []int{1, 50} {
-		svc, catalog, stats, sensors := newViewService(150)
+		svc, catalog, sensors := newViewService(150)
 		res, err := svc.ListToolView(context.Background(), tool.ListToolViewInput{
 			TenantID: shared.NewID().String(), Page: 1, PerPage: perPage,
-			ToolViewOptions: tool.ToolViewOptions{Availability: true, Stats: true},
+			ToolViewOptions: tool.ToolViewOptions{Availability: true},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -89,19 +78,19 @@ func TestToolView_QueryCountIndependentOfPageSize(t *testing.T) {
 			t.Fatalf("per_page %d: %d items of %d", perPage, len(res.Data), res.Total)
 		}
 		for _, v := range res.Data {
-			if v.Stats == nil || v.Availability == nil {
-				t.Fatalf("per_page %d: %s lacks stats or availability", perPage, v.Tool.Name)
+			if v.Availability == nil {
+				t.Fatalf("per_page %d: %s lacks availability", perPage, v.Tool.Name)
 			}
 		}
-		counts[perPage] = [3]int{catalog.reads, stats.reads, sensors.reads}
+		counts[perPage] = [2]int{catalog.reads, sensors.reads}
 	}
-	if counts[1] != counts[50] || counts[1][1] != 1 || counts[1][2] != 1 {
-		t.Fatalf("reads (catalog, stats, sensors) per_page=1 %v, per_page=50 %v; want equal, one stats and one sensor read", counts[1], counts[50])
+	if counts[1] != counts[50] || counts[1][1] != 1 {
+		t.Fatalf("reads (catalog, sensors) per_page=1 %v, per_page=50 %v; want equal and one sensor read", counts[1], counts[50])
 	}
 }
 
 func TestToolView_FiltersSortAndValidation(t *testing.T) {
-	svc, _, _, _ := newViewService(12)
+	svc, _, _ := newViewService(12)
 	ctx := context.Background()
 	tenant := shared.NewID().String()
 
@@ -136,7 +125,7 @@ func TestToolView_FiltersSortAndValidation(t *testing.T) {
 
 // Settings never hold a secret: refused at write, by key and by value.
 func TestToolView_UpdateSettingsRefusesSecrets(t *testing.T) {
-	svc, toolRepo, _, _ := newToolSvcTestService()
+	svc, toolRepo, _ := newToolSvcTestService()
 	tenant := shared.NewID()
 	tl := createPlatformTool("view-secret-tool", tooldom.InstallBinary)
 	toolRepo.tools[tl.ID.String()] = tl
