@@ -67,14 +67,17 @@ type CreateScanRequest struct {
 	// resolves it (at most 1000 targets and assets together). An id that is
 	// not the organization's or outside the caller's scope refuses the whole
 	// request, without saying which.
-	AssetIDs       []string       `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
-	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	ScannerName    string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig  map[string]any `json:"scanner_config"`
-	TargetsPerJob  int            `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	AssetIDs []string `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
+	// TargetOptions tunes how each run resolves the dynamic selectors among
+	// the targets (*.example.com, CIDRs) from the inventory (RFC-068).
+	TargetOptions  *scan.TargetOptions `json:"target_options"`
+	ScanType       string              `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string              `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string              `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any      `json:"scanner_config"`
+	TargetsPerJob  int                 `json:"targets_per_job"`
+	ScheduleType   string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron   string              `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule    string   `json:"schedule_rrule" validate:"max=500"`
@@ -100,8 +103,10 @@ type UpdateScanRequest struct {
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
 	ScannerConfig  map[string]any `json:"scanner_config"`
 	TargetsPerJob  *int           `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	// TargetOptions: omitted = unchanged (RFC-068).
+	TargetOptions *scan.TargetOptions `json:"target_options"`
+	ScheduleType  string              `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule"`
+	ScheduleCron  string              `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule    string   `json:"schedule_rrule" validate:"max=500"`
@@ -194,17 +199,20 @@ type AssetCompatibilityPreviewResponse struct {
 
 // ScanResponse represents the response for a scan.
 type ScanDetailResponse struct {
-	ID             string         `json:"id"`
-	TenantID       string         `json:"tenant_id"`
-	Name           string         `json:"name"`
-	Description    string         `json:"description,omitempty"`
-	AssetGroupID   string         `json:"asset_group_id,omitempty"`  // Primary asset group (legacy)
-	AssetGroupIDs  []string       `json:"asset_group_ids,omitempty"` // Multiple asset groups
-	Targets        []string       `json:"targets,omitempty"`         // Direct targets
-	ScanType       string         `json:"scan_type"`
-	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
-	ScannerName    string         `json:"scanner_name,omitempty"`
-	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
+	ID            string   `json:"id"`
+	TenantID      string   `json:"tenant_id"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description,omitempty"`
+	AssetGroupID  string   `json:"asset_group_id,omitempty"`  // Primary asset group (legacy)
+	AssetGroupIDs []string `json:"asset_group_ids,omitempty"` // Multiple asset groups
+	Targets       []string `json:"targets,omitempty"`         // Direct targets
+	// TargetOptions: how each run resolves the dynamic selectors among
+	// Targets from the inventory (RFC-068).
+	TargetOptions  scan.TargetOptions `json:"target_options"`
+	ScanType       string             `json:"scan_type"`
+	ScanWorkflowID *string            `json:"scan_workflow_id,omitempty"`
+	ScannerName    string             `json:"scanner_name,omitempty"`
+	ScannerConfig  map[string]any     `json:"scanner_config,omitempty"`
 	// ScannerConfigWarnings lists scanner_config values that look like
 	// secrets (a token, a password, an Authorization header). The config is
 	// sent to the sensor in clear inside every command, so a secret there
@@ -342,6 +350,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		AssetGroupIDs:       assetGroupIDs,       // Full list for new scans
 		Targets:             req.Targets,
 		AssetIDs:            req.AssetIDs,
+		TargetOptions:       req.TargetOptions,
 		ScanType:            req.ScanType,
 		ScanWorkflowID:      req.ScanWorkflowID,
 		ScannerName:         req.ScannerName,
@@ -559,6 +568,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		ScannerName:         req.ScannerName,
 		ScannerConfig:       req.ScannerConfig,
 		TargetsPerJob:       req.TargetsPerJob,
+		TargetOptions:       req.TargetOptions,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
 		ScheduleRRule:       req.ScheduleRRule,
@@ -1332,6 +1342,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		AssetGroupID:          assetGroupID,
 		AssetGroupIDs:         assetGroupIDs,
 		Targets:               s.Targets,
+		TargetOptions:         s.TargetOptions,
 		ScanType:              string(s.ScanType),
 		ScannerName:           s.ScannerName,
 		ScannerConfig:         scannerConfigFor(s.ScannerConfig, revealSecrets),
