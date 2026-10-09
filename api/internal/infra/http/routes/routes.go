@@ -613,7 +613,7 @@ func Register(
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
-		registerDashboardRoutes(router, h.Dashboard, authMiddleware, userSync)
+		registerDashboardRoutes(router, h.Dashboard, authMiddleware, userSync, log)
 	}
 
 	// Audit log routes (tenant from JWT token)

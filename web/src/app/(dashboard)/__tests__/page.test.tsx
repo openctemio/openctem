@@ -63,6 +63,11 @@ vi.mock('@/features/dashboard', () => ({
 }))
 
 // Custom-dashboards data layer — no saved dashboards, so the shell defaults to CTEM.
+// The overview provider has its own tests (dashboard-overview.test.tsx); here
+// the widgets' hooks are mocked, so it only passes its children through.
+vi.mock('@/features/dashboard/api/dashboard-overview', () => ({
+  DashboardOverviewProvider: ({ children }: { children: React.ReactNode }) => children,
+}))
 vi.mock('@/features/dashboards/api/use-dashboards-api', () => ({
   useMyDashboards: () => ({ data: { data: [] }, isLoading: false }),
   useRevalidateDashboards: () => async () => {},
