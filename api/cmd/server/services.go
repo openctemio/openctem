@@ -1956,6 +1956,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	// Wildcard domains and inventory-mode CIDRs are expanded from the
+	// inventory at each run start (RFC-068).
+	s.Scan.SetSelectorAssets(repos.ScanSelector)
 	if s.BountyProgram != nil {
 		s.Scan.SetProgramRules(s.BountyProgram) // RFC-065 §12
 	}

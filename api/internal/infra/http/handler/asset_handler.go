@@ -589,6 +589,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        asset_group_ids       query string false "Members of any of these asset groups (comma-separated UUIDs, at most 20)"
 // @Param        owner_ids             query string false "Owned by any of these users or groups (comma-separated UUIDs, at most 20)"
 // @Param        under                 query string false "Names equal to or below these DNS names (comma-separated, at most 10)"
+// @Param        in_cidr               query string false "Address assets inside these ranges (comma-separated CIDRs, at most 10)"
 // @Param        ids                   query string false "Only these assets (comma-separated UUIDs, at most 100): one batch read instead of one request per asset"
 // @Param        has_owner             query bool   false "Filter assets with (true) / without (false) an assigned owner"
 // @Param        data_classifications  query string false "Filter by data classification (comma-separated: public,internal,confidential,restricted,secret)"
@@ -641,6 +642,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		OwnerIDs:             parseQueryArray(query.Get("owner_ids")),
 		IDs:                  parseQueryArray(query.Get("ids")),
 		UnderDomains:         parseQueryArray(query.Get("under")),
+		InCIDRs:              parseQueryArray(query.Get("in_cidr")),
 		HasOwner:             parseQueryBoolPtr(query.Get("has_owner")),
 		DataClassifications:  parseQueryArray(query.Get("data_classifications")),
 		IsControlPlane:       parseQueryBoolPtr(query.Get("is_control_plane")),

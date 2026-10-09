@@ -1283,7 +1283,10 @@ type ListAssetsInput struct {
 	IDs []string `validate:"max=100,dive,uuid"`
 	// UnderDomains keeps the names equal to or below these DNS names (the
 	// scan wizard's coverage expansion: one request for every typed domain).
-	UnderDomains         []string `validate:"max=10,dive,fqdn"`
+	UnderDomains []string `validate:"max=10,dive,fqdn"`
+	// InCIDRs keeps the address assets inside these ranges (the scan
+	// wizard's preview of an inventory-mode CIDR target, RFC-068).
+	InCIDRs              []string `validate:"max=10,dive,cidr"`
 	HasOwner             *bool    // Assets with/without an assigned owner
 	DataClassifications  []string `validate:"max=5,dive,oneof=public internal confidential restricted secret"`
 	IsControlPlane       *bool    // Asset is a control-plane dependency
@@ -1442,6 +1445,9 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	}
 	if len(input.UnderDomains) > 0 {
 		filter = filter.WithUnderDomains(input.UnderDomains...)
+	}
+	if len(input.InCIDRs) > 0 {
+		filter = filter.WithInCIDRs(input.InCIDRs...)
 	}
 	if input.HasOwner != nil {
 		filter = filter.WithHasOwner(*input.HasOwner)
