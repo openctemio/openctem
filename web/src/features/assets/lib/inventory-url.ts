@@ -41,6 +41,8 @@ export type InventoryFilters = Pick<
   | 'hasFindings'
   | 'lastSeenBefore'
   | 'lastSeenAfter'
+  | 'expiresBefore'
+  | 'expiresAfter'
   | 'attribution'
   | 'sort'
   | 'page'
@@ -91,6 +93,8 @@ const STRING_PARAMS = {
   sort: 'sort',
   lastSeenBefore: 'last_seen_before',
   lastSeenAfter: 'last_seen_after',
+  expiresBefore: 'expires_before',
+  expiresAfter: 'expires_after',
 } as const
 
 type ArrayKey = keyof typeof ARRAY_PARAMS
@@ -264,7 +268,9 @@ export function isInventoryFilterEmpty(f: InventoryFilters): boolean {
     f.minRiskScore === undefined &&
     !f.propertiesFilter &&
     !f.lastSeenBefore &&
-    !f.lastSeenAfter
+    !f.lastSeenAfter &&
+    !f.expiresBefore &&
+    !f.expiresAfter
   )
 }
 
@@ -283,6 +289,7 @@ export function countActiveFilters(f: InventoryFilters): number {
   if (f.minRiskScore !== undefined) n += 1
   for (const values of Object.values(f.propertiesFilter ?? {})) n += values.length
   if (f.lastSeenBefore || f.lastSeenAfter) n += 1
+  if (f.expiresBefore || f.expiresAfter) n += 1
   return n
 }
 

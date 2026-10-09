@@ -25,6 +25,8 @@ export interface PlanUsageTableText {
   limitColumn: string
   usedColumn: string
   unlimited: string
+  /** Shown instead of a usage the server did not count (findings while unlimited). */
+  notCounted: string
   overLimit: string
   override: string
   /** "until {date}" for an expiring override. */
@@ -75,7 +77,14 @@ export function PlanUsageTable({ limits, text, action, actionColumn }: PlanUsage
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-3">
-                  <span className="tabular-nums">{used}</span>
+                  {row.uncounted ? (
+                    <span className="text-muted-foreground" title={text.notCounted}>
+                      <span aria-hidden="true">—</span>
+                      <span className="sr-only">{text.notCounted}</span>
+                    </span>
+                  ) : (
+                    <span className="tabular-nums">{used}</span>
+                  )}
                   {pct !== null && (
                     <Progress
                       value={pct}

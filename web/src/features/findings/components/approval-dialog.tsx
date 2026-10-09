@@ -8,6 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -87,7 +88,7 @@ export function ApprovalDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent size="sm">
         {step === 'input' ? (
           <>
             <DialogHeader>
@@ -97,37 +98,39 @@ export function ApprovalDialog({
                 a justification.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="justification">Justification</Label>
-                <Textarea
-                  id="justification"
-                  placeholder="Explain why this status change is needed..."
-                  value={justification}
-                  onChange={(e) => setJustification(e.target.value)}
-                  rows={4}
-                  maxLength={2000}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {justification.length}/2000 characters
-                </p>
-              </div>
-              {showExpiryPicker && (
+            <DialogBody>
+              <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="expires-at">Expiry Date (optional)</Label>
-                  <Input
-                    id="expires-at"
-                    type="datetime-local"
-                    value={expiresAt}
-                    onChange={(e) => setExpiresAt(e.target.value)}
-                    min={new Date().toISOString().slice(0, 16)}
+                  <Label htmlFor="justification">Justification</Label>
+                  <Textarea
+                    id="justification"
+                    placeholder="Explain why this status change is needed..."
+                    value={justification}
+                    onChange={(e) => setJustification(e.target.value)}
+                    rows={4}
+                    maxLength={2000}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Risk acceptance will expire on this date if set.
+                    {justification.length}/2000 characters
                   </p>
                 </div>
-              )}
-            </div>
+                {showExpiryPicker && (
+                  <div className="grid gap-2">
+                    <Label htmlFor="expires-at">Expiry Date (optional)</Label>
+                    <Input
+                      id="expires-at"
+                      type="datetime-local"
+                      value={expiresAt}
+                      onChange={(e) => setExpiresAt(e.target.value)}
+                      min={new Date().toISOString().slice(0, 16)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Risk acceptance will expire on this date if set.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancel
@@ -143,22 +146,24 @@ export function ApprovalDialog({
               <DialogTitle>Confirm Approval Request</DialogTitle>
               <DialogDescription>Please review the details before submitting.</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-3 py-4 text-sm">
-              <div>
-                <span className="font-medium text-muted-foreground">Status:</span>{' '}
-                <strong>{statusLabel}</strong>
-              </div>
-              <div>
-                <span className="font-medium text-muted-foreground">Justification:</span>
-                <p className="mt-1 rounded-md border bg-muted/50 p-2 text-sm">{justification}</p>
-              </div>
-              {expiresAt && (
+            <DialogBody>
+              <div className="grid gap-3 py-4 text-sm">
                 <div>
-                  <span className="font-medium text-muted-foreground">Expires:</span>{' '}
-                  {new Date(expiresAt).toLocaleString()}
+                  <span className="font-medium text-muted-foreground">Status:</span>{' '}
+                  <strong>{statusLabel}</strong>
                 </div>
-              )}
-            </div>
+                <div>
+                  <span className="font-medium text-muted-foreground">Justification:</span>
+                  <p className="mt-1 rounded-md border bg-muted/50 p-2 text-sm">{justification}</p>
+                </div>
+                {expiresAt && (
+                  <div>
+                    <span className="font-medium text-muted-foreground">Expires:</span>{' '}
+                    {new Date(expiresAt).toLocaleString()}
+                  </div>
+                )}
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={handleBack} disabled={isMutating}>
                 Back

@@ -103,6 +103,9 @@ type Repositories struct {
 	SensorPairing *postgres.SensorPairingRepository
 	// SensorGrant: per-sensor grants (RFC-052 §5).
 	SensorGrant *postgres.SensorGrantRepository
+	// SensorReach: what a sensor's lookups may answer about (fingerprints,
+	// baseline diff, suppressions).
+	SensorReach *postgres.SensorReachRepository
 	// SensorEvent is the sensor activity timeline (sensor_events).
 	SensorEvent *postgres.SensorEventRepository
 	// CommandEvent is the command lifecycle (command_events): run timelines.
@@ -139,7 +142,6 @@ type Repositories struct {
 	Capability       *postgres.CapabilityRepository
 	ToolCapability   *postgres.ToolCapabilityRepository
 	TenantToolConfig *postgres.TenantToolConfigRepository
-	ToolExecution    *postgres.ToolExecutionRepository
 	Scan             *postgres.ScanRepository
 	ScannerTemplate  *postgres.ScannerTemplateRepository
 	TemplateSource   *postgres.TemplateSourceRepository
@@ -369,6 +371,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorSigningKey:       postgres.NewSensorSigningKeyRepository(db),
 		SensorPairing:          postgres.NewSensorPairingRepository(db),
 		SensorGrant:            postgres.NewSensorGrantRepository(db),
+		SensorReach:            postgres.NewSensorReachRepository(db),
 		SensorEvent:            postgres.NewSensorEventRepository(db),
 		CommandEvent:           postgres.NewCommandEventRepository(db),
 		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
@@ -394,7 +397,6 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Capability:       postgres.NewCapabilityRepository(db),
 		ToolCapability:   postgres.NewToolCapabilityRepository(db),
 		TenantToolConfig: postgres.NewTenantToolConfigRepository(db),
-		ToolExecution:    postgres.NewToolExecutionRepository(db),
 		Scan:             postgres.NewScanRepository(db),
 		ScannerTemplate:  postgres.NewScannerTemplateRepository(db),
 		TemplateSource:   postgres.NewTemplateSourceRepository(db),
