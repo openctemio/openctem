@@ -6,7 +6,7 @@
  * being mixed into the sensor list.
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ArrowRight, Workflow } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
