@@ -56,10 +56,14 @@ const (
 	MaxApprovals      = 2
 )
 
-// Approval is one approver's approval of a pending entry.
+// Approval is one approver's approval of a pending entry. Self marks an
+// owner's approval of their own entry when no other approver existed
+// (approvers.go); Reason is then required.
 type Approval struct {
 	UserID     string
 	ApprovedAt time.Time
+	Self       bool
+	Reason     string
 }
 
 // Entry errors.

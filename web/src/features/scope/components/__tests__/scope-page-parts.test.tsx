@@ -49,7 +49,7 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 }
 
-const { ScopeApprovals, approveBlocker } = await import('../scope-approvals')
+const { ScopeApprovals, approveBlocker, approversText } = await import('../scope-approvals')
 const { ScopeEntriesTable } = await import('../scope-entries-table')
 const { ScopeExclusionDialog, daysFromNow } = await import('../scope-exclusion-dialog')
 
@@ -134,6 +134,84 @@ describe('Approvals', () => {
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/exclusions/x1/approve', {})
     })
     expect(toast.success).toHaveBeenCalledWith('2 changes approved')
+  })
+
+  it('names who can approve, or counts them when names are hidden', () => {
+    expect(
+      approversText({
+        ...pendingEntry,
+        approval: {
+          remaining: 1,
+          eligible_approver_count: 2,
+          eligible_approvers: [
+            { kind: 'user', id: 'a', name: 'Adam' },
+            { kind: 'user', id: 'c', name: 'Carla' },
+          ],
+          self_approval_available: false,
+        },
+      })
+    ).toBe('Needs 1 more approval. Can approve: Adam, Carla.')
+    expect(
+      approversText({
+        ...pendingEntry,
+        approval: { remaining: 2, eligible_approver_count: 3, self_approval_available: false },
+      })
+    ).toBe('Needs 2 more approvals. 3 members can approve it.')
+    expect(
+      approversText({
+        ...pendingEntry,
+        approval: { remaining: 1, eligible_approver_count: 0, self_approval_available: true },
+      })
+    ).toMatch(/Nobody else in your organization can approve it/)
+    expect(approversText(pendingEntry)).toBeNull()
+  })
+
+  it('reminds the approvers', async () => {
+    routeGets(
+      [
+        {
+          ...mine,
+          approval: { remaining: 1, eligible_approver_count: 1, self_approval_available: false },
+        },
+      ],
+      []
+    )
+    api.post.mockResolvedValue({ reminded: 1, can_remind_at: '2026-10-09T12:00:00Z' })
+    const user = userEvent.setup()
+    wrap(<ScopeApprovals />)
+    await user.click(await screen.findByRole('button', { name: /Remind approvers/ }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/e2/remind', {})
+    )
+    expect(toast.success).toHaveBeenCalledWith('Reminded 1 approver')
+  })
+
+  it('lets the only owner approve their own entry with a reason and a code', async () => {
+    routeGets(
+      [
+        {
+          ...mine,
+          max_tier: 't2',
+          approval: { remaining: 1, eligible_approver_count: 0, self_approval_available: true },
+        },
+      ],
+      []
+    )
+    api.post.mockResolvedValue({ status: 'active' })
+    const user = userEvent.setup()
+    wrap(<ScopeApprovals />)
+    expect(screen.queryByRole('button', { name: /Remind approvers/ })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: /Approve as the only owner/ }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText(/without a second person/), 'single owner')
+    await user.type(within(dialog).getByLabelText(/authenticator app/), '123456')
+    await user.click(within(dialog).getByRole('button', { name: /^Approve$/ }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/e2/self-approve', {
+        reason: 'single owner',
+        totp_code: '123456',
+      })
+    )
   })
 
   it('says why approval is blocked', () => {

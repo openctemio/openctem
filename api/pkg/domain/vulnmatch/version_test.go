@@ -7,7 +7,7 @@ import (
 
 func TestParseVersion_Refuses(t *testing.T) {
 	for _, s := range []string{
-		"", " ", "abc", "v", "-1.0", ".1", "1.0 (Ubuntu)", "1.0/2", "1;rm", "1:2.3",
+		"", " ", "abc", "latest", "rr24", "r", "v", "-1.0", ".1", "1.0 (Ubuntu)", "1.0/2", "1;rm", "1:2.3",
 		"1\x00", strings.Repeat("1", 65),
 		strings.Repeat("1.", 17) + "1", // 18 segments
 		"1." + strings.Repeat("9", 19), // overflow
@@ -22,7 +22,7 @@ func TestParseVersion_Refuses(t *testing.T) {
 func TestParseVersion_Accepts(t *testing.T) {
 	for _, s := range []string{
 		"1", "1.0", "v1.2.3", "V2.0", "8.2p1", "1.1.1w", "2.4.58-rc1", "10.0.17763",
-		"1.0.0-beta.2", "3.0.0+build.5", "1_2_3", "2.0~rc1", "0001.002",
+		"1.0.0-beta.2", "3.0.0+build.5", "1_2_3", "2.0~rc1", "0001.002", "r24", "R30p1",
 		strings.Repeat("1.", 15) + "1",
 	} {
 		if _, ok := ParseVersion(s); !ok {
@@ -85,6 +85,9 @@ func TestVersionCompare(t *testing.T) {
 		// big numbers
 		{"10.0.17763", "10.0.20348", -1},
 		{"2023.1", "2022.12", 1},
+		// release trains
+		{"r24", "r25", -1},
+		{"r30p1", "r30", 1},
 	}
 	for _, c := range cases {
 		a, ok := ParseVersion(c.a)
