@@ -219,3 +219,41 @@ func TestProgramRules_OffByDefault(t *testing.T) {
 		t.Fatalf("got %v %v", got, err)
 	}
 }
+
+type orgHTTPPolicy struct{ pol sensor.ToolHTTPPolicy }
+
+func (o orgHTTPPolicy) ToolHTTPPolicy(context.Context, shared.ID) (sensor.ToolHTTPPolicy, error) {
+	return o.pol, nil
+}
+
+// The program's rules go over the organization's tool HTTP layer: its
+// User-Agent wins, its headers are added, the organization's other settings
+// stay; a creator-supplied http_policy never survives.
+func TestProgramRules_OverTheOrganizationLayer(t *testing.T) {
+	insecure := true
+	for _, path := range handOutPaths[:2] { // Poll and claim-N deliver the organization's layer
+		t.Run(path.name, func(t *testing.T) {
+			src := &programRuleSource{rules: &bp.JobRules{Headers: map[string]string{"X-Bug-Bounty": "jdoe"}, UserAgent: "jdoe-research"}}
+			f := newRecheckFixture()
+			tenant := f.tenant
+			lookup := policySensorLookup{sensors: map[shared.ID]*sensor.Sensor{
+				f.sensor: {ID: f.sensor, TenantID: &tenant, Build: sensor.BuildInfo{SDKVersion: "v0.19.0"}},
+			}}
+			f.svc = command.NewService(f.repo, newCmdTestLogger(), command.WithSensorLookup(lookup),
+				command.WithHTTPPolicy(orgHTTPPolicy{sensor.ToolHTTPPolicy{UserAgent: "org-ua", AllowInsecureTLS: &insecure}}),
+				command.WithProgramRules(src))
+			f.svc.SetFailureObserver(f.steps)
+			c := f.repo.add(f.tenant, commanddom.CommandTypeScan, programPayload, nil)
+			got, err := path.run(f, c)
+			if err != nil || got == nil {
+				t.Fatalf("hand-out: %v %v", got, err)
+			}
+			pol := payloadMap(t, got.Payload)["http_policy"].(map[string]any)
+			headers, _ := pol["headers"].(map[string]any)
+			if pol["user_agent"] != "jdoe-research" || pol["allow_insecure_tls"] != true ||
+				headers["X-Bug-Bounty"] != "jdoe" || headers["X-Org"] != nil {
+				t.Fatalf("http_policy %v", pol)
+			}
+		})
+	}
+}
