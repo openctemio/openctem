@@ -64,15 +64,22 @@ export function useScopeCheck(targets: readonly string[], opts: UseScopeCheckOpt
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const available = can(Permission.ScopeRead)
-  const { enabled = true, sensor_preference, tier } = opts
+  const { enabled = true, sensor_preference, tier, scanner_name } = opts
   const list = normalizeCheckTargets(targets)
   const key =
     currentTenant && available && enabled && list.length > 0
-      ? ['scope-check', currentTenant.id, sensor_preference ?? '', tier ?? '', ...list]
+      ? [
+          'scope-check',
+          currentTenant.id,
+          sensor_preference ?? '',
+          tier ?? '',
+          scanner_name ?? '',
+          ...list,
+        ]
       : null
   const { data, error, isLoading, mutate } = useSWR<ApiScopeCheckResult[]>(
     key,
-    () => checkScope(list, { sensor_preference, tier }),
+    () => checkScope(list, { sensor_preference, tier, scanner_name }),
     { revalidateOnFocus: false, keepPreviousData: true, shouldRetryOnError: false }
   )
   // Stable between renders while the answer is unchanged, so tables can put

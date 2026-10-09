@@ -507,6 +507,16 @@ export function getErrorMessage(
 ): string {
   // Handle ApiClientError
   if (error instanceof ApiClientError) {
+    // A validation failure carries its reasons as [{ field, message }]; the
+    // message itself is only "Validation failed".
+    if (Array.isArray(error.details)) {
+      const reasons = (error.details as { field?: unknown; message?: unknown }[])
+        .filter((d) => d && typeof d.message === 'string')
+        .map((d) =>
+          typeof d.field === 'string' && d.field ? `${d.field} ${d.message}` : d.message
+        )
+      if (reasons.length > 0) return reasons.join('. ')
+    }
     // If message is technical/long, try to get a friendlier version
     if (error.message && error.message.length < 200 && !error.message.includes('Error:')) {
       return error.message

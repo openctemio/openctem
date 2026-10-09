@@ -16,14 +16,24 @@ import { ScopeCheckList, useScopeCheck } from '@/features/scope'
 interface ScopePreviewProps {
   targets: string[]
   sensorPreference?: 'auto' | 'tenant' | 'platform'
+  /**
+   * The single scanner the scan runs: the API checks at the tier that
+   * scanner probes at, the tier its create refuses tier_exceeds at. A
+   * workflow checks each step at its dispatch; the preview then uses the
+   * safe-active default.
+   */
+  scannerName?: string
 }
 
 export const SCOPE_PREVIEW_DEBOUNCE_MS = 400
 
-export function ScopePreview({ targets, sensorPreference }: ScopePreviewProps) {
+export function ScopePreview({ targets, sensorPreference, scannerName }: ScopePreviewProps) {
   const joined = useDebounce(targets.join('\n'), SCOPE_PREVIEW_DEBOUNCE_MS)
   const list = joined ? joined.split('\n') : []
-  const check = useScopeCheck(list, { sensor_preference: sensorPreference })
+  const check = useScopeCheck(list, {
+    sensor_preference: sensorPreference,
+    scanner_name: scannerName || undefined,
+  })
   const [showAllowed, setShowAllowed] = useState(false)
 
   if (!check.available || list.length === 0) return null
