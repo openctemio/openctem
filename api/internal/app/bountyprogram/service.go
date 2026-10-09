@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -53,6 +54,8 @@ type Assigner interface {
 
 // Service imports and manages programs.
 type Service struct {
+	// ruleScope matches the rules a job carries (rules.go).
+	ruleScope scopeauth.Targets
 	// Sync (sync.go, RFC-065 §14).
 	fetcher    ScopeFetcher
 	cipher     TokenCipher
