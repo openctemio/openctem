@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -41,10 +42,12 @@ type Joiner interface {
 // Service imports and manages programs.
 type Service struct {
 	// Sync (sync.go, RFC-065 §14).
-	fetcher    ScopeFetcher
-	cipher     TokenCipher
-	isGone     func(error) bool
-	syncAudit  SyncAuditor
+	fetcher   ScopeFetcher
+	cipher    TokenCipher
+	isGone    func(error) bool
+	syncAudit SyncAuditor
+	// ruleScope matches the rules a job carries (rules.go).
+	ruleScope  scopeauth.Targets
 	repo       bp.Repository
 	fullData   FullData
 	guardrails scopedom.Guardrails
