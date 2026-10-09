@@ -45,6 +45,7 @@ type ctlHarness struct {
 	sensors  *sensor.SensorService
 	repo     *postgres.SensorRepository
 	cmds     *command.Service
+	results  *handler.SensorResultsV2Handler
 	tenantID string
 	jwtToken string
 }
@@ -104,14 +105,15 @@ func newCtlHarness(t *testing.T, opts ...command.Option) *ctlHarness {
 	}
 
 	router := infrahttp.NewChiRouter()
-	registerSensorV2Routes(router, handler.NewSensorResultsV2Handler(receiver, sensorSvc, log), ctl, nil, log)
+	results := handler.NewSensorResultsV2Handler(receiver, sensorSvc, log)
+	registerSensorV2Routes(router, results, ctl, nil, log)
 	router.Group("/api/v1/probe", func(r Router) {
 		r.GET("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(299) })
 	}, userAuth)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)
 
-	h := &ctlHarness{t: t, db: sqldb, srv: srv, sensors: sensorSvc, repo: sensorRepo, cmds: cmdSvc, jwtToken: tok}
+	h := &ctlHarness{t: t, db: sqldb, srv: srv, sensors: sensorSvc, repo: sensorRepo, cmds: cmdSvc, results: results, jwtToken: tok}
 	h.tenantID = h.newTenant()
 	return h
 }
