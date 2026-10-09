@@ -28,6 +28,13 @@ controller then marks it `expired`.
 
 - **One-off entries** carry `expires_at` (default 7 days, at most the
   organization's `one_off_max_days`, 30 at most) and a `reason`.
+- **Intrusive (t2) entries** have their own bound, the owner-only
+  `t2_max_duration` (`7d`, `30d` default, `90d`, `365d`, `permanent`;
+  RFC-054 §12.4), checked in `scope.resolveExpiry` on create and update
+  (also when only the tier is raised: `INTRUSIVE_TOO_LONG`,
+  `INTRUSIVE_NEEDS_EXPIRY`). The one-off policy does not apply to them.
+  Only `PUT /scope/settings/intrusive` (owner, step-up, reason) changes
+  it; `PUT /scope/settings` keeps it (`ScopeSettings.WithIntrusive`).
 - **Who widens.** Creating, activating, extending or raising the tier of an
   entry is widening. A holder of `attack_surface:scope:approve` re-authenticates
   (step-up) and the entry needs the organization's approval count of other
