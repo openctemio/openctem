@@ -131,9 +131,19 @@ export function runRefreshInterval(run?: { status: string } | null): number {
  * schedule or another person starts). A function of the data, for SWR's
  * `refreshInterval`.
  */
-export function runListRefreshInterval(liveMs: number, idleMs: number) {
+export function runListRefreshInterval(
+  liveMs: number,
+  idleMs: number,
+  /** True while the live runs' run:{id} notices arrive: no fast polling then. */
+  realtime = false
+) {
   return (page?: { data?: Array<{ status: string }> } | null): number =>
-    page?.data?.some(isRunInProgress) ? liveMs : idleMs
+    page?.data?.some(isRunInProgress) && !realtime ? liveMs : idleMs
+}
+
+/** The ids of the runs of a list that are in progress (their channels to watch). */
+export function liveRunIds(runs: Array<{ id: string; status: string }> | undefined): string[] {
+  return (runs ?? []).filter(isRunInProgress).map((r) => r.id)
 }
 
 /** A list idle for this long refreshes at most this often. */

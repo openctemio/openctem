@@ -18,15 +18,31 @@
  */
 export function proxyCacheHeaders(
   backendCacheControl: string | null,
-  authenticated: boolean
+  authenticated: boolean,
+  backendETag: string | null = null
 ): Record<string, string> {
   const value = backendCacheControl?.trim()
   if (!value) {
     return authenticated ? { 'Cache-Control': 'no-store' } : {}
   }
   const headers: Record<string, string> = { 'Cache-Control': value }
-  if (authenticated && !/\bno-store\b/i.test(value)) {
+  const storable = !/\bno-store\b/i.test(value)
+  if (authenticated && storable) {
     headers['Vary'] = 'Cookie'
+  }
+  // The validator travels only with a response the API lets the browser keep:
+  // the browser then revalidates with If-None-Match and gets a body-less 304
+  // instead of the whole document (research/81: the 107 KB asset type
+  // registry on every asset page load).
+  const etag = backendETag?.trim()
+  if (storable && etag) {
+    headers['ETag'] = etag
   }
   return headers
 }
+
+/**
+ * Request headers a GET may carry to the API for conditional requests. The
+ * API answers 304 when its ETag still matches; it never varies data on it.
+ */
+export const CONDITIONAL_REQUEST_HEADERS = ['if-none-match'] as const

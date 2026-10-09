@@ -799,5 +799,8 @@
   "auth.requestAccess.confirming": "Đang xác nhận yêu cầu...",
   "auth.requestAccess.confirmed": "Yêu cầu của bạn đã được xác nhận và đang chờ quản trị viên.",
   "auth.requestAccess.confirmFailed": "Liên kết này không hợp lệ hoặc đã hết hạn.",
+  "auth.verifyEmail.verifying": "Đang xác minh địa chỉ email...",
+  "auth.verifyEmail.verified": "Địa chỉ email của bạn đã được xác minh. Bạn có thể đăng nhập.",
+  "auth.verifyEmail.failed": "Liên kết này không hợp lệ hoặc đã hết hạn.",
   "admin.nav.access-requests": "Yêu cầu truy cập"
 }

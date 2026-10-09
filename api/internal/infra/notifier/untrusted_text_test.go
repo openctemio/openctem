@@ -91,13 +91,20 @@ func TestTeams_UntrustedTextCannotFormMarkdownLinks(t *testing.T) {
 	require.Contains(t, out, `"url":"https://app.openctem.test/findings/123"`, "our own action link still works")
 }
 
-// Telegram already escapes Markdown link syntax ([ ] _ * `) with parse_mode
-// Markdown. This pins that behavior.
-func TestTelegram_UntrustedTextCannotFormMarkdownLinks(t *testing.T) {
+// Telegram messages are HTML: untrusted text is escaped and its URLs
+// defanged, so it forms no tag, link or entity. A title with characters
+// legacy Markdown could not escape inside an entity (an underscore in a
+// rule name) no longer makes Telegram refuse the message.
+func TestTelegram_UntrustedTextCannotFormLinksOrTags(t *testing.T) {
 	c := &TelegramClient{chatID: "1"}
-	req := c.buildMessage(attackerMessage())
-	require.NotContains(t, req.Text, "[Re-authenticate](")
-	require.Contains(t, req.Text, `\[Re-authenticate\](`)
+	m := attackerMessage()
+	m.Title = `generic_api_key <a href="https://evil.example">x</a>`
+	req := c.buildMessage(m)
+	require.Equal(t, "HTML", req.ParseMode)
+	require.NotContains(t, req.Text, `<a href=`)
+	require.Contains(t, req.Text, `&lt;a href=&#34;https[:]//evil.example&#34;&gt;`)
+	require.Contains(t, req.Text, "generic_api_key")
+	require.NotContains(t, req.Text, "https://evil")
 	require.Equal(t, "https://app.openctem.test/findings/123", req.ReplyMarkup.InlineKeyboard[0][0].URL)
 }
 
