@@ -4,8 +4,9 @@ Organization (tenant) settings live in one JSONB column, `tenants.settings`.
 Each top-level key is a **section**: `general`, `security`, `branding`,
 `branch`, `ai`, `risk_scoring`, `pentest`, `asset_identity`,
 `asset_lifecycle`, `retest`. The key `subscribed_bundles` is written by the
-module bundle store. The data-scope policy is the separate column
-`tenants.members_without_group_see`.
+module bundle store. There is no per-organization data-scope policy: a
+member with no scope row sees nothing (the old
+`tenants.members_without_group_see` column was dropped by migration 001483).
 
 Code: `pkg/domain/tenant/settings.go` (typed sections),
 `pkg/domain/tenant/settings_section.go` (section keys, ETags, per-section

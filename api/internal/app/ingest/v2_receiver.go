@@ -9,7 +9,6 @@ package ingest
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -109,20 +108,10 @@ func (v *V2Receiver) openCommand(ctx context.Context, tenantID shared.ID, t V2Ta
 // commandTool is the tool a command asks for (payload "scanner", else
 // "preferred_tool"; the same keys the zone claim predicate reads), or "".
 func commandTool(cmd *command.Command) string {
-	if cmd == nil || len(cmd.Payload) == 0 {
+	if cmd == nil {
 		return ""
 	}
-	var p struct {
-		Scanner       string `json:"scanner"`
-		PreferredTool string `json:"preferred_tool"`
-	}
-	if json.Unmarshal(cmd.Payload, &p) != nil {
-		return ""
-	}
-	if p.Scanner != "" {
-		return p.Scanner
-	}
-	return p.PreferredTool
+	return command.PayloadTool(cmd.Payload)
 }
 
 func sameCommand(rep *ingestreport.Report, cmd *command.Command) bool {
