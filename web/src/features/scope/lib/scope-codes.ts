@@ -118,7 +118,10 @@ export const SCOPE_ERROR_TEXT = {
   REQUEST_MUST_BE_SINGLE:
     'A request covers one name or address. Wildcards and ranges need an approver.',
   REQUEST_TIER: 'A request cannot ask for intrusive (T2) probes.',
-  INTRUSIVE_NEEDS_EXPIRY: 'Intrusive (T2) entries must expire and need an approval.',
+  INTRUSIVE_TOO_LONG:
+    'An intrusive (T2) entry cannot last longer than your organization allows. An owner sets the limit in Scope settings.',
+  INTRUSIVE_NEEDS_EXPIRY:
+    'Intrusive (T2) entries must expire in your organization (an owner may allow permanent ones) and need an approval.',
   WIDENING_NEEDS_APPROVER: 'Only a scope approver can widen what may be probed.',
   ENTRY_SELF_APPROVAL: 'You requested this change, so another approver must approve it.',
   SELF_APPROVAL_NOT_ALLOWED:

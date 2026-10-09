@@ -106,6 +106,9 @@ export type ApiScopeSettings = Schemas['internal_infra_http_handler.ScopeSetting
 
 export type ScopeOneOffPolicy = 'admins' | 'admins_and_requests' | 'disabled'
 
+/** The longest an intrusive (t2) entry may last (owner-only, RFC-054 §12.4). */
+export type ScopeT2MaxDuration = '7d' | '30d' | '90d' | '365d' | 'permanent'
+
 export interface UpdateScopeSettingsInput {
   auto_join_discovered: boolean
   one_off_targets: ScopeOneOffPolicy

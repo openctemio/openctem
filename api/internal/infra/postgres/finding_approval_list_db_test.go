@@ -37,7 +37,7 @@ func TestFindingApprovalRepository_List(t *testing.T) {
 	newTenant := func(name string) shared.ID {
 		id := shared.NewID()
 		mustExec(t, db, `INSERT INTO tenants (id, name, slug) VALUES ($1,$2,$3)`,
-			id.String(), name, name+"-"+id.String()[:8])
+			id.String(), name, name+"-"+id.String()[28:])
 		t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id=$1`, id.String()) })
 		return id
 	}

@@ -190,3 +190,79 @@ func (h *ScopeHandler) RemindApprovers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
+
+// ScopeAttestationResponse is the attestation state of an active t2 entry
+// (RFC-054 §12.5).
+type ScopeAttestationResponse struct {
+	// DueAt: when the next confirmation falls due (null: the entry expires
+	// first and needs none).
+	DueAt *time.Time `json:"due_at,omitempty"`
+	// RequestedAt: an open request; DowngradeAt: when the entry falls back to
+	// t1 without a confirmation.
+	RequestedAt *time.Time `json:"requested_at,omitempty"`
+	DowngradeAt *time.Time `json:"downgrade_at,omitempty"`
+	// AttestedAt and AttestedBy: the last confirmation.
+	AttestedAt *time.Time `json:"attested_at,omitempty"`
+	AttestedBy *ActorRef  `json:"attested_by,omitempty"`
+}
+
+// addAttestationStatus sets Attestation on the active t2 entries of outs.
+func (h *ScopeHandler) addAttestationStatus(r *http.Request, outs []*ScopeTargetResponse, targets []*scopedom.Target) {
+	var interval time.Duration
+	loaded := false
+	refs := []*ActorRef{}
+	for i, t := range targets {
+		if i >= len(outs) || t.MaxTier() != scopedom.TierIntrusive || t.Status() != scopedom.StatusActive {
+			continue
+		}
+		if !loaded {
+			d, err := h.service.AttestationInterval(r.Context(), middleware.MustGetTenantID(r.Context()))
+			if err != nil {
+				h.logger.Warn("scope attestation: interval", "error", logger.SanitizeError(err))
+				return
+			}
+			interval, loaded = d, true
+		}
+		a := &ScopeAttestationResponse{
+			DueAt: t.AttestationDueAt(interval), RequestedAt: t.AttestationRequestedAt(),
+			DowngradeAt: t.DowngradeAt(), AttestedAt: t.AttestedAt(), AttestedBy: actorRef(t.AttestedBy()),
+		}
+		if a.DueAt == nil && a.RequestedAt == nil && a.AttestedAt == nil {
+			continue
+		}
+		refs = append(refs, a.AttestedBy)
+		outs[i].Attestation = a
+	}
+	if len(refs) > 0 {
+		resolveActors(r.Context(), h.actors, h.logger, middleware.MustGetTenantID(r.Context()), refs)
+	}
+}
+
+// AttestTarget handles POST /api/v1/scope/targets/{id}/attest
+// @Summary      Keep an intrusive (t2) scope entry
+// @Description  Confirms that an active t2 entry should keep intrusive probes and starts its next attestation period (RFC-054 §12.5). Without a confirmation within 14 days of a request the entry falls back to t1. Needs attack_surface:scope:approve; one click (it widens nothing). Audited.
+// @Tags         Scope
+// @Produce      json
+// @Param        id   path      string  true  "Target ID"
+// @Success      200  {object}  ScopeTargetResponse
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scope/targets/{id}/attest [post]
+func (h *ScopeHandler) AttestTarget(w http.ResponseWriter, r *http.Request) {
+	targetID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
+	before, ok := h.targetBefore(w, r, tenantID, targetID)
+	if !ok {
+		return
+	}
+	target, err := h.service.AttestTarget(r.Context(), targetID, tenantID, scopeActor(r))
+	if err != nil {
+		h.handleServiceError(w, "Scope target", err)
+		return
+	}
+	h.auditTarget(r, audit.ActionScopeTargetAttested, targetID, before, target)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(h.targetOut(r, target))
+}

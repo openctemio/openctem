@@ -131,14 +131,25 @@ func (s *Service) requireStepUp(ctx context.Context, a Actor) error {
 	return s.stepUp.RequireRecentAuth(ctx, a.UserID)
 }
 
+// expiryBound is the longest an entry of tier may last, in days, and the
+// error for going past it: the organization's t2 maximum for an intrusive
+// entry (RFC-054 §12.4), the one-off bound for any other.
+func expiryBound(p policy, tier scopedom.Tier) (int, error) {
+	if tier == scopedom.TierIntrusive {
+		days, _ := p.settings.T2Max()
+		return days, scopedom.ErrIntrusiveTooLong
+	}
+	return p.settings.MaxDays(), ErrOneOffTooLong
+}
+
 // resolveExpiry turns expires_in_days / expires_at into an expiry within the
-// tenant's one-off bound (nil: permanent).
-func resolveExpiry(p policy, now time.Time, at *time.Time, days *int) (*time.Time, error) {
-	maxDays := p.settings.MaxDays()
+// tenant's bound for tier (nil: permanent).
+func resolveExpiry(p policy, tier scopedom.Tier, now time.Time, at *time.Time, days *int) (*time.Time, error) {
+	maxDays, tooLong := expiryBound(p, tier)
 	switch {
 	case days != nil:
 		if *days < 1 || *days > maxDays {
-			return nil, fmt.Errorf("%w: expires_in_days must be between 1 and %d", ErrOneOffTooLong, maxDays)
+			return nil, fmt.Errorf("%w: expires_in_days must be between 1 and %d", tooLong, maxDays)
 		}
 		e := now.Add(time.Duration(*days) * 24 * time.Hour)
 		return &e, nil
@@ -147,12 +158,19 @@ func resolveExpiry(p policy, now time.Time, at *time.Time, days *int) (*time.Tim
 			return nil, fmt.Errorf("%w: expires_at must be in the future", shared.ErrValidation)
 		}
 		if at.After(now.Add(time.Duration(maxDays)*24*time.Hour + time.Minute)) {
-			return nil, fmt.Errorf("%w: at most %d days", ErrOneOffTooLong, maxDays)
+			return nil, fmt.Errorf("%w: at most %d days", tooLong, maxDays)
 		}
 		e := at.UTC()
 		return &e, nil
 	}
 	return nil, nil
+}
+
+// intrusivePermanent reports whether the organization allows permanent t2
+// entries.
+func (p policy) intrusivePermanent() bool {
+	_, permanent := p.settings.T2Max()
+	return permanent
 }
 
 // singleTarget reports whether a pattern names one name or one address.
@@ -177,6 +195,8 @@ type entryDecision struct {
 	tier      scopedom.Tier
 	approvals int
 	request   bool
+	// intrusivePermanent: the organization allows permanent t2 entries.
+	intrusivePermanent bool
 }
 
 func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, targetType scopedom.TargetType, in CreateTargetInput, now time.Time, preview bool) (entryDecision, error) {
@@ -192,11 +212,16 @@ func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, target
 	if d.tier, err = scopedom.ParseTier(tierText); err != nil {
 		return d, err
 	}
-	if d.expiresAt, err = resolveExpiry(p, now, in.ExpiresAt, in.ExpiresInDays); err != nil {
+	if d.expiresAt, err = resolveExpiry(p, d.tier, now, in.ExpiresAt, in.ExpiresInDays); err != nil {
 		return d, err
 	}
-	if d.expiresAt != nil && p.settings.OneOffPolicy() == tenant.OneOffDisabled {
+	// A t2 entry's expiry is its own bound (t2_max_duration), not a one-off.
+	if d.expiresAt != nil && d.tier != scopedom.TierIntrusive && p.settings.OneOffPolicy() == tenant.OneOffDisabled {
 		return d, ErrOneOffDisabled
+	}
+	d.intrusivePermanent = p.intrusivePermanent()
+	if d.tier == scopedom.TierIntrusive && d.expiresAt == nil && !d.intrusivePermanent {
+		return d, scopedom.ErrIntrusiveNeeds
 	}
 	if in.Actor.system() {
 		return d, nil

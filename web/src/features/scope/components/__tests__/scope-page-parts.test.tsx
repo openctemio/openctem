@@ -51,6 +51,7 @@ globalThis.ResizeObserver ??= class {
 
 const { ScopeApprovals, approveBlocker, approversText } = await import('../scope-approvals')
 const { ScopeEntriesTable } = await import('../scope-entries-table')
+const { attestationsDue } = await import('../scope-attestations')
 const { ScopeExclusionDialog, daysFromNow } = await import('../scope-exclusion-dialog')
 
 const wrap = (ui: ReactNode) =>
@@ -211,6 +212,26 @@ describe('Approvals', () => {
         reason: 'single owner',
         totp_code: '123456',
       })
+    )
+  })
+
+  it('asks to keep an intrusive (T2) entry whose confirmation is due', async () => {
+    const t2 = {
+      ...pendingEntry,
+      id: 't2',
+      pattern: 'pentest.acme.io',
+      status: 'active',
+      max_tier: 't2',
+      attestation: { requested_at: '2026-10-01T00:00:00Z', downgrade_at: '2026-10-15T00:00:00Z' },
+    }
+    expect(attestationsDue([t2, { ...t2, id: 'x', attestation: {} }, pendingEntry])).toHaveLength(1)
+    routeGets([t2], [])
+    api.post.mockResolvedValue({ ...t2, attestation: {} })
+    const user = userEvent.setup()
+    wrap(<ScopeApprovals />)
+    await user.click(await screen.findByRole('button', { name: /Keep T2/ }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/t2/attest', {})
     )
   })
 
