@@ -12,6 +12,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -22,6 +23,7 @@ const maxJSONSize = 64 * 1024 * 1024 // 64MB upper bound for marshaled JSON fiel
 // FindingRepository implements vulnerability.FindingRepository using PostgreSQL.
 type FindingRepository struct {
 	db *DB
+	planLimits
 }
 
 // NewFindingRepository creates a new FindingRepository.
@@ -117,6 +119,9 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
+	if err := r.checkLimit(ctx, finding.TenantID(), plan.Findings, 1); err != nil {
+		return err
+	}
 
 	args, err := findingCreateArgs(finding, metadata)
 	if err != nil {
@@ -136,6 +141,9 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 
 // CreateInTx persists a new finding within an existing transaction.
 func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding *vulnerability.Finding) error {
+	if err := r.checkLimit(ctx, finding.TenantID(), plan.Findings, 1); err != nil {
+		return err
+	}
 	metadata, err := json.Marshal(finding.Metadata())
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -330,6 +338,13 @@ func (r *FindingRepository) CreateBatch(ctx context.Context, findings []*vulnera
 	if len(findings) == 0 {
 		return nil
 	}
+	refused, err := r.refuseOverFindingsLimit(ctx, findings)
+	if err != nil {
+		return err
+	}
+	if len(refused) > 0 {
+		return fmt.Errorf("%w: %d new findings over the findings plan limit", shared.ErrForbidden, len(refused))
+	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -384,6 +399,32 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		return result, nil
 	}
 
+	// New findings over the organization's findings limit are refused one
+	// by one (per-item errors); re-sightings of existing findings and the
+	// new findings within the limit are stored.
+	refused, err := r.refuseOverFindingsLimit(ctx, findings)
+	if err != nil {
+		return nil, err
+	}
+	positions := make([]int, 0, len(findings))
+	if len(refused) > 0 {
+		kept := make([]*vulnerability.Finding, 0, len(findings)-len(refused))
+		for i, f := range findings {
+			if msg, ok := refused[i]; ok {
+				result.Skipped++
+				result.Errors[i] = msg
+				continue
+			}
+			kept = append(kept, f)
+			positions = append(positions, i)
+		}
+		findings = kept
+	} else {
+		for i := range findings {
+			positions = append(positions, i)
+		}
+	}
+
 	record := func(index int, finding *vulnerability.Finding, row upsertedRow) {
 		result.IDs[index] = row.id
 		result.Inserted[index] = row.inserted
@@ -410,14 +451,14 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		rows, err := r.insertChunk(ctx, chunk)
 		if err == nil {
 			for i, finding := range chunk {
-				record(chunkStart+i, finding, rows[i])
+				record(positions[chunkStart+i], finding, rows[i])
 			}
 			continue
 		}
 
 		// Chunk failed - retry individually to identify bad findings
 		for i, finding := range chunk {
-			globalIndex := chunkStart + i
+			globalIndex := positions[chunkStart+i]
 			row, err := r.insertSingleFinding(ctx, finding)
 			if err != nil {
 				result.Skipped++
@@ -429,6 +470,87 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 	}
 
 	return result, nil
+}
+
+// refuseOverFindingsLimit returns, by input index, the findings refused by
+// their organization's findings limit, with the refusal as the message. Only
+// NEW findings count (a fingerprint the organization does not have yet); the
+// first ones in input order are admitted up to the remaining headroom and
+// every later one is refused. While the limit is unlimited it costs one
+// limit read and no count. When the limit cannot be read every new finding
+// is refused (fail-closed).
+func (r *FindingRepository) refuseOverFindingsLimit(ctx context.Context, findings []*vulnerability.Finding) (map[int]string, error) {
+	if r.limits == nil {
+		return nil, nil
+	}
+	byTenant := map[shared.ID][]int{}
+	for i, f := range findings {
+		byTenant[f.TenantID()] = append(byTenant[f.TenantID()], i)
+	}
+	refused := map[int]string{}
+	for tenantID, idx := range byTenant {
+		room, herr := r.headroom(ctx, tenantID, plan.Findings)
+		if herr == nil && room == plan.Unlimited {
+			continue
+		}
+		var lim *plan.ErrLimitReached
+		if herr != nil && !errors.As(herr, &lim) {
+			return nil, herr // an invalid key: a programming error
+		}
+		fps := make([]string, 0, len(idx))
+		for _, i := range idx {
+			fps = append(fps, findings[i].Fingerprint())
+		}
+		fresh, err := r.newFingerprints(ctx, tenantID, fps)
+		if err != nil {
+			return nil, err
+		}
+		// The refusal each new finding over the limit gets.
+		msg := "plan limit reached: findings; this new finding was not stored"
+		if herr != nil {
+			room, msg = 0, herr.Error()+"; this new finding was not stored"
+		}
+		admitted := map[string]bool{}
+		n := 0
+		for _, i := range idx {
+			fp := findings[i].Fingerprint()
+			if !fresh[fp] || admitted[fp] {
+				continue
+			}
+			if len(admitted) < room {
+				admitted[fp] = true
+				continue
+			}
+			refused[i] = msg
+			n++
+		}
+		if herr == nil {
+			r.recordRefusals(plan.Findings, n)
+		}
+	}
+	return refused, nil
+}
+
+// newFingerprints returns the fingerprints the organization has no finding for.
+func (r *FindingRepository) newFingerprints(ctx context.Context, tenantID shared.ID, fps []string) (map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT b.fp
+		  FROM unnest($2::text[]) AS b(fp)
+		 WHERE NOT EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = $1 AND f.fingerprint = b.fp)`,
+		tenantID.String(), pq.Array(fps))
+	if err != nil {
+		return nil, fmt.Errorf("count new findings: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, fmt.Errorf("scan new finding: %w", err)
+		}
+		out[fp] = true
+	}
+	return out, rows.Err()
 }
 
 // upsertedRow is what the finding upsert returns for one row.

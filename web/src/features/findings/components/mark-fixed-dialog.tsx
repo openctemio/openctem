@@ -8,6 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -138,7 +139,7 @@ export function MarkFixedDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Mark as Fixed</DialogTitle>
           <DialogDescription>
@@ -148,86 +149,92 @@ export function MarkFixedDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Note (required) */}
-          <div className="space-y-2">
-            <Label htmlFor="fix-note">What did you do to fix this? *</Label>
-            <Textarea
-              id="fix-note"
-              placeholder="e.g., Upgraded log4j-core from 2.14.0 to 2.17.1 via Ansible playbook"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={3}
-              className="resize-none"
-            />
-          </div>
+        <DialogBody>
+          <div className="space-y-4 py-2">
+            {/* Note (required) */}
+            <div className="space-y-2">
+              <Label htmlFor="fix-note">What did you do to fix this? *</Label>
+              <Textarea
+                id="fix-note"
+                placeholder="e.g., Upgraded log4j-core from 2.14.0 to 2.17.1 via Ansible playbook"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
 
-          {/* Advanced options toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-between text-muted-foreground"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-          >
-            Advanced options
-            {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-
-          {showAdvanced && (
-            <div className="space-y-4 rounded-lg border p-3">
-              {/* Reference */}
-              <div className="space-y-2">
-                <Label htmlFor="fix-ref">Reference (optional)</Label>
-                <Input
-                  id="fix-ref"
-                  placeholder="commit:abc123, PR #456, KB5033898"
-                  value={reference}
-                  onChange={(e) => setReference(e.target.value)}
-                />
-              </div>
-
-              {/* Related CVEs */}
-              {groupType === 'cve' && relatedCVEs.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="include-related"
-                      checked={includeRelated}
-                      onCheckedChange={(v) => setIncludeRelated(!!v)}
-                    />
-                    <Label htmlFor="include-related" className="cursor-pointer">
-                      Include related CVEs (same component)
-                    </Label>
-                  </div>
-
-                  {includeRelated && (
-                    <div className="space-y-1.5 ms-6">
-                      {relatedCVEs.map((rc) => (
-                        <RelatedCVERow
-                          key={rc.cve_id}
-                          cve={rc}
-                          selected={selectedRelatedCVEs.has(rc.cve_id)}
-                          onToggle={() => toggleRelatedCVE(rc.cve_id)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
+            {/* Advanced options toggle */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-between text-muted-foreground"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              Advanced options
+              {showAdvanced ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
               )}
-            </div>
-          )}
+            </Button>
 
-          {/* Summary */}
-          <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-sm">
-            <Info className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-            <div>
-              <span className="font-medium">{totalFindings} findings</span> will be marked as
-              &quot;Fix Applied&quot;. A proof-of-fix retest re-runs each finding&apos;s check where
-              it can; a security reviewer confirms the rest. You cannot mark findings as
-              &quot;Resolved&quot; directly.
+            {showAdvanced && (
+              <div className="space-y-4 rounded-lg border p-3">
+                {/* Reference */}
+                <div className="space-y-2">
+                  <Label htmlFor="fix-ref">Reference (optional)</Label>
+                  <Input
+                    id="fix-ref"
+                    placeholder="commit:abc123, PR #456, KB5033898"
+                    value={reference}
+                    onChange={(e) => setReference(e.target.value)}
+                  />
+                </div>
+
+                {/* Related CVEs */}
+                {groupType === 'cve' && relatedCVEs.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="include-related"
+                        checked={includeRelated}
+                        onCheckedChange={(v) => setIncludeRelated(!!v)}
+                      />
+                      <Label htmlFor="include-related" className="cursor-pointer">
+                        Include related CVEs (same component)
+                      </Label>
+                    </div>
+
+                    {includeRelated && (
+                      <div className="space-y-1.5 ms-6">
+                        {relatedCVEs.map((rc) => (
+                          <RelatedCVERow
+                            key={rc.cve_id}
+                            cve={rc}
+                            selected={selectedRelatedCVEs.has(rc.cve_id)}
+                            onToggle={() => toggleRelatedCVE(rc.cve_id)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Summary */}
+            <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-sm">
+              <Info className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+              <div>
+                <span className="font-medium">{totalFindings} findings</span> will be marked as
+                &quot;Fix Applied&quot;. A proof-of-fix retest re-runs each finding&apos;s check
+                where it can; a security reviewer confirms the rest. You cannot mark findings as
+                &quot;Resolved&quot; directly.
+              </div>
             </div>
           </div>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

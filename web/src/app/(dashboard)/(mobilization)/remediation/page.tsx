@@ -82,6 +82,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -1874,7 +1875,7 @@ function TaskFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isEdit ? <Pencil className="h-4 w-4" /> : <ListTodo className="h-4 w-4" />}
@@ -1884,163 +1885,165 @@ function TaskFormDialog({
             {isEdit ? 'Update task information' : 'Create a new remediation task'}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
-          <div className="space-y-1.5">
-            <Label htmlFor="task-title" className="text-xs">
-              Title *
-            </Label>
-            <Input
-              id="task-title"
-              placeholder="Task title"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="task-desc" className="text-xs">
-              Description
-            </Label>
-            <Textarea
-              id="task-desc"
-              placeholder="Task description"
-              rows={3}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            />
-          </div>
-          {/* Only fields the backend actually persists are shown. Severity
+        <DialogBody>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="task-title" className="text-xs">
+                Title *
+              </Label>
+              <Input
+                id="task-title"
+                placeholder="Task title"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="task-desc" className="text-xs">
+                Description
+              </Label>
+              <Textarea
+                id="task-desc"
+                placeholder="Task description"
+                rows={3}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              />
+            </div>
+            {/* Only fields the backend actually persists are shown. Severity
               (derived from priority), Estimated Hours (no column), and the free-
               text Assignee (broken end-to-end — empty picker, dropped on save,
               never returned) were removed; a real assignee picker is a follow-up. */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Priority</Label>
-              <Select
-                value={formData.priority}
-                onValueChange={(v) => setFormData({ ...formData, priority: v as TaskPriority })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="urgent">Urgent</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Priority</Label>
+                <Select
+                  value={formData.priority}
+                  onValueChange={(v) => setFormData({ ...formData, priority: v as TaskPriority })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Due Date</Label>
+                <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-start font-normal h-9"
+                    >
+                      <CalendarIcon className="me-2 h-4 w-4" />
+                      {formData.dueDate ? format(formData.dueDate, 'PPP') : 'Select date'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <CalendarComponent
+                      mode="single"
+                      selected={formData.dueDate}
+                      onSelect={(date) => {
+                        setFormData({ ...formData, dueDate: date })
+                        setDueDateOpen(false)
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Due Date</Label>
-              <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+              <Label className="text-xs">Assignee</Label>
+              <div>
+                <AssigneeSelect
+                  variant="outline"
+                  showFullName
+                  placeholder="Assign to…"
+                  value={
+                    formData.assignedTo
+                      ? { id: formData.assignedTo, name: formData.assigneeName || 'Assigned' }
+                      : null
+                  }
+                  onChange={(user) =>
+                    setFormData({
+                      ...formData,
+                      assignedTo: user?.id ?? '',
+                      assigneeName: user?.name ?? '',
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5 min-w-0">
+              <Label className="text-xs">
+                Link Findings
+                {formData.findingIds.length > 0 ? ` (${formData.findingIds.length})` : ''}
+              </Label>
+              {/* A remediation task can cover MANY findings (one fix → many). Multi-
+                select → finding_filter.finding_ids (backend counts + resolves all). */}
+              <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
-                    className="w-full justify-start text-start font-normal h-9"
+                    className="h-9 w-full justify-between font-normal"
+                    type="button"
                   >
-                    <CalendarIcon className="me-2 h-4 w-4" />
-                    {formData.dueDate ? format(formData.dueDate, 'PPP') : 'Select date'}
+                    <span className="truncate">
+                      {formData.findingIds.length === 0
+                        ? 'Select findings…'
+                        : `${formData.findingIds.length} finding${formData.findingIds.length > 1 ? 's' : ''} selected`}
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <CalendarComponent
-                    mode="single"
-                    selected={formData.dueDate}
-                    onSelect={(date) => {
-                      setFormData({ ...formData, dueDate: date })
-                      setDueDateOpen(false)
-                    }}
-                    initialFocus
-                  />
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-1" align="start">
+                  <div className="max-h-64 overflow-y-auto">
+                    {findings.length === 0 ? (
+                      <p className="p-2 text-xs text-muted-foreground">No findings available</p>
+                    ) : (
+                      findings.map((f) => {
+                        const checked = formData.findingIds.includes(f.id)
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted"
+                            onClick={() =>
+                              setFormData({
+                                ...formData,
+                                findingIds: checked
+                                  ? formData.findingIds.filter((id) => id !== f.id)
+                                  : [...formData.findingIds, f.id],
+                              })
+                            }
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${
+                                checked
+                                  ? 'border-primary bg-primary text-primary-foreground'
+                                  : 'border-input'
+                              }`}
+                            >
+                              {checked && <Check className="h-3 w-3" />}
+                            </span>
+                            <span className="line-clamp-2">{f.title || f.message || f.id}</span>
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
                 </PopoverContent>
               </Popover>
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Assignee</Label>
-            <div>
-              <AssigneeSelect
-                variant="outline"
-                showFullName
-                placeholder="Assign to…"
-                value={
-                  formData.assignedTo
-                    ? { id: formData.assignedTo, name: formData.assigneeName || 'Assigned' }
-                    : null
-                }
-                onChange={(user) =>
-                  setFormData({
-                    ...formData,
-                    assignedTo: user?.id ?? '',
-                    assigneeName: user?.name ?? '',
-                  })
-                }
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5 min-w-0">
-            <Label className="text-xs">
-              Link Findings
-              {formData.findingIds.length > 0 ? ` (${formData.findingIds.length})` : ''}
-            </Label>
-            {/* A remediation task can cover MANY findings (one fix → many). Multi-
-                select → finding_filter.finding_ids (backend counts + resolves all). */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="h-9 w-full justify-between font-normal"
-                  type="button"
-                >
-                  <span className="truncate">
-                    {formData.findingIds.length === 0
-                      ? 'Select findings…'
-                      : `${formData.findingIds.length} finding${formData.findingIds.length > 1 ? 's' : ''} selected`}
-                  </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[--radix-popover-trigger-width] p-1" align="start">
-                <div className="max-h-64 overflow-y-auto">
-                  {findings.length === 0 ? (
-                    <p className="p-2 text-xs text-muted-foreground">No findings available</p>
-                  ) : (
-                    findings.map((f) => {
-                      const checked = formData.findingIds.includes(f.id)
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted"
-                          onClick={() =>
-                            setFormData({
-                              ...formData,
-                              findingIds: checked
-                                ? formData.findingIds.filter((id) => id !== f.id)
-                                : [...formData.findingIds, f.id],
-                            })
-                          }
-                        >
-                          <span
-                            aria-hidden="true"
-                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border ${
-                              checked
-                                ? 'border-primary bg-primary text-primary-foreground'
-                                : 'border-input'
-                            }`}
-                          >
-                            {checked && <Check className="h-3 w-3" />}
-                          </span>
-                          <span className="line-clamp-2">{f.title || f.message || f.id}</span>
-                        </button>
-                      )
-                    })
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>
             Cancel

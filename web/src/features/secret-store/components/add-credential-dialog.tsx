@@ -15,6 +15,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -235,7 +237,7 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Add Credential</DialogTitle>
           <DialogDescription>
@@ -244,292 +246,294 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
             {/* Basic Info */}
-            <div className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="GitHub Personal Access Token" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <DialogBody className="space-y-6">
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="GitHub Personal Access Token" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (optional)</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Used for accessing company template repositories"
-                        className="resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description (optional)</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Used for accessing company template repositories"
+                          className="resize-none"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="expires_at"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Expiration Date (optional)</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      Set an expiration date to receive reminders before the credential expires
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+                <FormField
+                  control={form.control}
+                  name="expires_at"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Expiration Date (optional)</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        Set an expiration date to receive reminders before the credential expires
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-            <Separator />
+              <Separator />
 
-            {/* Credential Type Selection */}
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium">Credential Type</h4>
-              <Tabs
-                value={credentialType}
-                onValueChange={(v) => handleCredentialTypeChange(v as CredentialType)}
-              >
-                <TabsList>
-                  {CREDENTIAL_TYPES.map((type) => {
-                    const Icon = CREDENTIAL_TYPE_ICONS[type]
-                    return (
-                      <TabsTrigger key={type} value={type} className="text-xs">
-                        <Icon className="me-1 h-3 w-3" />
-                        {CREDENTIAL_TYPE_DISPLAY_NAMES[type].split(' ')[0]}
-                      </TabsTrigger>
-                    )
-                  })}
-                </TabsList>
+              {/* Credential Type Selection */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">Credential Type</h4>
+                <Tabs
+                  value={credentialType}
+                  onValueChange={(v) => handleCredentialTypeChange(v as CredentialType)}
+                >
+                  <TabsList>
+                    {CREDENTIAL_TYPES.map((type) => {
+                      const Icon = CREDENTIAL_TYPE_ICONS[type]
+                      return (
+                        <TabsTrigger key={type} value={type} className="text-xs">
+                          <Icon className="me-1 h-3 w-3" />
+                          {CREDENTIAL_TYPE_DISPLAY_NAMES[type].split(' ')[0]}
+                        </TabsTrigger>
+                      )
+                    })}
+                  </TabsList>
 
-                {/* Bearer Token (Git PAT, etc.) */}
-                <TabsContent value="bearer_token" className="space-y-4 pt-4">
-                  <p className="text-sm text-muted-foreground">
-                    {CREDENTIAL_TYPE_DESCRIPTIONS.bearer_token}
-                  </p>
-                  <FormField
-                    control={form.control}
-                    name="bearer_token"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Token</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input
-                              type={showSecrets.bearer_token ? 'text' : 'password'}
-                              placeholder="ghp_xxxxxxxxxxxx or glpat-xxxxxxxxxxxx"
+                  {/* Bearer Token (Git PAT, etc.) */}
+                  <TabsContent value="bearer_token" className="space-y-4 pt-4">
+                    <p className="text-sm text-muted-foreground">
+                      {CREDENTIAL_TYPE_DESCRIPTIONS.bearer_token}
+                    </p>
+                    <FormField
+                      control={form.control}
+                      name="bearer_token"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Token</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                type={showSecrets.bearer_token ? 'text' : 'password'}
+                                placeholder="ghp_xxxxxxxxxxxx or glpat-xxxxxxxxxxxx"
+                                {...field}
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="absolute right-0 top-0"
+                                onClick={() => toggleShowSecret('bearer_token')}
+                              >
+                                {showSecrets.bearer_token ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </FormControl>
+                          <FormDescription>
+                            Personal access token for GitHub, GitLab, Bitbucket, etc.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </TabsContent>
+
+                  {/* SSH Key */}
+                  <TabsContent value="ssh_key" className="space-y-4 pt-4">
+                    <p className="text-sm text-muted-foreground">
+                      {CREDENTIAL_TYPE_DESCRIPTIONS.ssh_key}
+                    </p>
+                    <FormField
+                      control={form.control}
+                      name="ssh_private_key"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Private Key</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
+                              className="font-mono text-xs"
+                              rows={6}
                               {...field}
                             />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="absolute right-0 top-0"
-                              onClick={() => toggleShowSecret('bearer_token')}
-                            >
-                              {showSecrets.bearer_token ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </FormControl>
-                        <FormDescription>
-                          Personal access token for GitHub, GitLab, Bitbucket, etc.
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </TabsContent>
+                          </FormControl>
+                          <FormDescription>
+                            Paste your SSH private key (RSA, ED25519, etc.)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="ssh_passphrase"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Passphrase (optional)</FormLabel>
+                          <FormControl>
+                            <Input type="password" placeholder="Key passphrase" {...field} />
+                          </FormControl>
+                          <FormDescription>Only required if your key is encrypted</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </TabsContent>
 
-                {/* SSH Key */}
-                <TabsContent value="ssh_key" className="space-y-4 pt-4">
-                  <p className="text-sm text-muted-foreground">
-                    {CREDENTIAL_TYPE_DESCRIPTIONS.ssh_key}
-                  </p>
-                  <FormField
-                    control={form.control}
-                    name="ssh_private_key"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Private Key</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
-                            className="font-mono text-xs"
-                            rows={6}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Paste your SSH private key (RSA, ED25519, etc.)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="ssh_passphrase"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Passphrase (optional)</FormLabel>
-                        <FormControl>
-                          <Input type="password" placeholder="Key passphrase" {...field} />
-                        </FormControl>
-                        <FormDescription>Only required if your key is encrypted</FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </TabsContent>
+                  {/* API Key */}
+                  <TabsContent value="api_key" className="space-y-4 pt-4">
+                    <p className="text-sm text-muted-foreground">
+                      {CREDENTIAL_TYPE_DESCRIPTIONS.api_key}
+                    </p>
+                    <FormField
+                      control={form.control}
+                      name="api_key_value"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>API Key</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                type={showSecrets.api_key ? 'text' : 'password'}
+                                placeholder="your-api-key"
+                                {...field}
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="absolute right-0 top-0"
+                                onClick={() => toggleShowSecret('api_key')}
+                              >
+                                {showSecrets.api_key ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </TabsContent>
 
-                {/* API Key */}
-                <TabsContent value="api_key" className="space-y-4 pt-4">
-                  <p className="text-sm text-muted-foreground">
-                    {CREDENTIAL_TYPE_DESCRIPTIONS.api_key}
-                  </p>
-                  <FormField
-                    control={form.control}
-                    name="api_key_value"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>API Key</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input
-                              type={showSecrets.api_key ? 'text' : 'password'}
-                              placeholder="your-api-key"
-                              {...field}
-                            />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="absolute right-0 top-0"
-                              onClick={() => toggleShowSecret('api_key')}
-                            >
-                              {showSecrets.api_key ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </TabsContent>
+                  {/* Basic Auth */}
+                  <TabsContent value="basic_auth" className="space-y-4 pt-4">
+                    <p className="text-sm text-muted-foreground">
+                      {CREDENTIAL_TYPE_DESCRIPTIONS.basic_auth}
+                    </p>
+                    <FormField
+                      control={form.control}
+                      name="basic_username"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Username</FormLabel>
+                          <FormControl>
+                            <Input placeholder="username" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="basic_password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                type={showSecrets.basic_password ? 'text' : 'password'}
+                                placeholder="password"
+                                {...field}
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="absolute right-0 top-0"
+                                onClick={() => toggleShowSecret('basic_password')}
+                              >
+                                {showSecrets.basic_password ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </TabsContent>
 
-                {/* Basic Auth */}
-                <TabsContent value="basic_auth" className="space-y-4 pt-4">
-                  <p className="text-sm text-muted-foreground">
-                    {CREDENTIAL_TYPE_DESCRIPTIONS.basic_auth}
-                  </p>
-                  <FormField
-                    control={form.control}
-                    name="basic_username"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Username</FormLabel>
-                        <FormControl>
-                          <Input placeholder="username" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="basic_password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Password</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input
-                              type={showSecrets.basic_password ? 'text' : 'password'}
-                              placeholder="password"
-                              {...field}
-                            />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="absolute right-0 top-0"
-                              onClick={() => toggleShowSecret('basic_password')}
-                            >
-                              {showSecrets.basic_password ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </TabsContent>
-
-                {/* AWS Role */}
-                <TabsContent value="aws_role" className="space-y-4 pt-4">
-                  <p className="text-sm text-muted-foreground">
-                    {CREDENTIAL_TYPE_DESCRIPTIONS.aws_role}
-                  </p>
-                  <FormField
-                    control={form.control}
-                    name="aws_role_arn"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Role ARN</FormLabel>
-                        <FormControl>
-                          <Input placeholder="arn:aws:iam::123456789012:role/MyRole" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="aws_external_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>External ID (optional)</FormLabel>
-                        <FormControl>
-                          <Input placeholder="External ID for cross-account access" {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          Required if the role has an external ID condition
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </TabsContent>
-              </Tabs>
-            </div>
+                  {/* AWS Role */}
+                  <TabsContent value="aws_role" className="space-y-4 pt-4">
+                    <p className="text-sm text-muted-foreground">
+                      {CREDENTIAL_TYPE_DESCRIPTIONS.aws_role}
+                    </p>
+                    <FormField
+                      control={form.control}
+                      name="aws_role_arn"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Role ARN</FormLabel>
+                          <FormControl>
+                            <Input placeholder="arn:aws:iam::123456789012:role/MyRole" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="aws_external_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>External ID (optional)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="External ID for cross-account access" {...field} />
+                          </FormControl>
+                          <FormDescription>
+                            Required if the role has an external ID condition
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </div>
+            </DialogBody>
 
             <DialogFooter>
               <Button
@@ -545,7 +549,7 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                 Create Credential
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>
