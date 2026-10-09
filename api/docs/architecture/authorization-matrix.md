@@ -1917,6 +1917,15 @@ organization, its members and its settings, so 000771 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
 
+**Split from `findings:write` (migration 001421).** `findings:severity` gates
+`PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
+finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
+reactions (`/comments/{comment_id}/reactions*`). The migration granted both to
+every role that held `findings:write`, recorded in
+`granular_permission_backfill`. A custom role without `findings:severity`
+(the remediation-owner template) can fix and discuss a finding but not
+re-score it.
+
 `findings:export` gates the server-side findings export (RFC-048, #1058); `assets:export` is kept for the planned asset export of the same RFC and is not removed.
 
 **Removed** (000772; catalog rows and grants archived in
