@@ -260,7 +260,7 @@ Sender-constrained tokens (RFC 9449), `pkg/dpop` and `mcpoauth/dpop.go`:
 |---|---|
 | Scope | `mcp:findings.write` → `findings:write`; not in `scopes_supported`; grantable only when the organization policy lists it |
 | First tool | `add_finding_comment` (`finding_id`, `content` ≤ 4000, optional `confirmation_id`): an internal comment by the user, never sent to integrations |
-| Store | `mcp_action_confirmations` (migration `001458`): connection, user, tool, SHA-256 of the canonical arguments (without `confirmation_id`), server-written summary, status, 5-minute expiry |
+| Store | `mcp_action_confirmations` (migration `001487`): connection, user, tool, SHA-256 of the canonical arguments (without `confirmation_id`), server-written summary, status, 5-minute expiry |
 | Web | `/mcp/confirm/<id>` (signed-in session; same user and organization; summary shown as text) |
 | API | `GET /api/v1/mcp-access/confirmations/{id}`, `POST …/approve`, `POST …/deny` (API keys refused) |
 
