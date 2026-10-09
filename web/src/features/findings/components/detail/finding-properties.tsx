@@ -10,7 +10,7 @@
  */
 
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useId, useState } from 'react'
 import { ArrowUpRight, ChevronRight, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
