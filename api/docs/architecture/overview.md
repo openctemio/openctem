@@ -69,7 +69,9 @@ Scan workflow: "Full Security Scan"
 ```
 
 Lifecycle and states: [scan-lifecycle.md](scan-lifecycle.md); naming:
-[scan-naming.md](scan-naming.md).
+[scan-naming.md](scan-naming.md); what a run scans (literal targets, asset
+groups, `*.example.com` and CIDR selectors re-resolved at every run):
+[scan-targets.md](scan-targets.md).
 
 ## Multi-Tenant Architecture
 
@@ -270,6 +272,7 @@ Hexagonal / Ports & Adapters
 - [Scan Lifecycle](scan-lifecycle.md)
 - [Scan Orchestration (older walkthrough)](scan-orchestration.md)
 - [Scan Zones](scan-zones.md)
+- [Scan Targets and Dynamic Selectors](scan-targets.md)
 - [Tool Availability](tool-availability.md)
 - [Sensor ↔ Platform Trust](sensor-platform-trust.md)
 - [Signed Jobs: the Job Signer](job-signing.md)
