@@ -124,6 +124,14 @@ Migration `001044_member_lifecycle`.
 | W5, W9 | Small authz fixes and residual LOW items | planned |
 | W10 | Docs drift (expiring grants are now planned, D4/A2) | planned |
 
+**W22, team slice: implemented** (migration `001459`). A team membership may carry an end date
+(`expires_at`, `expiry_reason`; at most 365 days ahead). Teams of type `external` (engagements,
+audits) require one. `PATCH /api/v1/groups/{groupId}/members/{userId}`
+(`team:groups:members`, same delegation cap as adding a member) sets, moves or clears it. The
+team-membership-expiry controller removes an expired membership within a minute, which recomputes
+the member's data scope. The removal is audited (`member.removed`, reason `expired`) and the member is
+told. Expiry on role assignments and direct grants (the rest of W22/W23) is not built.
+
 P1 (W11–W20: one `decide()`, composite foreign keys, registry v2, on-behalf-of
 jobs, `scope_version`, scoped aggregates, sensitivity classes), P2 (W21–W33:
 view/act, expiry, guests, engagements, break-glass, service accounts, redacted

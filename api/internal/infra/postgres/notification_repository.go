@@ -208,7 +208,7 @@ func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notifica
 				WHERE ver.user_id = tm.user_id AND ver.tenant_id = $1
 				  AND ver.role IN ('owner', 'admin'))
 			OR EXISTS (
-				SELECT 1 FROM user_roles ur
+				SELECT 1 FROM v_user_role_grants ur
 				JOIN roles ro ON ro.id = ur.role_id
 				WHERE ur.tenant_id = $1 AND ur.user_id = tm.user_id AND ro.has_full_data_access = TRUE
 				  AND (ro.tenant_id IS NULL OR ro.tenant_id = ur.tenant_id))
