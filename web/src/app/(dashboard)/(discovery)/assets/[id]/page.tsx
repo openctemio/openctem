@@ -17,7 +17,7 @@
 
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { AlertCircle, ArrowLeft, Globe, Loader2, Server, Shield } from 'lucide-react'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
