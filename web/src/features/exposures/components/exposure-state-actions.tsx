@@ -8,6 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -169,29 +170,31 @@ export function ExposureActionDialog({
           <DialogDescription>{config.description}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          <div className="rounded-lg border p-3 bg-muted/50">
-            <p className="text-sm font-medium">{exposure.title}</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {exposure.description || 'No description'}
-            </p>
-          </div>
-
-          {(config.requireReason || actionType !== 'reactivate') && (
-            <div className="space-y-2">
-              <Label htmlFor="reason">
-                Reason {config.requireReason ? '(required)' : '(optional)'}
-              </Label>
-              <Textarea
-                id="reason"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder={`Why are you ${actionType === 'resolve' ? 'resolving' : actionType === 'accept' ? 'accepting' : actionType === 'false_positive' ? 'marking as false positive' : 'reactivating'} this exposure?`}
-                rows={3}
-              />
+        <DialogBody>
+          <div className="space-y-4 py-4">
+            <div className="rounded-lg border p-3 bg-muted/50">
+              <p className="text-sm font-medium">{exposure.title}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {exposure.description || 'No description'}
+              </p>
             </div>
-          )}
-        </div>
+
+            {(config.requireReason || actionType !== 'reactivate') && (
+              <div className="space-y-2">
+                <Label htmlFor="reason">
+                  Reason {config.requireReason ? '(required)' : '(optional)'}
+                </Label>
+                <Textarea
+                  id="reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={`Why are you ${actionType === 'resolve' ? 'resolving' : actionType === 'accept' ? 'accepting' : actionType === 'false_positive' ? 'marking as false positive' : 'reactivating'} this exposure?`}
+                  rows={3}
+                />
+              </div>
+            )}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
@@ -391,16 +394,18 @@ export function ExposureBulkActions({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2 py-4">
-            <Label htmlFor="bulk-reason">Reason (required)</Label>
-            <Textarea
-              id="bulk-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Provide a reason for this bulk action..."
-              rows={3}
-            />
-          </div>
+          <DialogBody>
+            <div className="space-y-2 py-4">
+              <Label htmlFor="bulk-reason">Reason (required)</Label>
+              <Textarea
+                id="bulk-reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Provide a reason for this bulk action..."
+                rows={3}
+              />
+            </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkAction(null)}>

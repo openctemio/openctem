@@ -24,6 +24,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import type { EASMVerifiedDomain } from '@/lib/api/generated'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -131,36 +132,38 @@ export function VerifyDomainDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {!current && (
-          <p className="text-sm text-muted-foreground">
-            Start verification to get the TXT record to publish at your DNS provider.
-          </p>
-        )}
+        <DialogBody className="grid gap-4">
+          {!current && (
+            <p className="text-sm text-muted-foreground">
+              Start verification to get the TXT record to publish at your DNS provider.
+            </p>
+          )}
 
-        {current?.managed && (
-          <p className="text-sm text-muted-foreground">
-            This domain was set up by your platform administrator and is managed there.
-          </p>
-        )}
+          {current?.managed && (
+            <p className="text-sm text-muted-foreground">
+              This domain was set up by your platform administrator and is managed there.
+            </p>
+          )}
 
-        {current && !current.managed && current.instructions && (
-          <div className="space-y-3">
-            {verified ? (
-              <p className="flex items-center gap-1 text-sm text-success">
-                <BadgeCheck className="h-4 w-4" aria-hidden /> Verified. It is re-checked every 12
-                hours; keep the record in place.
-              </p>
-            ) : (
-              <p className="text-sm">
-                {current.status === 'failed'
-                  ? 'The record is gone, so names under this domain no longer confirm automatically. Publish it again, then check.'
-                  : 'Publish this TXT record, then check. You can run up to 10 checks an hour.'}
-              </p>
-            )}
-            <CopyValue label="Host" value={current.instructions.host ?? ''} />
-            <CopyValue label="Value" value={current.instructions.value ?? ''} />
-          </div>
-        )}
+          {current && !current.managed && current.instructions && (
+            <div className="space-y-3">
+              {verified ? (
+                <p className="flex items-center gap-1 text-sm text-success">
+                  <BadgeCheck className="h-4 w-4" aria-hidden /> Verified. It is re-checked every 12
+                  hours; keep the record in place.
+                </p>
+              ) : (
+                <p className="text-sm">
+                  {current.status === 'failed'
+                    ? 'The record is gone, so names under this domain no longer confirm automatically. Publish it again, then check.'
+                    : 'Publish this TXT record, then check. You can run up to 10 checks an hour.'}
+                </p>
+              )}
+              <CopyValue label="Host" value={current.instructions.host ?? ''} />
+              <CopyValue label="Value" value={current.instructions.value ?? ''} />
+            </div>
+          )}
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
