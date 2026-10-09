@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -66,7 +67,7 @@ export function AddDomainDialog({ tenantId, onAdded }: { tenantId: string; onAdd
           Add domain
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         {created ? (
           <>
             <DialogHeader>
@@ -75,13 +76,15 @@ export function AddDomainDialog({ tenantId, onAdded }: { tenantId: string; onAdd
                 Publish this DNS TXT record to prove you own the domain, then verify it.
               </DialogDescription>
             </DialogHeader>
-            {created.instructions ? (
-              <DnsInstructions instructions={created.instructions} />
-            ) : (
-              <p className="text-muted-foreground text-sm">
-                No verification record was returned. Reopen the domain from the list to retry.
-              </p>
-            )}
+            <DialogBody>
+              {created.instructions ? (
+                <DnsInstructions instructions={created.instructions} />
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  No verification record was returned. Reopen the domain from the list to retry.
+                </p>
+              )}
+            </DialogBody>
             <DialogFooter>
               <Button onClick={() => handleOpenChange(false)}>Done</Button>
             </DialogFooter>
@@ -94,22 +97,24 @@ export function AddDomainDialog({ tenantId, onAdded }: { tenantId: string; onAdd
                 Enter a domain you own. Shared/consumer domains (like gmail.com) cannot be verified.
               </DialogDescription>
             </DialogHeader>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                void handleSubmit()
-              }}
-              className="space-y-2"
-            >
-              <Label htmlFor="verified-domain-input">Domain</Label>
-              <Input
-                id="verified-domain-input"
-                value={domain}
-                autoFocus
-                placeholder="acme.com"
-                onChange={(e) => setDomain(e.target.value)}
-              />
-            </form>
+            <DialogBody>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void handleSubmit()
+                }}
+                className="space-y-2"
+              >
+                <Label htmlFor="verified-domain-input">Domain</Label>
+                <Input
+                  id="verified-domain-input"
+                  value={domain}
+                  autoFocus
+                  placeholder="acme.com"
+                  onChange={(e) => setDomain(e.target.value)}
+                />
+              </form>
+            </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancel
