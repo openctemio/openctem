@@ -253,17 +253,19 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                 </button>
               </div>
               {/* Code content */}
-              <ScrollArea className="p-3 max-h-[300px]">
-                <CodeHighlighter
-                  code={displayContent}
-                  className="bg-transparent"
-                  showLineNumbers={true}
-                />
-                {!isExpanded && hasMore && (
-                  <p className="text-muted-foreground text-xs mt-2">
-                    ... ({lines.length - 8} more lines)
-                  </p>
-                )}
+              <ScrollArea className="max-h-[300px]">
+                <div className="p-3">
+                  <CodeHighlighter
+                    code={displayContent}
+                    className="bg-transparent"
+                    showLineNumbers={true}
+                  />
+                  {!isExpanded && hasMore && (
+                    <p className="text-muted-foreground text-xs mt-2">
+                      ... ({lines.length - 8} more lines)
+                    </p>
+                  )}
+                </div>
               </ScrollArea>
             </div>
             {hasMore && (
