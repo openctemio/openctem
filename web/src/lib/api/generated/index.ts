@@ -197,7 +197,8 @@ export type UpdatePlanModulesRequest =
   Schemas['internal_infra_http_handler.UpdatePlanModulesRequest']
 export type AdminTenantModulesResponse =
   Schemas['internal_infra_http_handler.AdminTenantModulesResponse']
-export type ModuleEntitlement = Schemas['internal_app_entitlement.ModuleEntitlement']
+export type ModuleEntitlement =
+  Schemas['github_com_openctemio_openctem_api_internal_app_entitlement.ModuleEntitlement']
 export type SetModuleGrantRequest = Schemas['internal_infra_http_handler.SetModuleGrantRequest']
 // Admin console: the sign-up policy (System > Sign-up)
 export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']

@@ -215,6 +215,10 @@ type GetTenantEnabledModulesOutput struct {
 	ModuleIDs  []string
 	Modules    []*moduledom.Module
 	SubModules map[string][]*moduledom.Module
+	// NotEntitledModuleIDs are top-level modules the organization's plan does
+	// not include (and no grant adds): the console says "not in your plan"
+	// rather than "turned off".
+	NotEntitledModuleIDs []string
 }
 
 // GetTenantEnabledModules returns all enabled modules for a tenant.
@@ -230,8 +234,18 @@ func (s *ModuleService) GetTenantEnabledModules(ctx context.Context, tenantID st
 	// Split into top-level and sub-modules from the same query result
 	topLevel, subModulesByParent := splitModules(allModules)
 
-	// Get tenant-specific overrides
-	disabledModules := s.getTenantDisabledModules(ctx, tenantID)
+	// Get tenant-specific state (preferences and entitlements)
+	states := s.moduleStates(ctx, tenantID)
+	disabledModules := make(map[string]bool, len(states))
+	for id := range states {
+		disabledModules[id] = true
+	}
+	notEntitled := make([]string, 0)
+	for _, m := range topLevel {
+		if r := states[m.ID()]; !m.IsCore() && (r == ReasonNotEntitled || r == ReasonUnavailable) {
+			notEntitled = append(notEntitled, m.ID())
+		}
+	}
 
 	// Filter modules: exclude disabled (non-core) top-level modules
 	enabledModules := make([]*moduledom.Module, 0, len(topLevel))
@@ -267,9 +281,10 @@ func (s *ModuleService) GetTenantEnabledModules(ctx context.Context, tenantID st
 	}
 
 	return &GetTenantEnabledModulesOutput{
-		ModuleIDs:  moduleIDs,
-		Modules:    enabledModules,
-		SubModules: subModules,
+		ModuleIDs:            moduleIDs,
+		Modules:              enabledModules,
+		SubModules:           subModules,
+		NotEntitledModuleIDs: notEntitled,
 	}, nil
 }
 
@@ -1097,4 +1112,3 @@ func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.Audi
 		WithMetadata("preset_name", p.Name)
 	s.auditService.LogEvent(ctx, actx, event)
 }
-

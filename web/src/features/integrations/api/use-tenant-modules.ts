@@ -71,6 +71,8 @@ export interface TenantModulesResponse {
   sub_modules?: Record<string, LicensingModule[]>
   coming_soon_module_ids?: string[]
   beta_module_ids?: string[]
+  /** Modules the organization's plan does not include (not just switched off). */
+  not_entitled_module_ids?: string[]
 }
 
 // ============================================

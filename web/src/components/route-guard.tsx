@@ -26,7 +26,7 @@
 'use client'
 
 import * as React from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { usePathname } from 'next/navigation'
 import { ShieldX, ArrowLeft, Home, Package, Settings } from 'lucide-react'
 import { usePermissions } from '@/lib/permissions/hooks'
@@ -59,7 +59,7 @@ export function RouteGuard({ children }: RouteGuardProps) {
   const pathname = usePathname()
   // Use the same permission hook as sidebar for consistency
   const { can, isLoading: permissionsLoading } = usePermissions()
-  const { moduleIds, isLoading: modulesLoading } = useBootstrapModules()
+  const { moduleIds, notEntitledModuleIds, isLoading: modulesLoading } = useBootstrapModules()
   const { isBootstrapped } = useBootstrapContextSafe()
 
   // Ensure permission sync has fully settled during tenant switches
@@ -133,6 +133,7 @@ export function RouteGuard({ children }: RouteGuardProps) {
         module={routeConfig.module}
         message={routeConfig.message}
         canManageModules={can(Permission.TeamUpdate)}
+        notInPlan={!!routeConfig.module && notEntitledModuleIds.includes(routeConfig.module)}
       />
     )
   }
@@ -154,6 +155,8 @@ interface AccessDeniedProps {
   message?: string
   /** Whether the user may switch modules on (Settings > Modules). */
   canManageModules?: boolean
+  /** The organization's plan does not include the module (not just switched off). */
+  notInPlan?: boolean
 }
 
 function AccessDenied({
@@ -162,6 +165,7 @@ function AccessDenied({
   module,
   message,
   canManageModules = false,
+  notInPlan = false,
 }: AccessDeniedProps) {
   const handleGoBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -181,10 +185,18 @@ function AccessDenied({
   // A module missing for a user who holds the route's permission is switched
   // off for the organization (by an administrator or its products), not a
   // plan matter: plans do not gate modules.
-  const title = isModuleDenied ? 'Turned off for your organization' : 'Access Denied'
-  const defaultMessage = isModuleDenied
-    ? 'This feature is switched off for your organization.'
-    : "You don't have permission to access this page."
+  const title = !isModuleDenied
+    ? 'Access Denied'
+    : notInPlan
+      ? 'Not in your plan'
+      : 'Turned off for your organization'
+  const defaultMessage = !isModuleDenied
+    ? "You don't have permission to access this page."
+    : notInPlan
+      ? "Your organization's plan does not include this feature."
+      : 'This feature is switched off for your organization.'
+  // Only an organization's own switch can be turned back on from Settings.
+  const canTurnOn = isModuleDenied && !notInPlan && canManageModules
 
   // This view replaces the page header and the layout's <main>, so it is the
   // page's main landmark and the skip link's #content target itself.
@@ -217,11 +229,13 @@ function AccessDenied({
 
           {/* Help text */}
           <p className="text-center text-sm text-muted-foreground">
-            {isModuleDenied
-              ? canManageModules
-                ? 'You can turn it on in Settings > Modules.'
-                : 'Ask an administrator of your organization to turn it on.'
-              : 'If you believe you should have access, please contact your administrator.'}
+            {!isModuleDenied
+              ? 'If you believe you should have access, please contact your administrator.'
+              : notInPlan
+                ? 'Contact your platform administrator to add it to your plan.'
+                : canManageModules
+                  ? 'You can turn it on in Settings > Modules.'
+                  : 'Ask an administrator of your organization to turn it on.'}
           </p>
 
           {/* Actions */}
@@ -230,7 +244,7 @@ function AccessDenied({
               <ArrowLeft className="me-2 h-4 w-4" />
               Go Back
             </Button>
-            {isModuleDenied && canManageModules ? (
+            {canTurnOn ? (
               <Button asChild>
                 <Link href="/settings/modules">
                   <Settings className="me-2 h-4 w-4" />
