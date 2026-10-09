@@ -112,6 +112,10 @@ check_http_client() {
         # inline (validateURL + safeDialer + CheckRedirect). Functionally
         # equivalent to SafeHTTPClient; consolidation is a follow-up.
         'api/internal/app/automation/handlers.go'
+        # Job signer client (RFC-040 §5.6): its transport dials only the
+        # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
+        # the request host, so no network destination exists to guard.
+        'api/internal/infra/signer/client.go'
     )
 
     local hits
@@ -421,6 +425,10 @@ check_client_ip_headers() {
         # these headers on the request it sends. Nothing is read from a
         # client request.
         'api/internal/app/automation/handlers.go'
+        # Job signer client (RFC-040 §5.6): its transport dials only the
+        # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
+        # the request host, so no network destination exists to guard.
+        'api/internal/infra/signer/client.go'
     )
 
     local hits

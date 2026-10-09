@@ -13,6 +13,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -88,8 +90,8 @@ export function MemberAccessDialog({
 
   return (
     <Dialog open={!!member} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={submit}>
+      <DialogContent size="sm">
+        <DialogForm onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>Change end of access</DialogTitle>
             <DialogDescription>
@@ -99,44 +101,46 @@ export function MemberAccessDialog({
                 : ' No organization manages the address, so their access must end.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="member-access-end">Access ends</Label>
-              <Input
-                id="member-access-end"
-                type="date"
-                min={min}
-                max={max}
-                required={!managed}
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                disabled={busy}
-              />
-              <p className="text-xs text-muted-foreground">
-                At most {MAX_EXTERNAL_ACCESS_DAYS} days from today. A member whose access ended is
-                enabled again.
-              </p>
+          <DialogBody>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="member-access-end">Access ends</Label>
+                <Input
+                  id="member-access-end"
+                  type="date"
+                  min={min}
+                  max={max}
+                  required={!managed}
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  disabled={busy}
+                />
+                <p className="text-xs text-muted-foreground">
+                  At most {MAX_EXTERNAL_ACCESS_DAYS} days from today. A member whose access ended is
+                  enabled again.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="member-access-reason">Reason (optional)</Label>
+                <Textarea
+                  id="member-access-reason"
+                  maxLength={500}
+                  rows={2}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  disabled={busy}
+                  placeholder="Engagement extended to the end of the quarter"
+                />
+              </div>
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="member-access-reason">Reason (optional)</Label>
-              <Textarea
-                id="member-access-reason"
-                maxLength={500}
-                rows={2}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                disabled={busy}
-                placeholder="Engagement extended to the end of the quarter"
-              />
-            </div>
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-          </div>
-          <DialogFooter className="gap-2">
+          </DialogBody>
+          <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
@@ -145,7 +149,7 @@ export function MemberAccessDialog({
               Save
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )

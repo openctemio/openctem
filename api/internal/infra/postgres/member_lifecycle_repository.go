@@ -561,7 +561,7 @@ func (r *MemberLifecycleRepository) ErasePersonalData(ctx context.Context, tenan
 	if _, err = tx.ExecContext(ctx, `
 		UPDATE users
 		SET name = $2, email = $3, avatar_url = NULL, phone = NULL, preferences = '{}'::jsonb,
-		    password_hash = NULL, keycloak_id = NULL, federated_issuer = NULL, federated_subject = NULL,
+		    password_hash = NULL, keycloak_id = NULL,
 		    email_verification_token = NULL, email_verification_expires_at = NULL,
 		    password_reset_token = NULL, password_reset_expires_at = NULL,
 		    status = 'inactive', erased_at = NOW(), updated_at = NOW()
