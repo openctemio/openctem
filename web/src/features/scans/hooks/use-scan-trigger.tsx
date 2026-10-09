@@ -33,6 +33,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { get, post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
@@ -260,14 +261,14 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
       />
       {freezeDialog}
       <Dialog open={!!refusal} onOpenChange={(open) => !open && setRefusal(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{refusal ? `"${refusal.scan.name}" was not started` : ''}</DialogTitle>
             <DialogDescription>
               The scope check refused some targets. Fix them, then trigger the scan again.
             </DialogDescription>
           </DialogHeader>
-          {refusal && <ScopeRefusalPanel refused={refusal.refused} />}
+          <DialogBody>{refusal && <ScopeRefusalPanel refused={refusal.refused} />}</DialogBody>
         </DialogContent>
       </Dialog>
     </>

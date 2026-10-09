@@ -35,14 +35,14 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 		 WHERE contype = 'f' AND confrelid = 'assets'::regclass AND array_length(conkey, 1) = 2`).Scan(&n, &allValid); err != nil {
 		t.Fatal(err)
 	}
-	// 27 from 000921 (one, scan_sessions, dropped by 001148), 3 from the scan
+	// 27 from 000921 (scan_sessions dropped by 001148, the type
+	// normalisation ledger by 001481), 3 from the scan
 	// chaining tables (001049), 2 from the CI run tables (001077, RFC-051), 1
 	// from CI pipelines (001084), 1 from CI coverage expectations (001099), 1
-	// from CI gate policies (001144), 1 from the property normalisation
-	// ledger (001185), 1 from web endpoints (001270) and 1 from API
-	// descriptions (001299, RFC-056).
-	if n != 37 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 37 validated", n, allValid.Bool)
+	// from CI gate policies (001144), 1 from web endpoints (001270) and 1 from
+	// API descriptions (001299, RFC-056).
+	if n != 35 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 35 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing

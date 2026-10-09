@@ -27,6 +27,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { KeyRound, Plus, Ban, Copy, Check, ShieldCheck } from 'lucide-react'
@@ -83,7 +85,7 @@ function GenerateTokenDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Generate SCIM token</DialogTitle>
           <DialogDescription>
@@ -91,17 +93,19 @@ function GenerateTokenDialog({
             users. The secret is shown once.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="scim-token-name">Name</Label>
-            <Input
-              id="scim-token-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Okta production"
-              required
-            />
-          </div>
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="scim-token-name">Name</Label>
+              <Input
+                id="scim-token-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Okta production"
+                required
+              />
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -110,7 +114,7 @@ function GenerateTokenDialog({
               {isMutating ? 'Generating...' : 'Generate'}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )
@@ -129,7 +133,7 @@ function RevealTokenDialog({ value, onClose }: { value: string; onClose: () => v
   }
   return (
     <Dialog open={!!value} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Copy your SCIM token</DialogTitle>
           <DialogDescription>
@@ -137,12 +141,14 @@ function RevealTokenDialog({ value, onClose }: { value: string; onClose: () => v
             configuration as the bearer token, then store it securely.
           </DialogDescription>
         </DialogHeader>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <code className="flex-1 break-all text-xs">{value}</code>
-          <Button size="icon" variant="ghost" onClick={copy} title="Copy">
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-          </Button>
-        </div>
+        <DialogBody>
+          <div className="bg-muted flex items-center gap-2 rounded-md p-3">
+            <code className="flex-1 break-all text-xs">{value}</code>
+            <Button size="icon" variant="ghost" onClick={copy} title="Copy">
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </Button>
+          </div>
+        </DialogBody>
         <DialogFooter>
           <Button onClick={onClose}>Done</Button>
         </DialogFooter>

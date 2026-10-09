@@ -11,6 +11,9 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogFooter,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -339,7 +342,7 @@ export function AddNotificationDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5" />
@@ -355,40 +358,41 @@ export function AddNotificationDialog({
         </DialogHeader>
 
         {step === 'provider' ? (
-          <div className="grid grid-cols-2 gap-3 py-4">
-            {PROVIDERS.map((provider) => {
-              const Icon = provider.icon
-              return (
-                <button
-                  key={provider.id}
-                  type="button"
-                  className={cn(
-                    'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                    'hover:border-primary hover:bg-primary/5',
-                    'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2'
-                  )}
-                  onClick={() => handleProviderSelect(provider)}
-                >
-                  <div
+          <DialogBody>
+            <div className="grid grid-cols-2 gap-3 py-2">
+              {PROVIDERS.map((provider) => {
+                const Icon = provider.icon
+                return (
+                  <button
+                    key={provider.id}
+                    type="button"
                     className={cn(
-                      'flex h-12 w-12 items-center justify-center rounded-lg',
-                      provider.bgColor
+                      'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
+                      'hover:border-primary hover:bg-primary/5',
+                      'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2'
                     )}
+                    onClick={() => handleProviderSelect(provider)}
                   >
-                    <Icon className={cn('h-6 w-6', provider.color)} />
-                  </div>
-                  <span className="font-medium text-sm">{provider.name}</span>
-                  <span className="text-xs text-muted-foreground text-center">
-                    {provider.description}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+                    <div
+                      className={cn(
+                        'flex h-12 w-12 items-center justify-center rounded-lg',
+                        provider.bgColor
+                      )}
+                    >
+                      <Icon className={cn('h-6 w-6', provider.color)} />
+                    </div>
+                    <span className="font-medium text-sm">{provider.name}</span>
+                    <span className="text-xs text-muted-foreground text-center">
+                      {provider.description}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </DialogBody>
         ) : (
-          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
-            {/* Scrollable content area */}
-            <div className="space-y-4 py-4 overflow-y-auto flex-1 pe-1">
+          <DialogForm onSubmit={handleSubmit(onSubmit)}>
+            <DialogBody className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Name</Label>
                 <Input id="name" placeholder="e.g., Security Alerts" {...register('name')} />
@@ -734,10 +738,9 @@ export function AddNotificationDialog({
                   </div>
                 </CollapsibleContent>
               </Collapsible>
-            </div>
+            </DialogBody>
 
-            {/* Fixed footer with buttons */}
-            <div className="flex justify-between pt-4 border-t mt-2">
+            <DialogFooter className="sm:justify-between">
               <Button type="button" variant="outline" onClick={handleBack}>
                 Back
               </Button>
@@ -745,8 +748,8 @@ export function AddNotificationDialog({
                 {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                 Create Channel
               </Button>
-            </div>
-          </form>
+            </DialogFooter>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>
