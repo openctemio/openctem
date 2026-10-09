@@ -166,16 +166,47 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 	}
 
 	s.logger.Info("asset group created", "id", group.ID(), "name", input.Name)
-	return group, nil
+	return s.readerView(ctx, tenantID, group)
 }
 
-// GetAssetGroup retrieves an asset group by tenant and ID.
+// GetAssetGroup retrieves an asset group by tenant and ID, as the caller
+// sees it: for a restricted reader the counts, risk and findings cover only
+// the members in their data scope (L-18).
 func (s *AssetGroupService) GetAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) (*assetgroupdom.AssetGroup, error) {
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	return s.repo.GetByTenantAndID(ctx, tenantID, id)
+	group, err := s.repo.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.readerView(ctx, tenantID, group)
+}
+
+// readerView returns group with the counts the caller may see. An
+// unrestricted caller gets the stored row; a restricted one gets the group
+// re-read with the counts computed over the members in their data scope.
+// Every handler response that carries a group goes through it.
+func (s *AssetGroupService) readerView(ctx context.Context, tenantID shared.ID, group *assetgroupdom.AssetGroup) (*assetgroupdom.AssetGroup, error) {
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope == nil {
+		return group, nil
+	}
+	filter := assetgroupdom.NewFilter().WithTenantID(tenantID.String())
+	filter.IDs = []shared.ID{group.ID()}
+	filter.DataScope = scope
+	res, err := s.repo.List(ctx, filter, assetgroupdom.NewListOptions(), pagination.New(1, 1))
+	if err != nil {
+		return nil, err
+	}
+	if len(res.Data) == 0 {
+		return nil, shared.ErrNotFound
+	}
+	return res.Data[0], nil
 }
 
 // UpdateAssetGroup updates an existing asset group.
@@ -253,7 +284,7 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 	}
 
 	s.logger.Info("asset group updated", "id", id)
-	return group, nil
+	return s.readerView(ctx, tenantID, group)
 }
 
 // DeleteAssetGroup deletes an asset group within the given tenant scope.
@@ -333,6 +364,16 @@ func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAsset
 
 	page := pagination.New(input.Page, input.PerPage)
 
+	// A restricted reader's counts, risk, findings (and the filters and
+	// sorts on them) cover only the members in their data scope (L-18).
+	if tid, err := shared.IDFromString(input.TenantID); err == nil {
+		scope, err := s.dataScope.Resolve(ctx, tid)
+		if err != nil {
+			return nil, fmt.Errorf("resolve data scope: %w", err)
+		}
+		filter.DataScope = scope
+	}
+
 	result, err := s.repo.List(ctx, filter, opts, page)
 	if err != nil {
 		return nil, err
@@ -352,7 +393,11 @@ func (s *AssetGroupService) GetAssetGroupStats(ctx context.Context, tenantID str
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
-	return s.repo.GetStats(ctx, tid)
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.repo.GetStats(ctx, tid, scope)
 }
 
 // errAssetsNotFound is the one answer for any member id the caller may not

@@ -12,6 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -76,7 +78,7 @@ export function CreateFirstOwnerDialog({
           Create first owner
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         {created ? (
           <>
             <DialogHeader>
@@ -86,15 +88,17 @@ export function CreateFirstOwnerDialog({
                 password. They add everyone else.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-2">
-              <SetupLinkResult outcome={created} email={created.user?.email ?? email.trim()} />
-            </div>
+            <DialogBody>
+              <div className="py-2">
+                <SetupLinkResult outcome={created} email={created.user?.email ?? email.trim()} />
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button onClick={close}>Done</Button>
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={submit}>
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>Create first owner</DialogTitle>
               <DialogDescription>
@@ -103,33 +107,35 @@ export function CreateFirstOwnerDialog({
                 themselves.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="org-owner-name">Name</Label>
-                <Input
-                  id="org-owner-name"
-                  required
-                  maxLength={255}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
+            <DialogBody>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="org-owner-name">Name</Label>
+                  <Input
+                    id="org-owner-name"
+                    required
+                    maxLength={255}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="org-owner-email">Email</Label>
+                  <Input
+                    id="org-owner-email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="org-owner-email">Email</Label>
-                <Input
-                  id="org-owner-email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-            </div>
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={close}>
                 Cancel
@@ -139,7 +145,7 @@ export function CreateFirstOwnerDialog({
                 Create owner
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>
