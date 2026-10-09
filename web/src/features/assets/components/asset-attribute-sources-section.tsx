@@ -127,10 +127,7 @@ function AttributeRow({
           </Badge>
         )}
         {conflict && (
-          <Badge
-            variant="outline"
-            className="border-amber-500/40 text-amber-700 dark:text-amber-400"
-          >
+          <Badge variant="outline" className="border-warning/40 bg-warning/10 text-warning">
             {conflict}
           </Badge>
         )}
