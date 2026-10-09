@@ -45,6 +45,10 @@ import type { PersonalAccountsPolicy, SSOException } from '../types/settings.typ
 import { DeleteOrganization } from './delete-organization'
 import { SsoManagedNotice } from '@/features/sso/components/sso-managed-by-platform'
 import { SensorOptInSwitches } from '@/features/sensors/components/sensor-opt-in-switches'
+import {
+  ToolHTTPPolicyFields,
+  toolUserAgentError,
+} from '@/features/sensors/components/tool-http-policy-fields'
 import { SensorIdentityPolicySwitch } from '@/features/sensors/components/sensor-identity-policy-switch'
 import { safeImageSrc } from '@/lib/safe-href'
 
@@ -382,6 +386,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
     require_sensor_local_policy_for_private_targets: false,
     allow_sensor_interactsh: false,
     allow_sensor_custom_templates: false,
+    tool_http_user_agent: '',
+    forbid_tool_insecure_tls: false,
     personal_accounts: 'allowed' as PersonalAccountsPolicy,
     sso_exceptions: [] as SSOException[],
     jit_requires_approval: false,
@@ -427,6 +433,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
           settings.security?.require_sensor_local_policy_for_private_targets || false,
         allow_sensor_interactsh: settings.security?.allow_sensor_interactsh || false,
         allow_sensor_custom_templates: settings.security?.allow_sensor_custom_templates || false,
+        tool_http_user_agent: settings.security?.tool_http_user_agent ?? '',
+        forbid_tool_insecure_tls: settings.security?.forbid_tool_insecure_tls ?? false,
         personal_accounts: settings.security?.personal_accounts ?? 'allowed',
         sso_exceptions: settings.security?.sso_exceptions ?? [],
         jit_requires_approval: settings.security?.jit_requires_approval ?? false,
@@ -530,6 +538,11 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
       const ipWhitelist = parseLines(securityForm.ip_whitelist)
       const allowedDomains = parseLines(securityForm.allowed_domains)
 
+      const uaError = toolUserAgentError(securityForm.tool_http_user_agent.trim())
+      if (uaError) {
+        toast.error(`User-Agent of scan tools: ${uaError}`)
+        return
+      }
       const result = await updateSecuritySettings({
         mfa_required: securityForm.mfa_required,
         mfa_required_for_admins: securityForm.mfa_required_for_admins,
@@ -540,6 +553,8 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
           securityForm.require_sensor_local_policy_for_private_targets,
         allow_sensor_interactsh: securityForm.allow_sensor_interactsh,
         allow_sensor_custom_templates: securityForm.allow_sensor_custom_templates,
+        tool_http_user_agent: securityForm.tool_http_user_agent.trim(),
+        forbid_tool_insecure_tls: securityForm.forbid_tool_insecure_tls,
         personal_accounts: securityForm.personal_accounts,
         sso_exceptions: securityForm.sso_exceptions,
         jit_requires_approval: securityForm.jit_requires_approval,
@@ -734,6 +749,17 @@ export function OrganizationSettings({ view }: { view: OrganizationSettingsView 
                   value={{
                     allow_sensor_interactsh: securityForm.allow_sensor_interactsh,
                     allow_sensor_custom_templates: securityForm.allow_sensor_custom_templates,
+                  }}
+                  onChange={(next) => setSecurityForm({ ...securityForm, ...next })}
+                  disabled={!canManageSecurityAndAPI}
+                />
+
+                <Separator />
+
+                <ToolHTTPPolicyFields
+                  value={{
+                    tool_http_user_agent: securityForm.tool_http_user_agent,
+                    forbid_tool_insecure_tls: securityForm.forbid_tool_insecure_tls,
                   }}
                   onChange={(next) => setSecurityForm({ ...securityForm, ...next })}
                   disabled={!canManageSecurityAndAPI}

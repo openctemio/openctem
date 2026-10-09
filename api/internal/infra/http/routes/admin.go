@@ -24,6 +24,7 @@ import (
 //	------------------------  ----------------  --------------------------
 //	/admin/auth/validate      any admin         —
 //	/admin/overview           any admin         —
+//	/admin/operations         any admin         —
 //	/admin/console-sessions   super_admin       super_admin + reason + fresh TOTP
 //	                                            code (audited high)
 //	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
@@ -113,6 +114,11 @@ func registerAdminRoutes(
 	// no tenant content and no administrator emails.
 	if h.AdminOverview != nil {
 		router.GET("/api/v1/admin/overview", h.AdminOverview.Get, adminMiddlewares...)
+	}
+	// Console > Operations (any admin role): build, schema, database, Redis,
+	// work queues, sensor versions, controllers. Infrastructure facts only.
+	if h.AdminOperations != nil {
+		router.GET("/api/v1/admin/operations", h.AdminOperations.Get, adminMiddlewares...)
 	}
 
 	// Plan defaults (Console > System > Plans): any admin reads; a super admin
