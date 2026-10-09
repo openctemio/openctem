@@ -81,6 +81,8 @@ var stepUpRoutes = []string{
 	"POST /api/v1/programs",
 	"PUT /api/v1/programs/{id}/scope",
 	"POST /api/v1/programs/{id}/reactivate",
+	"PUT /api/v1/programs/{id}/source",
+	"POST /api/v1/programs/{id}/pending/apply",
 	// Approving a custom template version for sensors (RFC-040 §11.5).
 	"POST /api/v1/scanner-templates/{id}/approve",
 	"POST /api/v1/sensors",
