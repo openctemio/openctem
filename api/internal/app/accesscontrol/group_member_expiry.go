@@ -47,11 +47,11 @@ type SetGroupMemberAccessInput struct {
 	Reason    string     `json:"reason" validate:"max=500"`
 }
 
-// SetMemberAccess sets, moves or clears the end date of a team membership.
+// UpdateMemberAccess sets, moves or clears the end date of a team membership.
 // Extending someone's membership keeps their access, so it has the same cap
 // as adding them: the caller cannot change their own membership and needs
 // every asset of the team in their own scope (D13).
-func (s *GroupService) SetMemberAccess(ctx context.Context, input SetGroupMemberAccessInput, actx auditapp.AuditContext) (*groupdom.Member, error) {
+func (s *GroupService) UpdateMemberAccess(ctx context.Context, input SetGroupMemberAccessInput, actx auditapp.AuditContext) (*groupdom.Member, error) {
 	groupID, err := shared.IDFromString(input.GroupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)

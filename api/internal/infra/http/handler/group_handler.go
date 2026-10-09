@@ -648,7 +648,7 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(toGroupMemberResponse(member))
 }
 
-// SetMemberAccess handles PATCH /api/v1/groups/{groupId}/members/{userId}/access
+// UpdateMemberAccess handles PATCH /api/v1/groups/{groupId}/members/{userId}
 // @Summary Set when a team membership ends
 // @Description Sets, moves or clears (expires_at null) the end date of a team membership (RFC-050 W22). External teams always need an end date; at most 365 days ahead. The membership is removed within a minute of its end date.
 // @Tags groups
@@ -661,8 +661,8 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 // @Failure 400 {object} apierror.Error
 // @Failure 403 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
-// @Router /groups/{groupId}/members/{userId}/access [patch]
-func (h *GroupHandler) SetMemberAccess(w http.ResponseWriter, r *http.Request) {
+// @Router /groups/{groupId}/members/{userId} [patch]
+func (h *GroupHandler) UpdateMemberAccess(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req SetGroupMemberAccessRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -678,7 +678,7 @@ func (h *GroupHandler) SetMemberAccess(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Invalid user ID format").WriteJSON(w)
 		return
 	}
-	member, err := h.service.SetMemberAccess(ctx, accesscontrol.SetGroupMemberAccessInput{
+	member, err := h.service.UpdateMemberAccess(ctx, accesscontrol.SetGroupMemberAccessInput{
 		GroupID:   chi.URLParam(r, "groupId"),
 		UserID:    uid,
 		ExpiresAt: req.ExpiresAt,

@@ -51,7 +51,7 @@ func registerGroupRoutes(
 		r.GET("/{groupId}/members", h.ListMembers, middleware.Require(permission.GroupsRead))
 		r.POST("/{groupId}/members", h.AddMember, middleware.Require(permission.GroupsMembers))
 		r.PUT("/{groupId}/members/{userId}", h.UpdateMemberRole, middleware.Require(permission.GroupsMembers))
-		r.PATCH("/{groupId}/members/{userId}/access", h.SetMemberAccess, middleware.Require(permission.GroupsMembers))
+		r.PATCH("/{groupId}/members/{userId}", h.UpdateMemberAccess, middleware.Require(permission.GroupsMembers))
 		r.DELETE("/{groupId}/members/{userId}", h.RemoveMember, middleware.Require(permission.GroupsMembers))
 
 		// Group asset ownership
