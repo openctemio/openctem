@@ -129,12 +129,13 @@ type Handlers struct {
 	CI            *handler.CIHandler               // nil if not initialized (no database) - CI/CD snippet generator
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
-	CIAdmin         *handler.CIAdminHandler
-	CIRunner        *handler.CIRunnerHandler
-	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
-	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
-	ContentPack     *handler.ContentPackHandler     // nil if not initialized (no database)
-	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
+	CIAdmin             *handler.CIAdminHandler
+	CIRunner            *handler.CIRunnerHandler
+	ScannerTemplate     *handler.ScannerTemplateHandler     // nil if not initialized (no database)
+	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
+	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
+	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
@@ -899,6 +900,9 @@ func Register(
 	// Template Source routes (tenant from JWT token)
 	if h.ContentPack != nil {
 		registerContentPackRoutes(router, h.ContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+	if h.PlatformContentPack != nil {
+		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
 	}
 
 	if h.TemplateSource != nil {

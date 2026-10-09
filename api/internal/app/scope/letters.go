@@ -50,12 +50,19 @@ func (s *Service) letterRef(ctx context.Context, tenantID shared.ID, letterID st
 	return &id, nil
 }
 
+// OnRevoke sets what runs after a letter is revoked: the scope service's
+// ledger narrowing (Service.NarrowLetter).
+func (ls *LetterService) OnRevoke(fn func(ctx context.Context, tenantID shared.ID)) { ls.revoked = fn }
+
 // LetterService manages authorization letters.
 type LetterService struct {
-	repo   scopedom.LetterRepository
-	files  LetterFileStore
-	notify func(ctx context.Context, tenantID shared.ID, title, body string)
-	now    func() time.Time
+	repo scopedom.LetterRepository
+	// revoked narrows the job signer's ledger once a letter is revoked
+	// (Service.NarrowLetter; nil: the periodic ledger sync does it).
+	revoked func(ctx context.Context, tenantID shared.ID)
+	files   LetterFileStore
+	notify  func(ctx context.Context, tenantID shared.ID, title, body string)
+	now     func() time.Time
 }
 
 // NewLetterService wires the service. notify tells every administrator
@@ -150,6 +157,9 @@ func (ls *LetterService) File(ctx context.Context, tenantID, id shared.ID) (io.R
 func (ls *LetterService) Revoke(ctx context.Context, tenantID, id, by shared.ID) (*scopedom.Letter, error) {
 	if err := ls.repo.Revoke(ctx, tenantID, id, by, ls.now()); err != nil {
 		return nil, err
+	}
+	if ls.revoked != nil {
+		ls.revoked(context.WithoutCancel(ctx), tenantID)
 	}
 	l, err := ls.repo.GetByID(ctx, tenantID, id)
 	if err != nil {

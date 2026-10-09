@@ -124,6 +124,51 @@ tests:
         alertname: AuditChainBreak
         exp_alerts: []
 
+  # A10: one job outside the signer's ledger pages at once; rate-limit
+  # refusals warn only above five in 15 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'openctem_signer_refusals_total{reason="out_of_ledger",job="openctem-api",instance="api:8080"}'
+        values: '0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'openctem_signer_refusals_total{reason="tenant_rate_limited",job="openctem-api",instance="api:8080"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29'
+      - series: 'openctem_signer_ledger_feed_total{kind="widen",outcome="refused",job="openctem-api",instance="api:8080"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SignerOutOfLedger
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SignerOutOfLedger
+        exp_alerts:
+          - exp_labels: {severity: critical, component: api, category: security, reason: out_of_ledger}
+            exp_annotations:
+              summary: The job signer refused 1 job(s) outside its scope ledger (out_of_ledger)
+              description: A job for a target nobody approved reached the signer. Treat as a security incident until explained.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signeroutofledger
+      - eval_time: 20m
+        alertname: SignerOutOfLedger
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: SignerRefusals
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SignerRefusals
+        exp_alerts:
+          - exp_labels: {severity: warning, component: api, category: security, reason: tenant_rate_limited}
+            exp_annotations:
+              summary: The job signer refused 15 job(s) in 15 minutes (tenant_rate_limited)
+              description: Rate ceilings, clock skew or malformed statements. Jobs wait until the signer signs them.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signerrefusals
+      - eval_time: 5m
+        alertname: SignerLedgerChangeRefused
+        exp_alerts:
+          - exp_labels: {severity: warning, component: api, category: security, kind: widen}
+            exp_annotations:
+              summary: The job signer refused 1 scope change(s) (widen)
+              description: A scope change the API approved did not meet the signer's approval rule. It was not saved.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signerledgerchangerefused
+
   # The API ships migration 1300 but the database is at 1299.
   - interval: 1m
     input_series:
