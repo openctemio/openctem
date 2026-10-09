@@ -60,6 +60,14 @@ func registerClientErrorRoute(router Router, h *handler.ClientErrorHandler, log 
 	router.POST("/api/v1/client-errors", h.Report, perIP, overall)
 }
 
+// registerAnnouncementRoute registers GET /api/v1/announcements: the platform
+// operator's active notices (maintenance, warnings) for the banner. Any
+// signed-in user, like /version: plain text written by the operator, no
+// tenant data. authMiddleware is the JWT/session chain (no oct_ keys).
+func registerAnnouncementRoute(router Router, h *handler.AnnouncementHandler, authMiddleware Middleware) {
+	router.GET("/api/v1/announcements", h.Active, authMiddleware)
+}
+
 // registerVersionRoute registers GET /api/v1/version: the running build, for
 // Help > About. Any signed-in user, nothing more: it is not tenant data, and it
 // stays off the public /health so an unauthenticated client cannot fingerprint

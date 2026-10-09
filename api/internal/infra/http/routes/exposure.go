@@ -262,8 +262,10 @@ func registerVulnerabilityRoutes(
 		r.POST("/{id}/unassign", h.UnassignFinding, middleware.Require(permission.FindingsAssign))
 
 		// Classification and severity
-		r.PATCH("/{id}/classify", h.ClassifyFinding, middleware.Require(permission.FindingsWrite))
-		r.PATCH("/{id}/severity", h.UpdateFindingSeverity, middleware.Require(permission.FindingsWrite))
+		// Re-scoring is its own permission (findings:severity), so the person
+		// who fixes a finding need not be able to lower its severity.
+		r.PATCH("/{id}/classify", h.ClassifyFinding, middleware.Require(permission.FindingsSeverity))
+		r.PATCH("/{id}/severity", h.UpdateFindingSeverity, middleware.Require(permission.FindingsSeverity))
 
 		// Triage and verification
 		r.PATCH("/{id}/triage", h.TriageFinding, middleware.Require(permission.FindingsTriage))
@@ -321,13 +323,13 @@ func registerVulnerabilityRoutes(
 	// Finding comment routes - tenant from JWT token
 	router.Group("/api/v1/findings/{id}/comments", func(r Router) {
 		r.GET("/", h.ListComments, middleware.Require(permission.FindingsRead))
-		r.POST("/", h.AddComment, middleware.Require(permission.FindingsWrite))
-		r.PUT("/{comment_id}", h.UpdateComment, middleware.Require(permission.FindingsWrite))
-		r.DELETE("/{comment_id}", h.DeleteComment, middleware.Require(permission.FindingsWrite))
+		r.POST("/", h.AddComment, middleware.Require(permission.FindingsComment))
+		r.PUT("/{comment_id}", h.UpdateComment, middleware.Require(permission.FindingsComment))
+		r.DELETE("/{comment_id}", h.DeleteComment, middleware.Require(permission.FindingsComment))
 	}, tenantMiddlewares...)
 
 	// Emoji reactions on finding comments. Same permission as posting a
-	// comment; the service also requires read access to the comment's finding
+	// comment (findings:comment); the service also requires read access to the comment's finding
 	// (data scope, pentest campaign membership). Rate limited per user.
 	reactionRL := middleware.NewRateLimiter(&config.RateLimitConfig{
 		Enabled:         true,
@@ -336,8 +338,8 @@ func registerVulnerabilityRoutes(
 		CleanupInterval: 5 * time.Minute,
 	}, nil)
 	router.Group("/api/v1/comments/{comment_id}/reactions", func(r Router) {
-		r.POST("/", h.AddCommentReaction, middleware.Require(permission.FindingsWrite), reactionRL.UserMiddleware())
-		r.DELETE("/{emoji}", h.RemoveCommentReaction, middleware.Require(permission.FindingsWrite), reactionRL.UserMiddleware())
+		r.POST("/", h.AddCommentReaction, middleware.Require(permission.FindingsComment), reactionRL.UserMiddleware())
+		r.DELETE("/{emoji}", h.RemoveCommentReaction, middleware.Require(permission.FindingsComment), reactionRL.UserMiddleware())
 	}, tenantMiddlewares...)
 
 	// Finding approval routes - tenant from JWT token
