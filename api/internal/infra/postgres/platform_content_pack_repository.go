@@ -1,7 +1,7 @@
 package postgres
 
 // Platform content packs (docs/rfcs/RFC-061-content-packs.md; migration
-// 001387): packs, blobs and channels the platform operator manages. Apart
+// 001394): packs, blobs and channels the platform operator manages. Apart
 // from the tenant tables on purpose: no tenant statement touches them.
 
 import (
