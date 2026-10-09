@@ -53,6 +53,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
+	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -90,6 +91,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -666,6 +668,9 @@ type Services struct {
 	// TemplateKeys signs custom templates for sensors; nil when no key is
 	// configured (see initTemplateKeyring).
 	TemplateKeys *scannertemplate.Keyring
+
+	// ContentPacks is the content pack store (RFC-061).
+	ContentPacks *contentpackapp.Service
 
 	// Workflows
 	Workflow           *workflow.WorkflowService
@@ -1610,6 +1615,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Custom templates leave for sensors signed with the tenant's key
 	// (sensors refuse unsigned ones; RFC-038 "Custom template trust").
 	s.TemplateKeys = initTemplateKeyring(cfg, log)
+	// Content packs are stored in each tenant's namespace of the operator
+	// file storage and signed with the tenant's content key.
+	s.ContentPacks = contentpackapp.NewService(repos.ContentPack, fileStorage, initContentSigner(cfg, log), s.Audit, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -1826,8 +1834,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
 		// Route targets to scan zones and pin jobs to zone sensors (RFC-023).
-		// Hostnames route by the address they resolve to from the platform.
-		scan.WithScanZones(repos.ScanZone, net.DefaultResolver),
+		// Hostnames route by the address they resolve to, through
+		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
+		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
 		// Freeze windows: a scheduled run is deferred to the window's end,
 		// any other trigger refused unless overridden (audited).
 		scan.WithFreezeWindows(repos.ScanFreezeWindow),
@@ -2569,6 +2578,35 @@ func initTemplateKeyring(cfg *config.Config, log *logger.Logger) *scannertemplat
 	return nil
 }
 
+// initContentSigner returns the signer of content packs (RFC-061): from
+// APP_CONTENT_SIGNING_KEY, else derived from APP_ENCRYPTION_KEY under the
+// content label, a key family separate from template, job and sensor CA
+// keys. nil (no key at all, development only): uploads are refused.
+func initContentSigner(cfg *config.Config, log *logger.Logger) *contentpackdom.Signer {
+	if k := cfg.Encryption.ContentSigningKey; k != "" {
+		raw, err := crypto.ParseKey(k, "")
+		if err == nil {
+			if s, err := contentpackdom.NewSigner(raw); err == nil {
+				log.Info("content pack signing enabled", "key_source", "APP_CONTENT_SIGNING_KEY")
+				return s
+			}
+		}
+		log.Error("APP_CONTENT_SIGNING_KEY is invalid; content pack uploads are refused")
+		return nil
+	}
+	if cfg.Encryption.IsConfigured() {
+		raw, err := crypto.ParseKey(cfg.Encryption.Key, cfg.Encryption.KeyFormat)
+		if err == nil {
+			if s, err := contentpackdom.NewSignerFromEncryptionKey(raw); err == nil {
+				log.Info("content pack signing enabled", "key_source", "derived from APP_ENCRYPTION_KEY")
+				return s
+			}
+		}
+	}
+	log.Warn("no content signing key (APP_CONTENT_SIGNING_KEY / APP_ENCRYPTION_KEY); content pack uploads are refused")
+	return nil
+}
+
 // initEncryptor initializes the credentials encryptor.
 func initEncryptor(cfg *config.Config, log *logger.Logger) (crypto.Encryptor, error) {
 	if !cfg.Encryption.IsConfigured() {
@@ -2734,4 +2772,25 @@ func easmRecheck(interval time.Duration) time.Duration {
 		return interval * 5 / 6
 	}
 	return interval - 30*time.Minute
+}
+
+// zoneResolver is the resolver scan-zone routing resolves hostnames with:
+// the platform's own for "system", else one that asks only the given
+// recursive resolver (host[:port], port 53 by default), so tenants cannot
+// resolve names through the platform's internal DNS.
+func zoneResolver(spec string) *net.Resolver {
+	if spec == "" || spec == config.ScanZoneResolverSystem {
+		return net.DefaultResolver
+	}
+	server := spec
+	if _, _, err := net.SplitHostPort(spec); err != nil {
+		server = net.JoinHostPort(spec, "53")
+	}
+	d := &net.Dialer{Timeout: 3 * time.Second}
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return d.DialContext(ctx, network, server)
+		},
+	}
 }

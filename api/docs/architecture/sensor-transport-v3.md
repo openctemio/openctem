@@ -39,6 +39,24 @@ The v2 budgets (per sensor, per tenant) are one set shared by both
 protocols, so a sensor cannot double its budget; v3 calls are counted in the
 v2 route metrics.
 
+Guards ahead of authentication: the binding is reachable without
+credentials, and verifying a signature costs a database lookup of the key, so
+before any of that runs:
+
+- the global per-IP rate limit applies (`MountPrefix` wraps the binding with
+  it, although the rest of the global middleware is skipped);
+- at most `MaxUnaryInFlight` (256) unary calls per replica are in flight
+  across both bindings; over it a call gets `503` with `Retry-After` before a
+  byte is read. Control streams take no slot (they are bounded per sensor);
+- a control stream's read and write deadlines are lifted only after it
+  authenticated; on the gRPC binding a unary call must deliver its message
+  within `UnaryTimeout` (the listener has no read timeout because of the
+  streams).
+
+The key-use bookkeeping of an authenticated call (sensor last seen, last IP,
+key last used) is written at most once per 15 seconds per sensor and
+address.
+
 `Subscribe` is served by the server itself: it registers in the hub, sends
 the doorbell (the heartbeat's pending jobs, actions, cancel ids and config
 version, computed by `SensorControlV2Handler.StreamHints`), then waits for a

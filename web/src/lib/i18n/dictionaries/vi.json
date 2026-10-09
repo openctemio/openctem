@@ -128,6 +128,8 @@
   "settings.desc.my-notifications": "Bạn nhận những thông báo nào và nhận bằng cách nào.",
   "settings.item.activity": "Hoạt động",
   "settings.desc.activity": "Các lần đăng nhập và thao tác gần đây của bạn.",
+  "settings.item.connected-apps": "Ứng dụng đã kết nối",
+  "settings.desc.connected-apps": "Các ứng dụng AI bạn đã cho phép đọc dữ liệu của bạn.",
   "settings.item.org-general": "Chung",
   "settings.desc.org-general": "Tên tổ chức, nhận diện thương hiệu, bản địa hóa và lưu trữ tệp.",
   "settings.item.modules": "Mô-đun",
@@ -638,6 +640,7 @@
   "admin.attention.sensorsOffline.title": "Sensor nền tảng ngoại tuyến",
   "admin.attention.test": "Ghi nhận kiểm thử",
   "admin.attention.warning": "Cảnh báo",
+  "admin.nav.aiApplications": "Ứng dụng AI",
   "admin.nav.activity": "Hoạt động quản trị",
   "admin.nav.adminSignIn": "Đăng nhập quản trị",
   "admin.nav.administrators": "Quản trị viên",
@@ -796,5 +799,8 @@
   "auth.requestAccess.confirming": "Đang xác nhận yêu cầu...",
   "auth.requestAccess.confirmed": "Yêu cầu của bạn đã được xác nhận và đang chờ quản trị viên.",
   "auth.requestAccess.confirmFailed": "Liên kết này không hợp lệ hoặc đã hết hạn.",
+  "auth.verifyEmail.verifying": "Đang xác minh địa chỉ email...",
+  "auth.verifyEmail.verified": "Địa chỉ email của bạn đã được xác minh. Bạn có thể đăng nhập.",
+  "auth.verifyEmail.failed": "Liên kết này không hợp lệ hoặc đã hết hạn.",
   "admin.nav.access-requests": "Yêu cầu truy cập"
 }

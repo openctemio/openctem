@@ -57,6 +57,9 @@ type Handlers struct {
 	MCPOAuth *handler.MCPOAuthHandler
 	// MCPSettings is the organization MCP policy (RFC-062 §8).
 	MCPSettings *handler.MCPSettingsHandler
+	// MCPConnections is the connected applications (RFC-062 §12), tenant
+	// and platform console; nil without the authorization server.
+	MCPConnections *handler.MCPConnectionsHandler
 	// APIKeyAuth authenticates `oct_` API keys on the tenant REST routes (the
 	// token-tenant chains), read-only. Share the instance behind MCPAuth so a
 	// key has one rate-limit budget. nil leaves the REST API JWT-only.
@@ -124,6 +127,7 @@ type Handlers struct {
 	CIRunner        *handler.CIRunnerHandler
 	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
 	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
+	ContentPack     *handler.ContentPackHandler     // nil if not initialized (no database)
 	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
@@ -661,6 +665,10 @@ func Register(
 	if h.MCPSettings != nil {
 		registerMCPSettingsRoutes(router, h.MCPSettings, authMiddleware, userSync)
 	}
+	// Connected AI applications (RFC-062 §12).
+	if h.MCPConnections != nil {
+		registerMCPConnectionRoutes(router, h.MCPConnections, authMiddleware, userSync)
+	}
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
 	// Per-IP rate limit runs before auth to throttle junk-token floods; the
@@ -866,6 +874,10 @@ func Register(
 	}
 
 	// Template Source routes (tenant from JWT token)
+	if h.ContentPack != nil {
+		registerContentPackRoutes(router, h.ContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+
 	if h.TemplateSource != nil {
 		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleTemplateSources))
 	}

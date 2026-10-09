@@ -828,3 +828,43 @@ func foldExposureBatch(events []*exposure.ExposureEvent) []exposureBatchRow {
 	}
 	return rows
 }
+
+// CountByStateAndSeverity counts the events a filter selects by state and by
+// severity in one query (GROUPING SETS), for a stats card that used to send
+// one COUNT per state and per severity.
+func (r *ExposureRepository) CountByStateAndSeverity(ctx context.Context, filter exposure.Filter) (map[string]int64, map[string]int64, error) {
+	// GROUPING(state) is 1 on the severity rows, so a NULL value can never be
+	// taken for the other dimension.
+	query := `SELECT GROUPING(state), COALESCE(state, ''), COALESCE(severity, ''), COUNT(*) FROM exposure_events`
+	whereClause, args := r.buildWhereClause(filter)
+	if whereClause != "" {
+		query += " WHERE " + whereClause
+	}
+	query += ` GROUP BY GROUPING SETS ((state), (severity))`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to count exposure events by state and severity: %w", err)
+	}
+	defer rows.Close()
+
+	byState := make(map[string]int64)
+	bySeverity := make(map[string]int64)
+	for rows.Next() {
+		var severityRow int
+		var state, severity string
+		var n int64
+		if err := rows.Scan(&severityRow, &state, &severity, &n); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan exposure counts: %w", err)
+		}
+		if severityRow == 1 {
+			bySeverity[severity] = n
+		} else {
+			byState[state] = n
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to read exposure counts: %w", err)
+	}
+	return byState, bySeverity, nil
+}

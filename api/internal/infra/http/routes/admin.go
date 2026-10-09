@@ -354,6 +354,22 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// AI applications (MCP clients, RFC-062 §12). Reads: any admin, counts
+	// only. Block / unblock: ops_admin+, audited.
+	if h.MCPConnections != nil {
+		router.Group("/api/v1/admin/mcp-clients", func(r Router) {
+			r.GET("/", h.MCPConnections.AdminListClients)
+			write := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+			block, unblock := cloneMW(write), cloneMW(write)
+			if h.AdminAuditMiddleware != nil {
+				block = append(block, h.AdminAuditMiddleware.AuditLog("mcp_client.blocked", "mcp_client", "id"))
+				unblock = append(unblock, h.AdminAuditMiddleware.AuditLog("mcp_client.unblocked", "mcp_client", "id"))
+			}
+			r.POST("/{id}/block", h.MCPConnections.AdminBlockClient, block...)
+			r.POST("/{id}/unblock", h.MCPConnections.AdminUnblockClient, unblock...)
+		}, adminMiddlewares...)
+	}
+
 	// Target mapping management (scanner target type -> asset type).
 	// Reads: any admin. Writes: ops_admin+ (readonly rejected) — target
 	// mappings are shared platform configuration, gated at the route layer to

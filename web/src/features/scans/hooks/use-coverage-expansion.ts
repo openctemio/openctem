@@ -14,28 +14,43 @@ import { Permission, usePermissions } from '@/lib/permissions'
 import {
   domainRoots,
   expandTargets,
+  MAX_EXPANDED_TARGETS,
   type CoverageLevel,
   type InventoryName,
 } from '../lib/coverage-expansion'
 
-/** Roots looked up per scan (each one GET, 100 names). */
+/** Roots looked up per scan (the API's `under` takes at most 10). */
 export const MAX_COVERAGE_ROOTS = 10
+
+/** Pages of 100 names read at most (an expansion adds at most 500 targets). */
+const MAX_PAGES = Math.ceil(MAX_EXPANDED_TARGETS / 100)
 
 interface AssetListPage {
   data?: { name?: string; properties?: Record<string, unknown> }[]
+  total?: number
 }
 
+/** `GET /assets?under=…`: the names equal to or below any of the roots. */
+export function coverageURL(roots: string[], page: number): string {
+  const params = new URLSearchParams({ under: roots.join(','), per_page: '100' })
+  if (page > 1) params.set('page', String(page))
+  return `/api/v1/assets?${params}`
+}
+
+/**
+ * One request for every root (research/81: it used to be one search per
+ * root), and more pages only when the inventory holds more names.
+ */
 async function loadUnder(roots: string[]): Promise<InventoryName[]> {
-  const pages = await Promise.all(
-    roots.map((r) =>
-      get<AssetListPage>(`/api/v1/assets?${new URLSearchParams({ search: r, per_page: '100' })}`)
-    )
-  )
-  return pages.flatMap((p) =>
-    (p?.data ?? [])
-      .filter((a): a is { name: string; properties?: Record<string, unknown> } => !!a.name)
-      .map((a) => ({ name: a.name, properties: a.properties }))
-  )
+  const names: InventoryName[] = []
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const p = await get<AssetListPage>(coverageURL(roots, page))
+    for (const a of p?.data ?? []) {
+      if (a.name) names.push({ name: a.name, properties: a.properties })
+    }
+    if ((p?.data?.length ?? 0) < 100 || names.length >= (p?.total ?? 0)) break
+  }
+  return names
 }
 
 export function useCoverageExpansion(typed: string[], level: CoverageLevel) {
@@ -44,7 +59,7 @@ export function useCoverageExpansion(typed: string[], level: CoverageLevel) {
   const roots = useMemo(() => domainRoots(typed).slice(0, MAX_COVERAGE_ROOTS), [typed])
   const key =
     level !== 'host' && currentTenant && can(Permission.AssetsRead) && roots.length > 0
-      ? ['coverage-expansion', currentTenant.id, ...roots]
+      ? coverageURL(roots, 1)
       : null
   const { data, isLoading, error } = useSWR<InventoryName[]>(key, () => loadUnder(roots), {
     revalidateOnFocus: false,
