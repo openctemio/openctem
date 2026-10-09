@@ -17,6 +17,7 @@
 
 import * as React from 'react'
 import { ServerCrash, Loader2 } from 'lucide-react'
+import { mutate as globalMutate } from 'swr'
 import { get } from '@/lib/api/client'
 import { devLog } from '@/lib/logger'
 import { Button } from '@/components/ui/button'
@@ -53,6 +54,12 @@ export interface BootstrapContextValue {
   isBootstrapped: boolean
   /** Refresh bootstrap data */
   refresh: () => Promise<void>
+  /**
+   * Re-read only the organization's modules (after a toggle here or a
+   * `module.updated` event), without the loading state of a full refresh, so
+   * the sidebar and the route guard follow at once.
+   */
+  refreshModules: () => Promise<void>
 }
 
 // ============================================
@@ -198,6 +205,20 @@ export function BootstrapProvider({ children }: BootstrapProviderProps) {
     await fetchBootstrap()
   }, [fetchBootstrap])
 
+  const refreshModules = React.useCallback(async () => {
+    if (!tenantId) return
+    try {
+      const modules = await get<TenantModulesResponse>('/api/v1/me/modules')
+      // A tenant switch while reading: the new tenant's bootstrap wins.
+      if (previousTenantIdRef.current !== tenantId) return
+      setData((prev) => (prev ? { ...prev, modules } : prev))
+      await globalMutate('/api/v1/me/modules', modules, { revalidate: false })
+    } catch (err) {
+      // Keep the current set; the next toggle event or bootstrap catches up.
+      devLog.error('[BootstrapProvider] Failed to refresh modules:', err)
+    }
+  }, [tenantId])
+
   const value = React.useMemo<BootstrapContextValue>(() => {
     // Synchronize context instantly with currentTenant to prevent stale data
     // leaking during the React render cycle before useEffect runs.
@@ -209,8 +230,9 @@ export function BootstrapProvider({ children }: BootstrapProviderProps) {
       error: isStale ? null : error,
       isBootstrapped: isStale ? false : isBootstrapped,
       refresh,
+      refreshModules,
     }
-  }, [data, isLoading, error, isBootstrapped, fetchedTenantId, tenantId, refresh])
+  }, [data, isLoading, error, isBootstrapped, fetchedTenantId, tenantId, refresh, refreshModules])
 
   return <BootstrapContext.Provider value={value}>{children}</BootstrapContext.Provider>
 }
@@ -301,6 +323,7 @@ const defaultContextValue: BootstrapContextValue = {
   error: null,
   isBootstrapped: false,
   refresh: async () => {},
+  refreshModules: async () => {},
 }
 
 /**
