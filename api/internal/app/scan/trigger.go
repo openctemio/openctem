@@ -395,6 +395,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {
 		return nil, err // Error already includes proper domain error for limit exceeded
 	}
+	s.recordScopeSnapshot(ctx, run, targets)
 
 	// Create step runs
 	for _, step := range steps {
@@ -560,6 +561,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {
 		return nil, err // Error already includes proper domain error for limit exceeded
 	}
+	s.recordScopeSnapshot(ctx, run, resolved.Targets)
 
 	// A single scan still needs a step run. The completion machinery
 	// (OnStepCompleted / OnStepFailed) works by looking the step up on the run
