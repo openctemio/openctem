@@ -58,7 +58,7 @@ const defaultConfig: SWRConfiguration = {
 // FETCHERS
 // ============================================
 
-/** The page size the API allows with include=availability or stats. */
+/** The page size the API allows with include=availability. */
 const VIEW_PAGE_SIZE = 50
 /** Bound on the pages read for one view (2,000 tools: the API's catalog bound). */
 const MAX_VIEW_PAGES = 40
