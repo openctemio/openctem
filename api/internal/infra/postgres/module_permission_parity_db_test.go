@@ -9,7 +9,7 @@ import (
 // permissions grouped under their module and drops any whose module is NULL
 // or inactive (ListModulesWithPermissions), so such a permission cannot be
 // granted from the console: scope, cycle, business-service and priority-rule
-// permissions were in that state until migration 001393.
+// permissions were in that state until migration 001443.
 func TestModuleCatalog_EveryPermissionHasALiveModule(t *testing.T) {
 	db := openModuleCatalogDB(t)
 	catalog := loadModuleCatalog(t, db)
