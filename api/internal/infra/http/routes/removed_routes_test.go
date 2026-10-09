@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/tools/lint/openapicontract"
 )
 
@@ -133,7 +134,7 @@ func TestRemovedRoutes_CrossTenantStatsAndTenantRebaselineAreGone(t *testing.T) 
 		})
 	}
 	router := infrahttp.NewChiRouter()
-	registerDashboardRoutes(router, &handler.DashboardHandler{}, auth, nil)
+	registerDashboardRoutes(router, &handler.DashboardHandler{}, auth, nil, logger.NewNop())
 	registerAuditRoutes(router, &handler.AuditHandler{}, auth, nil)
 	mux := router.(interface{ Handler() http.Handler }).Handler()
 

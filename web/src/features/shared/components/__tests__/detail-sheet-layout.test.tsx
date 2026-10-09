@@ -311,7 +311,8 @@ describe('DetailSheet on larger screens', () => {
       />
     )
     const el = document.querySelector('[data-slot="detail-sheet"]') as HTMLElement
-    expect(el).toHaveClass('h-full', 'sm:max-w-xl')
+    // Top to bottom of the screen (ending above the on-screen keyboard, if any).
+    expect(el).toHaveClass('top-0', 'bottom-[var(--modal-kb,0px)]', 'sm:max-w-xl')
     expect(el).not.toHaveAttribute('data-vaul-drawer')
     expect(el).not.toHaveClass('h-[92svh]')
     expect(el).not.toHaveClass('max-h-[92svh]')

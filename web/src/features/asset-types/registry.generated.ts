@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = '2532dc2f6acb4051'
+export const ASSET_REGISTRY_VERSION = 'ecb9aa51a9146fc3'
 
 export type AssetLens =
   | 'external_surface'
@@ -362,7 +362,7 @@ export const ASSET_TYPE_ALIASES: Readonly<
   web_application: { type: 'application', subType: 'website' },
 }
 
-export type AssetPropertyFormat = 'ip' | 'url' | 'code'
+export type AssetPropertyFormat = 'code' | 'expiry' | 'ip' | 'url'
 
 export interface AssetPropertyDefinition {
   label: string
@@ -659,7 +659,7 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   endpoint: { label: 'Endpoint', labelVi: 'Endpoint' },
   endpoints_count: { label: 'Endpoints', labelVi: 'Số endpoint' },
   engine: { label: 'Engine', labelVi: 'Engine' },
-  expires_at: { label: 'Expires', labelVi: 'Ngày hết hạn' },
+  expires_at: { label: 'Expires', labelVi: 'Ngày hết hạn', format: 'expiry' },
   fingerprint_sha256: {
     label: 'SHA-256 fingerprint',
     labelVi: 'Dấu vân tay SHA-256',
@@ -811,7 +811,7 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   network_plugin: { label: 'Network plugin', labelVi: 'Plugin mạng' },
   networks: { label: 'Networks', labelVi: 'Mạng', list: true },
   node_count: { label: 'Nodes', labelVi: 'Số node' },
-  not_after: { label: 'Valid until', labelVi: 'Hiệu lực đến' },
+  not_after: { label: 'Valid until', labelVi: 'Hiệu lực đến', format: 'expiry' },
   not_before: { label: 'Valid from', labelVi: 'Hiệu lực từ' },
   organization_id: { label: 'Organization ID', labelVi: 'ID tổ chức', format: 'code' },
   os_family: { label: 'OS family', labelVi: 'Họ hệ điều hành' },
