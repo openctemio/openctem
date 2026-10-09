@@ -91,7 +91,12 @@ Measured with nuclei-templates v10.5.0 (9.9 MB tar.gz, 15,325 entries):
 **Channels.** A super admin points `stable` or `canary` of a name at an active pack. Revoking a pack moves every channel that names it to the newest older active pack of the name, or removes the channel when there is none. This happens in the same transaction.
 
 Routes:
-- `/api/v1/admin/content-packs`: any admin reads. Upload, `import`, `{id}/revoke` and `channels/{channel}` need a super admin and are audited by the admin route layer.
+- `/api/v1/admin/content-packs`: any admin reads. Upload, `import`, `{id}/revoke` and `channels/{channel}` change what every organization's platform sensors may run, so each needs:
+  - a super admin;
+  - a `reason`;
+  - a fresh console authenticator code (`totp_code`, checked by the shared console step-up).
+
+  Each write records an admin audit row at high severity with the reason.
 - `/api/v1/platform-content-packs`: read-only for organizations, with `scans:content:read`.
 
 ## API
