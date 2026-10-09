@@ -56,9 +56,7 @@ type Reference struct {
 
 // pendingRoles are roles personas may name before they exist (a built-in role
 // another change is adding). Rendered as named; checked by the tests.
-var pendingRoles = map[string]string{
-	"researcher": "Researcher (RFC-064)",
-}
+var pendingRoles = map[string]string{}
 
 // Roles returns the built-in roles followed by the role templates.
 func Roles() []RoleInfo {

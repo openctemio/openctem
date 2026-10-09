@@ -139,6 +139,7 @@ Besides the Go runtime and process metrics:
 | `openctem_automation_runs_total`, `openctem_automations_auto_paused_total` | status | Finished automation runs; automations paused after repeated failures. |
 | `openctem_web_client_errors_total` | kind | Errors reported by browsers (when the web reporter is enabled). |
 | `openctem_sensors`, `openctem_sensors_config_health`, `openctem_sensors_sdk` | kind (platform, tenant), health / config_health / status | Active sensors, platform-wide counts. |
+| `openctem_sensors_unhardened` | kind (policy_none, pin_none, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |
 | `openctem_commands`, `openctem_command_oldest_pending_seconds` | state | Sensor command queue. |
 | `openctem_scan_runs_open`, `openctem_scan_runs_past_deadline` | | Open scan runs and those the reaper should have ended. |
 | `openctem_outbox_entries`, `openctem_outbox_oldest_pending_seconds` | status | Notification outbox. |
@@ -297,6 +298,43 @@ the gateway, and the key (expired or revoked keys also stop heartbeats).
 Sensors report a configuration problem (impaired or blocked): missing tools,
 capabilities the platform ignored, a local policy refusing work. The sensor's
 Configuration tab lists the checks that fail.
+
+### SensorsUnhardened
+
+Tenant sensors have run unhardened for a day. They keep working (existing
+installs are not cut off); each `kind` is one reason, and the Sensors page
+shows a warning on each flagged sensor and a Security posture block in its
+details:
+
+- `policy_none`: no local policy, and none required (an install paired before
+  policies were required), or a sensor whose SDK reports none. The network
+  owner installs one from the Local policy tab of the install commands
+  (`SENSOR_LOCAL_POLICY`).
+- `pin_none`: the sensor's HTTPS client trusts the system trust store instead
+  of a pinned platform CA. Set `SENSOR_CA_FINGERPRINT` (shown in the install
+  commands).
+- `network_unenforced`: tools run without network confinement. Run the sensor
+  with `SENSOR_SANDBOX_NETWORK=required` and the shipped seccomp profile.
+- `bearer_key`: the sensor authenticates with a bearer key instead of a
+  key-bound identity. Re-pair it:
+  1. On the sensor host, stop the sensor and keep its state directory (or
+     start from an empty one).
+  2. Start it with only the platform URL and no API key
+     (`API_URL=https://<platform>`, no `API_KEY`); it prints a pairing code
+     and a fingerprint.
+  3. In the console, open the Sensors page, pair a sensor and choose "Enter
+     code": enter the code, check that the fingerprint matches, and approve
+     (step-up). Approving a re-pair of an existing sensor replaces its key:
+     its bearer key and any earlier keys are revoked.
+  4. New pairings also pin the platform CA and require a local policy, so
+     install one before the sensor takes network jobs (the Local policy tab
+     of the install commands).
+
+Alertmanager sends this alert once per `kind` and repeats it every 24 hours,
+not on the warning schedule.
+
+The posture is what the sensor reports about itself: the platform shows it and
+alerts on it but never relaxes a check because of it.
 
 ### SensorSdkUnsupported
 

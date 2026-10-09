@@ -63,6 +63,7 @@ type Service struct {
 	sensor *limiters
 	logger *slog.Logger
 	now    func() time.Time
+	keyset keySet
 }
 
 // New opens the state directory and returns the service.
@@ -190,6 +191,7 @@ func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(SignPath, s.handleSign)
 	mux.HandleFunc(KeysPath, s.handleKeys)
+	mux.HandleFunc(KeySetPath, s.handleKeySet)
 	return mux
 }
 
