@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import {
   Plus,
   RadioTower,

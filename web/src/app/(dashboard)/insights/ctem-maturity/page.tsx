@@ -19,7 +19,7 @@
  *                cycle" state
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { AlertCircle, ArrowLeft, RefreshCw, ShieldOff, GaugeCircle } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { PageHeader } from '@/features/shared'
