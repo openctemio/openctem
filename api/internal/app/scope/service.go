@@ -26,10 +26,19 @@ type Service struct {
 	admins   AdminDirectory
 	inApp    InAppNotifier
 	stepUp   shared.RecentAuthGate
+	// Approvers (approvers.go): who may approve, the authenticator check
+	// for an owner's own approval, approval emails and channels.
+	approvers  ApproverDirectory
+	totp       TOTPVerifier
+	mail       ApprovalMailer
+	channels   ChannelNotifier
+	webBaseURL string
 	// guardrails are the platform's scope guardrails (nil: the defaults).
 	guardrails *scopedom.Guardrails
 	// programExcl lists program exclusions for the authority check (RFC-065).
 	programExcl ProgramExclusionReader
+	// programs names the programs of a scope snapshot (snapshot.go).
+	programs ProgramLister
 	// letters are the authorization letters letter entries name (letters.go).
 	letters scopedom.LetterRepository
 	// Coverage of the inventory (GetStats): counted in SQL over the
@@ -41,6 +50,8 @@ type Service struct {
 	visible VisibleAssetCounter
 	// ledger is the job signer's scope ledger (ledger.go); nil: none.
 	ledger LedgerFeed
+	// ledgerTemplates lists the approved template versions for snapshots.
+	ledgerTemplates LedgerTemplateSource
 }
 
 // NewService creates a new Service.

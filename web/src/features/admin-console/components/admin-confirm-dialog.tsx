@@ -24,6 +24,23 @@ import { AdminApiError } from '../api/admin-client'
 export const REASON_MIN = 10
 export const REASON_MAX = 500
 
+type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string
+
+/**
+ * What a refused step-up action tells the administrator: a missing code and a
+ * role that may not act get their own words; any other refusal (a rejected or
+ * reused code, a missing reason) shows the API's message.
+ */
+export function stepUpErrorMessage(err: unknown, t: Translate): string {
+  if (!(err instanceof AdminApiError))
+    return t('admin.confirm.failed', 'The action failed. Try again.')
+  if (err.code === 'STEP_UP_REQUIRED')
+    return t('admin.confirm.codeRequired', 'Enter a fresh code from your authenticator.')
+  if (err.status === 403)
+    return t('admin.confirm.roleRefused', 'Your console role cannot do this. Ask a super admin.')
+  return err.message
+}
+
 export interface AdminConfirmProof {
   /** Why the administrator acts; kept in the admin audit row. */
   reason: string
@@ -94,11 +111,7 @@ export function AdminConfirmDialog({
       reset()
       onOpenChange(false)
     } catch (err) {
-      setError(
-        err instanceof AdminApiError
-          ? err.message
-          : t('admin.confirm.failed', 'The action failed. Try again.')
-      )
+      setError(stepUpErrorMessage(err, t))
       // A used code cannot be replayed: clear it so the next one is typed.
       setCode('')
       setBusy(false)
