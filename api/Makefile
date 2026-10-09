@@ -164,12 +164,21 @@ swagger: swagger-install
 ##   api/openapi/swagger.yaml                    the OpenAPI spec (swagger)
 ##   api/openapi/routes.txt                      every registered route (web endpoint check)
 ##   ../web/src/config/api-route-permissions.json  the web console's route gate map
+##   ../web/src/config/authz-matrix.json           the authorization reference (roles,
+##                                                 templates, per-feature gates)
 ## The web API types are generated from the spec by `npm run generate:api-types`
 ## in web/; `make generate` at the repository root runs both halves.
 contract: swagger
 	@GOWORK=off UPDATE_ROUTE_MANIFEST=1 go test ./tools/lint/openapicontract/ -run '^TestWriteRouteManifest$$' -count=1 >/dev/null
 	@GOWORK=off UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run '^TestRoutePermissionMap$$' -count=1 >/dev/null
-	@echo "Route manifest and route permission map generated"
+	@GOWORK=off go run ./cmd/gen-authz-docs
+	@echo "Route manifest, route permission map and authorization reference generated"
+
+## authz-docs: Write the authorization reference as markdown pages into DIR
+##             (the documentation site adds FRONT_MATTER=1)
+authz-docs:
+	@test -n "$(DIR)" || { echo "usage: make authz-docs DIR=<output dir> [FRONT_MATTER=1]" >&2; exit 2; }
+	@GOWORK=off go run ./cmd/gen-authz-docs -json "" -md "$(DIR)" $(if $(FRONT_MATTER),-front-matter,)
 
 ## swagger-check: Generate the spec, then fail if the annotations, the spec and
 ## the routes disagree. Compares SETS of operations, not bytes — see
