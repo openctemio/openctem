@@ -7,6 +7,7 @@ package accesscontrol
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 
@@ -37,7 +38,10 @@ type GroupService struct {
 	// delegation caps what a caller can hand out through a group to the
 	// scope they hold (D13). Nil: no cap (tests).
 	delegation *datascope.Enforcer
-	logger     *logger.Logger
+	// expiredLister finds memberships past their end date (the expiry
+	// controller). Nil: ExpireMemberships does nothing.
+	expiredLister groupdom.ExpiredMemberLister
+	logger        *logger.Logger
 }
 
 // NewGroupService creates a new GroupService.
@@ -192,6 +196,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, 
 		GroupID: g.ID().String(),
 		UserID:  creatorUserID,
 		Role:    string(groupdom.MemberRoleOwner),
+		creator: true,
 	}, actx)
 	if err != nil {
 		// Rollback group creation
@@ -466,6 +471,14 @@ type AddGroupMemberInput struct {
 	GroupID string    `json:"-"`
 	UserID  shared.ID `json:"user_id" validate:"required"`
 	Role    string    `json:"role" validate:"required,oneof=owner lead member"`
+	// ExpiresAt ends the membership (RFC-050 W22). Required on external
+	// teams; at most 365 days ahead.
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	ExpiryReason string     `json:"expiry_reason,omitempty" validate:"max=500"`
+
+	// creator: the group's creator joins as its first owner without an end
+	// date, whatever the team type (set only by CreateGroup).
+	creator bool
 }
 
 // checkMembershipDelegation applies D13 to adding userID to group g: a
@@ -561,6 +574,11 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	member, err := groupdom.NewMember(groupID, input.UserID, role, nil)
 	if err != nil {
 		return nil, err
+	}
+	if !input.creator {
+		if err := applyMembershipExpiry(g, member, input.ExpiresAt, input.ExpiryReason, time.Now().UTC()); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := s.repo.AddMember(ctx, member); err != nil {
