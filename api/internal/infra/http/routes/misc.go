@@ -93,7 +93,12 @@ func registerDashboardRoutes(
 	h *handler.DashboardHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	log *logger.Logger,
 ) {
+	// The dashboard's reads in one response (research/81). Each part is sent
+	// through this router with the caller's credentials, so it passes its own
+	// endpoint's gates; this route itself needs dashboard:read.
+	overview := handler.NewDashboardOverviewHandler(router.Handler, log)
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
@@ -109,6 +114,7 @@ func registerDashboardRoutes(
 		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead))
 		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead))
 		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead))
+		r.GET("/overview", overview.Overview, middleware.Require(permission.DashboardRead))
 	}, tenantMiddlewares...)
 }
 

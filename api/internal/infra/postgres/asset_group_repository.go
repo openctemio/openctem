@@ -30,7 +30,7 @@ func NewAssetGroupRepository(db *DB) *AssetGroupRepository {
 // assetGroupSelectQuery uses LEFT JOIN with pre-aggregated findings count
 // to avoid N+1 correlated subquery execution when listing multiple groups.
 // OPTIMIZED: Changed from correlated subquery to LEFT JOIN for better performance.
-const assetGroupSelectQuery = `
+const assetGroupColumns = `
 	SELECT
 		ag.id, ag.tenant_id, ag.name, ag.description, ag.environment, ag.criticality,
 		ag.business_unit, ag.business_unit_id, ag.owner, ag.owner_email, ag.tags,
@@ -39,15 +39,13 @@ const assetGroupSelectQuery = `
 		ag.risk_score,
 		COALESCE(fc.finding_count, 0) as finding_count,
 		ag.created_at, ag.updated_at
-	FROM asset_groups ag
-	LEFT JOIN (
-		SELECT agm.asset_group_id, COUNT(f.id) as finding_count
-		FROM asset_group_members agm
-		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
-		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
-		GROUP BY agm.asset_group_id
-	) fc ON fc.asset_group_id = ag.id
-`
+	FROM `
+
+// assetGroupSelectQuery reads the stored row (every member counted).
+var assetGroupSelectQuery = func() string {
+	src, _ := groupReadSource(nil, nil)
+	return assetGroupColumns + src + "\n"
+}()
 
 // groupMembersFrom is the FROM clause for every read of a group's members:
 // asset_group_members has no tenant_id, so each member is joined to an asset
@@ -56,6 +54,81 @@ const assetGroupSelectQuery = `
 const groupMembersFrom = `asset_group_members agm
 		JOIN asset_groups mg ON mg.id = agm.asset_group_id
 		JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = mg.tenant_id AND a.deleted_at IS NULL`
+
+// The per-kind member predicates (on assets alias a), shared by the stored
+// counters (RecalculateCounts) and the counts computed for a scoped reader.
+const (
+	groupDomainPred  = `a.asset_class = 'domain'`
+	groupWebsitePred = `a.asset_class = 'application' AND COALESCE(a.sub_type, '') NOT IN ('api', 'mobile_app')`
+	groupServicePred = `(a.asset_class IN ('service', 'web_endpoint')
+				       OR (a.asset_class = 'application' AND a.sub_type = 'api'))`
+	groupRepoPred  = `a.asset_class = 'code_repo'`
+	groupCloudPred = `(a.asset_class IN ('cloud_account', 'function', 'container', 'cluster', 'artifact_registry')
+				       OR a.asset_type = 'storage'
+				       OR (a.asset_class = 'host' AND a.sub_type = 'compute'))`
+)
+
+// groupReadSource returns the FROM source of a group read, aliased ag, with
+// the finding counts joined as fc (alias columns as assetGroupSelectQuery
+// reads them), and the args with the scope's appended.
+//
+// With a nil scope it is the stored row. With a scope (a restricted reader,
+// L-18) every count and the risk score are computed over the members in that
+// scope only, and finding_count over findings of those members: the stored
+// counters cover every member, so they would tell a restricted reader how
+// many assets (and findings) lie outside their scope. Filters and sorts on
+// ag.asset_count / ag.risk_score / finding_count then see the scoped values.
+func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
+	if scope == nil {
+		return `asset_groups ag
+	LEFT JOIN (
+		SELECT agm.asset_group_id, COUNT(f.id) as finding_count
+		FROM asset_group_members agm
+		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
+		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
+		GROUP BY agm.asset_group_id
+	) fc ON fc.asset_group_id = ag.id`, args
+	}
+	at := len(args) + 1
+	memberCond, scopeArgs := dataScopeCondAt("a.id", scope, at)
+	findingCond, _ := dataScopeCondAt("f.asset_id", scope, at)
+	//nolint:gosec // G202: fixed SQL fragments and numbered placeholders only
+	src := `(
+		SELECT g.id, g.tenant_id, g.name, g.description, g.environment, g.criticality,
+			g.business_unit, g.business_unit_id, g.owner, g.owner_email, g.tags,
+			COALESCE(sc.asset_count, 0) AS asset_count,
+			COALESCE(sc.domain_count, 0) AS domain_count,
+			COALESCE(sc.website_count, 0) AS website_count,
+			COALESCE(sc.service_count, 0) AS service_count,
+			COALESCE(sc.repository_count, 0) AS repository_count,
+			COALESCE(sc.cloud_count, 0) AS cloud_count,
+			0 AS credential_count,
+			COALESCE(sc.risk_score, 0) AS risk_score,
+			g.created_at, g.updated_at
+		FROM asset_groups g
+		LEFT JOIN LATERAL (
+			SELECT COUNT(*)::int AS asset_count,
+				(COUNT(*) FILTER (WHERE ` + groupDomainPred + `))::int AS domain_count,
+				(COUNT(*) FILTER (WHERE ` + groupWebsitePred + `))::int AS website_count,
+				(COUNT(*) FILTER (WHERE ` + groupServicePred + `))::int AS service_count,
+				(COUNT(*) FILTER (WHERE ` + groupRepoPred + `))::int AS repository_count,
+				(COUNT(*) FILTER (WHERE ` + groupCloudPred + `))::int AS cloud_count,
+				AVG(a.risk_score)::integer AS risk_score
+			FROM asset_group_members agm
+			JOIN assets a ON a.id = agm.asset_id AND a.tenant_id = g.tenant_id AND a.deleted_at IS NULL
+			WHERE agm.asset_group_id = g.id AND ` + memberCond + `
+		) sc ON TRUE
+	) ag
+	LEFT JOIN (
+		SELECT agm.asset_group_id, COUNT(f.id) as finding_count
+		FROM asset_group_members agm
+		INNER JOIN asset_groups fg ON fg.id = agm.asset_group_id
+		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = fg.tenant_id AND NOT f.branch_only
+		WHERE ` + findingCond + `
+		GROUP BY agm.asset_group_id
+	) fc ON fc.asset_group_id = ag.id`
+	return src, append(args, scopeArgs...)
+}
 
 func (r *AssetGroupRepository) scanAssetGroup(row interface{ Scan(...any) error }) (*assetgroup.AssetGroup, error) {
 	var (
@@ -279,8 +352,18 @@ func (r *AssetGroupRepository) List(
 	page pagination.Pagination,
 ) (pagination.Result[*assetgroup.AssetGroup], error) {
 	var conditions []string
-	var args []any
-	argNum := 1
+	source, args := groupReadSource(filter.DataScope, nil)
+	argNum := len(args) + 1
+
+	if len(filter.IDs) > 0 {
+		ids := make([]string, len(filter.IDs))
+		for i, id := range filter.IDs {
+			ids[i] = id.String()
+		}
+		conditions = append(conditions, fmt.Sprintf("ag.id = ANY($%d)", argNum))
+		args = append(args, pq.StringArray(ids))
+		argNum++
+	}
 
 	if filter.TenantID != nil {
 		conditions = append(conditions, fmt.Sprintf("ag.tenant_id = $%d", argNum))
@@ -327,18 +410,11 @@ func (r *AssetGroupRepository) List(
 	}
 
 	if filter.HasFindings != nil {
+		// finding_count follows the reader's scope (groupReadSource).
 		if *filter.HasFindings {
-			conditions = append(conditions, `EXISTS (
-				SELECT 1 FROM findings f
-				INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-				WHERE agm.asset_group_id = ag.id AND f.tenant_id = ag.tenant_id AND NOT f.branch_only
-			)`)
+			conditions = append(conditions, "COALESCE(fc.finding_count, 0) > 0")
 		} else {
-			conditions = append(conditions, `NOT EXISTS (
-				SELECT 1 FROM findings f
-				INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-				WHERE agm.asset_group_id = ag.id AND f.tenant_id = ag.tenant_id AND NOT f.branch_only
-			)`)
+			conditions = append(conditions, "COALESCE(fc.finding_count, 0) = 0")
 		}
 	}
 
@@ -360,7 +436,7 @@ func (r *AssetGroupRepository) List(
 	}
 
 	// Count total
-	countQuery := "SELECT COUNT(*) FROM asset_groups ag" + whereClause
+	countQuery := "SELECT COUNT(*) FROM " + source + whereClause
 	var total int64
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return pagination.Result[*assetgroup.AssetGroup]{}, fmt.Errorf("count asset groups: %w", err)
@@ -379,7 +455,7 @@ func (r *AssetGroupRepository) List(
 	}
 
 	// Query with pagination
-	query := assetGroupSelectQuery + whereClause + orderClause +
+	query := assetGroupColumns + source + whereClause + orderClause +
 		fmt.Sprintf(" LIMIT $%d OFFSET $%d", argNum, argNum+1)
 	args = append(args, page.Limit(), page.Offset())
 
@@ -440,40 +516,36 @@ func (r *AssetGroupRepository) ExistsByName(ctx context.Context, tenantID shared
 }
 
 // GetStats returns aggregated statistics.
-func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID) (*assetgroup.Stats, error) {
+func (r *AssetGroupRepository) GetStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*assetgroup.Stats, error) {
+	// Totals over the groups as the reader sees them: with a scope, each
+	// group's counts, risk and findings cover only the members in it (L-18).
+	source, args := groupReadSource(scope, []any{tenantID.String()})
+	//nolint:gosec // G202: source is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT
 			COUNT(*) as total,
-			COALESCE(SUM(asset_count), 0) as total_assets,
-			COALESCE(AVG(risk_score), 0) as avg_risk_score
-		FROM asset_groups
-		WHERE tenant_id = $1
+			COALESCE(SUM(ag.asset_count), 0) as total_assets,
+			COALESCE(AVG(ag.risk_score), 0) as avg_risk_score,
+			COALESCE(SUM(fc.finding_count), 0) as total_findings
+		FROM ` + source + `
+		WHERE ag.tenant_id = $1
 	`
 
 	var stats assetgroup.Stats
 	var avgScore float64
+	var totalFindings int64
 
-	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&stats.Total,
 		&stats.TotalAssets,
 		&avgScore,
+		&totalFindings,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get stats: %w", err)
 	}
 	stats.AverageRiskScore = avgScore
-
-	// Get total findings by counting from findings table through asset_group_members
-	findingsQuery := `
-		SELECT COUNT(DISTINCT f.id)
-		FROM findings f
-		INNER JOIN asset_group_members agm ON f.asset_id = agm.asset_id
-		INNER JOIN asset_groups ag ON agm.asset_group_id = ag.id
-		WHERE ag.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only
-	`
-	if err := r.db.QueryRowContext(ctx, findingsQuery, tenantID.String()).Scan(&stats.TotalFindings); err != nil {
-		stats.TotalFindings = 0
-	}
+	stats.TotalFindings = totalFindings
 
 	// Get by environment
 	stats.ByEnvironment = make(map[assetgroup.Environment]int64)
@@ -787,29 +859,23 @@ func (r *AssetGroupRepository) RecalculateCounts(ctx context.Context, groupID sh
 			),
 			domain_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1 AND a.asset_class = 'domain'
+				WHERE agm.asset_group_id = $1 AND ` + groupDomainPred + `
 			),
 			website_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1 AND a.asset_class = 'application'
-				  AND COALESCE(a.sub_type, '') NOT IN ('api', 'mobile_app')
+				WHERE agm.asset_group_id = $1 AND ` + groupWebsitePred + `
 			),
 			service_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1
-				  AND (a.asset_class IN ('service', 'web_endpoint')
-				       OR (a.asset_class = 'application' AND a.sub_type = 'api'))
+				WHERE agm.asset_group_id = $1 AND ` + groupServicePred + `
 			),
 			repository_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1 AND a.asset_class = 'code_repo'
+				WHERE agm.asset_group_id = $1 AND ` + groupRepoPred + `
 			),
 			cloud_count = (
 				SELECT COUNT(*) FROM ` + groupMembersFrom + `
-				WHERE agm.asset_group_id = $1
-				  AND (a.asset_class IN ('cloud_account', 'function', 'container', 'cluster', 'artifact_registry')
-				       OR a.asset_type = 'storage'
-				       OR (a.asset_class = 'host' AND a.sub_type = 'compute'))
+				WHERE agm.asset_group_id = $1 AND ` + groupCloudPred + `
 			),
 			credential_count = 0,
 			risk_score = COALESCE((
