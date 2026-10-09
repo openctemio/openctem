@@ -33,6 +33,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -945,27 +946,29 @@ export default function WorkflowsPage() {
               visual builder after creation.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="workflow-name">Name</Label>
-              <Input
-                id="workflow-name"
-                placeholder="e.g., Critical Finding Response"
-                value={newWorkflowName}
-                onChange={(e) => setNewWorkflowName(e.target.value)}
-              />
+          <DialogBody>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="workflow-name">Name</Label>
+                <Input
+                  id="workflow-name"
+                  placeholder="e.g., Critical Finding Response"
+                  value={newWorkflowName}
+                  onChange={(e) => setNewWorkflowName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="workflow-description">Description (optional)</Label>
+                <Textarea
+                  id="workflow-description"
+                  placeholder="Describe what this workflow does..."
+                  value={newWorkflowDescription}
+                  onChange={(e) => setNewWorkflowDescription(e.target.value)}
+                  rows={3}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="workflow-description">Description (optional)</Label>
-              <Textarea
-                id="workflow-description"
-                placeholder="Describe what this workflow does..."
-                value={newWorkflowDescription}
-                onChange={(e) => setNewWorkflowDescription(e.target.value)}
-                rows={3}
-              />
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
               Cancel
@@ -987,36 +990,38 @@ export default function WorkflowsPage() {
               {edges.length} connection(s).
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="save-workflow-name">Name</Label>
-              <Input
-                id="save-workflow-name"
-                placeholder="e.g., Critical Finding Response"
-                value={saveWorkflowName}
-                onChange={(e) => setSaveWorkflowName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="save-workflow-description">Description (optional)</Label>
-              <Textarea
-                id="save-workflow-description"
-                placeholder="Describe what this workflow does..."
-                value={saveWorkflowDescription}
-                onChange={(e) => setSaveWorkflowDescription(e.target.value)}
-                rows={3}
-              />
-            </div>
-            <div className="rounded-lg border p-3 bg-muted/50">
-              <p className="text-sm font-medium mb-2">Workflow summary</p>
-              <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
-                <div>Triggers: {nodes.filter((n) => n.type === 'trigger').length}</div>
-                <div>Conditions: {nodes.filter((n) => n.type === 'condition').length}</div>
-                <div>Actions: {nodes.filter((n) => n.type === 'action').length}</div>
-                <div>Notifications: {nodes.filter((n) => n.type === 'notification').length}</div>
+          <DialogBody>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="save-workflow-name">Name</Label>
+                <Input
+                  id="save-workflow-name"
+                  placeholder="e.g., Critical Finding Response"
+                  value={saveWorkflowName}
+                  onChange={(e) => setSaveWorkflowName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="save-workflow-description">Description (optional)</Label>
+                <Textarea
+                  id="save-workflow-description"
+                  placeholder="Describe what this workflow does..."
+                  value={saveWorkflowDescription}
+                  onChange={(e) => setSaveWorkflowDescription(e.target.value)}
+                  rows={3}
+                />
+              </div>
+              <div className="rounded-lg border p-3 bg-muted/50">
+                <p className="text-sm font-medium mb-2">Workflow summary</p>
+                <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+                  <div>Triggers: {nodes.filter((n) => n.type === 'trigger').length}</div>
+                  <div>Conditions: {nodes.filter((n) => n.type === 'condition').length}</div>
+                  <div>Actions: {nodes.filter((n) => n.type === 'action').length}</div>
+                  <div>Notifications: {nodes.filter((n) => n.type === 'notification').length}</div>
+                </div>
               </div>
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsSaveDialogOpen(false)}>
               Cancel

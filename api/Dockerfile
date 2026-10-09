@@ -119,6 +119,13 @@ RUN CGO_ENABLED=0 \
     GOARCH=${TARGETARCH:-$(go env GOARCH)} \
     go build -ldflags="-s -w" -o /app/bin/refingerprint ./cmd/refingerprint
 
+# Build openctem-signer (the job signer, RFC-040 §5.6; runs as its own
+# container from this image, see deploy/docker-compose.job-signer.yml)
+RUN CGO_ENABLED=0 \
+    GOOS=${TARGETOS:-linux} \
+    GOARCH=${TARGETARCH:-$(go env GOARCH)} \
+    go build -ldflags="-s -w" -o /app/bin/openctem-signer ./cmd/signer
+
 
 # -----------------------------------------------------------------------------
 # Production stage
@@ -140,6 +147,7 @@ RUN addgroup -g 1000 -S openctem && \
 COPY --from=builder /app/bin/server .
 COPY --from=builder /app/bin/bootstrap-admin .
 COPY --from=builder /app/bin/refingerprint .
+COPY --from=builder /app/bin/openctem-signer .
 
 # The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
 # cmd/server/handlers.go NewDocsHandler).
@@ -161,6 +169,15 @@ COPY --from=builder /app/configs ./configs
 # container filesystem is read-only in the Compose files and ephemeral anyway.
 # Change ownership
 RUN mkdir -p /app/data/attachments && chown -R openctem:openctem /app
+
+# The job signer runs as its own user (uid 1001), in the API's group only so
+# the API can reach its socket: its key and state are never the API's. The
+# directories are created here so new named volumes start with this owner.
+RUN adduser -u 1001 -S -G openctem openctem-signer && \
+    mkdir -p /var/lib/openctem-signer/keys /var/lib/openctem-signer/state /run/openctem-signer && \
+    chown -R openctem-signer:openctem /var/lib/openctem-signer /run/openctem-signer && \
+    chmod 0700 /var/lib/openctem-signer/keys /var/lib/openctem-signer/state && \
+    chmod 0770 /run/openctem-signer
 
 # Switch to non-root user
 USER openctem

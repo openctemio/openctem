@@ -29,6 +29,14 @@ const (
 	// ActionMCPClientDeleted records an organization deleting its client;
 	// the client's connections end.
 	ActionMCPClientDeleted Action = "mcp_client.deleted"
+	// ActionMCPActionRequested records an AI application asking to run a
+	// write tool; nothing happens until the person confirms it.
+	ActionMCPActionRequested Action = "mcp_action.requested"
+	// ActionMCPActionConfirmed records the person approving the action in
+	// the web UI.
+	ActionMCPActionConfirmed Action = "mcp_action.confirmed"
+	// ActionMCPActionRefused records the person refusing the action.
+	ActionMCPActionRefused Action = "mcp_action.refused"
 )
 
 // Resource types of the MCP OAuth actions.
@@ -46,6 +54,9 @@ var _ = registerActions("mcp", map[Action]Severity{
 	ActionMCPSettingsUpdated:  SeverityHigh,
 	ActionMCPClientRegistered: SeverityMedium,
 	ActionMCPClientDeleted:    SeverityMedium,
+	ActionMCPActionRequested:  SeverityLow,
+	ActionMCPActionConfirmed:  SeverityMedium,
+	ActionMCPActionRefused:    SeverityLow,
 })
 
 func init() {
