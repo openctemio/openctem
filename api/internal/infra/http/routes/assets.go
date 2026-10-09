@@ -251,6 +251,9 @@ func registerScopeRoutes(
 		r.POST("/{id}/self-approve", h.SelfApproveTarget, middleware.Require(permission.ScopeApprove))
 		// Remind the approvers of a pending entry (once per hour per entry).
 		r.POST("/{id}/remind", h.RemindApprovers, middleware.Require(permission.ScopeWrite))
+		// Keep a t2 entry intrusive for another attestation period
+		// (RFC-054 §12.5): approvers, one click.
+		r.POST("/{id}/attest", h.AttestTarget, middleware.Require(permission.ScopeApprove))
 
 		// Bulk operations
 		r.POST("/bulk/delete", h.BulkDeleteTargets, middleware.Require(permission.ScopeDelete))

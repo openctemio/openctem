@@ -73,4 +73,7 @@ func wireScopeApprovers(svc *Services, dir *postgres.ScopeActorRepository, webBa
 		channels = svc.Outbox
 	}
 	svc.Scope.SetApprovers(dir, totp, mail, channels, webBaseURL)
+	if svc.Audit != nil {
+		svc.Scope.SetAuditor(svc.Audit)
+	}
 }

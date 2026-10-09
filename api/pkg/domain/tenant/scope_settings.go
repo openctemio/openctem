@@ -61,22 +61,42 @@ type ScopeSettings struct {
 	// T2MaxDuration is the longest a t2 entry may last: 7d, 30d, 90d, 365d
 	// or permanent ("" = 30d).
 	T2MaxDuration string `json:"t2_max_duration,omitempty"`
+	// T2AttestationDays: how often a long t2 entry is confirmed, 30..180
+	// (0 = 90).
+	T2AttestationDays int `json:"t2_attestation_days,omitempty"`
+}
+
+// Attestation bounds (RFC-054 §12.5).
+const (
+	MinT2AttestationDays     = 30
+	MaxT2AttestationDays     = 180
+	DefaultT2AttestationDays = 90
+)
+
+// AttestationDays returns the attestation period with its default.
+func (s ScopeSettings) AttestationDays() int {
+	if s.T2AttestationDays <= 0 {
+		return DefaultT2AttestationDays
+	}
+	return s.T2AttestationDays
 }
 
 // IntrusiveScopeSettings are the owner-only scope settings (RFC-054 §12.4).
 type IntrusiveScopeSettings struct {
-	T2MaxDuration string
+	T2MaxDuration     string
+	T2AttestationDays int
 }
 
 // WithIntrusive returns s with the owner-only fields of i.
 func (s ScopeSettings) WithIntrusive(i IntrusiveScopeSettings) ScopeSettings {
 	s.T2MaxDuration = i.T2MaxDuration
+	s.T2AttestationDays = i.T2AttestationDays
 	return s
 }
 
 // Intrusive returns the owner-only fields of s.
 func (s ScopeSettings) Intrusive() IntrusiveScopeSettings {
-	return IntrusiveScopeSettings{T2MaxDuration: s.T2MaxDuration}
+	return IntrusiveScopeSettings{T2MaxDuration: s.T2MaxDuration, T2AttestationDays: s.T2AttestationDays}
 }
 
 // T2Max returns the t2 duration bound with its default: the days, or
@@ -119,6 +139,9 @@ func (s ScopeSettings) Validate() error {
 	}
 	if _, ok := t2MaxDays[s.T2MaxDuration]; !ok && s.T2MaxDuration != "" && s.T2MaxDuration != T2MaxPermanent {
 		return fmt.Errorf("%w: t2_max_duration must be 7d, 30d, 90d, 365d or permanent", shared.ErrValidation)
+	}
+	if s.T2AttestationDays != 0 && (s.T2AttestationDays < MinT2AttestationDays || s.T2AttestationDays > MaxT2AttestationDays) {
+		return fmt.Errorf("%w: t2_attestation_days must be between %d and %d", shared.ErrValidation, MinT2AttestationDays, MaxT2AttestationDays)
 	}
 	return nil
 }

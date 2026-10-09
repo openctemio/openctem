@@ -121,6 +121,9 @@ type ScopeSettingsResponse struct {
 	T2MaxDays int `json:"t2_max_days"`
 	// T2PermanentAllowed: a t2 entry may be permanent.
 	T2PermanentAllowed bool `json:"t2_permanent_allowed"`
+	// T2AttestationDays: how often a long t2 entry is confirmed (30..180).
+	// Owner-only.
+	T2AttestationDays int `json:"t2_attestation_days"`
 }
 
 // ScopeSettingsRequest replaces the settings. There is no field that turns
@@ -145,6 +148,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
 		ActiveProof:   activeProofOrOff(h.activeProof),
 		T2MaxDuration: ss.T2Duration(), T2MaxDays: t2Days, T2PermanentAllowed: t2Permanent,
+		T2AttestationDays: ss.AttestationDays(),
 	}, nil
 }
 
@@ -245,6 +249,9 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 type ScopeIntrusiveSettingsRequest struct {
 	// T2MaxDuration: 7d, 30d, 90d, 365d or permanent.
 	T2MaxDuration string `json:"t2_max_duration" validate:"required,oneof=7d 30d 90d 365d permanent"`
+	// T2AttestationDays: how often a long t2 entry is confirmed, 30..180
+	// (omitted: 90).
+	T2AttestationDays int `json:"t2_attestation_days" validate:"omitempty,min=30,max=180"`
 	// Reason is kept in the audit log.
 	Reason string `json:"reason" validate:"required,max=1000"`
 }
@@ -281,7 +288,7 @@ func (h *ScopeHandler) UpdateIntrusiveSettings(w http.ResponseWriter, r *http.Re
 		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
 		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
 	}
-	out, err := h.settings.UpdateIntrusiveScopeSettings(ctx, tenantID, tenant.IntrusiveScopeSettings{T2MaxDuration: req.T2MaxDuration}, req.Reason, actx)
+	out, err := h.settings.UpdateIntrusiveScopeSettings(ctx, tenantID, tenant.IntrusiveScopeSettings{T2MaxDuration: req.T2MaxDuration, T2AttestationDays: req.T2AttestationDays}, req.Reason, actx)
 	if err != nil {
 		h.handleServiceError(w, "Scope settings", err)
 		return

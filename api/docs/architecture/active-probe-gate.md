@@ -35,6 +35,14 @@ controller then marks it `expired`.
   `INTRUSIVE_NEEDS_EXPIRY`). The one-off policy does not apply to them.
   Only `PUT /scope/settings/intrusive` (owner, step-up, reason) changes
   it; `PUT /scope/settings` keeps it (`ScopeSettings.WithIntrusive`).
+- **Re-attestation** (RFC-054 §12.5). An active t2 entry that outlives its
+  attestation period (owner-set `t2_attestation_days`, default 90) is
+  confirmed with `POST /scope/targets/{id}/attest` (`scope:approve`). The
+  `scope-attestation` controller (hourly) opens the request (owners and
+  administrators told in-app, approvers by email, channels) and, after 14
+  days without an answer, sets the entry to t1 with a conditional update
+  (`ScopeTargetRepository.DowngradeUnattested`; never a delete), audited as
+  `scope_target.t2_downgraded`.
 - **Who widens.** Creating, activating, extending or raising the tier of an
   entry is widening. A holder of `attack_surface:scope:approve` re-authenticates
   (step-up) and the entry needs the organization's approval count of other

@@ -13,6 +13,7 @@ import { Loader2, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -49,17 +50,23 @@ export function ScopeIntrusiveSettings({
   const { isOwner } = usePermissions()
   const owner = isOwner()
   const current = (settings.t2_max_duration as ScopeT2MaxDuration) || '30d'
+  const currentDays = settings.t2_attestation_days ?? 90
   const [value, setValue] = useState<ScopeT2MaxDuration>(current)
+  const [days, setDays] = useState(currentDays)
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => setValue(current), [current])
+  useEffect(() => setDays(currentDays), [currentDays])
+  const clampedDays = Math.min(180, Math.max(30, Math.round(days) || 90))
+  const dirty = value !== current || clampedDays !== currentDays
 
   const save = async () => {
     setSaving(true)
     try {
       const out = await updateScopeIntrusiveSettings({
         t2_max_duration: value,
+        t2_attestation_days: clampedDays,
         reason: reason.trim(),
       })
       setReason('')
@@ -87,7 +94,7 @@ export function ScopeIntrusiveSettings({
           <Button
             size="sm"
             onClick={() => void save()}
-            disabled={saving || value === current || !reason.trim()}
+            disabled={saving || !dirty || !reason.trim()}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save
@@ -125,7 +132,32 @@ export function ScopeIntrusiveSettings({
               </SelectContent>
             </Select>
           </div>
-          {owner && value !== current && (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+            <div className="min-w-0 sm:max-w-md">
+              <Label htmlFor={`${id}-attest`} className="text-sm font-medium">
+                Confirm long T2 entries every
+              </Label>
+              <p className="mt-1 text-sm text-muted-foreground text-pretty">
+                30 to 180 days. When a confirmation is due, owners and administrators are asked
+                &quot;Keep T2?&quot;. Without an answer within 14 days the entry falls back to
+                non-intrusive (T1); it is never removed.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Input
+                id={`${id}-attest`}
+                type="number"
+                min={30}
+                max={180}
+                className="w-24"
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+                disabled={!owner || saving}
+              />
+              <span className="text-sm text-muted-foreground">days</span>
+            </div>
+          </div>
+          {owner && dirty && (
             <div className="space-y-2">
               <Label htmlFor={`${id}-reason`}>Reason</Label>
               <Textarea

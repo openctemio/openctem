@@ -75,6 +75,7 @@ describe('Intrusive (T2) entries setting', () => {
     await waitFor(() =>
       expect(api.put).toHaveBeenCalledWith('/api/v1/scope/settings/intrusive', {
         t2_max_duration: 'permanent',
+        t2_attestation_days: 90,
         reason: 'standing contract',
       })
     )
