@@ -21,6 +21,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -28,7 +30,7 @@ import (
 )
 
 func newOverviewHarness(t *testing.T) *chainHarness {
-	return newChainHarness(t, func(h *Handlers, db *postgres.DB) {
+	return newChainHarness(t, func(h *Handlers, db *postgres.DB, _ *adminconsole.Service) {
 		h.AdminOverview = handler.NewAdminOverviewHandler(
 			func(ctx context.Context, now time.Time) (postgres.AdminOverviewCounts, error) {
 				return postgres.ReadAdminOverview(ctx, db.DB, now)
