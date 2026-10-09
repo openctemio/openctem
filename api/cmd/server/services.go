@@ -590,8 +590,10 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
-	AttackSurface *attack.SurfaceService
-	ThreatModel   *threatmodel.Service
+	// ScopeSnapshots stores the scope each scan run relied on (RFC-065 §9).
+	ScopeSnapshots *postgres.ScopeSnapshotRepository
+	AttackSurface  *attack.SurfaceService
+	ThreatModel    *threatmodel.Service
 
 	// Configuration (read-only system config)
 	FindingSource      *finding.FindingSourceService
@@ -972,6 +974,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetProgramExclusions(programRepo)
+	s.Scope.SetProgramLister(programRepo)
+	s.ScopeSnapshots = postgres.NewScopeSnapshotRepository(&postgres.DB{DB: deps.DB})
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
@@ -1858,6 +1862,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
 		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames)),
+		scan.WithScopeSnapshots(scope.NewSnapshotRecorder(s.Scope, s.ScopeSnapshots)),
 		// Platform sensors and intrusive scans need a verified domain
 		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
 		scan.WithActiveProof(cfg.Scope.ActiveProof),
