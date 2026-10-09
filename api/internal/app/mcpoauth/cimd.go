@@ -165,7 +165,7 @@ func parseClientMetadataDocument(clientID string, body []byte) (*mcpoauth.Client
 		return nil, fmt.Errorf("%w: a metadata document must not carry a client secret", ErrInvalidClientMetadata)
 	}
 	// Public clients only: PKCE is the client's proof.
-	if m := doc.TokenEndpointAuthMethod; m != "" && m != "none" {
+	if m := doc.TokenEndpointAuthMethod; m != "" && m != authMethodNone {
 		return nil, fmt.Errorf("%w: token_endpoint_auth_method %q not supported", ErrInvalidClientMetadata, m)
 	}
 	if len(doc.GrantTypes) > 0 && !contains(doc.GrantTypes, "authorization_code") {
