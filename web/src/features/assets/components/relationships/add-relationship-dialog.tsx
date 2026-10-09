@@ -20,6 +20,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -382,7 +383,7 @@ export function AddRelationshipDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto"
+        size="lg"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
@@ -391,394 +392,399 @@ export function AddRelationshipDialog({
           <DialogDescription>Create a new relationship from {sourceAsset.name}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Source Asset Preview */}
-          <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
-            <div
-              className={cn(
-                'h-10 w-10 rounded-lg flex items-center justify-center',
-                sourceColors.bg
-              )}
-            >
-              <Link2 className={cn('h-5 w-5', sourceColors.text)} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium">{sourceAsset.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type]} (Source)
-              </p>
-            </div>
-          </div>
-
-          {/* No valid relationship types — happens when the source asset
-              has an unmapped type (e.g. `unclassified`). Show a clear
-              message instead of an empty dropdown. */}
-          {validRelationshipTypes.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-amber-500/50 bg-amber-500/5 p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">No relationship types available</p>
-                  <p className="text-xs text-muted-foreground">
-                    The asset type{' '}
-                    <strong>
-                      {EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type] ?? sourceAsset.type}
-                    </strong>{' '}
-                    has no relationship constraints defined yet. Create the relationship from the
-                    other end of the edge instead, or contact your administrator to extend the
-                    constraint table.
-                  </p>
-                </div>
+        <DialogBody>
+          <div className="space-y-6 py-4">
+            {/* Source Asset Preview */}
+            <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
+              <div
+                className={cn(
+                  'h-10 w-10 rounded-lg flex items-center justify-center',
+                  sourceColors.bg
+                )}
+              >
+                <Link2 className={cn('h-5 w-5', sourceColors.text)} />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium">{sourceAsset.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type]} (Source)
+                </p>
               </div>
             </div>
-          ) : (
-            /* Relationship Type — SelectItem children show ONLY the label
+
+            {/* No valid relationship types — happens when the source asset
+              has an unmapped type (e.g. `unclassified`). Show a clear
+              message instead of an empty dropdown. */}
+            {validRelationshipTypes.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-warning/50 bg-warning/5 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">No relationship types available</p>
+                    <p className="text-xs text-muted-foreground">
+                      The asset type{' '}
+                      <strong>
+                        {EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type] ?? sourceAsset.type}
+                      </strong>{' '}
+                      has no relationship constraints defined yet. Create the relationship from the
+                      other end of the edge instead, or contact your administrator to extend the
+                      constraint table.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Relationship Type — SelectItem children show ONLY the label
               (e.g. "Runs On"). Putting the description inside SelectItem
               caused Radix to render it inside the trigger as well, creating
               a 2-line trigger and a duplicate of the helper text below. */
-            <div className="space-y-2">
-              <Label>Relationship Type</Label>
-              <Select
-                value={relationshipType}
-                onValueChange={(v) => {
-                  setRelationshipType(v as RelationshipType)
-                  // Clear selection when type changes — different types
-                  // have different valid target sets, so a previously
-                  // picked target may no longer apply.
-                  setSelectedTargets([])
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select relationship type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {/* Group the dropdown by category. Categories with no
+              <div className="space-y-2">
+                <Label>Relationship Type</Label>
+                <Select
+                  value={relationshipType}
+                  onValueChange={(v) => {
+                    setRelationshipType(v as RelationshipType)
+                    // Clear selection when type changes — different types
+                    // have different valid target sets, so a previously
+                    // picked target may no longer apply.
+                    setSelectedTargets([])
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select relationship type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {/* Group the dropdown by category. Categories with no
                       valid types for the current source asset are skipped
                       so the user only sees groups they can actually pick
                       from. The category metadata is sourced from the
                       generated registry, which is itself generated from
                       configs/relationship-types.yaml. */}
-                  {GENERATED_RELATIONSHIP_CATEGORIES.map((category) => {
-                    const typesInCategory = validRelationshipTypes.filter(
-                      (type) => GENERATED_RELATIONSHIP_LABELS[type]?.category === category.id
-                    )
-                    if (typesInCategory.length === 0) return null
-                    return (
-                      <SelectGroup key={category.id}>
-                        <SelectLabel>{category.name}</SelectLabel>
-                        {typesInCategory.map((type) => {
-                          const labels = RELATIONSHIP_LABELS[type]
-                          return (
-                            <SelectItem key={type} value={type}>
-                              {labels.direct}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectGroup>
-                    )
-                  })}
-                </SelectContent>
-              </Select>
-              {relationshipType && (
-                <p className="text-xs text-muted-foreground">
-                  {RELATIONSHIP_LABELS[relationshipType as RelationshipType]?.description}
-                </p>
-              )}
-              {/* Edge case: type was selected (valid for the source type
+                    {GENERATED_RELATIONSHIP_CATEGORIES.map((category) => {
+                      const typesInCategory = validRelationshipTypes.filter(
+                        (type) => GENERATED_RELATIONSHIP_LABELS[type]?.category === category.id
+                      )
+                      if (typesInCategory.length === 0) return null
+                      return (
+                        <SelectGroup key={category.id}>
+                          <SelectLabel>{category.name}</SelectLabel>
+                          {typesInCategory.map((type) => {
+                            const labels = RELATIONSHIP_LABELS[type]
+                            return (
+                              <SelectItem key={type} value={type}>
+                                {labels.direct}
+                              </SelectItem>
+                            )
+                          })}
+                        </SelectGroup>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+                {relationshipType && (
+                  <p className="text-xs text-muted-foreground">
+                    {RELATIONSHIP_LABELS[relationshipType as RelationshipType]?.description}
+                  </p>
+                )}
+                {/* Edge case: type was selected (valid for the source type
                   in the abstract) but the constraint table doesn't list
                   any concrete target types. Tells the user up front
                   instead of leaving them staring at an empty picker. */}
-              {relationshipType && validTargetTypes.length === 0 && (
-                <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 p-2.5 text-xs">
-                  <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-                  <span>
-                    No target asset types are defined for this relationship from a{' '}
-                    <strong>{EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type]}</strong>. Pick a
-                    different relationship type.
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+                {relationshipType && validTargetTypes.length === 0 && (
+                  <div className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/5 p-2.5 text-xs">
+                    <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                    <span>
+                      No target asset types are defined for this relationship from a{' '}
+                      <strong>{EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type]}</strong>. Pick a
+                      different relationship type.
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
-          {/* Visual Preview — collapses to "→ N assets" once the user
+            {/* Visual Preview — collapses to "→ N assets" once the user
               has picked more than one target so the badge row doesn't
               wrap into a wall. Single-pick still shows the asset name
               for the common case. */}
-          {relationshipType && (
-            <div className="flex items-center justify-center gap-3 py-2 flex-wrap">
-              <Badge variant="secondary" className="max-w-[180px] truncate">
-                {sourceAsset.name}
-              </Badge>
-              <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              <Badge variant="outline">
-                {RELATIONSHIP_LABELS[relationshipType as RelationshipType]?.direct}
-              </Badge>
-              <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              {selectedTargets.length === 0 ? (
+            {relationshipType && (
+              <div className="flex items-center justify-center gap-3 py-2 flex-wrap">
                 <Badge variant="secondary" className="max-w-[180px] truncate">
-                  Select target…
+                  {sourceAsset.name}
                 </Badge>
-              ) : selectedTargets.length === 1 ? (
-                <Badge variant="secondary" className="max-w-[180px] truncate">
-                  {selectedTargets[0].name}
+                <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                <Badge variant="outline">
+                  {RELATIONSHIP_LABELS[relationshipType as RelationshipType]?.direct}
                 </Badge>
-              ) : (
-                <Badge variant="secondary">{selectedTargets.length} assets</Badge>
-              )}
-            </div>
-          )}
+                <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                {selectedTargets.length === 0 ? (
+                  <Badge variant="secondary" className="max-w-[180px] truncate">
+                    Select target…
+                  </Badge>
+                ) : selectedTargets.length === 1 ? (
+                  <Badge variant="secondary" className="max-w-[180px] truncate">
+                    {selectedTargets[0].name}
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">{selectedTargets.length} assets</Badge>
+                )}
+              </div>
+            )}
 
-          {/* Target Asset Selector — server-side search */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Target Asset</Label>
-              {/* Live count of selected targets — invisible state from
+            {/* Target Asset Selector — server-side search */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Target Asset</Label>
+                {/* Live count of selected targets — invisible state from
                   the picker would otherwise be confusing when the user
                   scrolls or filters and can't see what they've picked. */}
-              {selectedTargets.length > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  {selectedTargets.length} selected
-                </span>
-              )}
-            </div>
-            {!relationshipType ? (
-              <div className="flex items-center gap-2 p-4 rounded-lg border border-dashed text-muted-foreground">
-                <AlertCircle className="h-4 w-4" />
-                <span className="text-sm">Select a relationship type first</span>
+                {selectedTargets.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {selectedTargets.length} selected
+                  </span>
+                )}
               </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder="Search assets by name…"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="flex-1"
-                  />
-                  {/* Bulk-select shortcuts. "Select all visible" uses
+              {!relationshipType ? (
+                <div className="flex items-center gap-2 p-4 rounded-lg border border-dashed text-muted-foreground">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="text-sm">Select a relationship type first</span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Search assets by name…"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="flex-1"
+                    />
+                    {/* Bulk-select shortcuts. "Select all visible" uses
                       the current filteredAssets list (post search +
                       constraint filter), so it never picks something
                       the user can't see. "Clear" wipes everything,
                       including off-screen picks the user may have
                       forgotten about. */}
-                  {filteredAssets.length > 0 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        // Merge filteredAssets into selectedTargets,
-                        // deduping by id so re-clicking is idempotent.
-                        setSelectedTargets((current) => {
-                          const byId = new Map(current.map((t) => [t.id, t]))
-                          for (const a of filteredAssets) byId.set(a.id, a)
-                          return Array.from(byId.values())
-                        })
-                      }}
-                    >
-                      Select all
-                    </Button>
-                  )}
-                  {selectedTargets.length > 0 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedTargets([])}
-                    >
-                      Clear
-                    </Button>
-                  )}
-                </div>
-                <ScrollArea className="h-[200px] rounded-lg border p-2">
-                  {isSearching ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                      <Loader2 className="h-6 w-6 animate-spin mb-2" />
-                      <p className="text-sm">Searching…</p>
-                    </div>
-                  ) : filteredAssets.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
-                      <Link2 className="h-8 w-8 mb-2" />
-                      <p className="text-sm">
-                        {debouncedQuery
-                          ? `No compatible assets match "${debouncedQuery}"`
-                          : 'No compatible assets found'}
-                      </p>
-                      {validTargetTypes.length > 0 && (
-                        <p className="text-xs mt-1">
-                          Looking for:{' '}
-                          {validTargetTypes
-                            .map((t) => EXTENDED_ASSET_TYPE_LABELS[t])
-                            .filter(Boolean)
-                            .join(', ')}
+                    {filteredAssets.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Merge filteredAssets into selectedTargets,
+                          // deduping by id so re-clicking is idempotent.
+                          setSelectedTargets((current) => {
+                            const byId = new Map(current.map((t) => [t.id, t]))
+                            for (const a of filteredAssets) byId.set(a.id, a)
+                            return Array.from(byId.values())
+                          })
+                        }}
+                      >
+                        Select all
+                      </Button>
+                    )}
+                    {selectedTargets.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedTargets([])}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  <ScrollArea className="h-[200px] rounded-lg border p-2">
+                    {isSearching ? (
+                      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                        <Loader2 className="h-6 w-6 animate-spin mb-2" />
+                        <p className="text-sm">Searching…</p>
+                      </div>
+                    ) : filteredAssets.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
+                        <Link2 className="h-8 w-8 mb-2" />
+                        <p className="text-sm">
+                          {debouncedQuery
+                            ? `No compatible assets match "${debouncedQuery}"`
+                            : 'No compatible assets found'}
                         </p>
-                      )}
-                      {/* Tell the user *why* their search came back empty
+                        {validTargetTypes.length > 0 && (
+                          <p className="text-xs mt-1">
+                            Looking for:{' '}
+                            {validTargetTypes
+                              .map((t) => EXTENDED_ASSET_TYPE_LABELS[t])
+                              .filter(Boolean)
+                              .join(', ')}
+                          </p>
+                        )}
+                        {/* Tell the user *why* their search came back empty
                           when the only reason is "everything is already
                           related". Otherwise they may think the search
                           is broken. */}
-                      {takenTargetIds.size > 0 && !debouncedQuery && (
-                        <p className="text-xs mt-2">
-                          {takenTargetIds.size} compatible asset
-                          {takenTargetIds.size === 1 ? ' is' : 's are'} already related and
-                          therefore hidden.
-                        </p>
-                      )}
-                      {/* Smart redirect for the most common confusion:
+                        {takenTargetIds.size > 0 && !debouncedQuery && (
+                          <p className="text-xs mt-2">
+                            {takenTargetIds.size} compatible asset
+                            {takenTargetIds.size === 1 ? ' is' : 's are'} already related and
+                            therefore hidden.
+                          </p>
+                        )}
+                        {/* Smart redirect for the most common confusion:
                           user wants `domain → server` but picks the
                           strict resolves_to (which only accepts IP /
                           load balancer endpoints). Suggest the right
                           relationship type instead of leaving them
                           stuck with an empty picker. */}
-                      {relationshipType === 'resolves_to' && (
-                        <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-2.5 text-start">
-                          <p className="text-xs text-foreground">
-                            <strong>Tip:</strong> Resolves To is for the literal DNS endpoint (an IP
-                            address or load balancer). To link this domain to a website / API /
-                            service, switch to{' '}
-                            {/* Clickable redirect — flips the relationship
+                        {relationshipType === 'resolves_to' && (
+                          <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-2.5 text-start">
+                            <p className="text-xs text-foreground">
+                              <strong>Tip:</strong> Resolves To is for the literal DNS endpoint (an
+                              IP address or load balancer). To link this domain to a website / API /
+                              service, switch to{' '}
+                              {/* Clickable redirect — flips the relationship
                                 type dropdown to Exposes immediately so the
                                 user doesn't have to scroll back up. */}
-                            <button
-                              type="button"
-                              className="font-semibold text-primary hover:underline"
-                              onClick={() => {
-                                setRelationshipType('exposes')
-                                setSelectedTargets([])
-                              }}
-                            >
-                              Exposes
-                            </button>
-                            . For subdomain → parent domain or CNAME aliases use{' '}
-                            <button
-                              type="button"
-                              className="font-semibold text-primary hover:underline"
-                              onClick={() => {
-                                setRelationshipType('cname_of')
-                                setSelectedTargets([])
-                              }}
-                            >
-                              CNAME Of
-                            </button>
-                            .
+                              <button
+                                type="button"
+                                className="font-semibold text-primary hover:underline"
+                                onClick={() => {
+                                  setRelationshipType('exposes')
+                                  setSelectedTargets([])
+                                }}
+                              >
+                                Exposes
+                              </button>
+                              . For subdomain → parent domain or CNAME aliases use{' '}
+                              <button
+                                type="button"
+                                className="font-semibold text-primary hover:underline"
+                                onClick={() => {
+                                  setRelationshipType('cname_of')
+                                  setSelectedTargets([])
+                                }}
+                              >
+                                CNAME Of
+                              </button>
+                              .
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {filteredAssets.map((asset) => {
+                          const isPicked = selectedTargets.some((t) => t.id === asset.id)
+                          return (
+                            <AssetSelectorItem
+                              key={asset.id}
+                              asset={asset}
+                              selected={isPicked}
+                              onClick={() => toggleTarget(asset)}
+                            />
+                          )
+                        })}
+                        {takenTargetIds.size > 0 && (
+                          <p className="text-[11px] text-muted-foreground text-center pt-2 border-t mt-2">
+                            {takenTargetIds.size} asset
+                            {takenTargetIds.size === 1 ? ' is' : 's are'} hidden because{' '}
+                            {takenTargetIds.size === 1 ? 'it already has' : 'they already have'} a
+                            relationship of this type with the source.
                           </p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {filteredAssets.map((asset) => {
-                        const isPicked = selectedTargets.some((t) => t.id === asset.id)
-                        return (
-                          <AssetSelectorItem
-                            key={asset.id}
-                            asset={asset}
-                            selected={isPicked}
-                            onClick={() => toggleTarget(asset)}
-                          />
-                        )
-                      })}
-                      {takenTargetIds.size > 0 && (
-                        <p className="text-[11px] text-muted-foreground text-center pt-2 border-t mt-2">
-                          {takenTargetIds.size} asset
-                          {takenTargetIds.size === 1 ? ' is' : 's are'} hidden because{' '}
-                          {takenTargetIds.size === 1 ? 'it already has' : 'they already have'} a
-                          relationship of this type with the source.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </ScrollArea>
-              </>
-            )}
-          </div>
+                        )}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </>
+              )}
+            </div>
 
-          {/* Additional Options. When the user has multi-selected,
+            {/* Additional Options. When the user has multi-selected,
               the description / confidence / impact applies to ALL N
               edges that will be created. The label below makes that
               explicit so users don't think they're editing one. */}
-          {selectedTargets.length > 0 && (
-            <>
-              {/* Description */}
-              <div className="space-y-2">
-                <Label>
-                  Description (Optional)
-                  {selectedTargets.length > 1 && (
-                    <span className="ms-1 text-xs font-normal text-muted-foreground">
-                      — applied to all {selectedTargets.length} relationships
-                    </span>
-                  )}
-                </Label>
-                <Textarea
-                  placeholder="Describe this relationship..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={2}
-                />
-              </div>
-
-              {/* Confidence & Impact */}
-              <div className="grid grid-cols-2 gap-4">
+            {selectedTargets.length > 0 && (
+              <>
+                {/* Description */}
                 <div className="space-y-2">
-                  <Label>Confidence</Label>
-                  <Select
-                    value={confidence}
-                    onValueChange={(v) => setConfidence(v as RelationshipConfidence)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Impact Weight: {impactWeight}</Label>
-                  <Slider
-                    value={[impactWeight]}
-                    onValueChange={([v]) => setImpactWeight(v)}
-                    min={1}
-                    max={10}
-                    step={1}
-                    className="mt-2"
-                  />
-                </div>
-              </div>
-
-              {/* Control-plane dependency flag (CTEM Scoping, api #467).
-                  Marks the target as governing the source's security posture
-                  (IdP / secrets / CI-CD / SIEM). Applies to all selected
-                  targets. */}
-              <div className="flex items-start gap-2 rounded-lg border p-3">
-                <Checkbox
-                  id="is-control-plane"
-                  checked={isControlPlane}
-                  onCheckedChange={(checked) => setIsControlPlane(checked === true)}
-                  className="mt-0.5"
-                />
-                <div className="space-y-0.5">
-                  <Label htmlFor="is-control-plane" className="text-sm font-normal cursor-pointer">
-                    Control-plane dependency (IdP / secrets / CI-CD / SIEM)
+                  <Label>
+                    Description (Optional)
                     {selectedTargets.length > 1 && (
-                      <span className="ms-1 text-xs text-muted-foreground">
+                      <span className="ms-1 text-xs font-normal text-muted-foreground">
                         — applied to all {selectedTargets.length} relationships
                       </span>
                     )}
                   </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Flag when the target governs this asset&apos;s security posture, so scoping can
-                    trace blast radius.
-                  </p>
+                  <Textarea
+                    placeholder="Describe this relationship..."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={2}
+                  />
                 </div>
-              </div>
-            </>
-          )}
-        </div>
+
+                {/* Confidence & Impact */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Confidence</Label>
+                    <Select
+                      value={confidence}
+                      onValueChange={(v) => setConfidence(v as RelationshipConfidence)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Impact Weight: {impactWeight}</Label>
+                    <Slider
+                      value={[impactWeight]}
+                      onValueChange={([v]) => setImpactWeight(v)}
+                      min={1}
+                      max={10}
+                      step={1}
+                      className="mt-2"
+                    />
+                  </div>
+                </div>
+
+                {/* Control-plane dependency flag (CTEM Scoping, api #467).
+                  Marks the target as governing the source's security posture
+                  (IdP / secrets / CI-CD / SIEM). Applies to all selected
+                  targets. */}
+                <div className="flex items-start gap-2 rounded-lg border p-3">
+                  <Checkbox
+                    id="is-control-plane"
+                    checked={isControlPlane}
+                    onCheckedChange={(checked) => setIsControlPlane(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <Label
+                      htmlFor="is-control-plane"
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      Control-plane dependency (IdP / secrets / CI-CD / SIEM)
+                      {selectedTargets.length > 1 && (
+                        <span className="ms-1 text-xs text-muted-foreground">
+                          — applied to all {selectedTargets.length} relationships
+                        </span>
+                      )}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Flag when the target governs this asset&apos;s security posture, so scoping
+                      can trace blast radius.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
