@@ -9,7 +9,7 @@
   database), belongs to one organization only, and can never be an owner or
   administrator or hold full data access (database triggers and the role grant
   guard). Deleting it removes its roles, team memberships and keys at once
-  (migration 001484).
+  (migration 001504).
 - `GET/POST /api/v1/service-accounts/{id}/api-keys` and
   `DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}`: mint, list and
   delete its keys (member and API key permissions together; minting and
