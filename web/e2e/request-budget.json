@@ -2,7 +2,7 @@
   "$comment": "API requests a hard load of each dashboard page may send (research/81). A page not listed gets defaultMax. Lower a number when a page gets cheaper; raising one needs a reviewer to agree the new request cannot come from the bootstrap, the cache or an event.",
   "defaultMax": 6,
   "routes": {
-    "/": 14,
+    "/": 3,
     "/compliance": 14,
     "/insights/reports/compliance": 14,
     "/scope": 10,
