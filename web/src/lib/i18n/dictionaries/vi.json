@@ -160,6 +160,8 @@
   "settings.desc.sla-policies": "Hạn khắc phục theo mức độ nghiêm trọng.",
   "settings.item.asset-lifecycle": "Vòng đời tài sản",
   "settings.desc.asset-lifecycle": "Khi nào tài sản cũ được tự động ngừng theo dõi.",
+  "settings.item.vulnerability-matching": "Đối chiếu lỗ hổng",
+  "settings.desc.vulnerability-matching": "CVE nào ảnh hưởng tới phiên bản phần mềm của bạn sẽ trở thành phát hiện.",
   "settings.item.pentest-methodology": "Phương pháp pentest",
   "settings.desc.pentest-methodology": "Loại chiến dịch và phương pháp kiểm thử.",
   "settings.item.scan-profiles": "Hồ sơ quét",

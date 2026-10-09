@@ -25,6 +25,7 @@ import {
   Bell,
   Bot,
   Boxes,
+  Bug,
   Building,
   CalendarClock,
   Clock,
@@ -322,6 +323,15 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Clock,
         permission: Permission.TeamUpdate,
         keywords: ['stale', 'retire', 'archive'],
+      },
+      {
+        id: 'vulnerability-matching',
+        title: 'Vulnerability matching',
+        description: 'Which CVEs affecting your software versions become findings.',
+        url: '/settings/vulnerability-matching',
+        icon: Bug,
+        permission: Permission.TeamUpdate,
+        keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
       },
       {
         id: 'scope-policy',
