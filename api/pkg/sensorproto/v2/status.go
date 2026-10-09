@@ -1,6 +1,9 @@
 package v2
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ReportState is the lifecycle state of a report on the status resource.
 type ReportState string
@@ -293,6 +296,13 @@ type Hello struct {
 type SignedJobs struct {
 	PayloadType string         `json:"payload_type"`
 	Keys        []SignedJobKey `json:"keys"`
+	// KeySet is the current key set, a DSSE envelope signed by the
+	// installation's offline root key (payload type
+	// application/vnd.openctem.keyset.v1+json): the online keys a sensor
+	// that pins the root accepts, with a version and an expiry
+	// (docs/architecture/job-signing.md). Absent when the signer serves
+	// none.
+	KeySet json.RawMessage `json:"keyset,omitempty"`
 }
 
 // SignedJobKey is one signer key: KeyID is "SHA256:" + lower-case hex of
