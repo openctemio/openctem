@@ -1918,8 +1918,7 @@ role. A custom role created later needs them explicitly for those reads.
 `PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
 finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
 reactions (`/comments/{comment_id}/reactions*`). The migration granted both to
-every role that held `findings:write`, recorded in
-`granular_permission_backfill`. A custom role without `findings:severity`
+every role that held `findings:write`. A custom role without `findings:severity`
 (the remediation-owner template) can fix and discuss a finding but not
 re-score it.
 
