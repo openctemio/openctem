@@ -70,51 +70,6 @@ var ModulePresets = []ModulePreset{
 // (all modules on) so existing flows don't regress.
 const DefaultPresetID = "ctem_full"
 
-// MandatoryModuleIDs lists modules every preset must include —
-// "operational essentials" that any persona needs regardless of their
-// security workflow choice. Distinct from CoreModuleIDs (which the
-// platform forbids disabling at all): mandatory modules CAN be
-// disabled by an admin post-apply if they really know what they're
-// doing, but presets always opt them in by default.
-//
-// Why each one (cross-checked against the actual ingestion pipeline,
-// not just the module name):
-//
-//   - sensors → DATA INGESTION GATEWAY. Every collector / scanner /
-//     SBOM tool sends results through /api/v2/sensor/results, authenticated
-//     by a sensor API key. Without `sensors` enabled, the tenant cannot
-//     register collectors, cannot receive scanner output, cannot
-//     ingest cloud asset data via push collectors. Architecturally
-//     this is more important than most "feature" modules because
-//     disabling it severs the tenant from any external data source
-//     that uses the modern push model.
-//
-//   - notification_settings → every org needs alert routing config UI
-//
-//   - integrations → parent module the Integrations page hangs off;
-//     also gates the pull-model code path (GitHub, AWS, GCP API
-//     polling) used when collectors aren't deployed
-//
-//   - integrations.notifications → Slack/Teams/Email channel
-//     registration — every org needs at least one alert channel
-//
-//   - groups → RBAC team scoping for any non-trivial permission grant
-//
-//   - api_keys → programmatic access (CI/CD pipelines, scripts,
-//     out-of-band sensor registration)
-//
-// Auto-included by ResolvePresetModules so individual presets don't
-// have to enumerate them. Adding a module here = retroactive opt-in
-// for every tenant on next preset apply.
-var MandatoryModuleIDs = map[string]bool{
-	"sensors":                    true,
-	"notification_settings":      true,
-	"integrations":               true,
-	"integrations.notifications": true,
-	"groups":                     true,
-	"api_keys":                   true,
-}
-
 // FindPreset returns the preset with the given ID, or nil when not found.
 func FindPreset(id string) *ModulePreset {
 	for i := range ModulePresets {
@@ -135,14 +90,10 @@ func FindPreset(id string) *ModulePreset {
 // preset is applied. Modules not in the set are treated as disabled.
 func ResolvePresetModules(p *ModulePreset) map[string]bool {
 	enabled := make(map[string]bool,
-		len(p.EnabledModules)+len(CoreModuleIDs)+len(MandatoryModuleIDs))
+		len(p.EnabledModules)+len(CoreModuleIDs))
 
 	// Core always on (platform requirement).
 	for id := range CoreModuleIDs {
-		enabled[id] = true
-	}
-	// Mandatory always on for every preset (operational essentials).
-	for id := range MandatoryModuleIDs {
 		enabled[id] = true
 	}
 	// Explicit allow-list from the preset.
@@ -270,7 +221,7 @@ var presetVMEssentials = ModulePreset{
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
 		"priority_rules", "risk_scoring", "risk_analysis", "sla",
 		// Mobilization
-		"remediation", "remediation_tasks", "suppressions", "workflows",
+		"remediation", "suppressions", "workflows",
 		// Insights
 		"reports", "executive_summary", "sbom_export",
 		// Settings / ops
@@ -431,7 +382,7 @@ var presetASPM = ModulePreset{
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
 		"priority_rules", "risk_scoring", "risk_analysis", "sla",
 		// Mobilization — gate + fix
-		"remediation", "remediation_tasks", "suppressions", "workflows",
+		"remediation", "suppressions", "workflows",
 		// Insights — SBOM + exec
 		"sbom_export", "reports", "executive_summary",
 		// Settings — SCM/CI/scanner integration heavy
@@ -477,7 +428,7 @@ var presetSBOM = ModulePreset{
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
 		"priority_rules", "risk_scoring", "risk_analysis", "sla",
 		// Mobilization
-		"remediation", "remediation_tasks", "suppressions", "workflows",
+		"remediation", "suppressions", "workflows",
 		// Insights — SBOM is the key deliverable
 		"sbom_export", "reports", "executive_summary",
 		// Settings — SCM/CI integration heavy
@@ -524,7 +475,7 @@ var presetCSPM = ModulePreset{
 		// Validation
 		"compensating_controls", "control_testing",
 		// Mobilization
-		"remediation", "remediation_tasks", "suppressions", "workflows",
+		"remediation", "suppressions", "workflows",
 		// Insights
 		"reports", "executive_summary", "mitre_coverage", "ctem_maturity",
 		// Settings — cloud integrations heavy
@@ -576,7 +527,7 @@ var presetCompliance = ModulePreset{
 		// Prioritization
 		"threat_intel", "priority_rules", "risk_analysis", "risk_scoring", "sla",
 		// Mobilization
-		"remediation", "remediation_tasks", "suppressions", "workflows",
+		"remediation", "suppressions", "workflows",
 		// Insights (heavy)
 		"reports", "executive_summary", "ctem_maturity", "mitre_coverage",
 		// Settings
@@ -615,7 +566,6 @@ var presetCTEMFull = ModulePreset{
 		// Discovery
 		"components", "branches", "credentials",
 		// Discovery — vulnerability database is part of the CTEM discovery surface
-		"vulnerabilities",
 		// Prioritization
 		"exposures",
 		"threat_intel", "ai_triage", "ai_triage.auto", "ai_triage.bulk",
@@ -626,7 +576,7 @@ var presetCTEMFull = ModulePreset{
 		"pentest", "attack_simulation", "control_testing",
 		"compensating_controls",
 		// Mobilization
-		"remediation", "remediation_tasks", "workflows",
+		"remediation", "workflows",
 		"suppressions",
 		// Insights
 		"reports", "executive_summary", "ctem_maturity",
