@@ -386,3 +386,58 @@ func TestPreview_GuardrailsAndExisting(t *testing.T) {
 		t.Fatalf("header injection: %v", err)
 	}
 }
+
+// fakeLedger records what the program paths send to the signer ledger hook.
+type fakeLedger struct {
+	put, removed int
+	refuse       bool
+	policy       string
+}
+
+func (f *fakeLedger) CommitEntries(_ context.Context, _ shared.ID, _ string, put []*scopedom.Target, removed []shared.ID,
+	policy string, save func() error,
+) error {
+	if f.refuse && len(put) > 0 {
+		return errors.New("refused")
+	}
+	f.put, f.removed, f.policy = f.put+len(put), f.removed+len(removed), policy
+	return save()
+}
+
+// Every path that puts program entries into effect or takes them out goes
+// through the job signer ledger hook (RFC-040 §11.5); a refusal saves
+// nothing.
+func TestProgramEntriesFeedTheSignerLedger(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepo()
+	tenant, user := shared.NewID(), shared.NewID()
+	svc := NewService(repo, fullData(true), nil)
+	l := &fakeLedger{refuse: true}
+	svc.SetLedger(l)
+	pv, _ := svc.Preview(ctx, tenant, input(), nil)
+	in := input()
+	in.AcceptTermsSHA256 = pv.TermsSHA256
+	if _, _, err := svc.Import(ctx, tenant, user, in); err == nil || len(repo.entries) != 0 {
+		t.Fatalf("import with the signer refusing: %v, %d entries", err, len(repo.entries))
+	}
+	l.refuse = false
+	p, _, err := svc.Import(ctx, tenant, user, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.put != 2 || l.policy != programAttestation {
+		t.Fatalf("import sent %d entries under %q", l.put, l.policy)
+	}
+	if _, err := svc.Pause(ctx, tenant, user, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if l.removed != 2 {
+		t.Fatalf("pause removed %d", l.removed)
+	}
+	if _, err := svc.Resume(ctx, tenant, user, p.ID, p.TermsSHA256); err != nil {
+		t.Fatal(err)
+	}
+	if l.put != 4 {
+		t.Fatalf("resume sent %d entries in total", l.put)
+	}
+}

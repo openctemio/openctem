@@ -980,6 +980,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
+	// RFC-040 §11.5: program entries reach the job signer's ledger through
+	// the scope service's hook (a no-op without a signer).
+	s.BountyProgram.SetLedger(s.Scope)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
@@ -1662,6 +1665,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if sock := cfg.SensorConfig.SignerSocket; sock != "" {
 		s.JobSigner = signerclient.NewClient(sock, cfg.SensorConfig.SignerTimeout)
 		cmdOpts = append(cmdOpts, command.WithJobSigner(s.JobSigner))
+		// RFC-040 P2: every scope change reaches the signer's own ledger
+		// (widenings before they are saved), which signs only inside it.
+		s.Scope.SetLedger(s.JobSigner)
 		log.Info("sensor jobs are signed by the job signer", "socket", sock)
 	}
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)

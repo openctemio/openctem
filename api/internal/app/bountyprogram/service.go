@@ -33,6 +33,13 @@ type AdminNotifier interface {
 	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body string)
 }
 
+// Ledger feeds the job signer's scope ledger (*scope.Service.CommitEntries):
+// entries put in effect go to the signer before save, removed ones after.
+type Ledger interface {
+	CommitEntries(ctx context.Context, tenantID shared.ID, requester string, put []*scopedom.Target,
+		removed []shared.ID, platformPolicy string, save func() error) error
+}
+
 // Joiner runs the scope join after entries change (*easm.JoinScheduler).
 type Joiner interface {
 	Schedule(tenantID shared.ID)
@@ -45,6 +52,7 @@ type Service struct {
 	guardrails scopedom.Guardrails
 	notifier   AdminNotifier
 	joiner     Joiner
+	ledger     Ledger
 	log        *logger.Logger
 	now        func() time.Time
 }
@@ -67,6 +75,34 @@ func (s *Service) SetNotifier(n AdminNotifier) { s.notifier = n }
 
 // SetJoiner wires the scope join.
 func (s *Service) SetJoiner(j Joiner) { s.joiner = j }
+
+// SetLedger wires the job signer's scope ledger (RFC-040 §11.5).
+func (s *Service) SetLedger(l Ledger) { s.ledger = l }
+
+// programAttestation labels the policy of a program widening: the
+// importer attests the published terms; no approver (RFC-065).
+const programAttestation = "program_attestation"
+
+// commit runs save through the ledger hook (or alone without one).
+func (s *Service) commit(ctx context.Context, tenantID, actor shared.ID, put []*scopedom.Target, removed []shared.ID, save func() error) error {
+	if s.ledger == nil {
+		return save()
+	}
+	requester := ""
+	if !actor.IsZero() {
+		requester = actor.String()
+	}
+	return s.ledger.CommitEntries(ctx, tenantID, requester, put, removed, programAttestation, save)
+}
+
+// entryIDs are the ids of entries.
+func entryIDs(entries []*scopedom.Target) []shared.ID {
+	out := make([]shared.ID, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.ID())
+	}
+	return out
+}
 
 // Input is the body of a preview, an import and a re-import.
 type Input struct {
@@ -292,7 +328,9 @@ func (s *Service) Import(ctx context.Context, tenantID, actor shared.ID, in Inpu
 	member := actor
 	group := bp.NewGroup{ID: shared.NewID(), Name: clip("Program: "+p.Name, 100),
 		Slug: "program-" + strings.ReplaceAll(p.ID.String(), "-", "")[:16], Member: &member}
-	if err := s.repo.Import(ctx, bp.ImportWrite{Program: p, Group: group, Entries: entries, Exclusions: s.exclusions(p, pv)}); err != nil {
+	if err := s.commit(ctx, tenantID, actor, entries, nil, func() error {
+		return s.repo.Import(ctx, bp.ImportWrite{Program: p, Group: group, Entries: entries, Exclusions: s.exclusions(p, pv)})
+	}); err != nil {
 		return nil, nil, err
 	}
 	s.widened(ctx, p, fmt.Sprintf("Program %s imported with %d scope entries (attested by the importer)", p.Name, len(entries)), len(entries) > 0)
@@ -436,8 +474,10 @@ func (s *Service) Reimport(ctx context.Context, tenantID, actor, id shared.ID, i
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := s.repo.ReplaceScope(ctx, bp.ScopeWrite{Program: p, CreateEntries: create, DeleteEntryIDs: drop,
-		Exclusions: s.exclusions(p, pv)}); err != nil {
+	if err := s.commit(ctx, tenantID, actor, create, drop, func() error {
+		return s.repo.ReplaceScope(ctx, bp.ScopeWrite{Program: p, CreateEntries: create, DeleteEntryIDs: drop,
+			Exclusions: s.exclusions(p, pv)})
+	}); err != nil {
 		return nil, nil, err
 	}
 	s.widened(ctx, p, fmt.Sprintf("Program %s re-imported: %d entries added, %d removed (attested)", p.Name, len(create), len(drop)),
@@ -455,7 +495,7 @@ func (s *Service) Pause(ctx context.Context, tenantID, actor, id shared.ID) (*bp
 		return nil, bp.ErrNotActive
 	}
 	p.Status, p.UpdatedAt = bp.StatusPaused, s.now()
-	if err := s.repo.SetStatus(ctx, p, scopedom.StatusInactive); err != nil {
+	if err := s.stopEntries(ctx, p, actor); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -471,7 +511,7 @@ func (s *Service) End(ctx context.Context, tenantID, actor, id shared.ID) (*bp.P
 		return nil, bp.ErrEnded
 	}
 	p.Status, p.UpdatedAt = bp.StatusEnded, s.now()
-	if err := s.repo.SetStatus(ctx, p, scopedom.StatusInactive); err != nil {
+	if err := s.stopEntries(ctx, p, actor); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -498,11 +538,33 @@ func (s *Service) Resume(ctx context.Context, tenantID, actor, id shared.ID, acc
 	}
 	now := s.now()
 	p.Status, p.AcceptedBy, p.AcceptedAt, p.UpdatedAt = bp.StatusActive, &actor, &now, now
-	if err := s.repo.SetStatus(ctx, p, scopedom.StatusActive); err != nil {
+	entries, err := s.repo.Entries(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if e.Status() == scopedom.StatusInactive {
+			e.Activate() // as SetStatus puts it, for the ledger
+		}
+	}
+	if err := s.commit(ctx, tenantID, actor, entries, nil, func() error {
+		return s.repo.SetStatus(ctx, p, scopedom.StatusActive)
+	}); err != nil {
 		return nil, err
 	}
 	s.widened(ctx, p, fmt.Sprintf("Program %s resumed (attested)", p.Name), true)
 	return p, nil
+}
+
+// stopEntries takes every entry of p out of effect (narrowing).
+func (s *Service) stopEntries(ctx context.Context, p *bp.Program, actor shared.ID) error {
+	entries, err := s.repo.Entries(ctx, p.TenantID, p.ID)
+	if err != nil {
+		return err
+	}
+	return s.commit(ctx, p.TenantID, actor, nil, entryIDs(entries), func() error {
+		return s.repo.SetStatus(ctx, p, scopedom.StatusInactive)
+	})
 }
 
 // widened notifies the administrators and schedules the scope join.
