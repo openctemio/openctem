@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanwindow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -60,6 +61,9 @@ type Task struct {
 	// SkippedTotal counts all of them.
 	Skipped      []SkippedTarget
 	SkippedTotal int
+	// WindowHold says why a queued task waits for a scan window and until
+	// when (nil: it does not).
+	WindowHold *scanwindow.Hold
 }
 
 // MaxRunTasks bounds the tasks one run read returns; the summary still counts

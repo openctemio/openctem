@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
+	"github.com/openctemio/openctem/api/pkg/domain/scanwindow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -212,7 +213,7 @@ type RunResponse struct {
 	StepRuns          []StepRunResponse              `json:"scan_run_steps,omitempty"`
 	ErrorMessage      string                         `json:"error_message,omitempty"`
 	// RefusalCode says why a blocked run was refused (status blocked only),
-	// e.g. ALL_TARGETS_EXCLUDED, SCAN_FREEZE_ACTIVE, NO_SENSOR_AVAILABLE.
+	// e.g. ALL_TARGETS_EXCLUDED, SCAN_WINDOW_NEVER_OPENS, NO_SENSOR_AVAILABLE.
 	RefusalCode string `json:"refusal_code,omitempty"`
 	// Kind is what the run is: scan, quick, retest, validation, test,
 	// connector or system.
@@ -246,6 +247,34 @@ type RunResponse struct {
 	// TasksNextCursor continues the task list after Tasks
 	// (GET /scan-runs/{id}/tasks?cursor=) when TasksTruncated.
 	TasksNextCursor string `json:"tasks_next_cursor,omitempty"`
+	// WindowWaits: the targets that had to wait for their scan windows when
+	// the run started, and until when (RFC-067).
+	WindowWaits *RunWindowWaitsResponse `json:"window_waits,omitempty"`
+}
+
+// RunWindowWaitsResponse lists the targets of a run that wait for their
+// scan windows (at most 50 listed; waiting_count counts all).
+type RunWindowWaitsResponse struct {
+	WaitingCount int                  `json:"waiting_count"`
+	Waiting      []scansvc.TargetWait `json:"waiting"`
+	NextOpenAt   *time.Time           `json:"next_open_at,omitempty"`
+}
+
+// toRunWindowWaits reads the waits the trigger records in the run context.
+func toRunWindowWaits(rc map[string]any) *RunWindowWaitsResponse {
+	raw, ok := rc[scansvc.RunContextKeyWindowWaits]
+	if !ok || raw == nil {
+		return nil
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var out RunWindowWaitsResponse
+	if json.Unmarshal(b, &out) != nil || out.WaitingCount == 0 {
+		return nil
+	}
+	return &out
 }
 
 // RunTaskPageResponse is one page of a run's tasks.
@@ -292,6 +321,9 @@ type RunTaskResponse struct {
 	// show as plain text). SkippedTargetsTotal counts all of them.
 	SkippedTargets      []RunTaskSkippedTarget `json:"skipped_targets,omitempty"`
 	SkippedTargetsTotal int                    `json:"skipped_targets_total,omitempty"`
+	// WindowHold: a queued task waits for a scan window (why, until when,
+	// or never).
+	WindowHold *scanwindow.Hold `json:"window_hold,omitempty"`
 }
 
 // RunTaskSkippedTarget is one target a sensor skipped, and why: reason is
@@ -321,7 +353,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			ID: t.ID.String(), StepKey: t.StepKey, Tool: t.Tool, Status: string(t.Status),
 			SensorName: t.SensorName, Platform: t.Platform, Targets: t.Targets, Attempts: t.Attempts,
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
-			SkippedTargetsTotal: t.SkippedTotal,
+			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))
@@ -1368,6 +1400,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 			resp.FilteringResult = toFilteringResultResponse(filteringResult)
 		}
 		resp.Dispatch = toRunDispatchResponse(r.Context)
+		resp.WindowWaits = toRunWindowWaits(r.Context)
 	}
 
 	return resp

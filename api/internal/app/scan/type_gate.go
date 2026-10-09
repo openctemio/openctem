@@ -236,6 +236,7 @@ func StepRunContext(runContext map[string]any, st *StepTargets) map[string]any {
 	out := maps.Clone(runContext)
 	delete(out, RunContextKeyTargetTypes)
 	delete(out, RunContextKeyActor)
+	delete(out, RunContextKeyWindowWaits)
 	if st != nil && st.Targets != nil {
 		if _, had := out["targets"]; had {
 			out["targets"] = st.Targets
