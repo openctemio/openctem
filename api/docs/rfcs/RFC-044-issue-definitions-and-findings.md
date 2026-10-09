@@ -556,7 +556,7 @@ Web:
 | D3 | Kinds: the seven of §4.1; `finding_type` takes the same values; `web3` becomes a domain (SWC → weakness) | **Yes** |
 | D4 | A CVE becomes rejected/withdrawn: findings stay open, flagged, excluded from P0–P1 and metrics, owner notified — or auto-close as false positive? | **Flag, demote, notify; no auto-close** |
 | D5 | Per-kind P0 evidence (§6): verified live secret, validated exposure, KEV for CVEs; SAST never P0 unvalidated. Does a sensor's "verified" count, or only a platform/retest verification? | **Yes to §6; sensor claim counts only when signed (RFC-040), else P1 max** |
-| D6 | Trusted sources: CVE List v5 + OSV bulk first; NVD API optional | **CVE v5 + OSV** |
+| D6 | Trusted sources: CVE List v5 + OSV bulk first; NVD API optional | **CVE v5 + OSV**. Amended 2026-10-09 by RFC-066 O1: the NVD CVE API 2.0 is the source of CPE ranges for inventory matching; CVE List v5 stays the lifecycle source |
 | D7 | RFC-043's `vulnerability_aliases` is this RFC's `definition_identifiers` (one table) | **Yes** — coordinate before either implements |
 | D8 | Issues page with kind tabs replaces the source-partitioned exposure pages | **Yes** |
 | D9 | Drop catalog `status` and `aliases` in P6 | **Yes** |

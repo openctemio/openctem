@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
@@ -49,14 +50,15 @@ func runSignerLedgerExport(ctx context.Context, db *postgres.DB, path string, w 
 		_, _ = fmt.Fprintf(w, "ledger export failed: %v\n", err)
 		return 1
 	}
-	entries, exclusions := 0, 0
+	entries, exclusions, templates := 0, 0, 0
 	for _, t := range exp.Tenants {
 		entries += len(t.Entries)
 		exclusions += len(t.Exclusions)
+		templates += len(t.Templates)
 	}
 	sum := sha256.Sum256(raw)
-	_, _ = fmt.Fprintf(w, "wrote %s: sha256:%s, %d organizations, %d entries, %d exclusions\n",
-		path, hex.EncodeToString(sum[:]), len(exp.Tenants), entries, exclusions)
+	_, _ = fmt.Fprintf(w, "wrote %s: sha256:%s, %d organizations, %d entries, %d exclusions, %d templates\n",
+		path, hex.EncodeToString(sum[:]), len(exp.Tenants), entries, exclusions, templates)
 	return 0
 }
 
@@ -66,6 +68,8 @@ func buildLedgerExport(ctx context.Context, db *postgres.DB, log *logger.Logger)
 		SELECT tenant_id FROM scope_targets WHERE status = 'active'
 		UNION
 		SELECT tenant_id FROM scope_exclusions WHERE status = 'active'
+		UNION
+		SELECT tenant_id FROM scanner_templates WHERE status = 'active' AND ledger_sha256 IS NOT NULL
 		ORDER BY 1`)
 	if err != nil {
 		return exp, fmt.Errorf("list organizations with scope: %w", err)
@@ -83,12 +87,13 @@ func buildLedgerExport(ctx context.Context, db *postgres.DB, log *logger.Logger)
 		return exp, err
 	}
 	svc := scope.NewService(postgres.NewScopeTargetRepository(db), postgres.NewScopeExclusionRepository(db), nil, log)
+	svc.SetLedgerTemplates(app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(db), "", log))
 	for _, id := range tenants {
 		snap, err := svc.LedgerSnapshot(ctx, id)
 		if err != nil {
 			return exp, fmt.Errorf("organization %s: %w", id, err)
 		}
-		if len(snap.Entries) == 0 && len(snap.Exclusions) == 0 {
+		if len(snap.Entries) == 0 && len(snap.Exclusions) == 0 && len(snap.Templates) == 0 {
 			continue
 		}
 		exp.Tenants = append(exp.Tenants, snap)

@@ -28,6 +28,7 @@ type ImportResult struct {
 	Tenants        int
 	Entries        int
 	Exclusions     int
+	Templates      int
 }
 
 // ErrLedgerNotEmpty: an import into a ledger that already holds scope needs
@@ -97,6 +98,11 @@ func ImportLedger(stateDir string, raw []byte, replace bool, now time.Time) (Imp
 			ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpPutExclusion, Exclusion: &x})
 			res.Exclusions++
 		}
+		for _, tpl := range t.Templates {
+			tpl := tpl
+			ops = append(ops, jobsign.LedgerOp{Op: jobsign.OpPutTemplate, Template: &tpl})
+			res.Templates++
+		}
 		if err := l.log.append(&LedgerRecord{Time: now.UTC(), Kind: recordImport, TenantID: t.TenantID, Ops: ops}); err != nil {
 			return res, err
 		}
@@ -131,6 +137,9 @@ func ReadLedger(r io.Reader, now time.Time) (jobsign.LedgerExport, string, error
 		}
 		for _, k := range sortedKeys(t.exclusions) {
 			s.Exclusions = append(s.Exclusions, t.exclusions[k])
+		}
+		for _, k := range sortedKeys(t.templates) {
+			s.Templates = append(s.Templates, t.templates[k])
 		}
 		out.Tenants = append(out.Tenants, s)
 	}
