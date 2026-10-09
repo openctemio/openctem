@@ -160,6 +160,8 @@
   "settings.desc.sla-policies": "Hạn khắc phục theo mức độ nghiêm trọng.",
   "settings.item.asset-lifecycle": "Vòng đời tài sản",
   "settings.desc.asset-lifecycle": "Khi nào tài sản cũ được tự động ngừng theo dõi.",
+  "settings.item.asset-sources": "Nguồn dữ liệu tài sản",
+  "settings.desc.asset-sources": "Nguồn nào quyết định mức quan trọng, chủ sở hữu và mức phơi nhiễm của tài sản.",
   "settings.item.pentest-methodology": "Phương pháp pentest",
   "settings.desc.pentest-methodology": "Loại chiến dịch và phương pháp kiểm thử.",
   "settings.item.scan-profiles": "Hồ sơ quét",

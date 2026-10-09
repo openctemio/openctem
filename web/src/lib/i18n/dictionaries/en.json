@@ -160,6 +160,8 @@
   "settings.desc.sla-policies": "Remediation deadlines per severity.",
   "settings.item.asset-lifecycle": "Asset lifecycle",
   "settings.desc.asset-lifecycle": "When stale assets are retired automatically.",
+  "settings.item.asset-sources": "Asset sources",
+  "settings.desc.asset-sources": "Which source decides asset criticality, owner and exposure.",
   "settings.item.pentest-methodology": "Pentest methodology",
   "settings.desc.pentest-methodology": "Campaign types and testing methodologies.",
   "settings.item.scan-profiles": "Scan profiles",
