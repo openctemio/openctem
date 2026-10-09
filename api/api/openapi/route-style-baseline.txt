@@ -348,5 +348,7 @@ R3 DELETE /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
 R3 GET /api/v1/admin/tenants/{tenantId}/plan
 R3 PUT /api/v1/admin/tenants/{tenantId}/plan
 R3 PUT /api/v1/admin/tenants/{tenantId}/plan/overrides/{key}
+R3 GET /api/v1/admin/tenants/{tenantId}/scope-policy
+R3 PUT /api/v1/admin/tenants/{tenantId}/scope-policy
 R3 GET /api/v1/admin/tenants/{tenantId}/idle
 R3 PUT /api/v1/admin/tenants/{tenantId}/idle/exemption
