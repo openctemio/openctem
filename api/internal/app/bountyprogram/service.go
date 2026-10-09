@@ -41,13 +41,13 @@ type Joiner interface {
 
 // Service imports and manages programs.
 type Service struct {
-	// Sync (sync.go, RFC-065 §14).
-	fetcher   ScopeFetcher
-	cipher    TokenCipher
-	isGone    func(error) bool
-	syncAudit SyncAuditor
 	// ruleScope matches the rules a job carries (rules.go).
-	ruleScope  scopeauth.Targets
+	ruleScope scopeauth.Targets
+	// Sync (sync.go, RFC-065 §14).
+	fetcher    ScopeFetcher
+	cipher     TokenCipher
+	isGone     func(error) bool
+	syncAudit  SyncAuditor
 	repo       bp.Repository
 	fullData   FullData
 	guardrails scopedom.Guardrails
