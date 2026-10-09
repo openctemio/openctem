@@ -27,6 +27,8 @@ audit_chain_rebaselines
 audit_log_chain
 audit_logs
 authorization_letters
+automation_runs
+automations
 bounty_program_exclusions
 bounty_programs
 business_service_assets
@@ -175,5 +177,3 @@ vulnerabilities
 web_endpoint_events
 web_endpoint_params
 web_endpoints
-workflow_runs
-workflows

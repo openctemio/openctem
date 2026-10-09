@@ -1,0 +1,804 @@
+package automation
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/metrics"
+
+	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
+)
+
+// Dispatcher configuration constants
+const (
+	// maxFindingsPerDispatch limits the number of findings processed in a single dispatch
+	// to prevent memory exhaustion and ensure reasonable processing times.
+	maxFindingsPerDispatch = 500
+
+	// dispatchTimeout is the maximum time allowed for dispatching workflow events.
+	dispatchTimeout = 60 * time.Second
+)
+
+// WorkflowEventDispatcher dispatches events to matching workflows.
+// It evaluates trigger configurations to determine which workflows should run.
+type WorkflowEventDispatcher struct {
+	workflowRepo automationdom.WorkflowRepository
+	nodeRepo     automationdom.NodeRepository
+	service      *WorkflowService
+	logger       *logger.Logger
+
+	// triggerFn replaces service.TriggerWorkflow in tests (nil in production).
+	triggerFn func(ctx context.Context, input TriggerWorkflowInput) error
+
+	// modules reports the modules a tenant has off; nil runs every tenant.
+	modules ModuleGuard
+}
+
+// ModuleGuard reports the modules a tenant has off (*module.ModuleService).
+type ModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard makes events start no automation for a tenant with the
+// workflows module off: its automations stay saved and start again on the
+// next event after the module is turned back on (no replay).
+func (d *WorkflowEventDispatcher) SetModuleGuard(g ModuleGuard) { d.modules = g }
+
+// NewWorkflowEventDispatcher creates a new workflow event dispatcher.
+func NewWorkflowEventDispatcher(
+	workflowRepo automationdom.WorkflowRepository,
+	nodeRepo automationdom.NodeRepository,
+	service *WorkflowService,
+	log *logger.Logger,
+) *WorkflowEventDispatcher {
+	return &WorkflowEventDispatcher{
+		workflowRepo: workflowRepo,
+		nodeRepo:     nodeRepo,
+		service:      service,
+		logger:       log.With("component", "workflow_event_dispatcher"),
+	}
+}
+
+// FindingEvent represents a finding-related event.
+type FindingEvent struct {
+	TenantID  shared.ID
+	Finding   *vulnerability.Finding
+	EventType automationdom.TriggerType // finding_created, finding_updated
+	Changes   map[string]any            // For finding_updated: which fields changed
+	// Cause is set when an automation step caused the event (loop_guard.go).
+	Cause *AutomationCause
+}
+
+// DispatchFindingEvent dispatches a finding event to matching workflows.
+// It evaluates all active workflows with matching trigger types and filters.
+func (d *WorkflowEventDispatcher) DispatchFindingEvent(ctx context.Context, event FindingEvent) error {
+	// Find all active workflows for the tenant with matching trigger type
+	workflows, err := d.findMatchingWorkflows(ctx, event.TenantID, event.EventType)
+	if err != nil {
+		return fmt.Errorf("failed to find matching workflows: %w", err)
+	}
+
+	if len(workflows) == 0 {
+		d.logger.Debug("no matching workflows found",
+			"tenant_id", event.TenantID,
+			"event_type", event.EventType,
+		)
+		return nil
+	}
+
+	// Build trigger data from finding
+	triggerData := d.buildFindingTriggerData(event)
+
+	// Trigger matching workflows
+	triggeredCount := 0
+	for _, wf := range workflows {
+		// Check if finding matches the trigger config filters
+		if !d.matchesTriggerFilters(wf, event) {
+			continue
+		}
+		cfg, _ := triggerConfigFor(wf, event.EventType)
+		if reason := loopBlocked(wf, event.Cause, cfg); reason != "" {
+			d.logger.Warn("automation not started: loop guard",
+				"workflow_id", wf.ID, "workflow_name", wf.Name, "event_type", event.EventType,
+				"finding_id", event.Finding.ID(), "reason", reason)
+			continue
+		}
+
+		// Trigger the workflow. An event an automation caused starts it at
+		// most once per finding per cooldown.
+		subject := event.Finding.ID()
+		err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
+			TenantID:        event.TenantID,
+			WorkflowID:      wf.ID,
+			TriggerType:     event.EventType,
+			TriggerData:     withCause(triggerData, event.Cause),
+			SubjectID:       &subject,
+			SubjectCooldown: event.Cause != nil,
+		})
+		if errors.Is(err, automationdom.ErrRunCooldown) {
+			d.logger.Info("automation not started: same finding within the cooldown",
+				"workflow_id", wf.ID, "finding_id", subject)
+			continue
+		}
+		if err != nil {
+			d.logger.Error("failed to trigger workflow",
+				"workflow_id", wf.ID,
+				"workflow_name", wf.Name,
+				"error", err,
+			)
+			continue
+		}
+
+		triggeredCount++
+		d.logger.Info("workflow triggered by event",
+			"workflow_id", wf.ID,
+			"workflow_name", wf.Name,
+			"event_type", event.EventType,
+			"finding_id", event.Finding.ID(),
+		)
+	}
+
+	d.logger.Debug("finding event dispatched",
+		"event_type", event.EventType,
+		"finding_id", event.Finding.ID(),
+		"workflows_matched", len(workflows),
+		"workflows_triggered", triggeredCount,
+	)
+
+	return nil
+}
+
+// findMatchingWorkflows finds all active workflows with matching trigger type.
+// Uses optimized batch query to avoid N+1 database calls.
+func (d *WorkflowEventDispatcher) findMatchingWorkflows(
+	ctx context.Context,
+	tenantID shared.ID,
+	triggerType automationdom.TriggerType,
+) ([]*automationdom.Workflow, error) {
+	if d.modules != nil && d.modules.TenantDisabledModules(ctx, tenantID.String())[moduledom.ModuleWorkflows] {
+		return nil, nil
+	}
+	// Use optimized batch query - single query returns workflows with their full graph
+	workflows, err := d.workflowRepo.ListActiveWithTriggerType(ctx, tenantID, triggerType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list workflows with trigger type: %w", err)
+	}
+
+	return workflows, nil
+}
+
+// matchesTriggerFilters checks if the finding matches the workflow's trigger filters.
+func (d *WorkflowEventDispatcher) matchesTriggerFilters(wf *automationdom.Workflow, event FindingEvent) bool {
+	// Find the trigger node
+	var triggerNode *automationdom.Node
+	for _, node := range wf.Nodes {
+		if node.NodeType == automationdom.NodeTypeTrigger &&
+			node.Config.TriggerType == event.EventType {
+			triggerNode = node
+			break
+		}
+	}
+
+	if triggerNode == nil {
+		return false
+	}
+
+	config := triggerNode.Config.TriggerConfig
+	if config == nil {
+		// No filters configured - match all
+		return true
+	}
+
+	// Check severity_filter
+	if !d.matchesSeverityFilter(config, event.Finding) {
+		return false
+	}
+
+	// Check tool_filter
+	if !d.matchesToolFilter(config, event.Finding) {
+		return false
+	}
+
+	// Check source_filter
+	if !d.matchesSourceFilter(config, event.Finding) {
+		return false
+	}
+
+	return true
+}
+
+// matchesSeverityFilter checks if finding severity matches the filter.
+func (d *WorkflowEventDispatcher) matchesSeverityFilter(config map[string]any, finding *vulnerability.Finding) bool {
+	severityFilter, ok := config["severity_filter"]
+	if !ok {
+		return true // No filter - match all
+	}
+
+	severities, ok := severityFilter.([]interface{})
+	if !ok || len(severities) == 0 {
+		return true
+	}
+
+	findingSeverity := string(finding.Severity())
+	for _, s := range severities {
+		if str, ok := s.(string); ok && str == findingSeverity {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesToolFilter checks if finding tool matches the filter.
+func (d *WorkflowEventDispatcher) matchesToolFilter(config map[string]any, finding *vulnerability.Finding) bool {
+	toolFilter, ok := config["tool_filter"]
+	if !ok {
+		return true // No filter - match all
+	}
+
+	tools, ok := toolFilter.([]interface{})
+	if !ok || len(tools) == 0 {
+		return true
+	}
+
+	findingTool := finding.ToolName()
+	for _, t := range tools {
+		if str, ok := t.(string); ok && str == findingTool {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesSourceFilter checks if finding source matches the filter.
+func (d *WorkflowEventDispatcher) matchesSourceFilter(config map[string]any, finding *vulnerability.Finding) bool {
+	sourceFilter, ok := config["source_filter"]
+	if !ok {
+		return true // No filter - match all
+	}
+
+	sources, ok := sourceFilter.([]interface{})
+	if !ok || len(sources) == 0 {
+		return true
+	}
+
+	findingSource := string(finding.Source())
+	for _, s := range sources {
+		if str, ok := s.(string); ok && str == findingSource {
+			return true
+		}
+	}
+	return false
+}
+
+// buildFindingTriggerData builds trigger data from a finding event.
+func (d *WorkflowEventDispatcher) buildFindingTriggerData(event FindingEvent) map[string]any {
+	data := map[string]any{
+		"event_type": string(event.EventType),
+		"finding":    findingTriggerSummary(event.Finding),
+	}
+
+	if event.Changes != nil {
+		data["changes"] = event.Changes
+	}
+
+	return data
+}
+
+// DispatchFindingsCreated dispatches finding_created for a batch of newly
+// created findings (the ingest callback). It runs asynchronously so ingest
+// never waits, with panic recovery.
+//
+// Every matching automation runs once per matching finding: 40 new critical
+// findings and a "critical -> ticket" automation give 40 runs (before, one
+// run for the first finding of the batch). The runs are bounded where they
+// are created: the key finding_created:<finding> makes a finding start an
+// automation at most once, and the per-automation and per-tenant hourly
+// quotas refuse the rest, visibly (automationdom.MaxRunsPerWorkflowPerHour).
+func (d *WorkflowEventDispatcher) DispatchFindingsCreated(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) {
+	if len(findings) == 0 {
+		return
+	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
+				d.logger.Error("panic recovered in workflow dispatch",
+					"tenant_id", tenantID,
+					"panic", r,
+				)
+			}
+		}()
+		dispatchCtx, cancel := context.WithTimeout(context.Background(), dispatchTimeout)
+		defer cancel()
+		d.dispatchFindingsCreated(dispatchCtx, tenantID, findings)
+	}()
+}
+
+// dispatchFindingsCreated is the synchronous body of DispatchFindingsCreated.
+// It returns the number of runs started.
+func (d *WorkflowEventDispatcher) dispatchFindingsCreated(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) int {
+	if len(findings) > maxFindingsPerDispatch {
+		d.logger.Warn("truncating findings batch for dispatch",
+			"original_count", len(findings),
+			"max_allowed", maxFindingsPerDispatch,
+		)
+		findings = findings[:maxFindingsPerDispatch]
+	}
+
+	workflows, err := d.findMatchingWorkflows(ctx, tenantID, automationdom.TriggerTypeFindingCreated)
+	if err != nil {
+		d.logger.Error("failed to find matching workflows", "tenant_id", tenantID, "error", err)
+		return 0
+	}
+	if len(workflows) == 0 {
+		return 0
+	}
+
+	started, duplicates := 0, 0
+	for _, wf := range workflows {
+		if wf.TenantID != tenantID {
+			continue
+		}
+		for _, f := range findings {
+			if f == nil || f.TenantID() != tenantID {
+				continue
+			}
+			event := FindingEvent{TenantID: tenantID, Finding: f, EventType: automationdom.TriggerTypeFindingCreated}
+			if !d.matchesTriggerFilters(wf, event) {
+				continue
+			}
+			subject := f.ID()
+			err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
+				TenantID:       tenantID,
+				WorkflowID:     wf.ID,
+				TriggerType:    automationdom.TriggerTypeFindingCreated,
+				TriggerData:    d.buildFindingTriggerData(event),
+				SubjectID:      &subject,
+				IdempotencyKey: "finding_created:" + subject.String(),
+			})
+			switch {
+			case err == nil:
+				started++
+			case errors.Is(err, automationdom.ErrRunDuplicate):
+				duplicates++
+			case automationdom.IsRunThrottled(err):
+				// The quota holds for the rest of this batch too: stop
+				// asking. The run history records the throttling once.
+				d.logger.Warn("automation throttled; the rest of this batch does not start it",
+					"workflow_id", wf.ID, "workflow_name", wf.Name, "error", err)
+			default:
+				d.logger.Error("failed to trigger workflow",
+					"workflow_id", wf.ID, "workflow_name", wf.Name, "finding_id", subject, "error", err)
+				continue
+			}
+			if automationdom.IsRunThrottled(err) {
+				break
+			}
+		}
+	}
+
+	d.logger.Info("finding_created events dispatched",
+		"tenant_id", tenantID,
+		"findings_count", len(findings),
+		"workflows_matched", len(workflows),
+		"runs_started", started,
+		"duplicates", duplicates,
+	)
+	return started
+}
+
+// DispatchFindingStatusChanged dispatches a `finding_status_changed` event for a
+// single finding whose status just changed. It is wired into
+// VulnerabilityService.UpdateFindingStatus so automation (e.g. a
+// verification-scan workflow on resolve) fires without a manual trigger. Runs
+// asynchronously with panic recovery so it never blocks or crashes the status
+// update, mirroring DispatchFindingsCreated.
+func (d *WorkflowEventDispatcher) DispatchFindingStatusChanged(
+	ctx context.Context,
+	tenantID shared.ID,
+	finding *vulnerability.Finding,
+	oldStatus, newStatus string,
+) {
+	if finding == nil {
+		return
+	}
+	// A status change made by an automation step carries its cause in ctx;
+	// read it now (the dispatch below runs on its own context).
+	var cause *AutomationCause
+	if c, ok := AutomationCauseFrom(ctx); ok {
+		cause = &c
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
+				d.logger.Error("panic recovered in finding_status_changed dispatch",
+					"tenant_id", tenantID,
+					"panic", r,
+				)
+			}
+		}()
+
+		dispatchCtx, cancel := context.WithTimeout(context.Background(), dispatchTimeout)
+		defer cancel()
+
+		if err := d.DispatchFindingEvent(dispatchCtx, FindingEvent{
+			TenantID:  tenantID,
+			Finding:   finding,
+			EventType: automationdom.TriggerTypeFindingStatusChanged,
+			Changes: map[string]any{
+				"old_status": oldStatus,
+				"new_status": newStatus,
+			},
+			Cause: cause,
+		}); err != nil {
+			d.logger.Error("failed to dispatch finding_status_changed event",
+				"tenant_id", tenantID,
+				"finding_id", finding.ID(),
+				"error", err,
+			)
+		}
+	}()
+}
+
+// =============================================================================
+// AI Triage Events
+// =============================================================================
+
+// AITriageEvent represents an AI triage completion/failure event.
+type AITriageEvent struct {
+	TenantID   shared.ID
+	FindingID  shared.ID
+	TriageID   shared.ID
+	EventType  automationdom.TriggerType // ai_triage_completed or ai_triage_failed
+	TriageData map[string]any            // Triage result data
+}
+
+// DispatchAITriageEvent dispatches an AI triage event to matching workflows.
+func (d *WorkflowEventDispatcher) DispatchAITriageEvent(ctx context.Context, event AITriageEvent) error {
+	// Find all active workflows for the tenant with matching trigger type
+	workflows, err := d.findMatchingWorkflows(ctx, event.TenantID, event.EventType)
+	if err != nil {
+		return fmt.Errorf("failed to find matching workflows: %w", err)
+	}
+
+	if len(workflows) == 0 {
+		d.logger.Debug("no matching workflows found for AI triage event",
+			"tenant_id", event.TenantID,
+			"event_type", event.EventType,
+			"triage_id", event.TriageID,
+		)
+		return nil
+	}
+
+	// Build trigger data from triage event
+	triggerData := d.buildAITriageTriggerData(event)
+
+	// Trigger matching workflows
+	triggeredCount := 0
+	for _, wf := range workflows {
+		// Check if triage matches the trigger config filters
+		if !d.matchesAITriageTriggerFilters(wf, event) {
+			continue
+		}
+
+		// Trigger the workflow: once per triage result, and at most once per
+		// finding per cooldown (an automation that requests triage on a
+		// triage result would otherwise loop).
+		subject := event.FindingID
+		err := d.triggerWorkflow(ctx, TriggerWorkflowInput{
+			TenantID:        event.TenantID,
+			WorkflowID:      wf.ID,
+			TriggerType:     event.EventType,
+			TriggerData:     triggerData,
+			SubjectID:       &subject,
+			IdempotencyKey:  string(event.EventType) + ":" + event.TriggerID(),
+			SubjectCooldown: true,
+		})
+		if errors.Is(err, automationdom.ErrRunDuplicate) || errors.Is(err, automationdom.ErrRunCooldown) {
+			continue
+		}
+		if err != nil {
+			d.logger.Error("failed to trigger workflow for AI triage event",
+				"workflow_id", wf.ID,
+				"workflow_name", wf.Name,
+				"error", err,
+			)
+			continue
+		}
+
+		triggeredCount++
+		d.logger.Info("workflow triggered by AI triage event",
+			"workflow_id", wf.ID,
+			"workflow_name", wf.Name,
+			"event_type", event.EventType,
+			"triage_id", event.TriageID,
+			"finding_id", event.FindingID,
+		)
+	}
+
+	d.logger.Debug("AI triage event dispatched",
+		"event_type", event.EventType,
+		"triage_id", event.TriageID,
+		"workflows_matched", len(workflows),
+		"workflows_triggered", triggeredCount,
+	)
+
+	return nil
+}
+
+// TriggerID is the triage result's identity for run idempotency.
+func (e AITriageEvent) TriggerID() string {
+	return e.TriageID.String()
+}
+
+// buildAITriageTriggerData builds trigger data from an AI triage event.
+func (d *WorkflowEventDispatcher) buildAITriageTriggerData(event AITriageEvent) map[string]any {
+	data := map[string]any{
+		"event_type": string(event.EventType),
+		"triage_id":  event.TriageID.String(),
+		"finding_id": event.FindingID.String(),
+	}
+
+	// Include triage result data
+	if event.TriageData != nil {
+		for k, v := range event.TriageData {
+			data[k] = v
+		}
+	}
+
+	// Ensure finding object exists for downstream actions
+	if _, ok := data["finding"]; !ok {
+		data["finding"] = map[string]any{
+			"id": event.FindingID.String(),
+		}
+	}
+
+	return data
+}
+
+// matchesAITriageTriggerFilters checks if the triage event matches the workflow's trigger filters.
+func (d *WorkflowEventDispatcher) matchesAITriageTriggerFilters(wf *automationdom.Workflow, event AITriageEvent) bool {
+	// Find the trigger node
+	var triggerNode *automationdom.Node
+	for _, node := range wf.Nodes {
+		if node.NodeType == automationdom.NodeTypeTrigger &&
+			node.Config.TriggerType == event.EventType {
+			triggerNode = node
+			break
+		}
+	}
+
+	if triggerNode == nil {
+		return false
+	}
+
+	// SECURITY: the triage verdict (severity_assessment, risk_score, ...) is
+	// produced by an LLM from attacker-influenceable finding content and is
+	// advisory only. When the triage service flags needs_review (the LLM
+	// output was invalid/coerced — a prompt-injection signal), refuse to let
+	// it auto-fire workflows that mutate finding state or have external
+	// effects. Notification-only workflows still fire so humans are alerted.
+	if triageNeedsReview(event.TriageData) && workflowHasSideEffectAction(wf) {
+		d.logger.Warn("SECURITY: skipping side-effect workflow for needs-review AI triage",
+			"workflow_id", wf.ID,
+			"workflow_name", wf.Name,
+			"finding_id", event.FindingID,
+			"triage_id", event.TriageID)
+		return false
+	}
+
+	config := triggerNode.Config.TriggerConfig
+	if config == nil {
+		// No filters configured - match all
+		return true
+	}
+
+	// Check severity_filter (from triage result)
+	if !d.matchesAITriageSeverityFilter(config, event.TriageData) {
+		return false
+	}
+
+	// Check risk_score_min filter
+	if !d.matchesRiskScoreFilter(config, event.TriageData) {
+		return false
+	}
+
+	return true
+}
+
+// triageNeedsReview reports whether the triage result was flagged for human
+// review (LLM output coerced/invalid — a low-confidence / prompt-injection
+// signal). Such a verdict must not silently drive automated state changes.
+func triageNeedsReview(triageData map[string]any) bool {
+	v, ok := triageData["needs_review"].(bool)
+	return ok && v
+}
+
+// workflowHasSideEffectAction reports whether the workflow contains any node
+// that mutates state or has an external effect (any action node). Notification
+// nodes are not side-effecting in this sense and remain allowed.
+func workflowHasSideEffectAction(wf *automationdom.Workflow) bool {
+	for _, node := range wf.Nodes {
+		if node.NodeType == automationdom.NodeTypeAction {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesAITriageSeverityFilter checks if triage severity matches the filter.
+func (d *WorkflowEventDispatcher) matchesAITriageSeverityFilter(config map[string]any, triageData map[string]any) bool {
+	severityFilter, ok := config["severity_filter"]
+	if !ok {
+		return true // No filter - match all
+	}
+
+	severities, ok := severityFilter.([]interface{})
+	if !ok || len(severities) == 0 {
+		return true
+	}
+
+	triageSeverity, _ := triageData["severity_assessment"].(string)
+	if triageSeverity == "" {
+		return false
+	}
+
+	for _, s := range severities {
+		if str, ok := s.(string); ok && str == triageSeverity {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesRiskScoreFilter checks if triage risk score is above minimum threshold.
+func (d *WorkflowEventDispatcher) matchesRiskScoreFilter(config map[string]any, triageData map[string]any) bool {
+	minScore, ok := config["risk_score_min"]
+	if !ok {
+		return true // No filter - match all
+	}
+
+	minScoreFloat, ok := minScore.(float64)
+	if !ok {
+		return true
+	}
+
+	riskScore, ok := triageData["risk_score"].(float64)
+	if !ok {
+		return false
+	}
+
+	return riskScore >= minScoreFloat
+}
+
+// DispatchAITriageCompleted is a convenience method for dispatching ai_triage_completed events.
+func (d *WorkflowEventDispatcher) DispatchAITriageCompleted(
+	ctx context.Context,
+	tenantID, findingID, triageID shared.ID,
+	triageData map[string]any,
+) {
+	// Dispatch asynchronously to avoid blocking
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
+				d.logger.Error("panic recovered in AI triage completed dispatch",
+					"triage_id", triageID,
+					"panic", r,
+				)
+			}
+		}()
+
+		dispatchCtx, cancel := context.WithTimeout(context.Background(), dispatchTimeout)
+		defer cancel()
+
+		event := AITriageEvent{
+			TenantID:   tenantID,
+			FindingID:  findingID,
+			TriageID:   triageID,
+			EventType:  automationdom.TriggerTypeAITriageCompleted,
+			TriageData: triageData,
+		}
+
+		if err := d.DispatchAITriageEvent(dispatchCtx, event); err != nil {
+			d.logger.Error("failed to dispatch AI triage completed event",
+				"triage_id", triageID,
+				"error", err,
+			)
+		}
+	}()
+}
+
+// DispatchAITriageFailed is a convenience method for dispatching ai_triage_failed events.
+func (d *WorkflowEventDispatcher) DispatchAITriageFailed(
+	ctx context.Context,
+	tenantID, findingID, triageID shared.ID,
+	errorMessage string,
+) {
+	// Dispatch asynchronously to avoid blocking
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				metrics.RecordPanic("workflow_dispatch")
+				d.logger.Error("panic recovered in AI triage failed dispatch",
+					"triage_id", triageID,
+					"panic", r,
+				)
+			}
+		}()
+
+		dispatchCtx, cancel := context.WithTimeout(context.Background(), dispatchTimeout)
+		defer cancel()
+
+		event := AITriageEvent{
+			TenantID:  tenantID,
+			FindingID: findingID,
+			TriageID:  triageID,
+			EventType: automationdom.TriggerTypeAITriageFailed,
+			TriageData: map[string]any{
+				"error_message": errorMessage,
+			},
+		}
+
+		if err := d.DispatchAITriageEvent(dispatchCtx, event); err != nil {
+			d.logger.Error("failed to dispatch AI triage failed event",
+				"triage_id", triageID,
+				"error", err,
+			)
+		}
+	}()
+}
+
+// =============================================================================
+// Source Filter Validation
+// =============================================================================
+
+// ValidateSourceFilter validates that source codes in the filter are valid.
+// Uses the finding.FindingSourceCacheService to check against active sources.
+func ValidateSourceFilter(ctx context.Context, config map[string]any, cacheService *finding.FindingSourceCacheService) error {
+	sourceFilter, ok := config["source_filter"]
+	if !ok {
+		return nil
+	}
+
+	sources, ok := sourceFilter.([]interface{})
+	if !ok {
+		return fmt.Errorf("source_filter must be an array")
+	}
+
+	for _, src := range sources {
+		srcStr, ok := src.(string)
+		if !ok {
+			return fmt.Errorf("source_filter values must be strings")
+		}
+
+		valid, err := cacheService.IsValidCode(ctx, srcStr)
+		if err != nil {
+			return fmt.Errorf("failed to validate source '%s': %w", srcStr, err)
+		}
+		if !valid {
+			// Get valid sources for error message
+			allSources, _ := cacheService.GetAll(ctx)
+			var validCodes []string
+			if allSources != nil {
+				for code := range allSources.ByCode {
+					validCodes = append(validCodes, code)
+				}
+			}
+			slices.Sort(validCodes)
+			return fmt.Errorf("invalid source '%s'; valid sources: %v", srcStr, validCodes)
+		}
+	}
+
+	return nil
+}

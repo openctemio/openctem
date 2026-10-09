@@ -7,24 +7,24 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
+	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // WorkflowHandler handles HTTP requests for workflows.
 type WorkflowHandler struct {
-	service   *workflowsvc.WorkflowService
+	service   *automationsvc.WorkflowService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewWorkflowHandler creates a new WorkflowHandler.
-func NewWorkflowHandler(service *workflowsvc.WorkflowService, v *validator.Validator, log *logger.Logger) *WorkflowHandler {
+func NewWorkflowHandler(service *automationsvc.WorkflowService, v *validator.Validator, log *logger.Logger) *WorkflowHandler {
 	return &WorkflowHandler{
 		service:   service,
 		validator: v,
@@ -233,11 +233,11 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Convert nodes
-	nodes := make([]workflowsvc.CreateNodeInput, len(req.Nodes))
+	nodes := make([]automationsvc.CreateNodeInput, len(req.Nodes))
 	for i, n := range req.Nodes {
-		nodes[i] = workflowsvc.CreateNodeInput{
+		nodes[i] = automationsvc.CreateNodeInput{
 			NodeKey:     n.NodeKey,
-			NodeType:    workflow.NodeType(n.NodeType),
+			NodeType:    automation.NodeType(n.NodeType),
 			Name:        n.Name,
 			Description: n.Description,
 		}
@@ -251,9 +251,9 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Convert edges
-	edges := make([]workflowsvc.CreateEdgeInput, len(req.Edges))
+	edges := make([]automationsvc.CreateEdgeInput, len(req.Edges))
 	for i, e := range req.Edges {
-		edges[i] = workflowsvc.CreateEdgeInput{
+		edges[i] = automationsvc.CreateEdgeInput{
 			SourceNodeKey: e.SourceNodeKey,
 			TargetNodeKey: e.TargetNodeKey,
 			SourceHandle:  e.SourceHandle,
@@ -261,7 +261,7 @@ func (h *WorkflowHandler) CreateWorkflow(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	input := workflowsvc.CreateWorkflowInput{
+	input := automationsvc.CreateWorkflowInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		Name:        req.Name,
@@ -329,7 +329,7 @@ func (h *WorkflowHandler) ListWorkflows(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	input := workflowsvc.ListWorkflowsInput{
+	input := automationsvc.ListWorkflowsInput{
 		TenantID: tenantUUID,
 		IsActive: isActive,
 		Tags:     parseQueryArray(r.URL.Query().Get("tags")),
@@ -406,7 +406,7 @@ func (h *WorkflowHandler) UpdateWorkflow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	input := workflowsvc.UpdateWorkflowInput{
+	input := automationsvc.UpdateWorkflowInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -506,11 +506,11 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 	}
 
 	// Convert nodes
-	nodes := make([]workflowsvc.CreateNodeInput, len(req.Nodes))
+	nodes := make([]automationsvc.CreateNodeInput, len(req.Nodes))
 	for i, n := range req.Nodes {
-		nodes[i] = workflowsvc.CreateNodeInput{
+		nodes[i] = automationsvc.CreateNodeInput{
 			NodeKey:     n.NodeKey,
-			NodeType:    workflow.NodeType(n.NodeType),
+			NodeType:    automation.NodeType(n.NodeType),
 			Name:        n.Name,
 			Description: n.Description,
 		}
@@ -524,9 +524,9 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 	}
 
 	// Convert edges
-	edges := make([]workflowsvc.CreateEdgeInput, len(req.Edges))
+	edges := make([]automationsvc.CreateEdgeInput, len(req.Edges))
 	for i, e := range req.Edges {
-		edges[i] = workflowsvc.CreateEdgeInput{
+		edges[i] = automationsvc.CreateEdgeInput{
 			SourceNodeKey: e.SourceNodeKey,
 			TargetNodeKey: e.TargetNodeKey,
 			SourceHandle:  e.SourceHandle,
@@ -534,7 +534,7 @@ func (h *WorkflowHandler) UpdateWorkflowGraph(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	input := workflowsvc.UpdateWorkflowGraphInput{
+	input := automationsvc.UpdateWorkflowGraphInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -593,12 +593,12 @@ func (h *WorkflowHandler) AddNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := workflowsvc.AddNodeInput{
+	input := automationsvc.AddNodeInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
 		NodeKey:     req.NodeKey,
-		NodeType:    workflow.NodeType(req.NodeType),
+		NodeType:    automation.NodeType(req.NodeType),
 		Name:        req.Name,
 		Description: req.Description,
 	}
@@ -675,7 +675,7 @@ func (h *WorkflowHandler) UpdateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := workflowsvc.UpdateNodeInput{
+	input := automationsvc.UpdateNodeInput{
 		TenantID:    tenantUUID,
 		UserID:      userUUID,
 		WorkflowID:  workflowUUID,
@@ -780,7 +780,7 @@ func (h *WorkflowHandler) AddEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := workflowsvc.AddEdgeInput{
+	input := automationsvc.AddEdgeInput{
 		TenantID:      tenantUUID,
 		UserID:        userUUID,
 		WorkflowID:    workflowUUID,
@@ -882,7 +882,7 @@ func (h *WorkflowHandler) TriggerWorkflow(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input := workflowsvc.ManualRunInput{
+	input := automationsvc.ManualRunInput{
 		TenantID:   tenantUUID,
 		UserID:     userUUID,
 		WorkflowID: workflowUUID,
@@ -956,7 +956,7 @@ func (h *WorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	input := workflowsvc.ListWorkflowRunsInput{
+	input := automationsvc.ListWorkflowRunsInput{
 		TenantID: tenantUUID,
 		Page:     paging.Page,
 		PerPage:  paging.PerPage,
@@ -970,7 +970,7 @@ func (h *WorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if status := r.URL.Query().Get("status"); status != "" {
-		s := workflow.RunStatus(status)
+		s := automation.RunStatus(status)
 		input.Status = &s
 	}
 
@@ -1027,22 +1027,22 @@ func (h *WorkflowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 
 // --- Conversion Helpers ---
 
-func toNodeConfig(req *NodeConfigRequest) workflow.NodeConfig {
+func toNodeConfig(req *NodeConfigRequest) automation.NodeConfig {
 	if req == nil {
-		return workflow.NodeConfig{}
+		return automation.NodeConfig{}
 	}
-	return workflow.NodeConfig{
-		TriggerType:        workflow.TriggerType(req.TriggerType),
+	return automation.NodeConfig{
+		TriggerType:        automation.TriggerType(req.TriggerType),
 		TriggerConfig:      req.TriggerConfig,
 		ConditionExpr:      req.ConditionExpr,
-		ActionType:         workflow.ActionType(req.ActionType),
+		ActionType:         automation.ActionType(req.ActionType),
 		ActionConfig:       req.ActionConfig,
-		NotificationType:   workflow.NotificationType(req.NotificationType),
+		NotificationType:   automation.NotificationType(req.NotificationType),
 		NotificationConfig: req.NotificationConfig,
 	}
 }
 
-func toWorkflowResponse(wf *workflow.Workflow) *WorkflowResponse {
+func toWorkflowResponse(wf *automation.Workflow) *WorkflowResponse {
 	resp := &WorkflowResponse{
 		ID:             wf.ID.String(),
 		TenantID:       wf.TenantID.String(),
@@ -1092,7 +1092,7 @@ func toWorkflowResponse(wf *workflow.Workflow) *WorkflowResponse {
 	return resp
 }
 
-func toNodeResponse(n *workflow.Node) *NodeResponse {
+func toNodeResponse(n *automation.Node) *NodeResponse {
 	return &NodeResponse{
 		ID:          n.ID.String(),
 		WorkflowID:  n.WorkflowID.String(),
@@ -1124,8 +1124,8 @@ const redactedValue = "[redacted]"
 // (they are often credentials). The action is refused for new nodes; a
 // stored one keeps its headers only to keep running, and no reader of the
 // workflow sees them.
-func redactActionConfig(t workflow.ActionType, cfg map[string]any) map[string]any {
-	if t != workflow.ActionTypeHTTPRequest || cfg == nil {
+func redactActionConfig(t automation.ActionType, cfg map[string]any) map[string]any {
+	if t != automation.ActionTypeHTTPRequest || cfg == nil {
 		return cfg
 	}
 	hdrs, ok := cfg["headers"].(map[string]any)
@@ -1144,7 +1144,7 @@ func redactActionConfig(t workflow.ActionType, cfg map[string]any) map[string]an
 	return out
 }
 
-func toEdgeResponse(e *workflow.Edge) *EdgeResponse {
+func toEdgeResponse(e *automation.Edge) *EdgeResponse {
 	return &EdgeResponse{
 		ID:            e.ID.String(),
 		WorkflowID:    e.WorkflowID.String(),
@@ -1156,7 +1156,7 @@ func toEdgeResponse(e *workflow.Edge) *EdgeResponse {
 	}
 }
 
-func toWorkflowRunResponse(run *workflow.Run) *WorkflowRunResponse {
+func toWorkflowRunResponse(run *automation.Run) *WorkflowRunResponse {
 	resp := &WorkflowRunResponse{
 		ID:             run.ID.String(),
 		WorkflowID:     run.WorkflowID.String(),
@@ -1196,7 +1196,7 @@ func toWorkflowRunResponse(run *workflow.Run) *WorkflowRunResponse {
 	return resp
 }
 
-func toNodeRunResponse(nr *workflow.NodeRun) NodeRunResponse {
+func toNodeRunResponse(nr *automation.NodeRun) NodeRunResponse {
 	resp := NodeRunResponse{
 		ID:            nr.ID.String(),
 		WorkflowRunID: nr.WorkflowRunID.String(),
@@ -1245,7 +1245,7 @@ func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		var de *shared.DomainError
-		if errors.As(err, &de) && de.Code == workflowsvc.ErrCodeRunNotAuthorized {
+		if errors.As(err, &de) && de.Code == automationsvc.ErrCodeRunNotAuthorized {
 			// A run subject outside the caller's data scope: the same
 			// answer as one that does not exist.
 			apierror.New(http.StatusNotFound, apierror.Code(de.Code), de.Message).WriteJSON(w)
@@ -1267,7 +1267,7 @@ func (h *WorkflowHandler) handleServiceError(w http.ResponseWriter, err error) {
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
 		var de *shared.DomainError
-		if errors.As(err, &de) && de.Code == workflowsvc.ErrCodeRunNotAuthorized {
+		if errors.As(err, &de) && de.Code == automationsvc.ErrCodeRunNotAuthorized {
 			apierror.Forbidden(de.Message).WriteJSON(w)
 			return
 		}
