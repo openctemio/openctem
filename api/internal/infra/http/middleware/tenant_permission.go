@@ -57,7 +57,7 @@ func RequireTenantPermission(checker TenantPermissionChecker, permission string)
 				return
 			}
 			if !ok {
-				apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+				permissionDenied(permission).WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)
