@@ -17,7 +17,7 @@ func TestAccessRequestRepository(t *testing.T) {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
 	r := NewAccessRequestRepository(&DB{DB: sqlDB})
-	domain := "ar-" + shared.NewID().String()[:8] + ".example.com"
+	domain := "ar-" + shared.NewID().String()[28:] + ".example.com"
 	ip := "iphash-" + shared.NewID().String()
 	t.Cleanup(func() {
 		_, _ = sqlDB.ExecContext(context.Background(), `DELETE FROM access_requests WHERE domain = $1`, domain)

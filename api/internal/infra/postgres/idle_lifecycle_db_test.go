@@ -17,7 +17,7 @@ func TestIdleLifecycleRepository(t *testing.T) {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
 	r := NewIdleLifecycleRepository(&DB{DB: sqlDB})
-	suffix := shared.NewID().String()[:8]
+	suffix := shared.NewID().String()[28:]
 	free := planTestTenant(t, sqlDB, "idle-free-"+suffix)
 	pro := planTestTenant(t, sqlDB, "idle-pro-"+suffix)
 	owner := planTestUser(t, sqlDB, "idle-owner-"+suffix+"@example.test")

@@ -152,7 +152,7 @@ func TestDispatchAssetsDiscovered_PayloadCapped(t *testing.T) {
 	tenant := shared.NewID()
 	assets := make([]*asset.Asset, 0, maxAssetsInTriggerData+5)
 	for i := 0; i < maxAssetsInTriggerData+5; i++ {
-		assets = append(assets, mkAsset(t, tenant, "h"+string(rune('a'+i%26))+shared.NewID().String()[:8]+".example.com", asset.AssetTypeDomain, true))
+		assets = append(assets, mkAsset(t, tenant, "h"+string(rune('a'+i%26))+shared.NewID().String()[28:]+".example.com", asset.AssetTypeDomain, true))
 	}
 	data := buildAssetsDiscoveredTriggerData(assets)
 	if n := len(data["assets"].([]map[string]any)); n != maxAssetsInTriggerData {

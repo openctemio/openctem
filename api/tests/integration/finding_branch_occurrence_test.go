@@ -25,7 +25,7 @@ func seedOccurrenceFixture(t *testing.T, db *sql.DB) (tenantID, assetID, branchI
 	fingerprint = "fbo" + shared.NewID().String()[:29] // unique 32-char-ish
 
 	_, err := db.Exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
-		tenantID.String(), "fbo-tenant-"+tenantID.String()[:8], "fbo-"+tenantID.String()[:8])
+		tenantID.String(), "fbo-tenant-"+tenantID.String()[28:], "fbo-"+tenantID.String()[28:])
 	require.NoError(t, err)
 
 	_, err = db.Exec(`INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, $3, 'repository')`,
