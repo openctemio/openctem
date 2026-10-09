@@ -25,6 +25,10 @@ async function openAddFinding(page: Page) {
   await add.click()
   const dialog = page.getByRole('dialog', { name: /add finding/i })
   await expect(dialog).toBeVisible()
+  // Let the open animation finish and the form load (sources, assets): on a
+  // phone the sheet grows with its content, which moves the title too.
+  await dialog.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
+  await page.waitForLoadState('networkidle')
   return dialog
 }
 

@@ -94,7 +94,7 @@ export function AutoAssignDialog({ open, onOpenChange, onSuccess }: AutoAssignDi
                 </div>
               )}
               {result.unassigned > 0 && (
-                <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                <p className="text-xs text-warning">
                   {result.unassigned} findings skipped (no asset owner)
                 </p>
               )}
