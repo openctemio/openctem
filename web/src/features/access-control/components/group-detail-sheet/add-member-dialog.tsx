@@ -19,12 +19,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { MemberRoleConfig, type GroupMemberRole } from '@/features/access-control'
+import { MembershipEndFields } from './membership-end'
+
+export interface NewGroupMember {
+  userId: string
+  role: GroupMemberRole
+  /** YYYY-MM-DD, or "" for a membership with no end. */
+  endsOn: string
+  reason: string
+}
 
 interface AddMemberDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  newMember: { userId: string; role: GroupMemberRole }
-  setNewMember: (member: { userId: string; role: GroupMemberRole }) => void
+  newMember: NewGroupMember
+  setNewMember: (member: NewGroupMember) => void
+  /** An external team: every member needs an end date. */
+  requireEnd: boolean
   isAddingMember: boolean
   onAddMember: () => void
   availableMembers: Array<{ user_id: string; name: string; email: string }>
@@ -38,6 +49,7 @@ export function AddMemberDialog({
   isAddingMember,
   onAddMember,
   availableMembers,
+  requireEnd,
 }: AddMemberDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -99,6 +111,14 @@ export function AddMemberDialog({
                 </SelectContent>
               </Select>
             </div>
+
+            <MembershipEndFields
+              idPrefix="add-member"
+              value={{ endsOn: newMember.endsOn, reason: newMember.reason }}
+              onChange={(v) => setNewMember({ ...newMember, ...v })}
+              required={requireEnd}
+              disabled={isAddingMember}
+            />
           </div>
         </DialogBody>
 
@@ -106,7 +126,10 @@ export function AddMemberDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={onAddMember} disabled={isAddingMember || !newMember.userId}>
+          <Button
+            onClick={onAddMember}
+            disabled={isAddingMember || !newMember.userId || (requireEnd && !newMember.endsOn)}
+          >
             {isAddingMember ? (
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
