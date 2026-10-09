@@ -150,6 +150,8 @@ Besides the Go runtime and process metrics:
 | `ingest_queue_depth`, `ingest_jobs_processed_total`, `ingest_v2_requests_total` | outcome … | Result ingestion. |
 | `openctem_controller_reconcile_errors_total`, `openctem_controller_last_reconcile_timestamp_seconds` | controller | Background controllers. |
 | `openctem_security_audit_chain_breaks_total` | reason | New breaks of the audit log hash chain. |
+| `openctem_signer_refusals_total` | reason (`out_of_ledger`, `tier_exceeds_ledger`, `target_excluded`, rate limits, malformed statements) | Job statements the job signer refused (RFC-040 §5.11 A10). |
+| `openctem_signer_ledger_feed_total` | kind (widen, narrow, sync), outcome (applied, refused, unavailable) | Scope changes sent to the job signer's ledger. |
 | `openctem_redis_*` | | Redis client and rate limiters. |
 
 ## Test the alert path
@@ -392,6 +394,50 @@ The audit log hash chain has a new break: an audit entry was changed or
 removed outside the API. **Treat it as a security incident**: keep the
 database as is (snapshot), find who had database access, compare with the
 latest backup. The admin console shows the break.
+
+### SignerOutOfLedger
+
+**Security, critical (RFC-040 §5.11 A10).** The job signer refused a job
+whose target is outside its scope ledger (`out_of_ledger`), above the tier
+people approved (`tier_exceeds_ledger`) or excluded (`target_excluded`). An
+honest API never asks for one: the command was written into the database
+outside the API, a scope change never reached the signer, or the API is
+compromised. The command failed with `SIGNER_REFUSED` and its detail names
+the target.
+
+1. Find the command: the API log line "command not signed" (outcome
+   `refused`) and the signer's own log (`docker compose logs signer`, "job
+   statement refused") give the organization, sensor and command ids.
+2. Compare with the organization's Scoping page and with
+   `openctem-signer ledger show`: is the target in effect in the database
+   but not in the ledger? Then a widening did not reach the signer (see
+   [SignerLedgerChangeRefused](#signerledgerchangerefused)); approve the
+   entry again, which sends it.
+3. If nobody created that command or scope through the console or the API,
+   treat it as a security incident: keep the database as is (snapshot),
+   check who had database or API host access, and keep the signer in
+   `enforce`. Never import a snapshot to "fix" it without the two-person
+   review in [job-signing.md](../architecture/job-signing.md#bootstrap-and-restore-the-ceremony).
+
+### SignerRefusals
+
+The signer refused more than five jobs in 15 minutes for another reason:
+rate ceilings (`tenant_rate_limited`, `sensor_rate_limited`: a burst of
+claims, or a runaway caller), `clock_skew` (the API's and the signer's
+clocks disagree; check NTP on the host) or malformed statements (a bug: open
+an issue with the reason). Refused jobs wait and are signed once the cause
+is gone.
+
+### SignerLedgerChangeRefused
+
+The signer refused a scope change: a widening that did not meet its
+approval rule (fewer approvals than the organization's policy or
+`SIGNER_LEDGER_MIN_APPROVALS`, the requester approving their own change, a
+t2 entry without approval) or a malformed change. The change was not saved
+and the user got `SCOPE_LEDGER_REFUSED`. The API log line "SECURITY: the
+job signer refused a scope change" has the reason. If the scope service's
+policy allowed the change, the two disagree: check
+`SIGNER_LEDGER_MIN_APPROVALS` and the organization's approval setting.
 
 ### LoginFailureSpike
 
