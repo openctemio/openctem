@@ -34,7 +34,7 @@ func TestComponentRepository_ListSBOMEntries(t *testing.T) {
 
 	newTenant := func(name string) shared.ID {
 		id := shared.NewID()
-		mustExec(t, db, `INSERT INTO tenants (id, name, slug) VALUES ($1,$2,$3)`, id.String(), name, name+"-"+id.String()[:8])
+		mustExec(t, db, `INSERT INTO tenants (id, name, slug) VALUES ($1,$2,$3)`, id.String(), name, name+"-"+id.String()[28:])
 		t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id=$1`, id.String()) })
 		return id
 	}
@@ -46,7 +46,7 @@ func TestComponentRepository_ListSBOMEntries(t *testing.T) {
 	newComponent := func(name, version string) shared.ID {
 		id := shared.NewID()
 		mustExec(t, db, `INSERT INTO components (id, purl, name, version, ecosystem, vulnerability_count) VALUES ($1,$2,$3,$4,'npm',1)`,
-			id.String(), "pkg:npm/"+name+"@"+version+"-"+id.String()[:8], name, version)
+			id.String(), "pkg:npm/"+name+"@"+version+"-"+id.String()[28:], name, version)
 		t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM components WHERE id=$1`, id.String()) })
 		return id
 	}

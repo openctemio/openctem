@@ -147,7 +147,7 @@ func TestFindingImport_VEXDocument_DB(t *testing.T) {
 	ih := newImportHarness(t, ingest.SourceResolveEnforce)
 	ctx := context.Background()
 	compID := shared.NewID()
-	purl := "pkg:golang/example.com/libexample@v1.4.2-" + compID.String()[:8]
+	purl := "pkg:golang/example.com/libexample@v1.4.2-" + compID.String()[28:]
 	if _, err := ih.db.ExecContext(ctx, `INSERT INTO components (id, purl, name, version, ecosystem) VALUES ($1, $2, 'libexample', 'v1.4.2', 'go')`, compID, purl); err != nil {
 		t.Fatal(err)
 	}

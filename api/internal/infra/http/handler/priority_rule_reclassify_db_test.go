@@ -68,7 +68,7 @@ func TestPriorityRuleHandler_MutationsEnqueueReclassify(t *testing.T) {
 	userID := shared.NewID()
 	if _, err := db.ExecContext(ctx,
 		`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
-		tenantID.String(), "reclassify-test", "reclassify-test-"+tenantID.String()[:8]); err != nil {
+		tenantID.String(), "reclassify-test", "reclassify-test-"+tenantID.String()); err != nil {
 		t.Fatalf("seed tenant: %v", err)
 	}
 	t.Cleanup(func() {
