@@ -742,6 +742,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/asset-lifecycle/**': {
     permission: Permission.TeamUpdate,
   },
+
+  // Vulnerability matching policy (RFC-066): owners and admins.
+  '/settings/vulnerability-matching': {
+    permission: Permission.TeamUpdate,
+  },
 }
 
 /**

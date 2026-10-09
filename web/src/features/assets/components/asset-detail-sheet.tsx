@@ -25,6 +25,7 @@ import {
 } from '@/features/shared'
 import { AssetStatusBadge, LifecycleSnoozeMenu } from '@/features/asset-lifecycle'
 import { AssetFindings } from './asset-findings'
+import { AssetSoftwareTab } from '@/features/vuln-matching'
 import { TimelineSection, TechnicalDetailsSection, TagsSection } from './sheet-sections'
 import { AssetMergeHistory } from './asset-merge-history'
 import { AssetIdentitySections } from './asset-identity-sections'
@@ -253,6 +254,8 @@ export function AssetDetailSheet<T extends Asset>({
           },
         ]
       : []),
+    // What the asset runs and the CVEs its versions fall in (RFC-066).
+    { value: 'software', label: 'Software' },
     ...(showFindingsTab
       ? [
           {
@@ -433,6 +436,8 @@ export function AssetDetailSheet<T extends Asset>({
             onNavigateToAsset={onNavigateToAsset}
           />
         )}
+
+        {tab === 'software' && <AssetSoftwareTab assetId={asset.id} />}
 
         {tab === 'findings' && <AssetFindings assetId={asset.id} assetName={asset.name} />}
 
