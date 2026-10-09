@@ -2190,6 +2190,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		accesscontrol.WithRoleMembershipReader(s.MembershipCache),
 		accesscontrol.WithRoleMembershipCacheInvalidator(s.MembershipCache),
 	)
+	// Team role bindings (decisions G1-G12): teams hand their members custom
+	// roles under the role service's grant ceiling and step-up gate.
+	if s.Group != nil {
+		s.Group.SetRoleBindings(repos.GroupRoleBinding, s.Role)
+	}
 
 	// Bound every oct_ key by what its user holds now, not at mint time.
 	if s.APIKey != nil {
