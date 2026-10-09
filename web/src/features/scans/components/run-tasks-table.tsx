@@ -12,6 +12,7 @@ import type { RunTask, RunTaskPage } from '@/lib/api/generated'
 import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs } from '@/features/scans/lib/run-display'
 import { RunTaskLogsDialog } from '@/features/scans/components/run-task-logs-dialog'
+import { holdText } from '@/features/scan-windows'
 
 /**
  * Who runs a task: "Platform scanning" (never a platform sensor's name), the
@@ -32,11 +33,15 @@ const RELEASED_PREFIX = 'released by sensor'
  * The line under a task's status. A queued task that its sensor handed back
  * (busy host, politeness, draining) carries the sensor's reason in its
  * message: that is why it waits, not an error, so it reads as information.
- * Any other message is the task's error.
+ * A queued task that waits for its scan window says which window and when
+ * it opens (window_hold, RFC-067). Any other message is the task's error.
  */
 export function taskStatusNote(
-  task: Pick<RunTask, 'status' | 'error_message'>
+  task: Pick<RunTask, 'status' | 'error_message' | 'window_hold'>
 ): { kind: 'waiting' | 'error'; text: string } | null {
+  if (task.status === 'queued' && task.window_hold) {
+    return { kind: 'waiting', text: holdText(task.window_hold) }
+  }
   const msg = task.error_message?.trim()
   if (!msg) return null
   if (task.status === 'queued' && msg.toLowerCase().startsWith(RELEASED_PREFIX)) {
