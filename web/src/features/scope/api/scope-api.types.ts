@@ -52,6 +52,8 @@ export interface CheckScopeInput {
   targets: string[]
   sensor_preference?: 'auto' | 'tenant' | 'platform'
   tier?: 0 | 1 | 2
+  /** Without tier: check at the tier a scan with this scanner probes at (server-side). */
+  scanner_name?: string
 }
 
 // ============================================
