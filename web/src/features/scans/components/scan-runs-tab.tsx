@@ -11,7 +11,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { useSWRConfig } from 'swr'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 
 import {
