@@ -20,6 +20,7 @@ const (
 	ReasonMissingTool    = "missing_tool"
 	ReasonBadDigest      = "bad_payload_digest"
 	ReasonBadTargets     = "bad_targets"
+	ReasonBadTemplates   = "bad_templates"
 	ReasonBadLeaseEpoch  = "bad_lease_epoch"
 	ReasonClockSkew      = "clock_skew"
 	ReasonBadExpiry      = "bad_expiry"
@@ -88,6 +89,9 @@ func validate(raw []byte, now time.Time) (*jobsign.Statement, *refusal) {
 	if r := validateTargets(st.Targets, present["targets"]); r != nil {
 		return st, r
 	}
+	if r := validateTemplates(st.Templates, present["templates"]); r != nil {
+		return st, r
+	}
 	if d := st.IssuedAt.Sub(now); d > jobsign.MaxClockSkew || d < -jobsign.MaxClockSkew {
 		return st, refuse(http.StatusBadRequest, ReasonClockSkew, "issued_at is more than %s from the signer clock", jobsign.MaxClockSkew)
 	}
@@ -108,6 +112,23 @@ func validateTargets(targets []string, raw json.RawMessage) *refusal {
 	for i, t := range targets {
 		if t == "" || len(t) > jobsign.MaxTargetBytes {
 			return refuse(http.StatusBadRequest, ReasonBadTargets, "target %d is empty or longer than %d bytes", i, jobsign.MaxTargetBytes)
+		}
+	}
+	return nil
+}
+
+// validateTemplates checks the custom template digests: absent when the
+// job carries none, otherwise 1 to jobsign.MaxTemplates digests.
+func validateTemplates(templates []string, raw json.RawMessage) *refusal {
+	if raw != nil && len(templates) == 0 {
+		return refuse(http.StatusBadRequest, ReasonBadTemplates, "templates must be left out when the job carries none")
+	}
+	if len(templates) > jobsign.MaxTemplates {
+		return refuse(http.StatusBadRequest, ReasonBadTemplates, "more than %d templates", jobsign.MaxTemplates)
+	}
+	for i, d := range templates {
+		if !jobsign.ValidDigest(d) {
+			return refuse(http.StatusBadRequest, ReasonBadTemplates, "template %d must be sha256:<64 lower-case hex>", i)
 		}
 	}
 	return nil

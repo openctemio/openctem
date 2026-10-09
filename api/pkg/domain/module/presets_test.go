@@ -144,50 +144,6 @@ func TestPresetsIncludeCore(t *testing.T) {
 	}
 }
 
-// TestPresetsIncludeMandatory — every preset must auto-include the
-// "operational essentials" tier (notification config, integrations
-// baseline, RBAC groups, api_keys). ResolvePresetModules guarantees
-// this — guard against drift if MandatoryModuleIDs ever changes.
-func TestPresetsIncludeMandatory(t *testing.T) {
-	for _, p := range ModulePresets {
-		resolved := ResolvePresetModules(&p)
-		for mandID := range MandatoryModuleIDs {
-			if !resolved[mandID] {
-				t.Errorf("preset %q does not include mandatory module %s",
-					p.ID, mandID)
-			}
-		}
-	}
-}
-
-// TestMandatoryModulesExistInCatalog — every ID in MandatoryModuleIDs
-// must be a real catalogue entry. A typo or rename would silently
-// break every preset apply.
-func TestMandatoryModulesExistInCatalog(t *testing.T) {
-	cat := knownModuleIDs()
-	for id := range MandatoryModuleIDs {
-		// Sub-modules (e.g. integrations.notifications) are implicitly
-		// known if their parent is in the catalogue.
-		if i := indexOfDot(id); i > 0 {
-			if cat[id[:i]] {
-				continue
-			}
-		}
-		if !cat[id] {
-			t.Errorf("MandatoryModuleIDs references unknown module: %s", id)
-		}
-	}
-}
-
-func indexOfDot(s string) int {
-	for i, r := range s {
-		if r == '.' {
-			return i
-		}
-	}
-	return -1
-}
-
 // TestFindPreset_Hit — sanity check on the lookup helper.
 func TestFindPreset_Hit(t *testing.T) {
 	p := FindPreset("vm_essentials")
@@ -214,12 +170,12 @@ func TestDefaultPresetExists(t *testing.T) {
 	}
 }
 
-// TestMinimalPresetOnlyCoreAndMandatory — the "minimal" preset is
+// TestMinimalPresetOnlyCore — the "minimal" preset is
 // supposed to keep its EnabledModules empty so it relies entirely on
-// the auto-included tiers (core + mandatory). Drift here (someone
+// the auto-included core tier. Drift here (someone
 // adds a feature module "because it's useful") would turn the
 // sandbox preset into an unintentional default.
-func TestMinimalPresetOnlyCoreAndMandatory(t *testing.T) {
+func TestMinimalPresetOnlyCore(t *testing.T) {
 	p := FindPreset("minimal")
 	if p == nil {
 		t.Fatal("minimal preset missing")
@@ -229,13 +185,13 @@ func TestMinimalPresetOnlyCoreAndMandatory(t *testing.T) {
 	}
 	resolved := ResolvePresetModules(p)
 	for id := range resolved {
-		if CoreModuleIDs[id] || MandatoryModuleIDs[id] {
+		if CoreModuleIDs[id] {
 			continue
 		}
-		// Sub-modules of a mandatory parent are OK — they're pulled
+		// Sub-modules of a core parent are OK — they're pulled
 		// in by sub-module inheritance in service.buildPresetDiff,
 		// not by ResolvePresetModules. But ResolvePresetModules also
 		// pulls hard transitive deps; those are fine too.
-		t.Errorf("minimal preset resolved unexpected non-core, non-mandatory module: %s", id)
+		t.Errorf("minimal preset resolved unexpected non-core module: %s", id)
 	}
 }

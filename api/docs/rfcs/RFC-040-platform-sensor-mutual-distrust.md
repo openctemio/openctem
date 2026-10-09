@@ -10,8 +10,16 @@
 > socket, per-sensor `seq`, hash-chained signing log) and claim-time signed
 > jobs on v2 and v3 are built, off by default (`SIGNER_SOCKET`):
 > [architecture/job-signing.md](../architecture/job-signing.md). Sensor
-> verification (sdk-go), the offline root key set, the scope ledger and
-> template signing by the signer are next.
+> verification is in sdk-go (`pkg/jobsig`). P1.5 (K3, point 2): the offline
+> root (`openctem-signer root keygen`), the root-signed, versioned key set
+> that expires within 30 days (`openctem-signer keyset sign`,
+> `SIGNER_KEYSET_FILE`, hello `signed_jobs.keyset`) and its ceremony are
+> built; sensors pin the root (`SENSOR_JOB_SIGNING_ROOT` or at pairing).
+> P2 scope ledger (§11.5, 2026-10-09): the signer keeps its own ledger of
+> approved scope, fed by the scope service and checked at sign time
+> (`enforce` for new installs, `audit` for upgraded ones until the
+> bootstrap ceremony). Custom template versions are approved through the
+> ledger and listed by digest in the signed job (§11.5).
 > Scope: api (sensor gateway, signer, ingest pipeline, audit, detections) +
 > web (output encoding) + sdk-go (job verification, local policy, credential
 > providers, local audit) + sensor (`openctemio/sensor`) + helm-charts and
@@ -786,7 +794,7 @@ green and verified end to end against a real sensor, as in RFC-032 §8.
 | **P1 — authority outside the API** | `openctem-signer` with K1 custody and the offline root key set; DSSE job envelopes; sensor verification (sig, key set, ids, expiry, nonce, `seq`, lease epoch); `require_signed_jobs` for sensors with a pinned root; RFC-038 settings and RFC-034 egress policy signed by the same signer | api (new cmd), sdk-go, sensor | L | T1, T8, T9 |
 | | Sensor-local policy file v1 (§5.7) with manifest echo, the job log and the SIEM sink | sdk-go, sensor, helm | M | T6–T11 |
 | | Sensor gateway as `SERVER_ROLE=sensor-gateway` with the `openctem_sensor_gw` DB role, Redis ACL user and Caddy sensor upstream/hostname; command-bound results enforced in the gateway; sealing moved to the core | api, gateway, helm | L | T3, T4 |
-| **P2 — people and data** | Two-person rule for widening (API-recorded approvals) and the signer's ledger | api, web | M | T6, T7 |
+| **P2 — people and data** | Two-person rule for widening (API-recorded approvals) and the signer's ledger. **Built** (§11.5): the ledger in the signer's state, the scope service's hook, the approval rule of RFC-054 §7/§12 checked by the signer, sign-time enforcement, detection A10 | api, web | M | T6, T7 |
 | | Credential references with Vault and CyberArk providers on the sensor | api, sdk-go, sensor, web | M | T8, T9 credentials |
 | | Ingest worker as a separate sandboxed process; string normaliser; per-field caps; URL validation | api | M | T3, T5 |
 | | Detections A1–A12 | api | M | all, detection |
@@ -1022,5 +1030,67 @@ Each is tracked in [architecture/sensor-platform-trust.md](../architecture/senso
 | Q9 | Outbound-only | **Invariant** (§11.1), with a regression test in the sensor. |
 | Q3 (revised) | Sensor without a local policy file | **New installs fail closed**: network jobs are refused with `no_local_policy` and a clear reason, and custom templates and out-of-band callbacks are refused. Existing paired sensors keep working and report `policy=none`. The Sensors page and an alert flag them, with a one-click "generate policy" built from the organization's scope. Q3 (a) stays for existing installs only, as an upgrade path. |
 | Q10 | Platform TLS identity on the sensor | **Pinned at pairing.** The CA/SPKI fingerprint is stored in the identity and emitted in every install snippet. The v3 CA bundle is fetched only over the pinned channel and is sticky. An x509 failure never falls back to another binding. Unpinned sensors report `pin=none` and are flagged. |
-| Q11 | Job signing | **Build §5.6 now** with a signer key separate from the API. It is never derived from `APP_ENCRYPTION_KEY`. Template signing moves to the signer. The sensor verifies before execution, and new enrollments require signed jobs. Platform side built (signer process, K1 custody, claim-time envelopes, off by default): [job-signing.md](../architecture/job-signing.md); sdk-go verification next. |
+| Q11 | Job signing | **Build §5.6 now** with a signer key separate from the API. It is never derived from `APP_ENCRYPTION_KEY`. Template signing moves to the signer. The sensor verifies before execution, and new enrollments require signed jobs. Platform side built (signer process, K1 custody, claim-time envelopes, off by default): [job-signing.md](../architecture/job-signing.md); sdk-go verifies (sdk-go#226); the offline root and the expiring, versioned key set are built (P1.5); the signer's scope ledger is built (§11.5). |
 | Q12 | Unconfined sandbox | `auto` must not run unconfined silently. `network_enforced=false` is reported prominently: on the manifest, as a Sensors page warning and as an alert. Compose and Helm ship the seccomp profile by default. The forwarder re-checks every resolved address at connect time, refusing link-local, loopback and private ranges unless the zone or policy allows them. When unconfined, custom templates are refused and nuclei runs with local-network access restricted. |
+
+### 11.5 The signer's scope ledger (P2, 2026-10-09)
+
+§5.6 points 4 and 5, built as the first part of P2. Format, ceremony and
+operation: [job-signing.md, "Scope ledger"](../architecture/job-signing.md#scope-ledger).
+
+**What it is.** Per organization, the scope entries in effect (type,
+pattern, tier ceiling, expiry) and the target exclusions, kept in the
+signer's state directory (`ledger.log`, hash-chained like the signing log;
+the ledger is its replay). The application database is never read. At sign
+time every target must be covered by an unexpired entry at the tool's tier
+(`stage.ProbeTier`, compiled into the signer) and not excluded; otherwise
+the signer refuses (`out_of_ledger`, `tier_exceeds_ledger`,
+`target_excluded`), the API fails the command with `SIGNER_REFUSED`, and
+detection A10 (`SignerOutOfLedger`) fires. Matching is the API's own
+(`pkg/domain/scope`: `*.x` covers `x`, CIDR containment, exclusions win);
+passive tools and internal targets need no entry, as in RFC-054 §4.2.
+
+**How it changes.** Only three ways: the scope service's `apply` (one hook,
+`commitEntry`/`commitExclusion`; a widening is accepted by the signer
+before it is saved, a narrowing is saved first and never blocked), a
+periodic `sync` from the database that can only narrow, and the operator's
+`openctem-signer ledger import` (signer stopped; into a non-empty ledger
+only with `-replace`). The signer classifies each change itself; the
+caller does not label it.
+
+**Approvals (amends point 5).** The approval count is the organization's
+policy as RFC-054 §7 and §12 decide it (`scope.Service`: 0, 1 or 2,
+never 0 for t2, the sole-owner self-approval of A2), not a fixed "two
+people": point 5's two-person rule is RFC-054 S3's setting. The signer
+checks the rule again on what the API recorded: distinct approvers, the
+requester's own approval never counts (a self-approval under A2 counts
+once), at least one for a t2 entry, and an operator floor
+`SIGNER_LEDGER_MIN_APPROVALS` (0 to 2) that no tenant setting lowers.
+Narrowing needs no approval. There is no second approver model and no
+tenant switch.
+
+**Modes.** `SIGNER_LEDGER=enforce|audit|off`. Unset: `enforce` for a new
+installation, `audit` (sign, record `ledger_audit`, warn) for one whose
+signer signed before the ledger existed, `enforce` after an import. This
+mirrors Q3 revised: new installs fail closed, existing ones get an upgrade
+path (the export/import ceremony).
+
+**Custom templates (§5.8).** A template version is approved for sensors
+like a scope widening (the same policy count and rule, never its author)
+and recorded in the ledger by digest; the job statement lists the digests
+of the job's custom templates (`templates`), the signer refuses any it did
+not record (`template_not_in_ledger`), and a sensor that verifies signed
+jobs trusts the templates through the envelope. The per-tenant template
+key the API derives remains only for sensors without signed jobs and is
+removed once signed jobs are required.
+
+**Residual risk until P3.** Approvals are as the API recorded them: an
+attacker in the API process can claim approvals and widen (recorded in the
+ledger log; bounded by the operator floor). The ledger still stops a
+database writer (T8), every path that bypasses the scope service, and every
+job outside approved scope (T9 can only run what people approved, or what
+it can make look approved). Internal names and private addresses are left
+to zones and the sensor-local policy. P3: approvals as WebAuthn assertions
+over the change digest verified by the signer; the signed scope document
+checked by the sensor next to the job (two repositories); zone ranges, time
+windows and distinct-target ceilings in the ledger.

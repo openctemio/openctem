@@ -139,6 +139,7 @@ Besides the Go runtime and process metrics:
 | `openctem_automation_runs_total`, `openctem_automations_auto_paused_total` | status | Finished automation runs; automations paused after repeated failures. |
 | `openctem_web_client_errors_total` | kind | Errors reported by browsers (when the web reporter is enabled). |
 | `openctem_sensors`, `openctem_sensors_config_health`, `openctem_sensors_sdk` | kind (platform, tenant), health / config_health / status | Active sensors, platform-wide counts. |
+| `openctem_sensors_unhardened` | kind (policy_none, pin_none, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |
 | `openctem_commands`, `openctem_command_oldest_pending_seconds` | state | Sensor command queue. |
 | `openctem_scan_runs_open`, `openctem_scan_runs_past_deadline` | | Open scan runs and those the reaper should have ended. |
 | `openctem_outbox_entries`, `openctem_outbox_oldest_pending_seconds` | status | Notification outbox. |
@@ -149,6 +150,8 @@ Besides the Go runtime and process metrics:
 | `ingest_queue_depth`, `ingest_jobs_processed_total`, `ingest_v2_requests_total` | outcome … | Result ingestion. |
 | `openctem_controller_reconcile_errors_total`, `openctem_controller_last_reconcile_timestamp_seconds` | controller | Background controllers. |
 | `openctem_security_audit_chain_breaks_total` | reason | New breaks of the audit log hash chain. |
+| `openctem_signer_refusals_total` | reason (`out_of_ledger`, `tier_exceeds_ledger`, `target_excluded`, rate limits, malformed statements) | Job statements the job signer refused (RFC-040 §5.11 A10). |
+| `openctem_signer_ledger_feed_total` | kind (widen, narrow, sync), outcome (applied, refused, unavailable) | Scope changes sent to the job signer's ledger. |
 | `openctem_redis_*` | | Redis client and rate limiters. |
 
 ## Test the alert path
@@ -298,6 +301,43 @@ Sensors report a configuration problem (impaired or blocked): missing tools,
 capabilities the platform ignored, a local policy refusing work. The sensor's
 Configuration tab lists the checks that fail.
 
+### SensorsUnhardened
+
+Tenant sensors have run unhardened for a day. They keep working (existing
+installs are not cut off); each `kind` is one reason, and the Sensors page
+shows a warning on each flagged sensor and a Security posture block in its
+details:
+
+- `policy_none`: no local policy, and none required (an install paired before
+  policies were required), or a sensor whose SDK reports none. The network
+  owner installs one from the Local policy tab of the install commands
+  (`SENSOR_LOCAL_POLICY`).
+- `pin_none`: the sensor's HTTPS client trusts the system trust store instead
+  of a pinned platform CA. Set `SENSOR_CA_FINGERPRINT` (shown in the install
+  commands).
+- `network_unenforced`: tools run without network confinement. Run the sensor
+  with `SENSOR_SANDBOX_NETWORK=required` and the shipped seccomp profile.
+- `bearer_key`: the sensor authenticates with a bearer key instead of a
+  key-bound identity. Re-pair it:
+  1. On the sensor host, stop the sensor and keep its state directory (or
+     start from an empty one).
+  2. Start it with only the platform URL and no API key
+     (`API_URL=https://<platform>`, no `API_KEY`); it prints a pairing code
+     and a fingerprint.
+  3. In the console, open the Sensors page, pair a sensor and choose "Enter
+     code": enter the code, check that the fingerprint matches, and approve
+     (step-up). Approving a re-pair of an existing sensor replaces its key:
+     its bearer key and any earlier keys are revoked.
+  4. New pairings also pin the platform CA and require a local policy, so
+     install one before the sensor takes network jobs (the Local policy tab
+     of the install commands).
+
+Alertmanager sends this alert once per `kind` and repeats it every 24 hours,
+not on the warning schedule.
+
+The posture is what the sensor reports about itself: the platform shows it and
+alerts on it but never relaxes a check because of it.
+
 ### SensorSdkUnsupported
 
 Sensors run an SDK older than `SENSOR_SDK_MIN_VERSION`. Upgrade them (install
@@ -354,6 +394,52 @@ The audit log hash chain has a new break: an audit entry was changed or
 removed outside the API. **Treat it as a security incident**: keep the
 database as is (snapshot), find who had database access, compare with the
 latest backup. The admin console shows the break.
+
+### SignerOutOfLedger
+
+**Security, critical (RFC-040 §5.11 A10).** The job signer refused a job
+whose target is outside its scope ledger (`out_of_ledger`), above the tier
+people approved (`tier_exceeds_ledger`) or excluded (`target_excluded`), or
+whose custom template is not a version people approved
+(`template_not_in_ledger`). An
+honest API never asks for one: the command was written into the database
+outside the API, a scope change never reached the signer, or the API is
+compromised. The command failed with `SIGNER_REFUSED` and its detail names
+the target.
+
+1. Find the command: the API log line "command not signed" (outcome
+   `refused`) and the signer's own log (`docker compose logs signer`, "job
+   statement refused") give the organization, sensor and command ids.
+2. Compare with the organization's Scoping page and with
+   `openctem-signer ledger show`: is the target in effect in the database
+   but not in the ledger? Then a widening did not reach the signer (see
+   [SignerLedgerChangeRefused](#signerledgerchangerefused)); approve the
+   entry again, which sends it.
+3. If nobody created that command or scope through the console or the API,
+   treat it as a security incident: keep the database as is (snapshot),
+   check who had database or API host access, and keep the signer in
+   `enforce`. Never import a snapshot to "fix" it without the two-person
+   review in [job-signing.md](../architecture/job-signing.md#bootstrap-and-restore-the-ceremony).
+
+### SignerRefusals
+
+The signer refused more than five jobs in 15 minutes for another reason:
+rate ceilings (`tenant_rate_limited`, `sensor_rate_limited`: a burst of
+claims, or a runaway caller), `clock_skew` (the API's and the signer's
+clocks disagree; check NTP on the host) or malformed statements (a bug: open
+an issue with the reason). Refused jobs wait and are signed once the cause
+is gone.
+
+### SignerLedgerChangeRefused
+
+The signer refused a scope change: a widening that did not meet its
+approval rule (fewer approvals than the organization's policy or
+`SIGNER_LEDGER_MIN_APPROVALS`, the requester approving their own change, a
+t2 entry without approval) or a malformed change. The change was not saved
+and the user got `SCOPE_LEDGER_REFUSED`. The API log line "SECURITY: the
+job signer refused a scope change" has the reason. If the scope service's
+policy allowed the change, the two disagree: check
+`SIGNER_LEDGER_MIN_APPROVALS` and the organization's approval setting.
 
 ### LoginFailureSpike
 

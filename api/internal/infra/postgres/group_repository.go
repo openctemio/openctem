@@ -312,8 +312,8 @@ func (r *GroupRepository) GetByExternalID(ctx context.Context, tenantID shared.I
 // AddMember adds a member to a group.
 func (r *GroupRepository) AddMember(ctx context.Context, member *group.Member) error {
 	query := `
-		INSERT INTO group_members (group_id, user_id, role, joined_at, added_by)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO group_members (group_id, user_id, role, joined_at, added_by, expires_at, expiry_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))
 	`
 
 	var addedBy sql.NullString
@@ -327,6 +327,8 @@ func (r *GroupRepository) AddMember(ctx context.Context, member *group.Member) e
 		member.Role().String(),
 		member.JoinedAt(),
 		addedBy,
+		member.ExpiresAt(),
+		member.ExpiryReason(),
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "group_members_pkey") {
@@ -341,7 +343,7 @@ func (r *GroupRepository) AddMember(ctx context.Context, member *group.Member) e
 // GetMember retrieves a member by group and user ID.
 func (r *GroupRepository) GetMember(ctx context.Context, groupID, userID shared.ID) (*group.Member, error) {
 	query := `
-		SELECT group_id, user_id, role, joined_at, added_by
+		SELECT group_id, user_id, role, joined_at, added_by, expires_at, COALESCE(expiry_reason, '')
 		FROM group_members
 		WHERE group_id = $1 AND user_id = $2
 	`
@@ -353,7 +355,7 @@ func (r *GroupRepository) GetMember(ctx context.Context, groupID, userID shared.
 func (r *GroupRepository) UpdateMember(ctx context.Context, member *group.Member) error {
 	query := `
 		UPDATE group_members
-		SET role = $3
+		SET role = $3, expires_at = $4, expiry_reason = NULLIF($5, '')
 		WHERE group_id = $1 AND user_id = $2
 	`
 
@@ -361,6 +363,8 @@ func (r *GroupRepository) UpdateMember(ctx context.Context, member *group.Member
 		member.GroupID().String(),
 		member.UserID().String(),
 		member.Role().String(),
+		member.ExpiresAt(),
+		member.ExpiryReason(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update member: %w", err)
@@ -400,7 +404,7 @@ func (r *GroupRepository) RemoveMember(ctx context.Context, groupID, userID shar
 // ListMembers lists all members of a group.
 func (r *GroupRepository) ListMembers(ctx context.Context, groupID shared.ID) ([]*group.Member, error) {
 	query := `
-		SELECT group_id, user_id, role, joined_at, added_by
+		SELECT group_id, user_id, role, joined_at, added_by, expires_at, COALESCE(expiry_reason, '')
 		FROM group_members
 		WHERE group_id = $1
 		ORDER BY joined_at ASC
@@ -445,7 +449,8 @@ func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID s
 		SELECT
 			gm.group_id, gm.user_id, gm.role, gm.joined_at, gm.added_by,
 			u.email, u.name, u.avatar_url, u.last_login_at,
-			COALESCE(ab.name, ab.email, '') AS added_by_name
+			COALESCE(ab.name, ab.email, '') AS added_by_name,
+			gm.expires_at, COALESCE(gm.expiry_reason, '')
 		FROM group_members gm
 		INNER JOIN users u ON u.id = gm.user_id
 		LEFT JOIN users ab ON ab.id = gm.added_by
@@ -470,12 +475,14 @@ func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID s
 			avatarURL                      sql.NullString
 			lastLoginAt                    sql.NullTime
 			addedByName                    string
+			expiresAt                      sql.NullTime
+			expiryReason                   string
 		)
 
 		if err := rows.Scan(
 			&groupIDStr, &userIDStr, &roleStr, &joinedAt, &addedByStr,
 			&email, &name, &avatarURL, &lastLoginAt,
-			&addedByName,
+			&addedByName, &expiresAt, &expiryReason,
 		); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan member with user: %w", err)
 		}
@@ -498,6 +505,7 @@ func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID s
 		}
 
 		member := group.ReconstituteMember(groupID, userID, role, joinedAt, addedBy)
+		member.RestoreExpiry(memberExpiry(expiresAt), expiryReason)
 		members = append(members, &group.MemberWithUser{
 			Member:      member,
 			Email:       email,
@@ -906,9 +914,11 @@ func (r *GroupRepository) scanMember(row *sql.Row) (*group.Member, error) {
 		groupIDStr, userIDStr, roleStr string
 		joinedAt                       time.Time
 		addedByStr                     sql.NullString
+		expiresAt                      sql.NullTime
+		expiryReason                   string
 	)
 
-	err := row.Scan(&groupIDStr, &userIDStr, &roleStr, &joinedAt, &addedByStr)
+	err := row.Scan(&groupIDStr, &userIDStr, &roleStr, &joinedAt, &addedByStr, &expiresAt, &expiryReason)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, group.ErrMemberNotFound
@@ -928,7 +938,9 @@ func (r *GroupRepository) scanMember(row *sql.Row) (*group.Member, error) {
 		}
 	}
 
-	return group.ReconstituteMember(groupID, userID, role, joinedAt, addedBy), nil
+	m := group.ReconstituteMember(groupID, userID, role, joinedAt, addedBy)
+	m.RestoreExpiry(memberExpiry(expiresAt), expiryReason)
+	return m, nil
 }
 
 func (r *GroupRepository) scanMemberRow(rows *sql.Rows) (*group.Member, error) {
@@ -936,9 +948,11 @@ func (r *GroupRepository) scanMemberRow(rows *sql.Rows) (*group.Member, error) {
 		groupIDStr, userIDStr, roleStr string
 		joinedAt                       time.Time
 		addedByStr                     sql.NullString
+		expiresAt                      sql.NullTime
+		expiryReason                   string
 	)
 
-	err := rows.Scan(&groupIDStr, &userIDStr, &roleStr, &joinedAt, &addedByStr)
+	err := rows.Scan(&groupIDStr, &userIDStr, &roleStr, &joinedAt, &addedByStr, &expiresAt, &expiryReason)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan member: %w", err)
 	}
@@ -955,5 +969,57 @@ func (r *GroupRepository) scanMemberRow(rows *sql.Rows) (*group.Member, error) {
 		}
 	}
 
-	return group.ReconstituteMember(groupID, userID, role, joinedAt, addedBy), nil
+	m := group.ReconstituteMember(groupID, userID, role, joinedAt, addedBy)
+	m.RestoreExpiry(memberExpiry(expiresAt), expiryReason)
+	return m, nil
+}
+
+func memberExpiry(t sql.NullTime) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	v := t.Time.UTC()
+	return &v
+}
+
+// ListExpiredMembers returns memberships whose end date is at or before now,
+// across organizations, for the expiry controller (no caller tenant: it is
+// never reachable from a request).
+func (r *GroupRepository) ListExpiredMembers(ctx context.Context, now time.Time, limit int) ([]group.ExpiredMember, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	query := `
+		SELECT g.tenant_id, gm.group_id, g.name, gm.user_id, gm.expires_at, COALESCE(gm.expiry_reason, '')
+		FROM group_members gm
+		JOIN groups g ON g.id = gm.group_id
+		WHERE gm.expires_at IS NOT NULL AND gm.expires_at <= $1
+		ORDER BY gm.expires_at ASC
+		LIMIT $2
+	`
+	rows, err := r.db.QueryContext(ctx, query, now, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list expired members: %w", err)
+	}
+	defer rows.Close()
+	var out []group.ExpiredMember
+	for rows.Next() {
+		var tid, gid, uid, name, reason string
+		var at time.Time
+		if err := rows.Scan(&tid, &gid, &name, &uid, &at, &reason); err != nil {
+			return nil, fmt.Errorf("failed to scan expired member: %w", err)
+		}
+		e := group.ExpiredMember{GroupName: name, ExpiresAt: at, Reason: reason}
+		if e.TenantID, err = shared.IDFromString(tid); err != nil {
+			return nil, fmt.Errorf("expired member tenant id: %w", err)
+		}
+		if e.GroupID, err = shared.IDFromString(gid); err != nil {
+			return nil, fmt.Errorf("expired member group id: %w", err)
+		}
+		if e.UserID, err = shared.IDFromString(uid); err != nil {
+			return nil, fmt.Errorf("expired member user id: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
