@@ -295,7 +295,13 @@ type Filter struct {
 	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
-	BusinessUnitIDs      []string   // Filter by business_units membership (business_unit_assets)
+	BusinessUnitIDs []string // Filter by business_units membership (business_unit_assets)
+	// AssetGroupIDs keeps the members of any of these asset groups of the
+	// tenant (asset_group_members).
+	AssetGroupIDs []string
+	// OwnerIDs keeps the assets owned by any of these users or groups of
+	// the tenant (asset_owners).
+	OwnerIDs             []string
 	IDs                  []string   // Only these assets (a batch lookup by id; data scope still applies)
 	UnderDomains         []string   // Names equal to or below these DNS names (example.com, *.example.com)
 	HasOwner             *bool      // Filter assets with/without an assigned owner (asset_owners)
@@ -511,6 +517,18 @@ func (f Filter) WithIDs(ids ...string) Filter {
 	return f
 }
 
+// WithAssetGroupIDs keeps the members of these asset groups.
+func (f Filter) WithAssetGroupIDs(ids ...string) Filter {
+	f.AssetGroupIDs = ids
+	return f
+}
+
+// WithOwnerIDs keeps the assets owned by these users or groups.
+func (f Filter) WithOwnerIDs(ids ...string) Filter {
+	f.OwnerIDs = ids
+	return f
+}
+
 // WithBusinessUnitIDs filters by business_units membership.
 func (f Filter) WithBusinessUnitIDs(ids ...string) Filter {
 	f.BusinessUnitIDs = ids
@@ -599,6 +617,8 @@ func (f Filter) IsEmpty() bool {
 		f.DataScopeUserID == nil &&
 		len(f.PropertiesFilter) == 0 &&
 		len(f.BusinessUnitIDs) == 0 &&
+		len(f.AssetGroupIDs) == 0 &&
+		len(f.OwnerIDs) == 0 &&
 		len(f.IDs) == 0 &&
 		len(f.UnderDomains) == 0 &&
 		f.HasOwner == nil &&
