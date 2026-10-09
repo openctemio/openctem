@@ -22,7 +22,7 @@ import (
 )
 
 // The platform content pack API end to end (handler, service, Postgres
-// migration 001394, file storage): upload, channels, revocation with
+// migration 001444, file storage): upload, channels, revocation with
 // rollback, download. Route gating (admin roles, tenant permission) is
 // covered by the route tests. Requires DATABASE_URL.
 func TestPlatformContentPackAPI(t *testing.T) {
