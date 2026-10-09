@@ -19,6 +19,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
+import { SheetBody, SheetFooter, SheetForm } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -701,251 +702,253 @@ export function ScanWorkflowForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col">
-      <Tabs
-        value={currentStep}
-        onValueChange={(v) => setCurrentStep(v as WizardStep)}
-        className="flex flex-col"
-      >
-        <TabsList className="mb-4">
-          {WIZARD_STEPS.map((step) => (
-            <TabsTrigger
-              key={step.id}
-              value={step.id}
-              className="flex items-center gap-2 text-xs sm:text-sm"
-            >
-              {step.icon}
-              <span className="hidden sm:inline">{step.label}</span>
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        {/* Basics */}
-        <TabsContent value="basics" className="space-y-4 mt-0">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">
-                Workflow Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="name"
-                placeholder="e.g., Daily Security Scan"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className={errors.name ? 'border-destructive' : ''}
-              />
-              {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                placeholder="Brief description of what this workflow does..."
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Tags</Label>
-              <div className="flex flex-wrap gap-2 min-h-[32px]">
-                {tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="gap-1 py-1">
-                    <Tag className="h-3 w-3" />
-                    {tag}
-                    <button
-                      type="button"
-                      aria-label={`Remove tag ${tag}`}
-                      onClick={() => removeTag(tag)}
-                      className="ms-1 hover:text-destructive"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Add a tag and press Enter"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      addTag()
-                    }
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  aria-label="Add tag"
-                  onClick={addTag}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* Steps */}
-        <TabsContent value="steps" className="space-y-4 mt-0">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-medium">Workflow Steps</h3>
-              <p className="text-xs text-muted-foreground">
-                Choose what each step does and what it runs after. Steps of one stage run in
-                parallel. Drag a step onto another stage to move it there.
-              </p>
-            </div>
-            <Button type="button" variant="outline" size="sm" onClick={addStep}>
-              <Plus className="me-2 h-3 w-3" />
-              Add Step
-            </Button>
-          </div>
-
-          {errors.steps && <p className="text-xs text-destructive">{errors.steps}</p>}
-
-          {legacySteps.length > 0 && (
-            <div
-              role="status"
-              className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs"
-            >
-              <span>
-                {legacySteps.length} step{legacySteps.length > 1 ? 's use' : ' uses'} the old format
-                (a tool without its capability).
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                onClick={fixAllLegacy}
+    <SheetForm onSubmit={handleSubmit}>
+      <SheetBody>
+        <Tabs
+          value={currentStep}
+          onValueChange={(v) => setCurrentStep(v as WizardStep)}
+          className="flex flex-col"
+        >
+          <TabsList className="mb-4">
+            {WIZARD_STEPS.map((step) => (
+              <TabsTrigger
+                key={step.id}
+                value={step.id}
+                className="flex items-center gap-2 text-xs sm:text-sm"
               >
-                Fix all
+                {step.icon}
+                <span className="hidden sm:inline">{step.label}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {/* Basics */}
+          <TabsContent value="basics" className="space-y-4 mt-0">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">
+                  Workflow Name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="name"
+                  placeholder="e.g., Daily Security Scan"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className={errors.name ? 'border-destructive' : ''}
+                />
+                {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Brief description of what this workflow does..."
+                  rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tags</Label>
+                <div className="flex flex-wrap gap-2 min-h-[32px]">
+                  {tags.map((tag) => (
+                    <Badge key={tag} variant="secondary" className="gap-1 py-1">
+                      <Tag className="h-3 w-3" />
+                      {tag}
+                      <button
+                        type="button"
+                        aria-label={`Remove tag ${tag}`}
+                        onClick={() => removeTag(tag)}
+                        className="ms-1 hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Add a tag and press Enter"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addTag()
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="Add tag"
+                    onClick={addTag}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Steps */}
+          <TabsContent value="steps" className="space-y-4 mt-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium">Workflow Steps</h3>
+                <p className="text-xs text-muted-foreground">
+                  Choose what each step does and what it runs after. Steps of one stage run in
+                  parallel. Drag a step onto another stage to move it there.
+                </p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={addStep}>
+                <Plus className="me-2 h-3 w-3" />
+                Add Step
               </Button>
             </div>
-          )}
 
-          {report && (
-            <DraftIssuesPanel
-              report={report}
-              steps={steps}
-              onSelectStep={(key) =>
-                document.getElementById(`wf-step-${key}`)?.scrollIntoView({ block: 'center' })
-              }
-            />
-          )}
+            {errors.steps && <p className="text-xs text-destructive">{errors.steps}</p>}
 
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={[...plan.stages.flat(), ...unplaced].map((s) => s.id)}
-              strategy={rectSortingStrategy}
-            >
-              <ol className="@container space-y-4">
-                {plan.stages.map((stage, i) => (
-                  <li key={i} aria-labelledby={`form-stage-${i}`} className="space-y-2">
-                    <h4
-                      id={`form-stage-${i}`}
-                      className="text-xs font-semibold text-muted-foreground"
-                    >
-                      Stage {i + 1}
-                      {stage.length > 1 && ` · ${stage.length} steps run in parallel`}
-                      {i > 0 && ` · waits for Stage ${i}`}
-                    </h4>
-                    <div className={`grid gap-3 ${stage.length > 1 ? '@2xl:grid-cols-2' : ''}`}>
-                      {stage.map(renderCard)}
-                    </div>
-                  </li>
-                ))}
-                {unplaced.length > 0 && (
-                  <li className="space-y-2">
-                    <h4 className="text-xs font-semibold text-destructive">
-                      Not placed: these steps wait for each other in a loop
-                    </h4>
-                    <div className="grid gap-3 @2xl:grid-cols-2">{unplaced.map(renderCard)}</div>
-                  </li>
-                )}
-              </ol>
-            </SortableContext>
-          </DndContext>
-        </TabsContent>
+            {legacySteps.length > 0 && (
+              <div
+                role="status"
+                className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs"
+              >
+                <span>
+                  {legacySteps.length} step{legacySteps.length > 1 ? 's use' : ' uses'} the old
+                  format (a tool without its capability).
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={fixAllLegacy}
+                >
+                  Fix all
+                </Button>
+              </div>
+            )}
 
-        {/* Settings */}
-        <TabsContent value="settings" className="space-y-4 mt-0">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="wf-timeout" className="flex items-center gap-2 text-sm">
-                <Clock className="h-4 w-4" />
-                Timeout (seconds)
-              </Label>
-              <Input
-                id="wf-timeout"
-                type="number"
-                min={60}
-                max={86400}
-                value={timeoutSeconds}
-                onChange={(e) => setTimeoutSeconds(parseInt(e.target.value) || 3600)}
+            {report && (
+              <DraftIssuesPanel
+                report={report}
+                steps={steps}
+                onSelectStep={(key) =>
+                  document.getElementById(`wf-step-${key}`)?.scrollIntoView({ block: 'center' })
+                }
               />
+            )}
+
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={[...plan.stages.flat(), ...unplaced].map((s) => s.id)}
+                strategy={rectSortingStrategy}
+              >
+                <ol className="@container space-y-4">
+                  {plan.stages.map((stage, i) => (
+                    <li key={i} aria-labelledby={`form-stage-${i}`} className="space-y-2">
+                      <h4
+                        id={`form-stage-${i}`}
+                        className="text-xs font-semibold text-muted-foreground"
+                      >
+                        Stage {i + 1}
+                        {stage.length > 1 && ` · ${stage.length} steps run in parallel`}
+                        {i > 0 && ` · waits for Stage ${i}`}
+                      </h4>
+                      <div className={`grid gap-3 ${stage.length > 1 ? '@2xl:grid-cols-2' : ''}`}>
+                        {stage.map(renderCard)}
+                      </div>
+                    </li>
+                  ))}
+                  {unplaced.length > 0 && (
+                    <li className="space-y-2">
+                      <h4 className="text-xs font-semibold text-destructive">
+                        Not placed: these steps wait for each other in a loop
+                      </h4>
+                      <div className="grid gap-3 @2xl:grid-cols-2">{unplaced.map(renderCard)}</div>
+                    </li>
+                  )}
+                </ol>
+              </SortableContext>
+            </DndContext>
+          </TabsContent>
+
+          {/* Settings */}
+          <TabsContent value="settings" className="space-y-4 mt-0">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="wf-timeout" className="flex items-center gap-2 text-sm">
+                  <Clock className="h-4 w-4" />
+                  Timeout (seconds)
+                </Label>
+                <Input
+                  id="wf-timeout"
+                  type="number"
+                  min={60}
+                  max={86400}
+                  value={timeoutSeconds}
+                  onChange={(e) => setTimeoutSeconds(parseInt(e.target.value) || 3600)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Max time for a run of this workflow; a scan&apos;s own timeout wins
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="wf-parallel" className="text-sm">
+                  Max Parallel Steps
+                </Label>
+                <Input
+                  id="wf-parallel"
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={maxParallelSteps}
+                  onChange={(e) => setMaxParallelSteps(parseInt(e.target.value) || 3)}
+                />
+                <p className="text-xs text-muted-foreground">Steps running simultaneously</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm">Sensor Selection</Label>
+              <Select
+                value={sensorPreference}
+                onValueChange={(v) => setSensorPreference(v as ScanWorkflowSensorPreference)}
+              >
+                <SelectTrigger aria-label="Sensor selection">
+                  <SelectValue placeholder="Select preference" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SCAN_WORKFLOW_SENSOR_PREFERENCES.filter(
+                    // Platform scanning is a choice only where the organization
+                    // may use it (or the workflow already chose it).
+                    (pref) =>
+                      pref !== 'platform' || platformOffered || sensorPreference === 'platform'
+                  ).map((pref) => (
+                    <SelectItem key={pref} value={pref}>
+                      {SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS[pref]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
-                Max time for a run of this workflow; a scan&apos;s own timeout wins
+                {SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS[sensorPreference]}
               </p>
             </div>
+          </TabsContent>
+        </Tabs>
+      </SheetBody>
 
-            <div className="space-y-2">
-              <Label htmlFor="wf-parallel" className="text-sm">
-                Max Parallel Steps
-              </Label>
-              <Input
-                id="wf-parallel"
-                type="number"
-                min={1}
-                max={10}
-                value={maxParallelSteps}
-                onChange={(e) => setMaxParallelSteps(parseInt(e.target.value) || 3)}
-              />
-              <p className="text-xs text-muted-foreground">Steps running simultaneously</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-sm">Sensor Selection</Label>
-            <Select
-              value={sensorPreference}
-              onValueChange={(v) => setSensorPreference(v as ScanWorkflowSensorPreference)}
-            >
-              <SelectTrigger aria-label="Sensor selection">
-                <SelectValue placeholder="Select preference" />
-              </SelectTrigger>
-              <SelectContent>
-                {SCAN_WORKFLOW_SENSOR_PREFERENCES.filter(
-                  // Platform scanning is a choice only where the organization
-                  // may use it (or the workflow already chose it).
-                  (pref) =>
-                    pref !== 'platform' || platformOffered || sensorPreference === 'platform'
-                ).map((pref) => (
-                  <SelectItem key={pref} value={pref}>
-                    {SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS[pref]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {SCAN_WORKFLOW_SENSOR_PREFERENCE_DESCRIPTIONS[sensorPreference]}
-            </p>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      <div className="flex items-center justify-between pt-4 mt-4 border-t">
+      <SheetFooter className="sm:items-center sm:justify-between">
         <div>
           {!isFirstStep && (
             <Button type="button" variant="ghost" onClick={handleBack} disabled={isSubmitting}>
@@ -999,7 +1002,7 @@ export function ScanWorkflowForm({
             </Button>
           )}
         </div>
-      </div>
-    </form>
+      </SheetFooter>
+    </SheetForm>
   )
 }
