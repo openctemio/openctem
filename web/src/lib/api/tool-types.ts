@@ -23,11 +23,6 @@ export const INSTALL_METHODS = ['go', 'pip', 'npm', 'docker', 'binary'] as const
 
 export type InstallMethod = (typeof INSTALL_METHODS)[number]
 
-// Execution status for tool executions
-export const EXECUTION_STATUSES = ['running', 'completed', 'failed', 'timeout'] as const
-
-export type ExecutionStatus = (typeof EXECUTION_STATUSES)[number]
-
 /**
  * Embedded category info for tool grouping in UI
  */
@@ -129,14 +124,14 @@ export interface UpdateToolRequest {
   tags?: string[]
 }
 
-/** Settings, availability and run statistics a tool read can include. */
-export type ToolInclude = 'settings' | 'availability' | 'stats'
+/** Settings and availability a tool read can include. */
+export type ToolInclude = 'settings' | 'availability'
 
 /**
  * Tool list filters (GET /api/v1/tools). include values need
  * scans:tenant_tools:read; one the caller may not read is left out and named
  * in meta.omitted_includes. per_page is capped at 100, and at 50 with
- * availability or stats.
+ * availability.
  */
 export interface ToolListFilters {
   source?: 'platform' | 'custom'
@@ -147,9 +142,8 @@ export interface ToolListFilters {
   /** A scan job can be dispatched now. */
   available?: boolean
   zone_id?: string
-  /** Comma-separated ToolInclude values (at most 3). */
+  /** Comma-separated ToolInclude values. */
   include?: string
-  days?: number
   sort?: string
   page?: number
   per_page?: number
@@ -197,22 +191,11 @@ export interface BulkToolSettingsRequest {
   is_enabled: boolean
 }
 
-/** Tool run statistics (include=stats). */
-export interface ToolStats {
-  tool_id: string
-  total_runs: number
-  successful_runs: number
-  failed_runs: number
-  total_findings: number
-  avg_duration_ms: number
-}
-
 /** One tool of the organization's view of the catalog. */
 export interface ToolView extends Tool {
   source: 'platform' | 'custom'
   settings?: ToolSettings
   availability?: ToolAvailabilityInfo
-  stats?: ToolStats
 }
 
 export interface IncludeMeta {

@@ -221,19 +221,32 @@ the membership, user or organization is deleted. Expired rows are purged.
 is `DPoP`; every MCP request must then carry a valid proof (method, URL, time
 within 60 s, unused `jti`, access-token hash). An organization can require it.
 
-## 10. Write tools (when the first one ships)
+## 10. Write tools
 
-A write tool needs: a write scope (step-up at consent), the organization policy
-allowing write tools, and a confirmation from the person **outside the AI
-client**. The tool answers with an MCP `InputRequiredResult` carrying a URL-mode
-elicitation to `${APP_URL}/mcp/confirm/<id>`; that page requires the same
-signed-in user as the grant and shows the exact action. The `requestState` is
-HMAC-protected and bound to the grant, the tool and a digest of its arguments,
-expires in 5 minutes and is single use. The retry runs the tool only after the
-confirmation is recorded. A confirmation inside the client (form-mode
-elicitation) is not accepted as the control, because a compromised or
-prompt-injected agent can answer it. Clients that do not support URL-mode
-elicitation do not see write tools.
+A write tool needs: a write scope (offered only through an
+`insufficient_scope` challenge, never up front), the organization policy
+listing that scope (read scopes only by default), a connection a person
+made (an OAuth token; `oct_` keys never run write tools), and a
+confirmation from that person **outside the AI client**.
+
+The first call validates the arguments, checks the user can reach the data
+(data scope), and answers with `status: confirmation_required`, a
+`confirmation_url` (`${APP_URL}/mcp/confirm/<id>`) and a `confirmation_id`;
+nothing changes. The web page requires the same signed-in user in the same
+organization and shows the exact action as the server describes it. After
+the person confirms, the client calls the tool again with the same
+arguments and the `confirmation_id`; the server runs it once if the
+confirmation is approved, unexpired (5 minutes), for this connection, this
+tool and the SHA-256 of these arguments, and marks it used. A confirmation
+inside the client (form-mode elicitation) is not accepted as the control,
+because a compromised or prompt-injected agent can answer it.
+
+This tool-level exchange works with every MCP protocol revision. When the
+endpoint moves to MCP 2026-07-28, the same confirmation is also offered as
+a URL-mode elicitation in an `InputRequiredResult` (§11).
+
+The first write tool is `add_finding_comment` (`mcp:findings.write` →
+`findings:write`): an internal comment, never sent to integrations.
 
 ## 11. Transport
 
@@ -242,8 +255,8 @@ elicitation do not see write tools.
 - `Origin`, when present, must be the public origin or listed in
   `CORS_ALLOWED_ORIGINS`; otherwise `403`.
 - Upgrading the MCP protocol itself to 2026-07-28 (stateless requests,
-  `server/discover`, header checks, multi round-trip results) is separate work
-  and a precondition for §10, not for the rest of this RFC.
+  `server/discover`, header checks, multi round-trip results) is separate
+  work; it adds the URL-mode elicitation form of the §10 confirmation.
 
 ## 12. Visibility and audit
 
@@ -299,7 +312,7 @@ elicitation do not see write tools.
 | 4 | Connected applications (user, organization, console) |
 | 5 | Client ID Metadata Documents, pre-registered clients, dynamic registration switch |
 | 6 | DPoP |
-| 7 | Write-tool confirmation, with the first write tool and the protocol upgrade |
+| 7 | Write-tool confirmation with the first write tool (`add_finding_comment`); URL-mode elicitation follows the protocol upgrade |
 
 Each PR carries tests for cross-tenant use, scope escalation, token replay,
 redirect URI tampering, refresh reuse and consent bypass, and is checked with a
