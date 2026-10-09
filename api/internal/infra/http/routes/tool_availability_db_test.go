@@ -34,8 +34,7 @@ func newToolAvailabilityHarness(t *testing.T) *authzPolicyHarness {
 	log := logger.NewNop()
 
 	sensorSvc := sensorapp.NewSensorService(postgres.NewSensorRepository(db), nil, log)
-	toolSvc := toolapp.NewService(postgres.NewToolRepository(db), postgres.NewTenantToolConfigRepository(db),
-		postgres.NewToolExecutionRepository(db), log)
+	toolSvc := toolapp.NewService(postgres.NewToolRepository(db), postgres.NewTenantToolConfigRepository(db), log)
 	toolSvc.SetAvailabilitySources(sensorSvc, postgres.NewScanZoneRepository(db), postgres.NewSensorGrantRepository(db))
 	toolSvc.SetManifestSource(postgres.NewSensorRepository(db))
 	toolSvc.SetCategoryRepo(postgres.NewToolCategoryRepository(db))

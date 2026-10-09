@@ -120,6 +120,39 @@ function applySchedule(
   if (schedule.frequency === 'monthly') request.schedule_day = schedule.dayOfMonth ?? 1
 }
 
+/** Direct targets a scan takes at most (the API refuses more). */
+export const MAX_DIRECT_TARGETS = 1000
+
+/** The direct targets the form sends: picked assets, typed and expanded, de-duplicated. */
+export function directTargets(form: NewScanFormData): string[] {
+  const { targets } = form
+  const all: string[] = []
+  for (const id of targets.assetIds) {
+    const name = targets.assetNames?.[id]
+    if (name) all.push(name)
+  }
+  all.push(...targets.customTargets)
+  if (targets.coverage && targets.coverage !== 'host') all.push(...(targets.expandedTargets ?? []))
+  return [...new Map(all.map((t) => [t.trim().toLowerCase(), t.trim()])).values()].filter(Boolean)
+}
+
+/** First problem with the Targets step, or null. Shared by New and Edit. */
+export function targetsError(form: NewScanFormData): string | null {
+  const { targets } = form
+  if (
+    targets.assetGroupIds.length === 0 &&
+    targets.assetIds.length === 0 &&
+    targets.customTargets.length === 0
+  ) {
+    return 'Select at least one target (asset group, asset or custom target)'
+  }
+  const n = directTargets(form).length
+  if (n > MAX_DIRECT_TARGETS) {
+    return `A scan takes at most ${MAX_DIRECT_TARGETS.toLocaleString()} direct targets; ${n.toLocaleString()} are selected. Remove some, or put them in an asset group and scan the group.`
+  }
+  return null
+}
+
 /** New scan: form -> POST /scans. Combines asset groups, assets and custom targets. */
 export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfigRequest {
   const { targets, schedule } = form
@@ -143,18 +176,10 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
     // asset_group_id for older API versions
     request.asset_group_id = targets.assetGroupIds[0]
   }
-  const all: string[] = []
-  for (const id of targets.assetIds) {
-    const name = targets.assetNames?.[id]
-    if (name) all.push(name)
-  }
-  all.push(...targets.customTargets)
-  if (targets.coverage && targets.coverage !== 'host') all.push(...(targets.expandedTargets ?? []))
-  const unique = [...new Map(all.map((t) => [t.trim().toLowerCase(), t.trim()])).values()].filter(
-    Boolean
-  )
-  // The API takes at most 1000 direct targets.
-  if (unique.length > 0) request.targets = unique.slice(0, 1000)
+  // Never cut silently: targetsError stops the wizard above the limit, and
+  // the API refuses more than MAX_DIRECT_TARGETS with its own message.
+  const unique = directTargets(form)
+  if (unique.length > 0) request.targets = unique
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
   if (form.mode === 'single') request.scanner_name = form.scannerName
