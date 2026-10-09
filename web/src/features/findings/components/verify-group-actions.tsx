@@ -18,6 +18,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogBody,
 } from '@/components/ui/alert-dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
@@ -101,24 +102,26 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
               The findings go back to the assignee as In progress. Say why the fix is not enough.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="my-2 rounded-lg border bg-muted/50 p-3">
-            <p className="font-medium">{group.label}</p>
-            <p className="text-sm text-muted-foreground">
-              {group.stats?.fix_applied ?? 0} findings will be reopened
-            </p>
-          </div>
-          <div className="space-y-2">
-            <label htmlFor={`reject-${group.group_key}`} className="text-sm font-medium">
-              Reason
-            </label>
-            <Textarea
-              id={`reject-${group.group_key}`}
-              placeholder="e.g. Vulnerability still present: log4j 2.14.0 detected on server"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={3}
-            />
-          </div>
+          <AlertDialogBody className="grid gap-4">
+            <div className="my-2 rounded-lg border bg-muted/50 p-3">
+              <p className="font-medium">{group.label}</p>
+              <p className="text-sm text-muted-foreground">
+                {group.stats?.fix_applied ?? 0} findings will be reopened
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor={`reject-${group.group_key}`} className="text-sm font-medium">
+                Reason
+              </label>
+              <Textarea
+                id={`reject-${group.group_key}`}
+                placeholder="e.g. Vulnerability still present: log4j 2.14.0 detected on server"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
