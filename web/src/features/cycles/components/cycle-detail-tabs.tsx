@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, type ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
 import { Lock, NotebookPen, ScrollText, ShieldQuestion, Swords } from 'lucide-react'
