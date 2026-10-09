@@ -32,7 +32,7 @@
 
 ARG API_IMAGE
 ARG WEB_IMAGE
-ARG GO_IMAGE=golang:1.26.8-alpine
+ARG GO_IMAGE=golang:1.26.9-alpine
 # Same Caddy as the split deployment (api/deploy/docker-compose.yml CADDY_VERSION).
 ARG CADDY_IMAGE=caddy:2.11.4-alpine
 

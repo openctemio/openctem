@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 
 import { Main } from '@/components/layout'
 import type { ColumnDef } from '@tanstack/react-table'

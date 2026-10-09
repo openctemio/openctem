@@ -166,4 +166,17 @@ describe('Findings state lens', () => {
     render(<FindingsPage />)
     expect(lastListFilters().state).toBe('dispositioned')
   })
+
+  it('a filter change on page 3 asks page 1 at once, never the old page (research/81)', () => {
+    openAt('?page=3')
+    render(<FindingsPage />)
+    expect(lastListFilters().page).toBe(3)
+    listCalls.length = 0
+    act(() => {
+      fireEvent.click(screen.getByRole('radio', { name: /^Fixed/ }))
+    })
+    const fixed = listCalls.filter((f) => f.state === 'fixed')
+    expect(fixed.length).toBeGreaterThan(0)
+    expect(fixed.every((f) => f.page === 1)).toBe(true)
+  })
 })
