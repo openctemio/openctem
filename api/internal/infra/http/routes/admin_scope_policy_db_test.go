@@ -12,7 +12,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scopepolicy"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -23,14 +22,8 @@ import (
 // log; an organization override wins over the default; no tenant token
 // reaches the routes.
 func TestAdminScopePolicy_Routes_DB(t *testing.T) {
-	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB) {
+	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, console *adminconsole.Service) {
 		log := logger.NewNop()
-		cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		console := adminconsole.NewService(postgres.NewAdminRepository(db), postgres.NewAdminConsoleRepository(db),
-			postgres.NewAuditLogRepository(db), cipher, chainSignIns{}, log)
 		svc := scopepolicy.NewService(postgres.NewScopePolicyRepository(db), postgres.NewAuditLogRepository(db), nil, nil, nil, log)
 		hs.AdminScopePolicy = handler.NewAdminScopePolicyHandler(svc, console, log)
 	})
