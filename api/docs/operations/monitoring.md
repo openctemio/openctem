@@ -316,7 +316,22 @@ details:
 - `network_unenforced`: tools run without network confinement. Run the sensor
   with `SENSOR_SANDBOX_NETWORK=required` and the shipped seccomp profile.
 - `bearer_key`: the sensor authenticates with a bearer key instead of a
-  key-bound identity. Pair it again with an enrollment token.
+  key-bound identity. Re-pair it:
+  1. On the sensor host, stop the sensor and keep its state directory (or
+     start from an empty one).
+  2. Start it with only the platform URL and no API key
+     (`API_URL=https://<platform>`, no `API_KEY`); it prints a pairing code
+     and a fingerprint.
+  3. In the console, open the Sensors page, pair a sensor and choose "Enter
+     code": enter the code, check that the fingerprint matches, and approve
+     (step-up). Approving a re-pair of an existing sensor replaces its key:
+     its bearer key and any earlier keys are revoked.
+  4. New pairings also pin the platform CA and require a local policy, so
+     install one before the sensor takes network jobs (the Local policy tab
+     of the install commands).
+
+Alertmanager sends this alert once per `kind` and repeats it every 24 hours,
+not on the warning schedule.
 
 The posture is what the sensor reports about itself: the platform shows it and
 alerts on it but never relaxes a check because of it.
