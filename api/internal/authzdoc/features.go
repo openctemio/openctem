@@ -73,6 +73,12 @@ var Features = []Feature{
 		Registers:   []string{"registerScopeRoutes"},
 	},
 	{
+		ID: "programs", Title: "Bug-bounty programs",
+		Description: "Programs the organization tests under their published rules: import with an attestation, re-import, pause, resume and end (RFC-065).",
+		Stages:      []string{StageScoping},
+		Registers:   []string{"registerProgramRoutes"},
+	},
+	{
 		ID: "ctem-program", Title: "CTEM program",
 		Description: "The program layer: CTEM cycles, business services and units, attacker profiles, compensating controls and threat models.",
 		Stages:      []string{StageScoping, StagePrioritization},
