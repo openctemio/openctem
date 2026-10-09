@@ -755,6 +755,8 @@ Authorization is enforced at the **route layer** in
 | `GET /api/v1/admin/platform-users?q=` | any admin (3+ characters; account-level facts only) |
 | `GET /api/v1/admin/platform-users/{user_id}` | any admin (audited `platform_user.view`) |
 | `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
+| `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
+| `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
 | `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
@@ -1279,6 +1281,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
+| `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values. The group list itself stays tenant configuration |
 | `GET /attack-surface/attack-paths` | **bypass** | `top_assets` filtered |
 | `GET /attack-surface/exposure-chains`, MCP `get_exposure_chains` | **bypass** | a chain is returned only when every hop is in scope |
 | `GET /attack-surface/stats` | bypass | asset counts, exposed-services list and recent changes scoped |
@@ -1668,9 +1671,7 @@ deliberately.
    inherit them. The `/api/v1/permission-sets` and
    `/api/v1/groups/{id}/permission-sets` routes are gone, no code reads or
    writes their tables, and `team:permission_sets:*` left the catalog
-   (migration 000670 archives those catalog rows and role grants in
-   `access_control_removed_archive`). The tables themselves are dropped by a
-   later contract migration, after a release (expand-contract).
+   (migration 000670). The tables are dropped.
    `GET /api/v1/me/permissions` now returns the caller's role-derived
    permissions (it used to return the group-derived set).
 
@@ -1881,9 +1882,8 @@ route checked them. Each is now either enforced or removed.
 
 **Enforced on top of the route's existing gate** (`RequireAll(old, new)`, so no
 role gains anything). Migration 000771 grants the new permission to every role,
-system or custom, that held the old gate, recording each grant in
-`granular_permission_backfill` (its down removes exactly those), so every
-role keeps its abilities. An administrator can now remove the new permission
+system or custom, that held the old gate, so every role keeps its
+abilities. An administrator can now remove the new permission
 from a custom role to deny that one action.
 
 | Permission | Routes | Old gate |
@@ -1919,8 +1919,7 @@ role. A custom role created later needs them explicitly for those reads.
 
 `findings:export` gates the server-side findings export (RFC-048, #1058); `assets:export` is kept for the planned asset export of the same RFC and is not removed.
 
-**Removed** (000772; catalog rows and grants archived in
-`access_control_removed_archive`, restored by its down):
+**Removed** (000772):
 
 | Permission | Why it is meaningless |
 |---|---|
