@@ -51,6 +51,10 @@ export interface SecuritySettings {
   /** research/25 D3: off unless an owner enables it; enabling is audited. */
   allow_sensor_interactsh?: boolean
   allow_sensor_custom_templates?: boolean
+  /** api RFC-060 §4.1: the User-Agent of the organization's scan tools ('' none). */
+  tool_http_user_agent?: string
+  /** api RFC-060 §4.1: refuse scan tools that skip TLS verification. */
+  forbid_tool_insecure_tls?: boolean
   /**
    * The caller's IP as the API sees it (read-only, GET only). Shown next to the
    * IP allowlist so an owner does not lock themselves out.
@@ -86,6 +90,8 @@ export interface UpdateSecuritySettingsInput {
   /** research/25 D3: off unless an owner enables it; enabling is audited. */
   allow_sensor_interactsh?: boolean
   allow_sensor_custom_templates?: boolean
+  tool_http_user_agent?: string
+  forbid_tool_insecure_tls?: boolean
   personal_accounts?: PersonalAccountsPolicy
   /** Replaces the whole list. */
   sso_exceptions?: SSOException[]
