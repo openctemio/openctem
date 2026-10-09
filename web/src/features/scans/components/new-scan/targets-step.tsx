@@ -12,7 +12,6 @@ import { useState, useMemo, useEffect, useEffectEvent } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -50,6 +49,7 @@ import { directTargets, MAX_DIRECT_TARGETS } from '../../lib/scan-form'
 
 /** Asset groups listed at once (the API's largest page). */
 const GROUP_PAGE_SIZE = 100
+import { TargetLinesInput } from './target-lines-input'
 
 // Target validation patterns (matching backend validator)
 const TARGET_PATTERNS = {
@@ -352,11 +352,7 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
     })
   }
 
-  const handleCustomTargetsChange = (value: string) => {
-    const targets = value
-      .split('\n')
-      .map((t) => t.trim())
-      .filter(Boolean)
+  const handleCustomTargetsChange = (targets: string[]) => {
     onChange({
       targets: {
         ...data.targets,
@@ -813,14 +809,14 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
                 </TooltipProvider>
               </div>
 
-              <Textarea
+              <TargetLinesInput
                 id="custom-targets"
                 placeholder={
                   'example.com\n192.168.1.0/24\nhttps://api.example.com/v1\nmail.example.com:587'
                 }
                 rows={5}
-                value={data.targets.customTargets.join('\n')}
-                onChange={(e) => handleCustomTargetsChange(e.target.value)}
+                value={data.targets.customTargets}
+                onChange={handleCustomTargetsChange}
                 className={cn(
                   validationStats.invalid > 0 && 'border-destructive focus-visible:ring-destructive'
                 )}

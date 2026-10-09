@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Sheet,
+  SheetBody,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -25,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -675,12 +675,12 @@ export default function EcosystemsPage() {
 
       {/* Ecosystem Detail Sheet */}
       <Sheet open={!!selectedEcosystem} onOpenChange={handleCloseSheet}>
-        <SheetContent className="sm:max-w-4xl flex flex-col p-0">
+        <SheetContent className="sm:max-w-4xl">
           {selectedEcosystem && (
             <>
               {/* Header */}
-              <div className="px-6 py-4 pe-14 border-b">
-                <SheetHeader>
+              <SheetHeader>
+                <div>
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
                       <Package className="h-5 w-5 text-primary" />
@@ -697,7 +697,7 @@ export default function EcosystemsPage() {
                       </SheetDescription>
                     </div>
                   </div>
-                </SheetHeader>
+                </div>
 
                 {/* Quick Stats */}
                 <div className="mt-4 grid grid-cols-3 gap-4">
@@ -754,10 +754,10 @@ export default function EcosystemsPage() {
                     </p>
                   </button>
                 </div>
-              </div>
+              </SheetHeader>
 
               {/* Content */}
-              <ScrollArea className="flex-1">
+              <SheetBody className="p-0">
                 <div className="p-6">
                   <DataTable
                     columns={componentColumns}
@@ -798,7 +798,7 @@ export default function EcosystemsPage() {
                     }
                   />
                 </div>
-              </ScrollArea>
+              </SheetBody>
             </>
           )}
         </SheetContent>
