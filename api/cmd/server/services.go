@@ -594,10 +594,13 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
+	// ProgramAssigner keeps program group assignments current (the
+	// periodic pass, RFC-065 §7).
+	ProgramAssigner controller.ProgramAssignments
+	AttackSurface   *attack.SurfaceService
+	ThreatModel     *threatmodel.Service
 	// ScopeLetters manages authorization letters (RFC-065 §13).
-	ScopeLetters  *scope.LetterService
-	AttackSurface *attack.SurfaceService
-	ThreatModel   *threatmodel.Service
+	ScopeLetters *scope.LetterService
 
 	// Configuration (read-only system config)
 	FindingSource      *finding.FindingSourceService
@@ -990,10 +993,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.BountyProgram.SetSync(bountysource.New(), s.Encryptor,
 		func(err error) bool { return errors.Is(err, bountysource.ErrGone) },
 		programSyncAuditor(s.Audit))
+	s.BountyProgram.SetAssigner(programRepo)
+	s.ProgramAssigner = programRepo
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
 	// Program rules (RFC-065 §12) are matched against the scope entries.
 	s.BountyProgram.SetRuleScope(s.Scope)
+	// RFC-040 §11.5: program entries reach the job signer's ledger through
+	// the scope service's hook (a no-op without a signer).
+	s.BountyProgram.SetLedger(s.Scope)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
@@ -1303,6 +1311,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
 	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),
 		letterFiles{svc: s.Attachment}, s.Scope.NotifyAdmins)
+	// A revoked letter's entries leave the job signer's ledger (RFC-040 §11.5).
+	s.ScopeLetters.SetLedger(s.Scope)
 	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
 	storageResolver := auth.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
 	// "local" is always the operator storage above, never a tenant-chosen
@@ -1322,7 +1332,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
 	// Simulation targets follow the scan act-scope rule (RFC-050 W3, 21b H4).
-	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames), s.DataScope)
+	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope), s.DataScope)
 	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
@@ -1684,6 +1694,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if sock := cfg.SensorConfig.SignerSocket; sock != "" {
 		s.JobSigner = signerclient.NewClient(sock, cfg.SensorConfig.SignerTimeout)
 		cmdOpts = append(cmdOpts, command.WithJobSigner(s.JobSigner))
+		// RFC-040 P2: every scope change reaches the signer's own ledger
+		// (widenings before they are saved), which signs only inside it.
+		s.Scope.SetLedger(s.JobSigner)
 		log.Info("sensor jobs are signed by the job signer", "socket", sock)
 	}
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
@@ -1723,6 +1736,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.BountyProgram.SetJoiner(joinScheduler)
 		stamper := easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)
 		stamper.SetScopeJoin(s.ScopeJoin)
+		stamper.SetProgramAssigner(programRepo)
 		s.Ingest.SetScanAttributionStamper(stamper)
 	}
 	// A nuclei takeover-template match from a tenant scan confirms an open
@@ -1897,7 +1911,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
-		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames)),
+		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope)),
 		// Platform sensors and intrusive scans need a verified domain
 		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
 		scan.WithActiveProof(cfg.Scope.ActiveProof),
@@ -2244,6 +2258,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		accesscontrol.WithRoleMembershipReader(s.MembershipCache),
 		accesscontrol.WithRoleMembershipCacheInvalidator(s.MembershipCache),
 	)
+	// Team role bindings (decisions G1-G12): teams hand their members custom
+	// roles under the role service's grant ceiling and step-up gate.
+	if s.Group != nil {
+		s.Group.SetRoleBindings(repos.GroupRoleBinding, s.Role)
+	}
 
 	// Bound every oct_ key by what its user holds now, not at mint time.
 	if s.APIKey != nil {

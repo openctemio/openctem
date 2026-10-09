@@ -9,6 +9,8 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -38,6 +40,8 @@ type RoleService struct {
 	// someone is made an administrator or an owner. nil (a service built
 	// outside the HTTP server, such as the bootstrap CLI) skips the check.
 	stepUp shared.RecentAuthGate
+	// bindings are the team role bindings (decisions G1-G12); nil: none.
+	bindings groupdom.RoleBindingRepository
 	// externalCeiling is the trust ceiling for external members (RFC-058).
 	externalCeiling func(ctx context.Context, host, home shared.ID) (string, error)
 	// privilege tells the administrators about privilege increases (RFC-058).
@@ -463,6 +467,9 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 	if err != nil {
 		return nil, err
 	}
+	if err := s.guardBoundRolePrivilege(ctx, r, newPerms, hasFullDataAccess, editor); err != nil {
+		return nil, err
+	}
 	if input.Permissions != nil {
 		if err := rejectAdminOnlyPermissions(input.Permissions); err != nil {
 			return nil, err
@@ -504,13 +511,14 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 	tenantIDStr := ""
 	if input.Permissions != nil && r.TenantID() != nil {
 		tenantIDStr = r.TenantID().String()
-		members, err := s.roleRepo.ListRoleMembers(ctx, *r.TenantID(), id)
+		// Direct holders and team members holding it through a binding.
+		holders, err := s.roleRepo.ListRoleHolderIDs(ctx, *r.TenantID(), id)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list role members for permission invalidation: %w", err)
+			return nil, fmt.Errorf("failed to list role holders for permission invalidation: %w", err)
 		}
-		holderIDs = make([]string, len(members))
-		for i, m := range members {
-			holderIDs[i] = m.UserID.String()
+		holderIDs = make([]string, len(holders))
+		for i, h := range holders {
+			holderIDs[i] = h.String()
 		}
 	}
 
@@ -1138,4 +1146,30 @@ func (s *RoleService) ListModulesWithPermissions(ctx context.Context) ([]*roledo
 // ListPermissions returns all permissions.
 func (s *RoleService) ListPermissions(ctx context.Context) ([]*roledom.Permission, error) {
 	return s.permissionRepo.ListPermissions(ctx)
+}
+
+// guardBoundRolePrivilege: a role bound to a team that an edit makes
+// privileged (decisions G1-G12 R5) is a privileged binding change, so only the
+// owner makes it, with a recent sign-in.
+func (s *RoleService) guardBoundRolePrivilege(ctx context.Context, r *roledom.Role, newPerms []string, fullData bool, editor grantActor) error {
+	if s.bindings == nil || r.TenantID() == nil || editor.system {
+		return nil
+	}
+	if permission.IsPrivilegedRole(r.Permissions(), r.HasFullDataAccess()) || !permission.IsPrivilegedRole(newPerms, fullData) {
+		return nil
+	}
+	bound, err := s.bindings.ListRoleGroups(ctx, asSharedID(*r.TenantID()), asSharedID(r.ID()))
+	if err != nil {
+		return fmt.Errorf("load role bindings: %w", err)
+	}
+	if len(bound) == 0 {
+		return nil
+	}
+	if !editor.owner {
+		return ErrPrivilegedTeamOwnerOnly
+	}
+	if s.stepUp != nil {
+		return s.stepUp.RequireRecentAuth(ctx, editor.id)
+	}
+	return nil
 }

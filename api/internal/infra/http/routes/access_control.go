@@ -54,6 +54,14 @@ func registerGroupRoutes(
 		r.PATCH("/{groupId}/members/{userId}", h.UpdateMemberAccess, middleware.Require(permission.GroupsMembers))
 		r.DELETE("/{groupId}/members/{userId}", h.RemoveMember, middleware.Require(permission.GroupsMembers))
 
+		// Team role bindings (decisions G1-G12): every active member holds the
+		// bound custom roles. Binding is a grant: the service also applies
+		// the grant ceiling, the scope cap and, for a privileged role, the
+		// owner-only rule with step-up.
+		r.GET("/{groupId}/roles", h.ListGroupRoles, middleware.RequireAll(permission.GroupsRead, permission.RolesRead))
+		r.POST("/{groupId}/roles", h.BindGroupRole, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
+		r.DELETE("/{groupId}/roles/{roleId}", h.UnbindGroupRole, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
+
 		// Group asset ownership
 		r.GET("/{groupId}/assets", h.ListGroupAssets, middleware.Require(permission.GroupsRead))
 		r.POST("/{groupId}/assets", h.AssignAsset, middleware.RequireAll(permission.GroupsWrite, permission.GroupsAssets))

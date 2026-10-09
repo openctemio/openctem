@@ -193,10 +193,10 @@ var Features = []Feature{
 	},
 	{
 		ID: "account", Title: "Sign-in and own account",
-		Description: "Authentication, the caller's own account, notifications, bootstrap data and the real-time socket.",
+		Description: "Authentication, the caller's own account, notifications, platform announcements, bootstrap data and the real-time socket.",
 		Registers: []string{
 			"registerAuthRoutes", "registerUserRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
-			"registerWebSocketRoutes",
+			"registerWebSocketRoutes", "registerAnnouncementRoute",
 		},
 	},
 	{

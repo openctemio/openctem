@@ -93,6 +93,9 @@ authorizes nothing by itself: a scope entry with authorization source
 effect only while the letter is valid (the in-effect read joins the letter).
 Revoking a letter (scope approvers) or its expiry stops every entry naming it
 at once. A letter's attachment cannot be deleted while the letter exists.
+The job signer's scope ledger follows (RFC-040 §11.5): a revocation removes
+the letter's entries, and a letter entry's ledger expiry is never later than
+the letter's end.
 
 ## Scope sync
 
@@ -103,7 +106,8 @@ registrable domain (`program_file`), read with the SSRF-safe HTTP client
 (RFC-065 §14). A sync, on demand or by the controller, applies narrowing at
 once (removed entries, new program exclusions; a closed program is suspended)
 and keeps widening as pending terms: nothing new authorizes until a member
-accepts the pending terms hash (`/pending/apply`, step-up, audited).
+accepts the pending terms hash (`/pending/apply`, step-up, audited). Every
+sync write goes through the job signer's ledger hook (`CommitEntries`).
 
 ## Evidence
 
@@ -129,4 +133,4 @@ the run and hold `scope:read` or `programs:read`.
 | `internal/app/command/program_rules.go`, `internal/app/scan/program_rules.go` | rules at delivery and at trigger |
 | `pkg/domain/scope/letter.go`, `internal/app/scope/letters.go` | letters of authorization |
 | `pkg/domain/bountyprogram/sync.go`, `internal/app/bountyprogram/sync.go`, `internal/infra/bountysource/` | scope sync |
-| `migrations/001549_authorization_letters.*`, `migrations/001551_bounty_program_sync.*` | letters, sync state |
+| `migrations/001549_authorization_letters.*`, `migrations/001565_bounty_program_sync.*` | letters, sync state |
