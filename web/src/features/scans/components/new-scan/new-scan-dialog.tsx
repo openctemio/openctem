@@ -306,7 +306,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           </>
         )
       case 'options':
-        return <OptionsStep data={formData} onChange={handleDataChange} />
+        return <OptionsStep data={formData} onChange={handleDataChange} showProfile />
       case 'schedule':
         return <ScheduleStep data={formData} onChange={handleDataChange} offerSaveOnly />
       case 'review':

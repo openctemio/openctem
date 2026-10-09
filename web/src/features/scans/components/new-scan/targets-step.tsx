@@ -140,9 +140,10 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
       label: t,
       kind: 'typed' as const,
       onRemove: () =>
-        setTyped(
-          targets.customTargets.filter((line) => line.trim().toLowerCase() !== t.toLowerCase())
-        ),
+        setTyped([
+          ...pasted.targets.filter((x) => x !== t),
+          ...pasted.invalid.map((bad) => bad.input),
+        ]),
     })),
     ...(coverage === 'host' ? [] : expansion.added).map((t) => ({
       key: `e:${t}`,
