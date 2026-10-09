@@ -375,7 +375,7 @@ content: { templates: { mode: merge, sources: [acme-nuclei], include: { tags: [c
 | Phase | Deliverable | Repos |
 |---|---|---|
 | K1 | `content:` slots in `tool.yaml` (validator, schema, `ctx.Content`, protocol `run.task.content`, exec placeholders); built-in tools declare their slots | sdk-go, sensor |
-| K2 | Pack store: ingest, canonical archive, lint, classification, signing, API and permissions, audit (tenant uploads: shipped, [architecture](../architecture/content-packs.md)); platform-managed upstream sources with channels | api |
+| K2 | Pack store: ingest, canonical archive, lint, classification, signing, API and permissions, audit (tenant uploads and platform packs with stable/canary channels: shipped, [architecture](../architecture/content-packs.md)); scheduled upstream polling and canary promotion by health come with K3 | api |
 | K3 | Desired state, push (v3 stream and v2 heartbeat), sensor prefetch, cache by digest, manifest by digest, GC | api, sdk-go, sensor |
 | K4 | Composition in steps, policies and profiles; pin at run start; retests reuse digests; placement by cached digest | api, web |
 | K5 | Tenant content sources (§3.6: git with app/token/deploy-key auth and webhooks, https with required integrity, oci, s3, `fetch_via: sensor`, binding by kind incl. namespaced kinds, per-kind validation); custom templates migrated; `$TMPDIR` path removed | api, sdk-go, sensor, web |

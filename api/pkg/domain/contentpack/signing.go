@@ -24,6 +24,7 @@ const StatementKind = "openctem.content-pack/v1"
 // under its own label, and each tenant's key is derived under another.
 const (
 	contentKeyInfo           = "openctem.content-signing-key/v1:tenant:"
+	platformKeyInfo          = "openctem.content-signing-key/v1:platform"
 	masterFromEncryptionInfo = "openctem.content-signing-master/v1"
 )
 
@@ -32,7 +33,10 @@ const (
 // the tenant's content key before it mounts the pack, and checks the
 // archive against Digest.
 type Statement struct {
-	Kind      string    `json:"kind"`
+	Kind string `json:"kind"`
+	// Scope is "platform" for a platform pack (signed with the platform
+	// content key, TenantID empty); empty for a tenant pack.
+	Scope     string    `json:"scope,omitempty"`
 	TenantID  string    `json:"tenant_id"`
 	PackID    string    `json:"pack_id"`
 	Name      string    `json:"name"`
@@ -96,6 +100,36 @@ func (s *Signer) PublicKey(tenantID string) (ed25519.PublicKey, string, error) {
 	return pub, scannertemplate.KeyID(pub), nil
 }
 
+func (s *Signer) platformKey() (ed25519.PrivateKey, error) {
+	seed, err := hkdf.Key(sha256.New, s.master, nil, platformKeyInfo, ed25519.SeedSize)
+	if err != nil {
+		return nil, err
+	}
+	return ed25519.NewKeyFromSeed(seed), nil
+}
+
+// PlatformPublicKey is the platform content-signing public key and its id:
+// what every sensor pins to verify platform packs.
+func (s *Signer) PlatformPublicKey() (ed25519.PublicKey, string, error) {
+	priv, err := s.platformKey()
+	if err != nil {
+		return nil, "", err
+	}
+	pub, _ := priv.Public().(ed25519.PublicKey)
+	return pub, scannertemplate.KeyID(pub), nil
+}
+
+// SignPlatform signs st as a platform pack (scope platform, no tenant) with
+// the platform content key.
+func (s *Signer) SignPlatform(st Statement) ([]byte, error) {
+	st.Scope, st.TenantID = "platform", ""
+	priv, err := s.platformKey()
+	if err != nil {
+		return nil, err
+	}
+	return seal(st, priv)
+}
+
 // Sign signs st with the key of st.TenantID and returns the DSSE envelope
 // (JSON) carrying the exact signed bytes.
 func (s *Signer) Sign(st Statement) ([]byte, error) {
@@ -105,9 +139,22 @@ func (s *Signer) Sign(st Statement) ([]byte, error) {
 	if st.PackID == "" || ValidateDigest(st.Digest) != nil {
 		return nil, errors.New("statement needs a pack id and a digest")
 	}
+	if st.Scope != "" {
+		return nil, errors.New("a tenant statement has no scope")
+	}
 	priv, err := s.tenantKey(st.TenantID)
 	if err != nil {
 		return nil, err
+	}
+	return seal(st, priv)
+}
+
+func seal(st Statement, priv ed25519.PrivateKey) ([]byte, error) {
+	if st.Kind == "" {
+		st.Kind = StatementKind
+	}
+	if st.PackID == "" || ValidateDigest(st.Digest) != nil {
+		return nil, errors.New("statement needs a pack id and a digest")
 	}
 	payload, err := json.Marshal(st)
 	if err != nil {

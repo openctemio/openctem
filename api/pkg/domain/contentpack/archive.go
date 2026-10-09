@@ -113,6 +113,11 @@ func Canonicalize(r io.Reader, lim Limits) (*Archive, error) {
 			}
 			return nil, archiveErr("not a tar archive (%v)", err)
 		}
+		if hdr.Typeflag == tar.TypeXGlobalHeader {
+			// PAX global metadata (git archive writes one with the commit
+			// id): not a file, nothing to keep.
+			continue
+		}
 		name, err := cleanPath(hdr.Name, lim)
 		if err != nil {
 			return nil, err
@@ -167,14 +172,45 @@ func Canonicalize(r io.Reader, lim Limits) (*Archive, error) {
 	return &Archive{Files: files, Canonical: canonical, Digest: "sha256:" + hex.EncodeToString(sum[:])}, nil
 }
 
+// Without is the canonical archive of a's files except those in drop; an
+// error when nothing is left.
+func (a *Archive) Without(drop map[string]bool) (*Archive, error) {
+	if len(drop) == 0 {
+		return a, nil
+	}
+	files := make([]File, 0, len(a.Files))
+	for _, f := range a.Files {
+		if !drop[f.Path] {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		return nil, archiveErr("no file is left after the excluded ones")
+	}
+	canonical, err := canonicalTar(files)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(canonical)
+	return &Archive{Files: files, Canonical: canonical, Digest: "sha256:" + hex.EncodeToString(sum[:])}, nil
+}
+
 // ReadCanonical parses a stored canonical archive and checks it against
 // digest, so tampered storage is never served.
 func ReadCanonical(data []byte, digest string) (*Archive, error) {
+	return readCanonical(data, digest, DefaultLimits)
+}
+
+// ReadPlatformCanonical is ReadCanonical within the platform limits.
+func ReadPlatformCanonical(data []byte, digest string) (*Archive, error) {
+	return readCanonical(data, digest, PlatformLimits)
+}
+
+func readCanonical(data []byte, digest string, lim Limits) (*Archive, error) {
 	sum := sha256.Sum256(data)
 	if "sha256:"+hex.EncodeToString(sum[:]) != digest {
 		return nil, fmt.Errorf("%w: stored archive does not match its digest", shared.ErrInternal)
 	}
-	lim := DefaultLimits
 	lim.MaxUpload = int64(len(data))
 	a, err := Canonicalize(bytes.NewReader(data), lim)
 	if err != nil {

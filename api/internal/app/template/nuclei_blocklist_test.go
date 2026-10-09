@@ -90,3 +90,11 @@ http:
 		t.Fatal("validator rejected benign template — blocklist too aggressive")
 	}
 }
+
+// A network template written with the tcp block (nuclei v3) is a template.
+func TestNucleiValidator_TCPBlockIsExecution(t *testing.T) {
+	tpl := "id: redis-open\ninfo:\n  name: Redis\n  severity: info\ntcp:\n  - inputs:\n      - data: \"PING\\r\\n\"\n    host: [\"{{Hostname}}\"]\n    port: 6379\n    matchers:\n      - type: word\n        words: [\"+PONG\"]\n"
+	if res := (&NucleiValidator{}).Validate([]byte(tpl)); res.HasErrors() {
+		t.Fatalf("tcp template refused: %s", res.ErrorMessages())
+	}
+}

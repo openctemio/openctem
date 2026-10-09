@@ -285,7 +285,7 @@ func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
 
 	// Must have requests, workflows, or other execution blocks
 	hasExecution := false
-	for _, key := range []string{"requests", "http", "dns", "file", "network", "headless", "ssl", "websocket", "whois", "code", "javascript", "workflows"} {
+	for _, key := range []string{"requests", "http", "dns", "file", "network", "tcp", "headless", "ssl", "websocket", "whois", "code", "javascript", "workflows"} {
 		if _, ok := tpl[key]; ok {
 			hasExecution = true
 			result.Metadata["execution_type"] = key

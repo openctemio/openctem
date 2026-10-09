@@ -160,7 +160,10 @@ type LintReport struct {
 	// value). They block the pack unless the uploader acknowledged them.
 	Secrets             []Issue `json:"secrets,omitempty"`
 	SecretsAcknowledged bool    `json:"secrets_acknowledged,omitempty"`
-	Truncated           bool    `json:"truncated,omitempty"`
+	// Excluded counts the files a platform ingest left out of the pack
+	// because they failed lint (each also a warning, up to MaxIssues).
+	Excluded  int  `json:"excluded,omitempty"`
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 func (r *LintReport) add(list *[]Issue, it Issue) {
