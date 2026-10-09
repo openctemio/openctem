@@ -186,8 +186,8 @@ with the envelope, or a refusal:
 
 | Status | Reasons |
 |---|---|
-| 400 | `malformed` (not JSON, unknown or mistyped field, trailing data), `bad_kind`, `invalid_id`, `missing_command_type`, `missing_tool`, `bad_payload_digest`, `bad_targets`, `bad_lease_epoch`, `clock_skew`, `bad_expiry`, `server_field_set` |
-| 403 | `out_of_ledger`, `tier_exceeds_ledger`, `target_excluded` (the [scope ledger](#scope-ledger) does not authorize the job) |
+| 400 | `malformed` (not JSON, unknown or mistyped field, trailing data), `bad_kind`, `invalid_id`, `missing_command_type`, `missing_tool`, `bad_payload_digest`, `bad_targets`, `bad_templates`, `bad_lease_epoch`, `clock_skew`, `bad_expiry`, `server_field_set` |
+| 403 | `out_of_ledger`, `tier_exceeds_ledger`, `target_excluded`, `template_not_in_ledger` (the [scope ledger](#scope-ledger) does not authorize the job) |
 | 413 | `body_too_large` |
 | 429 | `tenant_rate_limited`, `sensor_rate_limited` |
 | 500 | `internal` (the sequence number or the signing log could not be written: nothing is signed) |
@@ -241,6 +241,7 @@ payload bytes it received and never re-serializes them.
 | `tool` | string | payload `scanner`, else `preferred_tool`; `""` when neither |
 | `payload_sha256` | string | `sha256:` + hex SHA-256 of the command's `payload` JSON value, exactly as the claim response carries it |
 | `targets` | string[] | payload `targets` and `target`, trimmed, de-duplicated, in order |
+| `templates` | string[] | only when the payload carries custom templates: `sha256:` + hex SHA-256 of each `custom_templates[].content`, base64-decoded after trimming, in payload order, duplicates kept ([Custom templates](#custom-templates)) |
 | `lease_epoch` | int | the claim's lease epoch (the command's `lease_epoch`) |
 | `issued_at` | RFC 3339 UTC | when the API asked |
 | `expires_at` | RFC 3339 UTC | `issued_at` + 1 h, or the command's own expiry if sooner |
@@ -314,7 +315,10 @@ Before it parses anything else of the command:
 7. `seq` greater than the last accepted one (persisted; gaps allowed);
 8. `lease_epoch` equals the command's `lease_epoch`;
 9. `payload_sha256` equals the SHA-256 of the received `payload` bytes;
-10. it runs `tool` against `targets`, and its local policy agrees.
+10. it runs `tool` against `targets`, and its local policy agrees;
+11. `templates` lists exactly the digests of the payload's custom
+    templates; it then trusts those template bytes through the job
+    ([Custom templates](#custom-templates)).
 
 Any failure: refuse the command (fail it with a refusal), never run it.
 
@@ -559,6 +563,44 @@ reordered or truncated `ledger.log` stops the signer at start.
   lowered setting lowers the count the API reports. The operator floor
   is the signer-side bound.
 
+## Custom templates
+
+RFC-040 §5.8 and §11.5. A custom template version reaches a sensor only
+when people approved it and the signer recorded its digest in the ledger.
+
+- **Approval.** A template version (its content) is approved for sensors
+  like a scope widening: the organization's approval count from the scope
+  policy (`scope.Service.EffectiveApprovals`), approvers holding
+  `attack_surface:scope:approve`, with step-up, never the author of the
+  version (`content_author_id`: the creator, or whoever changed the
+  content). `POST /api/v1/scanner-templates/{id}/approve` records one
+  approval; once the count is reached the API sends `put_template {id,
+  sha256}` to the signer, a widening checked by the same rule as scope
+  entries, before the version is saved as approved (`ledger_sha256`).
+  With a count of 0 a new version is approved when it is saved. Approvals
+  belong to one version (`sensor_approvals[].sha256`): new content needs
+  new approvals, and the old version leaves the ledger
+  (`remove_template`). Deprecating or deleting a template removes it.
+  Templates synced from a source get no author and need an approval for
+  each new version. Without a job signer nothing changes: no approval is
+  asked.
+- **At claim time** the API lists the digests in the statement
+  (`templates`). The signer refuses a job with a digest no approved
+  version has (`template_not_in_ledger`, 403): the command fails with
+  `SIGNER_REFUSED`. A template whose content does not decode fails the
+  command before the signer is asked.
+- **On the sensor** (sdk-go): a verified statement whose `templates` equal
+  the payload's digests makes the templates trusted without
+  `SENSOR_TEMPLATE_SIGNING_KEYS`; the local `allow_custom_templates` gate
+  and the template protocol checks still apply. A sensor without signed
+  jobs keeps the per-tenant manifest (RFC-038 §6.12), signed with a key
+  the API derives: that path is the fallback and is removed once signed
+  jobs are required everywhere. Older sdk-go verifiers refuse statements
+  carrying `templates` (unknown field): such jobs fail closed on them.
+- **Upgrade.** Migration `001572` marks the current version of every
+  active template as approved (they ran before); the ledger bootstrap
+  exports them for review.
+
 ## Not yet (next steps)
 
 - **Root pin in the sensor's local policy** (RFC-040 §5.7): local policy
@@ -574,7 +616,9 @@ reordered or truncated `ledger.log` stops the signer at start.
 - **WebAuthn approvals** (P3): each approval an assertion over the change
   digest, verified by the signer against approver credentials enrolled
   through its own CLI, so a compromised API cannot invent approvals.
-- **Template manifests, tool settings and egress policy** signed by the
-  signer instead of the API's derived keys (decision Q11).
+- **Tool settings and egress policy** signed by the signer instead of the
+  API's derived keys (decision Q11); the per-tenant template manifest key
+  removed once signed jobs are required everywhere
+  ([Custom templates](#custom-templates)).
 - **K2** (KMS, Vault Transit, HSM) and a Helm chart for the signer.
 - Exporting the signing log to the SIEM and keyed audit checkpoints.

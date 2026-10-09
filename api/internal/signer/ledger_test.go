@@ -499,3 +499,110 @@ func serve(h http.Handler, method, path, body string) *httptest.ResponseRecorder
 	h.ServeHTTP(rec, req)
 	return rec
 }
+
+const (
+	tTemplate = "f0000000-0000-4000-8000-000000000001"
+	tDigestA  = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	tDigestB  = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+)
+
+func putTemplate(id, digest string) jobsign.LedgerOp {
+	return jobsign.LedgerOp{Op: jobsign.OpPutTemplate, Template: &jobsign.LedgerTemplate{ID: id, SHA256: digest}}
+}
+
+// signWithTemplates signs a passive job (no scope entry needed) carrying
+// custom templates with the given digests.
+func signWithTemplates(s *Service, digests ...string) *refusal {
+	_, ref := s.Sign(statement(func(m map[string]any) {
+		m["tool"] = "subfinder"
+		m["targets"] = []string{"app.example.com"}
+		m["templates"] = digests
+	}))
+	return ref
+}
+
+// A custom template version nobody approved is not signed, whatever the
+// API says; an approved version is, and a changed byte is a new version.
+func TestLedger_TemplateNotInLedgerIsRefused(t *testing.T) {
+	s := newService(t, t.TempDir(), newKey(t), enforcing)
+	wantReason(t, signWithTemplates(s, tDigestA), ReasonTemplateNotInLed)
+
+	// Approving a template version is a widening under the same rule.
+	_, ref := s.Ledger().Apply(change(1, nil, putTemplate(tTemplate, tDigestA)), tNow)
+	wantReason(t, ref, ReasonNotApproved)
+	_, ref = s.Ledger().Apply(change(1, []string{tAdminA}, putTemplate(tTemplate, tDigestA)), tNow)
+	wantReason(t, ref, ReasonNotApproved) // the author approving their own version
+	if k := mustApply(t, s, change(1, []string{tAdminB}, putTemplate(tTemplate, tDigestA))); k != jobsign.ChangeWiden {
+		t.Fatalf("kind %s", k)
+	}
+	if ref := signWithTemplates(s, tDigestA); ref != nil {
+		t.Fatalf("approved template refused: %+v", ref)
+	}
+	// One approved and one not: refused.
+	wantReason(t, signWithTemplates(s, tDigestA, tDigestB), ReasonTemplateNotInLed)
+
+	// A new version of the same template widens again.
+	_, ref = s.Ledger().Apply(change(1, nil, putTemplate(tTemplate, tDigestB)), tNow)
+	wantReason(t, ref, ReasonNotApproved)
+
+	// Removing it narrows, with no approval.
+	if k := mustApply(t, s, change(2, nil, jobsign.LedgerOp{Op: jobsign.OpRemoveTemplate, ID: tTemplate})); k != jobsign.ChangeNarrow {
+		t.Fatalf("kind %s", k)
+	}
+	wantReason(t, signWithTemplates(s, tDigestA), ReasonTemplateNotInLed)
+}
+
+func TestLedger_TemplateStatementsAreValidated(t *testing.T) {
+	s := newService(t, t.TempDir(), newKey(t), nil)
+	for name, digests := range map[string][]string{
+		"empty list":   {},
+		"not a digest": {"md5:abc"},
+		"upper case":   {strings.ToUpper(tDigestA)},
+	} {
+		if ref := signWithTemplates(s, digests...); ref == nil || ref.reason != ReasonBadTemplates {
+			t.Errorf("%s: want %s, got %+v", name, ReasonBadTemplates, ref)
+		}
+	}
+	many := make([]string, jobsign.MaxTemplates+1)
+	for i := range many {
+		many[i] = tDigestA
+	}
+	if ref := signWithTemplates(s, many...); ref == nil || ref.reason != ReasonBadTemplates {
+		t.Errorf("too many templates: %+v", ref)
+	}
+	// A statement without templates signs as before (the field is left out).
+	env, ref := s.Sign(statement(nil))
+	if ref != nil || bytes.Contains(env, []byte("templates")) {
+		t.Fatalf("plain statement: %+v", ref)
+	}
+}
+
+func TestLedger_SyncRemovesTemplatesAndNeverAddsThem(t *testing.T) {
+	s := newService(t, t.TempDir(), newKey(t), enforcing)
+	mustApply(t, s, change(0, nil, putTemplate(tTemplate, tDigestA)))
+	other := "f0000000-0000-4000-8000-000000000002"
+	snap := jobsign.LedgerSnapshot{TenantID: tTenant, Entries: []jobsign.LedgerEntry{}, Exclusions: []jobsign.LedgerExclusion{},
+		Templates: []jobsign.LedgerTemplate{{ID: tTemplate, SHA256: tDigestB}, {ID: other, SHA256: tDigestB}}}
+	res, ref := s.Ledger().Sync(snap, tNow)
+	if ref != nil || res.Narrowed != 1 || res.Diverged != 2 {
+		t.Fatalf("sync %+v %+v", res, ref)
+	}
+	wantReason(t, signWithTemplates(s, tDigestA), ReasonTemplateNotInLed)
+	wantReason(t, signWithTemplates(s, tDigestB), ReasonTemplateNotInLed)
+}
+
+func TestLedger_ImportCarriesTemplates(t *testing.T) {
+	dir := t.TempDir()
+	raw, _ := json.Marshal(jobsign.LedgerExport{Kind: jobsign.SnapshotKind, CreatedAt: tNow, Tenants: []jobsign.LedgerSnapshot{{
+		TenantID: tTenant, Entries: []jobsign.LedgerEntry{}, Exclusions: []jobsign.LedgerExclusion{},
+		Templates: []jobsign.LedgerTemplate{{ID: tTemplate, SHA256: tDigestA}},
+	}}})
+	res, err := ImportLedger(dir, raw, false, tNow)
+	if err != nil || res.Templates != 1 {
+		t.Fatalf("import %+v %v", res, err)
+	}
+	s := newService(t, dir, newKey(t), func(c *Config) { c.LedgerMode = "" })
+	if ref := signWithTemplates(s, tDigestA); ref != nil {
+		t.Fatalf("imported template refused: %+v", ref)
+	}
+}
