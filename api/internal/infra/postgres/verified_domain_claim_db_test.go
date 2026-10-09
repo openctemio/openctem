@@ -21,7 +21,7 @@ func TestVerifiedDomainRepository_SSOClaimIsExclusive(t *testing.T) {
 	a := seedTestTenant(ctx, t, sqlDB)
 	b := seedTestTenant(ctx, t, sqlDB)
 	c := seedTestTenant(ctx, t, sqlDB)
-	domain := "claim-" + shared.NewID().String()[:8] + ".example.com"
+	domain := "claim-" + shared.NewID().String()[28:] + ".example.com"
 
 	rowA, _ := verifieddomain.New(shared.NewID(), a, domain, "tok-a")
 	rowB, _ := verifieddomain.New(shared.NewID(), b, domain, "tok-b")
