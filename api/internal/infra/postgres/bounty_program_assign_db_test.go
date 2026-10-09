@@ -58,7 +58,7 @@ func TestProgramAssignment_DataScope(t *testing.T) {
 		p := &bountyprogram.Program{ID: shared.NewID(), TenantID: tenant, Name: name, ProgramURL: "https://p.example/" + name,
 			Status: bountyprogram.StatusActive, ScopeSource: bountyprogram.ScopeSourcePaste, ScopeItems: items,
 			TermsSHA256: bountyprogram.NewTerms("https://p.example/"+name, bountyprogram.Rules{}, items).SHA256(),
-			AcceptedBy: &who, AcceptedAt: &now, CreatedAt: now, UpdatedAt: now}
+			AcceptedBy:  &who, AcceptedAt: &now, CreatedAt: now, UpdatedAt: now}
 		var entries []*scope.Target
 		for _, e := range plan.Entries {
 			st, err := scope.NewEntry(tenant, e.TargetType, e.Pattern, "", who.String(), scope.EntryOptions{MaxTier: scope.TierActive})
@@ -76,7 +76,7 @@ func TestProgramAssignment_DataScope(t *testing.T) {
 				TargetType: x.TargetType, Pattern: x.Pattern, Reason: x.Reason, CreatedAt: now})
 		}
 		if err := repo.Import(ctx, bountyprogram.ImportWrite{Program: p,
-			Group: bountyprogram.NewGroup{ID: shared.NewID(), Name: "Program: " + name, Slug: "program-" + p.ID.String()[:13], Member: &who},
+			Group:   bountyprogram.NewGroup{ID: shared.NewID(), Name: "Program: " + name, Slug: "program-" + p.ID.String()[:13], Member: &who},
 			Entries: entries, Exclusions: ex}); err != nil {
 			t.Fatal(err)
 		}

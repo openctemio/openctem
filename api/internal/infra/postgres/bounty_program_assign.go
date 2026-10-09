@@ -93,28 +93,33 @@ func (r *BountyProgramRepository) AssignAllPrograms(ctx context.Context) (int64,
 	return r.assignWhere(ctx, `true`)
 }
 
-func (r *BountyProgramRepository) assignWhere(ctx context.Context, where string, args ...any) (int64, error) {
+type programRef struct{ tenant, program shared.ID }
+
+func (r *BountyProgramRepository) programRefs(ctx context.Context, where string, args ...any) ([]programRef, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT tenant_id::text, id::text FROM bounty_programs
 		WHERE group_id IS NOT NULL AND `+where+` ORDER BY tenant_id, id LIMIT 10000`, args...)
 	if err != nil {
-		return 0, fmt.Errorf("list programs: %w", err)
+		return nil, fmt.Errorf("list programs: %w", err)
 	}
-	type pair struct{ tenant, program shared.ID }
-	var todo []pair
+	defer func() { _ = rows.Close() }()
+	var out []programRef
 	for rows.Next() {
 		var t, p string
 		if err := rows.Scan(&t, &p); err != nil {
-			_ = rows.Close()
-			return 0, err
+			return nil, err
 		}
 		tid, e1 := shared.IDFromString(t)
 		pid, e2 := shared.IDFromString(p)
 		if e1 == nil && e2 == nil {
-			todo = append(todo, pair{tid, pid})
+			out = append(out, programRef{tid, pid})
 		}
 	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
+	return out, rows.Err()
+}
+
+func (r *BountyProgramRepository) assignWhere(ctx context.Context, where string, args ...any) (int64, error) {
+	todo, err := r.programRefs(ctx, where, args...)
+	if err != nil {
 		return 0, err
 	}
 	var changed int64
