@@ -60,7 +60,8 @@ var systemRoles = []SystemRole{
 // (migration bounty_programs, RFC-065 §7).
 var ResearcherPermissions = []Permission{
 	DashboardRead, AssetsRead,
-	FindingsRead, FindingsWrite, FindingsComment, FindingsSeverity, FindingsStatus, FindingsTriage, FindingsExport,
+	// No FindingsSeverity: researchers report and discuss, triage owns severity.
+	FindingsRead, FindingsWrite, FindingsComment, FindingsStatus, FindingsTriage, FindingsExport,
 	ScansRead, ScansWrite, ScansExecute,
 	ScanProfilesRead, ScannerTemplatesRead, ScanWorkflowsRead,
 	SensorsRead,
