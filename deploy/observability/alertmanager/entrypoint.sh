@@ -70,6 +70,12 @@ route:
   group_interval: 5m
   repeat_interval: 4h
   routes:
+    # Unhardened sensors are a standing nudge, not an incident: one
+    # notification per kind, repeated once a day.
+    - matchers: [alertname="SensorsUnhardened"]
+      receiver: operators
+      group_by: [alertname, kind]
+      repeat_interval: 24h
     - matchers: [severity="critical"]
       receiver: operators
       repeat_interval: 1h
