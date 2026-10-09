@@ -240,9 +240,13 @@ func (s *Service) narrow(ctx context.Context, p *bp.Program, d bp.SyncDiff) erro
 		}
 	}
 	// A narrowing: saved first, then taken out of the job signer's ledger.
-	return s.commit(ctx, p.TenantID, shared.ID{}, nil, drop, func() error {
+	if err := s.commit(ctx, p.TenantID, shared.ID{}, nil, drop, func() error {
 		return s.repo.ReplaceScope(ctx, bp.ScopeWrite{Program: p, DeleteEntryIDs: drop, Exclusions: excl})
-	})
+	}); err != nil {
+		return err
+	}
+	s.assign(ctx, p) // the program group loses what the program no longer covers
+	return nil
 }
 
 func (s *Service) suspend(ctx context.Context, p *bp.Program, actor shared.ID, why string) error {
@@ -250,6 +254,7 @@ func (s *Service) suspend(ctx context.Context, p *bp.Program, actor shared.ID, w
 	if err := s.stopEntries(ctx, p, actor); err != nil {
 		return err
 	}
+	s.assign(ctx, p)
 	s.audited(ctx, p, actor, "Program suspended: "+why, nil)
 	if s.notifier != nil {
 		s.notifier.NotifyAdmins(ctx, p.TenantID, "Program suspended", fmt.Sprintf("%s: %s", p.Name, why))
