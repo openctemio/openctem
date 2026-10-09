@@ -520,6 +520,9 @@ func registerScannerTemplateRoutes(
 		r.POST("/", h.Create, middleware.Require(permission.ScannerTemplatesWrite))
 		r.PUT("/{id}", h.Update, middleware.Require(permission.ScannerTemplatesWrite))
 		r.POST("/{id}/deprecate", h.Deprecate, middleware.Require(permission.ScannerTemplatesWrite))
+		// Approving a version for sensors is a scope widening (RFC-040
+		// §5.8, §11.5): the scope approvers, with step-up.
+		r.POST("/{id}/approve", h.ApproveForSensors, middleware.Require(permission.ScopeApprove), requireStepUp())
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScannerTemplatesDelete))

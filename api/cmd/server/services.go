@@ -1783,6 +1783,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ScanProfile = scan.NewScanProfileService(repos.ScanProfile, log)
 	s.ScannerTemplate = app.NewScannerTemplateService(repos.ScannerTemplate, cfg.Encryption.Key, log)
 	s.ScannerTemplate.SetSigningKeys(s.TemplateKeys)
+	if s.JobSigner != nil {
+		// RFC-040 §11.5: a custom template version reaches sensors only
+		// once approved under the scope policy and recorded by the signer.
+		s.ScannerTemplate.SetLedger(s.JobSigner, s.Scope)
+		s.Scope.SetLedgerTemplates(s.ScannerTemplate)
+	}
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
 
 	// Initialize credential service for template sources
