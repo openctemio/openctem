@@ -14,6 +14,7 @@ import type { ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Permission } from '@/lib/permissions'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { useTenant } from '@/context/tenant-provider'
 import { useDashboardStats } from '@/features/dashboard'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
@@ -61,9 +62,25 @@ export interface WidgetDef {
   component: () => ReactNode
   defaultSize: WidgetSize
   requiredPermission?: string
+  /** Module the widget's data belongs to: not offered, and shown as off, when it is off. */
+  requiredModule?: string
 }
 
 // ── shared shells ───────────────────────────────────────────────────────────
+
+/** A widget whose module is switched off for the organization. */
+function ModuleOffShell({ title }: { title: string }) {
+  return (
+    <Card className="h-full">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm text-muted-foreground">
+        Turned off for your organization.
+      </CardContent>
+    </Card>
+  )
+}
 
 function StatShell({
   title,
@@ -280,7 +297,9 @@ function ScanCoverageWidget() {
 }
 
 function ReachableAssetsWidget() {
+  const on = useModuleEnabled('attack_surface')
   const { data, isLoading } = useAttack()
+  if (!on) return <ModuleOffShell title="Assets reachable" />
   return (
     <StatShell
       title="Assets reachable"
@@ -414,6 +433,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
     component: ReachableAssetsWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.DashboardRead,
+    requiredModule: 'attack_surface',
   },
   threat_intel: {
     title: 'Threat intel',
