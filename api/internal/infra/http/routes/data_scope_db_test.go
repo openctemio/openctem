@@ -88,9 +88,16 @@ var dsMemberPerms = []string{ //nolint:gochecknoglobals // test fixture
 func (h *dsHarness) dsAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		ctx = context.WithValue(ctx, middleware.UserIDKey, r.Header.Get("X-Test-User"))
+		// The caller travels as a credential too (Authorization: Test <user>
+		// [admin]), so an internal dispatch that forwards only credentials
+		// (the dashboard overview) authenticates as the same caller.
+		user, admin := r.Header.Get("X-Test-User"), r.Header.Get("X-Test-Admin") == "1"
+		if f := strings.Fields(r.Header.Get("Authorization")); user == "" && len(f) >= 2 && f[0] == "Test" {
+			user, admin = f[1], len(f) > 2 && f[2] == "admin"
+		}
+		ctx = context.WithValue(ctx, middleware.UserIDKey, user)
 		ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenant.String())
-		ctx = context.WithValue(ctx, middleware.IsAdminKey, r.Header.Get("X-Test-Admin") == "1")
+		ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
 		perms := dsMemberPerms
 		if p := r.Header.Get("X-Test-Perms"); p != "" {
 			perms = strings.Split(p, ",")
@@ -189,7 +196,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	registerAssetGroupRoutes(router, handler.NewAssetGroupHandler(groupSvc, v, log), auth, nil)
 	registerAttackSurfaceRoutes(router, handler.NewAttackSurfaceHandler(surfaceSvc, log), auth, nil, passthrough)
 	registerExposureRoutes(router, handler.NewExposureHandler(expSvc, nil, v, log), auth, nil, passthrough)
-	registerDashboardRoutes(router, handler.NewDashboardHandler(dashSvc, log), auth, nil)
+	registerDashboardRoutes(router, handler.NewDashboardHandler(dashSvc, log), auth, nil, log)
 	registerNotificationRoutes(router, handler.NewNotificationHandler(notifSvc, log), auth, nil)
 
 	// Asset sub-resources outside /assets/<uuid>: services, state history,
@@ -294,9 +301,12 @@ func (h *dsHarness) do(user shared.ID, isAdmin bool, method, path string, body a
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Test-User", user.String())
+	auth := "Test " + user.String()
 	if isAdmin {
 		req.Header.Set("X-Test-Admin", "1")
+		auth += " admin"
 	}
+	req.Header.Set("Authorization", auth)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		h.t.Fatal(err)
