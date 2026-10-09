@@ -23,5 +23,12 @@ func registerProgramRoutes(router Router, h *handler.BountyProgramHandler, authM
 		r.POST("/{id}/suspend", h.Pause, middleware.Require(permission.ProgramsWrite))
 		r.POST("/{id}/end", h.End, middleware.Require(permission.ProgramsWrite))
 		r.POST("/{id}/reactivate", h.Resume, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		// Scope source and sync (RFC-065 §14): setting the source stores a
+		// credential (step-up); a sync narrows at once and keeps additions
+		// pending; applying them is the attestation (step-up).
+		r.PUT("/{id}/source", h.SetSource, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.ProgramsWrite))
+		r.GET("/{id}/pending", h.Pending, middleware.Require(permission.ProgramsRead))
+		r.POST("/{id}/pending/apply", h.ApplyPending, middleware.Require(permission.ProgramsWrite), requireStepUp())
 	}, tenantMiddlewares...)
 }
