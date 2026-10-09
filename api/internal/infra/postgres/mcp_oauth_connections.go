@@ -73,7 +73,7 @@ func scanMCPGrantRow(row rowScanner, extra1, extra2 *string) (*mcpoauth.Grant, e
 		cfetched, cexpires, cblocked sql.NullTime
 	)
 	if err := row.Scan(&id, &tenantID, &userID, &g.Resource, pq.Array(&scopes), &g.CreatedAt, &lastUsed,
-		&g.LastUsedIP, &g.ExpiresAt, &revoked, &g.RevokedReason,
+		&g.LastUsedIP, &g.ExpiresAt, &revoked, &g.RevokedReason, &g.DPoPJKT,
 		&cid, &g.Client.ClientID, &ckind, &ctenant, &g.Client.Name, pq.Array(&g.Client.RedirectURIs),
 		&cfetched, &cexpires, &cblocked, &g.Client.CreatedAt, extra1, extra2); err != nil {
 		return nil, err

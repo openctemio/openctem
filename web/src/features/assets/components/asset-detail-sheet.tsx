@@ -43,6 +43,7 @@ import {
 import { getAssetTypeLabel } from '../lib/asset-type-icon'
 import { ClassificationBadges, CIABadges, ControlPlaneBadge } from './classification-badges'
 import { useAssetRelationships } from '../hooks'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import type { Asset } from '../types/asset.types'
 
 // ============================================
@@ -207,6 +208,8 @@ export function AssetDetailSheet<T extends Asset>({
   // dialogs. Both calls share the same SWR cache key so there is only one
   // network request in practice.
   const { relationships } = useAssetRelationships(asset?.id ?? null)
+  // Relations follow the relationships module, as the API does.
+  const relationshipsOn = useModuleEnabled('relationships')
 
   if (!asset) return null
 
@@ -223,7 +226,8 @@ export function AssetDetailSheet<T extends Asset>({
 
   // Determine if we should show relationships
   const hasRelationships = relationships.length > 0
-  const shouldShowRelationshipPreview = showRelationshipPreview ?? hasRelationships
+  const shouldShowRelationshipPreview =
+    relationshipsOn && (showRelationshipPreview ?? hasRelationships)
 
   const typeLine =
     subtitle ||
@@ -236,15 +240,19 @@ export function AssetDetailSheet<T extends Asset>({
     { value: 'overview', label: 'Overview' },
     ...(showOwnersTab ? [{ value: 'owners', label: 'Owners' }] : []),
     ...(extraTabs ?? []).map((t) => ({ value: t.value, label: t.label })),
-    {
-      value: 'relationships',
-      label: (
-        <>
-          Relations
-          {relationships.length > 0 && <TabsCount value={relationships.length} />}
-        </>
-      ),
-    },
+    ...(relationshipsOn
+      ? [
+          {
+            value: 'relationships',
+            label: (
+              <>
+                Relations
+                {relationships.length > 0 && <TabsCount value={relationships.length} />}
+              </>
+            ),
+          },
+        ]
+      : []),
     ...(showFindingsTab
       ? [
           {
@@ -413,7 +421,7 @@ export function AssetDetailSheet<T extends Asset>({
         {/* Self-contained: handles Add / Edit / Delete dialogs itself. The
             sheet cannot swap its own selectedAsset, so navigation between
             related assets goes to the parent. */}
-        {tab === 'relationships' && (
+        {tab === 'relationships' && relationshipsOn && (
           <AssetRelationshipsTab
             assetId={asset.id}
             sourceAsset={{

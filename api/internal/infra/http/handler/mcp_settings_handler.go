@@ -54,7 +54,9 @@ type MCPSettingsResponse struct {
 	Scopes         []string `json:"scopes"`
 	APIKeysAllowed bool     `json:"api_keys_allowed"`
 	// RefreshDays: 0 means 90.
-	RefreshDays          int            `json:"refresh_days"`
+	RefreshDays int `json:"refresh_days"`
+	// RequireDPoP: only DPoP-bound tokens (RFC 9449).
+	RequireDPoP          bool           `json:"require_dpop"`
 	EffectiveRefreshDays int            `json:"effective_refresh_days"`
 	PlatformClientHosts  []string       `json:"platform_client_hosts"`
 	AvailableScopes      []MCPScopeInfo `json:"available_scopes"`
@@ -68,12 +70,14 @@ type MCPSettingsUpdateRequest struct {
 	Scopes         []string `json:"scopes"`
 	APIKeysAllowed bool     `json:"api_keys_allowed"`
 	RefreshDays    int      `json:"refresh_days"`
+	RequireDPoP    bool     `json:"require_dpop"`
 }
 
 func (h *MCPSettingsHandler) response(s tenant.MCPSettings) MCPSettingsResponse {
 	out := MCPSettingsResponse{
 		Enabled: !s.Disabled, AnyClient: s.AnyClient, ClientHosts: s.ClientHosts, Scopes: s.Scopes,
 		APIKeysAllowed: !s.APIKeysDisabled, RefreshDays: s.RefreshDays, EffectiveRefreshDays: s.RefreshLimitDays(),
+		RequireDPoP:         s.RequireDPoP,
 		PlatformClientHosts: h.trustedHosts,
 	}
 	if out.ClientHosts == nil {
@@ -130,7 +134,7 @@ func (h *MCPSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	s := tenant.MCPSettings{
 		Disabled: !req.Enabled, AnyClient: req.AnyClient, ClientHosts: req.ClientHosts, Scopes: req.Scopes,
-		APIKeysDisabled: !req.APIKeysAllowed, RefreshDays: req.RefreshDays,
+		APIKeysDisabled: !req.APIKeysAllowed, RefreshDays: req.RefreshDays, RequireDPoP: req.RequireDPoP,
 	}
 	if err := mcpoauthapp.ValidatePolicy(&s); err != nil {
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)

@@ -127,3 +127,7 @@ administrator saves them the built-in defaults above apply.
   every query scoped by `tenant_id`.
 - `internal/infra/http/handler/plan_handler.go`: console and organization
   endpoints; `WritePlanLimitError` (403 `PLAN_LIMIT`).
+
+## Plans and modules
+
+Plans set numeric limits only; they do not decide which modules an organization has. Module entitlements per plan, with grants for trials and add-ons, are designed in [RFC-064](../rfcs/RFC-064-modules-entitlements-preferences.md); today's module model is in [modules.md](modules.md).

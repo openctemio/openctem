@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -134,6 +135,7 @@ type TriageBroadcaster interface {
 
 // AITriageService handles AI-powered vulnerability triage operations.
 type AITriageService struct {
+	modules            AITriageModuleGuard // nil: auto-triage ignores modules
 	triageRepo         aitriagedom.Repository
 	findingRepo        vulnerability.FindingRepository
 	tenantRepo         tenant.Repository
@@ -184,6 +186,16 @@ func NewAITriageService(
 		promptSanitizer: NewPromptSanitizer(),
 	}
 }
+
+// AITriageModuleGuard reports the modules a tenant has off
+// (*module.ModuleService).
+type AITriageModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard stops auto-triage for a tenant with the ai_triage module
+// off; the manual routes are gated by the route module gate.
+func (s *AITriageService) SetModuleGuard(g AITriageModuleGuard) { s.modules = g }
 
 // SetAuditService sets the audit service for logging AI operations.
 func (s *AITriageService) SetAuditService(auditSvc *auditapp.AuditService) {
@@ -1042,6 +1054,9 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 // ShouldAutoTriage checks if a finding should be auto-triaged based on tenant settings.
 func (s *AITriageService) ShouldAutoTriage(ctx context.Context, tenantID shared.ID, severity string) (bool, error) {
 	if !s.platformCfg.Enabled {
+		return false, nil
+	}
+	if s.modules != nil && s.modules.TenantDisabledModules(ctx, tenantID.String())[moduledom.ModuleAITriage] {
 		return false, nil
 	}
 

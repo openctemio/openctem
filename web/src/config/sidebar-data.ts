@@ -493,7 +493,7 @@ export const sidebarData: SidebarData = {
           url: '/exceptions',
           icon: ShieldQuestion,
           permission: Permission.SuppressionsRead,
-          module: 'findings',
+          module: 'suppressions',
         },
         {
           // When something happens, do something: notify, assign, open a

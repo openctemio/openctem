@@ -1,5 +1,8 @@
 # Module coupling & the path to feature-toggleable modules
 
+> The current module model (core, overrides, bundles, every enforced surface) is in
+> [modules.md](modules.md); its direction is RFC-064. This page covers code coupling.
+
 > Question this answers: **"If we later don't need a module (e.g. pentesting),
 > can the system keep running instead of dying?"** — plus a concrete, phased
 > plan to get there.

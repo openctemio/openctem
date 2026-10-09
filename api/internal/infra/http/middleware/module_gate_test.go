@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -140,5 +141,31 @@ func TestRequireModule_BlocksDisabled(t *testing.T) {
 	g.RequireModule("compliance")(next).ServeHTTP(rec2, req)
 	if rec2.Code != http.StatusOK {
 		t.Errorf("enabled module should pass, got %d", rec2.Code)
+	}
+}
+
+// The refusal names the module and why, so a client can say "turned off by
+// your organization" instead of guessing from a bare 403.
+func TestRequireModule_ErrorNamesModuleAndReason(t *testing.T) {
+	g := NewModuleGate(&fakeDisabledProvider{disabled: map[string]bool{"pentest": true}}, time.Minute)
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil).
+		WithContext(context.WithValue(context.Background(), TenantIDKey, "t1"))
+	g.RequireModule("pentest")(next).ServeHTTP(rec, req)
+
+	var body struct {
+		Code    string `json:"code"`
+		Details struct {
+			Module string `json:"module"`
+			Reason string `json:"reason"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode %q: %v", rec.Body.String(), err)
+	}
+	if rec.Code != http.StatusForbidden || body.Code != "MODULE_NOT_ENABLED" ||
+		body.Details.Module != "pentest" || body.Details.Reason != ModuleReasonDisabled {
+		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
 	}
 }

@@ -25,6 +25,7 @@ import { BootstrapProvider, BootstrapGate } from '@/context/bootstrap-provider'
 import { PermissionProvider } from '@/context/permission-provider'
 import { WebSocketProvider } from '@/context/websocket-provider'
 import { RiskScoringProvider } from '@/context/risk-scoring-provider'
+import { ModuleSync } from './module-sync'
 
 interface DashboardProvidersProps {
   children: React.ReactNode
@@ -38,6 +39,7 @@ export function DashboardProviders({ children }: DashboardProvidersProps) {
           {/* The socket wraps the permission sync, which polls only while it is down. */}
           <WebSocketProvider>
             <PermissionProvider>
+              <ModuleSync />
               <RiskScoringProvider>{children}</RiskScoringProvider>
             </PermissionProvider>
           </WebSocketProvider>

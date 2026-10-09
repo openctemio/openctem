@@ -34,7 +34,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { useSWRConfig } from 'swr'
+import { useBootstrapContext } from '@/context/bootstrap-provider'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, isHiddenReleaseStatus } from '@/lib/permissions'
 import {
@@ -115,7 +115,8 @@ export default function ModuleManagementPage() {
   const { updateModules, isUpdating } = useUpdateTenantModules(tenantId)
   const { resetModules, isResetting } = useResetTenantModules(tenantId)
   const { edges: dependencyEdges } = useModuleDependencyGraph(tenantId)
-  const { mutate: globalMutate } = useSWRConfig()
+  // Sidebar, route guard and module checks read the bootstrap set.
+  const { refreshModules } = useBootstrapContext()
   // Subscribe to "module.updated" WS events on the tenant channel so
   // an admin in another tab (or another admin) flipping a module
   // reflects on this page within ~100ms instead of waiting for the
@@ -258,7 +259,7 @@ export default function ModuleManagementPage() {
           await mutate(result, false)
         }
         setPendingChanges({})
-        await globalMutate('/api/v1/me/modules')
+        await refreshModules()
         toast.success('Modules updated successfully')
 
         for (const w of result?.warnings ?? []) {
@@ -276,7 +277,7 @@ export default function ModuleManagementPage() {
         toast.error(getErrorMessage(err))
       }
     },
-    [updateModules, mutate, globalMutate]
+    [updateModules, mutate, refreshModules]
   )
 
   const handleSave = useCallback(async () => {
@@ -331,12 +332,12 @@ export default function ModuleManagementPage() {
       setPendingChanges({})
       setShowResetDialog(false)
       // Invalidate sidebar module cache so changes reflect immediately
-      await globalMutate('/api/v1/me/modules')
+      await refreshModules()
       toast.success('Modules reset to defaults (all enabled)')
     } catch (err) {
       toast.error(getErrorMessage(err))
     }
-  }, [resetModules, mutate, globalMutate])
+  }, [resetModules, mutate, refreshModules])
 
   const pendingEnabled = Object.values(pendingChanges).filter(Boolean).length
   const pendingDisabled = Object.values(pendingChanges).filter((v) => !v).length
@@ -415,7 +416,13 @@ export default function ModuleManagementPage() {
           which overwrote the config and duplicated this exact catalog. The
           manual toggles below layer on top as non-destructive overrides. */}
       <Can route="POST /api/v1/tenants/{tenant}/settings/modules/bundles">
-        <BundleSubscriptionCard tenantId={tenantId} onChanged={() => mutate()} />
+        <BundleSubscriptionCard
+          tenantId={tenantId}
+          onChanged={() => {
+            void mutate()
+            void refreshModules()
+          }}
+        />
       </Can>
 
       <div className="mt-5 space-y-5">

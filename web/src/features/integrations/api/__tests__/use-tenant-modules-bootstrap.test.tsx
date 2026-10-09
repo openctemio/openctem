@@ -28,6 +28,7 @@ function bootstrapState(over: Partial<BootstrapContextValue>): BootstrapContextV
     error: null,
     isBootstrapped: false,
     refresh: vi.fn(),
+    refreshModules: vi.fn(),
     ...over,
   }
 }

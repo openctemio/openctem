@@ -55,6 +55,8 @@ import {
   type RoleMember,
 } from '@/features/access-control'
 import { AddMemberToRoleDialog } from './add-member-to-role-dialog'
+import { RoleCapabilities } from './role-capabilities'
+import { isAdminBypassRole } from '../lib/authz-reference'
 
 interface RoleDetailSheetProps {
   role: Role | null
@@ -64,7 +66,7 @@ interface RoleDetailSheetProps {
   onDelete?: (role: Role) => void
 }
 
-type RoleTab = 'permissions' | 'members'
+type RoleTab = 'permissions' | 'features' | 'members'
 
 // Permission types: a category, told apart by icon and label as well as colour.
 const permissionTypeConfig: Record<
@@ -302,6 +304,7 @@ export function RoleDetailSheet({
         </>
       ),
     },
+    { value: 'features', label: 'By feature' },
     {
       value: 'members',
       label: (
@@ -501,6 +504,13 @@ export function RoleDetailSheet({
               )}
             </DetailSection>
           </div>
+        )}
+
+        {activeTab === 'features' && (
+          <RoleCapabilities
+            permissions={role.permissions ?? []}
+            adminBypass={isAdminBypassRole(role.slug, role.is_system)}
+          />
         )}
 
         {activeTab === 'members' && (

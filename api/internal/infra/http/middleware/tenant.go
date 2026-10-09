@@ -218,7 +218,7 @@ func RequireTeamRole(roles ...tenant.Role) func(http.Handler) http.Handler {
 			}
 
 			if !slices.Contains(roleStrings, string(role)) {
-				apierror.Forbidden("Insufficient permissions in this tenant").WriteJSON(w)
+				roleRequired("Insufficient permissions in this tenant", lowestRole(roles)).WriteJSON(w)
 				return
 			}
 
@@ -254,7 +254,7 @@ func RequireMinTeamRole(minRole tenant.Role) func(http.Handler) http.Handler {
 			}
 
 			if role.Priority() < minRole.Priority() {
-				apierror.Forbidden("Insufficient permissions in this tenant").WriteJSON(w)
+				roleRequired("Insufficient permissions in this tenant", minRole.String()).WriteJSON(w)
 				return
 			}
 
@@ -318,4 +318,19 @@ func GetTeamMembership(ctx context.Context) *tenant.Membership {
 		return m
 	}
 	return nil
+}
+
+// lowestRole is the least privileged of the roles a gate admits, which is
+// what a refused caller needs at minimum.
+func lowestRole(roles []tenant.Role) string {
+	if len(roles) == 0 {
+		return ""
+	}
+	low := roles[0]
+	for _, r := range roles[1:] {
+		if r.Priority() < low.Priority() {
+			low = r
+		}
+	}
+	return low.String()
 }

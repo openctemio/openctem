@@ -12,6 +12,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -90,8 +91,21 @@ type RemediationCampaignService struct {
 	epicCreator CampaignEpicCreator                  // nil → ticketing disabled
 	audit       CampaignAuditLogger                  // nil → no audit trail (tests)
 	assignees   CampaignAssigneeChecker              // nil → naming an assignee is refused
+	modules     CampaignModuleGuard                  // nil → progress reconciles for every tenant
 	logger      *logger.Logger
 }
+
+// CampaignModuleGuard reports the modules a tenant has off
+// (*module.ModuleService). The background progress reconcile skips the
+// campaigns of a tenant with the remediation module off: no counts written,
+// no auto-complete, no ticket sync. The next pass after the module is turned
+// back on catches up.
+type CampaignModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard wires the tenant module state into the progress reconcile.
+func (s *RemediationCampaignService) SetModuleGuard(g CampaignModuleGuard) { s.modules = g }
 
 // CampaignAssigneeChecker decides whether a user may own a campaign in a
 // tenant: an active member with an active account.
@@ -893,7 +907,18 @@ func (s *RemediationCampaignService) ReconcileProgress(ctx context.Context) (int
 	}
 
 	updated := 0
+	disabled := make(map[shared.ID]bool)
 	for _, campaign := range campaigns {
+		if s.modules != nil {
+			off, seen := disabled[campaign.TenantID()]
+			if !seen {
+				off = s.modules.TenantDisabledModules(ctx, campaign.TenantID().String())[moduledom.ModuleRemediation]
+				disabled[campaign.TenantID()] = off
+			}
+			if off {
+				continue
+			}
+		}
 		changed, rerr := s.recomputeProgress(ctx, campaign)
 		if rerr != nil {
 			s.logger.Warn("campaign progress reconcile failed", "id", campaign.ID().String(), "error", rerr)

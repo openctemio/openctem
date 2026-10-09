@@ -80,6 +80,19 @@ func (g *ModuleGate) Invalidate(tenantID string) {
 	g.mu.Unlock()
 }
 
+// ModuleReasonDisabled: the organization switched the module off (or left it
+// out of its products). Entitlement reasons (not_entitled, read_only_grace)
+// join it with plan entitlements (RFC-064).
+const ModuleReasonDisabled = "disabled_by_admin"
+
+// ModuleNotEnabledDetails is the details object of a MODULE_NOT_ENABLED error:
+// which module, and why, so a client can say "turned off by your
+// organization" rather than guess. Module ids are public product facts.
+type ModuleNotEnabledDetails struct {
+	Module string `json:"module"`
+	Reason string `json:"reason"`
+}
+
 // RequireModule returns middleware that blocks a route group when the module is
 // disabled for the requesting tenant. Fail-open (see IsEnabled): a nil gate or
 // missing tenant lets the request through.
@@ -90,7 +103,9 @@ func (g *ModuleGate) RequireModule(moduleID string) func(http.Handler) http.Hand
 				next.ServeHTTP(w, r)
 				return
 			}
-			apierror.ModuleNotEnabled("This module is not enabled for your team").WriteJSON(w)
+			apierror.ModuleNotEnabled("This module is not enabled for your team").
+				WithDetails(ModuleNotEnabledDetails{Module: moduleID, Reason: ModuleReasonDisabled}).
+				WriteJSON(w)
 		})
 	}
 }

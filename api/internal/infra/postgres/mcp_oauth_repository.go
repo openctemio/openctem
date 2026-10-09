@@ -241,10 +241,10 @@ func (r *MCPOAuthRepository) RedeemCode(ctx context.Context, codeHash string, no
 func (r *MCPOAuthRepository) CreateGrant(ctx context.Context, g *mcpoauth.Grant, requestID shared.ID, tokens ...mcpoauth.Token) error {
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		const qg = `
-			INSERT INTO mcp_oauth_grants (id, tenant_id, user_id, client_ref, resource, scopes, created_at, expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+			INSERT INTO mcp_oauth_grants (id, tenant_id, user_id, client_ref, resource, scopes, created_at, expires_at, dpop_jkt)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))`
 		if _, err := tx.ExecContext(ctx, qg, g.ID.String(), g.TenantID.String(), g.UserID.String(), g.Client.ID.String(),
-			g.Resource, pq.Array(scopeStrings(g.Scopes)), g.CreatedAt, g.ExpiresAt); err != nil {
+			g.Resource, pq.Array(scopeStrings(g.Scopes)), g.CreatedAt, g.ExpiresAt, g.DPoPJKT); err != nil {
 			return fmt.Errorf("insert mcp grant: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE mcp_oauth_requests SET grant_id = $2 WHERE id = $1 AND tenant_id = $3`,
@@ -286,7 +286,7 @@ func (r *MCPOAuthRepository) GetGrantByToken(ctx context.Context, tokenHash stri
 }
 
 const mcpGrantSelectCols = `SELECT g.id, g.tenant_id, g.user_id, g.resource, g.scopes, g.created_at, g.last_used_at,
-	COALESCE(g.last_used_ip, ''), g.expires_at, g.revoked_at, COALESCE(g.revoked_reason, ''), ` + mcpClientColumns
+	COALESCE(g.last_used_ip, ''), g.expires_at, g.revoked_at, COALESCE(g.revoked_reason, ''), COALESCE(g.dpop_jkt, ''), ` + mcpClientColumns
 
 func scanMCPGrantWithUse(row rowScanner) (*mcpoauth.Grant, bool, error) {
 	var (
@@ -299,7 +299,7 @@ func scanMCPGrantWithUse(row rowScanner) (*mcpoauth.Grant, bool, error) {
 		cfetched, cexpires, cblocked sql.NullTime
 	)
 	if err := row.Scan(&id, &tenantID, &userID, &g.Resource, pq.Array(&scopes), &g.CreatedAt, &lastUsed,
-		&g.LastUsedIP, &g.ExpiresAt, &revoked, &g.RevokedReason,
+		&g.LastUsedIP, &g.ExpiresAt, &revoked, &g.RevokedReason, &g.DPoPJKT,
 		&cid, &g.Client.ClientID, &ckind, &ctenant, &g.Client.Name, pq.Array(&g.Client.RedirectURIs),
 		&cfetched, &cexpires, &cblocked, &g.Client.CreatedAt, &used); err != nil {
 		return nil, false, err

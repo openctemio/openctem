@@ -1840,6 +1840,45 @@ deliberately.
   intentional (staged rollout), not a dead control. Tenant isolation is enforced by
   convention (`WHERE tenant_id = $n`) today; do not assume RLS backstops it.
 
+## Role templates
+
+The built-in roles (`permission.SystemRoles`) are deliberately coarse.
+Least-privilege roles for the people in a CTEM program are custom roles,
+created from a **role template** (`permission.RoleTemplates`,
+`GET /api/v1/roles/templates`, `team:roles:read`). A template is a starting
+point and grants nothing. Creating a role from one is an ordinary
+`POST /api/v1/roles`: the grant ceiling, the admin-only refusal and the audit
+apply, so a template never lets anyone build a role above their own grants.
+
+| Template | For | Full data |
+|---|---|---|
+| `program-lead` | CISO, CTEM program manager: cycles, priority rules, SLAs, approvals | yes |
+| `security-analyst` | triage, assignment, verification; requests risk acceptance | no |
+| `vulnerability-manager` | backlog routing, assignment rules, campaigns, scan schedules, reports | no |
+| `remediation-owner` | asset owners, IT, developers: comments, remediation, fix applied | no |
+| `appsec-engineer` | code and dependency scanning, application findings, the CI gate | no |
+| `scan-operator` | scans and scan workflows on approved scope | no |
+| `validation-engineer` | pentest campaigns, simulations, control tests, retests | no |
+| `external-tester` | a vendor tester: only the campaigns they are a member of | no |
+| `threat-intel-analyst` | attacker profiles, threat intel, external exposures | no |
+| `risk-approver` | GRC: approves risk acceptance and suppressions, compliance | no |
+| `auditor` | read-only evidence, the audit log and exports | yes |
+| `executive` | dashboards, cycle outcomes and reports; less than viewer | no |
+
+Unit tests (`templates_test.go`) keep the templates honest:
+- every permission is in the catalog and none is admin-only;
+- **separation of duties** holds:
+  - fix applied and verify are never together;
+  - approve is never with status, triage, bulk or fix;
+  - suppression write is never with suppression approve;
+  - scope write is never with scope approve;
+- no template administers the organization or deletes anything;
+- only `program-lead` and `auditor` see all data;
+- `auditor` and `executive` are read-only, and `executive` is within viewer;
+- `external-tester` holds no organization-wide findings, exposures, members or scans.
+
+`TestRoleTemplates_CreationIsBoundedByTheCreator` checks two things: the owner can create every template, and a delegated role manager can create only the templates their own grants cover.
+
 ## Granular permissions enforced (D-4, migrations 000771/000772)
 
 Thirty permissions were defined, seeded and shown in the role editor, yet no
@@ -1896,6 +1935,12 @@ role. A custom role created later needs them explicitly for those reads.
 | `settings:billing:read`, `settings:billing:write` | No billing API or page. |
 
 ## CI invariants that keep this from drifting
+
+The generated [authorization reference](authorization-reference.md) (role and
+permission matrix, personas, one page per feature) is built from the same
+sources; `TestEveryRouteIsClassified` fails on a route that belongs to no
+feature or says nothing about its authorization. Refused permission and team
+role gates name what was missing in the 403 `details`.
 
 These tests fail the build if the model erodes. Treat them as executable spec:
 
