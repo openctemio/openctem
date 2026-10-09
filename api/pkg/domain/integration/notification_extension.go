@@ -211,7 +211,7 @@ func AllEventTypes() []EventTypeInfo {
 
 		// Workflow events - require 'findings' module ('workflows' is a child of
 		// 'findings' per migration 000162). Deliberately NOT gated on the
-		// 'workflows' module: internal/app/workflow never checks module
+		// 'workflows' module: internal/app/automation never checks module
 		// enablement before enqueuing, so gating the notification on a module
 		// the emitter ignores would recreate the same silent drop this list
 		// exists to prevent.
