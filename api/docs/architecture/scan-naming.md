@@ -12,7 +12,7 @@ never used on its own.
 | One execution of a Scan | Scan run | `/api/v1/scan-runs` | `scan_runs` | `pkg/domain/scanrun`, `internal/app/scanrun` |
 | One step of a scan run | Step | in `GET /api/v1/scan-runs/{id}` | `scan_run_steps` | `scanrun.StepRun` |
 | One unit of sensor work of a step (a chunk of targets) | Task | `/api/v1/scan-runs/{id}/tasks` | `commands` (`commands.scan_run_step_id`, payload `scan_run_id`) | `pkg/domain/command` |
-| An event rule (when / if / then) | Automation | `/api/v1/workflows` (renamed to `/api/v1/automations` with the automations redesign) | `automations`, `automation_runs`, `automation_run_steps` (migration 001484) | `pkg/domain/automation`, `internal/app/automation` |
+| An event rule (when / if / then) | Automation | `/api/v1/workflows` (renamed to `/api/v1/automations` with the automations redesign) | `automations`, `automation_runs`, `automation_run_steps` (migration 001499) | `pkg/domain/automation`, `internal/app/automation` |
 | A customer's CI pipeline (repository + config file) | CI pipeline | `/api/v1/ci/pipelines` | `ci_pipelines` | `pkg/domain/cirun` |
 | One CI pipeline execution reporting to OpenCTEM | CI run | `/api/v1/ci/runs` | `ci_runs` | `pkg/domain/cirun` |
 
