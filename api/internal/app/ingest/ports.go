@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/capability"
@@ -203,7 +204,9 @@ type PortReconciler interface {
 	// ClosePorts marks the tenant's open_port assets inactive, records a
 	// "disappeared" history entry for each and resolves their active
 	// port_open exposures, in one transaction. It returns the ids it closed.
-	ClosePorts(ctx context.Context, tenantID shared.ID, ids []shared.ID, reason string) ([]shared.ID, error)
+	// A port seen open at or after seenBefore (by a newer report that
+	// arrived first) is not closed.
+	ClosePorts(ctx context.Context, tenantID shared.ID, ids []shared.ID, seenBefore time.Time, reason string) ([]shared.ID, error)
 	// ReopenPorts marks the tenant's inactive open_port assets with the given
 	// names active again with a "recovered" history entry.
 	ReopenPorts(ctx context.Context, tenantID shared.ID, names []string, reason string) ([]shared.ID, error)
@@ -292,7 +295,10 @@ func (p *AssetProcessor) surfacePorts(ctx context.Context, tenantID shared.ID, r
 	if len(closed) == 0 {
 		return
 	}
-	done, err := p.ports.ClosePorts(ctx, tenantID, closed, "port closed: not seen open by the latest port scan")
+	// Only ports last seen before this report's own observation: a delayed
+	// older scan never closes a port a newer one saw open.
+	done, err := p.ports.ClosePorts(ctx, tenantID, closed, reportObservedAt(report, time.Now()),
+		"port closed: not seen open by the latest port scan")
 	if err != nil {
 		p.logger.Warn("ingest: closed ports not recorded", "tenant_id", tenantID.String(), "error", err)
 		return

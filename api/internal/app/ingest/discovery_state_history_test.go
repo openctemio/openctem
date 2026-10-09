@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openctemio/ctis"
 
@@ -113,7 +114,7 @@ func TestMergeCTISIntoAsset_DetectsReactivation(t *testing.T) {
 	}
 
 	var recovered []shared.ID
-	p.mergeCTISIntoAsset(a, &ctis.Asset{}, nil, &recovered)
+	p.mergeCTISIntoAsset(a, &ctis.Asset{}, nil, time.Time{}, &recovered)
 
 	if a.Status() != asset.StatusActive {
 		t.Fatalf("MarkSeen should have reactivated to active, got %q", a.Status())
@@ -128,7 +129,7 @@ func TestMergeCTISIntoAsset_ActiveAssetNotFlaggedRecovered(t *testing.T) {
 	a := newTestAsset(t, shared.NewID(), "host.example.com") // active by default
 
 	var recovered []shared.ID
-	p.mergeCTISIntoAsset(a, &ctis.Asset{}, nil, &recovered)
+	p.mergeCTISIntoAsset(a, &ctis.Asset{}, nil, time.Time{}, &recovered)
 
 	if len(recovered) != 0 {
 		t.Fatalf("an already-active asset must not be flagged recovered, got %v", recovered)
