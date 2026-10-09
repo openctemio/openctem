@@ -305,4 +305,15 @@ var (
 		},
 		[]string{"reason"},
 	)
+
+	// JobSigningTotal counts claimed commands sent to the job signer, by
+	// outcome: "signed", "refused" (the signer said no) or "unavailable"
+	// (no answer). A command not signed is not handed out.
+	JobSigningTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sensor_job_signing_total",
+			Help: "Claimed commands sent to the job signer, by outcome (signed, refused, unavailable)",
+		},
+		[]string{"outcome"},
+	)
 )

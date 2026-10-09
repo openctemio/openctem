@@ -171,6 +171,13 @@ type Command struct {
 	// sensor may echo the epoch in HeaderLeaseEpoch on complete and fail.
 	LeaseEpoch     int        `json:"lease_epoch"`
 	LeaseExpiresAt *time.Time `json:"lease_expires_at"`
+	// SignedJob is the signer's DSSE envelope for this delivery
+	// (FeatureSignedJobs, docs/architecture/job-signing.md). Present on
+	// every command a claim hands out when the platform signs jobs: the
+	// claim-N answer of GET /commands and POST /commands/{id}/claim. Never
+	// on a listing poll or another transition. Its payload_sha256 is over
+	// the exact bytes of Payload above.
+	SignedJob json.RawMessage `json:"signed_job,omitempty"`
 }
 
 // CommandList is the answer of GET /commands.

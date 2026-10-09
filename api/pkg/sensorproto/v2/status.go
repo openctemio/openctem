@@ -251,6 +251,12 @@ const (
 	// the sensor holds, in numbered batches (RFC-029 §4.4.1). A sensor sends
 	// no logs to a server that does not list it.
 	FeatureLogs = "logs"
+	// FeatureSignedJobs: every command a claim hands out carries
+	// "signed_job", a DSSE envelope from the platform's separate job signer
+	// (RFC-040 §5.6, docs/architecture/job-signing.md), and hello lists the
+	// signer's keys in "signed_jobs". A command the signer did not sign is
+	// not handed out.
+	FeatureSignedJobs = "signed_jobs"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
@@ -277,6 +283,25 @@ type Hello struct {
 	// TransportV3 says where this platform serves sensor protocol v3
 	// (docs/rfcs/RFC-059-sensor-transport-v3.md); absent when it does not.
 	TransportV3 *TransportV3 `json:"transport_v3,omitempty"`
+	// SignedJobs lists the job signer's keys when the platform signs jobs
+	// (FeatureSignedJobs); absent when it does not. Keys is empty while the
+	// signer has not answered yet: claims are then not handed out.
+	SignedJobs *SignedJobs `json:"signed_jobs,omitempty"`
+}
+
+// SignedJobs is the hello's description of job signing.
+type SignedJobs struct {
+	PayloadType string         `json:"payload_type"`
+	Keys        []SignedJobKey `json:"keys"`
+}
+
+// SignedJobKey is one signer key: KeyID is "SHA256:" + lower-case hex of
+// the SHA-256 of the raw key, PublicKey the raw 32-byte Ed25519 key in
+// standard base64.
+type SignedJobKey struct {
+	KeyID     string `json:"keyid"`
+	Algorithm string `json:"algorithm"`
+	PublicKey string `json:"public_key"`
 }
 
 // TransportV3 locates protocol v3 on a v2 hello.

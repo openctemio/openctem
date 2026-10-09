@@ -13,7 +13,6 @@ package ingest
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"net/netip"
 	"strings"
@@ -110,33 +109,10 @@ func RoleMayPushUnsolicited(t sensor.SensorType) bool { return unsolicitedRoles[
 // CommandTargets are the targets a command's payload names ("targets" and
 // "target", the keys sensors read), trimmed and de-duplicated.
 func CommandTargets(cmd *command.Command) []string {
-	if cmd == nil || len(cmd.Payload) == 0 {
+	if cmd == nil {
 		return nil
 	}
-	var p struct {
-		Targets []any `json:"targets"`
-		Target  any   `json:"target"`
-	}
-	if json.Unmarshal(cmd.Payload, &p) != nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	var out []string
-	add := func(v any) {
-		s, ok := v.(string)
-		if !ok {
-			return
-		}
-		if s = strings.TrimSpace(s); s != "" && !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	for _, t := range p.Targets {
-		add(t)
-	}
-	add(p.Target)
-	return out
+	return command.PayloadTargets(cmd.Payload)
 }
 
 // coverTarget is one command target, parsed once.

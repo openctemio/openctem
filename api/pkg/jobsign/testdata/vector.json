@@ -1,0 +1,17 @@
+{
+  "seed": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+  "keyid": "SHA256:fe812c12f3ab4ce6ac5db69ac352f906cb1b11ef43fb33e252ef7ff552263889",
+  "public_key": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+  "payload": "{\"kind\":\"openctem.job/v1\",\"tenant_id\":\"11111111-1111-4111-8111-111111111111\",\"sensor_id\":\"22222222-2222-4222-8222-22222222abcd\",\"command_id\":\"33333333-3333-4333-8333-333333333333\",\"command_type\":\"scan\",\"tool\":\"nuclei\",\"payload_sha256\":\"sha256:17fe3891372e5bbda1731e443466ed609e266bbe6fa5eee2436a30b0bb53c68e\",\"targets\":[\"203.0.113.10\",\"app.example.com\"],\"lease_epoch\":2,\"issued_at\":\"2026-10-09T10:00:00Z\",\"expires_at\":\"2026-10-09T11:00:00Z\",\"seq\":18,\"nonce\":\"AAECAwQFBgcICQoLDA0ODw\",\"signer\":{\"keyid\":\"SHA256:fe812c12f3ab4ce6ac5db69ac352f906cb1b11ef43fb33e252ef7ff552263889\"}}",
+  "command_payload": "{\"scanner\":\"nuclei\",\"targets\":[\"203.0.113.10\",\"app.example.com\"]}",
+  "envelope": {
+    "payloadType": "application/vnd.openctem.job.v1+json",
+    "payload": "eyJraW5kIjoib3BlbmN0ZW0uam9iL3YxIiwidGVuYW50X2lkIjoiMTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExIiwic2Vuc29yX2lkIjoiMjIyMjIyMjItMjIyMi00MjIyLTgyMjItMjIyMjIyMjJhYmNkIiwiY29tbWFuZF9pZCI6IjMzMzMzMzMzLTMzMzMtNDMzMy04MzMzLTMzMzMzMzMzMzMzMyIsImNvbW1hbmRfdHlwZSI6InNjYW4iLCJ0b29sIjoibnVjbGVpIiwicGF5bG9hZF9zaGEyNTYiOiJzaGEyNTY6MTdmZTM4OTEzNzJlNWJiZGExNzMxZTQ0MzQ2NmVkNjA5ZTI2NmJiZTZmYTVlZWUyNDM2YTMwYjBiYjUzYzY4ZSIsInRhcmdldHMiOlsiMjAzLjAuMTEzLjEwIiwiYXBwLmV4YW1wbGUuY29tIl0sImxlYXNlX2Vwb2NoIjoyLCJpc3N1ZWRfYXQiOiIyMDI2LTEwLTA5VDEwOjAwOjAwWiIsImV4cGlyZXNfYXQiOiIyMDI2LTEwLTA5VDExOjAwOjAwWiIsInNlcSI6MTgsIm5vbmNlIjoiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EdyIsInNpZ25lciI6eyJrZXlpZCI6IlNIQTI1NjpmZTgxMmMxMmYzYWI0Y2U2YWM1ZGI2OWFjMzUyZjkwNmNiMWIxMWVmNDNmYjMzZTI1MmVmN2ZmNTUyMjYzODg5In19",
+    "signatures": [
+      {
+        "keyid": "SHA256:fe812c12f3ab4ce6ac5db69ac352f906cb1b11ef43fb33e252ef7ff552263889",
+        "sig": "eKqmNBkdusqD8wCM0O7jpffwbv3IJDy+HlMK+0wLRrTKrsbNJlGUByoFvcvZgWoi6jD6wbzIGOKmUnEPuA/DAg=="
+      }
+    ]
+  }
+}

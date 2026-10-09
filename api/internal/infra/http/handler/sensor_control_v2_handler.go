@@ -90,6 +90,9 @@ func (h *SensorControlV2Handler) Features() []string {
 	if h.HasLogs() {
 		out = append(out, protov2.FeatureLogs)
 	}
+	if h.commands != nil && h.commands.service.SignsJobs() {
+		out = append(out, protov2.FeatureSignedJobs)
+	}
 	return out
 }
 
@@ -647,6 +650,9 @@ func (h *SensorControlV2Handler) transitionFailed(w http.ResponseWriter, route s
 		protov2.NewProblem(protov2.ProblemCommandClaimed).Write(w)
 	case errors.Is(err, command.ErrTransitionConflict):
 		protov2.NewProblem(protov2.ProblemTransitionConflict).Write(w)
+	case errors.Is(err, command.ErrJobNotSigned):
+		// Claims wait for the signer; nothing leaves unsigned.
+		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
 	default:
 		h.internal(w, route, err)
 	}
@@ -684,6 +690,8 @@ func toV2Command(c *commanddom.Command) protov2.Command {
 		Result:         rawOrNull(c.Result),
 		LeaseEpoch:     c.LeaseEpoch,
 		LeaseExpiresAt: utcPtr(c.LeaseExpiresAt),
+		// Set only on the copy a claim hands out when jobs are signed.
+		SignedJob: c.SignedJob,
 	}
 	if c.SensorID != nil {
 		id := c.SensorID.String()

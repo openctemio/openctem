@@ -40,10 +40,19 @@ type SensorResultsV2Handler struct {
 	ciKeys CIRunnerKeyPolicy
 	// transportV3 is listed on hello when protocol v3 is served (RFC-059).
 	transportV3 *protov2.TransportV3
+	// signedJobs lists the job signer keys on hello; nil when jobs are
+	// not signed.
+	signedJobs func(ctx context.Context) *protov2.SignedJobs
 }
 
 // SetTransportV3 lists protocol v3 on hello (nil: not served).
 func (h *SensorResultsV2Handler) SetTransportV3(t *protov2.TransportV3) { h.transportV3 = t }
+
+// SetSignedJobs lists the job signer's keys on hello (nil: jobs are not
+// signed). keys is called per hello and should answer from a cache.
+func (h *SensorResultsV2Handler) SetSignedJobs(keys func(ctx context.Context) *protov2.SignedJobs) {
+	h.signedJobs = keys
+}
 
 // CIRunnerKeyPolicy refuses the key of a CI (one-shot) sensor when its
 // organization requires OIDC for CI (cirun.RunnerKeyPolicy).
@@ -244,9 +253,12 @@ func (h *SensorResultsV2Handler) Abandon(w http.ResponseWriter, r *http.Request)
 }
 
 // Hello handles GET /hello: protocol level, features and limits (RFC-023 C3).
-func (h *SensorResultsV2Handler) Hello(w http.ResponseWriter, _ *http.Request) {
+func (h *SensorResultsV2Handler) Hello(w http.ResponseWriter, r *http.Request) {
 	hello := protov2.NewHello(h.receiver.Limits(), h.features...)
 	hello.TransportV3 = h.transportV3
+	if h.signedJobs != nil {
+		hello.SignedJobs = h.signedJobs(r.Context())
+	}
 	h.writeJSON(w, http.StatusOK, hello)
 }
 

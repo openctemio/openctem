@@ -39,7 +39,7 @@ the RFC holds the design and phase plan.
 | Platform-side scope check before dispatch; scan targets limited to what the actor may act on | [active-probe-gate.md](active-probe-gate.md) |
 | Sensor-local, read-only policy set by the network owner (allowed ranges, ports, check types, kill switch); the platform stops dispatching jobs a sensor would refuse | [sensors.md](sensors.md#sensor-local-policy-rfc-040-57) |
 | Scan credentials held by the sensor, referenced by the platform | RFC-040 §5.9, RFC-032 |
-| Jobs signed by a separate signing service, with nonce and sequence against replay | **Planned** (RFC-040 §5.6) |
+| Jobs signed by a separate signing service, with nonce and sequence against replay | **Platform side built, off by default** (`SIGNER_SOCKET`): [job-signing.md](job-signing.md). Sensor verification (sdk-go), the offline root key set and the signer's scope ledger are next |
 | Two-person approval for scope widening | **Planned** (RFC-040 §5.6) |
 
 ### Both directions
@@ -113,7 +113,7 @@ are hostile. Decisions and the full finding list: RFC-040 §11.
 | H2 | Coverage auto-resolve outside the command | fixed: #1551 |
 | H3 | Pairing limiter keyed on the raw path | fixed: #1559 |
 | H4 | Ingest staging never purged | fixed: #1561 |
-| H5 | Unsigned jobs, no policy by default, platform TLS not pinned | decided (RFC-040 Q3 revised, Q10, Q11); sdk-go, sensor and signer work |
+| H5 | Unsigned jobs, no policy by default, platform TLS not pinned | decided (RFC-040 Q3 revised, Q10, Q11); the signer and claim-time signed jobs are built ([job-signing.md](job-signing.md)); sdk-go and sensor work remain |
 | H6 | Unconfined sandbox and DNS rebinding past admission | decided (RFC-040 Q12); sdk-go and sensor work |
 | M1 | Scan-zone preview resolved any name | fixed: #1564 |
 | M3 | Jira comments carried live wiki markup | fixed: #1562 |
