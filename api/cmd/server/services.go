@@ -1755,6 +1755,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
 	s.Ingest.SetGrants(repos.SensorGrant, s.Sensor)
+	// Sensor lookups (fingerprint check, baseline diff, suppressions) answer
+	// only about assets the sensor reaches: its commands' targets and its
+	// zones' ranges.
+	s.Ingest.SetReachSource(repos.SensorReach)
 
 	// Initialize scanning services
 	s.ScanProfile = scan.NewScanProfileService(repos.ScanProfile, log)

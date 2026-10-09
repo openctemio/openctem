@@ -31,6 +31,7 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -720,7 +721,10 @@ func utcPtr(t *time.Time) *time.Time {
 // =============================================================================
 
 // Suppressions handles GET /api/v2/sensor/suppressions (RFC-029 §4.5): the
-// v1 document with a strong ETag; If-None-Match with it answers 304.
+// v1 document with a strong ETag; If-None-Match with it answers 304. A rule
+// on an asset is listed only when the sensor reaches that asset
+// (ingest sensor_reach.go): a sensor never learns another zone's assets or
+// suppressed paths.
 func (h *SensorControlV2Handler) Suppressions(w http.ResponseWriter, r *http.Request) {
 	s := sensorForV2(w, r)
 	if s == nil {
@@ -733,7 +737,15 @@ func (h *SensorControlV2Handler) Suppressions(w http.ResponseWriter, r *http.Req
 			h.internal(w, "suppressions", err)
 			return
 		}
+		reachable, err := h.reachableRuleAssets(r, s, rules)
+		if err != nil {
+			h.internal(w, "suppressions", err)
+			return
+		}
 		for _, rule := range rules {
+			if rule.AssetID() != nil && !reachable[*rule.AssetID()] {
+				continue
+			}
 			item := protov2.SuppressionRule{RuleID: rule.RuleID(), ToolName: rule.ToolName(), PathPattern: rule.PathPattern()}
 			if rule.AssetID() != nil {
 				a := rule.AssetID().String()
@@ -764,6 +776,21 @@ func (h *SensorControlV2Handler) Suppressions(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", protov2.MediaTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(append(body, '\n'))
+}
+
+// reachableRuleAssets returns which of the rules' assets the sensor reaches,
+// in one lookup; without the ingest service it reaches none (fail closed).
+func (h *SensorControlV2Handler) reachableRuleAssets(r *http.Request, s *sensor.Sensor, rules []*suppression.Rule) (map[shared.ID]bool, error) {
+	var ids []shared.ID
+	for _, rule := range rules {
+		if rule.AssetID() != nil {
+			ids = append(ids, *rule.AssetID())
+		}
+	}
+	if len(ids) == 0 || h.ingest == nil || h.ingest.ingestService == nil {
+		return map[shared.ID]bool{}, nil
+	}
+	return h.ingest.ingestService.SensorReachableAssets(r.Context(), s, ids)
 }
 
 // etagMatches implements the If-None-Match comparison for a strong tag: "*"
