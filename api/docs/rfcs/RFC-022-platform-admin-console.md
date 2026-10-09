@@ -604,6 +604,7 @@ Requests is its own console section. Access requests moved from
 lists them, as information for the first two days and as a warning after
 that, with a link to the inbox. Future request kinds (domain-claim conflicts,
 JIT approvals) join this section when they have an administrator API.
+
 ## Revision 16: security center
 
 - **Sessions** (Security > Sessions, super admin only, like the roster):
