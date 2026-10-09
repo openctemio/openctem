@@ -39,8 +39,8 @@ func TestToolGetByName_IsTenantScoped(t *testing.T) {
 			t.Fatalf("seed tenant: %v", err)
 		}
 	}
-	name := "custom-" + tenantB.String()[:8]
-	platformName := "platform-" + tenantB.String()[:8]
+	name := "custom-" + tenantB.String()[28:]
+	platformName := "platform-" + tenantB.String()[28:]
 	t.Cleanup(func() {
 		bg := context.Background()
 		_, _ = raw.ExecContext(bg, `DELETE FROM tools WHERE name IN ($1, $2)`, name, platformName)

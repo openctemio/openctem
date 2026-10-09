@@ -39,6 +39,7 @@ import type {
 } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { TIER_HINT, TIER_LABEL } from '../lib/scope-entry'
+import { ScopeIntrusiveSettings } from './scope-intrusive-settings'
 
 export const ACTIVE_PROOF_TEXT: Record<string, { label: string; hint: string }> = {
   off: {
@@ -293,6 +294,14 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
           </CardContent>
         </Card>
       </SettingsSection>
+
+      <ScopeIntrusiveSettings
+        settings={saved}
+        onSaved={(out) => {
+          setSaved(out)
+          setForm(settingsToInput(out))
+        }}
+      />
     </div>
   )
 }

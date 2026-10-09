@@ -85,6 +85,13 @@ const (
 	// ActionScopeTargetApproversReminded: someone reminded the approvers of
 	// a pending scope entry.
 	ActionScopeTargetApproversReminded Action = "scope_target.approvers_reminded"
+	// ActionScopeTargetAttested: someone confirmed that a t2 entry keeps
+	// intrusive probes; ActionScopeTargetAttestationRequested: the system
+	// asked for it; ActionScopeTargetT2Downgraded: nobody confirmed in time
+	// and the system set the entry to t1 (RFC-054 §12.5).
+	ActionScopeTargetAttested             Action = "scope_target.attested"
+	ActionScopeTargetAttestationRequested Action = "scope_target.attestation_requested"
+	ActionScopeTargetT2Downgraded         Action = "scope_target.t2_downgraded"
 	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
 	// existing repository asset and attached its SCM data to it. POST
 	// /assets no longer merges (a duplicate is a 409); older rows from it
@@ -606,6 +613,7 @@ func (a Action) IsValid() bool {
 		ActionBountyProgramSourceSet, ActionBountyProgramSynced,
 		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
+		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
@@ -779,6 +787,7 @@ func (a Action) Category() string {
 	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
 		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
+		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
@@ -1010,7 +1019,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
-		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved,
+		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved, ActionScopeTargetT2Downgraded,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
