@@ -600,6 +600,8 @@
   "plan.key.platform_scans_per_day": "Platform scans a day",
   "plan.key.platform_scans_concurrent": "Concurrent platform scans",
   "plan.key.free_teams_per_user": "Free organizations per person",
+  "plan.key.findings": "Findings",
+  "plan.notCounted": "Counted while a limit is set",
   "admin.activity.actionFilter": "Action, e.g. console.login",
   "admin.activity.actionFilterLabel": "Filter by action",
   "admin.activity.adminFilter": "Administrator email",

@@ -17,6 +17,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,7 +26,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Building2,
   User,
@@ -231,10 +231,10 @@ export function EditGroupDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden p-0">
+      <DialogContent size="lg">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b px-6 py-4">
-          <DialogHeader>
+        <DialogHeader className="bg-gradient-to-r from-primary/10 via-primary/5 to-background">
+          <div>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
                 <Pencil className="h-5 w-5 text-primary" />
@@ -246,11 +246,11 @@ export function EditGroupDialog({
                 </DialogDescription>
               </div>
             </div>
-          </DialogHeader>
-        </div>
+          </div>
+        </DialogHeader>
 
         {/* Content */}
-        <ScrollArea className="max-h-[60vh]">
+        <DialogBody className="p-0">
           <div className="space-y-4 p-6">
             {/* Group Identity */}
             <Card>
@@ -559,10 +559,10 @@ export function EditGroupDialog({
               </Card>
             </Collapsible>
           </div>
-        </ScrollArea>
+        </DialogBody>
 
         {/* Footer */}
-        <DialogFooter className="border-t bg-muted/30 px-6 py-4">
+        <DialogFooter className="bg-muted/30">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancel
           </Button>
