@@ -311,7 +311,12 @@ type Filter struct {
 	Environments         []string   // Filter by environment (production|staging|development|testing|dr)
 	LastSeenAfter        *time.Time // Filter assets last seen at/after this time (freshness)
 	LastSeenBefore       *time.Time // Filter assets last seen at/before this time (freshness)
-	CreatedAfter         *time.Time // Filter assets added to the inventory at/after this time
+	// ExpiresAfter / ExpiresBefore keep the assets whose expiry property
+	// (format expiry: not_after, expires_at) is after / before this time.
+	// An asset without a readable expiry never matches either.
+	ExpiresAfter  *time.Time
+	ExpiresBefore *time.Time
+	CreatedAfter  *time.Time // Filter assets added to the inventory at/after this time
 	// ExposureChangedOrCreatedAfter keeps assets that were added, or whose
 	// exposure level last changed, at/after this time. Combined with an
 	// Exposures filter it answers "newly exposed since t".
@@ -628,6 +633,8 @@ func (f Filter) IsEmpty() bool {
 		len(f.Environments) == 0 &&
 		f.LastSeenAfter == nil &&
 		f.LastSeenBefore == nil &&
+		f.ExpiresAfter == nil &&
+		f.ExpiresBefore == nil &&
 		f.CreatedAfter == nil &&
 		f.ExposureChangedOrCreatedAfter == nil
 }

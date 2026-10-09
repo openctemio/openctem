@@ -23,13 +23,7 @@ import { NAV_BUTTON_CLASS, NAV_COLUMN_CLASS } from '@/components/layout/nav-grou
 import { SidebarFooterLinks } from '@/components/layout/sidebar-footer-links'
 import { useTranslation } from '@/context/i18n-provider'
 import { visibleAdminNav } from '../lib/admin-nav-visibility'
-import type { AdminIdentity } from '../types'
-
-export const ROLE_LABELS: Record<AdminIdentity['role'], string> = {
-  super_admin: 'Super admin',
-  ops_admin: 'Operations admin',
-  readonly: 'Read-only admin',
-}
+import { ADMIN_ROLE_LABELS, type AdminIdentity } from '../types'
 
 function isActive(pathname: string, url: string): boolean {
   if (url === '/admin') return pathname === '/admin'
@@ -81,7 +75,7 @@ export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarPro
               <div className="grid flex-1 text-start text-sm leading-tight">
                 <span className="truncate font-semibold">Platform admin</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {t(`admin.role.${admin.role}`, ROLE_LABELS[admin.role])}
+                  {t(`admin.role.${admin.role}`, ADMIN_ROLE_LABELS[admin.role])}
                 </span>
               </div>
             </SidebarMenuButton>

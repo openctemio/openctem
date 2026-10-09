@@ -52,7 +52,6 @@ var assetMergeRefs = []mergeRef{
 	{table: "scan_runs", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "exposure_events", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "runtime_telemetry_events", column: "endpoint_asset_id", tenantCol: "tenant_id"},
-	{table: "attack_path_nodes", column: "asset_id"},
 	{table: "threat_model_threats", column: "entry_point_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "hop_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "target_asset_id", tenantCol: "tenant_id"},
@@ -154,14 +153,6 @@ var assetMergeLeftAlone = map[string]string{
 	"asset_merge_log.merged_asset_id":     "the merge record itself",
 	"ctem_cycle_scope_snapshots.asset_id": "historical snapshot of a closed scope",
 	"ingest_reports.touched_asset_ids":    "historical record of one report",
-	// The type normalisation ledger (migration 000684) describes the row as
-	// that migration moved it; its down migration restores only rows still
-	// holding that pair, so a merged asset's entry goes with it.
-	"asset_type_reclassifications.asset_id": "ledger of one migration; removed with the merged asset",
-	// The property normalisation ledger (migration 001185, RFC-042 §6.3.9)
-	// keeps an asset's properties as they were before it, for its down
-	// migration only.
-	"asset_properties_pre_001185.asset_id": "ledger of one migration; removed with the merged asset",
 }
 
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.
