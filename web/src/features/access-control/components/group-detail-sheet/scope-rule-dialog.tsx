@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -130,7 +131,7 @@ export function ScopeRuleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit Scope Rule' : 'Create Scope Rule'}</DialogTitle>
           <DialogDescription>
@@ -140,182 +141,187 @@ export function ScopeRuleDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
-          {/* Name */}
-          <div className="space-y-2">
-            <Label htmlFor="rule-name">Name</Label>
-            <Input
-              id="rule-name"
-              placeholder="e.g., Production Assets"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={200}
-            />
-          </div>
-
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="rule-description">Description</Label>
-            <Textarea
-              id="rule-description"
-              placeholder="Optional description..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-            />
-          </div>
-
-          {/* Rule Type (only when creating) */}
-          {!isEditing && (
+        <DialogBody>
+          <div className="space-y-4 py-4">
+            {/* Name */}
             <div className="space-y-2">
-              <Label>Rule Type</Label>
-              <Select value={ruleType} onValueChange={(v: ScopeRuleType) => setRuleType(v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="tag_match">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Tag Match</span>
-                      <span className="text-xs text-muted-foreground">
-                        Match assets by their tags
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="asset_group_match">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Asset Group Match</span>
-                      <span className="text-xs text-muted-foreground">
-                        Match assets by asset group membership
-                      </span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="rule-name">Name</Label>
+              <Input
+                id="rule-name"
+                placeholder="e.g., Production Assets"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={200}
+              />
             </div>
-          )}
 
-          {/* Tag Match Configuration */}
-          {ruleType === 'tag_match' && (
-            <>
-              <div className="space-y-2">
-                <Label>Match Tags (max 10)</Label>
-                <TagInput
-                  value={matchTags}
-                  onChange={setMatchTags}
-                  suggestions={tagSuggestions}
-                  placeholder="Type a tag and press Enter..."
-                  maxTags={10}
-                />
-              </div>
+            {/* Description */}
+            <div className="space-y-2">
+              <Label htmlFor="rule-description">Description</Label>
+              <Textarea
+                id="rule-description"
+                placeholder="Optional description..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+              />
+            </div>
 
+            {/* Rule Type (only when creating) */}
+            {!isEditing && (
               <div className="space-y-2">
-                <Label>Match Logic</Label>
-                <Select value={matchLogic} onValueChange={(v: MatchLogic) => setMatchLogic(v)}>
+                <Label>Rule Type</Label>
+                <Select value={ruleType} onValueChange={(v: ScopeRuleType) => setRuleType(v)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="any">
+                    <SelectItem value="tag_match">
                       <div className="flex flex-col">
-                        <span className="font-medium">Any (OR)</span>
+                        <span className="font-medium">Tag Match</span>
                         <span className="text-xs text-muted-foreground">
-                          Asset matches if it has ANY of the tags
+                          Match assets by their tags
                         </span>
                       </div>
                     </SelectItem>
-                    <SelectItem value="all">
+                    <SelectItem value="asset_group_match">
                       <div className="flex flex-col">
-                        <span className="font-medium">All (AND)</span>
+                        <span className="font-medium">Asset Group Match</span>
                         <span className="text-xs text-muted-foreground">
-                          Asset must have ALL of the tags
+                          Match assets by asset group membership
                         </span>
                       </div>
                     </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            </>
-          )}
+            )}
 
-          {/* Asset Group Match Configuration */}
-          {ruleType === 'asset_group_match' && (
-            <div className="space-y-2">
-              <Label>Select Asset Groups (max 5)</Label>
-              <div className="border rounded-md max-h-[200px] overflow-y-auto p-1 space-y-1">
-                {assetGroups.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground text-sm">
-                    No asset groups found
-                  </div>
-                ) : (
-                  assetGroups.map((group) => {
-                    const selected = matchAssetGroupIds.includes(group.id)
-                    const disabled = !selected && matchAssetGroupIds.length >= 5
+            {/* Tag Match Configuration */}
+            {ruleType === 'tag_match' && (
+              <>
+                <div className="space-y-2">
+                  <Label>Match Tags (max 10)</Label>
+                  <TagInput
+                    value={matchTags}
+                    onChange={setMatchTags}
+                    suggestions={tagSuggestions}
+                    placeholder="Type a tag and press Enter..."
+                    maxTags={10}
+                  />
+                </div>
 
-                    return (
-                      <div
-                        key={group.id}
-                        className={`
+                <div className="space-y-2">
+                  <Label>Match Logic</Label>
+                  <Select value={matchLogic} onValueChange={(v: MatchLogic) => setMatchLogic(v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">
+                        <div className="flex flex-col">
+                          <span className="font-medium">Any (OR)</span>
+                          <span className="text-xs text-muted-foreground">
+                            Asset matches if it has ANY of the tags
+                          </span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="all">
+                        <div className="flex flex-col">
+                          <span className="font-medium">All (AND)</span>
+                          <span className="text-xs text-muted-foreground">
+                            Asset must have ALL of the tags
+                          </span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+
+            {/* Asset Group Match Configuration */}
+            {ruleType === 'asset_group_match' && (
+              <div className="space-y-2">
+                <Label>Select Asset Groups (max 5)</Label>
+                <div className="border rounded-md max-h-[200px] overflow-y-auto p-1 space-y-1">
+                  {assetGroups.length === 0 ? (
+                    <div className="p-4 text-center text-muted-foreground text-sm">
+                      No asset groups found
+                    </div>
+                  ) : (
+                    assetGroups.map((group) => {
+                      const selected = matchAssetGroupIds.includes(group.id)
+                      const disabled = !selected && matchAssetGroupIds.length >= 5
+
+                      return (
+                        <div
+                          key={group.id}
+                          className={`
                           flex items-center justify-between p-2 rounded-sm cursor-pointer text-sm
                           ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}
                           ${selected ? 'bg-primary/10 border-primary/20 border' : ''}
                         `}
-                        onClick={() => !disabled && toggleAssetGroup(group.id)}
-                      >
-                        <div className="flex flex-col truncate">
-                          <span className="font-medium truncate">{group.name}</span>
-                          {group.description && (
-                            <span className="text-xs text-muted-foreground truncate">
-                              {group.description}
-                            </span>
-                          )}
+                          onClick={() => !disabled && toggleAssetGroup(group.id)}
+                        >
+                          <div className="flex flex-col truncate">
+                            <span className="font-medium truncate">{group.name}</span>
+                            {group.description && (
+                              <span className="text-xs text-muted-foreground truncate">
+                                {group.description}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })
+                      )
+                    })
+                  )}
+                </div>
+                {matchAssetGroupIds.length > 0 && (
+                  <p className="text-xs text-muted-foreground text-end">
+                    {matchAssetGroupIds.length} group{matchAssetGroupIds.length !== 1 ? 's' : ''}{' '}
+                    selected
+                  </p>
                 )}
               </div>
-              {matchAssetGroupIds.length > 0 && (
-                <p className="text-xs text-muted-foreground text-end">
-                  {matchAssetGroupIds.length} group{matchAssetGroupIds.length !== 1 ? 's' : ''}{' '}
-                  selected
-                </p>
-              )}
+            )}
+
+            {/* Ownership Type */}
+            <div className="space-y-2">
+              <Label>Ownership Type</Label>
+              <Select
+                value={ownershipType}
+                onValueChange={(v: OwnershipType) => setOwnershipType(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="primary">Primary</SelectItem>
+                  <SelectItem value="secondary">Secondary</SelectItem>
+                  <SelectItem value="stakeholder">Stakeholder</SelectItem>
+                  <SelectItem value="informed">Informed</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          )}
 
-          {/* Ownership Type */}
-          <div className="space-y-2">
-            <Label>Ownership Type</Label>
-            <Select value={ownershipType} onValueChange={(v: OwnershipType) => setOwnershipType(v)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="primary">Primary</SelectItem>
-                <SelectItem value="secondary">Secondary</SelectItem>
-                <SelectItem value="stakeholder">Stakeholder</SelectItem>
-                <SelectItem value="informed">Informed</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* Priority */}
+            <div className="space-y-2">
+              <Label htmlFor="rule-priority">Priority</Label>
+              <Input
+                id="rule-priority"
+                type="number"
+                min={0}
+                max={100}
+                value={priority}
+                onChange={(e) => setPriority(Number(e.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Higher priority rules are evaluated first (0-100)
+              </p>
+            </div>
           </div>
-
-          {/* Priority */}
-          <div className="space-y-2">
-            <Label htmlFor="rule-priority">Priority</Label>
-            <Input
-              id="rule-priority"
-              type="number"
-              min={0}
-              max={100}
-              value={priority}
-              onChange={(e) => setPriority(Number(e.target.value))}
-            />
-            <p className="text-xs text-muted-foreground">
-              Higher priority rules are evaluated first (0-100)
-            </p>
-          </div>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
