@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
@@ -64,7 +65,9 @@ type ModuleService struct {
 // the entitlement could not be read: every non-core module is then
 // unavailable (fail-closed).
 type EntitlementReader interface {
-	NotEntitled(ctx context.Context, tenantID string) (map[string]bool, error)
+	// NotEntitled maps each module the organization may not use to the end of
+	// its read-only grace (nil: no access).
+	NotEntitled(ctx context.Context, tenantID string) (map[string]*time.Time, error)
 }
 
 // Reasons a module is off for an organization (MODULE_NOT_ENABLED details).
@@ -72,6 +75,9 @@ const (
 	ReasonDisabledByAdmin = "disabled_by_admin"
 	ReasonNotEntitled     = "not_entitled"
 	ReasonUnavailable     = "unavailable"
+	// ReasonReadOnlyGrace: lost recently; reads and export still work, writes
+	// are refused and the module's jobs are stopped.
+	ReasonReadOnlyGrace = "read_only_grace"
 )
 
 // ModuleCacheInvalidator drops a tenant's cached module-enablement so a toggle
@@ -219,6 +225,8 @@ type GetTenantEnabledModulesOutput struct {
 	// not include (and no grant adds): the console says "not in your plan"
 	// rather than "turned off".
 	NotEntitledModuleIDs []string
+	// ReadOnlyModules are modules in read-only grace, with its end.
+	ReadOnlyModules map[string]time.Time
 }
 
 // GetTenantEnabledModules returns all enabled modules for a tenant.
@@ -237,8 +245,11 @@ func (s *ModuleService) GetTenantEnabledModules(ctx context.Context, tenantID st
 	// Get tenant-specific state (preferences and entitlements)
 	states := s.moduleStates(ctx, tenantID)
 	disabledModules := make(map[string]bool, len(states))
-	for id := range states {
-		disabledModules[id] = true
+	for id, r := range states {
+		// A module in read-only grace stays listed: its pages still read.
+		if r != ReasonReadOnlyGrace {
+			disabledModules[id] = true
+		}
 	}
 	notEntitled := make([]string, 0)
 	for _, m := range topLevel {
@@ -280,11 +291,19 @@ func (s *ModuleService) GetTenantEnabledModules(ctx context.Context, tenantID st
 		}
 	}
 
+	var readOnly map[string]time.Time
+	for _, r := range states {
+		if r == ReasonReadOnlyGrace {
+			readOnly = s.readOnlyUntil(ctx, tenantID)
+			break
+		}
+	}
 	return &GetTenantEnabledModulesOutput{
 		ModuleIDs:            moduleIDs,
 		Modules:              enabledModules,
 		SubModules:           subModules,
 		NotEntitledModuleIDs: notEntitled,
+		ReadOnlyModules:      readOnly,
 	}, nil
 }
 
@@ -363,7 +382,8 @@ func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModu
 		}
 
 		isEnabled := states[m.ID()] == "" || m.IsCore()
-		entitled := m.IsCore() || (states[m.ID()] != ReasonNotEntitled && states[m.ID()] != ReasonUnavailable)
+		r := states[m.ID()]
+		entitled := m.IsCore() || (r != ReasonNotEntitled && r != ReasonUnavailable && r != ReasonReadOnlyGrace)
 
 		// Build sub-module info with INDEPENDENT enabled states.
 		// The admin UI needs the sub-module's OWN state (not combined with parent)
@@ -483,7 +503,7 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 		// Within the entitlement only: a module the plan does not include
 		// (and no grant adds) cannot be switched on by the organization.
 		if u.IsEnabled && !m.IsCore() {
-			if r := states[u.ModuleID]; r == ReasonNotEntitled || r == ReasonUnavailable {
+			if r := states[u.ModuleID]; r == ReasonNotEntitled || r == ReasonUnavailable || r == ReasonReadOnlyGrace {
 				return nil, fmt.Errorf("%w: '%s' is not included in this organization's plan", moduledom.ErrModuleNotEntitled, m.Name())
 			}
 		}
@@ -792,6 +812,25 @@ func (s *ModuleService) TenantModuleStates(ctx context.Context, tenantID string)
 	return s.moduleStates(ctx, tenantID)
 }
 
+// readOnlyUntil returns the end of the read-only grace of each module in grace.
+func (s *ModuleService) readOnlyUntil(ctx context.Context, tenantID string) map[string]time.Time {
+	out := map[string]time.Time{}
+	if s.entitlements == nil {
+		return out
+	}
+	notEntitled, err := s.entitlements.NotEntitled(ctx, tenantID)
+	if err != nil {
+		return out
+	}
+	now := time.Now()
+	for id, until := range notEntitled {
+		if until != nil && now.Before(*until) {
+			out[id] = *until
+		}
+	}
+	return out
+}
+
 func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[string]string {
 	states := make(map[string]string)
 	if _, err := shared.IDFromString(tenantID); err != nil {
@@ -826,8 +865,14 @@ func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[s
 			}
 			return states
 		}
-		for id := range notEntitled {
-			if !moduledom.IsCoreModule(id) {
+		now := time.Now()
+		for id, until := range notEntitled {
+			if moduledom.IsCoreModule(id) {
+				continue
+			}
+			if until != nil && now.Before(*until) {
+				states[id] = ReasonReadOnlyGrace
+			} else {
 				states[id] = ReasonNotEntitled
 			}
 		}

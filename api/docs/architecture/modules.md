@@ -78,12 +78,25 @@ entitled(org, module) = !deny(org, module)
 - **Presets** write overrides once (Settings > Modules, or the starting set
   picked at onboarding) and change nothing else. The organization-chosen
   product bundles are retired: packaging is the plan's.
+- **Read-only grace** (`tenant_module_grace`): an organization that loses a
+  module keeps reading it for 30 days (`plan.GracePeriod`). Grace starts when
+  a deny, the removal of a grant, a change of the organization's plan or a
+  plan mapping change takes the module away, and ends when the module comes
+  back. An expired trial grant gives the same grace from its expiry, with no
+  row. During grace GET, HEAD and OPTIONS pass the gate; every other method
+  gets `403 read_only_grace`, so creating a report or a POST search is
+  refused too, while GET exports and downloads work. Jobs, MCP tools and
+  automations treat the module as off at once. The module stays in the
+  session's module list (pages render with a "Read-only until" banner) and in
+  `read_only_modules`; it cannot be switched on. After grace the reason is
+  `not_entitled`. Data is never deleted.
 - **Failures:** a preference read error fails open (nothing disabled); an
   entitlement read error fails closed: every non-core module is
   `unavailable` and the gate answers 503 until it can be read again.
 
 Each off module has a reason, returned in `MODULE_NOT_ENABLED` details:
-`not_entitled`, `disabled_by_admin` (403) or `unavailable` (503). The console
+`not_entitled`, `disabled_by_admin`, `read_only_grace` (writes only; 403) or
+`unavailable` (503). The console
 says "Not in your plan" (with no way to turn it on) or "Turned off for your
 organization" (with Settings > Modules for an administrator).
 

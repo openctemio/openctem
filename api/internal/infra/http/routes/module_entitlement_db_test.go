@@ -2,9 +2,10 @@ package routes
 
 // Module entitlements end to end on a migrated database (RFC-064): the plan to
 // module map and the platform grants decide what an organization may use; the
-// route gate answers MODULE_NOT_ENABLED with reason not_entitled for that
-// organization only, and an organization cannot switch on what it is not
-// entitled to.
+// route gate answers MODULE_NOT_ENABLED for that organization only, and an
+// organization cannot switch on what it is not entitled to. A module the
+// organization loses enters 30 days of read-only grace: reads pass, writes get
+// reason read_only_grace, jobs see it off; afterwards reason not_entitled.
 
 import (
 	"context"
@@ -67,6 +68,7 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 		}
 		t.Cleanup(func() {
 			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenant_module_grants WHERE tenant_id = $1`, id.String())
+			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenant_module_grace WHERE tenant_id = $1`, id.String())
 			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenant_modules WHERE tenant_id = $1`, id.String())
 			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenant_plans WHERE tenant_id = $1`, id.String())
 			_, _ = sqldb.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, id.String())
@@ -94,13 +96,14 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	serve := func(tenant shared.ID) (int, middleware.ModuleNotEnabledDetails) {
+	serveMethod := func(method string, tenant shared.ID) (int, middleware.ModuleNotEnabledDetails) {
 		h := gate.RequireModule(moduledom.ModulePentest)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 		router := infrahttp.NewChiRouter()
 		router.GET("/x", h.ServeHTTP)
-		req := httptest.NewRequest(http.MethodGet, "/x", nil).
+		router.POST("/x", h.ServeHTTP)
+		req := httptest.NewRequest(method, "/x", nil).
 			WithContext(context.WithValue(ctx, middleware.TenantIDKey, tenant.String()))
 		rec := httptest.NewRecorder()
 		router.(interface{ Handler() http.Handler }).Handler().ServeHTTP(rec, req)
@@ -110,14 +113,52 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 		_ = json.Unmarshal(rec.Body.Bytes(), &body)
 		return rec.Code, body.Details
 	}
+	serve := func(tenant shared.ID) (int, middleware.ModuleNotEnabledDetails) {
+		return serveMethod(http.MethodGet, tenant)
+	}
+	write := func(tenant shared.ID) (int, middleware.ModuleNotEnabledDetails) {
+		return serveMethod(http.MethodPost, tenant)
+	}
+	graceUntil := func(tenant shared.ID) (until time.Time, ok bool) {
+		err := sqldb.QueryRowContext(ctx, `SELECT read_only_until FROM tenant_module_grace
+			WHERE tenant_id = $1 AND module_id = $2`, tenant.String(), moduledom.ModulePentest).Scan(&until)
+		return until, err == nil
+	}
+	// endGrace moves the grace into the past, as if 30 days went by.
+	endGrace := func(tenant shared.ID) {
+		t.Helper()
+		if _, err := sqldb.ExecContext(ctx, `UPDATE tenant_module_grace SET read_only_until = now() - interval '1 second'
+			WHERE tenant_id = $1`, tenant.String()); err != nil {
+			t.Fatal(err)
+		}
+		gate.Invalidate(tenant.String())
+	}
 
 	// The deny applies at once (the grant invalidated the cache), to that
-	// organization only.
-	if code, d := serve(denied); code != http.StatusForbidden || d.Reason != middleware.ModuleReasonNotEntitled {
-		t.Fatalf("denied organization: %d %+v, want 403 not_entitled", code, d)
+	// organization only: 30 days of read-only grace start.
+	until, ok := graceUntil(denied)
+	if !ok || until.Before(time.Now().Add(plan.GracePeriod-time.Hour)) {
+		t.Fatalf("grace after the deny: %v %v, want about 30 days", ok, until)
 	}
-	if code, _ := serve(other); code != http.StatusOK {
+	if code, _ := serve(denied); code != http.StatusOK {
+		t.Fatalf("denied organization, read in grace: %d, want 200", code)
+	}
+	if code, d := write(denied); code != http.StatusForbidden || d.Reason != middleware.ModuleReasonReadOnlyGrace {
+		t.Fatalf("denied organization, write in grace: %d %+v, want 403 read_only_grace", code, d)
+	}
+	if gate.IsEnabled(ctx, denied.String(), moduledom.ModulePentest) {
+		t.Fatal("jobs must see a module in grace as off")
+	}
+	if code, _ := write(other); code != http.StatusOK {
 		t.Fatalf("other organization: %d, want 200", code)
+	}
+	if _, ok := graceUntil(other); ok {
+		t.Fatal("a deny on one organization started grace on another")
+	}
+	// After the grace: no access at all.
+	endGrace(denied)
+	if code, d := serve(denied); code != http.StatusForbidden || d.Reason != middleware.ModuleReasonNotEntitled {
+		t.Fatalf("denied organization after grace: %d %+v, want 403 not_entitled", code, d)
 	}
 
 	// The organization cannot switch it back on.
@@ -131,8 +172,11 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 	if err := ent.DeleteModuleGrant(ctx, ops, denied, moduledom.ModulePentest, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := serve(denied); code != http.StatusOK {
+	if code, _ := write(denied); code != http.StatusOK {
 		t.Fatalf("after removing the deny: %d, want 200", code)
+	}
+	if _, ok := graceUntil(denied); ok {
+		t.Fatal("regaining the module must end its grace")
 	}
 
 	// A plan mapping without pentest for Free, with a trial grant for one
@@ -156,11 +200,25 @@ func TestModuleEntitlements_GateAndToggle(t *testing.T) {
 	}, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := serve(denied); code != http.StatusOK {
+	if code, _ := write(denied); code != http.StatusOK {
 		t.Fatalf("trial organization: %d, want 200", code)
 	}
+	if _, ok := graceUntil(denied); ok {
+		t.Fatal("the trial organization kept the module: no grace")
+	}
+	// The plan change took pentest from the other Free organization: grace.
+	if _, ok := graceUntil(other); !ok {
+		t.Fatal("plan mapping change did not start grace for the Free organization")
+	}
+	if code, _ := serve(other); code != http.StatusOK {
+		t.Fatalf("free organization, read in grace: %d, want 200", code)
+	}
+	if code, d := write(other); code != http.StatusForbidden || d.Reason != middleware.ModuleReasonReadOnlyGrace {
+		t.Fatalf("free organization, write in grace: %d %+v, want 403 read_only_grace", code, d)
+	}
+	endGrace(other)
 	if code, d := serve(other); code != http.StatusForbidden || d.Reason != middleware.ModuleReasonNotEntitled {
-		t.Fatalf("free organization without the trial: %d %+v, want 403 not_entitled", code, d)
+		t.Fatalf("free organization after grace: %d %+v, want 403 not_entitled", code, d)
 	}
 	enterprise := newTenant("")
 	if code, _ := serve(enterprise); code != http.StatusOK {
