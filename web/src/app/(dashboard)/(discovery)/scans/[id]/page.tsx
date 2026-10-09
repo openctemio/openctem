@@ -11,7 +11,7 @@ import { useMemo, useState } from 'react'
 import { useSWRConfig } from 'swr'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { toast } from 'sonner'
 import { AlertTriangle, ArrowLeft, RefreshCw, Tag, Trash2, XCircle } from 'lucide-react'
 

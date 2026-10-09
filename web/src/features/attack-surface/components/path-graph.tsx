@@ -1,7 +1,7 @@
 'use client'
 
 import { createElement, Fragment } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
