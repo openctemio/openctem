@@ -305,3 +305,23 @@ describe('Sheet with a SheetBody', () => {
     expect(document.querySelector('[data-slot="sheet-body"]')!.className).toContain('sm:last:pb-6')
   })
 })
+
+describe('a field that focuses itself', () => {
+  it('keeps focus (a search in the header), the body does not take it', async () => {
+    pointer(false)
+    render(
+      <Dialog open>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Choose a template</DialogTitle>
+            <input aria-label="Search" autoFocus />
+          </DialogHeader>
+          <DialogBody>
+            <p>list</p>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    )
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Search' })).toHaveFocus())
+  })
+})
