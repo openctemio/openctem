@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Platform content packs against a real schema (migration 001546):
+// Platform content packs against a real schema (migration 001568):
 // channels name a pack of their own name, revocation rolls a channel back
 // to the previous good pack, a revoked pack cannot be put on a channel.
 // Requires DATABASE_URL.

@@ -147,6 +147,9 @@ const (
 	// gate record whose targets the claim cannot read to re-check them;
 	// it is refused, and its owner creates it again.
 	FailureGateRecordMissing = "GATE_RECORD_MISSING"
+	// FailureSignerRefused: the job signer refused the job because its
+	// scope ledger does not authorize it (RFC-040 §5.6 point 4).
+	FailureSignerRefused = "SIGNER_REFUSED"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -162,6 +165,7 @@ var failureClasses = map[string]FailureClass{
 	FailureAllTargetsUnconfirm: FailureClassScope,
 	FailureScopeChanged:        FailureClassScope,
 	FailureGateRecordMissing:   FailureClassScope,
+	FailureSignerRefused:       FailureClassScope,
 	FailureNoSensor:            FailureClassPlacement,
 	FailureNoSensorForTool:     FailureClassPlacement,
 	FailureNoSensorAvailable:   FailureClassPlacement,
