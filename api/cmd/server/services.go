@@ -776,6 +776,9 @@ type Services struct {
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
+	// ModuleChangeBus fans module toggles out to every replica's route-gate
+	// cache; nil without Redis. Started with the WebSocket bridge.
+	ModuleChangeBus *redis.ModuleChangeBus
 	// F-8: Single-use ticket service used by WS upgrade auth.
 	// SessionRevocations rejects access tokens of signed-out sessions
 	// immediately (nil without Redis).
@@ -2232,6 +2235,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Ingest honors the suppressions module toggle: with the module off (or
 	// left out of the tenant's bundles) findings land as reported.
 	s.Ingest.SetSuppressionModuleGuard(s.Module)
+	// Events start no automation for a tenant with the workflows module off.
+	if s.WorkflowDispatcher != nil {
+		s.WorkflowDispatcher.SetModuleGuard(s.Module)
+	}
+	// Auto-triage stops for a tenant with the ai_triage module off.
+	if s.AITriage != nil {
+		s.AITriage.SetModuleGuard(s.Module)
+	}
 
 	// Initialize WebSocket hub for real-time features
 	s.WebSocketHub = websocket.NewHub(log)
