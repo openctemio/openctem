@@ -7,3 +7,8 @@
 
 - `POST /scope/targets` takes `authorization_source` (`ownership` by default, or `self_attestation`); `program` is refused (`PROGRAM_ENTRY_VIA_PROGRAMS`). Responses carry `authorization_source` and `program_id`.
 - Widening a program entry on the Scope routes (activate, tier, expiry, reason, discovery) answers `409 PROGRAM_MANAGED`; deactivating and deleting still work.
+
+### Security: bug-bounty program targets never reach platform sensors
+
+- A target that only program entries cover is never sent to platform sensors, in every `SCOPE_ACTIVE_PROOF` mode: an explicit `sensor_preference: platform` answers `400 PLATFORM_SENSOR_REFUSED`, `auto` keeps the job on the organization sensors, and `POST /scope/check` answers the refusal code `program_platform`.
+- A program out-of-scope item (and the unlisted apex of a program wildcard) stops every program entry of the organization from covering the name; the organization own entries are not affected.
