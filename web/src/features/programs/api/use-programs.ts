@@ -18,6 +18,8 @@ import type {
   ProgramDetail,
   ProgramInput,
   ProgramPreview,
+  ProgramSourceInput,
+  ProgramSyncResult,
 } from './programs-api.types'
 
 const BASE = '/api/v1/programs'
@@ -78,4 +80,35 @@ export function endProgram(id: string) {
 
 export function reactivateProgram(id: string, acceptTermsSha256: string) {
   return post<Program>(`${BASE}/${id}/reactivate`, { accept_terms_sha256: acceptTermsSha256 })
+}
+
+/** Where the program's scope comes from (step-up; the token is write-only). */
+export function setProgramSource(id: string, input: ProgramSourceInput) {
+  return put<Program>(`${BASE}/${id}/source`, input)
+}
+
+/** Read the scope from its source now: removals apply, additions wait. */
+export function syncProgram(id: string) {
+  return post<ProgramSyncResult>(`${BASE}/${id}/sync`, {})
+}
+
+/** What accepting the pending terms would do (only when there are some). */
+export function useProgramPending(id: string | null, pendingHash: string | undefined) {
+  const { currentTenant } = useTenant()
+  const can = useHasPermission(Permission.ProgramsRead)
+  const key =
+    currentTenant && can && id && pendingHash
+      ? ['program', currentTenant.id, id, 'pending', pendingHash]
+      : null
+  return useSWR<ProgramPreview>(key, () => get<ProgramPreview>(`${BASE}/${id}/pending`), {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+  })
+}
+
+/** Put the pending terms into effect on the caller's attestation (step-up). */
+export function applyPendingTerms(id: string, acceptTermsSha256: string) {
+  return post<ProgramChange>(`${BASE}/${id}/pending/apply`, {
+    accept_terms_sha256: acceptTermsSha256,
+  })
 }

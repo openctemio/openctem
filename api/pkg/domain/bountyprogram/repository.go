@@ -79,4 +79,15 @@ type Repository interface {
 	IsMember(ctx context.Context, tenantID, programID, userID shared.ID) (bool, error)
 	// MemberProgramIDs lists the programs whose group has the user.
 	MemberProgramIDs(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
+	// SaveSync writes the source settings, sync state and pending terms.
+	SaveSync(ctx context.Context, p *Program) error
+	// SyncDue lists active programs with a source not synced since
+	// olderThan (all tenants: the controller).
+	SyncDue(ctx context.Context, olderThan time.Time, limit int) ([]ProgramRef, error)
+}
+
+// ProgramRef names one program of one tenant.
+type ProgramRef struct {
+	TenantID  shared.ID
+	ProgramID shared.ID
 }

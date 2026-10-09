@@ -7,9 +7,9 @@ import (
 	"sync"
 	"testing"
 
-	workflowsvc "github.com/openctemio/openctem/api/internal/app/workflow"
+	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
+	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -18,10 +18,10 @@ import (
 // Mock Repositories
 // =============================================================================
 
-// MockWorkflowRepository implements workflow.WorkflowRepository for testing.
+// MockWorkflowRepository implements automation.WorkflowRepository for testing.
 type MockWorkflowRepository struct {
 	mu          sync.RWMutex
-	workflows   map[string]*workflow.Workflow
+	workflows   map[string]*automation.Workflow
 	createErr   error
 	getErr      error
 	updateErr   error
@@ -31,11 +31,11 @@ type MockWorkflowRepository struct {
 
 func NewMockWorkflowRepository() *MockWorkflowRepository {
 	return &MockWorkflowRepository{
-		workflows: make(map[string]*workflow.Workflow),
+		workflows: make(map[string]*automation.Workflow),
 	}
 }
 
-func (m *MockWorkflowRepository) Create(ctx context.Context, wf *workflow.Workflow) error {
+func (m *MockWorkflowRepository) Create(ctx context.Context, wf *automation.Workflow) error {
 	if m.createErr != nil {
 		return m.createErr
 	}
@@ -45,7 +45,7 @@ func (m *MockWorkflowRepository) Create(ctx context.Context, wf *workflow.Workfl
 	return nil
 }
 
-func (m *MockWorkflowRepository) GetByID(ctx context.Context, id shared.ID) (*workflow.Workflow, error) {
+func (m *MockWorkflowRepository) GetByID(ctx context.Context, id shared.ID) (*automation.Workflow, error) {
 	if m.getErr != nil {
 		return nil, m.getErr
 	}
@@ -57,7 +57,7 @@ func (m *MockWorkflowRepository) GetByID(ctx context.Context, id shared.ID) (*wo
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockWorkflowRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*workflow.Workflow, error) {
+func (m *MockWorkflowRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*automation.Workflow, error) {
 	if m.getErr != nil {
 		return nil, m.getErr
 	}
@@ -71,7 +71,7 @@ func (m *MockWorkflowRepository) GetByTenantAndID(ctx context.Context, tenantID,
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockWorkflowRepository) GetByName(ctx context.Context, tenantID shared.ID, name string) (*workflow.Workflow, error) {
+func (m *MockWorkflowRepository) GetByName(ctx context.Context, tenantID shared.ID, name string) (*automation.Workflow, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, wf := range m.workflows {
@@ -82,17 +82,17 @@ func (m *MockWorkflowRepository) GetByName(ctx context.Context, tenantID shared.
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockWorkflowRepository) List(ctx context.Context, filter workflow.WorkflowFilter, page pagination.Pagination) (pagination.Result[*workflow.Workflow], error) {
+func (m *MockWorkflowRepository) List(ctx context.Context, filter automation.WorkflowFilter, page pagination.Pagination) (pagination.Result[*automation.Workflow], error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var items []*workflow.Workflow
+	var items []*automation.Workflow
 	for _, wf := range m.workflows {
 		if filter.TenantID != nil && wf.TenantID != *filter.TenantID {
 			continue
 		}
 		items = append(items, wf)
 	}
-	return pagination.Result[*workflow.Workflow]{
+	return pagination.Result[*automation.Workflow]{
 		Data:       items,
 		Total:      int64(len(items)),
 		Page:       page.Page,
@@ -101,7 +101,7 @@ func (m *MockWorkflowRepository) List(ctx context.Context, filter workflow.Workf
 	}, nil
 }
 
-func (m *MockWorkflowRepository) Update(ctx context.Context, wf *workflow.Workflow) error {
+func (m *MockWorkflowRepository) Update(ctx context.Context, wf *automation.Workflow) error {
 	if m.updateErr != nil {
 		return m.updateErr
 	}
@@ -111,7 +111,7 @@ func (m *MockWorkflowRepository) Update(ctx context.Context, wf *workflow.Workfl
 	return nil
 }
 
-// SetOwner implements workflow.OwnerSetter.
+// SetOwner implements automation.OwnerSetter.
 func (m *MockWorkflowRepository) SetOwner(ctx context.Context, tenantID, id, ownerID shared.ID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -133,17 +133,17 @@ func (m *MockWorkflowRepository) Delete(ctx context.Context, id shared.ID) error
 	return nil
 }
 
-func (m *MockWorkflowRepository) GetWithGraph(ctx context.Context, id shared.ID) (*workflow.Workflow, error) {
+func (m *MockWorkflowRepository) GetWithGraph(ctx context.Context, id shared.ID) (*automation.Workflow, error) {
 	if m.getGraphErr != nil {
 		return nil, m.getGraphErr
 	}
 	return m.GetByID(ctx, id)
 }
 
-func (m *MockWorkflowRepository) ListActiveWithTriggerType(ctx context.Context, tenantID shared.ID, triggerType workflow.TriggerType) ([]*workflow.Workflow, error) {
+func (m *MockWorkflowRepository) ListActiveWithTriggerType(ctx context.Context, tenantID shared.ID, triggerType automation.TriggerType) ([]*automation.Workflow, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var items []*workflow.Workflow
+	var items []*automation.Workflow
 	for _, wf := range m.workflows {
 		if wf.TenantID == tenantID && wf.IsActive {
 			items = append(items, wf)
@@ -152,21 +152,21 @@ func (m *MockWorkflowRepository) ListActiveWithTriggerType(ctx context.Context, 
 	return items, nil
 }
 
-// MockNodeRepository implements workflow.NodeRepository for testing.
+// MockNodeRepository implements automation.NodeRepository for testing.
 type MockNodeRepository struct {
 	mu        sync.RWMutex
-	nodes     map[string]*workflow.Node
+	nodes     map[string]*automation.Node
 	createErr error
 	deleteErr error
 }
 
 func NewMockNodeRepository() *MockNodeRepository {
 	return &MockNodeRepository{
-		nodes: make(map[string]*workflow.Node),
+		nodes: make(map[string]*automation.Node),
 	}
 }
 
-func (m *MockNodeRepository) Create(ctx context.Context, node *workflow.Node) error {
+func (m *MockNodeRepository) Create(ctx context.Context, node *automation.Node) error {
 	if m.createErr != nil {
 		return m.createErr
 	}
@@ -176,7 +176,7 @@ func (m *MockNodeRepository) Create(ctx context.Context, node *workflow.Node) er
 	return nil
 }
 
-func (m *MockNodeRepository) CreateBatch(ctx context.Context, nodes []*workflow.Node) error {
+func (m *MockNodeRepository) CreateBatch(ctx context.Context, nodes []*automation.Node) error {
 	for _, node := range nodes {
 		if err := m.Create(ctx, node); err != nil {
 			return err
@@ -185,7 +185,7 @@ func (m *MockNodeRepository) CreateBatch(ctx context.Context, nodes []*workflow.
 	return nil
 }
 
-func (m *MockNodeRepository) GetByID(ctx context.Context, id shared.ID) (*workflow.Node, error) {
+func (m *MockNodeRepository) GetByID(ctx context.Context, id shared.ID) (*automation.Node, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if node, ok := m.nodes[id.String()]; ok {
@@ -194,10 +194,10 @@ func (m *MockNodeRepository) GetByID(ctx context.Context, id shared.ID) (*workfl
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockNodeRepository) GetByWorkflowID(ctx context.Context, workflowID shared.ID) ([]*workflow.Node, error) {
+func (m *MockNodeRepository) GetByWorkflowID(ctx context.Context, workflowID shared.ID) ([]*automation.Node, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var items []*workflow.Node
+	var items []*automation.Node
 	for _, node := range m.nodes {
 		if node.WorkflowID == workflowID {
 			items = append(items, node)
@@ -206,7 +206,7 @@ func (m *MockNodeRepository) GetByWorkflowID(ctx context.Context, workflowID sha
 	return items, nil
 }
 
-func (m *MockNodeRepository) GetByKey(ctx context.Context, workflowID shared.ID, nodeKey string) (*workflow.Node, error) {
+func (m *MockNodeRepository) GetByKey(ctx context.Context, workflowID shared.ID, nodeKey string) (*automation.Node, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, node := range m.nodes {
@@ -217,7 +217,7 @@ func (m *MockNodeRepository) GetByKey(ctx context.Context, workflowID shared.ID,
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockNodeRepository) Update(ctx context.Context, node *workflow.Node) error {
+func (m *MockNodeRepository) Update(ctx context.Context, node *automation.Node) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.nodes[node.ID.String()] = node
@@ -251,21 +251,21 @@ func (m *MockNodeRepository) GetNodeCount() int {
 	return len(m.nodes)
 }
 
-// MockEdgeRepository implements workflow.EdgeRepository for testing.
+// MockEdgeRepository implements automation.EdgeRepository for testing.
 type MockEdgeRepository struct {
 	mu        sync.RWMutex
-	edges     map[string]*workflow.Edge
+	edges     map[string]*automation.Edge
 	createErr error
 	deleteErr error
 }
 
 func NewMockEdgeRepository() *MockEdgeRepository {
 	return &MockEdgeRepository{
-		edges: make(map[string]*workflow.Edge),
+		edges: make(map[string]*automation.Edge),
 	}
 }
 
-func (m *MockEdgeRepository) Create(ctx context.Context, edge *workflow.Edge) error {
+func (m *MockEdgeRepository) Create(ctx context.Context, edge *automation.Edge) error {
 	if m.createErr != nil {
 		return m.createErr
 	}
@@ -275,7 +275,7 @@ func (m *MockEdgeRepository) Create(ctx context.Context, edge *workflow.Edge) er
 	return nil
 }
 
-func (m *MockEdgeRepository) CreateBatch(ctx context.Context, edges []*workflow.Edge) error {
+func (m *MockEdgeRepository) CreateBatch(ctx context.Context, edges []*automation.Edge) error {
 	for _, edge := range edges {
 		if err := m.Create(ctx, edge); err != nil {
 			return err
@@ -284,7 +284,7 @@ func (m *MockEdgeRepository) CreateBatch(ctx context.Context, edges []*workflow.
 	return nil
 }
 
-func (m *MockEdgeRepository) GetByID(ctx context.Context, id shared.ID) (*workflow.Edge, error) {
+func (m *MockEdgeRepository) GetByID(ctx context.Context, id shared.ID) (*automation.Edge, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if edge, ok := m.edges[id.String()]; ok {
@@ -293,10 +293,10 @@ func (m *MockEdgeRepository) GetByID(ctx context.Context, id shared.ID) (*workfl
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockEdgeRepository) GetByWorkflowID(ctx context.Context, workflowID shared.ID) ([]*workflow.Edge, error) {
+func (m *MockEdgeRepository) GetByWorkflowID(ctx context.Context, workflowID shared.ID) ([]*automation.Edge, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var items []*workflow.Edge
+	var items []*automation.Edge
 	for _, edge := range m.edges {
 		if edge.WorkflowID == workflowID {
 			items = append(items, edge)
@@ -332,7 +332,7 @@ func (m *MockEdgeRepository) GetEdgeCount() int {
 	return len(m.edges)
 }
 
-// MockRunRepository implements workflow.RunRepository for testing.
+// MockRunRepository implements automation.RunRepository for testing.
 type MockRunRepository struct {
 	activeCount    int
 	activeCountErr error
@@ -342,27 +342,27 @@ func NewMockRunRepository() *MockRunRepository {
 	return &MockRunRepository{}
 }
 
-func (m *MockRunRepository) Create(ctx context.Context, run *workflow.Run) error {
+func (m *MockRunRepository) Create(ctx context.Context, run *automation.Run) error {
 	return nil
 }
 
-func (m *MockRunRepository) GetByID(ctx context.Context, id shared.ID) (*workflow.Run, error) {
+func (m *MockRunRepository) GetByID(ctx context.Context, id shared.ID) (*automation.Run, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockRunRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*workflow.Run, error) {
+func (m *MockRunRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*automation.Run, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockRunRepository) List(ctx context.Context, filter workflow.RunFilter, page pagination.Pagination) (pagination.Result[*workflow.Run], error) {
-	return pagination.Result[*workflow.Run]{}, nil
+func (m *MockRunRepository) List(ctx context.Context, filter automation.RunFilter, page pagination.Pagination) (pagination.Result[*automation.Run], error) {
+	return pagination.Result[*automation.Run]{}, nil
 }
 
-func (m *MockRunRepository) ListByWorkflowID(ctx context.Context, workflowID shared.ID, page, perPage int) ([]*workflow.Run, int64, error) {
+func (m *MockRunRepository) ListByWorkflowID(ctx context.Context, workflowID shared.ID, page, perPage int) ([]*automation.Run, int64, error) {
 	return nil, 0, nil
 }
 
-func (m *MockRunRepository) Update(ctx context.Context, run *workflow.Run) error {
+func (m *MockRunRepository) Update(ctx context.Context, run *automation.Run) error {
 	return nil
 }
 
@@ -370,11 +370,11 @@ func (m *MockRunRepository) Delete(ctx context.Context, id shared.ID) error {
 	return nil
 }
 
-func (m *MockRunRepository) GetWithNodeRuns(ctx context.Context, id shared.ID) (*workflow.Run, error) {
+func (m *MockRunRepository) GetWithNodeRuns(ctx context.Context, id shared.ID) (*automation.Run, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockRunRepository) GetActiveByWorkflowID(ctx context.Context, workflowID shared.ID) ([]*workflow.Run, error) {
+func (m *MockRunRepository) GetActiveByWorkflowID(ctx context.Context, workflowID shared.ID) ([]*automation.Run, error) {
 	return nil, nil
 }
 
@@ -393,11 +393,11 @@ func (m *MockRunRepository) UpdateStats(ctx context.Context, id shared.ID, compl
 	return nil
 }
 
-func (m *MockRunRepository) UpdateStatus(ctx context.Context, id shared.ID, status workflow.RunStatus, errorMessage string) error {
+func (m *MockRunRepository) UpdateStatus(ctx context.Context, id shared.ID, status automation.RunStatus, errorMessage string) error {
 	return nil
 }
 
-func (m *MockRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *workflow.Run, maxPerWorkflow, maxPerTenant int) error {
+func (m *MockRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *automation.Run, maxPerWorkflow, maxPerTenant int) error {
 	return nil
 }
 
@@ -405,38 +405,38 @@ func (m *MockRunRepository) SetActiveCount(count int) {
 	m.activeCount = count
 }
 
-// MockNodeRunRepository implements workflow.NodeRunRepository for testing.
+// MockNodeRunRepository implements automation.NodeRunRepository for testing.
 type MockNodeRunRepository struct{}
 
 func NewMockNodeRunRepository() *MockNodeRunRepository {
 	return &MockNodeRunRepository{}
 }
 
-func (m *MockNodeRunRepository) Create(ctx context.Context, nodeRun *workflow.NodeRun) error {
+func (m *MockNodeRunRepository) Create(ctx context.Context, nodeRun *automation.NodeRun) error {
 	return nil
 }
 
-func (m *MockNodeRunRepository) CreateBatch(ctx context.Context, nodeRuns []*workflow.NodeRun) error {
+func (m *MockNodeRunRepository) CreateBatch(ctx context.Context, nodeRuns []*automation.NodeRun) error {
 	return nil
 }
 
-func (m *MockNodeRunRepository) GetByID(ctx context.Context, id shared.ID) (*workflow.NodeRun, error) {
+func (m *MockNodeRunRepository) GetByID(ctx context.Context, id shared.ID) (*automation.NodeRun, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockNodeRunRepository) GetByWorkflowRunID(ctx context.Context, workflowRunID shared.ID) ([]*workflow.NodeRun, error) {
+func (m *MockNodeRunRepository) GetByWorkflowRunID(ctx context.Context, workflowRunID shared.ID) ([]*automation.NodeRun, error) {
 	return nil, nil
 }
 
-func (m *MockNodeRunRepository) GetByNodeKey(ctx context.Context, workflowRunID shared.ID, nodeKey string) (*workflow.NodeRun, error) {
+func (m *MockNodeRunRepository) GetByNodeKey(ctx context.Context, workflowRunID shared.ID, nodeKey string) (*automation.NodeRun, error) {
 	return nil, shared.ErrNotFound
 }
 
-func (m *MockNodeRunRepository) List(ctx context.Context, filter workflow.NodeRunFilter) ([]*workflow.NodeRun, error) {
+func (m *MockNodeRunRepository) List(ctx context.Context, filter automation.NodeRunFilter) ([]*automation.NodeRun, error) {
 	return nil, nil
 }
 
-func (m *MockNodeRunRepository) Update(ctx context.Context, nodeRun *workflow.NodeRun) error {
+func (m *MockNodeRunRepository) Update(ctx context.Context, nodeRun *automation.NodeRun) error {
 	return nil
 }
 
@@ -444,7 +444,7 @@ func (m *MockNodeRunRepository) Delete(ctx context.Context, id shared.ID) error 
 	return nil
 }
 
-func (m *MockNodeRunRepository) UpdateStatus(ctx context.Context, id shared.ID, status workflow.NodeRunStatus, errorMessage, errorCode string) error {
+func (m *MockNodeRunRepository) UpdateStatus(ctx context.Context, id shared.ID, status automation.NodeRunStatus, errorMessage, errorCode string) error {
 	return nil
 }
 
@@ -452,7 +452,7 @@ func (m *MockNodeRunRepository) Complete(ctx context.Context, id shared.ID, outp
 	return nil
 }
 
-func (m *MockNodeRunRepository) GetPendingByDependencies(ctx context.Context, workflowRunID shared.ID, completedNodeKeys []string) ([]*workflow.NodeRun, error) {
+func (m *MockNodeRunRepository) GetPendingByDependencies(ctx context.Context, workflowRunID shared.ID, completedNodeKeys []string) ([]*automation.NodeRun, error) {
 	return nil, nil
 }
 
@@ -460,7 +460,7 @@ func (m *MockNodeRunRepository) GetPendingByDependencies(ctx context.Context, wo
 // Test Helper Functions
 // =============================================================================
 
-func newTestWorkflowService() (*workflowsvc.WorkflowService, *MockWorkflowRepository, *MockNodeRepository, *MockEdgeRepository, *MockRunRepository) {
+func newTestWorkflowService() (*automationsvc.WorkflowService, *MockWorkflowRepository, *MockNodeRepository, *MockEdgeRepository, *MockRunRepository) {
 	workflowRepo := NewMockWorkflowRepository()
 	nodeRepo := NewMockNodeRepository()
 	edgeRepo := NewMockEdgeRepository()
@@ -468,7 +468,7 @@ func newTestWorkflowService() (*workflowsvc.WorkflowService, *MockWorkflowReposi
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	service := workflowsvc.NewWorkflowService(
+	service := automationsvc.NewWorkflowService(
 		workflowRepo,
 		nodeRepo,
 		edgeRepo,
@@ -480,8 +480,8 @@ func newTestWorkflowService() (*workflowsvc.WorkflowService, *MockWorkflowReposi
 	return service, workflowRepo, nodeRepo, edgeRepo, runRepo
 }
 
-func createTestWorkflow(tenantID shared.ID, name string) *workflow.Workflow {
-	wf, _ := workflow.NewWorkflow(tenantID, name, "Test description")
+func createTestWorkflow(tenantID shared.ID, name string) *automation.Workflow {
+	wf, _ := automation.NewWorkflow(tenantID, name, "Test description")
 	return wf
 }
 
@@ -495,28 +495,28 @@ func TestCreateWorkflow_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	input := workflowsvc.CreateWorkflowInput{
+	input := automationsvc.CreateWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		Name:        "Test Workflow",
 		Description: "A test workflow",
 		Tags:        []string{"test", "automation"},
-		Nodes: []workflowsvc.CreateNodeInput{
+		Nodes: []automationsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
-				NodeType: workflow.NodeTypeTrigger,
+				NodeType: automation.NodeTypeTrigger,
 				Name:     "Manual Trigger",
-				Config: workflow.NodeConfig{
-					TriggerType: workflow.TriggerTypeManual,
+				Config: automation.NodeConfig{
+					TriggerType: automation.TriggerTypeManual,
 				},
 			},
 			{
 				NodeKey:  "action_1",
-				NodeType: workflow.NodeTypeAction,
+				NodeType: automation.NodeTypeAction,
 				Name:     "Send Notification",
 			},
 		},
-		Edges: []workflowsvc.CreateEdgeInput{
+		Edges: []automationsvc.CreateEdgeInput{
 			{
 				SourceNodeKey: "trigger_1",
 				TargetNodeKey: "action_1",
@@ -564,13 +564,13 @@ func TestCreateWorkflow_EmptyName(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := workflowsvc.CreateWorkflowInput{
+	input := automationsvc.CreateWorkflowInput{
 		TenantID: tenantID,
 		Name:     "",
-		Nodes: []workflowsvc.CreateNodeInput{
+		Nodes: []automationsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
-				NodeType: workflow.NodeTypeTrigger,
+				NodeType: automation.NodeTypeTrigger,
 				Name:     "Manual Trigger",
 			},
 		},
@@ -597,13 +597,13 @@ func TestUpdateWorkflowGraph_Success(t *testing.T) {
 	workflowRepo.Create(ctx, initialWf)
 
 	// Create initial nodes
-	triggerNode, _ := workflow.NewNode(initialWf.ID, "trigger_old", workflow.NodeTypeTrigger, "Old Trigger")
-	actionNode, _ := workflow.NewNode(initialWf.ID, "action_old", workflow.NodeTypeAction, "Old Action")
+	triggerNode, _ := automation.NewNode(initialWf.ID, "trigger_old", automation.NodeTypeTrigger, "Old Trigger")
+	actionNode, _ := automation.NewNode(initialWf.ID, "action_old", automation.NodeTypeAction, "Old Action")
 	nodeRepo.Create(ctx, triggerNode)
 	nodeRepo.Create(ctx, actionNode)
 
 	// Create initial edge
-	oldEdge, _ := workflow.NewEdge(initialWf.ID, "trigger_old", "action_old")
+	oldEdge, _ := automation.NewEdge(initialWf.ID, "trigger_old", "action_old")
 	edgeRepo.Create(ctx, oldEdge)
 
 	// No active runs
@@ -611,32 +611,32 @@ func TestUpdateWorkflowGraph_Success(t *testing.T) {
 
 	// Update with new graph
 	newName := "Updated Workflow"
-	input := workflowsvc.UpdateWorkflowGraphInput{
+	input := automationsvc.UpdateWorkflowGraphInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: initialWf.ID,
 		Name:       &newName,
-		Nodes: []workflowsvc.CreateNodeInput{
+		Nodes: []automationsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_new",
-				NodeType: workflow.NodeTypeTrigger,
+				NodeType: automation.NodeTypeTrigger,
 				Name:     "New Trigger",
-				Config: workflow.NodeConfig{
-					TriggerType: workflow.TriggerTypeManual,
+				Config: automation.NodeConfig{
+					TriggerType: automation.TriggerTypeManual,
 				},
 			},
 			{
 				NodeKey:  "condition_1",
-				NodeType: workflow.NodeTypeCondition,
+				NodeType: automation.NodeTypeCondition,
 				Name:     "Check Severity",
 			},
 			{
 				NodeKey:  "action_new",
-				NodeType: workflow.NodeTypeAction,
+				NodeType: automation.NodeTypeAction,
 				Name:     "New Action",
 			},
 		},
-		Edges: []workflowsvc.CreateEdgeInput{
+		Edges: []automationsvc.CreateEdgeInput{
 			{
 				SourceNodeKey: "trigger_new",
 				TargetNodeKey: "condition_1",
@@ -689,14 +689,14 @@ func TestUpdateWorkflowGraph_WithActiveRuns(t *testing.T) {
 	// Set active runs
 	runRepo.SetActiveCount(2)
 
-	input := workflowsvc.UpdateWorkflowGraphInput{
+	input := automationsvc.UpdateWorkflowGraphInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: wf.ID,
-		Nodes: []workflowsvc.CreateNodeInput{
+		Nodes: []automationsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
-				NodeType: workflow.NodeTypeTrigger,
+				NodeType: automation.NodeTypeTrigger,
 				Name:     "Trigger",
 			},
 		},
@@ -725,14 +725,14 @@ func TestUpdateWorkflowGraph_WorkflowNotFound(t *testing.T) {
 	userID := shared.NewID()
 	nonExistentID := shared.NewID()
 
-	input := workflowsvc.UpdateWorkflowGraphInput{
+	input := automationsvc.UpdateWorkflowGraphInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: nonExistentID,
-		Nodes: []workflowsvc.CreateNodeInput{
+		Nodes: []automationsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
-				NodeType: workflow.NodeTypeTrigger,
+				NodeType: automation.NodeTypeTrigger,
 				Name:     "Trigger",
 			},
 		},
@@ -763,18 +763,18 @@ func TestUpdateWorkflowGraph_PreservesMetadataWhenNotProvided(t *testing.T) {
 	runRepo.SetActiveCount(0)
 
 	// Update only graph, not metadata
-	input := workflowsvc.UpdateWorkflowGraphInput{
+	input := automationsvc.UpdateWorkflowGraphInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: wf.ID,
 		// Name, Description, Tags not provided
-		Nodes: []workflowsvc.CreateNodeInput{
+		Nodes: []automationsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
-				NodeType: workflow.NodeTypeTrigger,
+				NodeType: automation.NodeTypeTrigger,
 				Name:     "Trigger",
-				Config: workflow.NodeConfig{
-					TriggerType: workflow.TriggerTypeManual,
+				Config: automation.NodeConfig{
+					TriggerType: automation.TriggerTypeManual,
 				},
 			},
 		},
@@ -814,11 +814,11 @@ func TestDeleteWorkflow_Success(t *testing.T) {
 	workflowRepo.Create(ctx, wf)
 
 	// Create nodes
-	node, _ := workflow.NewNode(wf.ID, "trigger_1", workflow.NodeTypeTrigger, "Trigger")
+	node, _ := automation.NewNode(wf.ID, "trigger_1", automation.NodeTypeTrigger, "Trigger")
 	nodeRepo.Create(ctx, node)
 
 	// Create edge
-	edge, _ := workflow.NewEdge(wf.ID, "trigger_1", "action_1")
+	edge, _ := automation.NewEdge(wf.ID, "trigger_1", "action_1")
 	edgeRepo.Create(ctx, edge)
 
 	runRepo.SetActiveCount(0)
@@ -874,7 +874,7 @@ func TestUpdateWorkflow_Success(t *testing.T) {
 
 	newName := "Updated Name"
 	newDesc := "Updated Description"
-	input := workflowsvc.UpdateWorkflowInput{
+	input := automationsvc.UpdateWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		WorkflowID:  wf.ID,
@@ -913,7 +913,7 @@ func TestUpdateWorkflow_ActivateDeactivate(t *testing.T) {
 
 	// Deactivate
 	inactive := false
-	input := workflowsvc.UpdateWorkflowInput{
+	input := automationsvc.UpdateWorkflowInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: wf.ID,
@@ -953,13 +953,13 @@ func TestCreateWorkflow_ValidationError_InvalidNodeType(t *testing.T) {
 	tenantID := shared.NewID()
 
 	// Workflow with a trigger node but graph validation fails (no trigger node key)
-	input := workflowsvc.CreateWorkflowInput{
+	input := automationsvc.CreateWorkflowInput{
 		TenantID: tenantID,
 		Name:     "Bad Graph Workflow",
-		Nodes: []workflowsvc.CreateNodeInput{
+		Nodes: []automationsvc.CreateNodeInput{
 			{
 				NodeKey:  "action_1",
-				NodeType: workflow.NodeTypeAction,
+				NodeType: automation.NodeTypeAction,
 				Name:     "Action Only",
 			},
 		},
@@ -977,19 +977,19 @@ func TestCreateWorkflow_DuplicateNodeKeys(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	input := workflowsvc.CreateWorkflowInput{
+	input := automationsvc.CreateWorkflowInput{
 		TenantID: tenantID,
 		Name:     "Duplicate Keys",
-		Nodes: []workflowsvc.CreateNodeInput{
+		Nodes: []automationsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
-				NodeType: workflow.NodeTypeTrigger,
+				NodeType: automation.NodeTypeTrigger,
 				Name:     "Trigger",
-				Config:   workflow.NodeConfig{TriggerType: workflow.TriggerTypeManual},
+				Config:   automation.NodeConfig{TriggerType: automation.TriggerTypeManual},
 			},
 			{
 				NodeKey:  "trigger_1", // duplicate key
-				NodeType: workflow.NodeTypeAction,
+				NodeType: automation.NodeTypeAction,
 				Name:     "Also Trigger 1",
 			},
 		},
@@ -1008,15 +1008,15 @@ func TestCreateWorkflow_RepoError(t *testing.T) {
 
 	workflowRepo.createErr = errors.New("database connection refused")
 
-	input := workflowsvc.CreateWorkflowInput{
+	input := automationsvc.CreateWorkflowInput{
 		TenantID: tenantID,
 		Name:     "Fail Workflow",
-		Nodes: []workflowsvc.CreateNodeInput{
+		Nodes: []automationsvc.CreateNodeInput{
 			{
 				NodeKey:  "trigger_1",
-				NodeType: workflow.NodeTypeTrigger,
+				NodeType: automation.NodeTypeTrigger,
 				Name:     "Trigger",
-				Config:   workflow.NodeConfig{TriggerType: workflow.TriggerTypeManual},
+				Config:   automation.NodeConfig{TriggerType: automation.TriggerTypeManual},
 			},
 		},
 	}
@@ -1097,7 +1097,7 @@ func TestUpdateWorkflow_NotFound(t *testing.T) {
 	userID := shared.NewID()
 
 	newName := "Updated"
-	input := workflowsvc.UpdateWorkflowInput{
+	input := automationsvc.UpdateWorkflowInput{
 		TenantID:   tenantID,
 		UserID:     userID,
 		WorkflowID: shared.NewID(), // does not exist
@@ -1152,7 +1152,7 @@ func TestListWorkflows_WithFilters(t *testing.T) {
 	workflowRepo.Create(ctx, wf3)
 
 	// List for tenantID only
-	result, err := service.ListWorkflows(ctx, workflowsvc.ListWorkflowsInput{
+	result, err := service.ListWorkflows(ctx, automationsvc.ListWorkflowsInput{
 		TenantID: tenantID,
 		Page:     1,
 		PerPage:  10,
@@ -1177,7 +1177,7 @@ func TestListWorkflows_Pagination(t *testing.T) {
 	}
 
 	// Page defaults
-	result, err := service.ListWorkflows(ctx, workflowsvc.ListWorkflowsInput{
+	result, err := service.ListWorkflows(ctx, automationsvc.ListWorkflowsInput{
 		TenantID: tenantID,
 	})
 	if err != nil {
@@ -1199,7 +1199,7 @@ func TestListWorkflows_EmptyResult(t *testing.T) {
 	ctx := context.Background()
 	tenantID := shared.NewID()
 
-	result, err := service.ListWorkflows(ctx, workflowsvc.ListWorkflowsInput{
+	result, err := service.ListWorkflows(ctx, automationsvc.ListWorkflowsInput{
 		TenantID: tenantID,
 		Page:     1,
 		PerPage:  10,
@@ -1229,17 +1229,17 @@ func TestTriggerWorkflow_Success(t *testing.T) {
 	workflowRepo.Create(ctx, wf)
 
 	// Add nodes so GetWithGraph returns them
-	triggerNode, _ := workflow.NewNode(wf.ID, "trigger_1", workflow.NodeTypeTrigger, "Trigger")
-	triggerNode.Config.TriggerType = workflow.TriggerTypeManual
+	triggerNode, _ := automation.NewNode(wf.ID, "trigger_1", automation.NodeTypeTrigger, "Trigger")
+	triggerNode.Config.TriggerType = automation.TriggerTypeManual
 	nodeRepo.Create(ctx, triggerNode)
 	wf.Nodes = append(wf.Nodes, triggerNode)
 	workflowRepo.Update(ctx, wf)
 
-	input := workflowsvc.TriggerWorkflowInput{
+	input := automationsvc.TriggerWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		WorkflowID:  wf.ID,
-		TriggerType: workflow.TriggerTypeManual,
+		TriggerType: automation.TriggerTypeManual,
 		TriggerData: map[string]any{"source": "test"},
 	}
 
@@ -1254,7 +1254,7 @@ func TestTriggerWorkflow_Success(t *testing.T) {
 	if run.WorkflowID != wf.ID {
 		t.Errorf("Expected workflow ID %s, got %s", wf.ID, run.WorkflowID)
 	}
-	if run.Status != workflow.RunStatusPending {
+	if run.Status != automation.RunStatusPending {
 		t.Errorf("Expected status pending, got %s", run.Status)
 	}
 }
@@ -1270,11 +1270,11 @@ func TestTriggerWorkflow_InactiveWorkflow(t *testing.T) {
 	wf.Deactivate()
 	workflowRepo.Create(ctx, wf)
 
-	input := workflowsvc.TriggerWorkflowInput{
+	input := automationsvc.TriggerWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		WorkflowID:  wf.ID,
-		TriggerType: workflow.TriggerTypeManual,
+		TriggerType: automation.TriggerTypeManual,
 	}
 
 	_, err := service.TriggerWorkflow(ctx, input)
@@ -1297,11 +1297,11 @@ func TestTriggerWorkflow_WorkflowNotFound(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	input := workflowsvc.TriggerWorkflowInput{
+	input := automationsvc.TriggerWorkflowInput{
 		TenantID:    tenantID,
 		UserID:      userID,
 		WorkflowID:  shared.NewID(), // does not exist
-		TriggerType: workflow.TriggerTypeManual,
+		TriggerType: automation.TriggerTypeManual,
 	}
 
 	_, err := service.TriggerWorkflow(ctx, input)
@@ -1324,11 +1324,11 @@ func TestTriggerWorkflow_WrongTenant(t *testing.T) {
 	wf.Activate()
 	workflowRepo.Create(ctx, wf)
 
-	input := workflowsvc.TriggerWorkflowInput{
+	input := automationsvc.TriggerWorkflowInput{
 		TenantID:    otherTenantID, // wrong tenant
 		UserID:      userID,
 		WorkflowID:  wf.ID,
-		TriggerType: workflow.TriggerTypeManual,
+		TriggerType: automation.TriggerTypeManual,
 	}
 
 	_, err := service.TriggerWorkflow(ctx, input)
