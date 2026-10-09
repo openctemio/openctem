@@ -286,6 +286,11 @@ func (s *ScanScheduler) isRunning(scanID shared.ID) bool {
 // the schedule's following occurrence (at least MinScheduleInterval later)
 // is due too.
 func isMisfire(sc *scan.Scan, occurrence, now time.Time) bool {
+	// A one-off run has no following occurrence: it misfires once it is
+	// later than OnceMisfireGrace, so it never starts at a time nobody chose.
+	if sc.ScheduleType == scan.ScheduleOnce {
+		return now.Sub(occurrence) > scan.OnceMisfireGrace
+	}
 	following := sc.OccurrenceAfter(occurrence.Add(scan.MinScheduleInterval - time.Second))
 	return following != nil && !following.After(now)
 }

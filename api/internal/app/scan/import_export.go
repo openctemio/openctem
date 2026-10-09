@@ -40,6 +40,8 @@ type ScanConfigExport struct {
 	ScheduleDay      *int    `json:"schedule_day,omitempty"`
 	ScheduleTime     *string `json:"schedule_time,omitempty"`
 	ScheduleTimezone string  `json:"schedule_timezone"`
+	// ScheduleRunAt is the one run of a once schedule (RFC 3339).
+	ScheduleRunAt *time.Time `json:"schedule_run_at,omitempty"`
 
 	// Routing
 	Tags              []string `json:"tags,omitempty"`
@@ -98,6 +100,7 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 		ScheduleRRule:       sc.ScheduleRRule,
 		ScheduleDay:         sc.ScheduleDay,
 		ScheduleTimezone:    sc.ScheduleTimezone,
+		ScheduleRunAt:       sc.ScheduleRunAt,
 		RunOnTenantRunner:   sc.RunOnTenantRunner,
 		SensorPreference:    string(sc.SensorPreference),
 		TimeoutSeconds:      sc.TimeoutSeconds,
@@ -207,6 +210,13 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 	}
 
 	// Build create input from export
+	// A one-off run is a moment, not a portable setting: one that is no
+	// longer ahead imports as a manual scan rather than failing the import.
+	if export.ScheduleType == string(scan.ScheduleOnce) &&
+		(export.ScheduleRunAt == nil || export.ScheduleRunAt.Before(time.Now().Add(scan.MinOnceLead))) {
+		export.ScheduleType = string(scan.ScheduleManual)
+		export.ScheduleRunAt = nil
+	}
 	input := CreateScanInput{
 		TenantID:            tenantID.String(),
 		Name:                export.Name,
@@ -222,6 +232,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		ScheduleRRule:       export.ScheduleRRule,
 		ScheduleDay:         export.ScheduleDay,
 		ScheduleTime:        scheduleTime,
+		RunAt:               export.ScheduleRunAt,
 		Timezone:            export.ScheduleTimezone,
 		Tags:                export.Tags,
 		TenantRunner:        export.RunOnTenantRunner,
