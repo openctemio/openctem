@@ -624,6 +624,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// People on scope responses are named from this tenant's members only.
 	scopeActors := postgres.NewScopeActorRepository(deps.DB)
 	handlers.Scope.SetActorNamer(scopeActors)
+	// Pending entries name their approvers; an owner without another
+	// approver approves with a fresh authenticator code (RFC-054 §7).
+	wireScopeApprovers(svc, scopeActors, cfg.SMTP.BaseURL, log)
 	if svc.EASMSweep != nil {
 		handlers.Scope.SetSweeper(svc.EASMSweep)
 	}
