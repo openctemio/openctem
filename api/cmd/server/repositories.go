@@ -146,6 +146,7 @@ type Repositories struct {
 	ToolCapability   *postgres.ToolCapabilityRepository
 	TenantToolConfig *postgres.TenantToolConfigRepository
 	Scan             *postgres.ScanRepository
+	ScanSelector     *postgres.ScanSelectorRepository
 	ScannerTemplate  *postgres.ScannerTemplateRepository
 	TemplateSource   *postgres.TemplateSourceRepository
 	SecretStore      *postgres.SecretStoreRepository
@@ -407,6 +408,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ToolCapability:   postgres.NewToolCapabilityRepository(db),
 		TenantToolConfig: postgres.NewTenantToolConfigRepository(db),
 		Scan:             postgres.NewScanRepository(db),
+		ScanSelector:     postgres.NewScanSelectorRepository(db),
 		ScannerTemplate:  postgres.NewScannerTemplateRepository(db),
 		TemplateSource:   postgres.NewTemplateSourceRepository(db),
 		SecretStore:      postgres.NewSecretStoreRepository(db),
