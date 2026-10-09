@@ -185,15 +185,16 @@ No new route and no new permission.
 
 ## 8. Web
 
-- **Targets step.** "Host and its subdomains" keeps `*.example.com` in the
-  scan (dynamic) instead of copying inventory names. A live preview per
-  selector: how many names the inventory holds now, the name seen most
-  recently, a sample, and "re-resolved at each run; discovery steps add what
-  they find". A CIDR offers *Sweep the whole range* or *Only known hosts*,
-  with the known count. The wildcard hint no longer asks to replace the
-  pattern for an active scanner.
-- **Options step.** Freshness: "only assets seen in the last N days",
-  "include stale assets".
+- **Targets step.** "Host and its subdomains" stores each typed or picked
+  domain as `*.domain` (dynamic) instead of copying inventory names; "…and
+  their IPs" adds today's recorded addresses as before. A *Dynamic targets*
+  panel appears when the scan has a wildcard or a CIDR: per selector, how
+  many assets the inventory holds now, the ones seen most recently, and
+  "resolved again at the start of every run; discovery steps add what they
+  find"; a CIDR offers *Sweep the whole range* or *Only the hosts already in
+  the inventory*; freshness: "only assets seen in the last N days" and
+  "include stale assets". The wildcard hint that asked to replace the
+  pattern for an active scanner is removed.
 - **Scan detail.** Dynamic targets are marked; a scheduled scan says
   "targets are re-resolved at each run".
 - **Run detail.** "Resolved at start": per selector, matched, capped, sample;
