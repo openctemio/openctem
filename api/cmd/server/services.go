@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -82,6 +83,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/bountysource"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	infrajira "github.com/openctemio/openctem/api/internal/infra/jira"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
@@ -982,6 +984,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	letterRepo := postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetLetters(letterRepo)
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
+	// Program sync (RFC-065 §14): the outbound guard, the token encrypted
+	// with APP_ENCRYPTION_KEY, and every sync that narrows audited as the
+	// system or the person who ran it.
+	s.BountyProgram.SetSync(bountysource.New(), s.Encryptor,
+		func(err error) bool { return errors.Is(err, bountysource.ErrGone) },
+		programSyncAuditor(s.Audit))
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
