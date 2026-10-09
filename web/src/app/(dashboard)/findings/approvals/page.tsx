@@ -41,6 +41,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -608,31 +609,35 @@ export default function ApprovalsPage() {
 
       {/* Reject Dialog */}
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Reject Request</DialogTitle>
             <DialogDescription>Provide a reason for rejecting this request.</DialogDescription>
           </DialogHeader>
-          {selectedApproval && (
-            <div className="rounded-lg border bg-muted/50 p-3">
-              <p className="text-sm font-medium">
-                {getRequestedStatusLabel(selectedApproval.requested_status)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                {selectedApproval.justification}
+          <DialogBody className="grid gap-4">
+            {selectedApproval && (
+              <div className="rounded-lg border bg-muted/50 p-3">
+                <p className="text-sm font-medium">
+                  {getRequestedStatusLabel(selectedApproval.requested_status)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                  {selectedApproval.justification}
+                </p>
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Textarea
+                placeholder="Reason for rejection..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                rows={3}
+                maxLength={2000}
+              />
+              <p className="text-xs text-muted-foreground text-end">
+                {rejectionReason.length}/2000
               </p>
             </div>
-          )}
-          <div className="grid gap-2">
-            <Textarea
-              placeholder="Reason for rejection..."
-              value={rejectionReason}
-              onChange={(e) => setRejectionReason(e.target.value)}
-              rows={3}
-              maxLength={2000}
-            />
-            <p className="text-xs text-muted-foreground text-end">{rejectionReason.length}/2000</p>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button
               variant="outline"

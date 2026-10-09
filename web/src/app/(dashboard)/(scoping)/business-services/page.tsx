@@ -32,6 +32,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
@@ -484,7 +485,7 @@ export default function BusinessServicesPage() {
       )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
               {editingService ? 'Edit business service' : 'New business service'}
@@ -495,156 +496,158 @@ export default function BusinessServicesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input
-                id="name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. Customer Payment Service"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="Briefly describe what this service does"
-                rows={3}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="criticality">Criticality</Label>
-              <Select
-                value={form.criticality}
-                onValueChange={(value) => setForm({ ...form, criticality: value as Criticality })}
-              >
-                <SelectTrigger id="criticality">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RATED_CRITICALITY_LEVELS.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {CRITICALITY_LABELS[c]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Compliance scope</Label>
-              <div className="flex flex-wrap gap-2">
-                {COMPLIANCE_FRAMEWORKS.map((framework) => {
-                  const selected = form.compliance_scope.includes(framework)
-                  return (
-                    <Badge
-                      key={framework}
-                      variant={selected ? 'default' : 'outline'}
-                      className="cursor-pointer"
-                      onClick={() => toggleCompliance(framework)}
-                    >
-                      {framework}
-                    </Badge>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="grid gap-3 rounded-md border p-3">
-              <Label className="text-sm font-semibold">Data handling</Label>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="handles_pii" className="font-normal">
-                  Handles PII
-                </Label>
-                <Switch
-                  id="handles_pii"
-                  checked={form.handles_pii}
-                  onCheckedChange={(checked) => setForm({ ...form, handles_pii: checked })}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="handles_phi" className="font-normal">
-                  Handles PHI
-                </Label>
-                <Switch
-                  id="handles_phi"
-                  checked={form.handles_phi}
-                  onCheckedChange={(checked) => setForm({ ...form, handles_phi: checked })}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="handles_financial" className="font-normal">
-                  Handles Financial Data
-                </Label>
-                <Switch
-                  id="handles_financial"
-                  checked={form.handles_financial}
-                  onCheckedChange={(checked) => setForm({ ...form, handles_financial: checked })}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
+          <DialogBody>
+            <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="availability_target">Availability (%)</Label>
+                <Label htmlFor="name">Name *</Label>
                 <Input
-                  id="availability_target"
-                  type="number"
-                  step="0.01"
-                  value={form.availability_target}
-                  onChange={(e) => setForm({ ...form, availability_target: e.target.value })}
-                  placeholder="99.99"
+                  id="name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="e.g. Customer Payment Service"
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="rpo_minutes">RPO (min)</Label>
-                <Input
-                  id="rpo_minutes"
-                  type="number"
-                  value={form.rpo_minutes}
-                  onChange={(e) => setForm({ ...form, rpo_minutes: e.target.value })}
-                  placeholder="60"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="rto_minutes">RTO (min)</Label>
-                <Input
-                  id="rto_minutes"
-                  type="number"
-                  value={form.rto_minutes}
-                  onChange={(e) => setForm({ ...form, rto_minutes: e.target.value })}
-                  placeholder="120"
-                />
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="owner_name">Owner name</Label>
-                <Input
-                  id="owner_name"
-                  value={form.owner_name}
-                  onChange={(e) => setForm({ ...form, owner_name: e.target.value })}
-                  placeholder="Jane Doe"
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Briefly describe what this service does"
+                  rows={3}
                 />
               </div>
+
               <div className="grid gap-2">
-                <Label htmlFor="owner_email">Owner email</Label>
-                <Input
-                  id="owner_email"
-                  type="email"
-                  value={form.owner_email}
-                  onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
-                  placeholder="jane@example.com"
-                />
+                <Label htmlFor="criticality">Criticality</Label>
+                <Select
+                  value={form.criticality}
+                  onValueChange={(value) => setForm({ ...form, criticality: value as Criticality })}
+                >
+                  <SelectTrigger id="criticality">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RATED_CRITICALITY_LEVELS.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {CRITICALITY_LABELS[c]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Compliance scope</Label>
+                <div className="flex flex-wrap gap-2">
+                  {COMPLIANCE_FRAMEWORKS.map((framework) => {
+                    const selected = form.compliance_scope.includes(framework)
+                    return (
+                      <Badge
+                        key={framework}
+                        variant={selected ? 'default' : 'outline'}
+                        className="cursor-pointer"
+                        onClick={() => toggleCompliance(framework)}
+                      >
+                        {framework}
+                      </Badge>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-3 rounded-md border p-3">
+                <Label className="text-sm font-semibold">Data handling</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="handles_pii" className="font-normal">
+                    Handles PII
+                  </Label>
+                  <Switch
+                    id="handles_pii"
+                    checked={form.handles_pii}
+                    onCheckedChange={(checked) => setForm({ ...form, handles_pii: checked })}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="handles_phi" className="font-normal">
+                    Handles PHI
+                  </Label>
+                  <Switch
+                    id="handles_phi"
+                    checked={form.handles_phi}
+                    onCheckedChange={(checked) => setForm({ ...form, handles_phi: checked })}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="handles_financial" className="font-normal">
+                    Handles Financial Data
+                  </Label>
+                  <Switch
+                    id="handles_financial"
+                    checked={form.handles_financial}
+                    onCheckedChange={(checked) => setForm({ ...form, handles_financial: checked })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="availability_target">Availability (%)</Label>
+                  <Input
+                    id="availability_target"
+                    type="number"
+                    step="0.01"
+                    value={form.availability_target}
+                    onChange={(e) => setForm({ ...form, availability_target: e.target.value })}
+                    placeholder="99.99"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="rpo_minutes">RPO (min)</Label>
+                  <Input
+                    id="rpo_minutes"
+                    type="number"
+                    value={form.rpo_minutes}
+                    onChange={(e) => setForm({ ...form, rpo_minutes: e.target.value })}
+                    placeholder="60"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="rto_minutes">RTO (min)</Label>
+                  <Input
+                    id="rto_minutes"
+                    type="number"
+                    value={form.rto_minutes}
+                    onChange={(e) => setForm({ ...form, rto_minutes: e.target.value })}
+                    placeholder="120"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="owner_name">Owner name</Label>
+                  <Input
+                    id="owner_name"
+                    value={form.owner_name}
+                    onChange={(e) => setForm({ ...form, owner_name: e.target.value })}
+                    placeholder="Jane Doe"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="owner_email">Owner email</Label>
+                  <Input
+                    id="owner_email"
+                    type="email"
+                    value={form.owner_email}
+                    onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
+                    placeholder="jane@example.com"
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>

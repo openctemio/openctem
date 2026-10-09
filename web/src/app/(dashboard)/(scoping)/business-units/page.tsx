@@ -50,6 +50,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -773,14 +774,14 @@ export default function BusinessUnitsPage() {
 
       {/* Create Dialog */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>New business unit</DialogTitle>
             <DialogDescription>
               Add a new business unit to organize your security scope
             </DialogDescription>
           </DialogHeader>
-          {formFields}
+          <DialogBody>{formFields}</DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancel
@@ -792,12 +793,12 @@ export default function BusinessUnitsPage() {
 
       {/* Edit Dialog */}
       <Dialog open={!!editUnit} onOpenChange={(open) => !open && setEditUnit(null)}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>Edit business unit</DialogTitle>
             <DialogDescription>Update business unit details</DialogDescription>
           </DialogHeader>
-          {formFields}
+          <DialogBody>{formFields}</DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditUnit(null)}>
               Cancel

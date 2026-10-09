@@ -8,6 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -91,54 +92,56 @@ export function ResolveCampaignDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="campaign-resolve-status">Outcome</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as ResolveStatus)}>
-              <SelectTrigger id="campaign-resolve-status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fix_applied">
-                  Fix applied — pending rescan verification (recommended)
-                </SelectItem>
-                <SelectItem value="resolved">Resolved — close now</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-muted-foreground text-xs">
-              {status === 'fix_applied'
-                ? 'The next scan confirms the fix and closes each finding automatically.'
-                : 'Closes every finding immediately without waiting for a rescan.'}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="campaign-resolve-note">Note (optional)</Label>
-            <Textarea
-              id="campaign-resolve-note"
-              placeholder="e.g. Patched via change CR-1234"
-              value={resolution}
-              onChange={(e) => setResolution(e.target.value)}
-              rows={3}
-            />
-          </div>
-
-          {needsApproval ? (
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id="campaign-resolve-approve"
-                checked={approved}
-                onCheckedChange={(c) => setApproved(c === true)}
-              />
-              <Label
-                htmlFor="campaign-resolve-approve"
-                className="text-sm font-normal leading-snug"
-              >
-                I confirm resolving {openCount} findings at once.
-              </Label>
+        <DialogBody>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="campaign-resolve-status">Outcome</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as ResolveStatus)}>
+                <SelectTrigger id="campaign-resolve-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fix_applied">
+                    Fix applied — pending rescan verification (recommended)
+                  </SelectItem>
+                  <SelectItem value="resolved">Resolved — close now</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                {status === 'fix_applied'
+                  ? 'The next scan confirms the fix and closes each finding automatically.'
+                  : 'Closes every finding immediately without waiting for a rescan.'}
+              </p>
             </div>
-          ) : null}
-        </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="campaign-resolve-note">Note (optional)</Label>
+              <Textarea
+                id="campaign-resolve-note"
+                placeholder="e.g. Patched via change CR-1234"
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value)}
+                rows={3}
+              />
+            </div>
+
+            {needsApproval ? (
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="campaign-resolve-approve"
+                  checked={approved}
+                  onCheckedChange={(c) => setApproved(c === true)}
+                />
+                <Label
+                  htmlFor="campaign-resolve-approve"
+                  className="text-sm font-normal leading-snug"
+                >
+                  I confirm resolving {openCount} findings at once.
+                </Label>
+              </div>
+            ) : null}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isMutating}>

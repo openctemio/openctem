@@ -9,6 +9,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -71,22 +72,24 @@ export function CreateJiraEpicDialog({ campaign, onOpenChange }: CreateJiraEpicD
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
-          <Label htmlFor="jira-project-key">Jira project key</Label>
-          <Input
-            id="jira-project-key"
-            placeholder="SEC"
-            value={projectKey}
-            onChange={(e) => setProjectKey(e.target.value)}
-            autoComplete="off"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleCreate()
-            }}
-          />
-          <p className="text-muted-foreground text-xs">
-            The epic is created in this project. Requires a connected Jira integration.
-          </p>
-        </div>
+        <DialogBody>
+          <div className="space-y-2">
+            <Label htmlFor="jira-project-key">Jira project key</Label>
+            <Input
+              id="jira-project-key"
+              placeholder="SEC"
+              value={projectKey}
+              onChange={(e) => setProjectKey(e.target.value)}
+              autoComplete="off"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreate()
+              }}
+            />
+            <p className="text-muted-foreground text-xs">
+              The epic is created in this project. Requires a connected Jira integration.
+            </p>
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isMutating}>

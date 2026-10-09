@@ -271,7 +271,7 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
           if (!open && !isDeleting) setNoteToDelete(null)
         }}
       >
-        <AlertDialogContent className="max-w-md">
+        <AlertDialogContent size="sm">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-start">Delete evidence note?</AlertDialogTitle>
             <AlertDialogDescription className="text-sm">
@@ -279,7 +279,7 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
               be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="mt-2">
+          <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {

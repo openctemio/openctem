@@ -23,6 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -143,7 +144,7 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FlaskConical className="size-5" />
@@ -154,25 +155,27 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Target priority */}
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Would reclassify matching findings to</span>
-            <PriorityClassBadge priorityClass={rule.priority_class} />
-          </div>
+        <DialogBody>
+          <div className="space-y-4 py-2">
+            {/* Target priority */}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Would reclassify matching findings to</span>
+              <PriorityClassBadge priorityClass={rule.priority_class} />
+            </div>
 
-          {state.status === 'loading' ? (
-            <LoadingState />
-          ) : state.status === 'error' ? (
-            <Alert variant="destructive">
-              <AlertTriangle className="size-4" />
-              <AlertTitle>Could not evaluate the rule</AlertTitle>
-              <AlertDescription>{state.message}</AlertDescription>
-            </Alert>
-          ) : state.status === 'done' ? (
-            <ResultView result={state.result} targetClass={rule.priority_class} />
-          ) : null}
-        </div>
+            {state.status === 'loading' ? (
+              <LoadingState />
+            ) : state.status === 'error' ? (
+              <Alert variant="destructive">
+                <AlertTriangle className="size-4" />
+                <AlertTitle>Could not evaluate the rule</AlertTitle>
+                <AlertDescription>{state.message}</AlertDescription>
+              </Alert>
+            ) : state.status === 'done' ? (
+              <ResultView result={state.result} targetClass={rule.priority_class} />
+            ) : null}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

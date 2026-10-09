@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -172,7 +173,7 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
           New schedule
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>New report schedule</DialogTitle>
           <DialogDescription>
@@ -181,187 +182,189 @@ export function NewScheduleDialog({ onCreate }: NewScheduleDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="schedule-name">Name</Label>
-            <Input
-              id="schedule-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Weekly exec digest"
-            />
-          </div>
+        <DialogBody>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="schedule-name">Name</Label>
+              <Input
+                id="schedule-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Weekly exec digest"
+              />
+            </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Report type</Label>
-              <Select value={reportType} onValueChange={(v) => setReportType(v as ReportType)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {REPORT_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Format</Label>
-              <Select value="html" disabled>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="html">HTML email digest</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Cadence</Label>
-              <Select
-                value={cadence}
-                onValueChange={(v) => setCadence(v as keyof typeof CRON_PRESETS)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(CRON_PRESETS).map(([key, preset]) => (
-                    <SelectItem key={key} value={key}>
-                      {preset.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {cadence !== 'custom' && (
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="schedule-time">Time</Label>
+                <Label>Report type</Label>
+                <Select value={reportType} onValueChange={(v) => setReportType(v as ReportType)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REPORT_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Format</Label>
+                <Select value="html" disabled>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="html">HTML email digest</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Cadence</Label>
+                <Select
+                  value={cadence}
+                  onValueChange={(v) => setCadence(v as keyof typeof CRON_PRESETS)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(CRON_PRESETS).map(([key, preset]) => (
+                      <SelectItem key={key} value={key}>
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {cadence !== 'custom' && (
+                <div className="space-y-2">
+                  <Label htmlFor="schedule-time">Time</Label>
+                  <Input
+                    id="schedule-time"
+                    type="time"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {cadence === 'weekly' && (
+              <div className="space-y-2">
+                <Label>Day of week</Label>
+                <Select value={weekday} onValueChange={setWeekday}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WEEKDAYS.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {cadence === 'monthly' && (
+              <div className="space-y-2">
+                <Label htmlFor="schedule-monthday">Day of month</Label>
                 <Input
-                  id="schedule-time"
-                  type="time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
+                  id="schedule-monthday"
+                  type="number"
+                  min={1}
+                  max={28}
+                  value={monthDay}
+                  onChange={(e) => setMonthDay(e.target.value)}
                 />
               </div>
             )}
-          </div>
 
-          {cadence === 'weekly' && (
+            {cadence === 'custom' && (
+              <div className="space-y-2">
+                <Label htmlFor="schedule-cron">Cron expression</Label>
+                <Input
+                  id="schedule-cron"
+                  value={customCron}
+                  onChange={(e) => setCustomCron(e.target.value)}
+                  placeholder="0 8 * * 1"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Standard 5-field cron: minute hour day-of-month month day-of-week.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label>Day of week</Label>
-              <Select value={weekday} onValueChange={setWeekday}>
+              <Label>Timezone</Label>
+              <Select value={timezone} onValueChange={setTimezone}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {WEEKDAYS.map((d) => (
-                    <SelectItem key={d.value} value={d.value}>
-                      {d.label}
+                  {timezones.map((tz) => (
+                    <SelectItem key={tz} value={tz}>
+                      {tz}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          {cadence === 'monthly' && (
-            <div className="space-y-2">
-              <Label htmlFor="schedule-monthday">Day of month</Label>
-              <Input
-                id="schedule-monthday"
-                type="number"
-                min={1}
-                max={28}
-                value={monthDay}
-                onChange={(e) => setMonthDay(e.target.value)}
-              />
-            </div>
-          )}
-
-          {cadence === 'custom' && (
-            <div className="space-y-2">
-              <Label htmlFor="schedule-cron">Cron expression</Label>
-              <Input
-                id="schedule-cron"
-                value={customCron}
-                onChange={(e) => setCustomCron(e.target.value)}
-                placeholder="0 8 * * 1"
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                Standard 5-field cron: minute hour day-of-month month day-of-week.
+            {cronPreview && (
+              <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+                Runs <span className="font-medium text-foreground">{cronPreview}</span> ({timezone})
               </p>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Timezone</Label>
-            <Select value={timezone} onValueChange={setTimezone}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {timezones.map((tz) => (
-                  <SelectItem key={tz} value={tz}>
-                    {tz}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {cronPreview && (
-            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-              Runs <span className="font-medium text-foreground">{cronPreview}</span> ({timezone})
-            </p>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="schedule-recipient">Recipients</Label>
-            <div className="flex gap-2">
-              <Input
-                id="schedule-recipient"
-                type="email"
-                value={recipientInput}
-                onChange={(e) => setRecipientInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    addRecipient()
-                  }
-                }}
-                placeholder="exec@company.com"
-              />
-              <Button type="button" variant="outline" onClick={addRecipient}>
-                Add
-              </Button>
-            </div>
-            {recipients.length > 0 && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {recipients.map((email) => (
-                  <Badge key={email} variant="secondary" className="gap-1">
-                    {email}
-                    <button
-                      type="button"
-                      onClick={() => removeRecipient(email)}
-                      aria-label={`Remove ${email}`}
-                      className="ml-1 rounded-full hover:text-destructive"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
             )}
+
+            <div className="space-y-2">
+              <Label htmlFor="schedule-recipient">Recipients</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="schedule-recipient"
+                  type="email"
+                  value={recipientInput}
+                  onChange={(e) => setRecipientInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addRecipient()
+                    }
+                  }}
+                  placeholder="exec@company.com"
+                />
+                <Button type="button" variant="outline" onClick={addRecipient}>
+                  Add
+                </Button>
+              </div>
+              {recipients.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {recipients.map((email) => (
+                    <Badge key={email} variant="secondary" className="gap-1">
+                      {email}
+                      <button
+                        type="button"
+                        onClick={() => removeRecipient(email)}
+                        aria-label={`Remove ${email}`}
+                        className="ml-1 rounded-full hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>

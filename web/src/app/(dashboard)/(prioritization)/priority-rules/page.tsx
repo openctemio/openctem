@@ -31,6 +31,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
@@ -603,7 +604,7 @@ export default function PriorityRulesPage() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>{editingRule ? 'Edit priority rule' : 'Create priority rule'}</DialogTitle>
             <DialogDescription>
@@ -611,171 +612,173 @@ export default function PriorityRulesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input
-                id="name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="e.g. KEV on crown jewel → P0"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="Explain when and why this rule applies"
-                rows={2}
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
+          <DialogBody>
+            <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="priority_class">Target priority class</Label>
-                <Select
-                  value={form.priority_class}
-                  onValueChange={(value) =>
-                    setForm({ ...form, priority_class: value as PriorityClass })
-                  }
-                >
-                  <SelectTrigger id="priority_class">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITY_CLASSES.map((pc) => (
-                      <SelectItem key={pc} value={pc}>
-                        {pc}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="evaluation_order">Evaluation order</Label>
+                <Label htmlFor="name">Name *</Label>
                 <Input
-                  id="evaluation_order"
-                  type="number"
-                  value={form.evaluation_order}
-                  onChange={(e) => setForm({ ...form, evaluation_order: e.target.value })}
-                  placeholder="50"
+                  id="name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="e.g. KEV on crown jewel → P0"
                 />
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="is_active">Active</Label>
-                <div className="flex h-9 items-center">
-                  <Switch
-                    id="is_active"
-                    checked={form.is_active}
-                    onCheckedChange={(checked) => setForm({ ...form, is_active: checked })}
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Explain when and why this rule applies"
+                  rows={2}
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="priority_class">Target priority class</Label>
+                  <Select
+                    value={form.priority_class}
+                    onValueChange={(value) =>
+                      setForm({ ...form, priority_class: value as PriorityClass })
+                    }
+                  >
+                    <SelectTrigger id="priority_class">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRIORITY_CLASSES.map((pc) => (
+                        <SelectItem key={pc} value={pc}>
+                          {pc}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="evaluation_order">Evaluation order</Label>
+                  <Input
+                    id="evaluation_order"
+                    type="number"
+                    value={form.evaluation_order}
+                    onChange={(e) => setForm({ ...form, evaluation_order: e.target.value })}
+                    placeholder="50"
                   />
                 </div>
-              </div>
-            </div>
 
-            <div className="grid gap-2 rounded-md border p-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">Conditions</Label>
-                <Button type="button" variant="outline" size="sm" onClick={addCondition}>
-                  <Plus className="me-1 h-3 w-3" />
-                  Add condition
-                </Button>
+                <div className="grid gap-2">
+                  <Label htmlFor="is_active">Active</Label>
+                  <div className="flex h-9 items-center">
+                    <Switch
+                      id="is_active"
+                      checked={form.is_active}
+                      onCheckedChange={(checked) => setForm({ ...form, is_active: checked })}
+                    />
+                  </div>
+                </div>
               </div>
-              {form.conditions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Add at least one condition. A rule applies only to findings that match all of its
-                  conditions.
-                </p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {form.conditions.map((c, idx) => {
-                    const cfg = FIELD_CONFIG[c.field]
-                    // A rule persisted with a field this UI build doesn't know
-                    // (backend version drift / renamed field) would otherwise
-                    // crash the whole dialog on `.type`. Render a removable
-                    // placeholder so the rest of the rule stays editable.
-                    if (!cfg) {
+
+              <div className="grid gap-2 rounded-md border p-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold">Conditions</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addCondition}>
+                    <Plus className="me-1 h-3 w-3" />
+                    Add condition
+                  </Button>
+                </div>
+                {form.conditions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Add at least one condition. A rule applies only to findings that match all of
+                    its conditions.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {form.conditions.map((c, idx) => {
+                      const cfg = FIELD_CONFIG[c.field]
+                      // A rule persisted with a field this UI build doesn't know
+                      // (backend version drift / renamed field) would otherwise
+                      // crash the whole dialog on `.type`. Render a removable
+                      // placeholder so the rest of the rule stays editable.
+                      if (!cfg) {
+                        return (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between gap-2 rounded-md border border-dashed p-2"
+                          >
+                            <span className="text-muted-foreground text-xs">
+                              Unknown condition field <code className="font-mono">{c.field}</code> —
+                              remove to edit this rule.
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9"
+                              aria-label="Remove unknown condition"
+                              onClick={() => removeCondition(idx)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )
+                      }
+                      const type = cfg.type
+                      const ops = operatorsFor(type)
                       return (
                         <div
                           key={idx}
-                          className="flex items-center justify-between gap-2 rounded-md border border-dashed p-2"
+                          className="grid grid-cols-[1fr_120px_1fr_auto] gap-2 items-start"
                         >
-                          <span className="text-muted-foreground text-xs">
-                            Unknown condition field <code className="font-mono">{c.field}</code> —
-                            remove to edit this rule.
-                          </span>
+                          <Select
+                            value={c.field}
+                            onValueChange={(v) => changeConditionField(idx, v as FieldKey)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(Object.keys(FIELD_CONFIG) as FieldKey[]).map((k) => (
+                                <SelectItem key={k} value={k}>
+                                  {FIELD_CONFIG[k].label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={c.operator}
+                            onValueChange={(v) => changeConditionOperator(idx, v as Operator)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ops.map((op) => (
+                                <SelectItem key={op} value={op}>
+                                  {OPERATOR_LABEL[op]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {renderValueInput(c, idx)}
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
                             className="h-9 w-9"
-                            aria-label="Remove unknown condition"
                             onClick={() => removeCondition(idx)}
                           >
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
                       )
-                    }
-                    const type = cfg.type
-                    const ops = operatorsFor(type)
-                    return (
-                      <div
-                        key={idx}
-                        className="grid grid-cols-[1fr_120px_1fr_auto] gap-2 items-start"
-                      >
-                        <Select
-                          value={c.field}
-                          onValueChange={(v) => changeConditionField(idx, v as FieldKey)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(Object.keys(FIELD_CONFIG) as FieldKey[]).map((k) => (
-                              <SelectItem key={k} value={k}>
-                                {FIELD_CONFIG[k].label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Select
-                          value={c.operator}
-                          onValueChange={(v) => changeConditionOperator(idx, v as Operator)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ops.map((op) => (
-                              <SelectItem key={op} value={op}>
-                                {OPERATOR_LABEL[op]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {renderValueInput(c, idx)}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9"
-                          onClick={() => removeCondition(idx)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>

@@ -63,6 +63,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -604,64 +605,66 @@ export default function CrownJewelsPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>Designate crown jewel</DialogTitle>
             <DialogDescription>
               Select an existing asset to designate as a crown jewel that needs special protection
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="asset-search">Search asset *</Label>
-              <Input
-                id="asset-search"
-                value={assetSearch}
-                onChange={(e) => {
-                  setAssetSearch(e.target.value)
-                  setSelectedAssetId('')
-                }}
-                placeholder="Type to search assets..."
-              />
-              {allAssets?.data && allAssets.data.length > 0 && (
-                <div className="border rounded-md max-h-64 overflow-y-auto overscroll-contain">
-                  {allAssets.data.map((a) => (
-                    <button
-                      key={a.id as string}
-                      type="button"
-                      className={`w-full text-start px-3 py-2 text-sm hover:bg-muted transition-colors ${
-                        selectedAssetId === a.id ? 'bg-muted font-medium' : ''
-                      }`}
-                      onClick={() => {
-                        setSelectedAssetId(a.id as string)
-                        setAssetSearch(a.name as string)
-                      }}
-                    >
-                      <span className="font-medium">{a.name as string}</span>
-                      {(a.type as string | undefined) && (
-                        <span className="ms-2 text-xs text-muted-foreground">
-                          {a.type as string}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {selectedAssetId && (
-                <p className="text-xs text-muted-foreground">Asset selected: {assetSearch}</p>
-              )}
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="asset-search">Search asset *</Label>
+                <Input
+                  id="asset-search"
+                  value={assetSearch}
+                  onChange={(e) => {
+                    setAssetSearch(e.target.value)
+                    setSelectedAssetId('')
+                  }}
+                  placeholder="Type to search assets..."
+                />
+                {allAssets?.data && allAssets.data.length > 0 && (
+                  <div className="border rounded-md max-h-64 overflow-y-auto overscroll-contain">
+                    {allAssets.data.map((a) => (
+                      <button
+                        key={a.id as string}
+                        type="button"
+                        className={`w-full text-start px-3 py-2 text-sm hover:bg-muted transition-colors ${
+                          selectedAssetId === a.id ? 'bg-muted font-medium' : ''
+                        }`}
+                        onClick={() => {
+                          setSelectedAssetId(a.id as string)
+                          setAssetSearch(a.name as string)
+                        }}
+                      >
+                        <span className="font-medium">{a.name as string}</span>
+                        {(a.type as string | undefined) && (
+                          <span className="ms-2 text-xs text-muted-foreground">
+                            {a.type as string}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedAssetId && (
+                  <p className="text-xs text-muted-foreground">Asset selected: {assetSearch}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="businessImpact">Business impact notes *</Label>
+                <Textarea
+                  id="businessImpact"
+                  value={formData.businessImpact}
+                  onChange={(e) => setFormData({ ...formData, businessImpact: e.target.value })}
+                  placeholder="Describe the impact if this asset is compromised..."
+                  rows={3}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="businessImpact">Business impact notes *</Label>
-              <Textarea
-                id="businessImpact"
-                value={formData.businessImpact}
-                onChange={(e) => setFormData({ ...formData, businessImpact: e.target.value })}
-                placeholder="Describe the impact if this asset is compromised..."
-                rows={3}
-              />
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancel
@@ -683,25 +686,27 @@ export default function CrownJewelsPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>Edit crown jewel</DialogTitle>
             <DialogDescription>
               Update business impact notes for {editJewel?.name}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-businessImpact">Business impact notes *</Label>
-              <Textarea
-                id="edit-businessImpact"
-                value={formData.businessImpact}
-                onChange={(e) => setFormData({ ...formData, businessImpact: e.target.value })}
-                placeholder="Describe the impact if this asset is compromised..."
-                rows={4}
-              />
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-businessImpact">Business impact notes *</Label>
+                <Textarea
+                  id="edit-businessImpact"
+                  value={formData.businessImpact}
+                  onChange={(e) => setFormData({ ...formData, businessImpact: e.target.value })}
+                  placeholder="Describe the impact if this asset is compromised..."
+                  rows={4}
+                />
+              </div>
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditJewel(null)}>
               Cancel
