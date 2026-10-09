@@ -414,7 +414,7 @@ func ParseRoutes(apiRoot string) ([]Route, error) {
 				// Two passes so a variable built from another one resolves.
 				for pass := 0; pass < 2; pass++ {
 					ast.Inspect(block, func(m ast.Node) bool {
-						if _, ok := m.(*ast.FuncLit); ok && m != nil {
+						if _, ok := m.(*ast.FuncLit); ok {
 							return false
 						}
 						as, ok := m.(*ast.AssignStmt)
