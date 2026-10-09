@@ -10,7 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Scope snapshots (migration 001454): one body per (tenant, hash), one link
+// Scope snapshots (migration 001495): one body per (tenant, hash), one link
 // per run, read back only by the run's tenant; a run of another tenant
 // cannot be linked. Requires DATABASE_URL.
 func TestScopeSnapshotRepository(t *testing.T) {
