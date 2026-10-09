@@ -9,6 +9,8 @@ import (
 	"os"
 	"time"
 
+	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
+
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 
 	"github.com/openctemio/openctem/api/internal/app/activity"
@@ -668,6 +670,9 @@ type Services struct {
 	// TemplateKeys signs custom templates for sensors; nil when no key is
 	// configured (see initTemplateKeyring).
 	TemplateKeys *scannertemplate.Keyring
+	// JobSigner is the client of the job signer (SIGNER_SOCKET); nil when
+	// jobs are not signed.
+	JobSigner *signerclient.Client
 
 	// ContentPacks is the content pack store (RFC-061).
 	ContentPacks *contentpackapp.Service
@@ -907,7 +912,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Entitlement = entitlementapp.NewService(repos.Plan, repos.AdminAuditLog, repos.Admin, nil, log)
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	for _, r := range []interface{ SetPlanLimits(plan.Checker) }{
-		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing,
+		repos.Tenant, repos.Asset, repos.APIKey, repos.CIRun, repos.Sensor, repos.SensorPairing, repos.Finding,
 	} {
 		r.SetPlanLimits(s.Entitlement)
 	}
@@ -1642,6 +1647,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
+	// RFC-040 §5.6: claims carry jobs signed by the separate signer, and
+	// nothing it does not sign is handed out. Off unless SIGNER_SOCKET is set.
+	if sock := cfg.SensorConfig.SignerSocket; sock != "" {
+		s.JobSigner = signerclient.NewClient(sock, cfg.SensorConfig.SignerTimeout)
+		cmdOpts = append(cmdOpts, command.WithJobSigner(s.JobSigner))
+		log.Info("sensor jobs are signed by the job signer", "socket", sock)
+	}
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
@@ -1745,6 +1757,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
 	s.Ingest.SetGrants(repos.SensorGrant, s.Sensor)
+	// Sensor lookups (fingerprint check, baseline diff, suppressions) answer
+	// only about assets the sensor reaches: its commands' targets and its
+	// zones' ranges.
+	s.Ingest.SetReachSource(repos.SensorReach)
 
 	// Initialize scanning services
 	s.ScanProfile = scan.NewScanProfileService(repos.ScanProfile, log)

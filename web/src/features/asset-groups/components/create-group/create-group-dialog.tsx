@@ -16,6 +16,8 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
@@ -197,10 +199,10 @@ export function CreateGroupDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[90vh] overflow-hidden p-0 w-full sm:max-w-[720px]">
+      <DialogContent size="lg">
         {/* Header with gradient */}
-        <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b">
-          <DialogHeader className="px-6 pt-5 pb-3">
+        <DialogHeader className="bg-gradient-to-r from-primary/10 via-primary/5 to-background">
+          <div>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
                 <Layers className="h-5 w-5 text-primary" />
@@ -212,17 +214,17 @@ export function CreateGroupDialog({
                 </DialogDescription>
               </div>
             </div>
-          </DialogHeader>
+          </div>
 
           {/* Stepper */}
           <GroupStepper currentStep={currentStep} onStepClick={handleStepClick} />
-        </div>
+        </DialogHeader>
 
         {/* Step Content */}
-        <div className="max-h-[50vh] overflow-y-auto overflow-x-hidden">{renderStep()}</div>
+        <DialogBody className="p-0">{renderStep()}</DialogBody>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t bg-muted/30 px-6 py-4">
+        <DialogFooter className="bg-muted/30 sm:items-center sm:justify-between">
           <div>
             {!isFirstStep && (
               <Button
@@ -276,7 +278,7 @@ export function CreateGroupDialog({
               </Button>
             )}
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

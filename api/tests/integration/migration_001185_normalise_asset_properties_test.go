@@ -57,7 +57,9 @@ func TestMigration001185NormalisesAssetProperties(t *testing.T) {
 			t.Fatalf("%v\n%s", err, q)
 		}
 	}
-	// The database is migrated: take 001185 back first.
+	// The database is migrated and 001481 dropped the ledger: up recreates it
+	// (nothing left to move), then down takes 001185 back.
+	exec(up)
 	exec(down)
 
 	type row struct {

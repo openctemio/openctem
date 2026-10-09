@@ -28,6 +28,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -321,7 +322,7 @@ function TrustConfigDialog({
   const tenantAudience = defaultAudience(currentTenant?.id ?? '<tenant id>')
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{config ? 'Edit CI trust' : 'Add CI trust'}</DialogTitle>
           <DialogDescription>
@@ -329,238 +330,242 @@ function TrustConfigDialog({
             separated; patterns use * for one path segment and ** for any depth.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          <Field label="Name" id="ci-name">
-            <Input id="ci-name" value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="Provider" id="ci-provider">
-            <Select
-              value={provider}
-              onValueChange={(v) => chooseProvider(v as CIProvider)}
-              disabled={!!config}
-            >
-              <SelectTrigger id="ci-provider">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CI_PROVIDERS.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {PROVIDER_LABEL[p]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          {provider === 'gitlab' && (
-            <Field label="GitLab URL (issuer)" id="ci-issuer" hint="Leave empty for gitlab.com.">
-              <Input
-                id="ci-issuer"
-                placeholder="https://gitlab.com"
-                value={organization}
-                onChange={(e) => setOrganization(e.target.value)}
-              />
+        <DialogBody>
+          <div className="space-y-3">
+            <Field label="Name" id="ci-name">
+              <Input id="ci-name" value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
-          )}
-          {provider === 'jenkins' && (
-            <Field
-              label="Issuer"
-              id="ci-issuer"
-              hint="The OpenID Connect Provider plugin's issuer: <Jenkins URL>/oidc, a folder's issuer, or the credential's issuer URI when the platform cannot reach the controller."
-            >
-              <Input
-                id="ci-issuer"
-                placeholder="https://jenkins.example.com/oidc"
-                value={organization}
-                onChange={(e) => setOrganization(e.target.value)}
-              />
+            <Field label="Provider" id="ci-provider">
+              <Select
+                value={provider}
+                onValueChange={(v) => chooseProvider(v as CIProvider)}
+                disabled={!!config}
+              >
+                <SelectTrigger id="ci-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CI_PROVIDERS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {PROVIDER_LABEL[p]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
-          )}
-          {traits.issuerInput === 'organization_id' && (
-            <Field
-              label="Organization id"
-              id="ci-org"
-              hint={
-                provider === 'azure_devops'
-                  ? 'The Azure DevOps organization id (a UUID), the org_id of its tokens.'
-                  : 'The CircleCI organization id (Organization settings > Overview).'
-              }
-            >
-              <Input
-                id="ci-org"
-                placeholder="00000000-0000-0000-0000-000000000000"
-                value={organization}
-                onChange={(e) => setOrganization(e.target.value)}
-              />
-            </Field>
-          )}
-          {provider === 'bitbucket' && (
-            <>
-              <Field label="Workspace" id="ci-org" hint="As in bitbucket.org/<workspace>.">
+            {provider === 'gitlab' && (
+              <Field label="GitLab URL (issuer)" id="ci-issuer" hint="Leave empty for gitlab.com.">
                 <Input
-                  id="ci-org"
-                  placeholder="acme"
+                  id="ci-issuer"
+                  placeholder="https://gitlab.com"
                   value={organization}
                   onChange={(e) => setOrganization(e.target.value)}
                 />
               </Field>
+            )}
+            {provider === 'jenkins' && (
               <Field
-                label="Workspace UUID"
-                id="ci-ws-uuid"
-                hint="Required: a renamed workspace gives up its name, never its UUID."
+                label="Issuer"
+                id="ci-issuer"
+                hint="The OpenID Connect Provider plugin's issuer: <Jenkins URL>/oidc, a folder's issuer, or the credential's issuer URI when the platform cannot reach the controller."
               >
                 <Input
-                  id="ci-ws-uuid"
-                  placeholder="{00000000-0000-0000-0000-000000000000}"
-                  value={workspaceUUID}
-                  onChange={(e) => setWorkspaceUUID(e.target.value)}
+                  id="ci-issuer"
+                  placeholder="https://jenkins.example.com/oidc"
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
                 />
               </Field>
-            </>
-          )}
-          <Field
-            label="Owners"
-            id="ci-owners"
-            hint={
-              provider === 'gitlab'
-                ? 'Top-level groups.'
-                : provider === 'bitbucket'
-                  ? 'The workspace.'
-                  : 'Organizations or users that own the repositories.'
-            }
-          >
-            <Input
-              id="ci-owners"
-              placeholder="acme"
-              value={owners}
-              onChange={(e) => setOwners(e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Repositories"
-            id="ci-repos"
-            hint={
-              traits.repositoriesById
-                ? 'Repository UUIDs: the token signs the id, never the name.'
-                : 'owner/name, owner/* or owner/**.'
-            }
-          >
-            <Input
-              id="ci-repos"
-              placeholder={traits.repositoriesById ? '{repository uuid}' : 'acme/api, acme/web'}
-              value={repositories}
-              onChange={(e) => setRepositories(e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Branches and tags"
-            id="ci-refs"
-            hint="Empty admits every ref. For a pull request, its source branch."
-          >
-            <Input
-              id="ci-refs"
-              placeholder="main, release/*"
-              value={refs}
-              onChange={(e) => setRefs(e.target.value)}
-            />
-          </Field>
-          {traits.environments && (
+            )}
+            {traits.issuerInput === 'organization_id' && (
+              <Field
+                label="Organization id"
+                id="ci-org"
+                hint={
+                  provider === 'azure_devops'
+                    ? 'The Azure DevOps organization id (a UUID), the org_id of its tokens.'
+                    : 'The CircleCI organization id (Organization settings > Overview).'
+                }
+              >
+                <Input
+                  id="ci-org"
+                  placeholder="00000000-0000-0000-0000-000000000000"
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
+                />
+              </Field>
+            )}
+            {provider === 'bitbucket' && (
+              <>
+                <Field label="Workspace" id="ci-org" hint="As in bitbucket.org/<workspace>.">
+                  <Input
+                    id="ci-org"
+                    placeholder="acme"
+                    value={organization}
+                    onChange={(e) => setOrganization(e.target.value)}
+                  />
+                </Field>
+                <Field
+                  label="Workspace UUID"
+                  id="ci-ws-uuid"
+                  hint="Required: a renamed workspace gives up its name, never its UUID."
+                >
+                  <Input
+                    id="ci-ws-uuid"
+                    placeholder="{00000000-0000-0000-0000-000000000000}"
+                    value={workspaceUUID}
+                    onChange={(e) => setWorkspaceUUID(e.target.value)}
+                  />
+                </Field>
+              </>
+            )}
             <Field
-              label="Environments"
-              id="ci-envs"
+              label="Owners"
+              id="ci-owners"
               hint={
-                provider === 'bitbucket'
-                  ? 'Optional: deployment environment UUIDs.'
-                  : 'Optional: require a deployment environment.'
+                provider === 'gitlab'
+                  ? 'Top-level groups.'
+                  : provider === 'bitbucket'
+                    ? 'The workspace.'
+                    : 'Organizations or users that own the repositories.'
               }
             >
               <Input
-                id="ci-envs"
-                value={environments}
-                onChange={(e) => setEnvironments(e.target.value)}
+                id="ci-owners"
+                placeholder="acme"
+                value={owners}
+                onChange={(e) => setOwners(e.target.value)}
               />
             </Field>
-          )}
-          {traits.events && (
             <Field
-              label="Events"
-              id="ci-events"
-              hint="Optional: push, pull_request, merge_request_event, schedule..."
-            >
-              <Input id="ci-events" value={events} onChange={(e) => setEvents(e.target.value)} />
-            </Field>
-          )}
-          <Field
-            label="Default branch"
-            id="ci-default"
-            hint="The baseline when the platform does not know the repository's default branch yet."
-          >
-            <Input
-              id="ci-default"
-              value={defaultBranch}
-              onChange={(e) => setDefaultBranch(e.target.value)}
-            />
-          </Field>
-          {traits.fixedAudience ? (
-            <p className="text-xs text-muted-foreground" data-testid="ci-fixed-audience">
-              Audience: {traits.fixedAudience}, the only one Azure Pipelines issues. Tokens are
-              pinned to this organization id and accepted once.
-            </p>
-          ) : (
-            <Field
-              label="Audience"
-              id="ci-aud"
+              label="Repositories"
+              id="ci-repos"
               hint={
-                traits.tenantAudience
-                  ? `Default: ${tenantAudience}. Must contain your organization id.`
-                  : `Default: ${tenantAudience}`
+                traits.repositoriesById
+                  ? 'Repository UUIDs: the token signs the id, never the name.'
+                  : 'owner/name, owner/* or owner/**.'
               }
             >
-              <Input id="ci-aud" value={audience} onChange={(e) => setAudience(e.target.value)} />
+              <Input
+                id="ci-repos"
+                placeholder={traits.repositoriesById ? '{repository uuid}' : 'acme/api, acme/web'}
+                value={repositories}
+                onChange={(e) => setRepositories(e.target.value)}
+              />
             </Field>
-          )}
-          {traits.protectedRef !== 'none' && (
+            <Field
+              label="Branches and tags"
+              id="ci-refs"
+              hint="Empty admits every ref. For a pull request, its source branch."
+            >
+              <Input
+                id="ci-refs"
+                placeholder="main, release/*"
+                value={refs}
+                onChange={(e) => setRefs(e.target.value)}
+              />
+            </Field>
+            {traits.environments && (
+              <Field
+                label="Environments"
+                id="ci-envs"
+                hint={
+                  provider === 'bitbucket'
+                    ? 'Optional: deployment environment UUIDs.'
+                    : 'Optional: require a deployment environment.'
+                }
+              >
+                <Input
+                  id="ci-envs"
+                  value={environments}
+                  onChange={(e) => setEnvironments(e.target.value)}
+                />
+              </Field>
+            )}
+            {traits.events && (
+              <Field
+                label="Events"
+                id="ci-events"
+                hint="Optional: push, pull_request, merge_request_event, schedule..."
+              >
+                <Input id="ci-events" value={events} onChange={(e) => setEvents(e.target.value)} />
+              </Field>
+            )}
+            <Field
+              label="Default branch"
+              id="ci-default"
+              hint="The baseline when the platform does not know the repository's default branch yet."
+            >
+              <Input
+                id="ci-default"
+                value={defaultBranch}
+                onChange={(e) => setDefaultBranch(e.target.value)}
+              />
+            </Field>
+            {traits.fixedAudience ? (
+              <p className="text-xs text-muted-foreground" data-testid="ci-fixed-audience">
+                Audience: {traits.fixedAudience}, the only one Azure Pipelines issues. Tokens are
+                pinned to this organization id and accepted once.
+              </p>
+            ) : (
+              <Field
+                label="Audience"
+                id="ci-aud"
+                hint={
+                  traits.tenantAudience
+                    ? `Default: ${tenantAudience}. Must contain your organization id.`
+                    : `Default: ${tenantAudience}`
+                }
+              >
+                <Input id="ci-aud" value={audience} onChange={(e) => setAudience(e.target.value)} />
+              </Field>
+            )}
+            {traits.protectedRef !== 'none' && (
+              <SwitchRow
+                id="ci-protected"
+                label="Protected branches and tags only"
+                checked={protectedRef}
+                onChange={setProtectedRef}
+              />
+            )}
+            {protectedRef && traits.protectedRef === 'environment' && (
+              <p className="text-muted-foreground text-xs">
+                {PROVIDER_LABEL[provider]} tokens do not say whether a ref is protected. List the
+                deployment environments above whose deployment branch rules admit only protected
+                branches and tags; only jobs running in one of them are admitted.
+              </p>
+            )}
             <SwitchRow
-              id="ci-protected"
-              label="Protected branches and tags only"
-              checked={protectedRef}
-              onChange={setProtectedRef}
+              id="ci-forks"
+              label={
+                traits.pullRequestsAsForks
+                  ? 'Admit pull request builds'
+                  : 'Admit fork pull requests'
+              }
+              checked={allowForks}
+              onChange={setAllowForks}
             />
-          )}
-          {protectedRef && traits.protectedRef === 'environment' && (
-            <p className="text-muted-foreground text-xs">
-              {PROVIDER_LABEL[provider]} tokens do not say whether a ref is protected. List the
-              deployment environments above whose deployment branch rules admit only protected
-              branches and tags; only jobs running in one of them are admitted.
-            </p>
-          )}
-          <SwitchRow
-            id="ci-forks"
-            label={
-              traits.pullRequestsAsForks ? 'Admit pull request builds' : 'Admit fork pull requests'
-            }
-            checked={allowForks}
-            onChange={setAllowForks}
-          />
-          {traits.pullRequestsAsForks && !allowForks && (
-            <p className="text-muted-foreground text-xs">
-              {PROVIDER_LABEL[provider]} tokens cannot tell a fork&apos;s pull request from your
-              own, so pull request builds are refused.
-            </p>
-          )}
-          {allowForks && (
-            <Alert variant="destructive">
-              <ShieldAlert />
-              <AlertTitle>Fork code would act with this repository&apos;s identity</AlertTitle>
-              <AlertDescription>
-                {traits.pullRequestsAsForks
-                  ? 'Every pull request build is admitted, including builds of fork code. Turn this on only if the pipeline never builds fork pull requests.'
-                  : 'Events such as pull_request_target run code from a fork. Leave this off unless the workflow never checks out fork code.'}
-              </AlertDescription>
-            </Alert>
-          )}
-          <SwitchRow id="ci-enabled" label="Enabled" checked={enabled} onChange={setEnabled} />
-          {!needsIssuer && <CITrustPreview provider={provider} draft={body} />}
-        </div>
+            {traits.pullRequestsAsForks && !allowForks && (
+              <p className="text-muted-foreground text-xs">
+                {PROVIDER_LABEL[provider]} tokens cannot tell a fork&apos;s pull request from your
+                own, so pull request builds are refused.
+              </p>
+            )}
+            {allowForks && (
+              <Alert variant="destructive">
+                <ShieldAlert />
+                <AlertTitle>Fork code would act with this repository&apos;s identity</AlertTitle>
+                <AlertDescription>
+                  {traits.pullRequestsAsForks
+                    ? 'Every pull request build is admitted, including builds of fork code. Turn this on only if the pipeline never builds fork pull requests.'
+                    : 'Events such as pull_request_target run code from a fork. Leave this off unless the workflow never checks out fork code.'}
+                </AlertDescription>
+              </Alert>
+            )}
+            <SwitchRow id="ci-enabled" label="Enabled" checked={enabled} onChange={setEnabled} />
+            {!needsIssuer && <CITrustPreview provider={provider} draft={body} />}
+          </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
@@ -589,7 +594,7 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
   )
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Pipeline snippet</DialogTitle>
           <DialogDescription>
@@ -597,12 +602,14 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
             secret goes into CI; the token is never printed. The job fails when the gate does.
           </DialogDescription>
         </DialogHeader>
-        <pre
-          className="max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs"
-          data-testid="ci-snippet"
-        >
-          {snippet}
-        </pre>
+        <DialogBody>
+          <pre
+            className="max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs"
+            data-testid="ci-snippet"
+          >
+            {snippet}
+          </pre>
+        </DialogBody>
         <DialogFooter>
           <Button
             variant="outline"
@@ -817,84 +824,86 @@ function PolicyDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>{isNew ? 'Add gate policy' : 'Edit gate policy'}</DialogTitle>
           <DialogDescription>What fails a pipeline at this scope.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          {isNew && scopeType !== 'tenant' && (
-            <>
-              <Field label="Scope" id="gp-scope">
-                <Select value={scopeType} onValueChange={setScopeType}>
-                  <SelectTrigger id="gp-scope">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="repository">Repository</SelectItem>
-                    <SelectItem value="business_unit">Business unit</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field
-                label={scopeType === 'repository' ? 'Repository asset ID' : 'Business unit ID'}
-                id="gp-scope-id"
-              >
-                <Input
+        <DialogBody>
+          <div className="space-y-3">
+            {isNew && scopeType !== 'tenant' && (
+              <>
+                <Field label="Scope" id="gp-scope">
+                  <Select value={scopeType} onValueChange={setScopeType}>
+                    <SelectTrigger id="gp-scope">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="repository">Repository</SelectItem>
+                      <SelectItem value="business_unit">Business unit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field
+                  label={scopeType === 'repository' ? 'Repository asset ID' : 'Business unit ID'}
                   id="gp-scope-id"
-                  value={scopeId}
-                  onChange={(e) => setScopeId(e.target.value)}
-                />
-              </Field>
-            </>
-          )}
-          <Field label="Mode" id="gp-mode">
-            <Select value={mode} onValueChange={setMode}>
-              <SelectTrigger id="gp-mode">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="enforce">Enforce</SelectItem>
-                <SelectItem value="warn">Warn (report what would fail)</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="Fail on severity" id="gp-sev">
-            <Select value={severity} onValueChange={setSeverity}>
-              <SelectTrigger id="gp-sev">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SEVERITY_OPTIONS.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s === 'none' ? 'None' : `${s} and above`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="EPSS threshold (0 to 1, optional)" id="gp-epss">
-            <Input
-              id="gp-epss"
-              inputMode="decimal"
-              value={epss}
-              onChange={(e) => setEpss(e.target.value)}
-              aria-invalid={epssInvalid}
+                >
+                  <Input
+                    id="gp-scope-id"
+                    value={scopeId}
+                    onChange={(e) => setScopeId(e.target.value)}
+                  />
+                </Field>
+              </>
+            )}
+            <Field label="Mode" id="gp-mode">
+              <Select value={mode} onValueChange={setMode}>
+                <SelectTrigger id="gp-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="enforce">Enforce</SelectItem>
+                  <SelectItem value="warn">Warn (report what would fail)</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Fail on severity" id="gp-sev">
+              <Select value={severity} onValueChange={setSeverity}>
+                <SelectTrigger id="gp-sev">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SEVERITY_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s === 'none' ? 'None' : `${s} and above`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="EPSS threshold (0 to 1, optional)" id="gp-epss">
+              <Input
+                id="gp-epss"
+                inputMode="decimal"
+                value={epss}
+                onChange={(e) => setEpss(e.target.value)}
+                aria-invalid={epssInvalid}
+              />
+            </Field>
+            <SwitchRow
+              id="gp-new"
+              label="New findings only (compared with the default branch)"
+              checked={newOnly}
+              onChange={setNewOnly}
             />
-          </Field>
-          <SwitchRow
-            id="gp-new"
-            label="New findings only (compared with the default branch)"
-            checked={newOnly}
-            onChange={setNewOnly}
-          />
-          <SwitchRow
-            id="gp-kev"
-            label="Known exploited (KEV) fails"
-            checked={kev}
-            onChange={setKev}
-          />
-        </div>
+            <SwitchRow
+              id="gp-kev"
+              label="Known exploited (KEV) fails"
+              checked={kev}
+              onChange={setKev}
+            />
+          </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
@@ -1000,41 +1009,47 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
         ))
       )}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Break-glass</DialogTitle>
             <DialogDescription>
               The commit passes the gate until the override expires or is revoked.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <Field label="Repository asset ID" id="ov-asset">
-              <Input id="ov-asset" value={assetId} onChange={(e) => setAssetId(e.target.value)} />
-            </Field>
-            <Field label="Commit" id="ov-sha" hint="Full or abbreviated (at least 7 characters).">
-              <Input
-                id="ov-sha"
-                className="font-mono"
-                value={sha}
-                onChange={(e) => setSha(e.target.value)}
-              />
-            </Field>
-            <Field
-              label="Reason"
-              id="ov-reason"
-              hint="At least 10 characters; recorded in the audit log."
-            >
-              <Textarea id="ov-reason" value={reason} onChange={(e) => setReason(e.target.value)} />
-            </Field>
-            <Field label="Hours (1 to 168)" id="ov-hours">
-              <Input
-                id="ov-hours"
-                inputMode="numeric"
-                value={hours}
-                onChange={(e) => setHours(e.target.value)}
-              />
-            </Field>
-          </div>
+          <DialogBody>
+            <div className="space-y-3">
+              <Field label="Repository asset ID" id="ov-asset">
+                <Input id="ov-asset" value={assetId} onChange={(e) => setAssetId(e.target.value)} />
+              </Field>
+              <Field label="Commit" id="ov-sha" hint="Full or abbreviated (at least 7 characters).">
+                <Input
+                  id="ov-sha"
+                  className="font-mono"
+                  value={sha}
+                  onChange={(e) => setSha(e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Reason"
+                id="ov-reason"
+                hint="At least 10 characters; recorded in the audit log."
+              >
+                <Textarea
+                  id="ov-reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </Field>
+              <Field label="Hours (1 to 168)" id="ov-hours">
+                <Input
+                  id="ov-hours"
+                  inputMode="numeric"
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value)}
+                />
+              </Field>
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel

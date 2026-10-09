@@ -272,6 +272,7 @@ Hexagonal / Ports & Adapters
 - [Scan Zones](scan-zones.md)
 - [Tool Availability](tool-availability.md)
 - [Sensor ↔ Platform Trust](sensor-platform-trust.md)
+- [Signed Jobs: the Job Signer](job-signing.md)
 - [Audit Hash Chain](audit-hash-chain.md)
 - [CTEM-ID Catalog](ctem-id-catalog.md)
 - [Certificate-Transparency Monitoring](certificate-transparency-monitoring.md)

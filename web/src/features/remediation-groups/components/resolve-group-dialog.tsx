@@ -8,6 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -100,51 +101,55 @@ export function ResolveGroupDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="resolve-status">Outcome</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as ResolveGroupStatus)}>
-              <SelectTrigger id="resolve-status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fix_applied">
-                  Fix applied — pending rescan verification (recommended)
-                </SelectItem>
-                {canResolve ? <SelectItem value="resolved">Resolved — close now</SelectItem> : null}
-              </SelectContent>
-            </Select>
-            <p className="text-muted-foreground text-xs">
-              {status === 'fix_applied'
-                ? 'A retest, a later verified scan or a security reviewer confirms the fix and closes each finding.'
-                : 'Closes every finding immediately without waiting for a rescan.'}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="resolve-note">Note (optional)</Label>
-            <Textarea
-              id="resolve-note"
-              placeholder="e.g. Patched via change CR-1234"
-              value={resolution}
-              onChange={(e) => setResolution(e.target.value)}
-              rows={3}
-            />
-          </div>
-
-          {needsApproval ? (
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id="resolve-approve"
-                checked={approved}
-                onCheckedChange={(c) => setApproved(c === true)}
-              />
-              <Label htmlFor="resolve-approve" className="text-sm font-normal leading-snug">
-                I confirm resolving {group?.finding_count} findings at once.
-              </Label>
+        <DialogBody>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="resolve-status">Outcome</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as ResolveGroupStatus)}>
+                <SelectTrigger id="resolve-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fix_applied">
+                    Fix applied — pending rescan verification (recommended)
+                  </SelectItem>
+                  {canResolve ? (
+                    <SelectItem value="resolved">Resolved — close now</SelectItem>
+                  ) : null}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                {status === 'fix_applied'
+                  ? 'A retest, a later verified scan or a security reviewer confirms the fix and closes each finding.'
+                  : 'Closes every finding immediately without waiting for a rescan.'}
+              </p>
             </div>
-          ) : null}
-        </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="resolve-note">Note (optional)</Label>
+              <Textarea
+                id="resolve-note"
+                placeholder="e.g. Patched via change CR-1234"
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value)}
+                rows={3}
+              />
+            </div>
+
+            {needsApproval ? (
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="resolve-approve"
+                  checked={approved}
+                  onCheckedChange={(c) => setApproved(c === true)}
+                />
+                <Label htmlFor="resolve-approve" className="text-sm font-normal leading-snug">
+                  I confirm resolving {group?.finding_count} findings at once.
+                </Label>
+              </div>
+            ) : null}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isMutating}>

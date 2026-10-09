@@ -76,6 +76,25 @@ over 512 bytes or carries ids that are not UUIDs is dropped, and a wake only
 ever makes a stream re-read the database. Without Redis, other replicas see
 a change at their 30 s re-check.
 
+### Wake and stream-open limits
+
+A tenant-wide wake (a command released, refused or returned to the pool)
+makes every stream of the tenant on every replica re-authenticate and re-read
+the doorbell, and v3 streams are cheap to open. So a tenant or a sensor
+cannot drive that work at its own pace (research/84 RE-12):
+
+| Limit | Value | Where | Over it |
+|---|---|---|---|
+| Wake coalescing | one delivery per 500 ms (`WakeCoalesce`) per tenant, per sensor, and for wake-all | each replica's hub (`Hub.Wake`), and the bus's publishes | the wakes inside the interval fold into **one** delivered when it ends: delayed, never lost (the 30 s re-check stays the backstop). A wake for a tenant with no stream on the replica costs nothing |
+| Publish quota | 32 queued wakes per tenant (wake-all counts as one tenant) of the 1024-wake publish queue | `SensorWakeBus.enqueue` | the excess folds into one tenant-wide wake, queued as soon as one of the tenant's queued wakes is published; another tenant's wake still finds room. Counted in `openctem_sensor_wakes_coalesced_total{reason="tenant_quota"}` (`queue_full` when the whole queue is full: dropped, re-check backstop) |
+| Stream opens | token bucket per sensor per replica: 6 per minute, burst 10 (`StreamOpensPerMinute`, `StreamOpenBurst`) | first thing in `Subscribe`, after the identity, before the hub and any database read | `ResourceExhausted`; counted in `openctem_sensor_stream_opens_refused_total{reason="rate"}` (`concurrent` for the 4-stream bound) |
+
+The burst covers a sensor's normal reconnects (the 24–30 minute stream age,
+a replica shutdown, a network blip); the coalescing interval is below the
+wake jitter's order of magnitude, so a single change is still pushed at
+once. `pkg/coalesce` holds the per-key trailing-edge throttle both use; idle
+keys are swept, so memory follows the active tenants and sensors.
+
 ## Transport per sensor
 
 Every heartbeat stores, with the protocol telemetry, the binding it arrived on

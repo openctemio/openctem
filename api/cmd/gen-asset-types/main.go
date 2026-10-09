@@ -745,7 +745,12 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 }
 
 // propertyFormats are the display formats a property may declare.
-var propertyFormats = set([]string{"", "ip", "url", "code"})
+// "expiry" marks a timestamp after which the asset is no longer valid (a
+// certificate's not_after, a domain's expires_at): shown against today
+// and filtered by the list's expires_before / expires_after.
+var propertyFormats = set([]string{"", "ip", "url", "code", formatExpiry})
+
+const formatExpiry = "expiry"
 
 // resolveProperties validates the property dictionary against the types'
 // attributes and builds model.Properties (RFC-042 §6.3.9):
@@ -772,6 +777,7 @@ func resolveProperties(m *model, cfg *config) error { //nolint:gocognit,gocyclo,
 	used := map[string]bool{}
 	attrClasses := map[string]map[string]bool{}
 	shape := map[string]string{}
+	attrKinds := map[string]map[string]bool{}
 	for _, t := range m.Types {
 		for _, a := range t.Attributes {
 			if err := checkPropertyName(a.Name, a.Type); err != nil {
@@ -784,6 +790,10 @@ func resolveProperties(m *model, cfg *config) error { //nolint:gocognit,gocyclo,
 				return fmt.Errorf("type %s attribute %q: is a %s here but a %s on another type", t.Type, a.Name, s, prev)
 			}
 			shape[a.Name] = s
+			if attrKinds[a.Name] == nil {
+				attrKinds[a.Name] = map[string]bool{}
+			}
+			attrKinds[a.Name][a.Type] = true
 			if len(cfg.Properties[a.Name].Synonyms) > 0 && s == kindObject {
 				return fmt.Errorf("type %s attribute %q: an object property cannot have synonyms", t.Type, a.Name)
 			}
@@ -817,6 +827,8 @@ func resolveProperties(m *model, cfg *config) error { //nolint:gocognit,gocyclo,
 			return fmt.Errorf("%s: unknown format %q", where, p.Format)
 		case len(p.Classes) > 0 && common[k]:
 			return fmt.Errorf("%s: a common property cannot be restricted to classes", where)
+		case p.Format == formatExpiry && (common[k] || len(attrKinds[k]) != 1 || !attrKinds[k]["time"]):
+			return fmt.Errorf("%s: an expiry property must be a time attribute of its types", where)
 		}
 		if err := dup(where+" synonym", p.Synonyms); err != nil {
 			return err
@@ -1580,7 +1592,13 @@ func renderTS(m *model) string {
 // dictionary, the common keys and each type's attribute keys, so the web can
 // label and group an asset's properties without waiting for the registry.
 func renderTSProperties(w func(string, ...any), m *model) {
-	w("export type AssetPropertyFormat = 'ip' | 'url' | 'code'\n\n")
+	formats := make([]string, 0, len(propertyFormats))
+	for _, f := range sortedKeys(propertyFormats) {
+		if f != "" {
+			formats = append(formats, "'"+f+"'")
+		}
+	}
+	w("export type AssetPropertyFormat = %s\n\n", strings.Join(formats, " | "))
 	w("export interface AssetPropertyDefinition {\n  label: string\n  labelVi: string\n")
 	w("  format?: AssetPropertyFormat\n  synonyms?: readonly string[]\n  classes?: readonly AssetClass[]\n")
 	w("  /** Stored as an array (synonyms merge into it). */\n  list?: boolean\n}\n\n")
@@ -1733,24 +1751,6 @@ func renderSQL(m *model) string {
 	w("UPDATE asset_types SET class = 'other', lens = NULL, alias_of = NULL, alias_sub_type = NULL,\n")
 	w("    sub_types = '{}', is_storable = false\n")
 	w("WHERE code NOT IN (%s);\n\n", sqlList(typeIDs))
-	w("-- Accepted inputs that are not stored as such: aliases (from_sub_type '')\n")
-	w("-- and legacy sub-types, with what they are stored as.\n")
-	w("DELETE FROM asset_type_input_map;\n")
-	w("INSERT INTO asset_type_input_map (from_type, from_sub_type, to_type, to_sub_type, provider, attributes) VALUES\n")
-	for i, in := range m.Inputs {
-		sep := ","
-		if i == len(m.Inputs)-1 {
-			sep = ";"
-		}
-		attrs := "'{}'"
-		if len(in.To.Attributes) > 0 {
-			raw, _ := json.Marshal(in.To.Attributes) // map keys are sorted
-			attrs = sqlString(string(raw))
-		}
-		w("    (%s, %s, %s, %s, %s, %s)%s\n", sqlString(in.From.Type), sqlString(in.From.SubType),
-			sqlString(in.To.Type), sqlNullable(in.To.SubType), sqlNullable(in.To.Provider), attrs, sep)
-	}
-	w("\n")
 	w("-- Re-derive assets.asset_class / asset_lens in batches, without touching\n-- updated_at.\n")
 	w("ALTER TABLE assets DISABLE TRIGGER trigger_assets_updated_at;\n")
 	w("DO $$\nDECLARE\n    cursor_id uuid := NULL;\nBEGIN\n    LOOP\n")
