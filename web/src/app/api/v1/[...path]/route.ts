@@ -26,6 +26,11 @@ import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
 import { CONDITIONAL_REQUEST_HEADERS, proxyCacheHeaders } from '@/lib/api/proxy-cache-headers'
 import { proxyBackendPath } from '@/lib/api/proxy-path'
 import {
+  copyProxiedHeaders,
+  PROXIED_RESPONSE_HEADERS,
+  PROXIED_STREAM_HEADERS,
+} from '@/lib/api/proxy-response-headers'
+import {
   isSensorProtocolPath,
   SENSOR_PROTOCOL_REFUSAL,
   SENSOR_PROTOCOL_REFUSAL_STATUS,
@@ -376,10 +381,7 @@ async function proxyRequest(
         statusText: response.statusText,
       })
       // Forward content headers
-      for (const key of ['content-type', 'content-disposition', 'content-length']) {
-        const val = response.headers.get(key)
-        if (val) proxyResponse.headers.set(key, val)
-      }
+      copyProxiedHeaders(response.headers, proxyResponse.headers, PROXIED_STREAM_HEADERS)
       for (const [key, val] of Object.entries(
         proxyCacheHeaders(response.headers.get('cache-control'), Boolean(accessToken))
       )) {
@@ -432,14 +434,8 @@ async function proxyRequest(
       statusText: response.statusText,
     })
 
-    // Copy relevant response headers
-    const copyHeaders = ['content-type', 'x-request-id', 'x-total-count', 'x-permission-stale']
-    copyHeaders.forEach((header) => {
-      const value = response.headers.get(header)
-      if (value) {
-        proxyResponse.headers.set(header, value)
-      }
-    })
+    // The API's content and security headers (CSP, nosniff, attachments).
+    copyProxiedHeaders(response.headers, proxyResponse.headers, PROXIED_RESPONSE_HEADERS)
     // The API's caching decision (no-store on secrets, max-age on config),
     // keyed by the session cookie for authenticated responses.
     for (const [key, val] of Object.entries(

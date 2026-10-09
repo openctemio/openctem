@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Plus,
@@ -338,7 +339,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
 
       {/* Delete Confirmation */}
       <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Delete Scope Rule</DialogTitle>
             <DialogDescription>
@@ -372,35 +373,37 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Preview: {previewingRule?.name}</DialogTitle>
             <DialogDescription>
               Shows how many assets would be affected by this scope rule.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            {isPreviewing || !previewResult ? (
-              <div className="flex items-center justify-center py-8" aria-busy="true">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div className="p-3 rounded-lg bg-muted">
-                  <p className="text-2xl font-bold">{previewResult.matching_assets}</p>
-                  <p className="text-xs text-muted-foreground">Matching Assets</p>
+          <DialogBody>
+            <div className="py-4">
+              {isPreviewing || !previewResult ? (
+                <div className="flex items-center justify-center py-8" aria-busy="true">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-                <div className="p-3 rounded-lg bg-muted">
-                  <p className="text-2xl font-bold">{previewResult.already_assigned}</p>
-                  <p className="text-xs text-muted-foreground">Already Assigned</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div className="p-3 rounded-lg bg-muted">
+                    <p className="text-2xl font-bold">{previewResult.matching_assets}</p>
+                    <p className="text-xs text-muted-foreground">Matching Assets</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted">
+                    <p className="text-2xl font-bold">{previewResult.already_assigned}</p>
+                    <p className="text-xs text-muted-foreground">Already Assigned</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-success/10">
+                    <p className="text-2xl font-bold text-success">{previewResult.would_add}</p>
+                    <p className="text-xs text-muted-foreground">Would Add</p>
+                  </div>
                 </div>
-                <div className="p-3 rounded-lg bg-success/10">
-                  <p className="text-2xl font-bold text-success">{previewResult.would_add}</p>
-                  <p className="text-xs text-muted-foreground">Would Add</p>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button
               variant="ghost"

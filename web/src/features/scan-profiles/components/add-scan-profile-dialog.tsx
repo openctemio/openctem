@@ -15,6 +15,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -118,7 +120,7 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Create Scan Profile</DialogTitle>
           <DialogDescription>
@@ -127,74 +129,19 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
             {/* Basic Info */}
-            <div className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Quick Scan" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Fast scan with basic security checks"
-                        className="resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <Separator />
-
-            {/* Scan Settings */}
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium">Scan Settings</h4>
-
-              <div className="grid grid-cols-2 gap-4">
+            <DialogBody className="space-y-6">
+              <div className="space-y-4">
                 <FormField
                   control={form.control}
-                  name="intensity"
+                  name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Intensity</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select intensity" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {INTENSITY_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              <div>
-                                <div>{option.label}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {option.description}
-                                </div>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Quick Scan" {...field} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -202,18 +149,15 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
 
                 <FormField
                   control={form.control}
-                  name="timeout_seconds"
+                  name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Timeout (minutes)</FormLabel>
+                      <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={1440}
+                        <Textarea
+                          placeholder="Fast scan with basic security checks"
+                          className="resize-none"
                           {...field}
-                          value={Math.floor(field.value / 60)}
-                          onChange={(e) => field.onChange(parseInt(e.target.value, 10) * 60)}
                         />
                       </FormControl>
                       <FormMessage />
@@ -222,81 +166,143 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
                 />
               </div>
 
+              <Separator />
+
+              {/* Scan Settings */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">Scan Settings</h4>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="intensity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Intensity</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select intensity" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {INTENSITY_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                <div>
+                                  <div>{option.label}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {option.description}
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="timeout_seconds"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Timeout (minutes)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={1440}
+                            {...field}
+                            value={Math.floor(field.value / 60)}
+                            onChange={(e) => field.onChange(parseInt(e.target.value, 10) * 60)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="max_concurrent_scans"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Max Concurrent Scans</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          {...field}
+                          onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Maximum number of scans that can run simultaneously
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <Separator />
+
+              {/* Tools Configuration */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">Tools</h4>
+                <p className="text-sm text-muted-foreground">
+                  Select which tools should be enabled for scans using this profile.
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {TOOL_OPTIONS.map((tool) => (
+                    <div
+                      key={tool.value}
+                      className="flex items-start space-x-3 rounded-lg border p-3"
+                    >
+                      <Checkbox
+                        id={tool.value}
+                        checked={enabledTools[tool.value] || false}
+                        onCheckedChange={(checked) =>
+                          handleToolToggle(tool.value, checked as boolean)
+                        }
+                      />
+                      <div className="grid gap-0.5 leading-none">
+                        <Label htmlFor={tool.value} className="cursor-pointer text-sm font-medium">
+                          {tool.label}
+                        </Label>
+                        <p className="text-xs text-muted-foreground">{tool.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Options */}
               <FormField
                 control={form.control}
-                name="max_concurrent_scans"
+                name="is_default"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Max Concurrent Scans</FormLabel>
+                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>Set as Default</FormLabel>
+                      <FormDescription>
+                        Use this profile as the default for new scans
+                      </FormDescription>
+                    </div>
                     <FormControl>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={100}
-                        {...field}
-                        onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
-                      />
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
-                    <FormDescription>
-                      Maximum number of scans that can run simultaneously
-                    </FormDescription>
-                    <FormMessage />
                   </FormItem>
                 )}
               />
-            </div>
-
-            <Separator />
-
-            {/* Tools Configuration */}
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium">Tools</h4>
-              <p className="text-sm text-muted-foreground">
-                Select which tools should be enabled for scans using this profile.
-              </p>
-
-              <div className="grid grid-cols-2 gap-3">
-                {TOOL_OPTIONS.map((tool) => (
-                  <div
-                    key={tool.value}
-                    className="flex items-start space-x-3 rounded-lg border p-3"
-                  >
-                    <Checkbox
-                      id={tool.value}
-                      checked={enabledTools[tool.value] || false}
-                      onCheckedChange={(checked) =>
-                        handleToolToggle(tool.value, checked as boolean)
-                      }
-                    />
-                    <div className="grid gap-0.5 leading-none">
-                      <Label htmlFor={tool.value} className="cursor-pointer text-sm font-medium">
-                        {tool.label}
-                      </Label>
-                      <p className="text-xs text-muted-foreground">{tool.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Options */}
-            <FormField
-              control={form.control}
-              name="is_default"
-              render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                  <div className="space-y-0.5">
-                    <FormLabel>Set as Default</FormLabel>
-                    <FormDescription>Use this profile as the default for new scans</FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+            </DialogBody>
 
             <DialogFooter>
               <Button
@@ -312,7 +318,7 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
                 Create Profile
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>
