@@ -1646,6 +1646,14 @@ name to `technologies.slug`, case-insensitive.
 - outdated-version checks, by joining `version_key` to the CPE in a
   future phase (out of scope here).
 
+> **Amended 2026-10-09 by [RFC-066](RFC-066-inventory-vulnerability-matching.md)
+> (decision O6):** the per-tenant technology rows are `asset_software`
+> links to a shared software catalog (`software_products`,
+> `software_versions`; RFC-066 §5), which also carries the CPE identity,
+> version and confidence the vulnerability matcher uses. Slice 7 links its
+> global `technologies` catalog to `software_products` instead of adding a
+> `service_technologies` table.
+
 ### 6.8 How the existing typed assets map in
 
 | Today | v2 | Migration |
