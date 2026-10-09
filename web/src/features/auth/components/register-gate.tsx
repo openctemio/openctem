@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useSearchParams } from 'next/navigation'
 import { ArrowLeft, UserX } from 'lucide-react'
 
