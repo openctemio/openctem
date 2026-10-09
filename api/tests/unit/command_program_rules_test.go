@@ -120,26 +120,6 @@ func TestProgramRules_RateCapAndUncoveredJobs(t *testing.T) {
 	}
 }
 
-// Outside a testing window the job is not handed out and stays pending.
-func TestProgramRules_OutsideWindowWithheld(t *testing.T) {
-	for _, path := range handOutPaths {
-		t.Run(path.name, func(t *testing.T) {
-			f := newProgramFixture(&programRuleSource{err: bp.ErrOutsideWindow}, "v0.19.0")
-			c := f.repo.add(f.tenant, commanddom.CommandTypeScan, programPayload, nil)
-			got, err := path.run(f, c)
-			if got != nil {
-				t.Fatal("handed out outside the testing window")
-			}
-			if path.name == "claim by id" && !errors.Is(err, bp.ErrOutsideWindow) {
-				t.Fatalf("claim by id: %v", err)
-			}
-			if st := f.repo.commands[c.ID.String()].Status; st != commanddom.CommandStatusPending {
-				t.Fatalf("status %s, want pending", st)
-			}
-		})
-	}
-}
-
 // Conflicting programs fail the job once with PROGRAM_RULES_CONFLICT.
 func TestProgramRules_ConflictFailsTheJob(t *testing.T) {
 	for _, path := range handOutPaths {

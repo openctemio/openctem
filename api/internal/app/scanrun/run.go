@@ -559,8 +559,6 @@ func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanw
 	// attributed to the step (scan provenance, chained outputs) and the
 	// step settles with its last command.
 	cmd.SetStepRunID(stepRun.ID)
-	// A run started with an audited freeze override keeps it for every step.
-	cmd.FreezeOverride = run.FreezeOverride
 	return cmd, nil
 }
 
