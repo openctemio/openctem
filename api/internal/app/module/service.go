@@ -52,29 +52,51 @@ type ModuleService struct {
 	versionService   *VersionService
 	wsBroadcaster    WSBroadcaster
 	cacheInvalidator ModuleCacheInvalidator
-	bundleStore      BundleStore
+	entitlements     EntitlementReader
 	logger           *logger.Logger
 
 	toggleLocks   map[string]*sync.Mutex
 	toggleLocksMu sync.Mutex
 }
 
-// BundleStore persists and reads a tenant's product-bundle subscription (the
-// set of bundle IDs the tenant runs). Optional — when nil, a tenant is treated
-// as having no subscription (every module on), which is the backward-compatible
-// default. Implemented by an adapter over the tenant repository at the
-// composition root; kept as a narrow interface so this package needn't import
-// the tenant service.
-type BundleStore interface {
-	GetSubscribedBundles(ctx context.Context, tenantID string) ([]string, error)
-	SetSubscribedBundles(ctx context.Context, tenantID string, bundleIDs []string) error
+// EntitlementReader reports the modules an organization may not use under
+// its plan and its administrator grants (*entitlement.Service). An error means
+// the entitlement could not be read: every non-core module is then
+// unavailable (fail-closed).
+type EntitlementReader interface {
+	NotEntitled(ctx context.Context, tenantID string) (map[string]bool, error)
 }
+
+// Reasons a module is off for an organization (MODULE_NOT_ENABLED details).
+const (
+	ReasonDisabledByAdmin = "disabled_by_admin"
+	ReasonNotEntitled     = "not_entitled"
+	ReasonUnavailable     = "unavailable"
+)
 
 // ModuleCacheInvalidator drops a tenant's cached module-enablement so a toggle
 // takes effect immediately rather than after the gate's TTL. Implemented by
 // *middleware.ModuleGate. Optional — nil relies on the TTL alone.
 type ModuleCacheInvalidator interface {
 	Invalidate(tenantID string)
+}
+
+// allInvalidator also drops every tenant (a plan mapping change).
+type allInvalidator interface {
+	InvalidateAll()
+}
+
+// NotifyEntitlementChange refreshes the module state after a plan, grant or
+// plan mapping change: one organization (its gate cache on every replica, its
+// version and its open consoles), or every organization when tenantID is "".
+func (s *ModuleService) NotifyEntitlementChange(tenantID string) {
+	if tenantID != "" {
+		s.notifyModuleChange(context.Background(), tenantID)
+		return
+	}
+	if a, ok := s.cacheInvalidator.(allInvalidator); ok {
+		a.InvalidateAll()
+	}
 }
 
 // WSBroadcaster is the minimal interface ModuleService needs to fan
@@ -142,11 +164,10 @@ func (s *ModuleService) SetModuleCacheInvalidator(inv ModuleCacheInvalidator) {
 	s.cacheInvalidator = inv
 }
 
-// SetBundleStore wires the tenant bundle-subscription store. Optional — when
-// unset, no tenant has a subscription and every module stays on (the
-// backward-compatible default).
-func (s *ModuleService) SetBundleStore(b BundleStore) {
-	s.bundleStore = b
+// SetEntitlements wires the plan and grant entitlements. Without it every
+// module is entitled.
+func (s *ModuleService) SetEntitlements(e EntitlementReader) {
+	s.entitlements = e
 }
 
 // GetTenantModuleVersion returns the current module-config version for
@@ -266,8 +287,11 @@ type TenantModuleConfigOutput struct {
 
 // TenantModuleInfo combines module metadata with tenant-specific enabled state.
 type TenantModuleInfo struct {
-	Module     *moduledom.Module
-	IsEnabled  bool
+	Module    *moduledom.Module
+	IsEnabled bool
+	// Entitled: the organization's plan or an administrator's grant includes
+	// it. A module that is not entitled cannot be switched on.
+	Entitled   bool
 	SubModules []*SubModuleInfo
 }
 
@@ -299,8 +323,7 @@ func (s *ModuleService) GetTenantModuleConfig(ctx context.Context, tenantID stri
 // buildTenantModuleConfig builds the tenant module config from pre-loaded modules.
 // Separated to allow reuse in UpdateTenantModules (avoids redundant ListActiveModules query).
 func (s *ModuleService) buildTenantModuleConfig(ctx context.Context, tenantID string, allModules []*moduledom.Module) (*TenantModuleConfigOutput, error) {
-	disabledModules := s.getTenantDisabledModules(ctx, tenantID)
-	return s.buildTenantModuleConfigFromMaps(tenantID, allModules, disabledModules)
+	return s.buildTenantModuleConfigFromMaps(tenantID, allModules, s.moduleStates(ctx, tenantID))
 }
 
 // buildTenantModuleConfigFromMaps is the pure-map variant used by
@@ -308,7 +331,7 @@ func (s *ModuleService) buildTenantModuleConfig(ctx context.Context, tenantID st
 // for dependency validation. Calling this saves the duplicate
 // `getTenantDisabledModules` trip that the plain
 // buildTenantModuleConfig would issue.
-func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModules []*moduledom.Module, disabledModules map[string]bool) (*TenantModuleConfigOutput, error) {
+func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModules []*moduledom.Module, states map[string]string) (*TenantModuleConfigOutput, error) {
 	_ = tenantID // retained in the signature for symmetry; may be used for future scoping
 
 	// Split into top-level and sub-modules from the same query result
@@ -324,7 +347,8 @@ func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModu
 			continue
 		}
 
-		isEnabled := !disabledModules[m.ID()] || m.IsCore()
+		isEnabled := states[m.ID()] == "" || m.IsCore()
+		entitled := m.IsCore() || (states[m.ID()] != ReasonNotEntitled && states[m.ID()] != ReasonUnavailable)
 
 		// Build sub-module info with INDEPENDENT enabled states.
 		// The admin UI needs the sub-module's OWN state (not combined with parent)
@@ -334,7 +358,7 @@ func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModu
 		if subs, ok := subModulesByParent[m.ID()]; ok {
 			subInfos = make([]*SubModuleInfo, 0, len(subs))
 			for _, sub := range subs {
-				subEnabled := !disabledModules[sub.ID()]
+				subEnabled := states[sub.ID()] == ""
 				subInfos = append(subInfos, &SubModuleInfo{
 					Module:    sub,
 					IsEnabled: subEnabled,
@@ -345,6 +369,7 @@ func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModu
 		modules = append(modules, &TenantModuleInfo{
 			Module:     m,
 			IsEnabled:  isEnabled,
+			Entitled:   entitled,
 			SubModules: subInfos,
 		})
 
@@ -415,10 +440,10 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 	// matters when a single request both disables X and the modules that
 	// soft/hard depend on X — the request as a whole is valid even though
 	// mid-way the dependent is still in the updates queue.
-	disabled := s.getTenantDisabledModules(ctx, tenantID)
+	states := s.moduleStates(ctx, tenantID)
 	enabledAfter := make(map[string]bool, len(allModules))
 	for _, m := range allModules {
-		enabledAfter[m.ID()] = m.IsActive() && !disabled[m.ID()]
+		enabledAfter[m.ID()] = m.IsActive() && states[m.ID()] == ""
 	}
 	for _, u := range updates {
 		enabledAfter[u.ModuleID] = u.IsEnabled
@@ -439,6 +464,13 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 
 		if !u.IsEnabled && m.IsCore() {
 			return nil, fmt.Errorf("%w: '%s' is a core module and cannot be disabled", moduledom.ErrCoreModuleCannotBeDisabled, m.Name())
+		}
+		// Within the entitlement only: a module the plan does not include
+		// (and no grant adds) cannot be switched on by the organization.
+		if u.IsEnabled && !m.IsCore() {
+			if r := states[u.ModuleID]; r == ReasonNotEntitled || r == ReasonUnavailable {
+				return nil, fmt.Errorf("%w: '%s' is not included in this organization's plan", moduledom.ErrModuleNotEntitled, m.Name())
+			}
 		}
 
 		// Dependency check — platform-wide static graph in
@@ -503,12 +535,18 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 	// their SWR cache and refetch immediately.
 	s.notifyModuleChange(ctx, tenantID)
 
-	// Re-derive the disabled set from the applied updates instead of
-	// re-querying the DB (saves one round-trip per toggle request).
+	// Re-derive the states from the applied updates instead of re-querying
+	// the DB (saves one round-trip per toggle request). Entitlement reasons
+	// stay: switching on a module that is not entitled was refused above.
 	for _, u := range updates {
-		disabled[u.ModuleID] = !u.IsEnabled
+		switch {
+		case !u.IsEnabled && states[u.ModuleID] == "":
+			states[u.ModuleID] = ReasonDisabledByAdmin
+		case u.IsEnabled && states[u.ModuleID] == ReasonDisabledByAdmin:
+			delete(states, u.ModuleID)
+		}
 	}
-	out, buildErr := s.buildTenantModuleConfigFromMaps(tenantID, allModules, disabled)
+	out, buildErr := s.buildTenantModuleConfigFromMaps(tenantID, allModules, states)
 	if buildErr != nil {
 		return nil, buildErr
 	}
@@ -714,116 +752,72 @@ func splitModules(allModules []*moduledom.Module) ([]*moduledom.Module, map[stri
 	return topLevel, subByParent
 }
 
-// getTenantDisabledModules returns a set of module IDs disabled by the tenant.
-// TenantDisabledModules returns the set of module IDs a tenant has explicitly
-// disabled. Fail-open: an unconfigured repo, a bad tenant id, or a query error
-// yields an empty set (nothing disabled), so route gating never blocks on a
-// lookup problem. Used by the module-gating middleware.
+// TenantDisabledModules returns the modules that are off for the
+// organization, for whatever reason (TenantModuleStates). Used by the route
+// gate, the background jobs and every module check.
 func (s *ModuleService) TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool {
 	return s.getTenantDisabledModules(ctx, tenantID)
 }
 
 func (s *ModuleService) getTenantDisabledModules(ctx context.Context, tenantID string) map[string]bool {
-	disabled := make(map[string]bool)
-	if s.tenantModuleRepo == nil {
-		return disabled
-	}
-
-	parsedID, parseErr := shared.IDFromString(tenantID)
-	if parseErr != nil {
-		return disabled
-	}
-
-	overrides, err := s.tenantModuleRepo.ListByTenant(ctx, parsedID)
-	if err != nil {
-		s.logger.Warn("failed to get tenant module overrides", "tenant_id", tenantID, "error", err)
-		return disabled
-	}
-
-	// Split per-module admin overrides into explicit-on / explicit-off.
-	overrideOff := make(map[string]bool)
-	overrideOn := make(map[string]bool)
-	for _, o := range overrides {
-		if o.IsEnabled {
-			overrideOn[o.ModuleID] = true
-		} else {
-			overrideOff[o.ModuleID] = true
-		}
-	}
-
-	// Bundle subsetting: when the tenant subscribes to one or more bundles, the
-	// enabled baseline is the union of those bundles (+core+deps);
-	// every non-core module NOT in the baseline is disabled. When there is no
-	// subscription (or no bundle store wired), we skip this entirely and fall
-	// through to the legacy "only explicit-off overrides are disabled" behavior
-	// — so existing tenants are completely unaffected.
-	if bundles := s.subscribedBundles(ctx, tenantID); len(bundles) > 0 {
-		baseline := resolveBundleBaseline(bundles)
-		allModules, mErr := s.moduleRepo.ListActiveModules(ctx)
-		switch {
-		case len(baseline) == 0:
-			// Every subscribed bundle ID is unknown — e.g. a bundle was removed
-			// or renamed in the catalog AFTER the tenant subscribed. FAIL SAFE:
-			// treat as no subscription (all modules on) rather than disabling
-			// every feature module and locking the tenant out. A valid bundle
-			// always yields a non-empty baseline (ResolvePresetModules includes
-			// core + mandatory), so an empty baseline means no bundle resolved.
-			s.logger.Warn("subscribed bundles resolved to an empty baseline (unknown bundle ids); ignoring subscription",
-				"tenant_id", tenantID, "bundles", bundles)
-		case mErr != nil:
-			// Could not load the catalog — fail open (no subsetting) so a lookup
-			// error never blocks a tenant's modules.
-			s.logger.Warn("bundle resolution: failed to list modules", "tenant_id", tenantID, "error", mErr)
-		default:
-			applySubModuleInheritance(baseline, allModules)
-			for _, m := range allModules {
-				id := m.ID()
-				if m.IsCore() {
-					continue // core is never disabled
-				}
-				if !baseline[id] && !overrideOn[id] {
-					disabled[id] = true // outside the subscription and not admin-re-enabled
-				}
-			}
-		}
-	}
-
-	// Admin explicit-off always wins (both subscribed and legacy paths).
-	for id := range overrideOff {
+	states := s.moduleStates(ctx, tenantID)
+	disabled := make(map[string]bool, len(states))
+	for id := range states {
 		disabled[id] = true
 	}
 	return disabled
 }
 
-// subscribedBundles reads the tenant's bundle subscription; nil store or any
-// error yields no subscription (empty), keeping resolution backward-compatible.
-func (s *ModuleService) subscribedBundles(ctx context.Context, tenantID string) []string {
-	if s.bundleStore == nil {
-		return nil
-	}
-	ids, err := s.bundleStore.GetSubscribedBundles(ctx, tenantID)
-	if err != nil {
-		s.logger.Warn("failed to read subscribed bundles", "tenant_id", tenantID, "error", err)
-		return nil
-	}
-	return ids
+// TenantModuleStates returns, for every module that is off for the
+// organization, why: not_entitled (its plan does not include it, or an
+// administrator denied it), unavailable (the entitlement could not be read:
+// fail-closed) or disabled_by_admin (the organization switched it off). An
+// entitlement reason wins over a preference. Core modules are never off.
+func (s *ModuleService) TenantModuleStates(ctx context.Context, tenantID string) map[string]string {
+	return s.moduleStates(ctx, tenantID)
 }
 
-// resolveBundleBaseline returns the union of every named bundle's resolved
-// module set (core + mandatory + explicit + transitive hard deps). Unknown
-// bundle IDs are skipped.
-func resolveBundleBaseline(bundleIDs []string) map[string]bool {
-	baseline := make(map[string]bool)
-	for _, id := range bundleIDs {
-		p := moduledom.FindPreset(id)
-		if p == nil {
-			continue
+func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[string]string {
+	states := make(map[string]string)
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return states
+	}
+
+	// Preference: the organization's explicit-off overrides. A lookup error
+	// fails open (preferences are cosmetic; entitlement is the boundary).
+	if s.tenantModuleRepo != nil {
+		parsedID, _ := shared.IDFromString(tenantID)
+		overrides, err := s.tenantModuleRepo.ListByTenant(ctx, parsedID)
+		if err != nil {
+			s.logger.Warn("failed to get tenant module overrides", "tenant_id", tenantID, "error", err)
 		}
-		for m := range moduledom.ResolvePresetModules(p) {
-			baseline[m] = true
+		for _, o := range overrides {
+			if !o.IsEnabled {
+				states[o.ModuleID] = ReasonDisabledByAdmin
+			}
 		}
 	}
-	return baseline
+
+	// Entitlement: fail-closed.
+	if s.entitlements != nil {
+		notEntitled, err := s.entitlements.NotEntitled(ctx, tenantID)
+		if err != nil {
+			s.logger.Warn("module entitlement unavailable; treating non-core modules as off (fail-closed)",
+				"tenant_id", tenantID, "error", err)
+			for _, d := range moduledom.Registry {
+				if !d.Core {
+					states[d.ID] = ReasonUnavailable
+				}
+			}
+			return states
+		}
+		for id := range notEntitled {
+			if !moduledom.IsCoreModule(id) {
+				states[id] = ReasonNotEntitled
+			}
+		}
+	}
+	return states
 }
 
 // applySubModuleInheritance enables a parent's "<parent>.<sub>" sub-modules in
@@ -1050,7 +1044,7 @@ func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p 
 
 	target := moduledom.ResolvePresetModules(p) // what the preset wants
 	// Sub-module inheritance: a parent enabled in the preset implicitly enables
-	// its "<parent>.<sub>" sub-modules (shared with bundle resolution).
+	// its "<parent>.<sub>" sub-modules.
 	applySubModuleInheritance(target, allModules)
 	disabledNow := s.getTenantDisabledModules(ctx, tenantID)
 
@@ -1104,60 +1098,3 @@ func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.Audi
 	s.auditService.LogEvent(ctx, actx, event)
 }
 
-// SubscribeBundles replaces the tenant's product-bundle subscription. Once set,
-// the enabled module set is resolved live as the union of these bundles
-// (+core+deps) on every read, with per-module overrides layered on
-// top. An empty slice clears the subscription (every module on). Invalidates the
-// gate cache + bumps the config version + audits, so it takes effect immediately.
-func (s *ModuleService) SubscribeBundles(ctx context.Context, tenantID string, bundleIDs []string, actx auditapp.AuditContext) error {
-	if s.bundleStore == nil {
-		return fmt.Errorf("%w: bundle subscription is not configured", shared.ErrValidation)
-	}
-	if _, err := shared.IDFromString(tenantID); err != nil {
-		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-
-	// Validate against the catalog + dedupe (order preserved).
-	seen := make(map[string]bool, len(bundleIDs))
-	clean := make([]string, 0, len(bundleIDs))
-	for _, id := range bundleIDs {
-		if moduledom.FindPreset(id) == nil {
-			return fmt.Errorf("%w: unknown bundle %q", shared.ErrValidation, id)
-		}
-		if !seen[id] {
-			seen[id] = true
-			clean = append(clean, id)
-		}
-	}
-
-	if err := s.bundleStore.SetSubscribedBundles(ctx, tenantID, clean); err != nil {
-		return fmt.Errorf("failed to persist bundle subscription: %w", err)
-	}
-	s.notifyModuleChange(ctx, tenantID)
-	s.logBundlesSubscribed(ctx, actx, tenantID, clean)
-	return nil
-}
-
-// GetSubscribedBundles returns the tenant's current bundle subscription, or an
-// empty slice when the tenant runs every module (no subscription).
-func (s *ModuleService) GetSubscribedBundles(ctx context.Context, tenantID string) []string {
-	return s.subscribedBundles(ctx, tenantID)
-}
-
-// logBundlesSubscribed records a bundle-subscription change (bundle IDs are from
-// the fixed catalog, so they are safe to log verbatim).
-func (s *ModuleService) logBundlesSubscribed(ctx context.Context, actx auditapp.AuditContext, tenantID string, bundleIDs []string) {
-	if s.auditService == nil {
-		return
-	}
-	actx.TenantID = tenantID
-	msg := "Module bundles set: " + strings.Join(bundleIDs, ", ")
-	if len(bundleIDs) == 0 {
-		msg = "Module bundle subscription cleared (all modules on)"
-	}
-	event := auditapp.NewSuccessEvent(audit.ActionTenantModulesUpdated, audit.ResourceTypeTenant, tenantID).
-		WithMessage(msg).
-		WithSeverity(audit.SeverityMedium).
-		WithMetadata("subscribed_bundles", bundleIDs)
-	_ = s.auditService.LogEvent(ctx, actx, event)
-}

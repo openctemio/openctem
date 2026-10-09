@@ -34,7 +34,11 @@ import (
 //	/admin/platform-idp       super_admin       super_admin (audited)
 //	/admin/access-requests    any admin         ops_admin+ (approve/reject, audited)
 //	/admin/settings/plans     any admin         super_admin + fresh TOTP code
+//	/admin/settings/plan-modules
+//	                          any admin         super_admin + fresh TOTP code
 //	/admin/tenants/{id}/plan  any admin         ops_admin+ (plan, overrides; audited)
+//	/admin/tenants/{id}/modules
+//	                          any admin         ops_admin+ (grant/deny; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, admins emailed)
 //	/admin/tenants/{id}/audit-chain
@@ -121,6 +125,11 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/plans", func(r Router) {
 			r.GET("/", h.Plan.GetDefaults)
 			r.PUT("/", h.Plan.UpdateDefaults, requireSuperPlans)
+		}, adminMiddlewares...)
+		// The modules of each plan (RFC-064): same rule as the plan limits.
+		router.Group("/api/v1/admin/settings/plan-modules", func(r Router) {
+			r.GET("/", h.Plan.GetPlanModules)
+			r.PUT("/", h.Plan.UpdatePlanModules, requireSuperPlans)
 		}, adminMiddlewares...)
 	}
 
@@ -259,6 +268,12 @@ func registerAdminRoutes(
 				r.PUT("/{tenantId}/plan", h.Plan.SetTenantPlan, with([]Middleware{opsWrite, scope})...)
 				r.PUT("/{tenantId}/plan/overrides/{key}", h.Plan.SetOverride, with([]Middleware{opsWrite, scope})...)
 				r.DELETE("/{tenantId}/plan/overrides/{key}", h.Plan.DeleteOverride, with([]Middleware{opsWrite, scope})...)
+				// Module entitlements of one organization (RFC-064): any admin
+				// reads; ops_admin+ grants a module beyond the plan (a trial, an
+				// add-on) or denies one (audited by the service).
+				r.GET("/{tenantId}/modules", h.Plan.GetTenantModules, read...)
+				r.PUT("/{tenantId}/modules/{module_id}/grant", h.Plan.SetModuleGrant, with([]Middleware{opsWrite, scope})...)
+				r.DELETE("/{tenantId}/modules/{module_id}/grant", h.Plan.DeleteModuleGrant, with([]Middleware{opsWrite, scope})...)
 			}
 
 			if h.VerifiedDomain != nil {

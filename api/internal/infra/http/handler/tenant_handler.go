@@ -2655,14 +2655,17 @@ func (h *TenantHandler) GetRiskScoringPresets(w http.ResponseWriter, r *http.Req
 
 // TenantModuleResponse represents a module with tenant-specific state.
 type TenantModuleResponse struct {
-	ID            string                    `json:"id"`
-	Name          string                    `json:"name"`
-	Description   string                    `json:"description,omitempty"`
-	Icon          string                    `json:"icon,omitempty"`
-	Category      string                    `json:"category"`
-	DisplayOrder  int                       `json:"display_order"`
-	IsCore        bool                      `json:"is_core"`
-	IsEnabled     bool                      `json:"is_enabled"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	Icon         string `json:"icon,omitempty"`
+	Category     string `json:"category"`
+	DisplayOrder int    `json:"display_order"`
+	IsCore       bool   `json:"is_core"`
+	IsEnabled    bool   `json:"is_enabled"`
+	// Entitled: the organization's plan or a platform grant includes the
+	// module; one that is not cannot be switched on here.
+	Entitled      bool                      `json:"entitled"`
 	ReleaseStatus string                    `json:"release_status"`
 	SubModules    []TenantSubModuleResponse `json:"sub_modules,omitempty"`
 }
@@ -2882,62 +2885,6 @@ func (h *TenantHandler) ListModulePresets(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(map[string]any{"presets": presets})
 }
 
-type subscribeBundlesRequest struct {
-	BundleIDs []string `json:"bundle_ids"`
-}
-
-// GetModuleBundles returns the tenant's current bundle subscription plus the
-// available bundle catalog. Empty subscription = the tenant runs every module.
-func (h *TenantHandler) GetModuleBundles(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-	if h.moduleService == nil {
-		apierror.InternalServerError("Module service not configured").WriteJSON(w)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"subscribed": h.moduleService.GetSubscribedBundles(r.Context(), tenantID.String()),
-		"available":  h.moduleService.ListModulePresets(r.Context()),
-	})
-}
-
-// SubscribeModuleBundles replaces the tenant's bundle subscription. An empty
-// list clears it (every module on). The enabled-module set is then resolved live
-// from the chosen bundles; per-module overrides still apply on top.
-func (h *TenantHandler) SubscribeModuleBundles(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
-		return
-	}
-	if h.moduleService == nil {
-		apierror.InternalServerError("Module service not configured").WriteJSON(w)
-		return
-	}
-	var req subscribeBundlesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-	actx := h.buildAuditContext(r)
-	if err := h.moduleService.SubscribeBundles(r.Context(), tenantID.String(), req.BundleIDs, actx); err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	// Return the fresh module config so the UI can refresh in one round trip.
-	config, err := h.moduleService.GetTenantModuleConfig(r.Context(), tenantID.String())
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(config)
-}
-
 // PreviewModulePreset handles POST /.../settings/modules/presets/{presetId}/preview.
 // Dry-run — returns what would change if the preset were applied.
 func (h *TenantHandler) PreviewModulePreset(w http.ResponseWriter, r *http.Request) {
@@ -3015,6 +2962,7 @@ func toTenantModuleListResponse(config *module.TenantModuleConfigOutput) TenantM
 			DisplayOrder:  m.DisplayOrder(),
 			IsCore:        m.IsCore(),
 			IsEnabled:     info.IsEnabled,
+			Entitled:      info.Entitled,
 			ReleaseStatus: string(m.ReleaseStatus()),
 		}
 

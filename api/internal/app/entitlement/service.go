@@ -60,6 +60,13 @@ type Service struct {
 	cached   plan.Defaults
 	version  int
 	cachedAt time.Time
+
+	// Module entitlements (modules.go).
+	modules         plan.ModuleRepository
+	modulesChanged  ModulesChangeNotifier
+	cachedModules   plan.PlanModules
+	modulesVersion  int
+	modulesCachedAt time.Time
 }
 
 // NewService creates the service. audit, admins and notifier may be nil.
@@ -259,6 +266,10 @@ func (s *Service) ChangeTenantPlan(ctx context.Context, actor *admin.AdminUser, 
 		return err
 	}
 	s.writeAudit(ctx, actor, ActionTenantPlanSet, &tenantID, "tenant", map[string]any{"plan": string(p)}, ip, ua)
+	// The plan decides the organization's modules: refresh them.
+	if s.modulesChanged != nil {
+		s.modulesChanged(tenantID.String())
+	}
 	return nil
 }
 
@@ -314,7 +325,7 @@ func (s *Service) writeAudit(ctx context.Context, actor *admin.AdminUser, action
 		Request("PUT", "", body)
 	// A change to every organization's limits is critical; one
 	// organization's plan or override is high.
-	if action == ActionDefaultsChanged {
+	if action == ActionDefaultsChanged || action == ActionPlanModulesChanged {
 		b = b.Critical()
 	} else {
 		b = b.High()

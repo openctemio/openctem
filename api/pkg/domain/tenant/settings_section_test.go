@@ -37,10 +37,6 @@ func TestSettingsFromMap_MatchesWholeBlobDecode(t *testing.T) {
 	if s.Security.SessionTimeoutMin != 0 {
 		t.Fatalf("absent section must keep its zero value (as the whole-blob decode did), got %d", s.Security.SessionTimeoutMin)
 	}
-	s = SettingsFromMap(map[string]any{"subscribed_bundles": []any{"asm", "aspm"}})
-	if len(s.SubscribedBundles) != 2 {
-		t.Fatalf("subscribed_bundles not decoded: %v", s.SubscribedBundles)
-	}
 }
 
 func TestSecuritySettingsStrict(t *testing.T) {

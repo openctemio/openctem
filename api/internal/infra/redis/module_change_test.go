@@ -24,6 +24,12 @@ func (c *recordingCache) Invalidate(tenantID string) {
 	c.tenants = append(c.tenants, tenantID)
 }
 
+func (c *recordingCache) InvalidateAll() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tenants = append(c.tenants, "*")
+}
+
 func (c *recordingCache) snapshot() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -56,6 +62,13 @@ func TestModuleChangeBusInvalidatesEveryReplica(t *testing.T) {
 		t.Fatalf("replica A dropped %v", got)
 	}
 
+	// A plan mapping change drops every tenant on every replica.
+	a.InvalidateAll()
+	waitFor(t, func() bool { return len(cacheB.snapshot()) == 2 })
+	if got := cacheB.snapshot(); got[1] != "*" {
+		t.Fatalf("replica B got %v after InvalidateAll", got)
+	}
+
 	// Redis carries only hints: malformed or non-UUID messages are dropped.
 	for _, bad := range []string{`not json`, `{"o":"x","t":"../etc"}`, `{"o":"x","t":""}`,
 		`{"o":"x","t":"` + string(make([]byte, 300)) + `"}`} {
@@ -64,7 +77,7 @@ func TestModuleChangeBusInvalidatesEveryReplica(t *testing.T) {
 		}
 	}
 	time.Sleep(300 * time.Millisecond)
-	if got := cacheB.snapshot(); len(got) != 1 {
+	if got := cacheB.snapshot(); len(got) != 2 {
 		t.Fatalf("a malformed change was applied: %v", got)
 	}
 }
