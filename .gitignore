@@ -34,6 +34,7 @@ go.work.sum
 /api/api/openapi/routes.txt
 /web/src/lib/api/generated/api.types.ts
 /web/src/config/api-route-permissions.json
+/web/src/config/authz-matrix.json
 
 # Python bytecode
 __pycache__/

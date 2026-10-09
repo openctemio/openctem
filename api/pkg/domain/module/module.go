@@ -291,6 +291,11 @@ var CoreModuleIDs = map[string]bool{
 	ModuleNotificationSettings:      true,
 	ModuleIntegrations:              true,
 	ModuleIntegrationsNotifications: true,
+	// SLA is a property of every finding (its remediation deadline), read by
+	// the findings list and detail, dashboards, My Work, exports, reports and
+	// the escalation job. A module gates a surface it owns; it cannot switch
+	// off an attribute of a core object, so SLA is core.
+	ModuleSLA: true,
 }
 
 // IsCoreModule returns true if the module is essential for platform operation.
@@ -312,13 +317,13 @@ var UserFacingModuleIDs = map[string]bool{
 	ModuleRoles:     true,
 	ModuleAudit:     true,
 	ModuleSettings:  true,
+	ModuleSLA:       true, // Settings > SLA Policies (core, see CoreModuleIDs)
 
 	// Toggleable feature modules (each directly controls sidebar visibility)
 	ModuleCredentials:      true, // Discovery > Credential Leaks
 	ModuleComponents:       true, // Discovery > Components (SBOM)
 	ModuleExposures:        true, // Discovery > Exposures (Non-CVE security issues)
 	ModuleThreatIntel:      true, // Prioritization > Threat Intel
-	ModuleSLA:              true, // Prioritization > SLA Compliance / SLA Policies
 	ModulePentest:          true, // Validation > Penetration Testing
 	ModuleAttackSimulation: true, // Validation > Attack Simulation (BAS)
 	ModuleControlTesting:   true, // Validation > Control Testing
