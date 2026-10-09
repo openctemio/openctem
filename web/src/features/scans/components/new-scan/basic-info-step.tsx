@@ -44,6 +44,8 @@ import { ScannerSelect } from '../scanner-select'
 import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
 import { TENABLE_SC_TOOL } from '@/features/integrations/lib/tenable-sc'
 import { TenableScanFields } from './tenable-scan-fields'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
+import { Module } from '@/config/route-permissions'
 
 interface BasicInfoStepProps {
   data: NewScanFormData
@@ -56,13 +58,18 @@ interface BasicInfoStepProps {
 }
 
 export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoStepProps) {
+  // Workflow scans are a module: when it is off for the organization the
+  // API refuses them, so none is offered (an existing workflow scan being
+  // edited keeps showing its workflow).
+  const workflowsEnabled = useModuleEnabled(Module.ScanWorkflows)
+  const offerWorkflows = workflowsEnabled || (lockMode && data.mode === 'workflow')
   // The workflows are needed to offer the starters, unless the mode is
-  // locked to a single scan (Edit).
+  // locked to a single scan (Edit) or workflows are not offered.
   const { data: workflowsData, isLoading: isLoadingWorkflows } = useScanWorkflows(
-    lockMode && data.mode === 'single'
+    !offerWorkflows || (lockMode && data.mode === 'single')
       ? undefined
       : { is_active: true, per_page: 100, include: 'readiness' },
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, isPaused: () => !offerWorkflows }
   )
   // Workflows that can run here come first; the others stay visible, off,
   // with why (a hidden card would hide what the product can do).
@@ -107,7 +114,7 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
       </div>
 
       {/* What to run: a single check, a starter workflow or another workflow */}
-      {!lockMode && (
+      {!lockMode && offerWorkflows && (
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">What to run</legend>
           <RadioGroup

@@ -13,10 +13,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"sync"
 	"time"
 
 	redislib "github.com/redis/go-redis/v9"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/pkg/coalesce"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -27,6 +30,16 @@ const SensorWakeChannel = "sensor:v3:wake"
 // sensorWakeQueue bounds the wakes waiting to be published; beyond it a
 // wake is dropped (the periodic re-check still delivers it).
 const sensorWakeQueue = 1024
+
+// sensorWakeTenantQuota is one tenant's share of the publish queue
+// (research/84 RE-12): the queue is shared by every tenant, so a tenant
+// flooding wakes must not push out the others'. A tenant at its quota has
+// its further wakes folded into one tenant-wide wake, queued as soon as one
+// of its queued wakes is published.
+const sensorWakeTenantQuota = 32
+
+// allTenants is the quota key of WakeAll.
+const allTenants = "*"
 
 // SensorWaker is the local hub the bus delivers wakes to.
 type SensorWaker interface {
@@ -50,7 +63,21 @@ type SensorWakeBus struct {
 	log    *logger.Logger
 	origin string
 	queue  chan sensorWake
+	// publish coalesces the publishes of one tenant (sensor, WakeAll) to
+	// one per sensortransport.WakeCoalesce, like the hubs deliver them.
+	publish *coalesce.Throttle
+
+	mu sync.Mutex
+	// queued counts each tenant's wakes in queue; owed marks a tenant whose
+	// wakes beyond its quota were folded into a tenant-wide wake still to
+	// be queued.
+	queued map[string]int
+	owed   map[string]bool
 }
+
+// sensorWakeCoalesce matches sensortransport.WakeCoalesce (the redis
+// package does not import the transport).
+const sensorWakeCoalesce = 500 * time.Millisecond
 
 // NewSensorWakeBus builds the bus. Start must run for remote delivery.
 func NewSensorWakeBus(client *Client, local SensorWaker, log *logger.Logger) *SensorWakeBus {
@@ -63,26 +90,66 @@ func newSensorWakeBus(rc redislib.UniversalClient, local SensorWaker, log *logge
 	return &SensorWakeBus{
 		rc: rc, local: local, log: log.With("component", "sensor-wake-bus"),
 		origin: hex.EncodeToString(b[:]), queue: make(chan sensorWake, sensorWakeQueue),
+		publish: coalesce.New(sensorWakeCoalesce), queued: map[string]int{}, owed: map[string]bool{},
 	}
 }
 
 // Wake implements the command and sensor change notifiers. It never blocks.
 func (b *SensorWakeBus) Wake(tenantID, sensorID string) {
 	b.local.Wake(tenantID, sensorID)
-	b.enqueue(sensorWake{Origin: b.origin, TenantID: tenantID, SensorID: sensorID})
+	key := "t:" + tenantID
+	if sensorID != "" {
+		key = "s:" + tenantID + "/" + sensorID
+	}
+	b.publish.Do(key, func() { b.enqueue(sensorWake{Origin: b.origin, TenantID: tenantID, SensorID: sensorID}) })
 }
 
 // WakeAll wakes every stream on every replica.
 func (b *SensorWakeBus) WakeAll() {
 	b.local.WakeAll()
-	b.enqueue(sensorWake{Origin: b.origin, All: true})
+	b.publish.Do(allTenants, func() { b.enqueue(sensorWake{Origin: b.origin, All: true}) })
 }
 
+func quotaKey(w sensorWake) string {
+	if w.All {
+		return allTenants
+	}
+	return w.TenantID
+}
+
+// enqueue queues w unless its tenant holds its quota of the queue (then the
+// wake is folded into a tenant-wide one, owed) or the queue is full.
 func (b *SensorWakeBus) enqueue(w sensorWake) {
+	key := quotaKey(w)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.queued[key] >= sensorWakeTenantQuota {
+		b.owed[key] = true
+		metrics.SensorWakesCoalescedTotal.WithLabelValues("tenant_quota").Inc()
+		return
+	}
 	select {
 	case b.queue <- w:
+		b.queued[key]++
 	default:
+		metrics.SensorWakesCoalescedTotal.WithLabelValues("queue_full").Inc()
 		b.log.Debug("sensor wake dropped: publish queue full")
+	}
+}
+
+// dequeued releases w's quota slot and queues the tenant's owed tenant-wide
+// wake, if any, in its place.
+func (b *SensorWakeBus) dequeued(w sensorWake) {
+	key := quotaKey(w)
+	b.mu.Lock()
+	if b.queued[key]--; b.queued[key] <= 0 {
+		delete(b.queued, key)
+	}
+	owed := b.owed[key]
+	delete(b.owed, key)
+	b.mu.Unlock()
+	if owed {
+		b.enqueue(sensorWake{Origin: b.origin, TenantID: w.TenantID, All: w.All})
 	}
 }
 
@@ -121,6 +188,7 @@ func (b *SensorWakeBus) publishLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case w := <-b.queue:
+			b.dequeued(w)
 			raw, err := json.Marshal(w)
 			if err != nil {
 				continue

@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -153,7 +154,7 @@ export function LinkFindingsToRemediationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Remediate findings</DialogTitle>
           <DialogDescription>
@@ -162,106 +163,108 @@ export function LinkFindingsToRemediationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'new' | 'existing')}>
-          <TabsList>
-            <TabsTrigger value="new">New task</TabsTrigger>
-            <TabsTrigger value="existing">Add to existing</TabsTrigger>
-          </TabsList>
+        <DialogBody>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as 'new' | 'existing')}>
+            <TabsList>
+              <TabsTrigger value="new">New task</TabsTrigger>
+              <TabsTrigger value="existing">Add to existing</TabsTrigger>
+            </TabsList>
 
-          {/* ── New campaign ── */}
-          <TabsContent value="new" className="space-y-4 pt-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="rem-name">Task name</Label>
-              <Input
-                id="rem-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Rotate exposed credentials"
-                autoFocus
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+            {/* ── New campaign ── */}
+            <TabsContent value="new" className="space-y-4 pt-3">
               <div className="space-y-1.5">
-                <Label htmlFor="rem-priority">Priority</Label>
-                <Select value={priority} onValueChange={setPriority}>
-                  <SelectTrigger id="rem-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map((p) => (
-                      <SelectItem key={p} value={p} className="capitalize">
-                        {p}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Owner (optional)</Label>
-                <AssigneeSelect
-                  placeholder="Assign"
-                  value={assignedTo ? { id: assignedTo, name: 'Assigned' } : null}
-                  onChange={(user) => setAssignedTo(user?.id)}
+                <Label htmlFor="rem-name">Task name</Label>
+                <Input
+                  id="rem-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Rotate exposed credentials"
+                  autoFocus
                 />
               </div>
-            </div>
-            <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
-              <Target className="h-3.5 w-3.5" />
-              {findingIds.length} finding{findingIds.length === 1 ? '' : 's'} will be linked and
-              tracked to resolution.
-            </div>
-          </TabsContent>
-
-          {/* ── Existing campaign ── */}
-          <TabsContent value="existing" className="space-y-3 pt-3">
-            <div className="relative">
-              <Search className="text-muted-foreground absolute start-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search remediation tasks…"
-                className="ps-7"
-              />
-            </div>
-            <div
-              className="max-h-72 space-y-1 overflow-y-auto overscroll-contain"
-              style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
-            >
-              {campaignsLoading ? (
-                <div className="text-muted-foreground flex items-center justify-center gap-2 py-6 text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading tasks…
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="rem-priority">Priority</Label>
+                  <Select value={priority} onValueChange={setPriority}>
+                    <SelectTrigger id="rem-priority">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRIORITIES.map((p) => (
+                        <SelectItem key={p} value={p} className="capitalize">
+                          {p}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              ) : linkableCampaigns.length === 0 ? (
-                <p className="text-muted-foreground py-6 text-center text-sm">
-                  No open remediation tasks{query ? ' match your search' : ''}. Create a new one
-                  instead.
-                </p>
-              ) : (
-                linkableCampaigns.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => handleAddToExisting(c.id)}
-                    className="hover:bg-muted flex w-full items-center gap-3 rounded-md px-3 py-2 text-start disabled:opacity-50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{c.name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {c.finding_count} finding{c.finding_count === 1 ? '' : 's'} ·{' '}
-                        {progressPercent(c.progress)}% done
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="shrink-0 capitalize">
-                      {c.status}
-                    </Badge>
-                    <Plus className="text-muted-foreground h-4 w-4 shrink-0" />
-                  </button>
-                ))
-              )}
-            </div>
-          </TabsContent>
-        </Tabs>
+                <div className="space-y-1.5">
+                  <Label>Owner (optional)</Label>
+                  <AssigneeSelect
+                    placeholder="Assign"
+                    value={assignedTo ? { id: assignedTo, name: 'Assigned' } : null}
+                    onChange={(user) => setAssignedTo(user?.id)}
+                  />
+                </div>
+              </div>
+              <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                <Target className="h-3.5 w-3.5" />
+                {findingIds.length} finding{findingIds.length === 1 ? '' : 's'} will be linked and
+                tracked to resolution.
+              </div>
+            </TabsContent>
+
+            {/* ── Existing campaign ── */}
+            <TabsContent value="existing" className="space-y-3 pt-3">
+              <div className="relative">
+                <Search className="text-muted-foreground absolute start-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search remediation tasks…"
+                  className="ps-7"
+                />
+              </div>
+              <div
+                className="max-h-72 space-y-1 overflow-y-auto overscroll-contain"
+                style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+              >
+                {campaignsLoading ? (
+                  <div className="text-muted-foreground flex items-center justify-center gap-2 py-6 text-sm">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading tasks…
+                  </div>
+                ) : linkableCampaigns.length === 0 ? (
+                  <p className="text-muted-foreground py-6 text-center text-sm">
+                    No open remediation tasks{query ? ' match your search' : ''}. Create a new one
+                    instead.
+                  </p>
+                ) : (
+                  linkableCampaigns.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => handleAddToExisting(c.id)}
+                      className="hover:bg-muted flex w-full items-center gap-3 rounded-md px-3 py-2 text-start disabled:opacity-50"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{c.name}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {c.finding_count} finding{c.finding_count === 1 ? '' : 's'} ·{' '}
+                          {progressPercent(c.progress)}% done
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="shrink-0 capitalize">
+                        {c.status}
+                      </Badge>
+                      <Plus className="text-muted-foreground h-4 w-4 shrink-0" />
+                    </button>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </DialogBody>
 
         {tab === 'new' && (
           <DialogFooter>

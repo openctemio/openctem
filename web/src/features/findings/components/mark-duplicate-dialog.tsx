@@ -22,6 +22,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -100,7 +101,7 @@ export function MarkDuplicateDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Mark as duplicate</DialogTitle>
           <DialogDescription>
@@ -110,61 +111,63 @@ export function MarkDuplicateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="relative">
-            <Search
-              className="text-muted-foreground absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2"
-              aria-hidden
-            />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search findings on this asset"
-              aria-label="Search findings on this asset"
-              className="pl-8"
-            />
-          </div>
+        <DialogBody>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search
+                className="text-muted-foreground absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2"
+                aria-hidden
+              />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search findings on this asset"
+                aria-label="Search findings on this asset"
+                className="pl-8"
+              />
+            </div>
 
-          <div className="max-h-72 overflow-y-auto rounded-md border">
-            {isLoading ? (
-              <div className="text-muted-foreground flex items-center gap-2 p-4 text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                Loading findings
-              </div>
-            ) : candidates.length === 0 ? (
-              <p className="text-muted-foreground p-4 text-sm">
-                No other finding on this asset matches.
-              </p>
-            ) : (
-              <RadioGroup
-                value={selected}
-                onValueChange={setSelected}
-                aria-label="Original finding"
-                className="gap-0"
-              >
-                {candidates.map((f) => (
-                  <Label
-                    key={f.id}
-                    htmlFor={`dup-${f.id}`}
-                    className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 border-b p-3 font-normal last:border-b-0"
-                  >
-                    <RadioGroupItem id={`dup-${f.id}`} value={f.id} className="mt-0.5" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
-                        {candidateTitle(f)}
+            <div className="max-h-72 overflow-y-auto rounded-md border">
+              {isLoading ? (
+                <div className="text-muted-foreground flex items-center gap-2 p-4 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Loading findings
+                </div>
+              ) : candidates.length === 0 ? (
+                <p className="text-muted-foreground p-4 text-sm">
+                  No other finding on this asset matches.
+                </p>
+              ) : (
+                <RadioGroup
+                  value={selected}
+                  onValueChange={setSelected}
+                  aria-label="Original finding"
+                  className="gap-0"
+                >
+                  {candidates.map((f) => (
+                    <Label
+                      key={f.id}
+                      htmlFor={`dup-${f.id}`}
+                      className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 border-b p-3 font-normal last:border-b-0"
+                    >
+                      <RadioGroupItem id={`dup-${f.id}`} value={f.id} className="mt-0.5" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">
+                          {candidateTitle(f)}
+                        </span>
+                        <span className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-2 text-xs">
+                          <FindingStatusBadge status={f.status as FindingStatus} />
+                          <span>{f.tool_name}</span>
+                          {f.file_path && <span className="truncate font-mono">{f.file_path}</span>}
+                        </span>
                       </span>
-                      <span className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-2 text-xs">
-                        <FindingStatusBadge status={f.status as FindingStatus} />
-                        <span>{f.tool_name}</span>
-                        {f.file_path && <span className="truncate font-mono">{f.file_path}</span>}
-                      </span>
-                    </span>
-                  </Label>
-                ))}
-              </RadioGroup>
-            )}
+                    </Label>
+                  ))}
+                </RadioGroup>
+              )}
+            </div>
           </div>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => close(false)} disabled={isMutating}>
