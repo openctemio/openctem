@@ -7,9 +7,9 @@ import { AccessRequestsPanel } from '@/features/admin-console/components/access-
 import { adminCan } from '@/features/admin-console/types'
 
 /**
- * Organizations -> Access requests: people who asked for an organization while
+ * Requests -> Access requests: people who asked for an organization while
  * sign-up is closed. Approving creates the organization with the requester as
- * its owner.
+ * its owner. The overview's attention queue links here while any wait.
  */
 export default function AccessRequestsPage() {
   const me = useAdmin()

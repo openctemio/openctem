@@ -100,6 +100,24 @@ export function buildAttention(o: AdminOverview, role: AdminRole): AttentionItem
     })
   }
 
+  const access = o.requests?.access_pending ?? 0
+  if (access > 0) {
+    const days = Math.floor((o.requests?.access_oldest_pending_seconds ?? 0) / 86400)
+    items.push({
+      id: 'access-requests',
+      // Someone is waiting for an organization; after two days it is late.
+      severity: days >= 2 ? 'warning' : 'info',
+      titleKey: 'admin.attention.accessRequests.title',
+      title: 'Access requests waiting',
+      detailKey: 'admin.attention.accessRequests.detail',
+      detail: '{count} request(s) for an organization; the oldest has waited {days} day(s).',
+      vars: { count: access, days },
+      href: '/admin/requests',
+      actionKey: 'admin.attention.review',
+      action: 'Review',
+    })
+  }
+
   if (o.security.failed_admin_actions_24h > 0) {
     items.push({
       id: 'failed-admin-actions',
