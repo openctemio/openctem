@@ -57,6 +57,8 @@ var (
 	AdminRoleID  = MustParseID("00000000-0000-0000-0000-000000000002")
 	MemberRoleID = MustParseID("00000000-0000-0000-0000-000000000003")
 	ViewerRoleID = MustParseID("00000000-0000-0000-0000-000000000004")
+	// ResearcherRoleID tests programs the organization follows (RFC-065).
+	ResearcherRoleID = MustParseID("00000000-0000-0000-0000-000000000005")
 )
 
 // Role represents a role entity that defines a set of permissions.
