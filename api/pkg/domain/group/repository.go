@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -88,4 +89,21 @@ type GroupWithRole struct {
 type GroupWithMembers struct {
 	Group   *Group
 	Members []*MemberWithUser
+}
+
+// ExpiredMember is a membership whose end date has passed.
+type ExpiredMember struct {
+	TenantID  shared.ID
+	GroupID   shared.ID
+	GroupName string
+	UserID    shared.ID
+	ExpiresAt time.Time
+	Reason    string
+}
+
+// ExpiredMemberLister lists memberships whose end date is at or before now,
+// across organizations, oldest first. Only the membership-expiry controller
+// uses it; it is never reachable from a request.
+type ExpiredMemberLister interface {
+	ListExpiredMembers(ctx context.Context, now time.Time, limit int) ([]ExpiredMember, error)
 }
