@@ -104,6 +104,9 @@ func (e *Enforcer) CallerOf(ctx context.Context) Caller {
 	return e.caller(ctx)
 }
 
+// CallerUserID is the user a request acts as ("" for none).
+func (e *Enforcer) CallerUserID(ctx context.Context) string { return e.CallerOf(ctx).UserID }
+
 // Resolve returns the data scope of the request's caller in tenantID, or nil
 // when the caller is unrestricted.
 func (e *Enforcer) Resolve(ctx context.Context, tenantID shared.ID) (*shared.DataScope, error) {

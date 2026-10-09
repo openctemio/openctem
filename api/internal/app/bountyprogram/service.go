@@ -38,8 +38,15 @@ type Joiner interface {
 	Schedule(tenantID shared.ID)
 }
 
+// Assigner keeps a program's group assignments equal to what its entries
+// cover (*postgres.BountyProgramRepository, RFC-065 §7).
+type Assigner interface {
+	AssignProgramAssets(ctx context.Context, tenantID, programID shared.ID) (added, removed int64, err error)
+}
+
 // Service imports and manages programs.
 type Service struct {
+	assigner   Assigner
 	repo       bp.Repository
 	fullData   FullData
 	guardrails scopedom.Guardrails
@@ -64,6 +71,20 @@ func (s *Service) SetGuardrails(g scopedom.Guardrails) { s.guardrails = g }
 
 // SetNotifier wires the administrator notification.
 func (s *Service) SetNotifier(n AdminNotifier) { s.notifier = n }
+
+// SetAssigner wires the program data scope (group assignments).
+func (s *Service) SetAssigner(a Assigner) { s.assigner = a }
+
+// assign reconciles the program's group assignments. Best effort: the
+// change is committed; the periodic pass repeats it.
+func (s *Service) assign(ctx context.Context, p *bp.Program) {
+	if s.assigner == nil {
+		return
+	}
+	if _, _, err := s.assigner.AssignProgramAssets(ctx, p.TenantID, p.ID); err != nil {
+		s.log.Warn("program assignment failed; the periodic pass retries", "program_id", p.ID.String(), "error", err)
+	}
+}
 
 // SetJoiner wires the scope join.
 func (s *Service) SetJoiner(j Joiner) { s.joiner = j }
@@ -458,6 +479,7 @@ func (s *Service) Pause(ctx context.Context, tenantID, actor, id shared.ID) (*bp
 	if err := s.repo.SetStatus(ctx, p, scopedom.StatusInactive); err != nil {
 		return nil, err
 	}
+	s.assign(ctx, p)
 	return p, nil
 }
 
@@ -474,6 +496,7 @@ func (s *Service) End(ctx context.Context, tenantID, actor, id shared.ID) (*bp.P
 	if err := s.repo.SetStatus(ctx, p, scopedom.StatusInactive); err != nil {
 		return nil, err
 	}
+	s.assign(ctx, p)
 	return p, nil
 }
 
@@ -507,6 +530,7 @@ func (s *Service) Resume(ctx context.Context, tenantID, actor, id shared.ID, acc
 
 // widened notifies the administrators and schedules the scope join.
 func (s *Service) widened(ctx context.Context, p *bp.Program, body string, join bool) {
+	s.assign(ctx, p)
 	if s.notifier != nil {
 		s.notifier.NotifyAdmins(ctx, p.TenantID, "Program scope in effect", body)
 	}
