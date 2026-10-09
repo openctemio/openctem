@@ -980,6 +980,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
+	// Program rules (RFC-065 §12) are matched against the scope entries.
+	s.BountyProgram.SetRuleScope(s.Scope)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
 	// Wire the KEV/critical finding counter for exposure-chain analysis.
 	s.AttackSurface.SetFindingRiskCounter(repos.Finding)
@@ -1652,6 +1654,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// claims it: scope can change while it waits in the queue. Until
 		// the scan service exists the gate refuses (fail closed).
 		command.WithScopeRecheck(probeGate)}
+	if s.BountyProgram != nil {
+		// RFC-065 §12: program testing windows, headers, User-Agent and
+		// rate caps travel with each job a program covers.
+		cmdOpts = append(cmdOpts, command.WithProgramRules(s.BountyProgram))
+	}
 	if s.TemplateKeys != nil {
 		cmdOpts = append(cmdOpts, command.WithTemplateSigner(template.NewPayloadSigner(s.TemplateKeys, log)))
 	}
@@ -1898,6 +1905,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	if s.BountyProgram != nil {
+		s.Scan.SetProgramRules(s.BountyProgram) // RFC-065 §12
+	}
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	s.ScanFreeze = scanfreezeapp.NewService(repos.ScanFreezeWindow, s.Audit, log)
 	// The validate-command dispatcher gates every probe through the scan

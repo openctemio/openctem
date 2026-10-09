@@ -175,6 +175,29 @@ func (a *Authority) ProgramOnly(name string) bool {
 	return program
 }
 
+// ProgramsCovering lists the programs whose in-effect entries cover name
+// (program exclusions applied): the programs whose rules a job on name
+// carries (RFC-065 §12).
+func (a *Authority) ProgramsCovering(name string) []shared.ID {
+	if a == nil {
+		return nil
+	}
+	seen := map[shared.ID]bool{}
+	var out []shared.ID
+	for _, f := range MatchForms(name) {
+		for _, t := range a.targets {
+			if t == nil || !t.IsProgramEntry() || t.ProgramID() == nil || seen[*t.ProgramID()] {
+				continue
+			}
+			if a.coversForm(t, f) {
+				seen[*t.ProgramID()] = true
+				out = append(out, *t.ProgramID())
+			}
+		}
+	}
+	return out
+}
+
 // Covers reports whether the tenant authorized active probes of name (an
 // address, CIDR, host, host:port, URL or repository name) and which entry
 // covers it. Proof is "verified" when the name sits at or under a verified
