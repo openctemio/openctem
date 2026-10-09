@@ -1254,6 +1254,10 @@ type ListAssetsInput struct {
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
 	BusinessUnitIDs []string `validate:"max=50,dive,uuid"`
+	// AssetGroupIDs keeps the members of these asset groups.
+	AssetGroupIDs []string `validate:"max=20,dive,uuid"`
+	// OwnerIDs keeps the assets owned by these users or groups.
+	OwnerIDs []string `validate:"max=20,dive,uuid"`
 	// IDs narrows the list to these assets: one request instead of one
 	// GET /assets/{id} per row (research/81). At most a page of them.
 	IDs []string `validate:"max=100,dive,uuid"`
@@ -1404,6 +1408,12 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 	// CTEM inventory dimensions.
 	if len(input.BusinessUnitIDs) > 0 {
 		filter = filter.WithBusinessUnitIDs(input.BusinessUnitIDs...)
+	}
+	if len(input.AssetGroupIDs) > 0 {
+		filter = filter.WithAssetGroupIDs(input.AssetGroupIDs...)
+	}
+	if len(input.OwnerIDs) > 0 {
+		filter = filter.WithOwnerIDs(input.OwnerIDs...)
 	}
 	if len(input.IDs) > 0 {
 		filter = filter.WithIDs(input.IDs...)
