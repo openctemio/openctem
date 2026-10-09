@@ -1051,6 +1051,14 @@ func (s *Service) decideWorkflowRouting(ctx context.Context, sc *scan.Scan, targ
 			return sensorRouting{Routing: sensorRoutingTenant}, nil
 		}
 	}
+	// Bug-bounty program targets stay on the tenant's sensors (RFC-065 §8).
+	if programOnly, err := s.programOnly(ctx, sc.TenantID, targets); err != nil || len(programOnly) > 0 {
+		if err != nil {
+			s.logger.Warn("program target lookup failed; run kept on tenant sensors",
+				"error", err, "scan_id", sc.ID.String())
+		}
+		return sensorRouting{Routing: sensorRoutingTenant}, nil
+	}
 	if canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID); !canUse {
 		return sensorRouting{Routing: sensorRoutingTenant}, nil
 	}
@@ -1079,6 +1087,15 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 			return false, err
 		}
 	}
+	// Bug-bounty program targets never go to platform sensors, in any proof
+	// mode (RFC-065 §8).
+	var programOnly []string
+	if !internal {
+		var err error
+		if programOnly, err = s.programOnly(ctx, sc.TenantID, targets); err != nil {
+			return false, err
+		}
+	}
 
 	// If explicitly set to platform only, the tenant must be allowed and the
 	// targets must be public.
@@ -1089,6 +1106,9 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 				shared.ErrValidation)
 		}
 		if err := proofError("platform sensors probe only verified domains", unproven); err != nil {
+			return false, err
+		}
+		if err := programRefusal(programOnly); err != nil {
 			return false, err
 		}
 		if s.sensorSelector != nil {
@@ -1105,7 +1125,7 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	// Auto: tenant sensors first. Shared sensors only if the tenant may use them,
 	// nothing in the scan is internal and every target is proven where the
 	// operator requires it; otherwise the job waits.
-	if s.sensorSelector == nil || internal || len(unproven) > 0 {
+	if s.sensorSelector == nil || internal || len(unproven) > 0 || len(programOnly) > 0 {
 		return false, nil
 	}
 	result, err := s.sensorSelector.SelectSensor(ctx, SelectSensorRequest{

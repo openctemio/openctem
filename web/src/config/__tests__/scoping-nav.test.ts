@@ -10,7 +10,11 @@ import { describe, expect, it } from 'vitest'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
-import { BUSINESS_CONTEXT_SECTION_TABS, THREAT_MODEL_SECTION_TABS } from '../section-tabs'
+import {
+  BUSINESS_CONTEXT_SECTION_TABS,
+  SCOPE_SECTION_TABS,
+  THREAT_MODEL_SECTION_TABS,
+} from '../section-tabs'
 import { matchRoutePermission } from '../route-permissions'
 import { checkIsActive } from '@/components/layout/nav-active'
 import type { NavCollapsible, NavItem, NavLink } from '@/components/types'
@@ -57,6 +61,14 @@ describe('Scoping rows', () => {
     ])
   })
 
+  it('Scope carries Scope | Programs, gated like their routes (RFC-065)', () => {
+    expect(row('Scoping', 'Scope').sections).toBe(SCOPE_SECTION_TABS)
+    expect(SCOPE_SECTION_TABS.map((t) => [t.label, t.href, t.permission])).toEqual([
+      ['Scope', '/scope', 'attack_surface:scope:read'],
+      ['Programs', '/programs', 'attack_surface:programs:read'],
+    ])
+  })
+
   it('Business context carries Crown jewels | Services | Units, each on its own module', () => {
     expect(row('Scoping', 'Business context').sections).toBe(BUSINESS_CONTEXT_SECTION_TABS)
     expect(BUSINESS_CONTEXT_SECTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
@@ -74,7 +86,7 @@ describe('Scoping rows', () => {
     ])
   })
 
-  it.each([...BUSINESS_CONTEXT_SECTION_TABS, ...THREAT_MODEL_SECTION_TABS])(
+  it.each([...BUSINESS_CONTEXT_SECTION_TABS, ...THREAT_MODEL_SECTION_TABS, ...SCOPE_SECTION_TABS])(
     '$label tab has a page and the gates its route guard enforces',
     (tab) => {
       expect(pageExists(tab.href), tab.href).toBe(true)
