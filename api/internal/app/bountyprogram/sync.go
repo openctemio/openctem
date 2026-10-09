@@ -15,7 +15,6 @@ import (
 	"time"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -240,12 +239,15 @@ func (s *Service) narrow(ctx context.Context, p *bp.Program, d bp.SyncDiff) erro
 				TargetType: x.TargetType, Pattern: x.Pattern, Reason: x.Reason, CreatedAt: s.now()})
 		}
 	}
-	return s.repo.ReplaceScope(ctx, bp.ScopeWrite{Program: p, DeleteEntryIDs: drop, Exclusions: excl})
+	// A narrowing: saved first, then taken out of the job signer's ledger.
+	return s.commit(ctx, p.TenantID, shared.ID{}, nil, drop, func() error {
+		return s.repo.ReplaceScope(ctx, bp.ScopeWrite{Program: p, DeleteEntryIDs: drop, Exclusions: excl})
+	})
 }
 
 func (s *Service) suspend(ctx context.Context, p *bp.Program, actor shared.ID, why string) error {
 	p.Status, p.UpdatedAt = bp.StatusPaused, s.now()
-	if err := s.repo.SetStatus(ctx, p, scopedom.StatusInactive); err != nil {
+	if err := s.stopEntries(ctx, p, actor); err != nil {
 		return err
 	}
 	s.audited(ctx, p, actor, "Program suspended: "+why, nil)

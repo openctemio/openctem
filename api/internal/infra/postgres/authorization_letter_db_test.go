@@ -95,8 +95,8 @@ func TestAuthorizationLetters(t *testing.T) {
 	if _, err := letters.GetByID(ctx, other, valid.ID); !errors.Is(err, scope.ErrLetterNotFound) {
 		t.Fatalf("another tenant must not read the letter: %v", err)
 	}
-	if n, _ := letters.CountEntries(ctx, tenant, valid.ID); n != 1 {
-		t.Fatalf("entries naming the letter: %d", n)
+	if ids, _ := letters.EntryIDs(ctx, tenant, valid.ID); len(ids) != 1 {
+		t.Fatalf("entries naming the letter: %d", len(ids))
 	}
 	if l, _ := letters.List(ctx, tenant); len(l) != 2 {
 		t.Fatalf("list: %d", len(l))
