@@ -18,49 +18,24 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { useDebounce } from '@/hooks/use-debounce'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { KeyRound, Plus, Ban, Trash2, Copy, Check } from 'lucide-react'
+import { KeyRound, Plus, Ban, Trash2 } from 'lucide-react'
 import {
   useApiKeys,
   useCreateApiKey,
   useRevokeApiKey,
   useDeleteApiKey,
 } from '@/features/api-keys/api/use-api-keys'
-import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '@/features/api-keys/lib/expiry'
+import {
+  GenerateKeyDialog,
+  RevealKeyDialog,
+} from '@/features/api-keys/components/generate-key-dialog'
 import type { APIKey } from '@/features/api-keys/types/api-key.types'
 import { toast } from 'sonner'
-import { copyToClipboard } from '@/lib/clipboard'
-
-const AVAILABLE_SCOPES = [
-  'assets:read',
-  'findings:read',
-  'scans:read',
-  'integrations:read',
-  'assets:write',
-  'findings:write',
-  'scans:write',
-]
 
 function isExpired(k: APIKey): boolean {
   return !!k.expires_at && new Date(k.expires_at).getTime() < Date.now()
@@ -83,149 +58,6 @@ function StatusBadge({ k }: { k: APIKey }) {
   }
   return (
     <Badge className="border-0 bg-green-500/10 text-green-600 dark:text-green-400">Active</Badge>
-  )
-}
-
-// ─────────────────────────────────────────────────────────
-// Generate dialog + one-time reveal
-// ─────────────────────────────────────────────────────────
-
-function GenerateKeyDialog({
-  open,
-  onOpenChange,
-  onCreated,
-}: {
-  open: boolean
-  onOpenChange: (o: boolean) => void
-  onCreated: (plaintext: string) => void
-}) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [expires, setExpires] = useState<string>(DEFAULT_API_KEY_EXPIRY_DAYS)
-  const [scopes, setScopes] = useState<string[]>(['assets:read', 'findings:read'])
-  const { trigger, isMutating } = useCreateApiKey()
-
-  function toggleScope(s: string) {
-    setScopes((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]))
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name) return toast.error('Name is required')
-    if (scopes.length === 0) return toast.error('Select at least one scope')
-    try {
-      const res = await trigger({
-        name,
-        description: description || undefined,
-        scopes,
-        expires_in_days: Number(expires),
-      })
-      onCreated(res?.key ?? '')
-      onOpenChange(false)
-      setName('')
-      setDescription('')
-      setExpires(DEFAULT_API_KEY_EXPIRY_DAYS)
-      setScopes(['assets:read', 'findings:read'])
-    } catch {
-      toast.error('Failed to create API key')
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Generate API key</DialogTitle>
-          <DialogDescription>
-            Scope the key to the minimum permissions needed. The secret is shown once.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="key-name">Name</Label>
-            <Input
-              id="key-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="CI pipeline"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="key-desc">Description (optional)</Label>
-            <Input
-              id="key-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="key-expiry">Expires</Label>
-            <Select value={expires} onValueChange={setExpires}>
-              <SelectTrigger id="key-expiry">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {API_KEY_EXPIRY_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Scopes</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {AVAILABLE_SCOPES.map((s) => (
-                <label key={s} className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={scopes.includes(s)} onCheckedChange={() => toggleScope(s)} />
-                  <span className="font-mono text-xs">{s}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isMutating}>
-              {isMutating ? 'Generating...' : 'Generate'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function RevealKeyDialog({ value, onClose }: { value: string; onClose: () => void }) {
-  const [copied, setCopied] = useState(false)
-  async function copy() {
-    await copyToClipboard(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-  return (
-    <Dialog open={!!value} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Copy your API key</DialogTitle>
-          <DialogDescription>
-            This is the only time the full key is shown. Store it securely.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <code className="flex-1 break-all text-xs">{value}</code>
-          <Button size="icon" variant="ghost" onClick={copy} title="Copy">
-            {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-          </Button>
-        </div>
-        <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 
@@ -343,11 +175,12 @@ export default function APIKeysPage() {
   })
   // Owners and administrators see every key of the organization; anyone else
   // gets only their own keys from the API, and cannot mint or revoke keys.
-  const { can, isAdmin } = usePermissions()
+  const { isAdmin } = usePermissions()
   const canGenerate = useCanMutate('POST /api/v1/api-keys')
   const ownKeysOnly = !isAdmin()
   const [genOpen, setGenOpen] = useState(false)
   const [newKey, setNewKey] = useState('')
+  const { trigger: createKey, isMutating: creating } = useCreateApiKey()
 
   const keys = useMemo(() => data?.data ?? [], [data])
 
@@ -509,6 +342,8 @@ export default function APIKeysPage() {
       <GenerateKeyDialog
         open={genOpen}
         onOpenChange={setGenOpen}
+        onSubmit={(req) => createKey(req)}
+        isMutating={creating}
         onCreated={(plaintext) => {
           setNewKey(plaintext)
           mutate()

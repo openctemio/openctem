@@ -190,6 +190,8 @@
   "settings.desc.notification-channels": "Slack, Teams, Telegram and webhook alerts for the organization.",
   "settings.item.siem": "SIEM",
   "settings.desc.siem": "Forward security events to Splunk.",
+  "settings.item.service-accounts": "Service accounts",
+  "settings.desc.service-accounts": "Identities for integrations, with their own roles and API keys.",
   "settings.backToApp": "Back to app",
   "settings.filter": "Filter settings",
   "settings.noMatch": "No settings match your filter.",
