@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useTranslation } from '@/context/i18n-provider'
 import { PLAN_LABEL, PLAN_NAMES, type PlanName } from '@/features/plans/lib/plan-keys'
 import type { PlanModulesResponse } from '@/lib/api/generated'
 import { AdminApiError } from '../api/admin-client'
@@ -69,6 +70,7 @@ export interface PlanModulesFormProps {
  * one organization wins over this. A change needs a fresh authenticator code.
  */
 export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps) {
+  const { t } = useTranslation()
   const initial = useMemo(() => toSelection(data), [data])
   const [sel, setSel] = useState<Selection>(initial)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -107,7 +109,7 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
         totp_code: code.trim(),
       })
       setConfirmOpen(false)
-      toast.success('Plan modules saved')
+      toast.success(t('admin.planModules.saved', 'Plan modules saved'))
       onSaved()
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
@@ -117,11 +119,20 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
       }
       setConfirmOpen(false)
       if (e instanceof AdminApiError && e.status === 409) {
-        toast.error('Another administrator changed the plan modules. The latest values are shown.')
+        toast.error(
+          t(
+            'admin.planModules.conflict',
+            'Another administrator changed the plan modules. The latest values are shown.'
+          )
+        )
         onSaved()
         return
       }
-      toast.error(e instanceof Error ? e.message : 'Could not save the plan modules')
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t('admin.planModules.saveFailed', 'Could not save the plan modules')
+      )
     } finally {
       setBusy(false)
     }
@@ -131,12 +142,14 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Plan modules</CardTitle>
+          <CardTitle>{t('admin.planModules.title', 'Plan modules')}</CardTitle>
           <CardDescription>
-            Which modules each plan includes. Core modules (assets, findings, scans, SLA, team and
-            settings) are always included. A module left out of a plan is unavailable to its
-            organizations; their data is kept. A module granted to one organization wins over this.
-            {data.builtin && ' Not saved yet: every plan includes every module.'}
+            {t(
+              'admin.planModules.description',
+              'Which modules each plan includes. Core modules (assets, findings, scans, SLA, team and settings) are always included. A module left out of a plan is unavailable to its organizations; their data is kept. A module granted to one organization wins over this.'
+            )}
+            {data.builtin &&
+              ` ${t('admin.planModules.builtin', 'Not saved yet: every plan includes every module.')}`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -144,7 +157,7 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Module</TableHead>
+                  <TableHead>{t('admin.planModules.col.module', 'Module')}</TableHead>
                   {PLAN_NAMES.map((p) => (
                     <TableHead key={p}>{PLAN_LABEL[p]}</TableHead>
                   ))}
@@ -152,14 +165,16 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
               </TableHeader>
               <TableBody>
                 <TableRow>
-                  <TableCell className="font-medium">Every module</TableCell>
+                  <TableCell className="font-medium">
+                    {t('admin.planModules.everyModule', 'Every module')}
+                  </TableCell>
                   {PLAN_NAMES.map((p) => (
                     <TableCell key={p}>
                       <Checkbox
                         checked={sel[p].all}
                         onCheckedChange={(v) => toggleAll(p, v === true)}
                         disabled={!canEdit}
-                        aria-label={`${PLAN_LABEL[p]}: every module`}
+                        aria-label={`${PLAN_LABEL[p]}: ${t('admin.planModules.everyModuleLower', 'every module')}`}
                       />
                     </TableCell>
                   ))}
@@ -169,7 +184,9 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
                     <TableCell>
                       {m.name}
                       {m.release === 'beta' && (
-                        <span className="text-muted-foreground ms-1.5 text-xs">Beta</span>
+                        <span className="text-muted-foreground ms-1.5 text-xs">
+                          {t('admin.planModules.beta', 'Beta')}
+                        </span>
                       )}
                     </TableCell>
                     {PLAN_NAMES.map((p) => (
@@ -197,10 +214,12 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
                 }}
                 disabled={!dirty || busy}
               >
-                Save
+                {t('common.save', 'Save')}
               </Button>
             ) : (
-              <p className="text-sm text-muted-foreground">Only a super admin can change them.</p>
+              <p className="text-sm text-muted-foreground">
+                {t('admin.planModules.superOnly', 'Only a super admin can change them.')}
+              </p>
             )}
           </div>
         </CardContent>
@@ -211,12 +230,13 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
         onOpenChange={(open) => {
           if (!busy) setConfirmOpen(open)
         }}
-        title="Change the plan modules?"
+        title={t('admin.planModules.confirmTitle', 'Change the plan modules?')}
         desc={
           <p>
-            Applies at once to every organization on these plans without a grant of its own. A
-            module removed from a plan becomes unavailable to them; nothing is deleted. The change
-            is recorded in the admin audit log.
+            {t(
+              'admin.planModules.confirmWhat',
+              'Applies at once to every organization on these plans without a grant of its own. A module removed from a plan becomes unavailable to them; nothing is deleted. The change is recorded in the admin audit log.'
+            )}
           </p>
         }
         disabled={code.trim().length < 6}
@@ -226,15 +246,15 @@ export function PlanModulesForm({ data, canEdit, onSaved }: PlanModulesFormProps
           busy ? (
             <>
               <Loader2 className="me-1.5 size-4 animate-spin" />
-              Saving
+              {t('admin.planModules.saving', 'Saving')}
             </>
           ) : (
-            'Confirm'
+            t('common.confirm', 'Confirm')
           )
         }
       >
         <div className="space-y-2">
-          <Label htmlFor={codeId}>Code from your authenticator</Label>
+          <Label htmlFor={codeId}>{t('admin.confirm.code', 'Code from your authenticator')}</Label>
           <Input
             id={codeId}
             value={code}
