@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Loader2, RadioTower } from 'lucide-react'
 import { toast } from 'sonner'
 

@@ -12,7 +12,7 @@
  */
 
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Activity, Building2, ChevronRight, Gavel, Globe, ShieldQuestion } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'

@@ -2,7 +2,7 @@
 
 import { memo } from 'react'
 import { Globe, Sparkles, Wrench, Bot, ExternalLink } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/link'
 
 import { Badge } from '@/components/ui/badge'
 import {

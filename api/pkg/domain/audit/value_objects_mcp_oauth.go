@@ -23,6 +23,12 @@ const (
 	// ActionMCPSettingsUpdated records a change of the organization's MCP
 	// policy (RFC-062 §8).
 	ActionMCPSettingsUpdated Action = "mcp_settings.updated"
+	// ActionMCPClientRegistered records an organization registering an MCP
+	// client (name, redirect URIs).
+	ActionMCPClientRegistered Action = "mcp_client.registered"
+	// ActionMCPClientDeleted records an organization deleting its client;
+	// the client's connections end.
+	ActionMCPClientDeleted Action = "mcp_client.deleted"
 )
 
 // Resource types of the MCP OAuth actions.
@@ -38,6 +44,8 @@ var _ = registerActions("mcp", map[Action]Severity{
 	ActionMCPRefreshReused:    SeverityHigh,
 	ActionMCPGrantRevoked:     SeverityMedium,
 	ActionMCPSettingsUpdated:  SeverityHigh,
+	ActionMCPClientRegistered: SeverityMedium,
+	ActionMCPClientDeleted:    SeverityMedium,
 })
 
 func init() {

@@ -63,3 +63,17 @@ func registerMCPConnectionRoutes(router Router, h *handler.MCPConnectionsHandler
 		r.DELETE("/{id}", h.RevokeAny, middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 }
+
+// registerMCPClientRoutes mounts client registration (RFC-062 §5): the
+// organization's own clients (settings permissions, step-up for changes)
+// and RFC 7591 dynamic registration, which answers only when the operator
+// enabled it and is rate limited like account registration.
+func registerMCPClientRoutes(router Router, h *handler.MCPClientsHandler, authMiddleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/mcp-access/clients", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.SettingsRead))
+		r.POST("/", h.Create, middleware.Require(permission.SettingsWrite), requireStepUp())
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SettingsWrite), requireStepUp())
+	}, tenantMiddlewares...)
+	router.POST("/oauth/register", h.Register, newAuthRateLimiter("mcp-register").RegisterMiddleware())
+}
