@@ -104,7 +104,7 @@ func (h *DashboardOverviewHandler) Overview(w http.ResponseWriter, r *http.Reque
 func (h *DashboardOverviewHandler) dispatch(root http.Handler, r *http.Request, target string) DashboardOverviewPart {
 	// A fresh context: none of the identity this request's middleware put in
 	// its context reaches the part, which authenticates from the credentials
-	// alone. It is still cancelled with this request.
+	// alone. It is still canceled with this request.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stop := context.AfterFunc(r.Context(), cancel)
