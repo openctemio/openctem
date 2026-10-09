@@ -67,6 +67,8 @@ func newMCPOAuthService(d *routes.MCPDiscovery, deps *HandlerDeps, log *logger.L
 		Repository:  repo,
 		Connections: repo,
 		Clients:     repo,
+		// Write tools wait for the person's confirmation (RFC-062 §10).
+		Confirmations: repo,
 		// Deprecated by MCP; off unless the operator turns it on.
 		DynamicRegistration: cfg.MCP.DynamicRegistration,
 		// DPoP proof ids are remembered in Redis (one use per proof).
