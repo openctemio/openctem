@@ -165,11 +165,13 @@ type Repositories struct {
 	Group *postgres.GroupRepository
 	// GroupRoleBinding: team role bindings (decisions G1-G12).
 	GroupRoleBinding *postgres.GroupRoleBindingRepository
-	AccessControl    *postgres.AccessControlRepository
-	DataScope        *postgres.DataScopeRepository
-	MemberLifecycle  *postgres.MemberLifecycleRepository
-	Role             *postgres.RoleRepository
-	RolePermission   *postgres.PermissionRepository
+	// ServiceAccount: organization-owned identities for integrations.
+	ServiceAccount  *postgres.ServiceAccountRepository
+	AccessControl   *postgres.AccessControlRepository
+	DataScope       *postgres.DataScopeRepository
+	MemberLifecycle *postgres.MemberLifecycleRepository
+	Role            *postgres.RoleRepository
+	RolePermission  *postgres.PermissionRepository
 
 	// Session (raw *sql.DB required)
 	Session      *postgres.SessionRepository
@@ -421,6 +423,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Access Control
 		Group:            postgres.NewGroupRepository(db),
 		GroupRoleBinding: postgres.NewGroupRoleBindingRepository(db),
+		ServiceAccount:   postgres.NewServiceAccountRepository(db),
 		AccessControl:    postgres.NewAccessControlRepository(db),
 		DataScope:        postgres.NewDataScopeRepository(db),
 		MemberLifecycle:  postgres.NewMemberLifecycleRepository(db),

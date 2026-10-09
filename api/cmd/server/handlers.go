@@ -514,6 +514,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Access Control
 		Group:          handler.NewGroupHandler(svc.Group, v, log),
 		Role:           handler.NewRoleHandler(svc.Role, v, log),
+		ServiceAccount: handler.NewServiceAccountHandler(svc.ServiceAccount, v, log),
 		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
 		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
 		ScopeRule:      handler.NewScopeRuleHandler(svc.ScopeRule, v, log),

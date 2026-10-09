@@ -150,8 +150,10 @@ type Handlers struct {
 	RelationshipSuggestion *handler.RelationshipSuggestionHandler // nil if not initialized (no database)
 
 	// Access Control handlers
-	Group          *handler.GroupHandler          // nil if not initialized (no database)
-	Role           *handler.RoleHandler           // nil if not initialized (no database)
+	Group *handler.GroupHandler // nil if not initialized (no database)
+	Role  *handler.RoleHandler  // nil if not initialized (no database)
+	// ServiceAccount serves /api/v1/service-accounts; nil when not wired.
+	ServiceAccount *handler.ServiceAccountHandler
 	Permission     *handler.PermissionHandler     // nil if not initialized (permission sync handler)
 	AssignmentRule *handler.AssignmentRuleHandler // nil if not initialized (no database)
 	ScopeRule      *handler.ScopeRuleHandler      // nil if not initialized (no database)
@@ -945,6 +947,9 @@ func Register(
 	// Role routes (Access Control - tenant from JWT token)
 	if h.Role != nil {
 		registerRoleRoutes(router, h.Role, authMiddleware, userSync)
+	}
+	if h.ServiceAccount != nil {
+		registerServiceAccountRoutes(router, h.ServiceAccount, authMiddleware, userSync)
 	}
 
 	// Assignment Rule routes (Access Control - tenant from JWT token)

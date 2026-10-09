@@ -1960,6 +1960,25 @@ report all read it.
 Team roles, the administrator bypass and the owner invariants are unchanged:
 they read the built-in roles only, and those never bind.
 
+## Service accounts
+
+An integration acts as a **service account**: a user of kind `service`
+(migration `service_accounts`) that belongs to one organization, has a person
+accountable for it (`service_owner_id`, the creator), and never signs in.
+
+| Rule | Enforcement |
+|---|---|
+| Never signs in | no password and no federated identity (CHECK on `users`); its address is on the unroutable `service-accounts.invalid` domain; no set-password link is issued for it |
+| One organization | trigger on `tenant_members`: a service account is a member of its own organization only |
+| Never owner, administrator or full data | trigger on `tenant_members` (label) and on `user_roles` (owner, admin, any full-data role); the role grant guard refuses the same (`ErrServiceAccountRoleCeiling`); a team carrying a full-data role refuses it as it refuses an external member |
+| Starts with nothing | created with no role: roles come from the role APIs (grant ceiling) and teams; data scope from teams |
+| Acts through keys | an administrator mints `oct_` keys for it (`user_id` = the account); a key carries at most the account's live permissions and data scope, and is read-only on the REST API |
+| Removal | `DELETE /api/v1/service-accounts/{id}` removes the account with its roles, team memberships and keys at once |
+
+Routes: `GET /api/v1/service-accounts` (`team:members:read`), `POST` and
+`DELETE /{id}` (`team:members:write`). Creation and deletion are audited
+(`user.created` / `user.deleted`, metadata `kind=service`).
+
 ## CI invariants that keep this from drifting
 
 The generated [authorization reference](authorization-reference.md) (role and
