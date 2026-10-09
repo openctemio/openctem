@@ -9,7 +9,7 @@ import (
 // change, so whoever could comment or record remediation steps could also
 // lower a finding's severity. Severity and classification now need
 // findings:severity, comments and reactions findings:comment (migration
-// 001501 grants both to every role that held findings:write).
+// 001534 grants both to every role that held findings:write).
 func TestFindingSeverityAndCommentGates(t *testing.T) {
 	m := buildRoutePermissionMap(t)
 	want := map[string][]string{

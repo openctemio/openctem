@@ -34,7 +34,7 @@ var permSeedMigrations = []string{
 	"001223_finding_evidence.up.sql",
 	"001384_content_packs.up.sql",             // scans:content:* (RFC-061)
 	"001495_bounty_programs.up.sql",           // attack_surface:programs:* (RFC-065)
-	"001501_findings_comment_severity.up.sql", // findings:comment, findings:severity
+	"001534_findings_comment_severity.up.sql", // findings:comment, findings:severity
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
