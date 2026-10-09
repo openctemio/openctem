@@ -352,8 +352,8 @@ federated identity presenting the same email is rejected.
 Accounts are global and the email address is mutable at the identity provider,
 so every federated login finds the account by the provider's user id, never by
 the email alone. The ids live in `user_identities` (migration 001306; the old
-single `users.federated_issuer/subject` pair was copied there and is no longer
-used):
+single `users.federated_issuer/subject` pair was copied there and migration
+001483 dropped it):
 
 | Path | Issuer | Subject | Scope |
 |---|---|---|---|

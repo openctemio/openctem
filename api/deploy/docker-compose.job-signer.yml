@@ -1,0 +1,73 @@
+# Signed jobs (docs/rfcs/RFC-040-platform-sensor-mutual-distrust.md §5.6,
+# docs/architecture/job-signing.md): an optional overlay. The signer runs as
+# its own container from the API image, as its own user, with its own key
+# volume that is never mounted into the API. The API reaches it only through
+# a Unix socket on a shared volume; the signer has no network listener and
+# no network at all.
+#
+# Off by default: without this overlay SIGNER_SOCKET is unset and claims are
+# unchanged. Once it is on, a command the signer does not sign is not handed
+# to a sensor, so start the signer before the API and keep it up.
+#
+# 1. Create the key (once). It is written 0400 into the key volume and its
+#    id and public key are printed; record them (sensors pin them later):
+#
+#      docker compose -f docker-compose.yml -f docker-compose.job-signer.yml \
+#        run --rm signer keygen -out /var/lib/openctem-signer/keys/signer.pem
+#
+# 2. Start the stack with the overlay:
+#
+#      docker compose -f docker-compose.yml -f docker-compose.job-signer.yml up -d
+#
+# 3. Check: the API logs "sensor jobs are signed by the job signer", and
+#    GET /api/v2/sensor/hello lists the signed_jobs feature and the key.
+#
+# Back up the signer-keys volume offline; the signer-state volume holds the
+# per-sensor sequence numbers (losing it would let sequence numbers repeat
+# for sensors that kept their last seen value) and the hash-chained signing
+# log (openctem-signer verify-log checks it).
+services:
+  signer:
+    image: ${API_IMAGE:-ghcr.io/openctemio/api}:${API_VERSION:-${OPENCTEM_VERSION}}
+    entrypoint: ["/app/openctem-signer"]
+    command: ["serve"]
+    user: "1001:1000"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      SIGNER_KEY_FILE: /var/lib/openctem-signer/keys/signer.pem
+      SIGNER_SOCKET: /run/openctem-signer/signer.sock
+      SIGNER_STATE_DIR: /var/lib/openctem-signer/state
+      # Signing ceilings (token buckets); defaults 50/s burst 500 per
+      # organization, 20/s burst 200 per sensor.
+      # SIGNER_TENANT_RATE: "50"
+      # SIGNER_TENANT_BURST: "500"
+      # SIGNER_SENSOR_RATE: "20"
+      # SIGNER_SENSOR_BURST: "200"
+    volumes:
+      - signer-keys:/var/lib/openctem-signer/keys
+      - signer-state:/var/lib/openctem-signer/state
+      - signer-socket:/run/openctem-signer
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/openctem-signer/signer.sock"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  api:
+    environment:
+      SIGNER_SOCKET: /run/openctem-signer/signer.sock
+    volumes:
+      - signer-socket:/run/openctem-signer
+    depends_on:
+      signer:
+        condition: service_healthy
+
+volumes:
+  signer-keys:
+  signer-state:
+  signer-socket:
