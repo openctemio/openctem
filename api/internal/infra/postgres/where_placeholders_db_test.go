@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/compliance"
@@ -21,7 +22,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -171,24 +171,24 @@ func TestDynamicWhere_AllFiltersExecute(t *testing.T) {
 		check("TenantToolConfigRepository.ListToolsWithConfig", err)
 	}
 	{
-		st := workflow.NodeRunStatusPending
-		_, err := NewWorkflowNodeRunRepository(db).List(ctx, workflow.NodeRunFilter{
+		st := automation.NodeRunStatusPending
+		_, err := NewAutomationRunStepRepository(db).List(ctx, automation.NodeRunFilter{
 			WorkflowRunID: &id, NodeID: &id, Status: &st,
 		})
-		check("WorkflowNodeRunRepository.List", err)
+		check("AutomationRunStepRepository.List", err)
 	}
 	{
-		_, err := NewWorkflowRepository(db).List(ctx, workflow.WorkflowFilter{
+		_, err := NewAutomationRepository(db).List(ctx, automation.WorkflowFilter{
 			TenantID: &tenantID, IsActive: &yes, Search: search,
 		}, page)
-		check("WorkflowRepository.List", err)
+		check("AutomationRepository.List", err)
 	}
 	{
-		st, tt := workflow.RunStatusPending, workflow.TriggerTypeManual
-		_, err := NewWorkflowRunRepository(db).List(ctx, workflow.RunFilter{
+		st, tt := automation.RunStatusPending, automation.TriggerTypeManual
+		_, err := NewAutomationRunRepository(db).List(ctx, automation.RunFilter{
 			TenantID: &tenantID, WorkflowID: &id, Status: &st, TriggerType: &tt, TriggeredBy: &id,
 			StartedFrom: &since, StartedTo: &until,
 		}, page)
-		check("WorkflowRunRepository.List", err)
+		check("AutomationRunRepository.List", err)
 	}
 }
