@@ -26,6 +26,7 @@ audit_chain_rebaseline_entries
 audit_chain_rebaselines
 audit_log_chain
 audit_logs
+authorization_letters
 bounty_program_exclusions
 bounty_programs
 business_service_assets
@@ -83,6 +84,7 @@ finding_status_approvals
 finding_verification_checklists
 findings
 group_asset_scope_rules
+group_role_bindings
 groups
 ingest_jobs
 ingest_reports
