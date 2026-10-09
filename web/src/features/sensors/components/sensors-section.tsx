@@ -1056,7 +1056,7 @@ export function SensorsSection({
 
       {/* Revoke Confirmation */}
       <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
-        <AlertDialogContent className="max-w-md">
+        <AlertDialogContent size="sm">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <Ban className="h-5 w-5" />

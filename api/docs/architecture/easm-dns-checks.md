@@ -24,10 +24,27 @@ window are not asked again):
 Code: `internal/app/easmdns` (checks, service), `pkg/dnsprobe` (DNS client),
 `internal/infra/postgres/easm_dns_repository.go`, migration 000325.
 
-**Attribution.** Every asset is checked except those whose attribution is
-`rejected` (RFC-036 §6.4). A name awaiting review is still checked: looking
-up a name under the tenant's domain is passive, and a dangling record there is
-worth knowing before anyone has confirmed the host.
+**Attribution and scope.** The checks run the platform's own resolver, so
+they only ask about names that are the tenant's (research/84 F9):
+
+- a name in the inventory is always checked: attribution `confirmed`,
+  `dependency` or `monitor_only`, or no attribution record (legacy, counted as
+  confirmed; RFC-054 §4.4);
+- a name awaiting review (`needs_review`, `candidate`; what a sensor report
+  creates) is checked only while an active, unexpired `domain`, `subdomain` or
+  `email_domain` scope target of the tenant covers it (`x` is exactly x,
+  `*.x` / `**.x` is x and every name below it) and no active, approved
+  domain exclusion matches it. A dangling record under the tenant's own scope
+  is worth knowing before anyone has confirmed the host; a name outside it may
+  be anyone's, and checking it would let a tenant, or a hostile sensor
+  reporting arbitrary names, use the platform as a DNS reconnaissance tool
+  against third parties;
+- a `rejected` name is never checked.
+
+The filter is one tenant-scoped query (`DueTargets` in
+`easm_dns_repository.go`), matched the same way as the scope coverage count.
+A name that leaves the scope simply stops being due; its open exposures stay
+as they are until a person or a later in-scope check resolves them.
 
 ## Dangling DNS
 
