@@ -43,8 +43,9 @@ func assetTypesFor(kind string) []string {
 	return []string{"domain", "subdomain"}
 }
 
-// DueTargets returns the tenant's active assets of the check's types whose
-// attribution is not rejected and that were not checked since checkedBefore,
+// DueTargets returns the tenant's active assets of the check's types that are
+// in the inventory or covered by the tenant's scope (dnsCheckInventoryStates)
+// and that were not checked since checkedBefore,
 // never-checked first, then oldest check, up to limit. The email check also
 // takes the tenant's root-domain seeds and verified domains that have no
 // domain asset, by name (Target.AssetID zero; 22c B3).
@@ -88,6 +89,28 @@ func stripChecked(in []dueTarget) []easmdns.Target {
 	return out
 }
 
+// dnsCheckInventoryStates are the attribution states the DNS checks look at
+// without a scope entry: the inventory (attribution.InInventory; an asset with
+// no record counts as confirmed). A name still in review (needs_review,
+// candidate; what a sensor reported lands there) is checked only while an
+// active, unexpired domain scope entry of the tenant covers it and no approved
+// exclusion removes it: otherwise a tenant, or a hostile sensor, could make the
+// platform's resolver look up any third-party name (research/84 F9). Rejected
+// names are never checked.
+var dnsCheckInventoryStates = []string{"confirmed", "dependency", "monitor_only"}
+
+// dnsScopeMatch is the SQL condition "this scope pattern covers a.name" for
+// domain entries, matched as pkg/domain/scope and the scope coverage count
+// match them: "x" is exactly x; "*.x" / "**.x" is x and every name below it.
+// pattern is a column reference, never user input.
+func dnsScopeMatch(pattern string) string {
+	p := "lower(rtrim(trim(" + pattern + "), '.'))"
+	root := "regexp_replace(" + p + ", '^\\*\\*?\\.', '')"
+	host := "lower(rtrim(a.name, '.'))"
+	return "(" + host + " = " + p + " OR ((" + p + " LIKE '*.%' OR " + p + " LIKE '**.%') AND (" +
+		host + " = " + root + " OR right(" + host + ", length(" + root + ") + 1) = '.' || " + root + ")))"
+}
+
 func (r *EASMDNSRepository) dueAssetTargets(ctx context.Context, tenantID shared.ID, kind string, checkedBefore time.Time, limit int) ([]dueTarget, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT a.id, a.name, s.last_checked_at
@@ -97,11 +120,22 @@ func (r *EASMDNSRepository) dueAssetTargets(ctx context.Context, tenantID shared
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		  AND a.asset_type = ANY($3)
 		  AND a.status = 'active'
-		  AND COALESCE(aa.state, 'confirmed') <> 'rejected'
 		  AND (s.last_checked_at IS NULL OR s.last_checked_at < $4)
+		  AND (COALESCE(aa.state, 'confirmed') = ANY($6) OR (
+		       aa.state IN ('needs_review', 'candidate')
+		       AND EXISTS (SELECT 1 FROM scope_targets t
+		            WHERE t.tenant_id = $1 AND t.status = 'active'
+		              AND (t.expires_at IS NULL OR t.expires_at > now())
+		              AND t.target_type IN ('domain', 'subdomain', 'email_domain')
+		              AND `+dnsScopeMatch("t.pattern")+`)
+		       AND NOT EXISTS (SELECT 1 FROM scope_exclusions e
+		            WHERE e.tenant_id = $1 AND e.status = 'active' AND e.approved_at IS NOT NULL
+		              AND (e.expires_at IS NULL OR e.expires_at > now())
+		              AND e.exclusion_type IN ('domain', 'subdomain', 'email_domain')
+		              AND `+dnsScopeMatch("e.pattern")+`)))
 		ORDER BY s.last_checked_at ASC NULLS FIRST, a.name
 		LIMIT $5`,
-		tenantID.String(), kind, pq.Array(assetTypesFor(kind)), checkedBefore, limit)
+		tenantID.String(), kind, pq.Array(assetTypesFor(kind)), checkedBefore, limit, pq.Array(dnsCheckInventoryStates))
 	if err != nil {
 		return nil, fmt.Errorf("list dns check targets: %w", err)
 	}
