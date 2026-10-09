@@ -4,7 +4,7 @@ package integration
 // (or the never-valid "open") map to the canonical status, a verified finding
 // keeps that it was verified by a retest as its resolution method, the CHECK
 // then refuses the aliases, and running the migration again changes nothing.
-// Runs on a private database: everything up, 001573 and 001378 down, seed,
+// Runs on a private database: everything up, the pentest single-store migration and 001378 down, seed,
 // 001378 up.
 
 import (
@@ -16,9 +16,10 @@ import (
 func TestMigration001378FoldsStatusAliases(t *testing.T) {
 	const dir = "../../migrations"
 	db := testdb.PrivateDatabase(t, "mig1378", dir)
-	// 001573 dropped pentest_findings; its down recreates the table 001378
-	// works on.
-	testdb.Migrate(t, db, dir, 1555, 1555, true)
+	// The single-store migration dropped pentest_findings; its down recreates
+	// the table 001378 works on. Looked up by name: the queue renumbers it.
+	single := testdb.MigrationVersion(t, dir, "pentest_findings_single_store")
+	testdb.Migrate(t, db, dir, single, single, true)
 	testdb.Migrate(t, db, dir, 1378, 1378, true)
 
 	exec := func(q string, args ...any) {
