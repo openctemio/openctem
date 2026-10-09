@@ -34,6 +34,11 @@ type AdminOverviewCounts struct {
 	BreakGlassSignIns7d int64
 	// Refused or failed administrator actions since now - 24 hours.
 	FailedAdminActions24h int64
+
+	// Access requests waiting for a decision (confirmed by email, neither
+	// approved nor rejected), and the age of the oldest in seconds.
+	AccessRequestsPending      int64
+	AccessRequestOldestPendSec float64
 }
 
 const adminOverviewSample = 5
@@ -87,6 +92,14 @@ func ReadAdminOverview(ctx context.Context, db opsQuerier, now time.Time) (Admin
 		adminOverviewBreakGlassAction, now.Add(-7*24*time.Hour), now.Add(-24*time.Hour),
 	).Scan(&c.BreakGlassSignIns7d, &c.FailedAdminActions24h); err != nil {
 		return c, fmt.Errorf("admin activity: %w", err)
+	}
+
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*), COALESCE(EXTRACT(EPOCH FROM $1 - min(COALESCE(confirmed_at, created_at))), 0)
+		FROM access_requests
+		WHERE status = 'pending'`, now,
+	).Scan(&c.AccessRequestsPending, &c.AccessRequestOldestPendSec); err != nil {
+		return c, fmt.Errorf("access requests: %w", err)
 	}
 
 	return c, nil
