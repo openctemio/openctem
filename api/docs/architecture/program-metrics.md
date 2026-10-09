@@ -97,7 +97,6 @@ The platform has no data for this, so it is not reported. Here is why:
 
 - Attack paths and exposure chains are computed on demand from the current asset
   graph (`internal/app/attack/exposure_chains.go`) and never persisted.
-- Only the demo seeder writes to `attack_paths`.
 - Neither asset exposure nor asset relationships keep a change history.
 
 With no record of when a path opened or when one of its links was broken, any
