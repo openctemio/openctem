@@ -29,6 +29,8 @@ audit_chain_rebaseline_entries
 audit_chain_rebaselines
 audit_log_chain
 audit_logs
+automation_runs
+automations
 business_service_assets
 business_services
 business_unit_assets
@@ -173,5 +175,3 @@ vulnerabilities
 web_endpoint_events
 web_endpoint_params
 web_endpoints
-workflow_runs
-workflows

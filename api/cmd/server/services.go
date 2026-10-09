@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/automation"
 	"github.com/openctemio/openctem/api/internal/app/capability"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
@@ -24,7 +25,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
-	"github.com/openctemio/openctem/api/internal/app/workflow"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
@@ -425,7 +425,7 @@ func (r workflowPermissionReader) GetUserPermissions(ctx context.Context, tenant
 // the same auth keys a request carries, so the services the step calls
 // (data scope above all) treat it as that member and not as an
 // unrestricted internal call.
-func workflowPrincipalContext(ctx context.Context, p workflow.Principal) context.Context {
+func workflowPrincipalContext(ctx context.Context, p automation.Principal) context.Context {
 	perms := p.Permissions
 	if perms == nil {
 		perms = []string{}
@@ -442,14 +442,14 @@ func workflowPrincipalContext(ctx context.Context, p workflow.Principal) context
 // import app/jira — that would cycle through the app shim).
 type workflowJiraTicketAdapter struct{ svc *jira.SyncService }
 
-func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (workflow.TicketRef, error) {
+func (a workflowJiraTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (automation.TicketRef, error) {
 	info, err := a.svc.CreateTicketFromFinding(ctx, jira.CreateTicketInput{
 		TenantID: tenantID, FindingID: findingID, ProjectKey: projectKey, IssueType: issueType,
 	})
 	if err != nil {
-		return workflow.TicketRef{}, err
+		return automation.TicketRef{}, err
 	}
-	return workflow.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+	return automation.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
 }
 
 func (a workflowJiraTicketAdapter) SyncFindingStatus(ctx context.Context, tenantID, findingID shared.ID) error {
@@ -462,14 +462,14 @@ type workflowGitHubTicketAdapter struct {
 	svc *ticketing.GitHubTicketService
 }
 
-func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (workflow.TicketRef, error) {
+func (a workflowGitHubTicketAdapter) CreateTicketFromFinding(ctx context.Context, tenantID, findingID, owner, repo string) (automation.TicketRef, error) {
 	info, err := a.svc.CreateTicketFromFinding(ctx, ticketing.GitHubTicketInput{
 		TenantID: tenantID, FindingID: findingID, Owner: owner, Repo: repo,
 	})
 	if err != nil {
-		return workflow.TicketRef{}, err
+		return automation.TicketRef{}, err
 	}
-	return workflow.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
+	return automation.TicketRef{Key: info.TicketKey, URL: info.TicketURL}, nil
 }
 
 // wsChannelAccess adapts the RBAC and group services to
@@ -673,8 +673,8 @@ type Services struct {
 	ContentPacks *contentpackapp.Service
 
 	// Workflows
-	Workflow           *workflow.WorkflowService
-	WorkflowDispatcher *workflow.WorkflowEventDispatcher
+	Workflow           *automation.WorkflowService
+	WorkflowDispatcher *automation.WorkflowEventDispatcher
 
 	// AssetDiscoveryNotifier turns newly discovered internet-facing assets into
 	// throttled tenant notifications (in-app + new_asset outbox event).
@@ -1985,7 +1985,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Every automation run acts as one person (a manual run: who started
 	// it; an event run: the owner), checked live before each step.
-	workflowAuthorizer := workflow.NewPrincipalAuthorizer(
+	workflowAuthorizer := automation.NewPrincipalAuthorizer(
 		workflowMemberReader{tenants: repos.Tenant, access: repos.AccessControl},
 		workflowPermissionReader{roles: repos.Role},
 		s.DataScope,
@@ -1993,12 +1993,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 
 	// Initialize workflow executor
-	workflowExecutor := workflow.NewWorkflowExecutor(
+	workflowExecutor := automation.NewWorkflowExecutor(
 		repos.Workflow,
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
-		log, workflow.WithExecutorDB(deps.DB), workflow.WithExecutorOutboxService(s.Outbox), workflow.WithExecutorIntegrationService(s.Integration), workflow.WithExecutorAuditService(s.Audit),
-		workflow.WithExecutorStepAuthorizer(workflowAuthorizer),
+		log, automation.WithExecutorDB(deps.DB), automation.WithExecutorOutboxService(s.Outbox), automation.WithExecutorIntegrationService(s.Integration), automation.WithExecutorAuditService(s.Audit),
+		automation.WithExecutorStepAuthorizer(workflowAuthorizer),
 	)
 
 	// Register all action handlers for the workflow executor. Use the AI-aware
@@ -2007,15 +2007,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// so create_ticket/update_ticket file real issues instead of returning a
 	// false success. Adapters are built only when the underlying service exists
 	// so a nil service yields a nil interface (not a non-nil box over nil).
-	var wfJira workflow.JiraTicketService
+	var wfJira automation.JiraTicketService
 	if s.JiraSync != nil {
 		wfJira = workflowJiraTicketAdapter{svc: s.JiraSync}
 	}
-	var wfGitHub workflow.GitHubTicketService
+	var wfGitHub automation.GitHubTicketService
 	if s.GitHubTicket != nil {
 		wfGitHub = workflowGitHubTicketAdapter{svc: s.GitHubTicket}
 	}
-	workflow.RegisterAllActionHandlersWithAI(
+	automation.RegisterAllActionHandlersWithAI(
 		workflowExecutor,
 		s.Vulnerability,
 		s.ScanRun,
@@ -2028,19 +2028,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 
 	// Initialize workflow service with executor
-	s.Workflow = workflow.NewWorkflowService(
+	s.Workflow = automation.NewWorkflowService(
 		repos.Workflow,
 		repos.WorkflowNode,
 		repos.WorkflowEdge,
 		repos.WorkflowRun,
 		repos.WorkflowNodeRun,
-		log, workflow.WithWorkflowAuditService(s.Audit), workflow.WithWorkflowExecutor(workflowExecutor),
-		workflow.WithWorkflowStepAuthorizer(workflowAuthorizer),
-		workflow.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
+		log, automation.WithWorkflowAuditService(s.Audit), automation.WithWorkflowExecutor(workflowExecutor),
+		automation.WithWorkflowStepAuthorizer(workflowAuthorizer),
+		automation.WithWorkflowSubjectReaders(repos.Finding, repos.Asset),
 	)
 
 	// Initialize workflow event dispatcher for automatic workflow triggering
-	s.WorkflowDispatcher = workflow.NewWorkflowEventDispatcher(
+	s.WorkflowDispatcher = automation.NewWorkflowEventDispatcher(
 		repos.Workflow,
 		repos.WorkflowNode,
 		s.Workflow,
