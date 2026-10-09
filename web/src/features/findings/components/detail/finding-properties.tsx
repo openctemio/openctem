@@ -22,6 +22,7 @@ import type { FindingDetail } from '../../types'
 import type { FindingTriage } from '../../hooks/use-finding-triage'
 import { StatusSelect } from '../status-select'
 import { SeveritySelect } from '../severity-select'
+import { useCanMutate } from '@/lib/permissions'
 import { AssigneeSelect } from '../assignee-select'
 import { PriorityClassBadge } from '../priority-class-badge'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
@@ -112,6 +113,8 @@ export function FindingProperties({
   const moreId = useId()
   const isHuman = HUMAN_SOURCES.has(finding.source)
   const locked = readOnly || isHuman
+  // Re-scoring needs findings:severity, which a remediation owner may lack.
+  const canRescore = useCanMutate('PATCH /api/v1/findings/{id}/severity')
   const asset = finding.assets[0]
   const crit = asset?.criticality
   const assetCaption = asset
@@ -152,7 +155,7 @@ export function FindingProperties({
               value={triage.severity}
               onChange={triage.changeSeverity}
               loading={triage.severityBusy}
-              disabled={locked}
+              disabled={locked || !canRescore}
               cvss={finding.cvss}
               showIcon={false}
             />
