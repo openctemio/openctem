@@ -175,6 +175,26 @@ func (a *Authority) ProgramOnly(name string) bool {
 	return program
 }
 
+// CoveredByPrograms reports whether an in-effect entry of one of the given
+// programs covers name (program exclusions applied): a restricted member of
+// those programs may scan it as typed text (RFC-065 §7).
+func (a *Authority) CoveredByPrograms(name string, programs map[shared.ID]bool) bool {
+	if a == nil || len(programs) == 0 {
+		return false
+	}
+	for _, f := range MatchForms(name) {
+		for _, t := range a.targets {
+			if t == nil || !t.IsProgramEntry() || t.ProgramID() == nil || !programs[*t.ProgramID()] {
+				continue
+			}
+			if a.coversForm(t, f) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Covers reports whether the tenant authorized active probes of name (an
 // address, CIDR, host, host:port, URL or repository name) and which entry
 // covers it. Proof is "verified" when the name sits at or under a verified
@@ -291,25 +311,5 @@ func Host(s string) string {
 }
 
 // MatchForms is the target as typed, lower-cased, and the host of a URL or
-// host:port.
-func MatchForms(target string) []string {
-	v := strings.TrimSpace(target)
-	out := []string{v}
-	add := func(s string) {
-		s = strings.Trim(strings.TrimSpace(s), "[]")
-		if s == "" {
-			return
-		}
-		for _, have := range out {
-			if have == s {
-				return
-			}
-		}
-		out = append(out, s)
-	}
-	add(strings.ToLower(v))
-	if h := asset.HostOf(v); !strings.EqualFold(h, v) {
-		add(h)
-	}
-	return out
-}
+// host:port (scopedom.AuthorityForms, which the job signer's ledger uses too).
+func MatchForms(target string) []string { return scopedom.AuthorityForms(target) }
