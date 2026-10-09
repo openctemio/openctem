@@ -93,6 +93,10 @@ type AssetService struct {
 	// effective value can raise a score, never lower it, and the asset's own
 	// criticality column is never mutated.
 	businessContext BusinessContextLookup
+
+	// Attribute reconciliation (RFC-069). Optional: nil records no source.
+	attrSources assetdom.AttributeSourceRepository
+	attrTenants ReconciliationSettingsReader
 }
 
 // UserMatcher resolves external references (email, username) to user IDs.
@@ -297,17 +301,20 @@ func (s *AssetService) InvalidateScoringConfigCache(tenantID shared.ID) {
 
 // CreateAssetInput represents the input for creating an asset.
 type CreateAssetInput struct {
-	TenantID    string         `validate:"omitempty,uuid"`
-	Name        string         `validate:"required,min=1,max=255"`
-	Type        string         `validate:"required,asset_type"`
-	SubType     string         `validate:"omitempty,max=50"` // kind from the type's closed list, or a legacy input
-	Criticality string         `validate:"required,criticality"`
-	Scope       string         `validate:"omitempty,scope"`
-	Exposure    string         `validate:"omitempty,exposure"`
-	Description string         `validate:"max=1000"`
-	Tags        []string       `validate:"max=20,dive,max=50"`
-	OwnerRef    string         `validate:"max=500"` // Raw owner from external source
-	Properties  map[string]any // JSONB properties (known fields auto-promoted to columns)
+	TenantID    string   `validate:"omitempty,uuid"`
+	Name        string   `validate:"required,min=1,max=255"`
+	Type        string   `validate:"required,asset_type"`
+	SubType     string   `validate:"omitempty,max=50"` // kind from the type's closed list, or a legacy input
+	Criticality string   `validate:"required,criticality"`
+	Scope       string   `validate:"omitempty,scope"`
+	Exposure    string   `validate:"omitempty,exposure"`
+	Description string   `validate:"max=1000"`
+	Tags        []string `validate:"max=20,dive,max=50"`
+	OwnerRef    string   `validate:"max=500"` // Raw owner from external source
+	// ActorID is the person creating the asset: the values they set are
+	// recorded as their locks (RFC-069). Empty for a caller with no user.
+	ActorID    string
+	Properties map[string]any // JSONB properties (known fields auto-promoted to columns)
 }
 
 // DuplicateAssetError answers a create whose name (or an address the name
@@ -473,6 +480,11 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	if input.OwnerRef != "" {
 		s.syncOwnerRefOwner(ctx, tenantID, a.ID(), input.OwnerRef)
 	}
+
+	// The values a person chose for a new asset are theirs until released
+	// (RFC-069), as before: no source changed them.
+	s.recordManualAttributes(ctx, tenantID, a.ID(), input.ActorID,
+		editedAttributes(a, true, input.Exposure != "", input.OwnerRef != ""), nil)
 
 	// Record an "appeared" event for the state-history audit trail (powers
 	// shadow-IT detection, appearances, and the activity timeline).
@@ -914,6 +926,9 @@ type UpdateAssetInput struct {
 	ImpactConfidentiality *string `validate:"omitempty,impact_rating"`
 	ImpactIntegrity       *string `validate:"omitempty,impact_rating"`
 	ImpactAvailability    *string `validate:"omitempty,impact_rating"`
+	// ActorID is the person editing: a tracked attribute they change
+	// becomes their lock (RFC-069).
+	ActorID string
 }
 
 // UpdateAsset updates an existing asset.
@@ -946,6 +961,7 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 		}
 	}
 
+	beforeAttrs := attributeSnapshot(a)
 	oldName := a.Name()
 	if input.Name != nil {
 		if err := a.UpdateName(*input.Name); err != nil {
@@ -1070,6 +1086,10 @@ func (s *AssetService) UpdateAsset(ctx context.Context, assetID string, tenantID
 	if ownerRefChanged {
 		s.syncOwnerRefOwner(ctx, parsedTenantID, parsedID, a.OwnerRef())
 	}
+
+	// What the person changed is theirs until they release it (RFC-069).
+	s.recordManualAttributes(ctx, parsedTenantID, parsedID, input.ActorID,
+		editedAttributes(a, input.Criticality != nil, input.Exposure != nil, input.OwnerRef != nil), beforeAttrs)
 
 	// Recalculate affected group stats (risk_score, finding_count, etc.)
 	s.recalculateAffectedGroups(ctx, parsedID)
