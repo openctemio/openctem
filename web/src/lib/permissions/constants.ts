@@ -118,6 +118,8 @@ export const Permission = {
   FindingsApprove: 'findings:approve',
   FindingsFixApply: 'findings:fix_apply',
   FindingsVerify: 'findings:verify',
+  FindingsComment: 'findings:comment',
+  FindingsSeverity: 'findings:severity',
 
   // Exposures (findings:exposures:*)
   ExposuresRead: 'findings:exposures:read',
@@ -777,6 +779,8 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   // Note: Legacy aliases (MembersManage, etc.) map to
   // the same permission IDs as their canonical counterparts, so their
   // labels are inherited automatically.
+  [Permission.FindingsComment]: 'Comment on Findings',
+  [Permission.FindingsSeverity]: 'Change Finding Severity',
 }
 
 /**
