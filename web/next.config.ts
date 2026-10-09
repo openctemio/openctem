@@ -83,6 +83,7 @@ const nextConfig: NextConfig = {
         { source: '/oauth/authorize', destination: `${backend}/oauth/authorize` },
         { source: '/oauth/token', destination: `${backend}/oauth/token` },
         { source: '/oauth/revoke', destination: `${backend}/oauth/revoke` },
+        { source: '/oauth/register', destination: `${backend}/oauth/register` },
       ],
       afterFiles: [],
       fallback: [],
