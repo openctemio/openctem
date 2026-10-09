@@ -34,6 +34,8 @@ type AuthProvidersHandler struct {
 	// signupPolicy, when wired, replaces tenantCreationMode (the console
 	// sign-up setting).
 	signupPolicy signupdom.PolicySource
+	// captchaSiteKey is the public Turnstile site key.
+	captchaSiteKey string
 	// registrationEnabled is reported when no sign-up policy is wired (the
 	// self_service seed), so the UI can hide sign-up.
 	registrationEnabled bool
@@ -83,6 +85,12 @@ func (h *AuthProvidersHandler) WithTenantCreationMode(mode string) *AuthProvider
 // WithSignupPolicy reports tenant_creation_mode from the console sign-up policy.
 func (h *AuthProvidersHandler) WithSignupPolicy(p signupdom.PolicySource) *AuthProvidersHandler {
 	h.signupPolicy = p
+	return h
+}
+
+// WithCaptchaSiteKey sets the Turnstile site key reported to the UI.
+func (h *AuthProvidersHandler) WithCaptchaSiteKey(key string) *AuthProvidersHandler {
+	h.captchaSiteKey = key
 	return h
 }
 
@@ -141,6 +149,12 @@ type AuthProvidersResponse struct {
 	// the self_service sign-up mode. When false the UI hides sign-up; an
 	// invited person can still register with their invitation.
 	RegistrationEnabled bool `json:"registration_enabled"`
+	// RequestAccess reports whether people who cannot sign up may request an
+	// organization (POST /auth/access-requests).
+	RequestAccess bool `json:"request_access"`
+	// CaptchaSiteKey is the Turnstile site key the request-access form
+	// renders; empty when no CAPTCHA is configured.
+	CaptchaSiteKey string `json:"captcha_site_key,omitempty"`
 	// PasswordPolicy is the policy every password form states and the server
 	// enforces (it also rejects known-breached passwords).
 	PasswordPolicy PasswordPolicyInfo `json:"password_policy"`
@@ -171,7 +185,9 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Reque
 		// Anyone may create an account exactly when anyone may create an
 		// organization (one policy); an invited person registers either way.
 		resp.RegistrationEnabled = p.AllowsSelfService()
+		resp.RequestAccess = p.RequestAccess && !p.AllowsSelfService()
 	}
+	resp.CaptchaSiteKey = h.captchaSiteKey
 	// Report what the server enforces: anything but an explicit self_service
 	// is admin-only.
 	if resp.TenantCreationMode != config.TenantCreationSelfService {

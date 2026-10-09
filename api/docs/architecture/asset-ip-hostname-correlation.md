@@ -8,10 +8,10 @@ Assets arrive from multiple sources with different identifiers for the same mach
 
 | Source | Sends | Example |
 |--------|-------|---------|
-| ESXi / vCenter | hostname + IP | `web-server-01` (IP: `10.0.1.5`) |
-| Splunk / SIEM | IP only | `10.0.1.5` |
+| ESXi / vCenter | hostname + IP | `web-server-01` (IP: `192.0.2.5`) |
+| Splunk / SIEM | IP only | `192.0.2.5` |
 | CMDB | hostname + FQDN | `web-server-01.internal.corp` |
-| Network scan | IP + reverse DNS | `10.0.1.5` (rDNS: `web-server-01`) |
+| Network scan | IP + reverse DNS | `192.0.2.5` (rDNS: `web-server-01`) |
 
 Without correlation, the system creates **duplicate assets** for the same machine.
 
@@ -32,25 +32,25 @@ Uses the `UNIQUE(tenant_id, name)` constraint on the `assets` table.
 When exact name match fails, search by IP or hostname in properties:
 
 ```
-Ingest "10.0.1.5" (type=host):
-  1. GetByName("10.0.1.5")                    → not found
-  2. FindByIP("10.0.1.5")                     → searches:
-     - assets.name = '10.0.1.5'
-     - assets.properties->>'ip' = '10.0.1.5'
-     - assets.properties->'ip_address'->>'address' = '10.0.1.5'
+Ingest "192.0.2.5" (type=host):
+  1. GetByName("192.0.2.5")                    → not found
+  2. FindByIP("192.0.2.5")                     → searches:
+     - assets.name = '192.0.2.5'
+     - assets.properties->>'ip' = '192.0.2.5'
+     - assets.properties->'ip_address'->>'address' = '192.0.2.5'
   3. If found → merge into existing asset
-  4. If not found → create new host with name="10.0.1.5"
+  4. If not found → create new host with name="192.0.2.5"
 ```
 
 ```
-Ingest "web-server-01" (type=host, properties.ip="10.0.1.5"):
+Ingest "web-server-01" (type=host, properties.ip="192.0.2.5"):
   1. GetByName("web-server-01")               → not found
   2. FindByHostname("web-server-01")           → searches:
      - assets.name = 'web-server-01'
      - assets.properties->>'hostname' = 'web-server-01'
      - assets.properties->'ip_address'->>'hostname' = 'web-server-01'
-  3. Found host "10.0.1.5" with matching hostname in properties
-  4. Rename "10.0.1.5" → "web-server-01" (hostname is more descriptive)
+  3. Found host "192.0.2.5" with matching hostname in properties
+  4. Rename "192.0.2.5" → "web-server-01" (hostname is more descriptive)
   5. Merge properties from both sources
 ```
 
@@ -121,7 +121,7 @@ After migration 000124, all host IP data uses a single format:
 {
   "type": "host",
   "properties": {
-    "ip_addresses": ["10.0.1.5", "10.0.2.5"],   // array — multiple IPs
+    "ip_addresses": ["192.0.2.5", "192.0.2.6"],   // array — multiple IPs
     "hostname": "web-server-01"                   // top-level string
   }
 }
@@ -141,7 +141,7 @@ After migration 000124, all host IP data uses a single format:
 }
 
 // ❌ DEPRECATED (auto-migrated by 000124)
-{ "ip": "10.0.1.5" }              // single string — converted to ip_addresses[]
+{ "ip": "192.0.2.5" }              // single string — converted to ip_addresses[]
 ```
 
 ---
@@ -150,7 +150,7 @@ After migration 000124, all host IP data uses a single format:
 
 | Type | Represents | Created By | Example |
 |------|-----------|------------|---------|
-| `host` | Physical/virtual machine | ESXi, CMDB, agent, Splunk logs | `web-server-01`, `10.0.1.5` (placeholder) |
+| `host` | Physical/virtual machine | ESXi, CMDB, sensor, Splunk logs | `web-server-01`, `192.0.2.5` (placeholder) |
 | `ip_address` | Network endpoint | DNS resolution, network scan | `203.0.113.5` (from domain A record) |
 
 **Key rules:**
@@ -180,12 +180,12 @@ container "nginx-prod"         ← workload
 When a hostname arrives for an IP-named host:
 
 ```
-Before: host { name: "10.0.1.5", properties: { ip: "10.0.1.5" } }
-After:  host { name: "web-server-01", properties: { ip: "10.0.1.5", hostname: "web-server-01" } }
+Before: host { name: "192.0.2.5", properties: { ip: "192.0.2.5" } }
+After:  host { name: "web-server-01", properties: { ip: "192.0.2.5", hostname: "web-server-01" } }
 ```
 
 The rename only happens when:
-1. Existing asset name `looksLikeIP()` (e.g., `10.0.1.5`)
+1. Existing asset name `looksLikeIP()` (e.g., `192.0.2.5`)
 2. New input name does NOT look like IP (e.g., `web-server-01`)
 3. Correlation found via hostname property match
 
@@ -231,8 +231,8 @@ A host can have multiple IP addresses (multi-NIC, dual-stack IPv4/IPv6):
   "type": "host",
   "properties": {
     "hostname": "web-server-01",
-    "ip_addresses": ["10.0.1.5", "10.0.2.5", "fd00::5"],
-    "ip": "10.0.1.5",
+    "ip_addresses": ["192.0.2.5", "192.0.2.6", "fd00::5"],
+    "ip": "192.0.2.5",
     "mac_addresses": ["00:50:56:a1:b2:c3", "00:50:56:a1:b2:c4"]
   }
 }
@@ -240,11 +240,11 @@ A host can have multiple IP addresses (multi-NIC, dual-stack IPv4/IPv6):
 
 **Correlation searches ALL IP formats:**
 - `properties->>'ip'` — single IP string (legacy/simple sources)
-- `properties->'ip_addresses' ? '10.0.1.5'` — JSONB array contains operator
+- `properties->'ip_addresses' ? '192.0.2.5'` — JSONB array contains operator
 - `properties->'ip_address'->>'address'` — structured ip_address type
 
-**When Splunk sends `10.0.2.5`** (secondary NIC):
-1. `FindByIP("10.0.2.5")` → matches `ip_addresses` array → returns `web-server-01`
+**When Splunk sends `192.0.2.6`** (secondary NIC):
+1. `FindByIP("192.0.2.6")` → matches `ip_addresses` array → returns `web-server-01`
 2. Merge findings into existing host — no duplicate
 
 ---
@@ -253,7 +253,7 @@ A host can have multiple IP addresses (multi-NIC, dual-stack IPv4/IPv6):
 
 | File | Purpose |
 |------|---------|
-| `internal/app/asset_service.go` | `correlateByIPOrHostname()`, `mergeAndUpdateExisting()`, `looksLikeIP()` |
+| `internal/app/asset/service.go` | `correlateByIPOrHostname()`, `mergeAndUpdateExisting()`, `looksLikeIP()` |
 | `internal/infra/postgres/asset_repository.go` | `FindByIP()`, `FindByHostname()` |
 | `pkg/domain/asset/repository.go` | Interface definitions |
 | `migrations/000123_asset_ip_correlation_indexes.up.sql` | Property indexes |

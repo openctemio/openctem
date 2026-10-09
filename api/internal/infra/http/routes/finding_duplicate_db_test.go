@@ -159,7 +159,7 @@ func TestMarkDuplicate_IsolationAndRules(t *testing.T) {
 		t.Cleanup(func() { _, _ = h.db.Exec(`DELETE FROM tenants WHERE id = $1`, other.String()) })
 		h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, 'dup-other.example.com', 'domain')`, asset.String(), other.String())
 		h.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
-			VALUES ($1::uuid, $2, $3, 'sast', 'dup-tool', 'foreign', 'high', $1::text, 'accepted_risk')`, foreign.String(), other.String(), asset.String())
+			VALUES ($1::uuid, $2, $3, 'sast', 'dup-tool', 'foreign', 'high', $1::text, 'accepted')`, foreign.String(), other.String(), asset.String())
 		for _, pair := range [][2]shared.ID{{a2, foreign}, {foreign, a2}} {
 			if status, _ := h.markDup(h.owner, true, nil, pair[0], pair[1]); status != http.StatusNotFound {
 				t.Fatalf("%s -> %s: status %d, want 404", pair[0], pair[1], status)
@@ -190,7 +190,7 @@ func TestMarkDuplicate_IsolationAndRules(t *testing.T) {
 	})
 
 	t.Run("risk acceptance needs findings:approve", func(t *testing.T) {
-		accepted := h.dupFinding(h.assetA, "sast", "accepted_risk")
+		accepted := h.dupFinding(h.assetA, "sast", "accepted")
 		open := h.dupFinding(h.assetA, "sast", "new")
 		// The harness member holds triage but not approve.
 		if status, body := h.markDup(h.memberA, false, nil, open, accepted); status != http.StatusForbidden {

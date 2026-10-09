@@ -235,6 +235,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"old_hash": h, "old_prev_hash": "", "new_hash": h, "new_prev_hash": ""}
 	},
 	// filename_sha256 has a lower-case hex CHECK.
+	"content_pack_blobs": func(*schemaSeeder) map[string]any {
+		return map[string]any{"digest": "sha256:" + strings.Repeat("ab", 32), "size_bytes": "1", "file_count": "1"}
+	},
+	"content_packs": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "seed", "version": "1", "kind": "wordlist", "tier": "T0", "status": "active", "source": "upload"}
+	},
 	"finding_imports": func(*schemaSeeder) map[string]any {
 		return map[string]any{"filename_sha256": strings.Repeat("ab", 32)}
 	},
@@ -244,8 +250,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"finding_rekey_runs": func(*schemaSeeder) map[string]any { return map[string]any{"target_version": "2"} },
 	// emoji has a length CHECK.
 	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
-	"scan_zones":        func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
-	"sensors":           func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	// kind is a closed set and redirect_uris must list 1 to 20 URIs (RFC-062).
+	"mcp_oauth_clients": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "organization", "redirect_uris": "{https://client.example/cb}"}
+	},
+	"scan_zones": func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
+	"sensors":    func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
 	"scan_freeze_windows": func(*schemaSeeder) map[string]any {
 		return map[string]any{"timezone": "UTC", "recurrence": "weekly", "days": "{1}", "start_minute": "0", "end_minute": "60"}
 	},

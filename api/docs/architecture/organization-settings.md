@@ -21,7 +21,7 @@ decode), `internal/app/tenant/settings_write.go` (the write path),
 - `GET /tenants/{t}/settings` returns `general`, `branding` and `pentest` to
   every member; `security` (IP allowlist, allowed domains, MFA, email
   verification) and `risk_scoring` only to owners and admins. The fields are
-  absent for other roles (owner decision B20).
+  absent for other roles (decision B20).
 - The legacy `api` section (API key switch, outbound webhook URL and a
   plaintext `webhook_secret`) was never read by anything. `PATCH
   /settings/api` is removed and migration 001052 deletes the stored key.
@@ -32,7 +32,7 @@ The slug keys the SAML/SSO sign-in and ACS URLs. Renaming it is owner-only
 (403 for admins; a profile save with the unchanged slug still works for
 admins) and refused while the organization has a usable SSO identity provider
 (400): the URLs registered at the IdP would stop working, and with SSO
-enforced everyone but the owner would be locked out (owner decision B13). A
+enforced everyone but the owner would be locked out (decision B13). A
 rename is audited at High.
 
 ## Writes: one section at a time, compare-and-swap

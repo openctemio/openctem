@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
 // CIRunService is what the CI runner endpoints need.
@@ -241,7 +242,14 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 
 // decodeCTISReport accepts {"report": {...}} or a bare report, refusing
 // fields outside the contract.
+//
+// The bounded I-JSON pre-pass runs first: nothing is decoded until the
+// document's item counts are within ingest.CIReportBounds, so a small body
+// cannot expand into gigabytes of decoded structs.
 func decodeCTISReport(body []byte) (*ctis.Report, bool) {
+	if ingest.CheckIJSONBounded(body, protov2.DefaultMaxJSONDepth, ingest.CIReportBounds) != nil {
+		return nil, false
+	}
 	var req CTISIngestRequest
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
