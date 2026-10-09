@@ -14,6 +14,8 @@ import {
   SheetTitle,
   SheetDescription,
   SheetFooter,
+  SheetBody,
+  SheetForm,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -148,12 +150,12 @@ export function CharterEditorSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full gap-0 p-0 sm:max-w-2xl"
+        className="w-full sm:max-w-2xl"
         onInteractOutside={(e) => {
           if (isSubmitting) e.preventDefault()
         }}
       >
-        <SheetHeader className="border-b">
+        <SheetHeader>
           <div className="flex items-center gap-2">
             <SheetTitle>Cycle charter</SheetTitle>
             {cycle && (
@@ -169,11 +171,8 @@ export function CharterEditorSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <form
-          onSubmit={handleSubmit(onSubmit)}
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-        >
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        <SheetForm onSubmit={handleSubmit(onSubmit)}>
+          <SheetBody className="space-y-4">
             {!editable && (
               <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -459,9 +458,9 @@ export function CharterEditorSheet({
                 </div>
               </CardContent>
             </Card>
-          </div>
+          </SheetBody>
 
-          <SheetFooter className="flex-row justify-end gap-2 border-t">
+          <SheetFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {editable ? 'Cancel' : 'Close'}
             </Button>
@@ -474,7 +473,7 @@ export function CharterEditorSheet({
               </Can>
             )}
           </SheetFooter>
-        </form>
+        </SheetForm>
       </SheetContent>
     </Sheet>
   )

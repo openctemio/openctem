@@ -26,8 +26,9 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogHeaderBar,
   DialogTitle,
+  DialogHeader,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -103,17 +104,14 @@ export function PairSensorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="flex max-h-[92svh] flex-col gap-0 overflow-hidden p-0 sm:p-0 sm:max-w-2xl"
-      >
-        <DialogHeaderBar>
+      <DialogContent size="lg">
+        <DialogHeader>
           <DialogTitle>Pair a sensor</DialogTitle>
           <DialogDescription>
             The sensor makes its own key. You compare a fingerprint; no key is copied.
           </DialogDescription>
-        </DialogHeaderBar>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        </DialogHeader>
+        <DialogBody className="py-4">
           {approved ? (
             <ApprovedNotice view={approved} onClose={() => onOpenChange(false)} />
           ) : (
@@ -130,7 +128,7 @@ export function PairSensorDialog({
               </TabsContent>
             </Tabs>
           )}
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   )

@@ -14,6 +14,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -103,7 +105,7 @@ export function AddUserDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         {created ? (
           <>
             <DialogHeader>
@@ -112,15 +114,17 @@ export function AddUserDialog({
                 {created.user?.name || created.user?.email} can sign in after setting a password.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-2">
-              <SetupLinkResult outcome={created} email={created.user?.email ?? email.trim()} />
-            </div>
+            <DialogBody>
+              <div className="py-2">
+                <SetupLinkResult outcome={created} email={created.user?.email ?? email.trim()} />
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button onClick={close}>Done</Button>
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={submit}>
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>Add user</DialogTitle>
               <DialogDescription>
@@ -129,67 +133,69 @@ export function AddUserDialog({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-5 py-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="add-user-name">Name</Label>
-                  <Input
-                    id="add-user-name"
-                    required
-                    maxLength={255}
-                    autoComplete="off"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="add-user-email">Email</Label>
-                  <Input
-                    id="add-user-email"
-                    type="email"
-                    required
-                    autoComplete="off"
-                    placeholder="colleague@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Assign roles</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Roles define what this user can do (up to {MAX_ROLES_PER_USER}).
-                    </p>
+            <DialogBody>
+              <div className="space-y-5 py-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="add-user-name">Name</Label>
+                    <Input
+                      id="add-user-name"
+                      required
+                      maxLength={255}
+                      autoComplete="off"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
                   </div>
-                  {roleIds.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {roleIds.length} selected
-                    </Badge>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="add-user-email">Email</Label>
+                    <Input
+                      id="add-user-email"
+                      type="email"
+                      required
+                      autoComplete="off"
+                      placeholder="colleague@company.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <RoleChecklist
-                  canGrantAdmin={canGrantAdmin}
-                  roles={roles}
-                  selected={roleIds}
-                  onChange={setRoleIds}
-                  loading={rolesLoading}
-                  disabled={busy}
-                  max={MAX_ROLES_PER_USER}
-                />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Assign roles</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Roles define what this user can do (up to {MAX_ROLES_PER_USER}).
+                      </p>
+                    </div>
+                    {roleIds.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        {roleIds.length} selected
+                      </Badge>
+                    )}
+                  </div>
+                  <RoleChecklist
+                    canGrantAdmin={canGrantAdmin}
+                    roles={roles}
+                    selected={roleIds}
+                    onChange={setRoleIds}
+                    loading={rolesLoading}
+                    disabled={busy}
+                    max={MAX_ROLES_PER_USER}
+                  />
+                </div>
+
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
               </div>
+            </DialogBody>
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-            </div>
-
-            <DialogFooter className="gap-2">
+            <DialogFooter>
               <Button type="button" variant="ghost" onClick={close}>
                 Cancel
               </Button>
@@ -202,7 +208,7 @@ export function AddUserDialog({
                 Add user
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>

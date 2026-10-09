@@ -55,6 +55,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -161,75 +162,79 @@ function AddAssetsDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[80vh] flex-col sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add assets to &quot;{group.name}&quot;</DialogTitle>
           <DialogDescription>Select assets to add to this group.</DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden flex flex-col gap-4 py-4">
-          <div className="relative">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search assets..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="ps-9"
-            />
-          </div>
-
-          <div className="flex-1 overflow-y-auto border rounded-lg max-h-64">
-            {displayed.length === 0 ? (
-              <EmptyState
-                icon={Package}
-                title="No assets found"
-                description="Try a different search."
-                card={false}
+        <DialogBody>
+          <div className="space-y-4">
+            <div className="relative">
+              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search assets..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="ps-9"
               />
-            ) : (
-              <div className="divide-y">
-                {displayed.map((asset) => (
-                  <label
-                    key={asset.id}
-                    className="flex items-center gap-3 p-3 hover:bg-muted/50 cursor-pointer"
-                  >
-                    <Checkbox
-                      checked={selectedIds.includes(asset.id)}
-                      onCheckedChange={() =>
-                        setSelectedIds((prev) =>
-                          prev.includes(asset.id)
-                            ? prev.filter((id) => id !== asset.id)
-                            : [...prev, asset.id]
-                        )
-                      }
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{asset.name}</p>
-                      <p className="text-sm text-muted-foreground">{asset.type}</p>
-                    </div>
-                    <RiskScoreBadge score={asset.riskScore} size="sm" />
-                  </label>
-                ))}
-                {displayLimit < filtered.length && (
-                  <div className="p-3 text-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setDisplayLimit((prev) => prev + 20)}
-                      className="w-full"
+            </div>
+
+            <div className="overflow-y-auto border rounded-lg max-h-64">
+              {displayed.length === 0 ? (
+                <EmptyState
+                  icon={Package}
+                  title="No assets found"
+                  description="Try a different search."
+                  card={false}
+                />
+              ) : (
+                <div className="divide-y">
+                  {displayed.map((asset) => (
+                    <label
+                      key={asset.id}
+                      className="flex items-center gap-3 p-3 hover:bg-muted/50 cursor-pointer"
                     >
-                      Load more ({filtered.length - displayLimit} remaining)
-                    </Button>
-                  </div>
-                )}
-              </div>
+                      <Checkbox
+                        checked={selectedIds.includes(asset.id)}
+                        onCheckedChange={() =>
+                          setSelectedIds((prev) =>
+                            prev.includes(asset.id)
+                              ? prev.filter((id) => id !== asset.id)
+                              : [...prev, asset.id]
+                          )
+                        }
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{asset.name}</p>
+                        <p className="text-sm text-muted-foreground">{asset.type}</p>
+                      </div>
+                      <RiskScoreBadge score={asset.riskScore} size="sm" />
+                    </label>
+                  ))}
+                  {displayLimit < filtered.length && (
+                    <div className="p-3 text-center">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDisplayLimit((prev) => prev + 20)}
+                        className="w-full"
+                      >
+                        Load more ({filtered.length - displayLimit} remaining)
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {selectedIds.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {selectedIds.length} asset(s) selected
+              </p>
             )}
           </div>
-
-          {selectedIds.length > 0 && (
-            <p className="text-sm text-muted-foreground">{selectedIds.length} asset(s) selected</p>
-          )}
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isMutating}>

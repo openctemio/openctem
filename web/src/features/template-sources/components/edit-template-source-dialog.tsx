@@ -18,6 +18,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -195,226 +197,109 @@ export function EditTemplateSourceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Edit Template Source</DialogTitle>
           <DialogDescription>Update the configuration for this template source.</DialogDescription>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">{SOURCE_TYPE_DISPLAY_NAMES[source.source_type]}</Badge>
+            <Badge variant="secondary">{source.template_type}</Badge>
+          </div>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 mb-4">
-          <Badge variant="outline">{SOURCE_TYPE_DISPLAY_NAMES[source.source_type]}</Badge>
-          <Badge variant="secondary">{source.template_type}</Badge>
-        </div>
-
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
             {/* Basic Info */}
-            <div className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Company Security Templates" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <DialogBody className="space-y-6">
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Company Security Templates" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Custom templates for internal vulnerability scanning"
-                        className="resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Custom templates for internal vulnerability scanning"
+                          className="resize-none"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="cache_ttl_minutes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cache TTL (minutes)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min={5}
-                        max={1440}
-                        {...field}
-                        onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
-                      />
-                    </FormControl>
-                    <FormDescription>How long to cache before checking for updates</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+                <FormField
+                  control={form.control}
+                  name="cache_ttl_minutes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cache TTL (minutes)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={5}
+                          max={1440}
+                          {...field}
+                          onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        How long to cache before checking for updates
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-            <Separator />
+              <Separator />
 
-            {/* Source-specific config */}
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium">
-                {SOURCE_TYPE_DISPLAY_NAMES[source.source_type]} Configuration
-              </h4>
+              {/* Source-specific config */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">
+                  {SOURCE_TYPE_DISPLAY_NAMES[source.source_type]} Configuration
+                </h4>
 
-              {source.source_type === 'git' && (
-                <>
-                  <FormField
-                    control={form.control}
-                    name="git_url"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Repository URL</FormLabel>
-                        <FormControl>
-                          <Input placeholder="https://github.com/org/templates" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
+                {source.source_type === 'git' && (
+                  <>
                     <FormField
                       control={form.control}
-                      name="git_branch"
+                      name="git_url"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Branch</FormLabel>
+                          <FormLabel>Repository URL</FormLabel>
                           <FormControl>
-                            <Input placeholder="main" {...field} />
+                            <Input placeholder="https://github.com/org/templates" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={form.control}
-                      name="git_path"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Path (optional)</FormLabel>
-                          <FormControl>
-                            <Input placeholder="templates/nuclei/" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <FormField
-                    control={form.control}
-                    name="git_auth_type"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Authentication</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select auth type" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">None (Public repo)</SelectItem>
-                            <SelectItem value="token">Personal Access Token</SelectItem>
-                            <SelectItem value="ssh">SSH Key</SelectItem>
-                            <SelectItem value="oauth">OAuth</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </>
-              )}
-
-              {source.source_type === 's3' && (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="s3_bucket"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Bucket Name</FormLabel>
-                          <FormControl>
-                            <Input placeholder="my-templates-bucket" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="s3_region"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Region</FormLabel>
-                          <FormControl>
-                            <Input placeholder="us-east-1" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <FormField
-                    control={form.control}
-                    name="s3_prefix"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Prefix (optional)</FormLabel>
-                        <FormControl>
-                          <Input placeholder="templates/nuclei/" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="s3_auth_type"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Authentication</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select auth type" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="keys">Access Key / Secret Key</SelectItem>
-                            <SelectItem value="sts_role">STS Assume Role</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {form.watch('s3_auth_type') === 'sts_role' && (
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
-                        name="s3_role_arn"
+                        name="git_branch"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Role ARN</FormLabel>
+                            <FormLabel>Branch</FormLabel>
                             <FormControl>
-                              <Input placeholder="arn:aws:iam::123456789:role/..." {...field} />
+                              <Input placeholder="main" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -422,41 +307,21 @@ export function EditTemplateSourceDialog({
                       />
                       <FormField
                         control={form.control}
-                        name="s3_external_id"
+                        name="git_path"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>External ID (optional)</FormLabel>
+                            <FormLabel>Path (optional)</FormLabel>
                             <FormControl>
-                              <Input placeholder="external-id" {...field} />
+                              <Input placeholder="templates/nuclei/" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                     </div>
-                  )}
-                </>
-              )}
-
-              {source.source_type === 'http' && (
-                <>
-                  <FormField
-                    control={form.control}
-                    name="http_url"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>URL</FormLabel>
-                        <FormControl>
-                          <Input placeholder="https://example.com/templates.zip" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
-                      name="http_auth_type"
+                      name="git_auth_type"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Authentication</FormLabel>
@@ -467,31 +332,222 @@ export function EditTemplateSourceDialog({
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              <SelectItem value="bearer">Bearer Token</SelectItem>
-                              <SelectItem value="basic">Basic Auth</SelectItem>
-                              <SelectItem value="api_key">API Key</SelectItem>
+                              <SelectItem value="none">None (Public repo)</SelectItem>
+                              <SelectItem value="token">Personal Access Token</SelectItem>
+                              <SelectItem value="ssh">SSH Key</SelectItem>
+                              <SelectItem value="oauth">OAuth</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
+                  </>
+                )}
+
+                {source.source_type === 's3' && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="s3_bucket"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Bucket Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="my-templates-bucket" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="s3_region"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Region</FormLabel>
+                            <FormControl>
+                              <Input placeholder="us-east-1" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                     <FormField
                       control={form.control}
-                      name="http_timeout"
+                      name="s3_prefix"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Timeout (seconds)</FormLabel>
+                          <FormLabel>Prefix (optional)</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
-                              min={5}
-                              max={300}
-                              {...field}
-                              onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
-                            />
+                            <Input placeholder="templates/nuclei/" {...field} />
                           </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="s3_auth_type"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Authentication</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select auth type" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="keys">Access Key / Secret Key</SelectItem>
+                              <SelectItem value="sts_role">STS Assume Role</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    {form.watch('s3_auth_type') === 'sts_role' && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="s3_role_arn"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Role ARN</FormLabel>
+                              <FormControl>
+                                <Input placeholder="arn:aws:iam::123456789:role/..." {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="s3_external_id"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>External ID (optional)</FormLabel>
+                              <FormControl>
+                                <Input placeholder="external-id" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {source.source_type === 'http' && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="http_url"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>URL</FormLabel>
+                          <FormControl>
+                            <Input placeholder="https://example.com/templates.zip" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="http_auth_type"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Authentication</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select auth type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                <SelectItem value="bearer">Bearer Token</SelectItem>
+                                <SelectItem value="basic">Basic Auth</SelectItem>
+                                <SelectItem value="api_key">API Key</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="http_timeout"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Timeout (seconds)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min={5}
+                                max={300}
+                                {...field}
+                                onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Credentials */}
+              {needsCredentials && (
+                <>
+                  <Separator />
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium flex items-center gap-2">
+                      <KeyRound className="h-4 w-4" />
+                      Credentials
+                    </h4>
+                    <FormField
+                      control={form.control}
+                      name="credential_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Select Credential</FormLabel>
+                          <Select
+                            onValueChange={(v) => field.onChange(v === 'none' ? '' : v)}
+                            value={field.value || 'none'}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Choose a stored credential" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {credentials.map((cred) => (
+                                <SelectItem key={cred.id} value={cred.id}>
+                                  <div className="flex items-center gap-2">
+                                    <span>{cred.name}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      ({cred.credential_type})
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {source.credential_name && (
+                            <FormDescription>
+                              Currently using: {source.credential_name}
+                            </FormDescription>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -499,81 +555,30 @@ export function EditTemplateSourceDialog({
                   </div>
                 </>
               )}
-            </div>
 
-            {/* Credentials */}
-            {needsCredentials && (
-              <>
-                <Separator />
-                <div className="space-y-4">
-                  <h4 className="text-sm font-medium flex items-center gap-2">
-                    <KeyRound className="h-4 w-4" />
-                    Credentials
-                  </h4>
-                  <FormField
-                    control={form.control}
-                    name="credential_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Select Credential</FormLabel>
-                        <Select
-                          onValueChange={(v) => field.onChange(v === 'none' ? '' : v)}
-                          value={field.value || 'none'}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Choose a stored credential" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            {credentials.map((cred) => (
-                              <SelectItem key={cred.id} value={cred.id}>
-                                <div className="flex items-center gap-2">
-                                  <span>{cred.name}</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    ({cred.credential_type})
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {source.credential_name && (
-                          <FormDescription>
-                            Currently using: {source.credential_name}
-                          </FormDescription>
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </>
-            )}
+              <Separator />
 
-            <Separator />
+              {/* Sync Settings */}
+              <FormField
+                control={form.control}
+                name="auto_sync_on_scan"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>Auto Sync on Scan</FormLabel>
+                      <FormDescription>
+                        Automatically check for updates when a scan uses this source
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
 
-            {/* Sync Settings */}
-            <FormField
-              control={form.control}
-              name="auto_sync_on_scan"
-              render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                  <div className="space-y-0.5">
-                    <FormLabel>Auto Sync on Scan</FormLabel>
-                    <FormDescription>
-                      Automatically check for updates when a scan uses this source
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-
-            {bindError && <CredentialBindAlert message={bindError} />}
+              {bindError && <CredentialBindAlert message={bindError} />}
+            </DialogBody>
             <DialogFooter>
               <Button
                 type="button"
@@ -588,7 +593,7 @@ export function EditTemplateSourceDialog({
                 Save Changes
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>

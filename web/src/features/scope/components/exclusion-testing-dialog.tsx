@@ -21,6 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -104,7 +105,7 @@ export function ExclusionTestingDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{step === 'choose' ? 'Testing mode' : 'Review change'}</DialogTitle>
           <DialogDescription>
@@ -113,88 +114,92 @@ export function ExclusionTestingDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-1">
-          {error && (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-          {step === 'choose' ? (
-            <>
-              <RadioGroup
-                value={mode}
-                onValueChange={(v) => {
-                  setMode(v as ExclusionTesting)
-                  setError(null)
-                }}
-                className="gap-2"
+        <DialogBody>
+          <div className="space-y-4">
+            {error && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
               >
-                {MODES.map((m) => (
-                  <label
-                    key={m}
-                    htmlFor={`${id}-${m}`}
-                    className={cn(
-                      'flex cursor-pointer items-start gap-3 rounded-md border p-3',
-                      'has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5'
-                    )}
-                  >
-                    <RadioGroupItem id={`${id}-${m}`} value={m} className="mt-0.5" />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium">
-                        {TESTING_LABEL[m]}
-                        {m === current ? ' (now)' : ''}
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+            {step === 'choose' ? (
+              <>
+                <RadioGroup
+                  value={mode}
+                  onValueChange={(v) => {
+                    setMode(v as ExclusionTesting)
+                    setError(null)
+                  }}
+                  className="gap-2"
+                >
+                  {MODES.map((m) => (
+                    <label
+                      key={m}
+                      htmlFor={`${id}-${m}`}
+                      className={cn(
+                        'flex cursor-pointer items-start gap-3 rounded-md border p-3',
+                        'has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5'
+                      )}
+                    >
+                      <RadioGroupItem id={`${id}-${m}`} value={m} className="mt-0.5" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">
+                          {TESTING_LABEL[m]}
+                          {m === current ? ' (now)' : ''}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          {TESTING_HINT[m]}
+                        </span>
                       </span>
-                      <span className="block text-xs text-muted-foreground">{TESTING_HINT[m]}</span>
-                    </span>
-                  </label>
-                ))}
-              </RadioGroup>
-              {mode !== 'blocked' && (
-                <div className="space-y-2">
-                  <Label htmlFor={`${id}-days`}>
-                    Back to blocked after (days{mode === 'allowed' ? '' : ', optional'})
-                  </Label>
-                  <Input
-                    id={`${id}-days`}
-                    type="number"
-                    min={1}
-                    max={MAX_TESTING_DAYS}
-                    value={days}
-                    onChange={(e) => {
-                      setDays(e.target.value)
-                      setError(null)
-                    }}
-                    className="w-28"
-                  />
-                  <p className="text-xs text-muted-foreground">1 to {MAX_TESTING_DAYS} days.</p>
-                </div>
-              )}
-            </>
-          ) : (
-            <ScopeChangePreview
-              lines={[
-                {
-                  key: 'testing',
-                  mark: 'change',
-                  pattern: rule,
-                  summary: `testing ${TESTING_LABEL[current].toLowerCase()} → ${TESTING_LABEL[mode].toLowerCase()}${n !== null && mode !== 'blocked' ? ` for ${n} ${n === 1 ? 'day' : 'days'}` : ''}`,
-                  message: testingImpact(current, mode, rule, exclusion.methods),
-                },
-              ]}
-              consequence={{ approvalsRequired: 0, stepUp: mode !== 'blocked' }}
-            />
-          )}
-          {step === 'review' && (
-            <p className="text-xs text-muted-foreground">
-              Audited; every administrator is notified. There is no switch that lifts every
-              exclusion at once.
-            </p>
-          )}
-        </div>
+                    </label>
+                  ))}
+                </RadioGroup>
+                {mode !== 'blocked' && (
+                  <div className="space-y-2">
+                    <Label htmlFor={`${id}-days`}>
+                      Back to blocked after (days{mode === 'allowed' ? '' : ', optional'})
+                    </Label>
+                    <Input
+                      id={`${id}-days`}
+                      type="number"
+                      min={1}
+                      max={MAX_TESTING_DAYS}
+                      value={days}
+                      onChange={(e) => {
+                        setDays(e.target.value)
+                        setError(null)
+                      }}
+                      className="w-28"
+                    />
+                    <p className="text-xs text-muted-foreground">1 to {MAX_TESTING_DAYS} days.</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <ScopeChangePreview
+                lines={[
+                  {
+                    key: 'testing',
+                    mark: 'change',
+                    pattern: rule,
+                    summary: `testing ${TESTING_LABEL[current].toLowerCase()} → ${TESTING_LABEL[mode].toLowerCase()}${n !== null && mode !== 'blocked' ? ` for ${n} ${n === 1 ? 'day' : 'days'}` : ''}`,
+                    message: testingImpact(current, mode, rule, exclusion.methods),
+                  },
+                ]}
+                consequence={{ approvalsRequired: 0, stepUp: mode !== 'blocked' }}
+              />
+            )}
+            {step === 'review' && (
+              <p className="text-xs text-muted-foreground">
+                Audited; every administrator is notified. There is no switch that lifts every
+                exclusion at once.
+              </p>
+            )}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           {step === 'review' ? (

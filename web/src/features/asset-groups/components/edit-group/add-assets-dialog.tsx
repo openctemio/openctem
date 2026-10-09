@@ -16,6 +16,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -436,10 +437,10 @@ export function AddAssetsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden p-0 flex flex-col">
+      <DialogContent size="lg">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b px-6 py-4 shrink-0">
-          <DialogHeader>
+        <DialogHeader className="bg-gradient-to-r from-primary/10 via-primary/5 to-background">
+          <div>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
                 <FolderPlus className="h-5 w-5 text-primary" />
@@ -451,11 +452,11 @@ export function AddAssetsDialog({
                 </DialogDescription>
               </div>
             </div>
-          </DialogHeader>
-        </div>
+          </div>
+        </DialogHeader>
 
         {/* Content */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <DialogBody className="p-0">
           <Tabs defaultValue="select" className="h-full flex flex-col">
             <div className="px-6 pt-4 shrink-0">
               <TabsList>
@@ -712,10 +713,10 @@ export function AddAssetsDialog({
               )}
             </TabsContent>
           </Tabs>
-        </div>
+        </DialogBody>
 
         {/* Footer */}
-        <DialogFooter className="border-t bg-muted/30 px-6 py-4 shrink-0">
+        <DialogFooter className="bg-muted/30">
           <div className="flex items-center justify-between w-full">
             <div>
               {totalToAdd > 0 && (

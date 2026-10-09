@@ -15,6 +15,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -225,7 +227,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{isEditMode ? 'Edit Tool' : 'Add Custom Tool'}</DialogTitle>
           <DialogDescription>
@@ -236,198 +238,108 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
         </DialogHeader>
 
         <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(handleSubmit)}
-            className="flex flex-col flex-1 overflow-hidden"
-          >
-            <div className="flex-1 overflow-y-auto pe-2 space-y-5">
-              {/* Required Fields Section */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Name *</FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="semgrep" className="font-mono" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="display_name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Display Name *</FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="Semgrep" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    control={form.control}
-                    name="category"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Category *</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+          <DialogForm onSubmit={form.handleSubmit(handleSubmit)}>
+            <DialogBody>
+              <div className="space-y-5">
+                {/* Required Fields Section */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField
+                      control={form.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Name *</FormLabel>
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select category" />
-                            </SelectTrigger>
+                            <Input {...field} placeholder="semgrep" className="font-mono" />
                           </FormControl>
-                          <SelectContent>
-                            {CATEGORY_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                <div className="flex items-center gap-2">
-                                  <ToolCategoryIcon category={option.value} className="h-4 w-4" />
-                                  <span>{option.label}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <FormField
-                    control={form.control}
-                    name="install_method"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Install Method *</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormField
+                      control={form.control}
+                      name="display_name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Display Name *</FormLabel>
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select method" />
-                            </SelectTrigger>
+                            <Input {...field} placeholder="Semgrep" />
                           </FormControl>
-                          <SelectContent>
-                            {INSTALL_METHOD_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          {...field}
-                          placeholder="Brief description of what this tool does..."
-                          rows={2}
-                          className="resize-none"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField
+                      control={form.control}
+                      name="category"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Category *</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select category" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {CATEGORY_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  <div className="flex items-center gap-2">
+                                    <ToolCategoryIcon category={option.value} className="h-4 w-4" />
+                                    <span>{option.label}</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                <div className="grid grid-cols-2 gap-3">
+                    <FormField
+                      control={form.control}
+                      name="install_method"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Install Method *</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select method" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {INSTALL_METHOD_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
                   <FormField
                     control={form.control}
-                    name="github_url"
+                    name="description"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>GitHub URL</FormLabel>
+                        <FormLabel>Description</FormLabel>
                         <FormControl>
-                          <Input {...field} type="url" placeholder="https://github.com/..." />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="docs_url"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Docs URL</FormLabel>
-                        <FormControl>
-                          <Input {...field} type="url" placeholder="https://docs.example.com" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-
-              {/* Commands Section - Collapsible */}
-              <Collapsible open={commandsOpen} onOpenChange={setCommandsOpen}>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    className="w-full justify-between px-3 py-2 h-auto font-medium text-sm hover:bg-muted/50"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Terminal className="h-4 w-4 text-muted-foreground" />
-                      <span>Commands</span>
-                      <span className="text-xs text-muted-foreground font-normal">(optional)</span>
-                    </div>
-                    {commandsOpen ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="space-y-3 pt-3">
-                  <FormField
-                    control={form.control}
-                    name="install_cmd"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Install Command</FormLabel>
-                        <FormControl>
-                          <Input
+                          <Textarea
                             {...field}
-                            placeholder="go install github.com/example/tool@latest"
-                            className="font-mono text-sm"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="update_cmd"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Update Command</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="go install github.com/example/tool@latest"
-                            className="font-mono text-sm"
+                            placeholder="Brief description of what this tool does..."
+                            rows={2}
+                            className="resize-none"
                           />
                         </FormControl>
                         <FormMessage />
@@ -438,14 +350,67 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                   <div className="grid grid-cols-2 gap-3">
                     <FormField
                       control={form.control}
-                      name="version_cmd"
+                      name="github_url"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Version Command</FormLabel>
+                          <FormLabel>GitHub URL</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="url" placeholder="https://github.com/..." />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="docs_url"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Docs URL</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="url" placeholder="https://docs.example.com" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                {/* Commands Section - Collapsible */}
+                <Collapsible open={commandsOpen} onOpenChange={setCommandsOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      className="w-full justify-between px-3 py-2 h-auto font-medium text-sm hover:bg-muted/50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Terminal className="h-4 w-4 text-muted-foreground" />
+                        <span>Commands</span>
+                        <span className="text-xs text-muted-foreground font-normal">
+                          (optional)
+                        </span>
+                      </div>
+                      {commandsOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-3 pt-3">
+                    <FormField
+                      control={form.control}
+                      name="install_cmd"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Install Command</FormLabel>
                           <FormControl>
                             <Input
                               {...field}
-                              placeholder="tool --version"
+                              placeholder="go install github.com/example/tool@latest"
                               className="font-mono text-sm"
                             />
                           </FormControl>
@@ -456,14 +421,14 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
 
                     <FormField
                       control={form.control}
-                      name="version_regex"
+                      name="update_cmd"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Version Regex</FormLabel>
+                          <FormLabel>Update Command</FormLabel>
                           <FormControl>
                             <Input
                               {...field}
-                              placeholder="v?(\d+\.\d+\.\d+)"
+                              placeholder="go install github.com/example/tool@latest"
                               className="font-mono text-sm"
                             />
                           </FormControl>
@@ -471,244 +436,290 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                         </FormItem>
                       )}
                     />
-                  </div>
 
-                  <FormField
-                    control={form.control}
-                    name="min_version"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Minimum version</FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="3.2.0" className="font-mono text-sm" />
-                        </FormControl>
-                        <FormDescription>
-                          When every online sensor runs an older version, the tool shows as
-                          outdated. Scans still run.
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CollapsibleContent>
-              </Collapsible>
-
-              {/* Metadata Section - Collapsible */}
-              <Collapsible open={metadataOpen} onOpenChange={setMetadataOpen}>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    className="w-full justify-between px-3 py-2 h-auto font-medium text-sm hover:bg-muted/50"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Tag className="h-4 w-4 text-muted-foreground" />
-                      <span>Metadata</span>
-                      <span className="text-xs text-muted-foreground font-normal">(optional)</span>
-                    </div>
-                    {metadataOpen ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="space-y-4 pt-3">
-                  {/* Tags */}
-                  <div>
-                    <FormLabel className="text-sm">Tags</FormLabel>
-                    <div className="mt-1.5 flex gap-2">
-                      <Input
-                        value={tagInput}
-                        onChange={(e) => setTagInput(e.target.value)}
-                        placeholder="Add tag..."
-                        className="flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            addArrayItem('tags', tagInput, setTagInput)
-                          }
-                        }}
+                    <div className="grid grid-cols-2 gap-3">
+                      <FormField
+                        control={form.control}
+                        name="version_cmd"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Version Command</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="tool --version"
+                                className="font-mono text-sm"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => addArrayItem('tags', tagInput, setTagInput)}
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    {(form.watch('tags')?.length ?? 0) > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {form.watch('tags')?.map((tag) => (
-                          <Badge key={tag} variant="secondary" className="gap-1 text-xs">
-                            {tag}
-                            <button
-                              type="button"
-                              onClick={() => removeArrayItem('tags', tag)}
-                              className="hover:text-destructive"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Capabilities */}
-                  <div>
-                    <FormLabel className="text-sm">Capabilities</FormLabel>
-                    <div className="mt-1.5 flex gap-2">
-                      <Input
-                        value={capabilityInput}
-                        onChange={(e) => setCapabilityInput(e.target.value)}
-                        placeholder="Add capability..."
-                        className="flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
+                      <FormField
+                        control={form.control}
+                        name="version_regex"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Version Regex</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="v?(\d+\.\d+\.\d+)"
+                                className="font-mono text-sm"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="min_version"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Minimum version</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="3.2.0" className="font-mono text-sm" />
+                          </FormControl>
+                          <FormDescription>
+                            When every online sensor runs an older version, the tool shows as
+                            outdated. Scans still run.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {/* Metadata Section - Collapsible */}
+                <Collapsible open={metadataOpen} onOpenChange={setMetadataOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      className="w-full justify-between px-3 py-2 h-auto font-medium text-sm hover:bg-muted/50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Tag className="h-4 w-4 text-muted-foreground" />
+                        <span>Metadata</span>
+                        <span className="text-xs text-muted-foreground font-normal">
+                          (optional)
+                        </span>
+                      </div>
+                      {metadataOpen ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-4 pt-3">
+                    {/* Tags */}
+                    <div>
+                      <FormLabel className="text-sm">Tags</FormLabel>
+                      <div className="mt-1.5 flex gap-2">
+                        <Input
+                          value={tagInput}
+                          onChange={(e) => setTagInput(e.target.value)}
+                          placeholder="Add tag..."
+                          className="flex-1"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              addArrayItem('tags', tagInput, setTagInput)
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => addArrayItem('tags', tagInput, setTagInput)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {(form.watch('tags')?.length ?? 0) > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {form.watch('tags')?.map((tag) => (
+                            <Badge key={tag} variant="secondary" className="gap-1 text-xs">
+                              {tag}
+                              <button
+                                type="button"
+                                onClick={() => removeArrayItem('tags', tag)}
+                                className="hover:text-destructive"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Capabilities */}
+                    <div>
+                      <FormLabel className="text-sm">Capabilities</FormLabel>
+                      <div className="mt-1.5 flex gap-2">
+                        <Input
+                          value={capabilityInput}
+                          onChange={(e) => setCapabilityInput(e.target.value)}
+                          placeholder="Add capability..."
+                          className="flex-1"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              addArrayItem('capabilities', capabilityInput, setCapabilityInput)
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() =>
                             addArrayItem('capabilities', capabilityInput, setCapabilityInput)
                           }
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() =>
-                          addArrayItem('capabilities', capabilityInput, setCapabilityInput)
-                        }
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    {(form.watch('capabilities')?.length ?? 0) > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {form.watch('capabilities')?.map((cap) => (
-                          <Badge key={cap} variant="outline" className="gap-1 text-xs">
-                            {cap}
-                            <button
-                              type="button"
-                              onClick={() => removeArrayItem('capabilities', cap)}
-                              className="hover:text-destructive"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
                       </div>
-                    )}
-                  </div>
+                      {(form.watch('capabilities')?.length ?? 0) > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {form.watch('capabilities')?.map((cap) => (
+                            <Badge key={cap} variant="outline" className="gap-1 text-xs">
+                              {cap}
+                              <button
+                                type="button"
+                                onClick={() => removeArrayItem('capabilities', cap)}
+                                className="hover:text-destructive"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
-                  {/* Supported Targets */}
-                  <div>
-                    <FormLabel className="text-sm">Supported Targets</FormLabel>
-                    <div className="mt-1.5 flex gap-2">
-                      <Input
-                        value={targetInput}
-                        onChange={(e) => setTargetInput(e.target.value)}
-                        placeholder="e.g., python, javascript"
-                        className="flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
+                    {/* Supported Targets */}
+                    <div>
+                      <FormLabel className="text-sm">Supported Targets</FormLabel>
+                      <div className="mt-1.5 flex gap-2">
+                        <Input
+                          value={targetInput}
+                          onChange={(e) => setTargetInput(e.target.value)}
+                          placeholder="e.g., python, javascript"
+                          className="flex-1"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              addArrayItem('supported_targets', targetInput, setTargetInput)
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() =>
                             addArrayItem('supported_targets', targetInput, setTargetInput)
                           }
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() =>
-                          addArrayItem('supported_targets', targetInput, setTargetInput)
-                        }
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    {(form.watch('supported_targets')?.length ?? 0) > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {form.watch('supported_targets')?.map((target) => (
-                          <Badge key={target} variant="outline" className="gap-1 text-xs">
-                            {target}
-                            <button
-                              type="button"
-                              onClick={() => removeArrayItem('supported_targets', target)}
-                              className="hover:text-destructive"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
                       </div>
-                    )}
-                  </div>
+                      {(form.watch('supported_targets')?.length ?? 0) > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {form.watch('supported_targets')?.map((target) => (
+                            <Badge key={target} variant="outline" className="gap-1 text-xs">
+                              {target}
+                              <button
+                                type="button"
+                                onClick={() => removeArrayItem('supported_targets', target)}
+                                className="hover:text-destructive"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
-                  {/* Output Formats */}
-                  <div>
-                    <FormLabel className="text-sm">Output Formats</FormLabel>
-                    <div className="mt-1.5 flex gap-2">
-                      <Input
-                        value={formatInput}
-                        onChange={(e) => setFormatInput(e.target.value)}
-                        placeholder="e.g., json, sarif"
-                        className="flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
+                    {/* Output Formats */}
+                    <div>
+                      <FormLabel className="text-sm">Output Formats</FormLabel>
+                      <div className="mt-1.5 flex gap-2">
+                        <Input
+                          value={formatInput}
+                          onChange={(e) => setFormatInput(e.target.value)}
+                          placeholder="e.g., json, sarif"
+                          className="flex-1"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              addArrayItem('output_formats', formatInput, setFormatInput)
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() =>
                             addArrayItem('output_formats', formatInput, setFormatInput)
                           }
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => addArrayItem('output_formats', formatInput, setFormatInput)}
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    {(form.watch('output_formats')?.length ?? 0) > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {form.watch('output_formats')?.map((format) => (
-                          <Badge key={format} variant="outline" className="gap-1 text-xs">
-                            {format}
-                            <button
-                              type="button"
-                              onClick={() => removeArrayItem('output_formats', format)}
-                              className="hover:text-destructive"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
                       </div>
-                    )}
-                  </div>
+                      {(form.watch('output_formats')?.length ?? 0) > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {form.watch('output_formats')?.map((format) => (
+                            <Badge key={format} variant="outline" className="gap-1 text-xs">
+                              {format}
+                              <button
+                                type="button"
+                                onClick={() => removeArrayItem('output_formats', format)}
+                                className="hover:text-destructive"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
-                  {/* Logo URL */}
-                  <FormField
-                    control={form.control}
-                    name="logo_url"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Logo URL</FormLabel>
-                        <FormControl>
-                          <Input {...field} type="url" placeholder="https://example.com/logo.png" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
+                    {/* Logo URL */}
+                    <FormField
+                      control={form.control}
+                      name="logo_url"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Logo URL</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              type="url"
+                              placeholder="https://example.com/logo.png"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            </DialogBody>
 
-            <DialogFooter className="pt-4 border-t mt-4">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -722,7 +733,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                 {isEditMode ? 'Update Tool' : 'Create Tool'}
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>

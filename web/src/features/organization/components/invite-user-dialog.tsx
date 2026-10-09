@@ -14,6 +14,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -126,7 +128,7 @@ export function InviteUserDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         {link ? (
           <>
             <DialogHeader>
@@ -136,74 +138,76 @@ export function InviteUserDialog({
                 also receive it by email.
               </DialogDescription>
             </DialogHeader>
-            {link.lookalikeOf && link.lookalikeOf.length > 0 && (
-              <Alert className="border-warning/40 bg-warning/10" data-testid="invite-lookalike">
-                <ShieldAlert className="size-4 text-warning" />
-                <AlertTitle>Looks like an existing member</AlertTitle>
-                <AlertDescription>
-                  {link.email} reaches the same mailbox as {link.lookalikeOf.join(', ')}. Check that
-                  this is not the same person with a second account.
-                </AlertDescription>
-              </Alert>
-            )}
-            {link.accessExpiresAt && (
-              <p className="text-sm text-muted-foreground" data-testid="invite-access-ends">
-                {link.email} is from outside the organization: they join as a viewer with no data
-                until you add them to a team, and their access ends{' '}
-                {new Date(link.accessExpiresAt).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                })}
-                .
-              </p>
-            )}
-            {link.url ? (
-              <div className="space-y-3 py-2">
-                <div className="space-y-1.5">
-                  <p className="text-sm font-medium">Invitation link</p>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <code
-                      className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 font-mono text-xs break-all select-all"
-                      data-testid="invitation-link"
-                    >
-                      {link.url}
-                    </code>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      aria-label="Copy invitation link"
-                      onClick={async () => {
-                        if (link.url && (await copyToClipboard(link.url))) setCopied(true)
-                      }}
-                    >
-                      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                    </Button>
-                  </div>
-                </div>
-                <Alert className="border-warning/40 bg-warning/10">
+            <DialogBody className="grid gap-4">
+              {link.lookalikeOf && link.lookalikeOf.length > 0 && (
+                <Alert className="border-warning/40 bg-warning/10" data-testid="invite-lookalike">
                   <ShieldAlert className="size-4 text-warning" />
-                  <AlertTitle>Shown once</AlertTitle>
+                  <AlertTitle>Looks like an existing member</AlertTitle>
                   <AlertDescription>
-                    Anyone with this link can join as {link.email}. It will not be shown again;
-                    cancel the invitation and invite again if it is lost.
+                    {link.email} reaches the same mailbox as {link.lookalikeOf.join(', ')}. Check
+                    that this is not the same person with a second account.
                   </AlertDescription>
                 </Alert>
-              </div>
-            ) : (
-              <Alert className="my-2">
-                <Mail className="size-4" />
-                <AlertTitle>Invitation emailed</AlertTitle>
-                <AlertDescription>{link.email} receives the link by email.</AlertDescription>
-              </Alert>
-            )}
+              )}
+              {link.accessExpiresAt && (
+                <p className="text-sm text-muted-foreground" data-testid="invite-access-ends">
+                  {link.email} is from outside the organization: they join as a viewer with no data
+                  until you add them to a team, and their access ends{' '}
+                  {new Date(link.accessExpiresAt).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                  .
+                </p>
+              )}
+              {link.url ? (
+                <div className="space-y-3 py-2">
+                  <div className="space-y-1.5">
+                    <p className="text-sm font-medium">Invitation link</p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <code
+                        className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 font-mono text-xs break-all select-all"
+                        data-testid="invitation-link"
+                      >
+                        {link.url}
+                      </code>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        aria-label="Copy invitation link"
+                        onClick={async () => {
+                          if (link.url && (await copyToClipboard(link.url))) setCopied(true)
+                        }}
+                      >
+                        {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                  <Alert className="border-warning/40 bg-warning/10">
+                    <ShieldAlert className="size-4 text-warning" />
+                    <AlertTitle>Shown once</AlertTitle>
+                    <AlertDescription>
+                      Anyone with this link can join as {link.email}. It will not be shown again;
+                      cancel the invitation and invite again if it is lost.
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              ) : (
+                <Alert className="my-2">
+                  <Mail className="size-4" />
+                  <AlertTitle>Invitation emailed</AlertTitle>
+                  <AlertDescription>{link.email} receives the link by email.</AlertDescription>
+                </Alert>
+              )}
+            </DialogBody>
             <DialogFooter>
               <Button onClick={close}>Done</Button>
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={submit}>
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>Invite user</DialogTitle>
               <DialogDescription>
@@ -211,76 +215,78 @@ export function InviteUserDialog({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-6 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="invite-email">Email address</Label>
-                <div className="relative">
-                  <Mail className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="invite-email"
-                    type="email"
-                    required
-                    placeholder="colleague@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="h-11 ps-10"
+            <DialogBody>
+              <div className="space-y-6 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="invite-email">Email address</Label>
+                  <div className="relative">
+                    <Mail className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="invite-email"
+                      type="email"
+                      required
+                      placeholder="colleague@company.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="h-11 ps-10"
+                      disabled={busy}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Assign roles</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Select roles to define permissions for this user
+                      </p>
+                    </div>
+                    {roleIds.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        {roleIds.length} selected
+                      </Badge>
+                    )}
+                  </div>
+                  <RoleChecklist
+                    canGrantAdmin={canGrantAdmin}
+                    roles={roles}
+                    selected={roleIds}
+                    onChange={setRoleIds}
+                    loading={rolesLoading}
                     disabled={busy}
                   />
                 </div>
-              </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Assign roles</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Select roles to define permissions for this user
-                    </p>
-                  </div>
-                  {roleIds.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {roleIds.length} selected
-                    </Badge>
-                  )}
+                <div className="space-y-2">
+                  <Label htmlFor="invite-access-ends">
+                    Access ends (people outside the organization)
+                  </Label>
+                  <Input
+                    id="invite-access-ends"
+                    type="date"
+                    min={dateInputDaysFromNow(1)}
+                    max={dateInputDaysFromNow(MAX_EXTERNAL_ACCESS_DAYS)}
+                    value={accessEnds}
+                    onChange={(e) => setAccessEnds(e.target.value)}
+                    disabled={busy}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Someone whose email domain your organization does not hold joins as a viewer
+                    with no data, and their access ends: in 90 days unless you choose a date.
+                  </p>
                 </div>
-                <RoleChecklist
-                  canGrantAdmin={canGrantAdmin}
-                  roles={roles}
-                  selected={roleIds}
-                  onChange={setRoleIds}
-                  loading={rolesLoading}
-                  disabled={busy}
-                />
+
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
               </div>
+            </DialogBody>
 
-              <div className="space-y-2">
-                <Label htmlFor="invite-access-ends">
-                  Access ends (people outside the organization)
-                </Label>
-                <Input
-                  id="invite-access-ends"
-                  type="date"
-                  min={dateInputDaysFromNow(1)}
-                  max={dateInputDaysFromNow(MAX_EXTERNAL_ACCESS_DAYS)}
-                  value={accessEnds}
-                  onChange={(e) => setAccessEnds(e.target.value)}
-                  disabled={busy}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Someone whose email domain your organization does not hold joins as a viewer with
-                  no data, and their access ends: in 90 days unless you choose a date.
-                </p>
-              </div>
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-            </div>
-
-            <DialogFooter className="gap-2">
+            <DialogFooter>
               <Button type="button" variant="ghost" onClick={close}>
                 Cancel
               </Button>
@@ -293,7 +299,7 @@ export function InviteUserDialog({
                 Send invitation
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>

@@ -23,6 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -145,7 +146,7 @@ export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Put out of scope</DialogTitle>
           <DialogDescription>
@@ -153,177 +154,175 @@ export function ScopeExclusionDialog({ open, onOpenChange }: ScopeExclusionDialo
             hosts, partners&apos; systems, payment gateways.
           </DialogDescription>
         </DialogHeader>
-        <form
-          id={id}
-          onSubmit={submit}
-          className="-mx-6 min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-1"
-        >
-          {error && (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
+        <DialogBody>
+          <form id={id} onSubmit={submit} className="space-y-4">
+            {error && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-what`}>What</Label>
+              <Input
+                id={`${id}-what`}
+                value={what}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={
+                  pathOnly ? '*.example.com (empty: every host)' : SCOPE_KIND_PLACEHOLDER[kind]
+                }
+                onChange={(e) => {
+                  setWhat(e.target.value)
+                  setError(null)
+                }}
+              />
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {pathOnly ? (
+                  <span>The hosts the path rule applies to; they stay in scope.</span>
+                ) : override ? (
+                  <>
+                    <span>Kind:</span>
+                    <ScopeTargetTypeSelect
+                      value={override}
+                      onValueChange={(v) => setOverride(v as ScopeKind)}
+                      only={EXCLUSION_KINDS}
+                      className="h-7 w-44 text-xs"
+                      aria-label="Kind"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <span aria-live="polite">
+                      {pattern
+                        ? detected
+                          ? `Detected: ${SCOPE_KIND_LABEL[detected]} · covers ${coversText({ pattern, target_type: detected })}`
+                          : 'Kind not recognised'
+                        : 'A domain (*.x covers x and every name below it), IP address or range, URL or repository.'}
+                    </span>
+                    {pattern && (
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 hover:text-foreground"
+                        onClick={() => setOverride(detected ?? 'domain')}
+                      >
+                        {detected ? 'Change' : 'Pick the kind'}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-what`}>What</Label>
-            <Input
-              id={`${id}-what`}
-              value={what}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={
-                pathOnly ? '*.example.com (empty: every host)' : SCOPE_KIND_PLACEHOLDER[kind]
-              }
-              onChange={(e) => {
-                setWhat(e.target.value)
-                setError(null)
-              }}
-            />
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {pathOnly ? (
-                <span>The hosts the path rule applies to; they stay in scope.</span>
-              ) : override ? (
-                <>
-                  <span>Kind:</span>
-                  <ScopeTargetTypeSelect
-                    value={override}
-                    onValueChange={(v) => setOverride(v as ScopeKind)}
-                    only={EXCLUSION_KINDS}
-                    className="h-7 w-44 text-xs"
-                    aria-label="Kind"
-                  />
-                </>
-              ) : (
-                <>
-                  <span aria-live="polite">
-                    {pattern
-                      ? detected
-                        ? `Detected: ${SCOPE_KIND_LABEL[detected]} · covers ${coversText({ pattern, target_type: detected })}`
-                        : 'Kind not recognised'
-                      : 'A domain (*.x covers x and every name below it), IP address or range, URL or repository.'}
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id={`${id}-path`}
+                  checked={pathOnly}
+                  onCheckedChange={(v) => {
+                    setPathOnly(v === true)
+                    setError(null)
+                  }}
+                  className="mt-0.5"
+                />
+                <Label htmlFor={`${id}-path`} className="flex-col items-start gap-0.5 font-normal">
+                  <span className="block font-medium">Only a path</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Block requests under a path (for example /admin or /api/payments) and keep the
+                    rest of the host in scope.
                   </span>
-                  {pattern && (
-                    <button
-                      type="button"
-                      className="underline underline-offset-2 hover:text-foreground"
-                      onClick={() => setOverride(detected ?? 'domain')}
-                    >
-                      {detected ? 'Change' : 'Pick the kind'}
-                    </button>
-                  )}
+                </Label>
+              </div>
+              {pathOnly && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor={`${id}-prefix`}>Path prefix</Label>
+                    <Input
+                      id={`${id}-prefix`}
+                      value={pathPrefix}
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="/admin"
+                      onChange={(e) => {
+                        setPathPrefix(e.target.value)
+                        setError(null)
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Covers the path and everything below it. * stands for one whole segment.
+                    </p>
+                  </div>
+                  <fieldset className="space-y-2">
+                    <legend className="text-sm font-medium">Methods blocked</legend>
+                    <div className="flex flex-wrap gap-x-4 gap-y-2">
+                      {HTTP_METHODS.map((m) => (
+                        <label key={m} className="flex items-center gap-1.5 text-sm">
+                          <Checkbox
+                            checked={methods.includes(m)}
+                            onCheckedChange={(v) =>
+                              setMethods((cur) =>
+                                v === true ? [...cur, m] : cur.filter((x) => x !== m)
+                              )
+                            }
+                          />
+                          {m}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Now: {methodsText(methods)}.{' '}
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 hover:text-foreground"
+                        onClick={() => setMethods(STATE_CHANGING_METHODS)}
+                      >
+                        Block only what changes state
+                      </button>{' '}
+                      so read-only checks still run there.
+                    </p>
+                  </fieldset>
+                  <p className="text-xs text-muted-foreground">
+                    Testing starts Blocked. An exclusion approver can later allow read-only or full
+                    testing for a limited time.
+                  </p>
                 </>
               )}
             </div>
-          </div>
-          <div className="space-y-3 rounded-md border p-3">
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id={`${id}-path`}
-                checked={pathOnly}
-                onCheckedChange={(v) => {
-                  setPathOnly(v === true)
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-reason`}>Reason</Label>
+              <Textarea
+                id={`${id}-reason`}
+                rows={2}
+                maxLength={1000}
+                value={reason}
+                placeholder="Why must scans never touch it? For example: payment gateway, PCI change freeze."
+                onChange={(e) => {
+                  setReason(e.target.value)
                   setError(null)
                 }}
-                className="mt-0.5"
               />
-              <Label htmlFor={`${id}-path`} className="flex-col items-start gap-0.5 font-normal">
-                <span className="block font-medium">Only a path</span>
-                <span className="block text-xs text-muted-foreground">
-                  Block requests under a path (for example /admin or /api/payments) and keep the
-                  rest of the host in scope.
-                </span>
-              </Label>
+              <p className="text-xs text-muted-foreground">Required. Kept in the audit log.</p>
             </div>
-            {pathOnly && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor={`${id}-prefix`}>Path prefix</Label>
-                  <Input
-                    id={`${id}-prefix`}
-                    value={pathPrefix}
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="/admin"
-                    onChange={(e) => {
-                      setPathPrefix(e.target.value)
-                      setError(null)
-                    }}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Covers the path and everything below it. * stands for one whole segment.
-                  </p>
-                </div>
-                <fieldset className="space-y-2">
-                  <legend className="text-sm font-medium">Methods blocked</legend>
-                  <div className="flex flex-wrap gap-x-4 gap-y-2">
-                    {HTTP_METHODS.map((m) => (
-                      <label key={m} className="flex items-center gap-1.5 text-sm">
-                        <Checkbox
-                          checked={methods.includes(m)}
-                          onCheckedChange={(v) =>
-                            setMethods((cur) =>
-                              v === true ? [...cur, m] : cur.filter((x) => x !== m)
-                            )
-                          }
-                        />
-                        {m}
-                      </label>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Now: {methodsText(methods)}.{' '}
-                    <button
-                      type="button"
-                      className="underline underline-offset-2 hover:text-foreground"
-                      onClick={() => setMethods(STATE_CHANGING_METHODS)}
-                    >
-                      Block only what changes state
-                    </button>{' '}
-                    so read-only checks still run there.
-                  </p>
-                </fieldset>
-                <p className="text-xs text-muted-foreground">
-                  Testing starts Blocked. An exclusion approver can later allow read-only or full
-                  testing for a limited time.
-                </p>
-              </>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-reason`}>Reason</Label>
-            <Textarea
-              id={`${id}-reason`}
-              rows={2}
-              maxLength={1000}
-              value={reason}
-              placeholder="Why must scans never touch it? For example: payment gateway, PCI change freeze."
-              onChange={(e) => {
-                setReason(e.target.value)
-                setError(null)
-              }}
-            />
-            <p className="text-xs text-muted-foreground">Required. Kept in the audit log.</p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-days`}>Ends after (days, optional)</Label>
-            <Input
-              id={`${id}-days`}
-              type="number"
-              min={1}
-              max={MAX_DAYS}
-              value={days}
-              onChange={(e) => setDays(e.target.value)}
-              className="w-28"
-            />
-            <p className="text-xs text-muted-foreground">Empty: until someone lifts it.</p>
-          </div>
-          <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            Another approver must approve it before scans start skipping it.
-          </p>
-        </form>
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-days`}>Ends after (days, optional)</Label>
+              <Input
+                id={`${id}-days`}
+                type="number"
+                min={1}
+                max={MAX_DAYS}
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
+                className="w-28"
+              />
+              <p className="text-xs text-muted-foreground">Empty: until someone lifts it.</p>
+            </div>
+            <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              Another approver must approve it before scans start skipping it.
+            </p>
+          </form>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
