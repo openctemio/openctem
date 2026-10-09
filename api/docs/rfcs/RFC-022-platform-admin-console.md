@@ -632,6 +632,26 @@ Platform-wide counts and infrastructure facts only. The overview's
 platform items (schema, sensors, runs, notifications, waiting jobs) link to
 it.
 
+## Revision 18: system settings, announcements and feeds
+
+- **System > Announcements.** The operator publishes a notice (planned
+  maintenance, a warning, information) that every signed-in user sees as a
+  dismissible banner under the header while it is active.
+  `GET/POST /api/v1/admin/announcements` (any admin reads; ops_admin+
+  publishes with a reason, audited) and
+  `POST /api/v1/admin/announcements/{announcement_id}/cancel` (ops_admin+,
+  reason, audited; a scheduled one never shows). A notice is one line of
+  plain text (1-500 characters, no control characters, rendered as text,
+  never HTML) with a required end at most 31 days after its start, so none
+  is left up by mistake. Signed-in users read the active ones (at most 5,
+  maintenance first) at `GET /api/v1/announcements`, once per page load.
+  Table `platform_announcements` (migration 001541), platform-level.
+- **System > Threat intelligence.** The EPSS and CISA KEV feeds' sync state
+  (last run, records, next run, last error), turning the scheduled sync on
+  or off and running a sync now, on the existing
+  `/api/v1/admin/threat-intel/sync` routes (ops_admin+ for changes,
+  audited).
+
 ## Later phases
 
 - **Phase 2 (api) — Organizations** (implemented, api#548; see the Organizations section of `docs/architecture/authorization-matrix.md`). Organization suspend is split out, since it needs enforcement at token exchange, the membership check and background jobs. `GET/POST /admin/tenants`, suspend/

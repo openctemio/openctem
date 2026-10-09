@@ -83,6 +83,7 @@ finding_status_approvals
 finding_verification_checklists
 findings
 group_asset_scope_rules
+group_role_bindings
 groups
 ingest_jobs
 ingest_reports
