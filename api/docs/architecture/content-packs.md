@@ -56,7 +56,7 @@ Reading an archive back re-checks it against its digest. Tampered storage return
 
 ## Platform packs and channels
 
-Migration 001497 adds platform packs, which are kept apart from tenant packs:
+Migration 001546 adds platform packs, which are kept apart from tenant packs:
 
 - `platform_content_pack_blobs` is keyed by digest.
 - `platform_content_packs` is unique by name and version.

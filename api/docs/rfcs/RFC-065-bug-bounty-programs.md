@@ -99,7 +99,7 @@ inventory of that program.
 
 ## 5. Programs
 
-### 5.1 Data model (migration `001454`)
+### 5.1 Data model (migration `001495`)
 
 `bounty_programs`:
 
@@ -278,7 +278,7 @@ logged and noted in the run's warnings; it does not stop the run.
 | PR | Content |
 |---|---|
 | Docs | this RFC, index, architecture |
-| Model | migration `001454` (programs, source, snapshot tables, permissions, Researcher role); domain types, parser, terms hash |
+| Model | migration `001495` (programs, source, snapshot tables, permissions, Researcher role); domain types, parser, terms hash |
 | Programs | service + routes: preview, import, re-import, pause/resume/end, attestation audit, notification |
 | Gate | platform-sensor refusal for program entries; act scope for program members; program assignment pass |
 | Snapshot | snapshot per run + route |

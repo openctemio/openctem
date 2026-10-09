@@ -8,6 +8,7 @@ package routes
 // signer does not sign is not handed out; without a signer nothing changes.
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -46,8 +47,12 @@ type wireCommandList struct {
 	Commands []wireCommand `json:"commands"`
 }
 
-// realSigner runs the signer service (internal/signer) on a Unix socket and
-// returns the API's client of it and the signer's public key.
+// testKeySetRoot is the offline root that signs realSigner's key set.
+var testKeySetRoot = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{9}, ed25519.SeedSize))
+
+// realSigner runs the signer service (internal/signer) on a Unix socket,
+// with a key set signed by testKeySetRoot, and returns the API's client of
+// it and the signer's public key.
 func realSigner(t *testing.T) (*signerclient.Client, ed25519.PublicKey) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "sj") // short: Unix socket paths are limited
@@ -61,6 +66,13 @@ func realSigner(t *testing.T) (*signerclient.Client, ed25519.PublicKey) {
 	}
 	svc, err := signer.New(signer.Config{Key: priv, StateDir: filepath.Join(dir, "state")})
 	if err != nil {
+		t.Fatal(err)
+	}
+	keyset, _, err := jobsign.SignKeySet(testKeySetRoot, 1, time.Now(), 24*time.Hour, []ed25519.PublicKey{pub})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.LoadKeySet(keyset); err != nil {
 		t.Fatal(err)
 	}
 	sock := filepath.Join(dir, "s.sock")
@@ -204,6 +216,12 @@ func TestSignedJobs_V2ClaimsCarryEnvelopesFromTheSigner(t *testing.T) {
 	if hello.SignedJobs == nil || hello.SignedJobs.PayloadType != jobsign.PayloadType || len(hello.SignedJobs.Keys) != 1 ||
 		hello.SignedJobs.Keys[0].KeyID != jobsign.KeyID(pub) {
 		t.Fatalf("hello signed_jobs %s", raw)
+	}
+	// And the key set: signed by the offline root, listing the signer's key.
+	rootPub, _ := testKeySetRoot.Public().(ed25519.PublicKey)
+	ks, _, err := jobsign.VerifyKeySet(hello.SignedJobs.KeySet, jobsign.KeyID(rootPub), time.Now())
+	if err != nil || !ks.HasKey(jobsign.KeyID(pub)) {
+		t.Fatalf("hello signed_jobs.keyset %s: %v", hello.SignedJobs.KeySet, err)
 	}
 }
 
