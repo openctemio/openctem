@@ -15,6 +15,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/features/shared'
@@ -98,7 +99,7 @@ export function ZoneSensorsDialog({ open, onOpenChange, zone }: ZoneSensorsDialo
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Sensors for {zone?.name}</DialogTitle>
           <DialogDescription>
@@ -107,60 +108,62 @@ export function ZoneSensorsDialog({ open, onOpenChange, zone }: ZoneSensorsDialo
           </DialogDescription>
         </DialogHeader>
 
-        {isLoading ? (
-          <div className="space-y-2">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        ) : sensors.length === 0 ? (
-          <EmptyState
-            icon={RadioTower}
-            title="No sensors yet"
-            description="Add a sensor in your network first, then assign it here."
-            card={false}
-            action={
-              <Button asChild size="sm" variant="outline">
-                <Link href="/sensors?tab=scanners">Go to scanners</Link>
-              </Button>
-            }
-          />
-        ) : (
-          <ul className="divide-y rounded-md border" data-testid="zone-sensor-list">
-            {sensors.map((s) => {
-              const checked = current.has(s.id)
-              const id = `zone-sensor-${s.id}`
-              return (
-                <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
-                  <Checkbox
-                    id={id}
-                    checked={checked}
-                    disabled={pending !== null}
-                    onCheckedChange={(v) => void toggle(s, v === true)}
-                    aria-label={`Assign ${s.name}`}
-                  />
-                  <label htmlFor={id} className="flex min-w-0 flex-1 cursor-pointer flex-col">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <SensorHealthChip sensor={s} className="border-0 px-0 text-sm" />
-                      {sensorRoleOf(s.type) === 'collector' && (
-                        <Badge variant="secondary" className="text-xs font-normal">
-                          Collector
-                        </Badge>
-                      )}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {sensorHealthLabel(s)}
-                      {s.effective?.tools?.length ? ` · ${s.effective.tools.join(', ')}` : ''}
-                    </span>
-                  </label>
-                  {pending === s.id && (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        )}
+        <DialogBody>
+          {isLoading ? (
+            <div className="space-y-2">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : sensors.length === 0 ? (
+            <EmptyState
+              icon={RadioTower}
+              title="No sensors yet"
+              description="Add a sensor in your network first, then assign it here."
+              card={false}
+              action={
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/sensors?tab=scanners">Go to scanners</Link>
+                </Button>
+              }
+            />
+          ) : (
+            <ul className="divide-y rounded-md border" data-testid="zone-sensor-list">
+              {sensors.map((s) => {
+                const checked = current.has(s.id)
+                const id = `zone-sensor-${s.id}`
+                return (
+                  <li key={s.id} className="flex items-center gap-3 px-3 py-2.5">
+                    <Checkbox
+                      id={id}
+                      checked={checked}
+                      disabled={pending !== null}
+                      onCheckedChange={(v) => void toggle(s, v === true)}
+                      aria-label={`Assign ${s.name}`}
+                    />
+                    <label htmlFor={id} className="flex min-w-0 flex-1 cursor-pointer flex-col">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <SensorHealthChip sensor={s} className="border-0 px-0 text-sm" />
+                        {sensorRoleOf(s.type) === 'collector' && (
+                          <Badge variant="secondary" className="text-xs font-normal">
+                            Collector
+                          </Badge>
+                        )}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {sensorHealthLabel(s)}
+                        {s.effective?.tools?.length ? ` · ${s.effective.tools.join(', ')}` : ''}
+                      </span>
+                    </label>
+                    {pending === s.id && (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => close(false)}>
