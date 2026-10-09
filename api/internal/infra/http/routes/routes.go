@@ -81,6 +81,8 @@ type Handlers struct {
 	Scope         *handler.ScopeHandler         // nil if not initialized (no database)
 	// BountyProgram serves bug-bounty programs (RFC-065); nil without a database.
 	BountyProgram *handler.BountyProgramHandler
+	// ScopeLetter serves authorization letters (RFC-065 §13).
+	ScopeLetter   *handler.ScopeLetterHandler
 	AssetType     *handler.AssetTypeHandler     // nil if not initialized (no database)
 	AttackSurface *handler.AttackSurfaceHandler // nil if not initialized (no database)
 	EASM          *handler.EASMHandler          // RFC-036 overview; nil if not initialized
@@ -127,12 +129,13 @@ type Handlers struct {
 	CI            *handler.CIHandler               // nil if not initialized (no database) - CI/CD snippet generator
 	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
 	// without a database.
-	CIAdmin         *handler.CIAdminHandler
-	CIRunner        *handler.CIRunnerHandler
-	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
-	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
-	ContentPack     *handler.ContentPackHandler     // nil if not initialized (no database)
-	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
+	CIAdmin             *handler.CIAdminHandler
+	CIRunner            *handler.CIRunnerHandler
+	ScannerTemplate     *handler.ScannerTemplateHandler     // nil if not initialized (no database)
+	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
+	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
+	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
@@ -238,6 +241,7 @@ type Handlers struct {
 	AdminPlatformUser *handler.AdminPlatformUserHandler
 	AdminSession      *handler.AdminSessionHandler
 	AdminOperations   *handler.AdminOperationsHandler
+	Announcement      *handler.AnnouncementHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
 	AdminConsole            *handler.AdminConsoleHandler
@@ -490,6 +494,9 @@ func Register(
 
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
+	if h.Announcement != nil {
+		registerAnnouncementRoute(router, h.Announcement, authMiddleware)
+	}
 
 	// User routes (protected with user sync for OIDC)
 	if h.User != nil {
@@ -767,6 +774,9 @@ func Register(
 	if h.BountyProgram != nil {
 		registerProgramRoutes(router, h.BountyProgram, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
 	}
+	if h.ScopeLetter != nil {
+		registerScopeLetterRoutes(router, h.ScopeLetter, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
+	}
 
 	// Asset Type routes (tenant from JWT token)
 	if h.AssetType != nil {
@@ -891,6 +901,9 @@ func Register(
 	// Template Source routes (tenant from JWT token)
 	if h.ContentPack != nil {
 		registerContentPackRoutes(router, h.ContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+	if h.PlatformContentPack != nil {
+		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
 	}
 
 	if h.TemplateSource != nil {
