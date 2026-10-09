@@ -31,7 +31,7 @@ others see. A hostile or compromised sensor, or just a buggy one, could:
 | `exploit_available`, `exploit_maturity` | CISA KEV feed (KEV means exploited) | nothing | `findings.exploit_available` (read by the list filter, the CVE groups and the tenant CVE views through one predicate, `vulnerability.FindingExploitAvailableSQL`) |
 | Component identity (`purl`, name, version, ecosystem) | — | create the row | — |
 | Component description, homepage, metadata | first report | set them only when it creates the row | — |
-| Component licenses | none (the shared `component_licenses` table was dropped by migration 001482) | nothing | `asset_components.license` |
+| Component licenses | none (the shared `component_licenses` table was dropped by migration 001491) | nothing | `asset_components.license` |
 | License dictionary (`licenses`) | the platform seed | add an unknown id (category and risk `unknown`) | — |
 
 ### How it is enforced
@@ -141,7 +141,7 @@ Data already written by tenants is corrected once:
    `asset_components.license` where it is empty, so license reports do not go
    blank. Existing links cannot be traced to the tenant that declared them, so
    every tenant keeps exactly what it saw before. New scans record only their
-   own licenses. `component_licenses` was no longer read and migration 001482
+   own licenses. `component_licenses` was no longer read and migration 001491
    dropped it.
 
 The down migration does not restore the cleared risk values: they were written
