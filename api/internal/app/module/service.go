@@ -371,7 +371,8 @@ func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModu
 // server-side from the static preset catalog, so it is bounded by the
 // module catalog, and it must be applied as one set for the dependency
 // check to see the preset's target state.
-const maxModuleUpdatesPerRequest = 50
+// A variable so a test can lower it.
+var maxModuleUpdatesPerRequest = 50
 
 // UpdateTenantModules toggles modules for a tenant on behalf of an API caller.
 func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string, updates []moduledom.TenantModuleUpdate, actx auditapp.AuditContext) (*TenantModuleConfigOutput, error) {
