@@ -21,6 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { SNOOZE_PRESETS, MIN_THRESHOLD_DAYS, MAX_THRESHOLD_DAYS } from '../types'
@@ -171,7 +172,7 @@ export function LifecycleSnoozeMenu({
       </DropdownMenu>
 
       <Dialog open={customOpen} onOpenChange={setCustomOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Custom snooze duration</DialogTitle>
             <DialogDescription>
@@ -179,17 +180,19 @@ export function LifecycleSnoozeMenu({
               this asset until the snooze expires.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="custom-days">Days</Label>
-            <Input
-              id="custom-days"
-              type="number"
-              min={MIN_THRESHOLD_DAYS}
-              max={MAX_THRESHOLD_DAYS}
-              value={customDays}
-              onChange={(e) => setCustomDays(e.target.value)}
-            />
-          </div>
+          <DialogBody>
+            <div className="space-y-2">
+              <Label htmlFor="custom-days">Days</Label>
+              <Input
+                id="custom-days"
+                type="number"
+                min={MIN_THRESHOLD_DAYS}
+                max={MAX_THRESHOLD_DAYS}
+                value={customDays}
+                onChange={(e) => setCustomDays(e.target.value)}
+              />
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCustomOpen(false)}>
               Cancel
