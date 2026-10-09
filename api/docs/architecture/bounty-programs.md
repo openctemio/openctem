@@ -82,4 +82,4 @@ the run and hold `scope:read` or `programs:read`.
 | `internal/app/scan/active_proof.go` | platform-sensor refusal for program-only targets |
 | `internal/app/scan/scope_snapshot.go`, `internal/app/scope/snapshot.go` | snapshot per run |
 | `internal/infra/postgres/bounty_program_assign.go` | program assignment pass (data scope) |
-| `migrations/001454_bounty_programs.*` | tables, columns, permissions, Researcher role |
+| `migrations/001495_bounty_programs.*` | tables, columns, permissions, Researcher role |
