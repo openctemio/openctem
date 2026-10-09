@@ -102,6 +102,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/notification-outbox":             {classConfig, "delivery queue, channel-manager only (L-03)"},
 	"/api/v1/webhooks":                        {classConfig, "inbound Jira/GitHub webhooks (HMAC); the outbound webhook API is removed"},
 	"/api/v1/scope":                           {classConfig, "scope targets, exclusions (two-person, L-07) and schedules"},
+	"/api/v1/programs":                        {classScoped, "bug-bounty programs (RFC-065): a caller sees only programs whose group has them unless full-data; another program is 404"},
 	"GET /api/v1/scope/stats":                 {classScoped, "inventory coverage counted in SQL over the caller's data scope (research/53 S-3)"},
 	"POST /api/v1/scope/targets/preview":      {classScoped, "names an entry would confirm, counted over the caller's data scope (RFC-054 §4.3)"},
 	"/api/v1/ci/settings":                     {classConfig, "CI settings: tenant configuration (RFC-051)"},
