@@ -916,7 +916,7 @@ The code must come from the caller's authenticator app in this request
 (`SELF_APPROVAL_NEEDS_TOTP` without one, `SELF_APPROVAL_INVALID_CODE` for a
 wrong or reused code; a wrong code counts towards the lockout). A password or
 an open step-up window is not enough. The approval row records
-`self_approved` and the reason (migration `001525`); the audit event
+`self_approved` and the reason (migration `001530`); the audit event
 `scope_target.self_approved` is high severity; every administrator and the
 channels (`security_alert`) are told. S3 is unchanged in substance: a T2
 entry still needs one approval, which here is the owner's own, proven with
@@ -973,7 +973,7 @@ organization requires N approvals"; the widening warning adapts.
 
 | PR | Content |
 |---|---|
-| Approvers | A1, A2: approver directory, `approval` on pending entries, notify and remind, self-approval with a fresh authenticator code (migration `001525`) |
+| Approvers | A1, A2: approver directory, `approval` on pending entries, notify and remind, self-approval with a fresh authenticator code (migration `001530`) |
 | T2 duration | A3: `t2_max_duration`, owner-only `PUT /scope/settings/intrusive`, server-side bound, entry dialogs |
 | Attestation | A4: attestation timestamps, `POST /attest`, the attestation and downgrade job |
 | Platform policy | A5: platform default and per-organization override, console section, effective policy on the tenant settings |
