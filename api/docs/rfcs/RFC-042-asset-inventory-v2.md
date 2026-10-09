@@ -982,7 +982,7 @@ port, and names are unique per tenant, so it merged into the domain.
 
 1. *One property schema, in the registry.* `api/configs/asset-types.yaml`
    declares every property key once (`properties`): English and
-   Vietnamese labels, a display format (`ip`, `url`, `code`), the synonym
+   Vietnamese labels, a display format (`ip`, `url`, `code`, `expiry`), the synonym
    keys that fold into it and, for a key such as `port`, the classes whose
    assets may hold it. A type's schema is its attributes plus
    `common_properties` (platform keys and the CTIS technical blocks).

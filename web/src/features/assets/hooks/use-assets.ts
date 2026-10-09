@@ -86,6 +86,10 @@ export interface AssetSearchFilters {
   providers?: string[]
   lastSeenBefore?: string // ISO timestamp — assets last seen before this instant
   lastSeenAfter?: string // ISO timestamp — assets last seen after this instant
+  // Expiry (properties of format expiry: certificate not_after, domain
+  // expires_at) after / before this ISO instant.
+  expiresAfter?: string
+  expiresBefore?: string
   // Attribution (RFC-036): states, or the aliases unknown / unconfirmed /
   // approved. Empty = no attribution filter (every asset).
   attribution?: string[]
@@ -419,6 +423,8 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
   if (filters.providers?.length) params.providers = filters.providers.join(',')
   if (filters.lastSeenBefore) params.last_seen_before = filters.lastSeenBefore
   if (filters.lastSeenAfter) params.last_seen_after = filters.lastSeenAfter
+  if (filters.expiresAfter) params.expires_after = filters.expiresAfter
+  if (filters.expiresBefore) params.expires_before = filters.expiresBefore
   if (filters.attribution?.length) params.attribution = filters.attribution.join(',')
 
   // Sorting
