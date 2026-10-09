@@ -1,4 +1,4 @@
 ### Added: programs sync their scope from the program source (RFC-065)
 
-- `PUT /api/v1/programs/{id}/source` (step-up): `program_api` reads the researcher API of the platform that runs the program (HackerOne structured scopes, with your own API token, encrypted and never returned) and `program_file` reads a scope file the program publishes over https on its own domain. Migration 001565.
+- `PUT /api/v1/programs/{id}/source` (step-up): `program_api` reads the researcher API of the platform that runs the program (HackerOne structured scopes, with your own API token, encrypted and never returned) and `program_file` reads a scope file the program publishes over https on its own domain. Migration 001610.
 - `POST /api/v1/programs/{id}/sync` and a controller every 6 hours read the source through the outbound guard. What the source removes stops at once; new out-of-scope items become program exclusions; what it adds waits as pending terms until a member accepts them (`GET /pending`, `POST /pending/apply` with step-up). A closed or vanished program is suspended. Syncs that narrow or suspend are audited (`bounty_program.synced`).

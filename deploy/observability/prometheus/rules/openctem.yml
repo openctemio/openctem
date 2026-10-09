@@ -300,7 +300,7 @@ groups:
       # written outside the API, a scope change the signer never accepted,
       # or a compromised API.
       - alert: SignerOutOfLedger
-        expr: sum by (reason) (increase(openctem_signer_refusals_total{reason=~"out_of_ledger|tier_exceeds_ledger|target_excluded"}[15m])) > 0
+        expr: sum by (reason) (increase(openctem_signer_refusals_total{reason=~"out_of_ledger|tier_exceeds_ledger|target_excluded|template_not_in_ledger"}[15m])) > 0
         labels: {severity: critical, component: api, category: security}
         annotations:
           summary: The job signer refused {{ $value | humanize }} job(s) outside its scope ledger ({{ $labels.reason }})
@@ -308,7 +308,7 @@ groups:
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signeroutofledger
 
       - alert: SignerRefusals
-        expr: sum by (reason) (increase(openctem_signer_refusals_total{reason!~"out_of_ledger|tier_exceeds_ledger|target_excluded"}[15m])) > 5
+        expr: sum by (reason) (increase(openctem_signer_refusals_total{reason!~"out_of_ledger|tier_exceeds_ledger|target_excluded|template_not_in_ledger"}[15m])) > 5
         labels: {severity: warning, component: api, category: security}
         annotations:
           summary: The job signer refused {{ $value | humanize }} job(s) in 15 minutes ({{ $labels.reason }})
