@@ -51,6 +51,8 @@ compensating_controls
 compliance_assessments
 compliance_finding_mappings
 compliance_frameworks
+content_pack_blobs
+content_packs
 control_tests
 credentials
 ct_monitor_state

@@ -28,6 +28,27 @@ type V2JobProcessor struct {
 	guard   BlindingGuard
 	logger  *logger.Logger
 	now     func() time.Time
+	// lastPurge is when Housekeep last purged the staging tables.
+	lastPurge time.Time
+}
+
+// Staging retention: what a report that will never be applied may keep.
+// Variables so a test can change them.
+var (
+	// StagingRetention is how long failed and expired reports, and finished
+	// jobs without a report, are kept (for the sensor's status reads and
+	// for diagnosis) before they are deleted.
+	StagingRetention = 7 * 24 * time.Hour
+	// stagingPurgeEvery is how often Housekeep purges (it runs every drain
+	// cycle).
+	stagingPurgeEvery = 10 * time.Minute
+	// stagingPurgeBatch caps the rows one purge step touches.
+	stagingPurgeBatch = 5000
+)
+
+// stagingPurger is implemented by the postgres report repository.
+type stagingPurger interface {
+	PurgeStaging(ctx context.Context, before time.Time, batch int) (ingestreport.StagingPurge, error)
 }
 
 // NewV2JobProcessor wires the v2 job processor.
@@ -196,8 +217,9 @@ func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report)
 	return nil
 }
 
-// Housekeep expires uncommitted reports past their window. The worker calls
-// it on every drain cycle.
+// Housekeep expires uncommitted reports past their window and, every
+// stagingPurgeEvery, purges the staging data of reports that will never be
+// applied (PurgeStaging). The worker calls it on every drain cycle.
 func (p *V2JobProcessor) Housekeep(ctx context.Context) {
 	n, err := p.reports.ExpireStale(ctx, p.now())
 	if err != nil {
@@ -207,6 +229,29 @@ func (p *V2JobProcessor) Housekeep(ctx context.Context) {
 	if n > 0 {
 		metrics.IngestV2ReportsTotal.WithLabelValues(string(protov2.StateExpired), "none").Add(float64(n))
 		p.logger.Info("v2: expired uncommitted reports", "count", n)
+	}
+	p.purgeStaging(ctx)
+}
+
+// purgeStaging bounds the staging tables: without it, every segment of a
+// report that is abandoned, expires or fails kept its decoded payload (up
+// to 64 MiB) forever, and a sensor could fill the database disk by opening,
+// filling and abandoning reports.
+func (p *V2JobProcessor) purgeStaging(ctx context.Context) {
+	purger, ok := p.reports.(stagingPurger)
+	now := p.now()
+	if !ok || (!p.lastPurge.IsZero() && now.Sub(p.lastPurge) < stagingPurgeEvery) {
+		return
+	}
+	p.lastPurge = now
+	out, err := purger.PurgeStaging(ctx, now.Add(-StagingRetention), stagingPurgeBatch)
+	if err != nil {
+		p.logger.Warn("v2: staging purge failed", "error", err)
+		return
+	}
+	if out != (ingestreport.StagingPurge{}) {
+		p.logger.Info("v2: purged staging data", "payloads_cleared", out.PayloadsCleared,
+			"reports_deleted", out.ReportsDeleted, "jobs_deleted", out.JobsDeleted)
 	}
 }
 

@@ -156,6 +156,7 @@ func (s *Service) bindingFromCommandID(ctx context.Context, tenantID shared.ID, 
 		if cmd, err := s.commands.GetByTenantAndID(ctx, tenantID, cid); err == nil && cmd != nil {
 			b.Targets = CommandTargets(cmd)
 			b.Tool = commandTool(cmd)
+			b.CommandType = cmd.Type
 			b.StepRunID = cmd.StepRunID
 		}
 	}
@@ -333,11 +334,13 @@ func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditCont
 		return nil, err
 	}
 
-	opts := Options{Binding: TrustedBinding(), Admitted: true, DeferAutoResolve: true, DeferSensorStats: true}
-	if item.Protocol == sensorresult.ProtocolV2 {
-		opts.RequireAssetForFindings = true
-		opts.NoCatalogWrites = true
-	}
+	// Accepting applies what the sensor sent with a person's authority, but
+	// keeps the protections of protocol v2 for every item (protocol v1 is
+	// retired; items it stored would otherwise keep its looser handling): a
+	// finding needs a real asset, and the shared CVE catalog is never
+	// written from sensor data.
+	opts := Options{Binding: TrustedBinding(), Admitted: true, DeferAutoResolve: true, DeferSensorStats: true,
+		RequireAssetForFindings: true, NoCatalogWrites: true}
 	agt := &sensor.Sensor{ID: item.SensorID, TenantID: &tenantID, Type: sensor.SensorType(item.SensorType), Status: sensor.SensorStatusActive}
 	out, ingErr := s.Ingest(ctx, agt, Input{Report: &report, Options: opts})
 

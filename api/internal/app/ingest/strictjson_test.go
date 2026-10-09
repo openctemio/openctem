@@ -207,7 +207,7 @@ func FuzzStrictCTIS(f *testing.F) {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		report, err := DecodeStrictReport(data, protov2.DefaultMaxJSONDepth)
+		report, err := DecodeStrictReport(data, protov2.DefaultMaxJSONDepth, ReportBounds(protov2.DefaultLimits()))
 		if err != nil {
 			return
 		}
@@ -219,4 +219,53 @@ func FuzzStrictCTIS(f *testing.F) {
 		}
 		_, _ = ParseV2Report(data, v2TestReportID, protov2.DefaultLimits())
 	})
+}
+
+func TestCheckIJSONBounded(t *testing.T) {
+	b := JSONBounds{TopArrays: map[string]int{"findings": 2}, MaxArrayLen: 3, MaxContainers: 8, MaxValues: 12}
+	cases := []struct {
+		name string
+		in   string
+		want error
+	}{
+		{"within every bound", `{"findings":[{},{}],"x":[1,2,3]}`, nil},
+		{"top-level array over its own bound", `{"findings":[{},{},{}]}`, ErrJSONTooManyItems},
+		{"other top-level array uses MaxArrayLen", `{"assets":[1,2,3]}`, nil},
+		{"other top-level array over MaxArrayLen", `{"assets":[1,2,3,4]}`, ErrJSONTooManyItems},
+		{"nested array named findings is not top-level", `{"a":{"findings":[1,2,3]}}`, nil},
+		{"nested array over MaxArrayLen", `{"a":[[1,2,3,4]]}`, ErrJSONTooManyItems},
+		{"too many containers", `{"a":{},"b":{},"c":{},"d":{},"e":{},"f":{},"g":{},"h":{}}`, ErrJSONTooManyItems},
+		{"too many values", `{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":9,"j":10,"k":11,"l":12}`, ErrJSONTooManyItems},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := CheckIJSONBounded([]byte(c.in), 64, b); !errors.Is(got, c.want) {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+	// The unbounded pre-pass is unchanged.
+	if err := CheckIJSON([]byte(`{"findings":[{},{},{},{},{}]}`), 64); err != nil {
+		t.Fatalf("CheckIJSON: %v", err)
+	}
+}
+
+// A segment over its item limit is refused as report-too-large before it is
+// decoded (the decoded structs of a flood of empty objects are ~280 times
+// the body).
+func TestParseV2Report_ItemFloodIsTooLargeBeforeDecode(t *testing.T) {
+	limits := protov2.DefaultLimits()
+	limits.MaxFindingsPerSegment = 10
+	flood := `{"version":"1.0","metadata":{"timestamp":"2026-10-01T12:00:00Z"},"tool":{"name":"semgrep"},"findings":[` +
+		strings.TrimSuffix(strings.Repeat("{},", 11), ",") + `]}`
+	_, err := ParseV2Report([]byte(flood), v2TestReportID, limits)
+	var verr *V2ReportError
+	if !errors.As(err, &verr) || verr.Problem != protov2.ProblemReportTooLarge {
+		t.Fatalf("err = %v, want report-too-large", err)
+	}
+	// Ten findings are within the limit.
+	ok := strings.Replace(flood, "{},{}]", "{}]", 1)
+	if _, err := DecodeStrictReport([]byte(ok), 64, ReportBounds(limits)); err != nil {
+		t.Fatalf("10 findings: %v", err)
+	}
 }

@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { PageHeader } from '@/features/shared'
-import { CI_GITHUB_GUIDE_URL, CI_GITLAB_GUIDE_URL } from '@/config/help-links'
+import { DOCS } from '@/lib/docs-links'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { CIPipelinesPanel } from './ci-pipelines-panel'
 import { CITrustSettings } from './ci-trust-settings'
@@ -36,13 +36,13 @@ export function CICDIntegration() {
         description="Scan every repository in its own pipeline: CI jobs (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket, CircleCI, Jenkins) send their results with the identity their CI provider gives them, no stored secret, and the platform decides which builds fail."
       >
         <Button asChild variant="outline" size="sm">
-          <SafeExternalLink href={CI_GITHUB_GUIDE_URL}>
+          <SafeExternalLink href={DOCS.ci.githubActions}>
             <BookOpen className="h-4 w-4" />
             GitHub Actions guide
           </SafeExternalLink>
         </Button>
         <Button asChild variant="outline" size="sm">
-          <SafeExternalLink href={CI_GITLAB_GUIDE_URL}>
+          <SafeExternalLink href={DOCS.ci.gitlabCi}>
             <BookOpen className="h-4 w-4" />
             GitLab CI guide
           </SafeExternalLink>

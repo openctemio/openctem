@@ -20,7 +20,7 @@ import { useFilteredSidebarData } from '@/lib/permissions'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { useTranslation } from '@/context/i18n-provider'
 import { commandFilter } from '@/lib/command-filter'
-import { DOCS_URL } from '@/config/help-links'
+import { DOCS_URL } from '@/lib/docs-links'
 import { ScrollArea } from './ui/scroll-area'
 
 export function CommandMenu() {

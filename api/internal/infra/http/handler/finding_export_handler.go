@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -58,14 +57,11 @@ var findingCSVHeader = []string{
 }
 
 // csvSafe neutralizes a cell a spreadsheet would evaluate as a formula
-// (OWASP CSV injection): a leading = + - @ tab or carriage return gets a
+// (OWASP CSV injection). It is sanitizeCSVCell, the one rule every CSV
+// export uses: a leading tab or carriage return, or = + - @ after any
+// leading whitespace (" =HYPERLINK(...)" is still a formula), gets a
 // leading apostrophe.
-func csvSafe(s string) string {
-	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
-		return "'" + s
-	}
-	return s
-}
+func csvSafe(s string) string { return sanitizeCSVCell(s) }
 
 func findingCSVRow(f FindingResponse) []string {
 	str := func(p *string) string {

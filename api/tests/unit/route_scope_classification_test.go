@@ -122,6 +122,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scan-profiles":                   {classConfig, "scan profiles"},
 	"/api/v1/scanner-templates":               {classConfig, "scanner templates"},
 	"/api/v1/template-sources":                {classConfig, "template sources"},
+	"/api/v1/content-packs":                   {classConfig, "content packs (RFC-061): the tenant own templates, rules and wordlists"},
 	// Not catalog data: the stats name the caller's own sensors and custom tools
 	// (tenant-filtered in SQL; platform tools are the only shared rows, 23b SC-H1).
 	"/api/v1/secret-store":          {classConfig, "scanner credentials"},

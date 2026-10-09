@@ -38,6 +38,11 @@ const (
 	// are pruned when a new version is stored.
 	ManifestVersionsKept   = 50
 	ManifestVersionsMaxAge = 90 * 24 * time.Hour
+	// ManifestVersionsHardCap bounds the stored versions of one sensor
+	// whatever their age: a sensor that changes its manifest on every call
+	// (any unknown member changes the digest) must not grow the table
+	// without bound within the retention age.
+	ManifestVersionsHardCap = 100
 
 	maxManifestCPUCores = 4096
 	maxManifestStrLen   = 128
