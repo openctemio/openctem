@@ -1972,12 +1972,18 @@ accountable for it (`service_owner_id`, the creator), and never signs in.
 | One organization | trigger on `tenant_members`: a service account is a member of its own organization only |
 | Never owner, administrator or full data | trigger on `tenant_members` (label) and on `user_roles` (owner, admin, any full-data role); the role grant guard refuses the same (`ErrServiceAccountRoleCeiling`); a team carrying a full-data role refuses it as it refuses an external member |
 | Starts with nothing | created with no role: roles come from the role APIs (grant ceiling) and teams; data scope from teams |
-| Acts through keys | an administrator mints `oct_` keys for it (`user_id` = the account); a key carries at most the account's live permissions and data scope, and is read-only on the REST API |
+| Acts through keys | keys are minted for it with `POST /api/v1/service-accounts/{id}/api-keys` (`user_id` = the account); each scope must be held by the person minting it, and at request time a key carries only the scopes the account still holds, within its data scope; keys are read-only on the REST API, and no key reaches `/api/v1/service-accounts` |
 | Removal | `DELETE /api/v1/service-accounts/{id}` removes the account with its roles, team memberships and keys at once |
 
 Routes: `GET /api/v1/service-accounts` (`team:members:read`), `POST` and
-`DELETE /{id}` (`team:members:write`). Creation and deletion are audited
-(`user.created` / `user.deleted`, metadata `kind=service`).
+`DELETE /{id}` (`team:members:write`). Its keys:
+`GET /{id}/api-keys` (`team:members:read` and `integrations:api_keys:read`),
+`POST /{id}/api-keys` (`team:members:write` and `integrations:api_keys:write`, recent
+sign-in) and `DELETE /{id}/api-keys/{key_id}` (`team:members:write` and
+`integrations:api_keys:delete`, recent sign-in). Another organization's account, a person,
+or a key that is not the account's reads as not found. Creation and deletion
+are audited (`user.created` / `user.deleted`, metadata `kind=service`;
+`api_key.created` / `api_key.deleted` for keys).
 
 ## CI invariants that keep this from drifting
 

@@ -10,3 +10,9 @@
   administrator or hold full data access (database triggers and the role grant
   guard). Deleting it removes its roles, team memberships and keys at once
   (migration 001461).
+- `GET/POST /api/v1/service-accounts/{id}/api-keys` and
+  `DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}`: mint, list and
+  delete its keys (member and API key permissions together; minting and
+  deleting need a recent sign-in). A scope must be held by the person minting
+  the key. API keys cannot reach `/api/v1/service-accounts`.
+- Settings > Integrations > Service accounts in the web console.
