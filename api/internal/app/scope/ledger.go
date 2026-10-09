@@ -48,6 +48,16 @@ type LedgerFeed interface {
 // saved as before.
 func (s *Service) SetLedger(l LedgerFeed) { s.ledger = l }
 
+// LedgerTemplateSource lists a tenant's custom template versions approved
+// for sensors (*app.ScannerTemplateService).
+type LedgerTemplateSource interface {
+	LedgerTemplates(ctx context.Context, tenantID string) ([]jobsign.LedgerTemplate, error)
+}
+
+// SetLedgerTemplates adds the approved template versions to the ledger's
+// sync and export snapshots.
+func (s *Service) SetLedgerTemplates(t LedgerTemplateSource) { s.ledgerTemplates = t }
+
 // Ledger errors (the handler answers them with their code).
 var (
 	ErrLedgerRefused = shared.NewDomainError("SCOPE_LEDGER_REFUSED",
@@ -332,6 +342,11 @@ func (s *Service) LedgerSnapshot(ctx context.Context, tenantID string) (jobsign.
 	for _, x := range exclusions {
 		if e := ledgerExclusionOf(x, now); e != nil {
 			snap.Exclusions = append(snap.Exclusions, *e)
+		}
+	}
+	if s.ledgerTemplates != nil {
+		if snap.Templates, err = s.ledgerTemplates.LedgerTemplates(ctx, tenantID); err != nil {
+			return snap, err
 		}
 	}
 	return snap, nil
