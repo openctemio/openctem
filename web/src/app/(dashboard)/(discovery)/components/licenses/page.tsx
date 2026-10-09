@@ -3,7 +3,7 @@
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { PageHeader, DataTable, DataTableColumnHeader } from '@/features/shared'
 import { Button } from '@/components/ui/button'
