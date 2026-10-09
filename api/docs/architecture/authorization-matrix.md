@@ -1917,7 +1917,7 @@ organization, its members and its settings, so 000771 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
 
-**Split from `findings:write` (migration 001447).** `findings:severity` gates
+**Split from `findings:write` (migration 001455).** `findings:severity` gates
 `PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
 finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
 reactions (`/comments/{comment_id}/reactions*`). The migration granted both to
