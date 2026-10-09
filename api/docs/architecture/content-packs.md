@@ -54,6 +54,46 @@ Ingest stays in the API process, owner decision 2026-10-08. A separate process w
 
 Reading an archive back re-checks it against its digest. Tampered storage returns 500 and is never served.
 
+## Platform packs and channels
+
+Migration 001387 adds platform packs, which are kept apart from tenant packs:
+
+- `platform_content_pack_blobs` is keyed by digest.
+- `platform_content_packs` is unique by name and version.
+- `platform_content_channels` holds a `stable` and a `canary` pointer per name. The composite foreign key `(pack_id, name)` means a channel can only name a pack of its own name.
+
+No tenant statement touches these tables. The archives live in the `platform-content` storage namespace, which is not a tenant id, so erasing an organization never reaches it.
+
+**Ingest.** A super admin uploads a pack, or imports an upstream release by `https` URL.
+
+- An import requires the release's `sha256` and checks it before anything is parsed.
+- The fetch goes through the SSRF guard: public addresses only, checked at dial time.
+- Limits: up to 128 MiB fetched or uploaded, 384 MiB of files, 60,000 files. One platform ingest runs at a time, with a 5 minute limit.
+- The pack is signed with the **platform content key**: a separate HKDF label from the tenant keys, with statement `scope: "platform"`. A tenant statement cannot carry that scope, and a tenant key never verifies a platform pack.
+
+**Upstream lint.** A file that fails lint is left out of the pack and listed as a warning (`lint.excluded` counts them). The release as a whole is not refused, and sensors never receive the left-out files. Left out:
+
+- the `code`, `javascript`, `headless` and `file` protocols;
+- self-contained templates;
+- unsafe regexes;
+- YAML files that are not templates (CI files, profiles);
+- workflows.
+
+Attack payloads in a template's requests (`/etc/passwd`, shell fragments) are what detection templates send to their targets. The custom-template text check refuses them; for upstream packs they make the template T2 instead.
+
+Measured with nuclei-templates v10.5.0 (9.9 MB tar.gz, 15,325 entries):
+
+- 11,329 files were kept and 3,084 left out;
+- 10,996 templates, tier T2;
+- a 47 MB canonical archive;
+- 14 s on one core, about 430 MB of resident memory.
+
+**Channels.** A super admin points `stable` or `canary` of a name at an active pack. Revoking a pack moves every channel that names it to the newest older active pack of the name, or removes the channel when there is none. This happens in the same transaction.
+
+Routes:
+- `/api/v1/admin/content-packs`: any admin reads. Upload, `import`, `{id}/revoke` and `channels/{channel}` need a super admin and are audited by the admin route layer.
+- `/api/v1/platform-content-packs`: read-only for organizations, with `scans:content:read`.
+
 ## API
 
 The routes are under `/api/v1/content-packs`, take the tenant from the JWT and are gated by the `scanner_templates` module.

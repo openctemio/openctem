@@ -550,6 +550,25 @@ func registerContentPackRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerPlatformContentPackRoutes registers the read-only view every
+// organization has of the platform content packs and channels (RFC-061).
+// The platform administrators manage them under /api/v1/admin/content-packs.
+func registerPlatformContentPackRoutes(
+	router Router,
+	h *handler.PlatformContentPackHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/platform-content-packs", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
+		r.GET("/channels", h.Channels, middleware.Require(permission.ContentPacksRead))
+		r.GET("/signing-key", h.SigningKey, middleware.Require(permission.ContentPacksRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
+	}, tenantMiddlewares...)
+}
+
 // registerTemplateSourceRoutes registers template source management endpoints.
 // Template sources are external sources (Git, S3, HTTP) for scanner templates.
 func registerTemplateSourceRoutes(
