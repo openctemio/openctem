@@ -180,7 +180,7 @@ var Features = []Feature{
 		Description: "The organization, its settings (security, SSO, evidence, retests), plan and the audit log.",
 		Registers: []string{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationPlanRoutes",
-			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes",
+			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes",
 		},
 	},
 	{
