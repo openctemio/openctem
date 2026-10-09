@@ -1292,7 +1292,13 @@ and narrows dispatch:
   `state` (`enforced`, `absent`), `source`, `digest`, a `summary` (counts of
   allow and deny entries, private yes/no, ports, tools, job types, the
   custom-template and interactsh switches, rate caps; never the ranges),
-  `kill_switch` and `warnings`. Older SDKs send nothing.
+  `kill_switch`, `warnings` and `required`. Older SDKs send nothing.
+  `required: true` with `state: absent` is a new install that fails closed
+  (it refuses every job with a network target, custom templates and
+  callbacks, rule `no_local_policy`); `required: false` with `absent` is a
+  legacy install that admits them (RFC-040 §11.4 Q3 revised). The config
+  report's `policy.local` check then fails with code `required_absent`; the
+  checklist derived for a sensor without a config report does the same.
 - **Storage.** `sensors.reported_local_policy` (JSONB, migration 000298) and
   `local_policy_reported_at`, sanitized at ingest
   (`sensor.SanitizeLocalPolicyReport`: known states only, digest format,
@@ -1444,6 +1450,56 @@ and narrows dispatch:
   privilege escalation, seccomp RuntimeDefault, writable tmpfs/emptyDir
   scratch directories). The Helm snippet turns on `sensor.localPolicy` of
   chart 0.11.0.
+
+## Security posture (RFC-040 §11.4)
+
+Existing sensors without a local policy, without a pinned platform CA, or
+running tools without network confinement keep working, but they are flagged
+prominently: on the manifest, on the Sensors page and with an alert (owner
+decisions Q3 revised, Q10, Q12, 2026-10-08).
+
+- **Hello feature `posture`.** Listed when manifests are served. SDKs that see
+  it add the manifest member `posture`: `platform_tls.pin` (`fingerprint`: the
+  CA pinned by `SENSOR_CA_FINGERPRINT`; `ca_file`: a private CA file besides
+  the system trust store; `none`: the system trust store only) and `sandbox`
+  (`mode` `off`/`auto`/`required`, `sandboxed`, `network_enforced`). The gRPC
+  transport pins its own CA; `platform_tls.pin` is about the HTTPS client.
+- **Storage.** The sanitized manifest (`sensor_manifests.manifest`, no new
+  column): `sensor.SanitizeManifestPosture` keeps closed values only; an
+  unknown pin is dropped, an unknown sandbox mode is cleared.
+- **Read side.** `GET /sensors` and `GET /sensors/{id}` return `posture`:
+  `local_policy` (`enforced`, `absent_required`, `absent_legacy`, `unknown`,
+  from `sensors.reported_local_policy`), `platform_pin` (`fingerprint`,
+  `ca_file`, `none`, `unknown`) and `network_enforced` (`true`, `false`,
+  `null` when not reported), both from the current manifest (the row whose
+  digest is `sensors.manifest_digest`, read in the same query with a
+  correlated lookup on the `(sensor_id, digest)` index, the manifest's tenant
+  matching the sensor's), and `unhardened`, the reasons, in order:
+  - `policy_none`: `absent_legacy`, or `unknown` for a sensor that has
+    connected (an SDK that ignores local policies);
+  - `pin_none`: `platform_pin` is `none`;
+  - `network_unenforced`: `network_enforced` is `false`;
+  - `bearer_key`: the sensor authenticates with a bearer key instead of a
+    key-bound identity (and has connected).
+
+  An unreported pin or sandbox is not flagged. `sensor.DerivePosture` is the
+  one derivation, used by the API and the metric.
+- **Console.** An "Unhardened" warning tag on the Sensors list rows, the phone
+  cards and the detail header (the title lists the fixes), and a Security
+  posture block in the detail sheet with one fix per reason: install a local
+  policy (the Local policy tab of the install commands), pin the platform CA
+  with `SENSOR_CA_FINGERPRINT`, run with `SENSOR_SANDBOX_NETWORK=required` and
+  the seccomp profile, pair again for a key-bound identity.
+- **Alert.** Gauge `openctem_sensors_unhardened{kind}` (`policy_none`,
+  `pin_none`, `network_unenforced`, `bearer_key`): active tenant sensors by
+  reason, platform-wide, no tenant or sensor label. Alert `SensorsUnhardened`
+  (warning, `for: 24h`); runbook in
+  [operations/monitoring.md](../operations/monitoring.md#sensorsunhardened).
+
+The posture is a claim from the sensor: it is shown and alerted on, and never
+relaxes a platform check (dispatch, scope, job signing, authentication). A
+sensor that reports a strong posture gets no more work than one that reports
+none.
 
 ## Config report: the setup checklist
 
