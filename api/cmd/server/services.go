@@ -686,6 +686,8 @@ type Services struct {
 
 	// ContentPacks is the content pack store (RFC-061).
 	ContentPacks *contentpackapp.Service
+	// PlatformContentPacks are the platform's packs and channels (RFC-061).
+	PlatformContentPacks *contentpackapp.PlatformService
 
 	// Workflows
 	Workflow           *workflow.WorkflowService
@@ -1309,8 +1311,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
 	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),
 		letterFiles{svc: s.Attachment}, s.Scope.NotifyAdmins)
-	// A revoked letter's entries leave the job signer's ledger (RFC-040 §11.5).
-	s.ScopeLetters.SetLedger(s.Scope)
+	// A revoked letter's entries leave the job signer's ledger at once.
+	s.ScopeLetters.OnRevoke(s.Scope.NarrowLetter)
 	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)
 	storageResolver := auth.NewSettingsStorageResolver(deps.DB, s.Encryptor, log)
 	// "local" is always the operator storage above, never a tenant-chosen
@@ -1660,7 +1662,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.TemplateKeys = initTemplateKeyring(cfg, log)
 	// Content packs are stored in each tenant's namespace of the operator
 	// file storage and signed with the tenant's content key.
-	s.ContentPacks = contentpackapp.NewService(repos.ContentPack, fileStorage, initContentSigner(cfg, log), s.Audit, log)
+	contentSigner := initContentSigner(cfg, log)
+	s.ContentPacks = contentpackapp.NewService(repos.ContentPack, fileStorage, contentSigner, s.Audit, log)
+	// Platform packs: their own storage namespace (not a tenant id, so an
+	// organization's erasure never reaches it) and the platform content key.
+	s.PlatformContentPacks = contentpackapp.NewPlatformService(repos.PlatformContentPack, fileStorage, contentSigner, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
@@ -1806,6 +1812,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ScanProfile = scan.NewScanProfileService(repos.ScanProfile, log)
 	s.ScannerTemplate = app.NewScannerTemplateService(repos.ScannerTemplate, cfg.Encryption.Key, log)
 	s.ScannerTemplate.SetSigningKeys(s.TemplateKeys)
+	if s.JobSigner != nil {
+		// RFC-040 §11.5: a custom template version reaches sensors only
+		// once approved under the scope policy and recorded by the signer.
+		s.ScannerTemplate.SetLedger(s.JobSigner, s.Scope)
+		s.Scope.SetLedgerTemplates(s.ScannerTemplate)
+	}
 	s.TemplateSource = template.NewSourceService(repos.TemplateSource, log)
 
 	// Initialize credential service for template sources

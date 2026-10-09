@@ -89,8 +89,8 @@ func ledgerImport(dir string, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(out, "imported %s: %d organizations, %d entries, %d exclusions; default mode now %s\n",
-		res.SnapshotSHA256, res.Tenants, res.Entries, res.Exclusions, jobsign.LedgerEnforce)
+	_, _ = fmt.Fprintf(out, "imported %s: %d organizations, %d entries, %d exclusions, %d templates; default mode now %s\n",
+		res.SnapshotSHA256, res.Tenants, res.Entries, res.Exclusions, res.Templates, jobsign.LedgerEnforce)
 	return nil
 }
 
