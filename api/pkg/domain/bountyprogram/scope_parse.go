@@ -123,6 +123,21 @@ func dedupe(items []Item) []Item {
 	return out
 }
 
+// NormalizeItems de-duplicates items from another source (a program API)
+// and refuses a scope with no in-scope item or too many items.
+func NormalizeItems(items []Item) ([]Item, error) {
+	if len(items) > MaxScopeItems {
+		return nil, ErrScopeTooLarge
+	}
+	items = dedupe(append([]Item(nil), items...))
+	for _, it := range items {
+		if it.InScope {
+			return items, nil
+		}
+	}
+	return nil, ErrScopeEmpty
+}
+
 // ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
@@ -244,7 +259,7 @@ func parseCSV(text string) ([]Item, error) {
 		if hasType && typeCol < len(rec) {
 			assetType = strings.TrimSpace(rec[typeCol])
 		}
-		it := classifyTyped(strings.TrimSpace(rec[idCol]), assetType)
+		it := ClassifyTyped(strings.TrimSpace(rec[idCol]), assetType)
 		it.InScope = true
 		if hasElig && eligCol < len(rec) && isFalse(rec[eligCol]) {
 			it.InScope = false
@@ -277,10 +292,10 @@ func isFalse(s string) bool {
 	return false
 }
 
-// classifyTyped honors a program's asset type: types that are not network
+// ClassifyTyped honors a program's asset type: types that are not network
 // targets stay "other" even when the identifier looks like a name (a mobile
 // app id such as com.example.app).
-func classifyTyped(raw, assetType string) Item {
+func ClassifyTyped(raw, assetType string) Item {
 	t := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(assetType)), "-", "_")
 	switch t {
 	case "", "url", "wildcard", "domain", "cidr", "ip_address", "ip", "iprange", "ip_range",

@@ -71,9 +71,20 @@ const (
 	ActionBountyProgramPaused        Action = "bounty_program.paused"
 	ActionBountyProgramResumed       Action = "bounty_program.resumed"
 	ActionBountyProgramEnded         Action = "bounty_program.ended"
+	// ActionBountyProgramSourceSet / Synced: where a program's scope comes
+	// from, and a sync that narrowed it or suspended it (RFC-065 §14).
+	ActionBountyProgramSourceSet Action = "bounty_program.source_set"
+	ActionBountyProgramSynced    Action = "bounty_program.synced"
 	// Authorization letters (RFC-065 §13).
 	ActionScopeLetterUploaded Action = "scope_letter.uploaded"
 	ActionScopeLetterRevoked  Action = "scope_letter.revoked"
+	// ActionScopeTargetSelfApproved: an owner approved their own pending
+	// scope entry because no other approver existed, with a fresh
+	// authenticator code and a reason (RFC-054 §7). High severity.
+	ActionScopeTargetSelfApproved Action = "scope_target.self_approved"
+	// ActionScopeTargetApproversReminded: someone reminded the approvers of
+	// a pending scope entry.
+	ActionScopeTargetApproversReminded Action = "scope_target.approvers_reminded"
 	// ActionAssetCreateMerged: a repository create (the SCM import) matched an
 	// existing repository asset and attached its SCM data to it. POST
 	// /assets no longer merges (a duplicate is a 409); older rows from it
@@ -592,7 +603,9 @@ func (a Action) IsValid() bool {
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
+		ActionBountyProgramSourceSet, ActionBountyProgramSynced,
 		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
+		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
@@ -765,6 +778,7 @@ func (a Action) Category() string {
 		return "tool"
 	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
 		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
@@ -996,7 +1010,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
-		ActionScopeTargetApproved, ActionScopeSettingsUpdated,
+		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
