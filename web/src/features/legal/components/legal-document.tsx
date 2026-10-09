@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { LogoFull } from '@/assets/logo'
 import { LEGAL_DOCS } from '@/lib/legal'
 
