@@ -211,6 +211,10 @@ type Sensor struct {
 	// Display and dispatch-narrowing data only: enforcement is the sensor's.
 	LocalPolicy           *LocalPolicyReport
 	LocalPolicyReportedAt *time.Time
+	// Posture is the posture of the current manifest (posture.go): the
+	// platform TLS pin and the tool sandbox; nil when the current manifest
+	// has none. Display and alert data only: it never relaxes a check.
+	Posture *ManifestPosture
 
 	// The config report (config_report.go): the digest and the platform's
 	// health rollup of the latest report the sensor sent ("" before the

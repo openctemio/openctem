@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import type { Sensor } from '@/lib/api/sensor-types'
 
 import { SensorStateBadge } from './sensor-state-badge'
-import { ConfigHealthTag, ProtocolTag, SensorGrantTags } from './sensor-cells'
+import { ConfigHealthTag, ProtocolTag, SensorGrantTags, SensorPostureTag } from './sensor-cells'
 import { sensorCapacity } from '../lib/capabilities'
 import { CONTENT_STATE_META, worstContentState } from '../lib/content'
 import { formatDurationShort, keyExpiry } from '../lib/format'
@@ -115,6 +115,7 @@ export function SensorMobileCard({
       <span className="flex flex-wrap items-center gap-1.5 self-start">
         <ProtocolTag sensor={sensor} />
         <ConfigHealthTag health={sensor.config_health} />
+        <SensorPostureTag sensor={sensor} />
         <SensorGrantTags grant={grant} />
       </span>
       {facts.length > 0 && (

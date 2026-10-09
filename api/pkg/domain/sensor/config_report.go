@@ -934,9 +934,13 @@ func (a *Sensor) DerivedConfigChecks() []ConfigCheck {
 			add("tools.available", CheckPass, "ok", map[string]ConfigParam{"count": {Int: &n}}, nil, "")
 		}
 	}
-	if a.LocalPolicy.Enforced() {
+	switch lp := a.LocalPolicy; {
+	case lp.Enforced():
 		add("policy.local", CheckPass, "enforced", nil, nil, "")
-	} else {
+	case lp != nil && lp.State == LocalPolicyAbsent && lp.Required:
+		add("policy.local", CheckFail, "required_absent", nil, nil,
+			"The sensor requires a local policy and has none: it refuses every job with a network target.")
+	default:
 		add("policy.local", CheckWarn, "absent", nil, nil, "The sensor reports no local policy (or a version that ignores it).")
 	}
 	return out

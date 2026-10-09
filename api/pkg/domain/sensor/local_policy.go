@@ -53,6 +53,11 @@ var (
 type LocalPolicyReport struct {
 	// State is LocalPolicyEnforced or LocalPolicyAbsent.
 	State string `json:"state"`
+	// Required is true when the sensor requires a local policy (new
+	// installs): absent and required, it refuses every job with a network
+	// target. Absent and not required is a legacy install that admits them.
+	// Display and alert data only.
+	Required bool `json:"required"`
 	// Source is "file" or "env" (shorthand settings); "" when absent.
 	Source string `json:"source,omitempty"`
 	// Digest is "sha256:<hex>" of the policy; "" when absent.
@@ -97,7 +102,7 @@ func SanitizeLocalPolicyReport(r *LocalPolicyReport) *LocalPolicyReport {
 	if state != LocalPolicyEnforced && state != LocalPolicyAbsent {
 		return nil
 	}
-	out := &LocalPolicyReport{State: state, KillSwitch: r.KillSwitch}
+	out := &LocalPolicyReport{State: state, Required: r.Required, KillSwitch: r.KillSwitch}
 	if state == LocalPolicyEnforced {
 		switch src := strings.ToLower(strings.TrimSpace(r.Source)); src {
 		case "file", "env":

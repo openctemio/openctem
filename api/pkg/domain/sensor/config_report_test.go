@@ -454,3 +454,25 @@ func TestParseConfigReportSummary(t *testing.T) {
 		t.Error("a malformed digest was accepted")
 	}
 }
+
+// A sensor that requires a local policy and has none fails policy.local with
+// required_absent (it refuses network jobs); a legacy one only warns.
+func TestDerivedConfigChecks_RequiredAbsent(t *testing.T) {
+	code := func(lp *LocalPolicyReport) (string, string) {
+		for _, c := range (&Sensor{LocalPolicy: lp}).DerivedConfigChecks() {
+			if c.ID == "policy.local" {
+				return c.Status, c.Code
+			}
+		}
+		return "", ""
+	}
+	if st, c := code(&LocalPolicyReport{State: LocalPolicyAbsent, Required: true}); st != CheckFail || c != "required_absent" {
+		t.Fatalf("required: %s %s", st, c)
+	}
+	if st, c := code(&LocalPolicyReport{State: LocalPolicyAbsent}); st != CheckWarn || c != "absent" {
+		t.Fatalf("legacy: %s %s", st, c)
+	}
+	if st, c := code(nil); st != CheckWarn || c != "absent" {
+		t.Fatalf("never reported: %s %s", st, c)
+	}
+}
