@@ -575,6 +575,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if svc.BountyProgram != nil {
 			w.ControllerManager.Register(controller.NewProgramSyncController(svc.BountyProgram, 0))
 		}
+		// Program data scope: assets a program covers stay assigned to its
+		// group (RFC-065 §7), also those that arrived by discovery.
+		if svc.ProgramAssigner != nil {
+			w.ControllerManager.Register(controller.NewProgramAssignmentController(svc.ProgramAssigner, 0))
+		}
 	}
 
 	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor != nil {
