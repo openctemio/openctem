@@ -20,8 +20,13 @@ type ScannerTemplateService struct {
 	logger        *logger.Logger
 	quota         scannertemplate.TemplateQuota
 	// keys signs custom templates for sensors (SigningKey shows a tenant
-	// its public key); nil when no key is configured.
+	// its public key); nil when no key is configured. It is the fallback
+	// for sensors that do not verify signed jobs (RFC-040 §11.5).
 	keys *scannertemplate.Keyring
+	// ledger and approvalPolicy approve template versions for sensors
+	// (scanner_template_ledger.go).
+	ledger         TemplateLedger
+	approvalPolicy TemplateApprovalPolicy
 }
 
 // ErrTemplateSigningDisabled is returned by SigningKey when the platform has
@@ -165,6 +170,12 @@ func (s *ScannerTemplateService) CreateTemplate(ctx context.Context, input Creat
 	signature := scannertemplate.ComputeSignature(content, s.signingSecret)
 	template.SetSignature(signature)
 
+	// Approved for sensors at once when the policy asks no approval: the
+	// signer accepts the version before it is saved.
+	if err := s.approveIfPolicyAllows(ctx, template); err != nil {
+		return nil, err
+	}
+
 	// Persist
 	if err := s.repo.Create(ctx, template); err != nil {
 		return nil, err
@@ -235,6 +246,8 @@ type UpdateScannerTemplateInput struct {
 	Description string   `json:"description" validate:"max=1000"`
 	Content     string   `json:"content"` // Base64 encoded, optional
 	Tags        []string `json:"tags" validate:"max=20,dive,max=50"`
+	// UserID is who changes it: the author of a new content version.
+	UserID string `json:"-"`
 }
 
 // UpdateTemplate updates an existing scanner template.
@@ -278,6 +291,7 @@ func (s *ScannerTemplateService) UpdateTemplate(ctx context.Context, input Updat
 	}
 
 	// Update template
+	wasApproved := tmpl.ApprovedForSensors()
 	if err := tmpl.Update(input.Name, input.Description, content, input.Tags); err != nil {
 		return nil, err
 	}
@@ -286,10 +300,25 @@ func (s *ScannerTemplateService) UpdateTemplate(ctx context.Context, input Updat
 	if content != nil {
 		signature := scannertemplate.ComputeSignature(content, s.signingSecret)
 		tmpl.SetSignature(signature)
+		if !tmpl.ApprovedForSensors() {
+			// A new version: its author cannot approve it, and it is
+			// approved at once only when the policy asks no approval.
+			var author *shared.ID
+			if id, err := shared.IDFromString(input.UserID); err == nil {
+				author = &id
+			}
+			tmpl.SetContentAuthor(author)
+			if err := s.approveIfPolicyAllows(ctx, tmpl); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	if err := s.repo.Update(ctx, tmpl); err != nil {
 		return nil, err
+	}
+	if wasApproved && !tmpl.ApprovedForSensors() {
+		s.removeTemplate(ctx, tmpl)
 	}
 
 	return tmpl, nil
@@ -314,7 +343,13 @@ func (s *ScannerTemplateService) DeleteTemplate(ctx context.Context, tenantID, t
 		return err
 	}
 
-	return s.repo.Delete(ctx, tid, template.ID)
+	if err := s.repo.Delete(ctx, tid, template.ID); err != nil {
+		return err
+	}
+	if template.ApprovedForSensors() {
+		s.removeTemplate(ctx, template)
+	}
+	return nil
 }
 
 // ValidateTemplateInput represents the input for validating template content.
@@ -372,10 +407,14 @@ func (s *ScannerTemplateService) DeprecateTemplate(ctx context.Context, tenantID
 		return nil, err
 	}
 
+	wasApproved := template.ApprovedForSensors()
 	template.Deprecate()
 
 	if err := s.repo.Update(ctx, template); err != nil {
 		return nil, err
+	}
+	if wasApproved {
+		s.removeTemplate(ctx, template)
 	}
 
 	return template, nil
