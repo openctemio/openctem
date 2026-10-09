@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,5 +149,64 @@ func TestBountyProgramRepository(t *testing.T) {
 	}
 	if s, _ := targets.GetByID(ctx, tenant, own.ID()); s.AuthorizationSource() != scope.AuthOwnership || s.ProgramID() != nil {
 		t.Fatalf("ownership entry: %v", s.AuthorizationSource())
+	}
+}
+
+// Program sync columns (migration 001491): source settings, sync state and
+// pending terms round-trip; due programs are listed across tenants; another
+// tenant cannot write them.
+func TestBountyProgramSync(t *testing.T) {
+	db, pdb := openBatchDedupDB(t)
+	ctx := context.Background()
+	tenant := seedBatchTenant(t, db)
+	other := seedBatchTenant(t, db)
+	repo := NewBountyProgramRepository(pdb)
+	items, _ := bountyprogram.ParseScope("*.sync.example\n")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	p := &bountyprogram.Program{ID: shared.NewID(), TenantID: tenant, Name: "Sync", ProgramURL: "https://sync.example/policy",
+		Status: bountyprogram.StatusActive, ScopeSource: bountyprogram.ScopeSourcePaste, ScopeItems: items,
+		TermsSHA256: strings.Repeat("a", 64), CreatedAt: now, UpdatedAt: now}
+	if err := repo.Import(ctx, bountyprogram.ImportWrite{Program: p,
+		Group: bountyprogram.NewGroup{ID: shared.NewID(), Name: "Program: Sync", Slug: "program-" + p.ID.String()[:13]}}); err != nil {
+		t.Fatal(err)
+	}
+	p.ScopeSource = bountyprogram.ScopeSourceAPI
+	p.Sync = bountyprogram.Sync{Handle: "sync", Username: "jdoe", TokenEncrypted: "ciphertext", LastSyncedAt: &now, LastError: ""}
+	p.Pending = &bountyprogram.PendingTerms{TermsSHA256: strings.Repeat("b", 64), Items: items}
+	if err := repo.SaveSync(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.GetByID(ctx, tenant, p.ID)
+	if err != nil || got.ScopeSource != bountyprogram.ScopeSourceAPI || got.Sync.Handle != "sync" || got.Sync.TokenEncrypted != "ciphertext" ||
+		got.Pending == nil || got.Pending.TermsSHA256 != strings.Repeat("b", 64) || len(got.Pending.Items) != 1 {
+		t.Fatalf("round trip: %+v %+v %v", got.Sync, got.Pending, err)
+	}
+	due, err := repo.SyncDue(ctx, now.Add(time.Hour), 100)
+	found := false
+	for _, r := range due {
+		found = found || r.ProgramID.Equals(p.ID)
+	}
+	if err != nil || !found {
+		t.Fatalf("due: %v %v", due, err)
+	}
+	if due, _ := repo.SyncDue(ctx, now.Add(-time.Hour), 100); len(due) != 0 {
+		for _, r := range due {
+			if r.ProgramID.Equals(p.ID) {
+				t.Fatal("a program synced after the cut-off is not due")
+			}
+		}
+	}
+	foreign := *p
+	foreign.TenantID = other
+	if err := repo.SaveSync(ctx, &foreign); !errors.Is(err, bountyprogram.ErrNotFound) {
+		t.Fatalf("another tenant must not write the sync settings: %v", err)
+	}
+	// Accepting clears the pending terms (updateProgram writes them).
+	got.Pending = nil
+	if err := repo.SetStatus(ctx, got, scope.StatusActive); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := repo.GetByID(ctx, tenant, p.ID); again.Pending != nil {
+		t.Fatal("pending terms must be cleared")
 	}
 }
