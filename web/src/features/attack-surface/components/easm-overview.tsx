@@ -7,7 +7,7 @@
  * GET /api/v1/easm/summary; nothing is computed from a page of rows.
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EASMMonitoringCard } from './easm-monitoring-card'

@@ -4,6 +4,7 @@ import useSWR from 'swr'
 import { get, post, put, del } from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
 import { usePermissions, Permission } from '@/lib/permissions'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import type { AssetRelationship, CreateRelationshipInput, UpdateRelationshipInput } from '../types'
 
 /**
@@ -66,7 +67,9 @@ function transformRelationship(backend: BackendRelationshipResponse): AssetRelat
 export function useAssetRelationships(assetId: string | null) {
   const { can } = usePermissions()
   const canRead = can(Permission.AssetsRead)
-  const shouldFetch = assetId && canRead
+  // The relationships API follows the relationships module: off, never asked.
+  const moduleOn = useModuleEnabled('relationships')
+  const shouldFetch = assetId && canRead && moduleOn
 
   const { data, error, isLoading, mutate } = useSWR<BackendRelationshipsListResponse>(
     shouldFetch ? endpoints.assets.listRelationships(assetId) : null,

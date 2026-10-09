@@ -487,7 +487,7 @@ func Require(perm permission.Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !HasPermission(r.Context(), perm.String()) {
-				apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+				permissionDenied(perm.String()).WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -510,7 +510,7 @@ func RequireAny(perms ...permission.Permission) func(http.Handler) http.Handler 
 					return
 				}
 			}
-			apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+			permissionDeniedAnyOf(permission.ToStrings(perms)...).WriteJSON(w)
 		})
 	}
 }
@@ -524,11 +524,15 @@ func RequireAny(perms ...permission.Permission) func(http.Handler) http.Handler 
 func RequireAll(perms ...permission.Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var missing []string
 			for _, perm := range perms {
 				if !HasPermission(r.Context(), perm.String()) {
-					apierror.Forbidden("Insufficient permissions").WriteJSON(w)
-					return
+					missing = append(missing, perm.String())
 				}
+			}
+			if len(missing) > 0 {
+				permissionDenied(missing...).WriteJSON(w)
+				return
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -540,7 +544,7 @@ func RequireAdmin() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !IsAdmin(r.Context()) {
-				apierror.Forbidden("Admin access required").WriteJSON(w)
+				roleRequired("Admin access required", "admin").WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -563,7 +567,7 @@ func RequireOwner() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !IsOwner(r.Context()) {
-				apierror.Forbidden("Owner access required").WriteJSON(w)
+				roleRequired("Owner access required", "owner").WriteJSON(w)
 				return
 			}
 			next.ServeHTTP(w, r)
