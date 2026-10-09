@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -122,9 +123,13 @@ func (s *Service) Sign(raw []byte) ([]byte, *refusal) {
 			ref = refuse(http.StatusTooManyRequests, ReasonSensorRate, "sensor signing ceiling reached")
 		}
 	}
+	// Only well-formed ids reach the signing log and the process log.
 	entry := LogEntry{
-		Time: now, TenantID: st.TenantID, SensorID: st.SensorID, CommandID: st.CommandID,
-		CommandType: st.CommandType, Tool: st.Tool, PayloadSHA256: st.PayloadSHA256, Targets: len(st.Targets),
+		Time: now, TenantID: canonicalID(st.TenantID), SensorID: canonicalID(st.SensorID), CommandID: canonicalID(st.CommandID),
+		// Bounded: a refused statement may carry anything, and one log line
+		// must stay under maxLogLine or the log would not verify on restart.
+		CommandType: clip(st.CommandType, maxCommandTypeLength), Tool: clip(st.Tool, maxToolLength),
+		PayloadSHA256: clip(st.PayloadSHA256, len(jobsign.PayloadDigest(nil))), Targets: len(st.Targets),
 	}
 	if ref != nil {
 		s.refused(entry, ref)
@@ -133,7 +138,7 @@ func (s *Service) Sign(raw []byte) ([]byte, *refusal) {
 
 	seq, err := s.seq.Next(st.SensorID)
 	if err != nil {
-		s.logger.Error("sequence number not stored; not signing", "error", err)
+		s.logger.Error("sequence number not stored; not signing", "sensor_id", entry.SensorID, "error", oneLine(err.Error()))
 		ref = refuse(http.StatusInternalServerError, ReasonInternal, "sequence store unavailable")
 		s.refused(entry, ref)
 		return nil, ref
@@ -165,7 +170,7 @@ func (s *Service) Sign(raw []byte) ([]byte, *refusal) {
 	entry.Decision, entry.Seq, entry.KeyID = DecisionSigned, seq, s.keyID
 	entry.StatementSHA256 = "sha256:" + hex.EncodeToString(sum[:])
 	if err := s.log.Append(entry); err != nil {
-		s.logger.Error("signing log not written; signature withheld", "error", err)
+		s.logger.Error("signing log not written; signature withheld", "error", oneLine(err.Error()))
 		return nil, refuse(http.StatusInternalServerError, ReasonInternal, "signing log unavailable")
 	}
 	return env, nil
@@ -174,7 +179,7 @@ func (s *Service) Sign(raw []byte) ([]byte, *refusal) {
 func (s *Service) refused(e LogEntry, r *refusal) {
 	e.Decision, e.Reason = DecisionRefused, r.reason
 	if err := s.log.Append(e); err != nil {
-		s.logger.Error("signing log not written for a refusal", "error", err, "reason", r.reason)
+		s.logger.Error("signing log not written for a refusal", "error", oneLine(err.Error()), "reason", r.reason)
 	}
 	s.logger.Warn("job statement refused", "reason", r.reason, "tenant_id", e.TenantID,
 		"sensor_id", e.SensorID, "command_id", e.CommandID)
@@ -286,4 +291,17 @@ func orDefaultInt(v, d int) int {
 		return d
 	}
 	return v
+}
+
+// clip cuts s to at most n bytes.
+func clip(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
+// oneLine keeps a message on one log line.
+func oneLine(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\n", " "), "\r", " ")
 }
