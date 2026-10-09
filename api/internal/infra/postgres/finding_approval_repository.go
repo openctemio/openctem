@@ -71,43 +71,86 @@ func (r *FindingApprovalRepository) ListByFinding(ctx context.Context, tenantID,
 	return approvals, rows.Err()
 }
 
-// ListPending retrieves all pending approvals for a tenant.
-func (r *FindingApprovalRepository) ListPending(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[*vulnerability.Approval], error) {
-	countQuery := "SELECT COUNT(*) FROM finding_status_approvals WHERE tenant_id = $1 AND status = 'pending'"
-	var total int64
-	if err := r.db.QueryRowContext(ctx, countQuery, tenantID.String()).Scan(&total); err != nil {
-		return pagination.Result[*vulnerability.Approval]{}, fmt.Errorf("failed to count pending approvals: %w", err)
+// approvalWhere is the tenant (and, for a restricted caller, data-scope)
+// condition of an approval list; args start with the tenant id. The scope
+// mirrors datascope.FilterFindings: the approval's finding must sit on an
+// asset in the user's scope.
+func approvalWhere(tenantID shared.ID, scope *shared.DataScope) (string, []any) {
+	where := "a.tenant_id = $1"
+	args := []any{tenantID.String()}
+	if scope != nil {
+		args = append(args, scope.UserID.String())
+		where += fmt.Sprintf(` AND a.finding_id IN (
+			SELECT f.id FROM findings f
+			WHERE f.tenant_id = $1
+			  AND f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa
+			                     WHERE uaa.user_id = $%d AND uaa.tenant_id = $1))`, len(args))
+	}
+	return where, args
+}
+
+// List returns a tenant's approvals, newest first, filtered by status (empty
+// = every status) and, for a restricted caller, by data scope. Total and the
+// per-status counts use the same tenant and scope condition.
+func (r *FindingApprovalRepository) List(ctx context.Context, tenantID shared.ID, filter vulnerability.ApprovalFilter, page pagination.Pagination, scope *shared.DataScope) (vulnerability.ApprovalPage, error) {
+	where, args := approvalWhere(tenantID, scope)
+
+	counts := make(map[vulnerability.ApprovalStatus]int64, len(vulnerability.ApprovalStatuses))
+	countRows, err := r.db.QueryContext(ctx,
+		"SELECT a.status, COUNT(*) FROM finding_status_approvals a WHERE "+where+" GROUP BY a.status", args...)
+	if err != nil {
+		return vulnerability.ApprovalPage{}, fmt.Errorf("failed to count approvals: %w", err)
+	}
+	defer countRows.Close()
+	var all int64
+	for countRows.Next() {
+		var st string
+		var n int64
+		if err := countRows.Scan(&st, &n); err != nil {
+			return vulnerability.ApprovalPage{}, fmt.Errorf("failed to scan approval count: %w", err)
+		}
+		counts[vulnerability.ApprovalStatus(st)] = n
+		all += n
+	}
+	if err := countRows.Err(); err != nil {
+		return vulnerability.ApprovalPage{}, fmt.Errorf("failed to count approvals: %w", err)
 	}
 
-	query := r.selectQuery() + " WHERE tenant_id = $1 AND status = 'pending' ORDER BY created_at DESC LIMIT $2 OFFSET $3"
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), page.Limit(), page.Offset())
+	total := all
+	if filter.Status != "" {
+		args = append(args, string(filter.Status))
+		where += fmt.Sprintf(" AND a.status = $%d", len(args))
+		total = counts[filter.Status]
+	}
+	args = append(args, page.Limit(), page.Offset())
+	query := r.selectQuery() + " a WHERE " + where +
+		fmt.Sprintf(" ORDER BY a.created_at DESC, a.id DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return pagination.Result[*vulnerability.Approval]{}, fmt.Errorf("failed to list pending approvals: %w", err)
+		return vulnerability.ApprovalPage{}, fmt.Errorf("failed to list approvals: %w", err)
 	}
 	defer rows.Close()
 
 	// Pre-allocate at the const cold-cap max so make() has ZERO
-	// user-influenced size input. CodeQL's go/unsafe-slice-allocation
-	// keeps the "tainted" tag on page.Limit() even after a bounds
-	// clamp — the only way to get a clean flow analysis is to pass
-	// the literal constant directly. Wasting the 800 bytes of slot
-	// overhead when a tenant has <100 approvals is cheap insurance
-	// against the re-flag loop.
+	// user-influenced size input (CodeQL go/unsafe-slice-allocation keeps
+	// page.Limit() tainted even after the bounds clamp).
 	const maxApprovalsCap = 100
 	approvals := make([]*vulnerability.Approval, 0, maxApprovalsCap)
 	for rows.Next() {
 		a, err := r.scanApprovalFromRows(rows)
 		if err != nil {
-			return pagination.Result[*vulnerability.Approval]{}, err
+			return vulnerability.ApprovalPage{}, err
 		}
 		approvals = append(approvals, a)
 	}
-
 	if err := rows.Err(); err != nil {
-		return pagination.Result[*vulnerability.Approval]{}, fmt.Errorf("failed to iterate approvals: %w", err)
+		return vulnerability.ApprovalPage{}, fmt.Errorf("failed to iterate approvals: %w", err)
 	}
 
-	return pagination.NewResult(approvals, total, page), nil
+	return vulnerability.ApprovalPage{
+		Result:       pagination.NewResult(approvals, total, page),
+		StatusCounts: counts,
+	}, nil
 }
 
 // Update updates an approval.

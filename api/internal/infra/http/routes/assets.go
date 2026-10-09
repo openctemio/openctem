@@ -134,7 +134,7 @@ func registerComponentRoutes(
 		r.GET("/ecosystems", h.GetEcosystemStats, middleware.Require(permission.ComponentsRead))
 		r.GET("/vulnerable", h.GetVulnerableComponents, middleware.Require(permission.ComponentsRead))
 		r.GET("/licenses", h.GetLicenseStats, middleware.Require(permission.ComponentsRead))
-		r.GET("/export", h.ExportComponents, middleware.Require(permission.ComponentsRead))
+		r.GET("/sbom", h.ExportSBOM, middleware.Require(permission.ComponentsRead))
 		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite), sbomRL.Middleware())
 
 		// Read operations
@@ -606,6 +606,8 @@ func registerAssetStateHistoryRoutes(
 		// Stats and analytics endpoints (must be before /{id})
 		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
 		r.GET("/timeline", h.Timeline, middleware.Require(permission.AssetsRead))
+		// The totals of every change view in one response (the What changed strip).
+		r.GET("/counts", h.Counts, middleware.Require(permission.AssetsRead))
 
 		// Shadow IT detection
 		r.GET("/shadow-it", h.ShadowITCandidates, middleware.Require(permission.AssetsRead))

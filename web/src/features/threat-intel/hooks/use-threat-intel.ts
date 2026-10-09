@@ -33,8 +33,9 @@ export function useThreatIntelStats(tenantId: string | null) {
   const shouldFetch = tenantId && canReadVulns
 
   const { data, error, isLoading, mutate } = useSWR<ThreatIntelStats>(
-    shouldFetch ? ['threat-intel-stats', tenantId] : null,
-    () => get<ThreatIntelStats>(threatIntelEndpoints.stats()),
+    // The endpoint URL: shared with every other reader (the dashboard).
+    shouldFetch ? threatIntelEndpoints.stats() : null,
+    (url: string) => get<ThreatIntelStats>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30000,
@@ -81,10 +82,10 @@ export function useSyncStatuses(tenantId: string | null) {
   const shouldFetch = tenantId && canReadVulns
 
   const { data, error, isLoading, mutate } = useSWR<SyncStatus[]>(
-    shouldFetch ? ['threat-intel-sync-statuses', tenantId] : null,
-    async () => {
+    shouldFetch ? threatIntelEndpoints.syncStatuses() : null,
+    async (url: string) => {
       try {
-        return await get<SyncStatus[]>(threatIntelEndpoints.syncStatuses())
+        return await get<SyncStatus[]>(url)
       } catch (err: unknown) {
         // 404 means no sync status exists yet - return empty array
         if (
@@ -124,8 +125,8 @@ export function useSyncStatus(tenantId: string | null, source: ThreatIntelSource
   const shouldFetch = tenantId && canReadVulns
 
   const { data, error, isLoading, mutate } = useSWR<SyncStatus>(
-    shouldFetch ? ['threat-intel-sync-status', tenantId, source] : null,
-    () => get<SyncStatus>(threatIntelEndpoints.syncStatus(source)),
+    shouldFetch ? threatIntelEndpoints.syncStatus(source) : null,
+    (url: string) => get<SyncStatus>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30000,
@@ -176,8 +177,8 @@ export function useEPSSScore(tenantId: string | null, cveId: string | null) {
   const shouldFetch = tenantId && cveId && canReadVulns
 
   const { data, error, isLoading, mutate } = useSWR<EPSSScore>(
-    shouldFetch ? ['epss-score', tenantId, cveId] : null,
-    () => get<EPSSScore>(threatIntelEndpoints.epssScore(cveId!)),
+    shouldFetch ? threatIntelEndpoints.epssScore(cveId!) : null,
+    (url: string) => get<EPSSScore>(url),
     {
       revalidateOnFocus: false,
     }
@@ -203,8 +204,8 @@ export function useEPSSStats(tenantId: string | null) {
   const shouldFetch = tenantId && canReadVulns
 
   const { data, error, isLoading, mutate } = useSWR<EPSSStats>(
-    shouldFetch ? ['epss-stats', tenantId] : null,
-    () => get<EPSSStats>(threatIntelEndpoints.epssStats()),
+    shouldFetch ? threatIntelEndpoints.epssStats() : null,
+    (url: string) => get<EPSSStats>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 60000,
@@ -241,8 +242,8 @@ export function useKEVEntry(tenantId: string | null, cveId: string | null) {
   const shouldFetch = tenantId && cveId && canReadVulns
 
   const { data, error, isLoading, mutate } = useSWR<KEVEntry>(
-    shouldFetch ? ['kev-entry', tenantId, cveId] : null,
-    () => get<KEVEntry>(threatIntelEndpoints.kevEntry(cveId!)),
+    shouldFetch ? threatIntelEndpoints.kevEntry(cveId!) : null,
+    (url: string) => get<KEVEntry>(url),
     {
       revalidateOnFocus: false,
     }
@@ -268,8 +269,8 @@ export function useKEVStats(tenantId: string | null) {
   const shouldFetch = tenantId && canReadVulns
 
   const { data, error, isLoading, mutate } = useSWR<KEVStats>(
-    shouldFetch ? ['kev-stats', tenantId] : null,
-    () => get<KEVStats>(threatIntelEndpoints.kevStats()),
+    shouldFetch ? threatIntelEndpoints.kevStats() : null,
+    (url: string) => get<KEVStats>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 60000,
@@ -318,8 +319,8 @@ export function useCVEEnrichment(tenantId: string | null, cveId: string | null) 
   const shouldFetch = tenantId && cveId && canReadVulns
 
   const { data, error, isLoading, mutate } = useSWR<CVEEnrichment>(
-    shouldFetch ? ['cve-enrichment', tenantId, cveId] : null,
-    () => enrichCVE(cveId!),
+    shouldFetch ? threatIntelEndpoints.enrichCVE(cveId!) : null,
+    (url: string) => get<CVEEnrichment>(url),
     {
       revalidateOnFocus: false,
     }

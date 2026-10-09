@@ -9,10 +9,11 @@
  *     shared client (`@/lib/api/client`: in-flight de-duplication, CSRF,
  *     token refresh, error mapping) and SWR's cache, so nothing else on the
  *     page can reuse the answer.
- *  2. TUPLE_KEY: an SWR key like `['/api/v1/x', tenantId]`. SWR caches by key,
- *     so the same URL under `'/api/v1/x'` elsewhere is a second request and a
- *     second copy that `mutate('/api/v1/x')` never reaches. Key by the URL
- *     string (the tenant switch revalidates every key; see tenant-provider).
+ *  2. TUPLE_KEY: an SWR key like `['/api/v1/x', tenantId]` or an opaque label
+ *     like `['asset', id]`. SWR caches by key, so the same URL under
+ *     `'/api/v1/x'` elsewhere is a second request and a second copy that
+ *     `mutate('/api/v1/x')` never reaches. Key by the URL string: a tenant
+ *     switch drops every cached answer (tenant-provider, clearSwrCache).
  *  3. POLLING: `refreshInterval`. A page that polls what the WebSocket already
  *     pushes, or polls while hidden UI is closed, multiplies requests. New
  *     polling needs a reviewer to agree it cannot be an event.
@@ -34,7 +35,6 @@ const RAW_FETCH_EXEMPT_DIRS = ['lib/api/', 'app/api/']
 
 /** Reviewed raw `fetch('/api/v1/…')` call sites, file → count. */
 const RAW_FETCH_BASELINE: Record<string, number> = {
-  'features/repositories/components/repository-workspace.tsx': 1,
   'context/tenant-provider.tsx': 1,
   'features/findings/components/detail/evidence-tab.tsx': 1,
   'features/pentest/components/attachment-upload.tsx': 2,
@@ -46,11 +46,13 @@ const RAW_FETCH_BASELINE: Record<string, number> = {
 
 /** Reviewed `['/api/v1/…', …]` SWR keys, file → count. */
 const TUPLE_KEY_BASELINE: Record<string, number> = {
-  'features/components/api/use-components-api.ts': 2,
-  'features/dashboard/hooks/use-ctem-dashboard.ts': 1,
-  'features/dashboard/hooks/use-dashboard-stats.ts': 2,
-  'features/scoping/api.ts': 2,
-  'features/vulnerabilities/api/index.ts': 3,
+  // Not one GET URL, so no URL key to share: every page of the inventory's
+  // addresses merged into one result.
+  'features/scan-zones/components/zone-coverage-card.tsx': 1,
+  // A POST preview of the form being edited, keyed by its content.
+  'features/scans/components/new-scan/workflow-preview.tsx': 1,
+  // The web's own build (not an API call) and the API's, per shell.
+  'hooks/use-build-versions.ts': 2,
 }
 
 /** Reviewed `refreshInterval` options, file → count. */
@@ -67,7 +69,9 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/notifications/api/use-notification-api.ts': 1,
   'features/scan-freeze/api/use-freeze-windows.ts': 1,
   'features/scans/components/run-detail-sheet.tsx': 1,
-  'features/scans/components/scan-runs-tab.tsx': 1,
+  // The run list and its counts poll on their own clocks: fast only while a
+  // listed run is live (research/81); it was one shared 30 s poll before.
+  'features/scans/components/scan-runs-tab.tsx': 2,
   'features/sensors/components/sensor-detail-sheet.tsx': 1,
   'features/sensors/components/sensor-install-flow.tsx': 1,
   'lib/api/hooks.ts': 1,
@@ -148,13 +152,15 @@ function scan(): Counts {
           let key = node.arguments[0]
           // `cond ? key : null` — look at the key branch.
           if (key && ts.isConditionalExpression(key)) key = key.whenTrue
+          if (key && ts.isArrayLiteralExpression(key)) key = unwrap(key)
           if (key && ts.isArrayLiteralExpression(key)) {
-            const prefix = literalPrefix(key.elements[0])
             const first = key.elements[0]
             const isUrlConst =
               first !== undefined && ts.isIdentifier(first) && /_URL$|Url$/.test(first.text)
-            if ((prefix !== null && prefix.startsWith('/api/')) || isUrlConst)
-              bump(counts.tupleKey, rel)
+            // Any string as the first element: a URL (`['/api/v1/x', tid]`)
+            // or an opaque label (`['asset', id]`), never shared with the
+            // URL-keyed readers of the same endpoint.
+            if (literalPrefix(first) !== null || isUrlConst) bump(counts.tupleKey, rel)
           }
         }
       }

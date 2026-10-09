@@ -32,8 +32,11 @@ const (
 // ConfigCheckGroups are the closed set of check groups, in display order.
 var ConfigCheckGroups = []string{"platform", "identity", "policy", "tools", "content", "network", "storage", "runtime", "config", "connector"}
 
-// configCheckDocsBase is where the troubleshooting anchors live.
-const configCheckDocsBase = "https://docs.openctem.io/sensor/troubleshooting#"
+// configCheckDocsBase is the docs page that explains every check: the
+// "Setup check reference" of the sensor troubleshooting page (openctemio/docs
+// sensors/troubleshooting.md). Each entry's Docs is a full URL on it, written
+// out so scripts/check_docs_links.py can check the anchor exists.
+const configCheckDocsBase = "https://docs.openctem.io/sensors/troubleshooting/"
 
 // checkCatalogEntry explains one (id, code). ID may hold one "*" segment
 // (tool.*.binary); its value is offered to the templates as the "tool"
@@ -50,7 +53,7 @@ type checkCatalogEntry struct {
 	// the whole concatenation (a YAML list item like "state:/path"). A
 	// format whose template names a parameter the check lacks is left out.
 	Fix map[string]string
-	// Docs is the anchor under configCheckDocsBase.
+	// Docs is the URL of the entry's anchor on the configCheckDocsBase page.
 	Docs string
 }
 
@@ -94,10 +97,10 @@ services:
 var configCheckCatalog = []checkCatalogEntry{
 	// --- tools ---------------------------------------------------------------
 	{ID: "tool.*.binary", Code: "ok", Group: "tools", Title: "Scanner {tool} is installed",
-		Why: "The sensor found {tool} and it starts.", Docs: "tool-binary"},
+		Why: "The sensor found {tool} and it starts.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-binary"},
 	{ID: "tool.*.binary", Code: "not_installed", Group: "tools", Title: "Scanner {tool} is not installed",
 		Why:  "The sensor offers {tool}, but its image does not contain it. The platform sends it no {tool} jobs.",
-		Docs: "tool-binary",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-binary",
 		Fix: map[string]string{
 			FixFormatEnv: `# Use an image that ships {{.tool}}, or stop offering it:
 export SENSOR_TOOLS=nuclei`,
@@ -106,7 +109,7 @@ export SENSOR_TOOLS=nuclei`,
 		}},
 	{ID: "tool.*.binary", Code: "broken", Group: "tools", Title: "Scanner {tool} is installed but does not start",
 		Why:  "Running {tool} to check its version failed (exit code {exit_code}). Jobs for it would fail; the output below is what it printed.",
-		Docs: "tool-binary",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-binary",
 		Fix: map[string]string{
 			FixFormatEnv: `# Pull a fresh image; if it still fails, stop offering the scanner:
 docker pull ghcr.io/openctemio/sensor:latest`,
@@ -114,10 +117,10 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 			FixFormatHelm:    imageHelmFix,
 		}},
 	{ID: "tool.*.binary", Code: "check_error", Group: "tools", Title: "Scanner {tool} could not be checked",
-		Why: "The sensor could not run its check of {tool}. The output below says why.", Docs: "tool-binary"},
+		Why: "The sensor could not run its check of {tool}. The output below says why.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-binary"},
 	{ID: "tool.*.selection", Code: "not_selected", Group: "tools", Title: "Scanner {tool} is not offered",
 		Why:  "{tool} is installed but not listed in SENSOR_TOOLS, so the sensor does not offer it.",
-		Docs: "tool-selection",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-selection",
 		Fix: map[string]string{
 			FixFormatEnv:     "# Add the scanner to the list the sensor offers:\nexport SENSOR_TOOLS=nuclei,{{.tool}}",
 			FixFormatCompose: "services:\n  sensor:\n    environment:\n      SENSOR_TOOLS: {{.tool}}",
@@ -125,35 +128,35 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		}},
 	{ID: "tool.*.selection", Code: "policy_excluded", Group: "tools", Title: "Scanner {tool} is excluded by the local policy",
 		Why:  "The sensor's local policy does not allow {tool}, so the sensor does not offer it. Only the network owner can change the policy on the sensor host.",
-		Docs: "tool-selection"},
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-selection"},
 	{ID: "tool.*.registration", Code: "register_failed", Group: "tools", Title: "Scanner {tool} could not be registered",
 		Why:  "The sensor found {tool} but could not register it, so it is not offered. The summary below is the sensor's message.",
-		Docs: "tool-registration"},
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-registration"},
 	{ID: "tools.available", Code: "ok", Group: "tools", Title: "Scanners are available",
-		Why: "The sensor offers {count} scanner(s).", Docs: "tools-available"},
+		Why: "The sensor offers {count} scanner(s).", Docs: "https://docs.openctem.io/sensors/troubleshooting/#tools-available"},
 	{ID: "tools.available", Code: "none", Group: "tools", Title: "No scanner is available",
 		Why:  "No scanner is both installed and allowed on this sensor, so the platform cannot send it any scan.",
-		Docs: "tools-available",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#tools-available",
 		Fix:  map[string]string{FixFormatEnv: toolsEnvFix, FixFormatCompose: toolsComposeFix, FixFormatHelm: toolsHelmFix}},
 
 	// --- identity ------------------------------------------------------------
 	{ID: "identity.state_persistent", Code: "persistent", Group: "identity", Title: "Sensor state is kept",
-		Why: "The state directory {path} is on a mounted volume.", Docs: "identity-state-persistent"},
+		Why: "The state directory {path} is on a mounted volume.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-state-persistent"},
 	{ID: "identity.state_persistent", Code: "not_persistent", Group: "identity", Title: "Key renewal will break after the first rotation",
 		Why:  "The sensor keeps its renewed API key in {path}, which is not on a mounted volume. Recreating the container loses it, and the sensor starts again with a retired key.",
-		Docs: "identity-state-persistent",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-state-persistent",
 		Fix:  map[string]string{FixFormatEnv: stateEnvFix, FixFormatCompose: stateComposeFix, FixFormatHelm: stateHelmFix}},
 	{ID: "identity.state_persistent", Code: "unknown", Group: "identity", Title: "Sensor state may not be kept",
 		Why:  "The sensor could not tell whether {path} is on a mounted volume. If it is not, a recreated container starts with a retired key.",
-		Docs: "identity-state-persistent",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-state-persistent",
 		Fix:  map[string]string{FixFormatEnv: stateEnvFix, FixFormatCompose: stateComposeFix, FixFormatHelm: stateHelmFix}},
 	{ID: "identity.key_renewal", Code: "enabled", Group: "identity", Title: "API key renewal is on",
-		Why: "The sensor renews its API key before it expires.", Docs: "identity-key-renewal"},
+		Why: "The sensor renews its API key before it expires.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-key-renewal"},
 	{ID: "identity.key_renewal", Code: "disabled", Group: "identity", Title: "API key renewal is off",
-		Why: "Key renewal is switched off in the sensor's settings. Rotate the key yourself before it expires.", Docs: "identity-key-renewal"},
+		Why: "Key renewal is switched off in the sensor's settings. Rotate the key yourself before it expires.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-key-renewal"},
 	{ID: "identity.key_renewal", Code: "off_not_persistent", Group: "identity", Title: "API key renewal is off because the state is not kept",
 		Why:  "The sensor turned key renewal off because its state directory is not on a mounted volume: a renewed key would be lost. Mount a volume to turn renewal on.",
-		Docs: "identity-key-renewal",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-key-renewal",
 		Fix: map[string]string{
 			FixFormatEnv:     "# Mount a state volume (see the state check), then:\nexport PLATFORM_KEY_AUTORENEW=true",
 			FixFormatCompose: "services:\n  sensor:\n    environment:\n      PLATFORM_KEY_AUTORENEW: \"true\"\n    volumes:\n      - state:/var/lib/openctem/state\nvolumes:\n  state:",
@@ -161,16 +164,16 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		}},
 	{ID: "identity.key_renewal", Code: "start_failed", Group: "identity", Title: "API key renewal did not start",
 		Why:  "The sensor could not start key renewal. The summary below is the sensor's message; the key will expire unless it is rotated.",
-		Docs: "identity-key-renewal"},
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-key-renewal"},
 
 	// --- network -------------------------------------------------------------
 	{ID: "network.scan_proxy_inherit", Code: "direct", Group: "network", Title: "Scanners connect directly",
-		Why: "Scanners do not use the host's proxy settings.", Docs: "network-scan-proxy"},
+		Why: "Scanners do not use the host's proxy settings.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#network-scan-proxy"},
 	{ID: "network.scan_proxy_inherit", Code: "inherit_explicit", Group: "network", Title: "Scanners use the host proxy on purpose",
-		Why: "SENSOR_SCAN_PROXY says scanners use the host's proxy settings.", Docs: "network-scan-proxy"},
+		Why: "SENSOR_SCAN_PROXY says scanners use the host's proxy settings.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#network-scan-proxy"},
 	{ID: "network.scan_proxy_inherit", Code: "inherits_proxy", Group: "network", Title: "Scanners send targets through the host proxy",
 		Why:  "The host sets {vars}, and scanners inherit them: scan traffic goes through that proxy, which may block it or see every target. Say which you want.",
-		Docs: "network-scan-proxy",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#network-scan-proxy",
 		Fix: map[string]string{
 			FixFormatEnv:     "# Scanners connect directly (the platform connection keeps the proxy):\nexport SENSOR_SCAN_PROXY=direct",
 			FixFormatCompose: "services:\n  sensor:\n    environment:\n      SENSOR_SCAN_PROXY: \"direct\"",
@@ -179,31 +182,31 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 
 	// --- runtime -------------------------------------------------------------
 	{ID: "runtime.oom_protect", Code: "protected", Group: "runtime", Title: "The sensor is protected from the OOM killer",
-		Why: "Under memory pressure the kernel stops a scanner before the sensor.", Docs: "runtime-oom-protect"},
+		Why: "Under memory pressure the kernel stops a scanner before the sensor.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-oom-protect"},
 	{ID: "runtime.oom_protect", Code: "not_requested", Group: "runtime", Title: "OOM protection is not requested",
-		Why: "The sensor does not ask the kernel to spare it under memory pressure.", Docs: "runtime-oom-protect"},
+		Why: "The sensor does not ask the kernel to spare it under memory pressure.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-oom-protect"},
 	{ID: "runtime.oom_protect", Code: "unsupported", Group: "runtime", Title: "OOM protection is not supported here",
-		Why: "This host does not let the sensor ask the kernel to spare it under memory pressure.", Docs: "runtime-oom-protect"},
+		Why: "This host does not let the sensor ask the kernel to spare it under memory pressure.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-oom-protect"},
 	{ID: "runtime.oom_protect", Code: "no_permission", Group: "runtime", Title: "OOM protection needs a capability",
 		Why:  "The sensor asked the kernel to stop a scanner before itself under memory pressure, but lacks the SYS_RESOURCE capability.",
-		Docs: "runtime-oom-protect",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-oom-protect",
 		Fix: map[string]string{
 			FixFormatEnv:     "# docker run ... --cap-add SYS_RESOURCE ...",
 			FixFormatCompose: "services:\n  sensor:\n    cap_add: [SYS_RESOURCE]",
 			FixFormatHelm:    "sensor:\n  securityContext:\n    capabilities:\n      drop: [ALL]\n      add: [SYS_RESOURCE]",
 		}},
 	{ID: "runtime.oom_protect", Code: "failed", Group: "runtime", Title: "OOM protection failed",
-		Why: "The sensor could not set its OOM protection. The summary below is the sensor's message.", Docs: "runtime-oom-protect"},
+		Why: "The sensor could not set its OOM protection. The summary below is the sensor's message.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-oom-protect"},
 	{ID: "runtime.command_poller", Code: "running", Group: "runtime", Title: "The sensor takes jobs",
-		Why: "The sensor is polling the platform for jobs.", Docs: "runtime-command-poller"},
+		Why: "The sensor is polling the platform for jobs.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-command-poller"},
 	{ID: "runtime.command_poller", Code: "stopped", Group: "runtime", Title: "The sensor stopped taking jobs",
 		Why:  "The loop that fetches jobs from the platform stopped with an error, so the sensor runs nothing. Restart the sensor; the summary below is its message.",
-		Docs: "runtime-command-poller"},
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-command-poller"},
 
 	// --- config --------------------------------------------------------------
 	{ID: "config.alias_deprecated", Code: "legacy_name", Group: "config", Title: "Setting {name} has a new name",
 		Why:  "{name} still works but is deprecated. Use {replacement} instead.",
-		Docs: "config-alias-deprecated",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#config-alias-deprecated",
 		Fix: map[string]string{
 			FixFormatEnv:     "# Rename the setting: {{.name}} -> {{.replacement}}\nunset {{.name}}",
 			FixFormatCompose: "# In services.sensor.environment, rename {{.name}} to {{.replacement}}",
@@ -211,7 +214,7 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		}},
 	{ID: "config.env_unknown", Code: "unknown", Group: "config", Title: "Unknown setting {name}",
 		Why:  "The sensor does not read {name}, so it has no effect. Check the spelling.",
-		Docs: "config-env-unknown",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#config-env-unknown",
 		Fix: map[string]string{
 			FixFormatEnv:     "{{with index . \"suggestion\"}}# Did you mean {{.}}?\n{{end}}unset {{.name}}",
 			FixFormatCompose: "# Remove {{.name}} from services.sensor.environment{{with index . \"suggestion\"}} (did you mean {{.}}?){{end}}",
@@ -219,19 +222,19 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		}},
 	{ID: "config.file_unknown_key", Code: "unknown_key", Group: "config", Title: "Unknown key {key} in the config file",
 		Why:  "The sensor does not know the key {key} in {path}, so it is ignored. Check the spelling.",
-		Docs: "config-file-unknown-key",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#config-file-unknown-key",
 		Fix: map[string]string{
 			FixFormatEnv: "# Edit {{.path}}: remove or rename the key {{.key}}{{with index . \"suggestion\"}} (did you mean {{.}}?){{end}}",
 		}},
 	{ID: "config.file_unset_var", Code: "unset_var", Group: "config", Title: "Config file uses unset variable {name}",
 		Why:  "{path} refers to the environment variable {name}, which is not set, so the value became empty.",
-		Docs: "config-file-unset-var",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#config-file-unset-var",
 		Fix: map[string]string{
 			FixFormatEnv: "# Set {{.name}} in the sensor's environment, or remove it from {{.path}}",
 		}},
 	{ID: "config.commands_disabled", Code: "daemon_without_commands", Group: "config", Title: "The sensor runs as a daemon but takes no jobs",
 		Why:  "The sensor was started with -daemon but without -enable-commands, so it heartbeats but never runs a job from the platform.",
-		Docs: "config-commands-disabled",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#config-commands-disabled",
 		Fix: map[string]string{
 			FixFormatEnv:     "# Start the sensor with both flags:\n# openctemio-sensor -daemon -enable-commands",
 			FixFormatCompose: "services:\n  sensor:\n    command: [\"-daemon\", \"-enable-commands\"]",
@@ -239,7 +242,7 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		}},
 	{ID: "config.tool_retired", Code: "retired_name", Group: "config", Title: "Scanner name {name} is retired",
 		Why:  "{name} was replaced by {replacement}; the sensor runs {replacement} for it. Update the tool list.",
-		Docs: "config-tool-retired",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#config-tool-retired",
 		Fix: map[string]string{
 			FixFormatEnv:     "# In SENSOR_TOOLS, replace {{.name}} with {{.replacement}}",
 			FixFormatCompose: "# In services.sensor.environment.SENSOR_TOOLS, replace {{.name}} with {{.replacement}}",
@@ -248,10 +251,10 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 
 	// --- platform ------------------------------------------------------------
 	{ID: "platform.tls", Code: "ok", Group: "platform", Title: "TLS trust is readable",
-		Why: "The certificate settings the sensor uses to trust the platform are readable.", Docs: "platform-tls"},
+		Why: "The certificate settings the sensor uses to trust the platform are readable.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#platform-tls"},
 	{ID: "platform.tls", Code: "ca_file_unreadable", Group: "platform", Title: "The CA file in {name} cannot be read",
 		Why:  "{name} points at {path}, which the sensor cannot read. TLS connections to the platform then fail with an unknown-authority error.",
-		Docs: "platform-tls",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#platform-tls",
 		Fix: map[string]string{
 			FixFormatEnv:     "# Mount the platform CA certificate read-only at the path the setting names:\n# docker run ... -v \"$PWD/platform-ca.pem\":{{.path}}:ro ...\nls -l {{.path}}",
 			FixFormatCompose: "services:\n  sensor:\n    volumes:\n      - {{joinq \"./platform-ca.pem:\" \"path\" \":ro\"}}",
@@ -259,7 +262,7 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		}},
 	{ID: "platform.tls", Code: "ca_dir_unreadable", Group: "platform", Title: "The CA directory in {name} cannot be read",
 		Why:  "{name} points at {path}, which the sensor cannot read. TLS connections to the platform then fail with an unknown-authority error.",
-		Docs: "platform-tls",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#platform-tls",
 		Fix: map[string]string{
 			FixFormatEnv:     "# Mount the directory with the platform CA certificate read-only:\n# docker run ... -v \"$PWD/certs\":{{.path}}:ro ...\nls -ld {{.path}}",
 			FixFormatCompose: "services:\n  sensor:\n    volumes:\n      - {{joinq \"./certs:\" \"path\" \":ro\"}}",
@@ -268,22 +271,22 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 
 	// --- policy --------------------------------------------------------------
 	{ID: "policy.local", Code: "enforced", Group: "policy", Title: "A local policy is enforced",
-		Why: "The network owner's local policy is loaded and every job is checked against it.", Docs: "policy-local"},
+		Why: "The network owner's local policy is loaded and every job is checked against it.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#policy-local"},
 	{ID: "policy.local", Code: "absent", Group: "policy", Title: "No local policy",
 		Why:  "No local policy is installed on the sensor host, so the sensor accepts any target outside its built-in deny list. The network owner should install one.",
-		Docs: "policy-local",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#policy-local",
 		Fix: map[string]string{
 			FixFormatEnv:     "# Install the policy read-only (owner root), then:\nexport SENSOR_LOCAL_POLICY=/etc/openctem/policy/sensor-policy.yaml",
 			FixFormatCompose: "services:\n  sensor:\n    environment:\n      SENSOR_LOCAL_POLICY: \"/etc/openctem/policy/sensor-policy.yaml\"\n    volumes:\n      - ./policy:/etc/openctem/policy:ro",
 			FixFormatHelm:    "sensor:\n  localPolicy:\n    enabled: true",
 		}},
 	{ID: "policy.template_keys", Code: "ok", Group: "policy", Title: "Template signing keys are set",
-		Why: "The sensor can verify custom templates the platform signs.", Docs: "policy-template-keys"},
+		Why: "The sensor can verify custom templates the platform signs.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#policy-template-keys"},
 	{ID: "policy.template_keys", Code: "not_needed", Group: "policy", Title: "Template signing keys are not needed",
-		Why: "The local policy does not allow custom templates.", Docs: "policy-template-keys"},
+		Why: "The local policy does not allow custom templates.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#policy-template-keys"},
 	{ID: "policy.template_keys", Code: "missing", Group: "policy", Title: "Custom templates are allowed but cannot be verified",
 		Why:  "The local policy allows custom templates, but SENSOR_TEMPLATE_SIGNING_KEYS is not set, so the sensor refuses every custom template.",
-		Docs: "policy-template-keys",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#policy-template-keys",
 		Fix: map[string]string{
 			FixFormatEnv:     "# The tenant's template signing public key (Settings > Sensors):\nexport SENSOR_TEMPLATE_SIGNING_KEYS='<public key>'",
 			FixFormatCompose: "services:\n  sensor:\n    environment:\n      SENSOR_TEMPLATE_SIGNING_KEYS: \"<public key>\"",
@@ -369,7 +372,7 @@ func ExplainCheck(c sensordom.ConfigCheck) CheckExplanation {
 		})
 	}
 	out := CheckExplanation{Known: true, Group: entry.entry.Group, Title: plain(entry.entry.Title),
-		Why: plain(entry.entry.Why), Fix: map[string]string{}, DocsURL: configCheckDocsBase + entry.entry.Docs}
+		Why: plain(entry.entry.Why), Fix: map[string]string{}, DocsURL: entry.entry.Docs}
 	for format, tmpl := range entry.fix {
 		if s, ok := renderFix(tmpl, format, text); ok {
 			out.Fix[format] = s

@@ -842,6 +842,7 @@ func TestDataScope_SubresourceLists_FilterForScopedMemberOnly(t *testing.T) {
 		{"/api/v1/services/stats", `"total_services":1`, `"total_services":2`},
 		{"/api/v1/state-history/stats", `"appeared":1`, `"appeared":2`},
 		{"/api/v1/state-history/timeline", `"appeared":1`, `"appeared":2`},
+		{"/api/v1/state-history/counts", `"appeared":1`, `"appeared":2`},
 		{"/api/v1/relationships/suggestions/count", `"count":1`, `"count":2`},
 		{"/api/v1/relationships/usage-stats", `"id":"depends_on"`, `"id":"depends_on"`},
 	}

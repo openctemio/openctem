@@ -91,7 +91,6 @@ services:
     environment:
       NODE_ENV: production
       BACKEND_API_URL: http://api:8080
-      CSRF_SECRET: ${CSRF_SECRET:?set CSRF_SECRET}
       SECURE_COOKIES: 'false'
     healthcheck:
       test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:3000/api/health']

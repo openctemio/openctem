@@ -140,13 +140,19 @@ type Item struct {
 type Limits struct {
 	MaxPendingPerTenant int
 	MaxPendingPerSensor int
+	// MaxPendingBytesPerTenant caps the payload bytes a tenant's pending
+	// items hold together: pending items are kept until someone reviews
+	// them, so the item count alone (MaxPendingPerTenant x MaxPayloadBytes)
+	// would let one tenant hold gigabytes.
+	MaxPendingBytesPerTenant int64
 	// MaxPayloadBytes is the largest report kept; a larger one is refused.
 	MaxPayloadBytes int
 }
 
 // DefaultLimits are the quarantine bounds.
 func DefaultLimits() Limits {
-	return Limits{MaxPendingPerTenant: 1000, MaxPendingPerSensor: 200, MaxPayloadBytes: 16 << 20}
+	return Limits{MaxPendingPerTenant: 1000, MaxPendingPerSensor: 200, MaxPayloadBytes: 16 << 20,
+		MaxPendingBytesPerTenant: 512 << 20}
 }
 
 // ListFilter selects quarantined items.

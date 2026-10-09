@@ -73,7 +73,16 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 
-import { ScanWorkflowForm } from '@/features/scan-workflows/components/workflow-form'
+import {
+  ScanWorkflowForm,
+  type WorkflowFormSubmitOptions,
+} from '@/features/scan-workflows/components/workflow-form'
+import {
+  fetchDraft,
+  fromDraftStep,
+  publishDraft,
+  saveDraftSteps,
+} from '@/features/scan-workflows/lib/draft'
 import { firstProblem, readinessLabel } from '@/features/scan-workflows/lib/readiness'
 import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
 import { ScansPageHeader, ScansSectionTabs } from '@/features/scans/components/scans-section-tabs'
@@ -207,14 +216,31 @@ export default function ScanWorkflowsPage() {
     }
   }
 
+  // Name, settings and tags save on the workflow; steps never go straight
+  // into the version runs use: they save to its draft, and publish only
+  // when asked (a blocking issue refuses the publish, the draft stays).
+  // The edited workflow has a draft (its steps were loaded from it).
+  const [editingDraft, setEditingDraft] = useState(false)
   const handleUpdateWorkflow = async (
-    data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest
+    data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest,
+    options?: WorkflowFormSubmitOptions
   ) => {
     if (!editingWorkflow) return
     setUpdatingWorkflow(true)
     try {
-      await put<ScanWorkflow>(scanWorkflowEndpoints.update(editingWorkflow.id), data)
-      toast.success(`Workflow "${editingWorkflow.name}" updated`)
+      const { steps, ...rest } = data as UpdateScanWorkflowRequest
+      await put<ScanWorkflow>(scanWorkflowEndpoints.update(editingWorkflow.id), rest)
+      if (steps) await saveDraftSteps(editingWorkflow.id, steps)
+      if (options?.publish) {
+        const published = await publishDraft(editingWorkflow.id)
+        toast.success(
+          `Workflow "${editingWorkflow.name}" published as version ${published.version}`
+        )
+      } else if (steps) {
+        toast.success(`Workflow "${editingWorkflow.name}" saved as a draft; publish it to run it`)
+      } else {
+        toast.success(`Workflow "${editingWorkflow.name}" updated`)
+      }
       await invalidateAllScanWorkflowCaches()
       setEditingWorkflow(null)
       setIsFormOpen(false)
@@ -236,7 +262,14 @@ export default function ScanWorkflowsPage() {
     setLoadingEdit(true)
     try {
       const fullWorkflow = await get<ScanWorkflow>(scanWorkflowEndpoints.get(workflow.id))
-      setEditingWorkflow(fullWorkflow)
+      // A workflow with a draft is edited from its draft.
+      const draft = fullWorkflow.is_system_template
+        ? null
+        : await fetchDraft(fullWorkflow.id).catch(() => null)
+      setEditingDraft(!!draft)
+      setEditingWorkflow(
+        draft ? { ...fullWorkflow, steps: draft.steps.map(fromDraftStep) } : fullWorkflow
+      )
       setIsFormOpen(true)
     } catch (error) {
       console.error('Failed to fetch workflow:', error)
@@ -525,7 +558,7 @@ export default function ScanWorkflowsPage() {
 
       {/* Create/Edit Workflow Sheet */}
       <Sheet open={isFormOpen} onOpenChange={handleCloseForm}>
-        <SheetContent className="w-full sm:max-w-xl flex flex-col p-0">
+        <SheetContent className="w-full sm:max-w-xl lg:max-w-3xl flex flex-col p-0">
           <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
             <SheetTitle className="flex items-center gap-2">
               <Workflow className="h-5 w-5" />
@@ -540,6 +573,7 @@ export default function ScanWorkflowsPage() {
           <div className="flex-1 overflow-y-auto px-6 py-4">
             <ScanWorkflowForm
               workflow={editingWorkflow}
+              hasDraft={!!editingWorkflow && editingDraft}
               onSubmit={editingWorkflow ? handleUpdateWorkflow : handleCreateWorkflow}
               onCancel={handleCloseForm}
               isSubmitting={creatingWorkflow || updatingWorkflow}

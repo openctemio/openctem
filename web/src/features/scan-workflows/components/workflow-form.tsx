@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -15,7 +15,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
-  verticalListSortingStrategy,
+  rectSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
@@ -63,7 +63,20 @@ import type { ToolWithConfig } from '@/lib/api/tool-types'
 import { generateTempStepId, isTempStepId } from '@/lib/utils'
 import type { Capability, CapabilityTable } from '../lib/capability-graph'
 import { useCapabilityTable } from '../lib/use-capability-table'
-import { namedCapability, stepCapabilities, withCapability, withTool } from '../lib/step-capability'
+import {
+  applyLegacyFix,
+  legacyCapabilityFix,
+  namedCapability,
+  stepCapabilities,
+  withCapability,
+  withTool,
+} from '../lib/step-capability'
+import { moveToStageOf, setRunsAfter, stageLabels } from '../lib/step-deps'
+import { planStages } from '../lib/workflow-stages'
+import { validateScanWorkflowSteps } from '../lib/use-capability-table'
+import type { GraphValidation } from '../lib/capability-graph'
+import { DraftIssuesPanel } from './draft-issues-panel'
+import { StepRunsAfter } from './step-runs-after'
 import {
   removeStep,
   renameStepKey,
@@ -75,9 +88,23 @@ import { toStepRequest } from '../lib/step-request'
 import { selectionOf } from '../lib/step-settings'
 import { ToolSelectionField } from './tool-selection-field'
 
+/** How an edit is saved: steps go to the workflow's draft; publish makes it what runs. */
+export interface WorkflowFormSubmitOptions {
+  publish?: boolean
+}
+
 interface WorkflowFormProps {
   workflow?: ScanWorkflow | null
-  onSubmit: (data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest) => Promise<void>
+  /**
+   * The steps of an existing workflow come from its draft when it has one;
+   * an edit that changes steps saves them to the draft (and publishes them
+   * only when asked), never straight into the version runs use.
+   */
+  hasDraft?: boolean
+  onSubmit: (
+    data: CreateScanWorkflowRequest | UpdateScanWorkflowRequest,
+    options?: WorkflowFormSubmitOptions
+  ) => Promise<void>
   onCancel: () => void
   isSubmitting?: boolean
 }
@@ -126,6 +153,10 @@ function loadSteps(workflow?: ScanWorkflow | null): ScanWorkflowStep[] {
 interface StepCardProps {
   step: ScanWorkflowStep
   index: number
+  /** Stage label: "1", "2a", "2b"... */
+  label: string
+  steps: ScanWorkflowStep[]
+  onRunsAfter: (keys: string[]) => void
   otherKeys: string[]
   table: CapabilityTable
   tools: ToolWithConfig[]
@@ -142,7 +173,8 @@ interface StepCardProps {
 }
 
 function SortableStepCard(props: StepCardProps) {
-  const { step, index, otherKeys, table, tools, toolsLoading, choose, errors } = props
+  const { step, index, label, otherKeys, table, tools, toolsLoading, choose, errors } = props
+  const legacy = legacyCapabilityFix(table, step)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: step.id,
   })
@@ -164,20 +196,21 @@ function SortableStepCard(props: StepCardProps) {
         opacity: isDragging ? 0.5 : 1,
         zIndex: isDragging ? 1000 : 'auto',
       }}
+      id={`wf-step-${step.step_key}`}
       className={`rounded-lg border bg-muted/30 overflow-hidden ${isDragging ? 'shadow-lg ring-2 ring-primary' : ''}`}
     >
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
         <button
           type="button"
-          aria-label={`Move step ${index + 1}`}
+          aria-label={`Move step ${label}`}
           className="cursor-grab active:cursor-grabbing touch-none p-0.5 rounded hover:bg-muted"
           {...attributes}
           {...listeners}
         >
           <GripVertical className="h-4 w-4 text-muted-foreground" />
         </button>
-        <Badge variant="outline" className="text-xs">
-          {index + 1}
+        <Badge variant="outline" className="text-xs" aria-label={`Step ${label}`}>
+          {label}
         </Badge>
         <span className="flex-1 text-sm font-medium truncate">
           {step.name || capability?.name || 'New step'}
@@ -187,7 +220,7 @@ function SortableStepCard(props: StepCardProps) {
             type="button"
             variant="ghost"
             size="icon"
-            aria-label={`Remove step ${index + 1}`}
+            aria-label={`Remove step ${label}`}
             onClick={props.onRemove}
             className="h-7 w-7 text-muted-foreground hover:text-destructive"
           >
@@ -196,8 +229,8 @@ function SortableStepCard(props: StepCardProps) {
         )}
       </div>
 
-      <div className="p-3 space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <div className="@container p-3 space-y-3">
+        <div className="grid gap-3 @md:grid-cols-2">
           <div className="space-y-1">
             <Label htmlFor={`${step.id}-name`} className="text-xs">
               Name *
@@ -241,6 +274,34 @@ function SortableStepCard(props: StepCardProps) {
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        {legacy.length > 0 && (
+          <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">
+            <p>
+              Old format: {step.tool} runs as {step.capabilities.join(', ') || 'no capability'}.
+              Name its capability to get typed connections and the capability&apos;s settings.
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {legacy.map((cap) => (
+                <Button
+                  key={cap.key}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-start text-xs"
+                  onClick={() => props.onChange(applyLegacyFix(step, cap))}
+                >
+                  Use capability {cap.key} ({step.tool} implements it)
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <Label className="text-xs">Runs after</Label>
+          <StepRunsAfter step={step} steps={props.steps} onChange={props.onRunsAfter} />
         </div>
 
         {choose.length > 0 && (
@@ -314,7 +375,7 @@ function SortableStepCard(props: StepCardProps) {
           <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
             Advanced
           </summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="mt-3 grid gap-3 @md:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor={`${step.id}-key`} className="text-xs">
                 Step key
@@ -367,6 +428,7 @@ function SortableStepCard(props: StepCardProps) {
 
 export function ScanWorkflowForm({
   workflow,
+  hasDraft = false,
   onSubmit,
   onCancel,
   isSubmitting,
@@ -477,8 +539,11 @@ export function ScanWorkflowForm({
     if (!isFirstStep) setCurrentStep(WIZARD_STEPS[currentStepIndex - 1].id)
   }
 
+  const publishRef = useRef(false)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const publish = publishRef.current
+    publishRef.current = false
     for (const step of WIZARD_STEPS) {
       if (!validateStep(step.id)) {
         setCurrentStep(step.id)
@@ -504,7 +569,7 @@ export function ScanWorkflowForm({
       const update: UpdateScanWorkflowRequest = stepsChanged
         ? { ...base, steps: stepRequests }
         : base
-      await onSubmit(update)
+      await onSubmit(update, { publish })
       return
     }
     const data: CreateScanWorkflowRequest = { ...base, steps: stepRequests }
@@ -531,16 +596,109 @@ export function ScanWorkflowForm({
     updateSteps([...steps, s])
   }
 
+  // Dropping a step on a step of another stage moves it there (it takes
+  // that step's dependencies); within a stage it only reorders.
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-    if (over && active.id !== over.id) {
-      const oldIndex = steps.findIndex((s) => s.id === active.id)
-      const newIndex = steps.findIndex((s) => s.id === over.id)
-      updateSteps(arrayMove(steps, oldIndex, newIndex))
+    if (!over || active.id === over.id) return
+    const stageOf = (id: string) => plan.stages.findIndex((g) => g.some((x) => x.id === id))
+    if (stageOf(String(active.id)) !== stageOf(String(over.id))) {
+      const r = moveToStageOf(steps, String(active.id), String(over.id))
+      if (r.error) {
+        setErrors({ ...errors, steps: r.error })
+        return
+      }
+      updateSteps(r.steps)
+      return
     }
+    const oldIndex = steps.findIndex((s) => s.id === active.id)
+    const newIndex = steps.findIndex((s) => s.id === over.id)
+    updateSteps(arrayMove(steps, oldIndex, newIndex))
   }
 
   const tools = useMemo(() => toolsData?.items ?? [], [toolsData])
+
+  // The stages the steps make, from what each runs after.
+  const plan = planStages(steps)
+  const labels = stageLabels(plan)
+  const placedIds = new Set(plan.stages.flat().map((x) => x.id))
+  const unplaced = steps.filter((x) => !placedIds.has(x.id))
+  const legacySteps = steps.filter((x) => legacyCapabilityFix(table, x).length > 0)
+  const fixAllLegacy = () =>
+    updateSteps(
+      steps.map((x) => {
+        const caps = legacyCapabilityFix(table, x)
+        return caps.length === 1 ? applyLegacyFix(x, caps[0]) : x
+      })
+    )
+
+  // The API's check of the steps, while editing (debounced; best effort).
+  const [report, setReport] = useState<GraphValidation | null>(null)
+  useEffect(() => {
+    if (steps.length === 0) {
+      setReport(null)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      validateScanWorkflowSteps(steps)
+        .then((r) => {
+          if (!cancelled) setReport(r)
+        })
+        .catch(() => {})
+    }, 600)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [steps])
+
+  const renderCard = (step: ScanWorkflowStep) => {
+    const index = steps.findIndex((x) => x.id === step.id)
+    return (
+      <SortableStepCard
+        key={step.id}
+        step={step}
+        index={index}
+        label={labels[step.step_key] ?? '?'}
+        steps={steps}
+        onRunsAfter={(keys) => updateSteps(setRunsAfter(steps, step.id, keys))}
+        otherKeys={steps.filter((s) => s.id !== step.id).map((s) => s.step_key)}
+        table={table}
+        tools={tools}
+        toolsLoading={toolsLoading}
+        choose={choose[step.id] ?? []}
+        errors={errors}
+        onCapability={(cap) => {
+          setChoose({ ...choose, [step.id]: [] })
+          replaceStep(withCapability(step, cap), cap.key, cap.name)
+        }}
+        onTool={(tool) => {
+          const declared = tools.find((t) => t.tool.name === tool)?.tool.capabilities ?? []
+          const r = tool
+            ? withTool(table, step, tool, declared)
+            : { step: { ...step, tool: '', capabilities: [] }, choose: [] }
+          setChoose({ ...choose, [step.id]: r.choose })
+          const cap = namedCapability(table, r.step)
+          replaceStep(r.step, cap?.key ?? tool, cap?.name)
+        }}
+        onChange={(x) => replaceStep(x)}
+        onName={(n) => {
+          const next = new Set(autoNames)
+          next.delete(step.id)
+          setAutoNames(next)
+          replaceStep({ ...step, name: n })
+        }}
+        onKey={(k) => {
+          const next = new Set(autoKeys)
+          next.delete(step.id)
+          setAutoKeys(next)
+          updateSteps(renameStepKey(steps, step.id, k))
+        }}
+        onRemove={steps.length > 1 ? () => updateSteps(removeStep(steps, step.id)) : undefined}
+      />
+    )
+  }
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col">
@@ -640,8 +798,8 @@ export function ScanWorkflowForm({
             <div>
               <h3 className="text-sm font-medium">Workflow Steps</h3>
               <p className="text-xs text-muted-foreground">
-                Choose what each step does; the platform picks a tool unless you prefer or pin one.
-                Connections between steps are edited in the builder.
+                Choose what each step does and what it runs after. Steps of one stage run in
+                parallel. Drag a step onto another stage to move it there.
               </p>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={addStep}>
@@ -652,57 +810,71 @@ export function ScanWorkflowForm({
 
           {errors.steps && <p className="text-xs text-destructive">{errors.steps}</p>}
 
+          {legacySteps.length > 0 && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs"
+            >
+              <span>
+                {legacySteps.length} step{legacySteps.length > 1 ? 's use' : ' uses'} the old format
+                (a tool without its capability).
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={fixAllLegacy}
+              >
+                Fix all
+              </Button>
+            </div>
+          )}
+
+          {report && (
+            <DraftIssuesPanel
+              report={report}
+              steps={steps}
+              onSelectStep={(key) =>
+                document.getElementById(`wf-step-${key}`)?.scrollIntoView({ block: 'center' })
+              }
+            />
+          )}
+
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
           >
-            <SortableContext items={steps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-              <div className="space-y-3">
-                {steps.map((step, index) => (
-                  <SortableStepCard
-                    key={step.id}
-                    step={step}
-                    index={index}
-                    otherKeys={steps.filter((s) => s.id !== step.id).map((s) => s.step_key)}
-                    table={table}
-                    tools={tools}
-                    toolsLoading={toolsLoading}
-                    choose={choose[step.id] ?? []}
-                    errors={errors}
-                    onCapability={(cap) => {
-                      setChoose({ ...choose, [step.id]: [] })
-                      replaceStep(withCapability(step, cap), cap.key, cap.name)
-                    }}
-                    onTool={(tool) => {
-                      const declared =
-                        tools.find((t) => t.tool.name === tool)?.tool.capabilities ?? []
-                      const r = tool
-                        ? withTool(table, step, tool, declared)
-                        : { step: { ...step, tool: '', capabilities: [] }, choose: [] }
-                      setChoose({ ...choose, [step.id]: r.choose })
-                      const cap = namedCapability(table, r.step)
-                      replaceStep(r.step, cap?.key ?? tool, cap?.name)
-                    }}
-                    onChange={(s) => replaceStep(s)}
-                    onName={(n) => {
-                      const next = new Set(autoNames)
-                      next.delete(step.id)
-                      setAutoNames(next)
-                      replaceStep({ ...step, name: n })
-                    }}
-                    onKey={(k) => {
-                      const next = new Set(autoKeys)
-                      next.delete(step.id)
-                      setAutoKeys(next)
-                      updateSteps(renameStepKey(steps, step.id, k))
-                    }}
-                    onRemove={
-                      steps.length > 1 ? () => updateSteps(removeStep(steps, step.id)) : undefined
-                    }
-                  />
+            <SortableContext
+              items={[...plan.stages.flat(), ...unplaced].map((s) => s.id)}
+              strategy={rectSortingStrategy}
+            >
+              <ol className="@container space-y-4">
+                {plan.stages.map((stage, i) => (
+                  <li key={i} aria-labelledby={`form-stage-${i}`} className="space-y-2">
+                    <h4
+                      id={`form-stage-${i}`}
+                      className="text-xs font-semibold text-muted-foreground"
+                    >
+                      Stage {i + 1}
+                      {stage.length > 1 && ` · ${stage.length} steps run in parallel`}
+                      {i > 0 && ` · waits for Stage ${i}`}
+                    </h4>
+                    <div className={`grid gap-3 ${stage.length > 1 ? '@2xl:grid-cols-2' : ''}`}>
+                      {stage.map(renderCard)}
+                    </div>
+                  </li>
                 ))}
-              </div>
+                {unplaced.length > 0 && (
+                  <li className="space-y-2">
+                    <h4 className="text-xs font-semibold text-destructive">
+                      Not placed: these steps wait for each other in a loop
+                    </h4>
+                    <div className="grid gap-3 @2xl:grid-cols-2">{unplaced.map(renderCard)}</div>
+                  </li>
+                )}
+              </ol>
             </SortableContext>
           </DndContext>
         </TabsContent>
@@ -788,6 +960,19 @@ export function ScanWorkflowForm({
             Cancel
           </Button>
 
+          {isLastStep && isEditing && (stepsChanged || hasDraft) && (
+            <Button
+              key="publish"
+              type="submit"
+              variant="outline"
+              disabled={isSubmitting}
+              onClick={() => {
+                publishRef.current = true
+              }}
+            >
+              Save and publish
+            </Button>
+          )}
           {isLastStep ? (
             // Distinct keys: reusing one DOM button would turn the click on
             // "Next" into a submit of the form when it becomes the last tab.
@@ -798,7 +983,11 @@ export function ScanWorkflowForm({
                   Saving...
                 </>
               ) : isEditing ? (
-                'Update Workflow'
+                stepsChanged ? (
+                  'Save draft'
+                ) : (
+                  'Update Workflow'
+                )
               ) : (
                 'Create Workflow'
               )}

@@ -22,10 +22,11 @@ export const PUBLIC_ROUTES = [
   '/verify-email',
   // Where a refused sign-up lands (no session): the same page for everyone.
   '/not-set-up',
+  // Request access when sign-up is closed, and its emailed confirmation link.
+  '/request-access',
   // OAuth / SSO provider callbacks: the session cookie is set by these pages.
   '/auth/callback',
   '/auth/sso/callback',
-  '/auth/error',
   // Platform admin console sign-in (RFC-022): the TOTP step and the platform
   // IdP callback. The rest of /admin is ADMIN_CONSOLE_ROOT.
   '/admin/login',

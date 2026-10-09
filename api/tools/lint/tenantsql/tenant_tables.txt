@@ -51,6 +51,8 @@ compensating_controls
 compliance_assessments
 compliance_finding_mappings
 compliance_frameworks
+content_pack_blobs
+content_packs
 control_tests
 credentials
 ct_monitor_state
@@ -88,6 +90,9 @@ ingest_reports
 integrations
 ioc_matches
 iocs
+mcp_oauth_clients
+mcp_oauth_grants
+mcp_oauth_requests
 notification_events
 notification_outbox
 notification_preferences
