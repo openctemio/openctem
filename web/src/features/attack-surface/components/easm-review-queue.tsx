@@ -14,7 +14,7 @@
 
 import { useMemo, useState } from 'react'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Ban, Check, Eye, Loader2, Network, Search as SearchIcon } from 'lucide-react'
 import { toast } from 'sonner'
