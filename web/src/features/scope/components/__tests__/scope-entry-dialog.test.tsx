@@ -168,6 +168,65 @@ describe('ScopeEntryDialog', () => {
   })
 })
 
+describe('ScopeEntryDialog: letter of authorization', () => {
+  // Radix Select uses pointer capture and scrollIntoView, which jsdom lacks.
+  beforeEach(() => {
+    Element.prototype.hasPointerCapture ??= () => false
+    Element.prototype.releasePointerCapture ??= () => {}
+    Element.prototype.scrollIntoView ??= () => {}
+  })
+
+  it('names an in-effect letter; revoked and expired letters are not offered', async () => {
+    api.get.mockImplementation(async (url: string) =>
+      url.startsWith('/api/v1/scope/letters')
+        ? {
+            data: [
+              {
+                id: 'l1',
+                title: 'Client LoA',
+                in_effect: true,
+                valid_until: '2027-01-01T00:00:00Z',
+              },
+              { id: 'l2', title: 'Old LoA', in_effect: false, valid_until: '2025-01-01T00:00:00Z' },
+              {
+                id: 'l3',
+                title: 'Revoked LoA',
+                in_effect: false,
+                revoked_at: '2026-10-01T00:00:00Z',
+                valid_until: '2027-01-01T00:00:00Z',
+              },
+            ],
+          }
+        : settings
+    )
+    api.post.mockResolvedValue({ pattern: '*.client.io', status: 'pending', approvals_required: 1 })
+    const user = userEvent.setup()
+    wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
+    await user.type(await screen.findByLabelText('What'), 'client.io')
+    await user.click(await screen.findByLabelText('Authorized by'))
+    expect(screen.queryByRole('option', { name: /Old LoA/ })).toBeNull()
+    expect(screen.queryByRole('option', { name: /Revoked LoA/ })).toBeNull()
+    await user.click(screen.getByRole('option', { name: /Client LoA/ }))
+    await user.click(screen.getByRole('button', { name: 'Add to scope' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/v1/scope/targets',
+        expect.objectContaining({
+          pattern: '*.client.io',
+          authorization_source: 'authorization_letter',
+          letter_id: 'l1',
+        })
+      )
+    )
+  })
+
+  it('offers no choice without a usable letter', async () => {
+    wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
+    await screen.findByLabelText('What')
+    expect(screen.queryByLabelText('Authorized by')).toBeNull()
+  })
+})
+
 describe('request and approval rules', () => {
   it('single names only for requests', () => {
     expect(isSingleTarget('domain', 'shop.acme.io')).toBe(true)

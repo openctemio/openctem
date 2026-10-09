@@ -249,3 +249,16 @@ export type EASMDecisionResult =
 export type EASMSettings = Schemas['internal_infra_http_handler.EASMSettingsResponse']
 export type EASMSweepTicket =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.SweepTicket']
+
+// Platform content packs (Console > System > Content packs).
+export type PlatformContentPackResponse =
+  Schemas['internal_infra_http_handler.PlatformContentPackResponse']
+export type PlatformContentPackListResponse =
+  Schemas['internal_infra_http_handler.PlatformContentPackListResponse']
+export type ContentChannelResponse = Schemas['internal_infra_http_handler.ContentChannelResponse']
+export type ContentSigningKeyResponse =
+  Schemas['internal_infra_http_handler.ContentSigningKeyResponse']
+export type ContentLintReport =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_contentpack.LintReport']
+export type ContentLintIssue =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_contentpack.Issue']
