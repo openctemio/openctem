@@ -175,6 +175,33 @@ describe('OrganizationModulesPanel', () => {
     await waitFor(() => expect(deleteModuleGrant).toHaveBeenCalledWith('t1', 'workflows'))
   })
 
+  it('shows a module in read-only grace with its end', () => {
+    vi.mocked(useTenantModuleEntitlements).mockReturnValue({
+      data: {
+        ...ENTITLEMENTS,
+        modules: [
+          {
+            module: 'pentest',
+            name: 'Penetration Testing',
+            core: false,
+            entitled: false,
+            source: 'grace',
+            in_plan: false,
+            read_only_until: '2026-11-08T12:00:00Z',
+          },
+        ],
+      },
+      error: undefined,
+      isLoading: false,
+      mutate: vi.fn(),
+    } as unknown as ReturnType<typeof useTenantModuleEntitlements>)
+    render(<OrganizationModulesPanel tenantId="t1" canManage />)
+    expect(screen.getByText('Read-only')).toBeInTheDocument()
+    expect(
+      screen.getByText(`until ${new Date('2026-11-08T12:00:00Z').toLocaleDateString()}`)
+    ).toBeInTheDocument()
+  })
+
   it('a read-only administrator sees no actions', () => {
     render(<OrganizationModulesPanel tenantId="t1" canManage={false} />)
     expect(screen.queryByRole('button', { name: 'Grant' })).not.toBeInTheDocument()

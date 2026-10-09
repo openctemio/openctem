@@ -40,6 +40,8 @@ export const SOURCE_LABEL: Record<string, string> = {
   grant: 'Granted',
   deny: 'Denied',
   none: 'Not in the plan',
+  // Lost recently: read-only (view and export) until read_only_until.
+  grace: 'Read-only',
 }
 
 export interface OrganizationModulesPanelProps {
@@ -111,9 +113,14 @@ export function OrganizationModulesPanel({ tenantId, canManage }: OrganizationMo
                     <Badge variant={m.entitled ? 'secondary' : 'outline'}>
                       {SOURCE_LABEL[m.source ?? ''] ?? m.source}
                     </Badge>
-                    {m.grant_expires_at && (
+                    {m.grant_expires_at && m.source !== 'grace' && (
                       <span className="text-muted-foreground ms-2 text-xs">
                         until {new Date(m.grant_expires_at).toLocaleDateString()}
+                      </span>
+                    )}
+                    {m.read_only_until && (
+                      <span className="text-muted-foreground ms-2 text-xs">
+                        until {new Date(m.read_only_until).toLocaleDateString()}
                       </span>
                     )}
                   </TableCell>

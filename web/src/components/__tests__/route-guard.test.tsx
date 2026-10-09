@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   permissions: new Set<string>(),
   moduleIds: ['dashboard'] as string[],
   notEntitled: [] as string[],
+  readOnly: {} as Record<string, string>,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -19,6 +20,7 @@ vi.mock('@/context/bootstrap-provider', () => ({
   useBootstrapModules: () => ({
     moduleIds: state.moduleIds,
     notEntitledModuleIds: state.notEntitled,
+    readOnlyModules: state.readOnly,
     isLoading: false,
   }),
   useBootstrapContextSafe: () => ({ isBootstrapped: true }),
@@ -32,6 +34,32 @@ describe('RouteGuard', () => {
     state.permissions = new Set()
     state.moduleIds = ['dashboard']
     state.notEntitled = []
+    state.readOnly = {}
+  })
+
+  it('renders a module in read-only grace with a banner saying until when', () => {
+    state.permissions = new Set(['sensors:read'])
+    state.moduleIds = ['sensors']
+    state.readOnly = { sensors: '2026-11-08T12:00:00Z' }
+    render(<RouteGuard>page</RouteGuard>)
+    expect(screen.getByText('page')).toBeInTheDocument()
+    const banner = screen.getByRole('status')
+    expect(banner).toHaveTextContent(
+      `Read-only until ${new Date('2026-11-08T12:00:00Z').toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })}`
+    )
+    expect(banner).toHaveTextContent(/export/)
+  })
+
+  it('shows no banner on a module that is not in grace', () => {
+    state.permissions = new Set(['sensors:read'])
+    state.moduleIds = ['sensors']
+    state.readOnly = { pentest: '2026-11-08T12:00:00Z' }
+    render(<RouteGuard>page</RouteGuard>)
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('says the plan does not include it, with no way to turn it on, when it is not entitled', () => {

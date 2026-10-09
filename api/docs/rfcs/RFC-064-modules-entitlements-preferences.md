@@ -221,5 +221,5 @@ organization, so this can be layered on later.
 | M1 | `details.reason` on `MODULE_NOT_ENABLED` | #1605 |
 | M2 | Registry, generators and coverage tests | #1619 |
 | M3 | Entitlements: plan mapping, grants, admin console pages, organization view, reasons in the console | #1635 |
-| M4 | Downgrade grace, schedule pause and resume | after M3 |
+| M4 | Downgrade grace: 30 days read-only (reads and GET exports pass, writes 403 `read_only_grace`, jobs stop); schedules are skipped while off and resume on the next tick | #PR_M4 |
 | M5 | Organization bundles retired (packaging is the plan's; presets remain for preferences) | with M3 |
