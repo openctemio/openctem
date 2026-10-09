@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable, DataTableColumnHeader } from '@/features/shared'
 import { Badge } from '@/components/ui/badge'
