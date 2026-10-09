@@ -1018,5 +1018,8 @@
   "announcements.region": "Thông báo",
   "admin.ann.state.active": "Đang hiển thị",
   "admin.ann.state.scheduled": "Đã lên lịch",
-  "admin.ann.state.ended": "Đã kết thúc"
+  "admin.ann.state.ended": "Đã kết thúc",
+  "admin.attention.accessRequests.detail": "{count} yêu cầu tạo tổ chức; yêu cầu lâu nhất đã chờ {days} ngày.",
+  "admin.attention.accessRequests.title": "Yêu cầu truy cập đang chờ",
+  "admin.nav.group.requests": "Yêu cầu"
 }

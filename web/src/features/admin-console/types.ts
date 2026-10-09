@@ -270,6 +270,11 @@ export interface AdminOverview {
     failed_admin_actions_24h: number
     break_glass_tests_overdue: number
   }
+  /** What waits in the Requests inbox. */
+  requests?: {
+    access_pending: number
+    access_oldest_pending_seconds: number
+  }
   platform: {
     schema_version: number
     /** Newest migration the running API ships; 0 when unknown. */
