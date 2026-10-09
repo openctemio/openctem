@@ -1099,10 +1099,7 @@ and every by-id read answers 404. There is no per-organization switch back.
      `members_without_group_see = 'nothing'`, so `everything` can never be
      stored again; its down migration restores the `000247` CHECK and does
      **not** flip any organization back;
-  3. **follow-up (contract), after the release that ships `000910`:** drop the
-     column and its CHECK (`ALTER TABLE tenants DROP COLUMN
-     members_without_group_see`), once no deployed binary can still select
-     it.
+  3. migration `001483` (contract) drops the column and its CHECK.
 
 **One enforcement point.** `internal/app/datascope.Enforcer` resolves the
 caller's scope (caller and admin flag come from the HTTP auth context, wired in
