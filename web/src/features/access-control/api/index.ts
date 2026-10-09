@@ -1,4 +1,5 @@
 export * from './use-groups'
+export * from './use-group-roles'
 export * from './use-roles'
 export * from './use-tenant-permissions'
 export * from './use-assignment-rules'
