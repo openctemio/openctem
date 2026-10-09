@@ -358,3 +358,4 @@ R3 PATCH /api/v1/groups/{groupId}/members/{userId}
 R3 DELETE /api/v1/groups/{groupId}/roles/{roleId}
 R3 GET /api/v1/groups/{groupId}/roles
 R3 POST /api/v1/groups/{groupId}/roles
+R3 DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}

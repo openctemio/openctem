@@ -133,6 +133,14 @@ func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, even
 	return h
 }
 
+// withScopeSnapshots gives the workflow handler the run scope snapshot route.
+func withScopeSnapshots(h *handler.ScanWorkflowHandler, snaps *postgres.ScopeSnapshotRepository) *handler.ScanWorkflowHandler {
+	if snaps != nil {
+		h.SetScopeSnapshots(snaps)
+	}
+	return h
+}
+
 // withReadiness gives the workflow handler ?include=readiness.
 func withReadiness(h *handler.ScanWorkflowHandler, scans *scanapp.Service) *handler.ScanWorkflowHandler {
 	if scans != nil {
@@ -476,7 +484,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CI:                  handler.NewCIHandler(svc.Scan, log),
 		CIAdmin:             ciAdmin,
 		CIRunner:            ciRunner,
-		ScanWorkflow:        withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan),
+		ScanWorkflow:        withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
@@ -525,6 +533,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Access Control
 		Group:          handler.NewGroupHandler(svc.Group, v, log),
 		Role:           handler.NewRoleHandler(svc.Role, v, log),
+		ServiceAccount: handler.NewServiceAccountHandler(svc.ServiceAccount, svc.APIKey, v, log),
 		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
 		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
 		ScopeRule:      handler.NewScopeRuleHandler(svc.ScopeRule, v, log),
