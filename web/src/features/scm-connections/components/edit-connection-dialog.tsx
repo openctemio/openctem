@@ -15,6 +15,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -172,7 +174,7 @@ export function EditConnectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
@@ -186,80 +188,82 @@ export function EditConnectionDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
             {/* Connection Name */}
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Connection Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., My GitHub Enterprise" {...field} />
-                  </FormControl>
-                  <FormDescription>A friendly name to identify this connection</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <DialogBody className="space-y-4">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Connection Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., My GitHub Enterprise" {...field} />
+                    </FormControl>
+                    <FormDescription>A friendly name to identify this connection</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Organization (optional) */}
-            <FormField
-              control={form.control}
-              name="scmOrganization"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Organization / Group (Optional)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., my-org" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Limit repositories to a specific organization or group
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              {/* Organization (optional) */}
+              <FormField
+                control={form.control}
+                name="scmOrganization"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Organization / Group (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., my-org" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Limit repositories to a specific organization or group
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            {/* Access Token */}
-            <FormField
-              control={form.control}
-              name="accessToken"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Personal Access Token</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Input
-                        type={showToken ? 'text' : 'password'}
-                        placeholder="Leave empty to keep current token"
-                        className="pe-10"
-                        {...field}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                        onClick={() => setShowToken(!showToken)}
-                      >
-                        {showToken ? (
-                          <EyeOff className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Eye className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                    </div>
-                  </FormControl>
-                  <FormDescription>
-                    Enter a new token to update credentials, or leave empty to keep current
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              {/* Access Token */}
+              <FormField
+                control={form.control}
+                name="accessToken"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Personal Access Token</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          type={showToken ? 'text' : 'password'}
+                          placeholder="Leave empty to keep current token"
+                          className="pe-10"
+                          {...field}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowToken(!showToken)}
+                        >
+                          {showToken ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Enter a new token to update credentials, or leave empty to keep current
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </DialogBody>
 
-            <DialogFooter className="gap-2">
+            <DialogFooter>
               <Button type="button" variant="outline" onClick={handleClose} disabled={isSaving}>
                 Cancel
               </Button>
@@ -268,7 +272,7 @@ export function EditConnectionDialog({
                 Save Changes
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>
