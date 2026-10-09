@@ -2131,6 +2131,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Initialize access control services
 	s.Group = accesscontrol.NewGroupService(repos.Group, log,
 		accesscontrol.WithGroupAuditService(s.Audit),
+		accesscontrol.WithExpiredMemberLister(repos.Group),
 		accesscontrol.WithAccessControlRepository(repos.AccessControl),
 		accesscontrol.WithGroupDataScope(s.DataScope),
 		accesscontrol.WithScopeDelegationCap(s.DataScope),

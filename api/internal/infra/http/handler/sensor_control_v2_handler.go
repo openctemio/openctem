@@ -82,6 +82,9 @@ func (h *SensorControlV2Handler) Features() []string {
 	if h.ingest != nil {
 		out = append(out, protov2.FeatureLocalPolicy)
 	}
+	if h.ingest != nil && h.ingest.sensorService.SupportsManifests() {
+		out = append(out, protov2.FeaturePosture)
+	}
 	if h.commands != nil {
 		out = append(out, protov2.FeatureCapacity, protov2.FeatureRefusal)
 	}
