@@ -35,7 +35,7 @@ import (
 // newChangeAuditHarness is the authorization-policy harness (real route
 // registration, auth chain and role tables) with the scope, scanner template
 // and tool handlers wired to the audit service as in cmd/server.
-func newChangeAuditHarness(t *testing.T, configure ...func(*scopeapp.Service, *postgres.DB)) *authzPolicyHarness {
+func newChangeAuditHarness(t *testing.T, configure ...func(*scopeapp.Service, *handler.ScopeHandler, *postgres.DB)) *authzPolicyHarness {
 	t.Helper()
 	dbURL := testdb.URL()
 	if dbURL == "" {
@@ -75,11 +75,11 @@ func newChangeAuditHarness(t *testing.T, configure ...func(*scopeapp.Service, *p
 		postgres.NewAssetRepository(db), log)
 	scopeSvc.SetStepUpGate(middleware.RecentAuthGate{Checker: alwaysSteppedUp{}, Window: time.Hour})
 	scopeSvc.SetEntryPolicy(nil, postgres.NewMemberLifecycleRepository(db), nil)
-	for _, c := range configure {
-		c(scopeSvc, db)
-	}
 	scope := handler.NewScopeHandler(scopeSvc, v, log)
 	scope.SetAuditService(auditSvc)
+	for _, c := range configure {
+		c(scopeSvc, scope, db)
+	}
 	templates := handler.NewScannerTemplateHandler(
 		app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(db), "change-audit-template-signing-key-0123456789", log), v, log)
 	templates.SetAuditService(auditSvc)

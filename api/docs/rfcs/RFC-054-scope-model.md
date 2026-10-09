@@ -927,7 +927,17 @@ the second factor.
 S6 bounded every expiring entry by `one_off_max_days` (1–30, default 7), and
 T2 entries had to expire. Revised: T2 entries have their own bound, the
 owner-only setting `t2_max_duration`: `7d`, `30d` (default), `90d`, `365d` or
-`permanent`. A T2 entry still needs a verified domain for its probes (§8.1)
+`permanent`. **`PUT /scope/settings/intrusive`** (`scope:approve`, owner
+role, step-up) `{"t2_max_duration": "90d", "reason": "…"}` changes it:
+high-severity `scope.settings_updated` with the reason, every administrator
+told. `PUT /scope/settings` never changes it. `GET /scope/settings` adds
+`t2_max_duration`, `t2_max_days` (the most `expires_in_days` a t2 entry may
+ask for; 365 when permanent is allowed) and `t2_permanent_allowed`. The
+bound is enforced on create, on update and when only the tier is raised
+(`400 INTRUSIVE_TOO_LONG`; `INTRUSIVE_NEEDS_EXPIRY` for a permanent t2 entry
+when not allowed). The one-off policy (`one_off_targets: disabled`) does
+not apply to t2 expiries. Lowering the bound does not shorten existing
+entries; attestation (§12.5) covers the long ones. A T2 entry still needs a verified domain for its probes (§8.1)
 and one approval at creation and on every widening. T0/T1 one-off entries
 keep `one_off_max_days`; T0/T1 entries may still be permanent.
 

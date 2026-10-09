@@ -15,6 +15,7 @@ import { get, post, put, del } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import type {
+  ScopeT2MaxDuration,
   ApiScopeTarget,
   ApiScopeTargetListResponse,
   ApiScopeExclusion,
@@ -553,6 +554,14 @@ export function useScopeSettingsApi(enabled = true, config?: SWRConfiguration) {
 /** PUT /scope/settings (scope:approve, step-up). */
 export function updateScopeSettings(input: UpdateScopeSettingsInput) {
   return put<ApiScopeSettings>(SETTINGS_URL, input)
+}
+
+/** PUT /scope/settings/intrusive: owner only, with a reason (RFC-054 §12.4). */
+export function updateScopeIntrusiveSettings(input: {
+  t2_max_duration: ScopeT2MaxDuration
+  reason: string
+}) {
+  return put<ApiScopeSettings>(`${SETTINGS_URL}/intrusive`, input)
 }
 
 // ============================================

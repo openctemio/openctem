@@ -145,3 +145,22 @@ export function patternForCoverage(name: string, coverage: 'name' | 'subdomains'
   const host = wildcardApex(name) || name.trim()
   return coverage === 'subdomains' ? `*.${host}` : host
 }
+
+/**
+ * The expiry bound of an entry of `tier` (RFC-054 §12.4): intrusive (t2)
+ * entries follow the owner's t2 limit, every other entry the one-off limit.
+ * `permanent` says whether the entry may have no expiry at all.
+ */
+export function expiryBoundFor(
+  tier: string,
+  settings:
+    { one_off_max_days?: number; t2_max_days?: number; t2_permanent_allowed?: boolean } | undefined
+): { maxDays: number; permanent: boolean } {
+  if (tier === 't2') {
+    return {
+      maxDays: Math.max(1, settings?.t2_max_days ?? 30),
+      permanent: settings?.t2_permanent_allowed ?? false,
+    }
+  }
+  return { maxDays: Math.max(1, settings?.one_off_max_days ?? 7), permanent: true }
+}

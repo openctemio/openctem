@@ -71,6 +71,7 @@ var stepUpRoutes = []string{
 	// Widening scope (RFC-054 §6): approving an entry, the settings, and
 	// taking an exclusion out of effect.
 	"PUT /api/v1/scope/settings",
+	"PUT /api/v1/scope/settings/intrusive",
 	"POST /api/v1/scope/targets/{id}/approve",
 	"POST /api/v1/scope/exclusions/{id}/deactivate",
 	"POST /api/v1/scope/exclusions/bulk/delete",

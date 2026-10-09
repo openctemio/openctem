@@ -20,6 +20,22 @@ const (
 	MaxScopeApprovals      = 2
 )
 
+// The longest an intrusive (t2) scope entry may last (RFC-054 §12.4): an
+// owner-only setting. Permanent t2 entries are re-attested.
+const (
+	T2Max7Days       = "7d"
+	T2Max30Days      = "30d"
+	T2Max90Days      = "90d"
+	T2Max365Days     = "365d"
+	T2MaxPermanent   = "permanent"
+	DefaultT2MaxDays = T2Max30Days
+	// MaxT2ExpiryDays bounds expires_in_days of a t2 entry when permanent
+	// t2 entries are allowed.
+	MaxT2ExpiryDays = 365
+)
+
+var t2MaxDays = map[string]int{T2Max7Days: 7, T2Max30Days: 30, T2Max90Days: 90, T2Max365Days: 365}
+
 // ScopeSettings are the organization's scope knobs (RFC-054 §6.3, owner
 // decision S5). They adjust friction inside the authorized set; none of them
 // turns scope off, and the platform guardrails are not here. The zero value
@@ -38,6 +54,49 @@ type ScopeSettings struct {
 	WideningApprovals *int `json:"widening_approvals,omitempty"`
 	// DefaultMaxTier is t0 or t1 ("" = t1). t2 is never a default.
 	DefaultMaxTier string `json:"default_max_tier,omitempty"`
+
+	// Owner-only fields (IntrusiveScopeSettings): PUT /scope/settings keeps
+	// them; only PUT /scope/settings/intrusive changes them.
+
+	// T2MaxDuration is the longest a t2 entry may last: 7d, 30d, 90d, 365d
+	// or permanent ("" = 30d).
+	T2MaxDuration string `json:"t2_max_duration,omitempty"`
+}
+
+// IntrusiveScopeSettings are the owner-only scope settings (RFC-054 §12.4).
+type IntrusiveScopeSettings struct {
+	T2MaxDuration string
+}
+
+// WithIntrusive returns s with the owner-only fields of i.
+func (s ScopeSettings) WithIntrusive(i IntrusiveScopeSettings) ScopeSettings {
+	s.T2MaxDuration = i.T2MaxDuration
+	return s
+}
+
+// Intrusive returns the owner-only fields of s.
+func (s ScopeSettings) Intrusive() IntrusiveScopeSettings {
+	return IntrusiveScopeSettings{T2MaxDuration: s.T2MaxDuration}
+}
+
+// T2Max returns the t2 duration bound with its default: the days, or
+// permanent (then days is MaxT2ExpiryDays, the bound of an expiring t2 entry).
+func (s ScopeSettings) T2Max() (days int, permanent bool) {
+	if s.T2MaxDuration == T2MaxPermanent {
+		return MaxT2ExpiryDays, true
+	}
+	if d, ok := t2MaxDays[s.T2MaxDuration]; ok {
+		return d, false
+	}
+	return t2MaxDays[DefaultT2MaxDays], false
+}
+
+// T2Duration returns the t2 duration setting with its default.
+func (s ScopeSettings) T2Duration() string {
+	if s.T2MaxDuration == "" {
+		return DefaultT2MaxDays
+	}
+	return s.T2MaxDuration
 }
 
 // Validate checks the bounds.
@@ -57,6 +116,9 @@ func (s ScopeSettings) Validate() error {
 	case "", "t0", "t1":
 	default:
 		return fmt.Errorf("%w: default_max_tier must be t0 or t1", shared.ErrValidation)
+	}
+	if _, ok := t2MaxDays[s.T2MaxDuration]; !ok && s.T2MaxDuration != "" && s.T2MaxDuration != T2MaxPermanent {
+		return fmt.Errorf("%w: t2_max_duration must be 7d, 30d, 90d, 365d or permanent", shared.ErrValidation)
 	}
 	return nil
 }

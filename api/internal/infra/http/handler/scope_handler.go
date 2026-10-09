@@ -363,8 +363,9 @@ type CreateScopeTargetRequest struct {
 	// Reason is the authority statement; required for a one-off entry, a
 	// request and a t2 entry.
 	Reason string `json:"reason" validate:"max=1000"`
-	// ExpiresInDays (1..one_off_max_days) or ExpiresAt makes a one-off entry.
-	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=30"`
+	// ExpiresInDays or ExpiresAt makes the entry expire: 1..one_off_max_days
+	// for t0/t1, 1..t2_max_days for t2 (the service checks the bound).
+	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=365"`
 	ExpiresAt     *time.Time `json:"expires_at"`
 	// MaxTier: t0, t1 or t2 (default: the organization's default_max_tier).
 	MaxTier string `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
@@ -383,7 +384,7 @@ type UpdateScopeTargetRequest struct {
 	Priority      *int       `json:"priority" validate:"omitempty,min=0,max=100"`
 	Tags          []string   `json:"tags" validate:"omitempty,max=20,dive,max=50"`
 	Reason        *string    `json:"reason" validate:"omitempty,max=1000"`
-	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=30"`
+	ExpiresInDays *int       `json:"expires_in_days" validate:"omitempty,min=1,max=365"`
 	ExpiresAt     *time.Time `json:"expires_at"`
 	ClearExpiry   bool       `json:"clear_expiry"`
 	MaxTier       *string    `json:"max_tier" validate:"omitempty,oneof=t0 t1 t2"`
