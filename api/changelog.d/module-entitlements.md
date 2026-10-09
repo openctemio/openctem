@@ -4,8 +4,8 @@
   Plan modules (super admin, fresh authenticator code). Until it is saved every plan
   includes every module, so nothing changes on upgrade.
 - One organization can be granted a module beyond its plan (a trial with an expiry, an
-  add-on) or denied one: Console > Organizations > Plan > Modules (ops admin and up, reason
-  required, admin audit log). Changes, and a change of plan, apply at once on every API
+  add-on) or denied one: Console > Organizations > Plan > Modules (ops admin and up; granting,
+  denying and removing each need a reason and a fresh authenticator code; admin audit log). Changes, and a change of plan, apply at once on every API
   replica.
 - An organization cannot switch on a module its plan does not include; Settings > Modules
   shows it as "Not in your plan". A page of such a module says so, and

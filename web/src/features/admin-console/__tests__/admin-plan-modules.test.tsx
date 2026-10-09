@@ -148,31 +148,46 @@ describe('OrganizationModulesPanel', () => {
     expect(screen.getByText('14-day trial')).toBeInTheDocument()
   })
 
-  it('grants a module with a reason', async () => {
+  it('grants a module with a reason and an authenticator code', async () => {
     vi.mocked(putModuleGrant).mockResolvedValue(ENTITLEMENTS)
     render(<OrganizationModulesPanel tenantId="t1" canManage />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Grant' }))
     const dialog = await screen.findByRole('dialog')
     const grant = within(dialog).getByRole('button', { name: 'Grant' })
-    expect(grant).toBeDisabled() // a reason is required
-    await userEvent.type(within(dialog).getByLabelText('Reason'), 'trial')
+    expect(grant).toBeDisabled() // a reason and a code are required
+    await userEvent.type(within(dialog).getByLabelText('Reason'), 'Support case 12: trial')
+    expect(grant).toBeDisabled()
+    await userEvent.type(within(dialog).getByLabelText('Code from your authenticator'), '123456')
     await userEvent.click(grant)
 
     await waitFor(() =>
       expect(putModuleGrant).toHaveBeenCalledWith('t1', 'pentest', {
         kind: 'grant',
-        reason: 'trial',
+        reason: 'Support case 12: trial',
+        totp_code: '123456',
         expires_at: undefined,
       })
     )
   })
 
-  it('lets the plan decide again', async () => {
+  it('removing a grant asks for a reason and a code before the plan decides again', async () => {
     vi.mocked(deleteModuleGrant).mockResolvedValue(ENTITLEMENTS)
     render(<OrganizationModulesPanel tenantId="t1" canManage />)
     await userEvent.click(screen.getByRole('button', { name: 'Let the plan decide Automations' }))
-    await waitFor(() => expect(deleteModuleGrant).toHaveBeenCalledWith('t1', 'workflows'))
+    expect(deleteModuleGrant).not.toHaveBeenCalled()
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/only read it for 30 days/)).toBeInTheDocument()
+    await userEvent.type(within(dialog).getByLabelText('Reason'), 'Trial ended early on request')
+    await userEvent.type(within(dialog).getByLabelText('Code from your authenticator'), '654321')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Let the plan decide' }))
+    await waitFor(() =>
+      expect(deleteModuleGrant).toHaveBeenCalledWith('t1', 'workflows', {
+        reason: 'Trial ended early on request',
+        totp_code: '654321',
+      })
+    )
   })
 
   it('shows a module in read-only grace with its end', () => {
