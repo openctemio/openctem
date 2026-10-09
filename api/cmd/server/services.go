@@ -590,8 +590,11 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
-	AttackSurface *attack.SurfaceService
-	ThreatModel   *threatmodel.Service
+	// ProgramAssigner keeps program group assignments current (the
+	// periodic pass, RFC-065 §7).
+	ProgramAssigner controller.ProgramAssignments
+	AttackSurface   *attack.SurfaceService
+	ThreatModel     *threatmodel.Service
 
 	// Configuration (read-only system config)
 	FindingSource      *finding.FindingSourceService
@@ -973,6 +976,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetProgramExclusions(programRepo)
 	s.BountyProgram = bountyprogramapp.NewService(programRepo, s.DataScope, log)
+	s.BountyProgram.SetAssigner(programRepo)
+	s.ProgramAssigner = programRepo
 	s.BountyProgram.SetGuardrails(scopeGuardrails)
 	s.BountyProgram.SetNotifier(s.Scope)
 	s.AttackSurface = attack.NewSurfaceService(repos.Asset, repos.AssetRelationship, log)
@@ -1300,7 +1305,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// run was computed and discarded — run history was always empty).
 	s.Simulation.SetRunRepo(repos.SimulationRun)
 	// Simulation targets follow the scan act-scope rule (RFC-050 W3, 21b H4).
-	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames), s.DataScope)
+	s.Simulation.SetActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope), s.DataScope)
 	// Validation (CTEM Stage-4): sensors POST proof-of-fix / technique evidence,
 	// which is persisted (redacted) and reconciled into finding status.
 	evidenceStore := validation.NewEvidenceStore(repos.ValidationEvidence)
@@ -1687,6 +1692,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.BountyProgram.SetJoiner(joinScheduler)
 		stamper := easmapp.NewScanStamper(repos.Attribution, repos.VerifiedNames)
 		stamper.SetScopeJoin(s.ScopeJoin)
+		stamper.SetProgramAssigner(programRepo)
 		s.Ingest.SetScanAttributionStamper(stamper)
 	}
 	// A nuclei takeover-template match from a tenant scan confirms an open
@@ -1857,7 +1863,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Scan targets limited to the actor: restricted members scan only
 		// assets in their data scope; free text must match a scope target
 		// (research/15 L-06, decision D9).
-		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames)),
+		scan.WithActScope(actscope.New(s.DataScope, repos.Asset, s.Scope, repos.VerifiedNames).SetPrograms(programRepo, s.DataScope)),
 		// Platform sensors and intrusive scans need a verified domain
 		// (RFC-054 §8.1, SCOPE_ACTIVE_PROOF).
 		scan.WithActiveProof(cfg.Scope.ActiveProof),
