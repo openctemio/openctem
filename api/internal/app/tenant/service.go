@@ -1721,6 +1721,10 @@ type UpdateSecuritySettingsInput struct {
 	// tenantdom.SecuritySettings (research/25 D3).
 	AllowSensorInteractsh      *bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates *bool `json:"allow_sensor_custom_templates"`
+	// ToolHTTPUserAgent, ForbidToolInsecureTLS: see tenantdom.SecuritySettings
+	// (RFC-060 §4.1).
+	ToolHTTPUserAgent     *string `json:"tool_http_user_agent"`
+	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
 	// PersonalAccounts and SSOExceptions: see tenantdom.SecuritySettings
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
@@ -1755,6 +1759,18 @@ func (s *TenantService) SensorOptIns(ctx context.Context, tenantID shared.ID) (s
 	}
 	sec := t.TypedSettings().Security
 	return sensordom.OptIns{AllowInteractsh: sec.AllowSensorInteractsh, AllowCustomTemplates: sec.AllowSensorCustomTemplates}, nil
+}
+
+// ToolHTTPPolicy returns the tenant's tool HTTP layer for sensor jobs
+// (RFC-060 §4.1). It implements command.HTTPPolicySource.
+func (s *TenantService) ToolHTTPPolicy(ctx context.Context, tenantID shared.ID) (sensordom.ToolHTTPPolicy, error) {
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		return sensordom.ToolHTTPPolicy{}, err
+	}
+	sec := t.TypedSettings().Security
+	p := sec.ToolHTTPPolicy()
+	return sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, AllowInsecureTLS: p.AllowInsecureTLS}, nil
 }
 
 // ErrIPAllowlistExcludesRequester is returned when saving an IP allowlist that
@@ -1801,6 +1817,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.AllowSensorCustomTemplates != nil {
 			security.AllowSensorCustomTemplates = *input.AllowSensorCustomTemplates
+		}
+		if input.ToolHTTPUserAgent != nil {
+			security.ToolHTTPUserAgent = strings.TrimSpace(*input.ToolHTTPUserAgent)
+		}
+		if input.ForbidToolInsecureTLS != nil {
+			security.ForbidToolInsecureTLS = *input.ForbidToolInsecureTLS
 		}
 		if input.PersonalAccounts != nil {
 			security.PersonalAccounts = tenantdom.PersonalAccountsPolicy(*input.PersonalAccounts)

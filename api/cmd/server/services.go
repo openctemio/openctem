@@ -1626,6 +1626,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// research/25 D3: interactsh and custom templates leave only when the
 		// organization enabled them (default off).
 		command.WithOptInPolicy(s.Tenant),
+		// RFC-060 §4.1: the organization tool HTTP layer rides on every scan job.
+		command.WithHTTPPolicy(s.Tenant),
 		// RFC-052 §5: each sensor's grant, before every other gate.
 		command.WithGrants(repos.SensorGrant, s.Sensor),
 		// RFC-055 §6.3: the tier is assigned from the tool contract.
