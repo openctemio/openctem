@@ -409,6 +409,9 @@ const (
 	ActionScannerTemplateUpdated    Action = "scanner_template.updated"
 	ActionScannerTemplateDeprecated Action = "scanner_template.deprecated"
 	ActionScannerTemplateDeleted    Action = "scanner_template.deleted"
+	// ActionScannerTemplateApproved: a person approved a template version
+	// for sensors (RFC-040 §11.5).
+	ActionScannerTemplateApproved Action = "scanner_template.approved"
 
 	// Asset Ownership actions
 	ActionAssetAssigned         Action = "asset.assigned"
@@ -647,7 +650,7 @@ func (a Action) IsValid() bool {
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
-		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
 		ActionAssetAccessGranted, ActionAssetAccessRevoked,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
@@ -768,7 +771,7 @@ func (a Action) Category() string {
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
 		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
-		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted:
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved:
 		return "scanner_template"
 	case ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted:
@@ -991,7 +994,7 @@ func SeverityForAction(a Action) Severity {
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramResumed,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
-		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
+		ActionScannerTemplateCreated, ActionScannerTemplateUpdated, ActionScannerTemplateApproved,
 		// Deleting an asset also deletes its findings.
 		ActionAssetDeleted:
 		return SeverityHigh

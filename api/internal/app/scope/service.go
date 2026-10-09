@@ -39,6 +39,8 @@ type Service struct {
 	visible VisibleAssetCounter
 	// ledger is the job signer's scope ledger (ledger.go); nil: none.
 	ledger LedgerFeed
+	// ledgerTemplates lists the approved template versions for snapshots.
+	ledgerTemplates LedgerTemplateSource
 }
 
 // NewService creates a new Service.
