@@ -45,7 +45,10 @@ func ParseVersion(s string) (Version, bool) {
 	if len(t) > 1 && t[0] == 'v' && t[1] >= '0' && t[1] <= '9' {
 		t = t[1:]
 	}
-	if t[0] < '0' || t[0] > '9' {
+	// A version starts with a digit, or with one letter and a digit (a
+	// release train such as "r24"); a word ("latest", "unknown") is not a
+	// version.
+	if !isDigit(t[0]) && (len(t) < 2 || t[0] < 'a' || t[0] > 'z' || !isDigit(t[1])) {
 		return Version{}, false
 	}
 	segs, ok := tokenize(t)
@@ -248,3 +251,5 @@ func cmpInt(a, b int) int {
 	}
 	return 0
 }
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
