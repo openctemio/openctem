@@ -157,3 +157,24 @@ tests:
             exp_annotations:
               summary: The last successful database backup is 1d 3h 0m 0s old
               runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#backupstale
+
+  # Unhardened sensors: SensorsUnhardened after a day, not before, one alert
+  # per kind with sensors (a kind at 0 never fires).
+  - interval: 1m
+    input_series:
+      - series: 'openctem_sensors_unhardened{kind="pin_none",job="openctem-api",instance="api:8080"}'
+        values: '2x1600'
+      - series: 'openctem_sensors_unhardened{kind="policy_none",job="openctem-api",instance="api:8080"}'
+        values: '0x1600'
+    alert_rule_test:
+      - eval_time: 12h
+        alertname: SensorsUnhardened
+        exp_alerts: []
+      - eval_time: 26h
+        alertname: SensorsUnhardened
+        exp_alerts:
+          - exp_labels: {severity: warning, component: api, kind: pin_none}
+            exp_annotations:
+              summary: '2 sensor(s) are unhardened: pin_none'
+              description: Sensors run without a local policy (policy_none), without a pinned platform CA (pin_none), with tools outside network confinement (network_unenforced) or with a bearer key instead of a key-bound identity (bearer_key). They keep working; the Sensors page flags them.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsunhardened

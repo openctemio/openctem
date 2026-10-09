@@ -28,6 +28,8 @@ type Service struct {
 	stepUp   shared.RecentAuthGate
 	// guardrails are the platform's scope guardrails (nil: the defaults).
 	guardrails *scopedom.Guardrails
+	// programExcl lists program exclusions for the authority check (RFC-065).
+	programExcl ProgramExclusionReader
 	// Coverage of the inventory (GetStats): counted in SQL over the
 	// caller's data scope.
 	coverage  CoverageCounter
@@ -79,6 +81,10 @@ type CreateTargetInput struct {
 	// Discovery: discovery from the entry (nil: on). It runs only for a
 	// permanent domain entry (research/53 SC1).
 	Discovery *bool
+	// AuthorizationSource: ownership (default) or self_attestation; both
+	// follow the organization's approval policy. Program entries are created
+	// only by the programs service (RFC-065).
+	AuthorizationSource string
 }
 
 // CreateTarget creates a scope entry: effective at once, pending approval,
@@ -94,6 +100,10 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	targetType, err := scopedom.ParseTargetType(input.TargetType)
 	if err != nil {
 		return nil, err // wraps shared.ErrValidation
+	}
+	source, err := scopedom.ParseGeneralSource(input.AuthorizationSource)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if pattern already exists
@@ -135,6 +145,9 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		target.UpdateTags(input.Tags)
 	}
 	target.SetOrigin(entryOrigin(input.Origin, input.Actor, d.request))
+	if err := target.SetAuthorization(source, nil); err != nil {
+		return nil, err
+	}
 	if input.Discovery != nil {
 		target.SetDiscovery(*input.Discovery)
 	}
@@ -191,6 +204,13 @@ type UpdateTargetInput struct {
 	Actor     Actor
 }
 
+// changesEntry reports whether the update touches the entry fields (expiry,
+// tier, reason, discovery): a program entry takes those from its program.
+func (in UpdateTargetInput) changesEntry() bool {
+	return in.Reason != nil || in.ExpiresAt != nil || in.ExpiresInDays != nil || in.ClearExpiry ||
+		in.MaxTier != nil || in.Discovery != nil
+}
+
 // UpdateTarget updates an existing scope target.
 func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID string, input UpdateTargetInput) (*scopedom.Target, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
@@ -205,6 +225,9 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 	target, err := s.targetRepo.GetByID(ctx, parsedTenantID, parsedID)
 	if err != nil {
 		return nil, err
+	}
+	if target.IsProgramEntry() && input.changesEntry() {
+		return nil, scopedom.ErrProgramManaged
 	}
 
 	if input.Description != nil {
@@ -460,6 +483,8 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 		return nil, scopedom.ErrEntryExpired
 	case target.Status() == scopedom.StatusActive || target.IsPending():
 		return target, nil // nothing to widen
+	case target.IsProgramEntry():
+		return nil, scopedom.ErrProgramManaged
 	}
 	if err := s.widenEntry(ctx, target, actor, now); err != nil {
 		return nil, err

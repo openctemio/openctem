@@ -24,7 +24,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
-		FindingsFixApply, FindingsVerify,
+		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead,
@@ -63,6 +63,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
+		ProgramsRead, ProgramsWrite,
 		// Validation (legacy)
 		PentestRead, PentestWrite,
 		// Pentest (granular - all)
@@ -102,7 +103,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
-		FindingsFixApply, FindingsVerify,
+		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead,
@@ -141,6 +142,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
+		ProgramsRead, ProgramsWrite,
 		// Validation (legacy)
 		PentestRead, PentestWrite,
 		// Pentest (granular - all)
@@ -184,6 +186,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// member's assign/bulk grant is a separate product decision.
 		FindingsRead, FindingsWrite,
 		FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsFixApply,
+		FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresTriage,
 		SuppressionsRead,
 		VulnerabilitiesRead,

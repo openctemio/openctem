@@ -146,8 +146,10 @@ export interface ScanTargets {
   type: TargetType
   assetGroupIds: string[]
   assetIds: string[]
-  /** Asset names mapped by ID - used to convert to targets when submitting */
+  /** Asset names by id: what the picker shows and the previews check (the request sends the ids). */
   assetNames: Record<string, string>
+  /** Asset group names by id, for the selection chips. */
+  assetGroupNames?: Record<string, string>
   customTargets: string[] // domains, IPs
   /**
    * How far typed domains reach (research/48 §6.7): the names themselves, plus
