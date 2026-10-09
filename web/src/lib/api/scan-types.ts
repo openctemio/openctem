@@ -177,6 +177,8 @@ export interface CreateScanConfigRequest {
   asset_group_id?: string // Primary asset group (legacy, optional)
   asset_group_ids?: string[] // Multiple asset groups (NEW)
   targets?: string[] // Direct targets (domains, IPs, URLs)
+  /** Inventory assets to scan, named by the API (at most 1000 with targets). */
+  asset_ids?: string[]
   scan_type: ScanType
   scan_workflow_id?: string
   scanner_name?: string

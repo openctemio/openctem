@@ -345,6 +345,8 @@ export interface Sensor {
    * on the sensor, shown here. Absent on APIs without it.
    */
   local_policy?: SensorLocalPolicy
+  /** The security posture (api RFC-040 §11.4); absent on an older API. */
+  posture?: SensorPosture
   /**
    * The load the sensor last reported on its heartbeat (api RFC-030 §5.8);
    * null when it never reported one, absent on APIs without it.
@@ -808,9 +810,28 @@ export interface SensorLocalPolicySummary {
   max_job_seconds?: number
 }
 
+/** Why the platform flags a sensor as unhardened (api RFC-040 §11.4). */
+export type SensorUnhardenedReason =
+  'policy_none' | 'pin_none' | 'network_unenforced' | 'bearer_key'
+
+/**
+ * A sensor's security posture as the API derives it from what the sensor
+ * reports (api RFC-040 §11.4). Display only.
+ */
+export interface SensorPosture {
+  local_policy: 'enforced' | 'absent_required' | 'absent_legacy' | 'unknown' | (string & {})
+  platform_pin: 'fingerprint' | 'ca_file' | 'none' | 'unknown' | (string & {})
+  /** null when the sensor did not report its sandbox. */
+  network_enforced: boolean | null
+  unhardened: (SensorUnhardenedReason | (string & {}))[]
+}
+
 /** A sensor's local policy as the API shows it (api RFC-040 §5.7). */
 export interface SensorLocalPolicy {
   state: SensorLocalPolicyState | (string & {})
+  /** The sensor requires a local policy: absent and required, it refuses
+   * every job with a network target. */
+  required?: boolean
   source?: 'file' | 'env' | (string & {})
   digest?: string
   kill_switch: boolean

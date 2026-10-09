@@ -172,7 +172,7 @@ describe('formDataToCreateRequest', () => {
     expect(req.scanner_name).toBeUndefined()
   })
 
-  it('combines asset groups, resolved assets and custom targets', () => {
+  it('sends asset groups, picked assets by id and typed targets', () => {
     const req = formDataToCreateRequest(
       form({
         targets: {
@@ -180,13 +180,26 @@ describe('formDataToCreateRequest', () => {
           assetGroupIds: ['g1', 'g2'],
           assetIds: ['a1', 'a2'],
           assetNames: { a1: 'api.example.com' },
-          customTargets: ['10.0.0.1'],
+          customTargets: ['10.0.0.1', 'Example.COM', 'example.com', 'not a target'],
         },
       })
     )
     expect(req.asset_group_ids).toEqual(['g1', 'g2'])
     expect(req.asset_group_id).toBe('g1')
-    expect(req.targets).toEqual(['api.example.com', '10.0.0.1'])
+    // The API names the assets (an asset without a known name is still sent).
+    expect(req.asset_ids).toEqual(['a1', 'a2'])
+    // Typed lines: valid ones, normalized, once each.
+    expect(req.targets).toEqual(['10.0.0.1', 'example.com'])
+  })
+
+  it('stops on typed lines that are not targets', () => {
+    expect(
+      targetsError(
+        form({
+          targets: { ...DEFAULT_NEW_SCAN.targets, customTargets: ['ok.example.com', 'nope'] },
+        })
+      )
+    ).toMatch(/1 typed line is not a target/)
   })
 
   it('carries the schedule only when not run immediately', () => {
