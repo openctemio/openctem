@@ -17,13 +17,14 @@ const (
 	OriginSeed          Origin = "seed"           // added as an EASM root-domain seed
 	OriginSeedMigration Origin = "seed_migration" // folded from a seed by an upgrade
 	OriginSystem        Origin = "system"         // written by the platform (an upgrade)
+	OriginProgram       Origin = "program"        // imported from a bug-bounty program (RFC-065)
 )
 
 // Valid reports whether o is a known origin.
 func (o Origin) Valid() bool {
 	switch o {
 	case OriginManual, OriginRequest, OriginImport, OriginReviewRule, OriginRefusalFix,
-		OriginSeed, OriginSeedMigration, OriginSystem:
+		OriginSeed, OriginSeedMigration, OriginSystem, OriginProgram:
 		return true
 	}
 	return false
