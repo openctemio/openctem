@@ -33,6 +33,7 @@ import {
   formDataToUpdateRequest,
   scanConfigToFormData,
   scheduleError,
+  targetsError,
 } from '../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
@@ -108,12 +109,9 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
         return true
       }
       case 'targets': {
-        const { targets } = formData
-        const hasAssetGroups = targets.assetGroupIds.length > 0
-        const hasIndividualAssets = targets.assetIds.length > 0
-        const hasCustomTargets = targets.customTargets.length > 0
-        if (!hasAssetGroups && !hasIndividualAssets && !hasCustomTargets) {
-          toast.error('Please select at least one target')
+        const problem = targetsError(formData)
+        if (problem) {
+          toast.error(problem)
           return false
         }
         return true
