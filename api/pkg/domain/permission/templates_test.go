@@ -176,12 +176,14 @@ func TestRoleTemplates_RemediationOwnerIsNarrow(t *testing.T) {
 		permission.FindingsTriage, permission.FindingsAssign, permission.FindingsBulkUpdate,
 		permission.FindingsVerify, permission.FindingsApprove, permission.FindingsExport,
 		permission.ScansWrite, permission.ScansExecute, permission.RemediationWrite,
+		// Whoever fixes a finding does not re-score it.
+		permission.FindingsSeverity,
 	} {
 		if permission.Contains(ro.Permissions, p) {
 			t.Errorf("remediation-owner holds %s", p)
 		}
 	}
-	for _, p := range []permission.Permission{permission.FindingsFixApply, permission.FindingsStatus, permission.FindingsWrite} {
+	for _, p := range []permission.Permission{permission.FindingsFixApply, permission.FindingsStatus, permission.FindingsWrite, permission.FindingsComment} {
 		if !permission.Contains(ro.Permissions, p) {
 			t.Errorf("remediation-owner lacks %s", p)
 		}

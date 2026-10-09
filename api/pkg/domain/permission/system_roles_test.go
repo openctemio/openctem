@@ -86,3 +86,14 @@ func TestSystemRoles_ViewerCannotListSecretStore(t *testing.T) {
 		}
 	}
 }
+
+// Researchers report and discuss findings; triage owns severity.
+func TestSystemRoles_ResearcherCommentsButDoesNotRescore(t *testing.T) {
+	r := systemRoleBySlug(t, "researcher")
+	if !permission.Contains(r.Permissions, permission.FindingsComment) {
+		t.Error("researcher cannot comment on findings")
+	}
+	if permission.Contains(r.Permissions, permission.FindingsSeverity) {
+		t.Error("researcher can change a finding severity")
+	}
+}

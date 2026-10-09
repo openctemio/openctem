@@ -263,6 +263,11 @@ type ScopeTargetResponse struct {
 	// Origin is how the entry came to exist: manual, request, import,
 	// review_rule, refusal_fix, seed, seed_migration or system.
 	Origin string `json:"origin"`
+	// AuthorizationSource: ownership, program, authorization_letter or
+	// self_attestation (RFC-065). ProgramID is set for a program entry.
+	AuthorizationSource string  `json:"authorization_source"`
+	ProgramID           *string `json:"program_id,omitempty"`
+	LetterID            *string `json:"letter_id,omitempty"`
 	// Discovery: names under the entry are discovered (Certificate
 	// Transparency) and join the inventory; only a permanent domain entry
 	// discovers.
@@ -366,6 +371,12 @@ type CreateScopeTargetRequest struct {
 	// Discovery: discover names under the entry (default true; runs only
 	// for a permanent domain entry).
 	Discovery *bool `json:"discovery"`
+	// AuthorizationSource: why the entry authorizes probes, ownership
+	// (default) or self_attestation. Program entries come from Programs
+	// (400 PROGRAM_ENTRY_VIA_PROGRAMS).
+	AuthorizationSource string `json:"authorization_source" validate:"omitempty,max=40"`
+	// LetterID names the letter of an authorization_letter entry (RFC-065 §13).
+	LetterID string `json:"letter_id" validate:"omitempty,uuid"`
 }
 
 // UpdateScopeTargetRequest represents the request to update a scope target.
@@ -431,30 +442,43 @@ type ScopeBulkOperationResponse struct {
 // =============================================================================
 
 func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
+	var programID *string
+	if pid := t.ProgramID(); pid != nil {
+		v := pid.String()
+		programID = &v
+	}
+	var letterID *string
+	if lid := t.LetterID(); lid != nil {
+		v := lid.String()
+		letterID = &v
+	}
 	return ScopeTargetResponse{
-		ID:                t.ID().String(),
-		TenantID:          t.TenantID().String(),
-		TargetType:        t.TargetType().String(),
-		Pattern:           t.Pattern(),
-		Covers:            t.Covers(),
-		Description:       t.Description(),
-		Reason:            t.Reason(),
-		Priority:          t.Priority(),
-		Status:            t.Status().String(),
-		InEffect:          t.InEffect(time.Now()),
-		ExpiresAt:         t.ExpiresAt(),
-		MaxTier:           t.MaxTier().String(),
-		ApprovalsRequired: t.ApprovalsRequired(),
-		Approvals:         approvalsResponse(t.Approvals()),
-		ApprovedAt:        t.ApprovedAt(),
-		RejectedBy:        actorRef(t.RejectedBy()),
-		RejectedAt:        t.RejectedAt(),
-		Tags:              t.Tags(),
-		CreatedBy:         actorRef(t.CreatedBy()),
-		Origin:            string(t.Origin()),
-		Discovery:         t.Discovery(),
-		CreatedAt:         t.CreatedAt(),
-		UpdatedAt:         t.UpdatedAt(),
+		ProgramID:           programID,
+		LetterID:            letterID,
+		ID:                  t.ID().String(),
+		TenantID:            t.TenantID().String(),
+		TargetType:          t.TargetType().String(),
+		Pattern:             t.Pattern(),
+		Covers:              t.Covers(),
+		Description:         t.Description(),
+		Reason:              t.Reason(),
+		Priority:            t.Priority(),
+		Status:              t.Status().String(),
+		InEffect:            t.InEffect(time.Now()),
+		ExpiresAt:           t.ExpiresAt(),
+		MaxTier:             t.MaxTier().String(),
+		ApprovalsRequired:   t.ApprovalsRequired(),
+		Approvals:           approvalsResponse(t.Approvals()),
+		ApprovedAt:          t.ApprovedAt(),
+		RejectedBy:          actorRef(t.RejectedBy()),
+		RejectedAt:          t.RejectedAt(),
+		Tags:                t.Tags(),
+		CreatedBy:           actorRef(t.CreatedBy()),
+		Origin:              string(t.Origin()),
+		AuthorizationSource: string(t.AuthorizationSource()),
+		Discovery:           t.Discovery(),
+		CreatedAt:           t.CreatedAt(),
+		UpdatedAt:           t.UpdatedAt(),
 	}
 }
 
@@ -690,6 +714,9 @@ func (h *ScopeHandler) CreateTarget(w http.ResponseWriter, r *http.Request) {
 		Actor:         scopeActor(r),
 		Origin:        scopedom.Origin(req.Origin),
 		Discovery:     req.Discovery,
+
+		AuthorizationSource: req.AuthorizationSource,
+		LetterID:            req.LetterID,
 	}
 
 	target, err := h.service.CreateTarget(r.Context(), input)
@@ -1343,6 +1370,10 @@ type CheckScopeRequest struct {
 	SensorPreference string `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"`
 	// Tier: 0 passive, 1 safe active (default), 2 intrusive.
 	Tier *int `json:"tier" validate:"omitempty,min=0,max=2"`
+	// ScannerName, when tier is not given, checks at the tier a scan with
+	// that scanner probes at: the tier its create and trigger check, so the
+	// preview of an intrusive scanner shows the targets they would refuse.
+	ScannerName string `json:"scanner_name" validate:"omitempty,max=100"`
 }
 
 // ScopeCheckVia is what authorizes an allowed target.
@@ -1384,7 +1415,7 @@ type CheckScopeResponse struct {
 
 // CheckScope handles POST /api/v1/scope/check
 // @Summary      Dry run of the active-probe gate
-// @Description  For each target and inventory asset, what a scan by the caller would do now (RFC-054 §6.4): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. An asset is checked by its name; one outside the caller's data scope, or not the organization's, answers out_of_data_scope with its id only. At most 200 targets and assets together.
+// @Description  For each target and inventory asset, what a scan by the caller would do now (RFC-054 §6.4), at the given tier or the tier of scanner_name (default safe active): allowed with what authorizes it, or refused with a code, the caller's own rule that refused it and the fixes the caller may take. Runs the act scope, the target validator, exclusions, ownership and scope authority, the platform guardrails, zones and the proof requirement; dispatches, logs and audits nothing. An asset is checked by its name; one outside the caller's data scope, or not the organization's, answers out_of_data_scope with its id only. At most 200 targets and assets together.
 // @Tags         Scope
 // @Accept       json
 // @Produce      json
@@ -1429,8 +1460,11 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tier := 1
-	if req.Tier != nil {
+	switch {
+	case req.Tier != nil:
 		tier = *req.Tier
+	case req.ScannerName != "":
+		tier = int(scansvc.ProbeTier(req.ScannerName))
 	}
 	results, err := h.dryRun.DryRunTargets(ctx, scansvc.DryRunInput{TenantID: tid, Targets: req.Targets, AssetIDs: assetIDs, SensorPreference: req.SensorPreference, Tier: tier})
 	if err != nil {

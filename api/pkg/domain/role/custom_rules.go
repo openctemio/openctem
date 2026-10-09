@@ -20,10 +20,11 @@ const MaxCustomHierarchyLevel = AdminHierarchyLevel - 1
 
 // reservedSlugs are the system role slugs. No custom role may use one.
 var reservedSlugs = map[string]bool{
-	"owner":  true,
-	"admin":  true,
-	"member": true,
-	"viewer": true,
+	"owner":      true,
+	"admin":      true,
+	"member":     true,
+	"viewer":     true,
+	"researcher": true,
 }
 
 // IsReservedSlug reports whether slug is a system role slug (case-insensitive).
@@ -31,9 +32,9 @@ func IsReservedSlug(slug string) bool {
 	return reservedSlugs[strings.ToLower(strings.TrimSpace(slug))]
 }
 
-// IsSystemRoleID reports whether id is one of the four system roles.
+// IsSystemRoleID reports whether id is one of the system roles.
 func IsSystemRoleID(id ID) bool {
-	return id == OwnerRoleID || id == AdminRoleID || id == MemberRoleID || id == ViewerRoleID
+	return id == OwnerRoleID || id == AdminRoleID || id == MemberRoleID || id == ViewerRoleID || id == ResearcherRoleID
 }
 
 // ValidCustomHierarchyLevel reports whether level is allowed for a custom role.
