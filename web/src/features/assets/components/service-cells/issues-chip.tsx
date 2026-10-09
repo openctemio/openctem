@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FINDINGS_OPEN_STATUSES } from '@/features/findings/lib/list-defaults'

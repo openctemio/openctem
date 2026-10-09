@@ -9,7 +9,7 @@
  */
 
 import { useId, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Archive, GitBranch, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
