@@ -781,5 +781,6 @@
   "auth.requestAccess.confirming": "Confirming your request...",
   "auth.requestAccess.confirmed": "Your request is confirmed and waits for an administrator.",
   "auth.requestAccess.confirmFailed": "This link is invalid or has expired.",
-  "admin.nav.access-requests": "Access requests"
+  "admin.nav.access-requests": "Access requests",
+  "auth.requestAccess.captchaFailed": "The security check could not load. Allow challenges.cloudflare.com, or try another network."
 }
