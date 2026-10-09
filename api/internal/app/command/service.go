@@ -47,6 +47,8 @@ type Service struct {
 	failures  FailureObserver
 	// now is the clock (tests replace it).
 	now func() time.Time
+	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
+	httpPolicy HTTPPolicySource
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -60,6 +62,19 @@ type TemplateSigner interface {
 // it hands a sensor. Without it they go unsigned and sensors refuse them.
 func WithTemplateSigner(t TemplateSigner) Option {
 	return func(s *Service) { s.templates = t }
+}
+
+// HTTPPolicySource returns a tenant's tool HTTP layer (RFC-060 §4.1).
+// Satisfied by the tenant service.
+type HTTPPolicySource interface {
+	ToolHTTPPolicy(ctx context.Context, tenantID shared.ID) (sensordom.ToolHTTPPolicy, error)
+}
+
+// WithHTTPPolicy makes Poll and Claim put the tenant's tool HTTP layer in
+// every scan command they hand a sensor ("http_policy"), as it is at
+// delivery: a queued job gets the policy in force when it leaves.
+func WithHTTPPolicy(p HTTPPolicySource) Option {
+	return func(s *Service) { s.httpPolicy = p }
 }
 
 // SensorLookup resolves a sensor inside one tenant. Satisfied by the sensor
@@ -286,7 +301,7 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	}
 	// Scope may have changed since the jobs were queued (scope_recheck.go).
 	cmds = s.recheckScope(ctx, tenantID, sensorID, cmds)
-	return s.signTemplates(input.SensorID, cmds), nil
+	return s.deliver(ctx, input.SensorID, cmds)
 }
 
 // ClaimInput is a claim-N poll: the sensor takes its work in one request.
@@ -381,7 +396,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		}
 		out = append(out, cmd)
 	}
-	return s.signTemplates(input.SensorID, out), nil
+	return s.deliver(ctx, input.SensorID, out)
 }
 
 // freeScanSlots is how many more scans a sensor may take: its job limit
@@ -395,6 +410,58 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 		free = min(free, *reportedFree)
 	}
 	return max(free, 0)
+}
+
+// deliver prepares the commands a sensor gets: the tenant's tool HTTP layer
+// on every scan command, then the custom template signatures. Both work on
+// copies; the stored commands are never changed. A tenant policy that
+// cannot be read fails the delivery (the claimed commands go back when
+// their lease ends): a job never leaves without the organization's layer.
+func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command) ([]*commanddom.Command, error) {
+	if s.httpPolicy != nil {
+		for i, c := range cmds {
+			if c.Type != commanddom.CommandTypeScan {
+				continue
+			}
+			pol, err := s.httpPolicy.ToolHTTPPolicy(ctx, c.TenantID)
+			if err != nil {
+				return nil, fmt.Errorf("read the organization's tool HTTP policy: %w", err)
+			}
+			payload, err := withHTTPPolicy(c.Payload, pol)
+			if err != nil {
+				return nil, err
+			}
+			cp := *c
+			cp.Payload = payload
+			cmds[i] = &cp
+		}
+	}
+	return s.signTemplates(sensorID, cmds), nil
+}
+
+// withHTTPPolicy sets the payload's http_policy to the tenant's layer, or
+// removes it when the tenant sets none: the field belongs to the platform,
+// whatever a command's creator put there.
+func withHTTPPolicy(payload json.RawMessage, pol sensordom.ToolHTTPPolicy) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if len(payload) == 0 || string(payload) == "null" {
+		fields = map[string]json.RawMessage{}
+	} else if err := json.Unmarshal(payload, &fields); err != nil {
+		return nil, fmt.Errorf("scan command payload: %w", err)
+	}
+	if pol.IsZero() {
+		if _, ok := fields["http_policy"]; !ok {
+			return payload, nil
+		}
+		delete(fields, "http_policy")
+	} else {
+		b, err := json.Marshal(pol)
+		if err != nil {
+			return nil, err
+		}
+		fields["http_policy"] = b
+	}
+	return json.Marshal(fields)
 }
 
 // signTemplates signs the custom templates of each command for sensorID, on
