@@ -38,6 +38,19 @@ controller then marks it `expired`.
 - **Approving** (`POST /scope/targets/{id}/approve`) needs the approval
   permission and step-up; the requester never approves, nobody approves
   twice. Exclusion removal, deactivation and shortening need step-up too.
+- **Who approves** (RFC-054 §12.2). A pending entry answers `approval`:
+  the approvals still needed and the members who can give them (owners,
+  administrators, holders of `scope:approve`; never the requester or a
+  prior approver), named only for callers with `team:members:read`
+  (`postgres.ScopeActorRepository.ScopeApprovers`). They are told in-app,
+  by email and on the channels; `POST /scope/targets/{id}/remind` repeats
+  it once an hour at most (atomic `approval_reminded_at`).
+- **No other approver** (RFC-054 §12.3). `POST /scope/targets/{id}/self-approve`
+  lets the owner who requested the entry approve it when the eligible
+  approvers cannot, with a reason and a code from their authenticator app
+  in the request (`auth.AuthService.VerifyFreshTOTP`; replay-proof, counts
+  towards the lockout). The approval row is marked `self_approved`; the
+  audit event is high severity; every administrator is told.
 - Every widening that takes effect, every request, and every settings change
   notifies all active owners and administrators in-app, and is audited.
 - Narrowing (deactivate, delete, an earlier expiry, a lower tier) stays one

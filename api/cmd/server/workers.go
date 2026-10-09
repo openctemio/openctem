@@ -574,6 +574,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.ScopeJoin.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
 		}
 		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
+		// Programs with a scope source are read again every 6 hours (RFC-065 §14).
+		if svc.BountyProgram != nil {
+			w.ControllerManager.Register(controller.NewProgramSyncController(svc.BountyProgram, 0))
+		}
 		// Program data scope: assets a program covers stay assigned to its
 		// group (RFC-065 §7), also those that arrived by discovery.
 		if svc.ProgramAssigner != nil {

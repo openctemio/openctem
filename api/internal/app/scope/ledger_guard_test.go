@@ -122,6 +122,9 @@ func TestLedgerGuard_SQLWritersAreKnown(t *testing.T) {
 		"internal/infra/postgres/bounty_program_repository.go:BountyProgramRepository.Import":       true,
 		"internal/infra/postgres/bounty_program_repository.go:BountyProgramRepository.ReplaceScope": true,
 		"internal/infra/postgres/bounty_program_repository.go:BountyProgramRepository.SetStatus":    true,
+		// Only approval_reminded_at of a pending entry (RFC-054 §12.2): a
+		// reminder never changes what authorizes probes.
+		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.MarkReminded": true,
 	}
 	root := moduleRoot(t)
 	var unknown []string

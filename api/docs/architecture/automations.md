@@ -14,9 +14,9 @@ trigger filters. With 40 new critical findings, a "critical → ticket"
 automation files 40 tickets. Before this, it started one run, for the first
 finding of the batch, and the other 39 were silently dropped.
 
-Every run records its subject (`workflow_runs.subject_id`: the finding or
+Every run records its subject (`automation_runs.subject_id`: the finding or
 asset). Where the event has a stable identity, the run also gets an
-idempotency key (`workflow_runs.idempotency_key`, unique per automation), so
+idempotency key (`automation_runs.idempotency_key`, unique per automation), so
 the same event never starts an automation twice:
 
 | Trigger | Subject | Idempotency key |
@@ -86,8 +86,8 @@ must fix the automation and switch it on again. Run statistics are written on
 the automation as it is stored when the run ends, so a switch-off made while a
 run executed is not undone.
 
-Code: `pkg/domain/workflow/run_limits.go` (the values),
-`internal/app/workflow/loop_guard.go` (the loop guard),
+Code: `pkg/domain/automation/run_limits.go` (the values),
+`internal/app/automation/loop_guard.go` (the loop guard),
 `internal/infra/controller/automation_run_reaper.go` (the reaper),
 `WorkflowRunRepository.CreateRunIfUnderLimit` (enforcement),
 `WorkflowEventDispatcher.dispatchFindingsCreated`, and

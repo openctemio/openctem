@@ -45,6 +45,7 @@ import { cn } from '@/lib/utils'
 import { createScopeTarget, invalidateScopeCache, useScopeSettingsApi } from '../api/use-scope-api'
 import type { ApiScopeTarget, ScopeTier } from '../api/scope-api.types'
 import { extractRootDomain } from '@/features/assets/lib/domain-hierarchy'
+import { useLetters } from '@/features/scope-letters'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import {
   coversText,
@@ -133,6 +134,13 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
   const [tier, setTier] = useState<ScopeTier>('t1')
   const [reason, setReason] = useState('')
   const [description, setDescription] = useState('')
+  // '' : the organization owns it; otherwise the letter that authorizes it.
+  const [letterId, setLetterId] = useState('')
+  const { data: letters } = useLetters()
+  const usableLetters = useMemo(
+    () => (letters ?? []).filter((l) => l.in_effect && !l.revoked_at),
+    [letters]
+  )
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -219,6 +227,9 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
         reason: reason.trim() || undefined,
         max_tier: tier,
         ...(effectiveDuration === 'one_off' ? { expires_in_days: clampedDays } : {}),
+        ...(letterId
+          ? { authorization_source: 'authorization_letter' as const, letter_id: letterId }
+          : {}),
       })
       await invalidateScopeCache()
       if (entry?.status === 'active') {
@@ -425,6 +436,34 @@ export function ScopeEntryDialog({ open, onOpenChange, draft, onCreated }: Scope
                 </Select>
                 <p className="text-xs text-muted-foreground">{TIER_HINT[tier]}</p>
               </div>
+
+              {usableLetters.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor={`${formId}-authority`}>Authorized by</Label>
+                  <Select
+                    value={letterId || 'ownership'}
+                    onValueChange={(v) => setLetterId(v === 'ownership' ? '' : v)}
+                  >
+                    <SelectTrigger id={`${formId}-authority`} className="w-full sm:w-80">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ownership">Our organization owns it</SelectItem>
+                      {usableLetters.map((l) => (
+                        <SelectItem key={l.id} value={l.id}>
+                          Letter: {l.title} (until {new Date(l.valid_until).toLocaleDateString()})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {letterId && (
+                    <p className="text-xs text-muted-foreground">
+                      The entry authorizes probes only while the letter is valid, and stops when it
+                      expires or is revoked.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor={`${formId}-reason`}>Reason{needsReason ? '' : ' (optional)'}</Label>
