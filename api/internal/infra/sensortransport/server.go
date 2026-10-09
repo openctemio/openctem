@@ -72,6 +72,12 @@ type Config struct {
 	MaxStreamAge time.Duration
 	// MaxStreamsPerSensor bounds concurrent control streams of one sensor.
 	MaxStreamsPerSensor int
+	// StreamOpensPerMinute and StreamOpenBurst are the token bucket on one
+	// sensor's control-stream opens (per replica): a sensor that opens and
+	// closes streams in a loop is refused with ResourceExhausted before any
+	// database work.
+	StreamOpensPerMinute int
+	StreamOpenBurst      int
 	// UnaryTimeout bounds one unary call.
 	UnaryTimeout time.Duration
 	// MaxUnaryInFlight bounds the unary calls this replica serves at once,
@@ -98,6 +104,12 @@ func (c Config) withDefaults() Config {
 	if c.MaxStreamsPerSensor <= 0 {
 		c.MaxStreamsPerSensor = 4
 	}
+	if c.StreamOpensPerMinute <= 0 {
+		c.StreamOpensPerMinute = 6
+	}
+	if c.StreamOpenBurst <= 0 {
+		c.StreamOpenBurst = 10
+	}
 	if c.UnaryTimeout <= 0 {
 		c.UnaryTimeout = 30 * time.Second
 	}
@@ -117,9 +129,11 @@ func (c Config) withDefaults() Config {
 type Server struct {
 	sensorv3connect.UnimplementedSensorServiceHandler
 
-	cfg    Config
-	log    *logger.Logger
-	hub    *Hub
+	cfg Config
+	log *logger.Logger
+	hub *Hub
+	// opens rate-limits each sensor's control-stream opens.
+	opens  *openLimiter
 	issuer CertificateIssuer
 	// mtls is the gRPC binding's server (EnableMTLS); nil when not served.
 	mtls *http.Server
@@ -164,7 +178,7 @@ func NewServer(cfg Config, hub *Hub, log *logger.Logger) *Server {
 	cfg = cfg.withDefaults()
 	hub.maxPerSensor = cfg.MaxStreamsPerSensor
 	return &Server{cfg: cfg, hub: hub, log: log.With("component", "sensor-v3"), done: make(chan struct{}),
-		unary: make(chan struct{}, cfg.MaxUnaryInFlight)}
+		unary: make(chan struct{}, cfg.MaxUnaryInFlight), opens: newOpenLimiter(cfg.StreamOpensPerMinute, cfg.StreamOpenBurst)}
 }
 
 // admitSensorUnary takes one of the sensor's unary slots on the gRPC
