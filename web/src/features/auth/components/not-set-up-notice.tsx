@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'

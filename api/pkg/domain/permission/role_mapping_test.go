@@ -110,7 +110,10 @@ func TestRolePermissionCounts(t *testing.T) {
 // =============================================================================
 
 func TestOwnerOnlyPermissions(t *testing.T) {
-	ownerOnly := []Permission{TeamDelete, SuppressionsApprove}
+	// suppressions:approve is seeded for admin too, and administrators pass
+	// every permission check anyway, so listing it here only described a
+	// rule nothing enforced.
+	ownerOnly := []Permission{TeamDelete}
 
 	for _, perm := range ownerOnly {
 		assert.True(t, HasPermission(tenant.RoleOwner, perm),
