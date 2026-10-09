@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ClipboardList, Grid3x3, RotateCcw, ShieldCheck, Swords } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Card, CardContent } from '@/components/ui/card'
