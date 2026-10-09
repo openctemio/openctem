@@ -4,6 +4,7 @@
  * Type definitions for scan management
  */
 
+import type { ScanTargetOptions } from '@/lib/api/scan-types'
 import type { Status } from '@/features/shared/types'
 
 // ============================================
@@ -156,8 +157,10 @@ export interface ScanTargets {
    * their inventory subdomains, plus the addresses those resolved to.
    */
   coverage?: 'host' | 'subdomains' | 'subdomains_ips'
-  /** Targets the coverage level added (sent with the others; each one is gated). */
+  /** Addresses the "subdomains and their IPs" level added (sent with the others; each one is gated). */
   expandedTargets?: string[]
+  /** How each run resolves `*.x` and CIDR targets from the inventory (RFC-068). */
+  targetOptions?: ScanTargetOptions
 }
 
 export const DEFAULT_TARGETS: ScanTargets = {
