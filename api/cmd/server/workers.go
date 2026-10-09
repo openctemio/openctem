@@ -142,6 +142,13 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 			func(ctx context.Context) (int64, error) { return console.DeleteExpiredSessions(ctx, time.Now()) },
 			log.With("controller", "admin-session-purge")))
 	}
+	if repos.MCPOAuth != nil {
+		// Ended MCP OAuth requests, tokens, grants and unused clients (RFC-062).
+		mcp := repos.MCPOAuth
+		m.Register(controller.NewPurgeController("mcp-oauth-purge", time.Hour,
+			func(ctx context.Context) (int64, error) { return mcp.PurgeForPlatform(ctx, time.Now()) },
+			log.With("controller", "mcp-oauth-purge")))
+	}
 	if repos.SensorResult != nil {
 		quarantine := repos.SensorResult
 		retention := cfg.Worker.QuarantineRetention
@@ -655,6 +662,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Remediation progress — periodically refresh campaign finding counts and
 	// auto-complete campaigns whose findings are all resolved.
 	if svc != nil && svc.RemediationCampaign != nil {
+		if svc.Module != nil {
+			svc.RemediationCampaign.SetModuleGuard(svc.Module) // skip tenants with remediation off
+		}
 		w.ControllerManager.Register(controller.NewRemediationProgressController(
 			svc.RemediationCampaign,
 			30*time.Minute,

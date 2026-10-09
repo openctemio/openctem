@@ -1,7 +1,7 @@
 'use client'
 
 import { epssScoreToPercent } from '@/lib/epss'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/features/shared'

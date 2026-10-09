@@ -149,6 +149,9 @@ func registerRoleRoutes(
 		r.GET("/", h.ListRoles, middleware.Require(permission.RolesRead))
 		r.POST("/", h.CreateRole, middleware.Require(permission.RolesWrite))
 
+		// Custom-role templates (static catalog; creating one is POST /).
+		r.GET("/templates", h.ListRoleTemplates, middleware.Require(permission.RolesRead))
+
 		// Single role operations
 		r.GET("/{roleId}", h.GetRole, middleware.Require(permission.RolesRead))
 		r.PUT("/{roleId}", h.UpdateRole, middleware.Require(permission.RolesWrite))
