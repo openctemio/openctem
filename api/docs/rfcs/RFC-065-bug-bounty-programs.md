@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-09) |
+| Status | Proposed (2026-10-09); P0 in review; P1 designed (§12–§14, owner delegated 2026-10-09) |
 | Scope | api (`pkg/domain/bountyprogram`, `pkg/domain/scope`, `internal/app/bountyprogram`, `internal/app/scopeauth`, `internal/app/actscope`, `internal/app/scan`, handlers, migrations), web (Programs area) |
 | Architecture | [bounty-programs.md](../architecture/bounty-programs.md), [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-054 (scope model: one authority check, guardrails, approvals), RFC-050 (data scope), RFC-040 (platform-sensor distrust), RFC-060 (tool overrides: headers, User-Agent, rate) |
@@ -165,11 +165,13 @@ ownership"), so an administrator sees the overlap.
 ```
 
 Bounds: `rate_limit_rps` 0–1000 (0 = none stated); at most 10 headers, name a
-token of at most 64 characters, value at most 200, no control characters;
-`user_agent` at most 200; `notes` at most 4 000. P0 enforces `forbidden:
-automated_scanning` (entries at `t0`) and never allows `t2`; the rate cap,
-headers and User-Agent reach the sensor through the tool overrides of RFC-060
-in P1.
+token of at most 64 characters, value at most 200, no control characters, and
+no credential or connection header (`Authorization`, `Cookie`, `Host`,
+`Proxy-*`, `Content-Length`, `Transfer-Encoding`, `Connection`, …);
+`user_agent` at most 200; `notes` at most 4 000; `testing_windows` (P1, §12)
+at most 14. P0 enforces `forbidden: automated_scanning` (entries at `t0`) and
+never allows `t2`; P1 enforces the rate cap, headers, User-Agent and testing
+windows on every job (§12).
 
 ### 5.4 Terms and attestation
 
@@ -268,7 +270,7 @@ logged and noted in the run's warnings; it does not stop the run.
 | Phase | Items |
 |---|---|
 | P0 | authorization source; programs with paste/CSV import, preview, attestation, program exclusions, re-import, pause/resume/end; Researcher role; program data scope and act scope; platform sensors refused for program entries; scope snapshot per run; web Programs area |
-| P1 | sync from program APIs with the researcher's own tokens (per-tenant encrypted credentials) and scope files a program publishes; rules enforced by the engine (rate cap, headers, User-Agent, testing windows); `authorization_letter` with uploaded letter; one entry shared by several programs |
+| P1 | rules enforced at delivery: headers, User-Agent, rate cap, testing windows, conflicts (§12); authorization letters (§13); sync from the program API and from published scope files, narrowing at once and widening on acceptance (§14) |
 | P2 | platform sensors for authoritative programs with quotas; abuse workflow (contact page, per-program and per-target kill switch, opt-out registry); researcher terms of use |
 
 ## 11. Implementation (P0)
@@ -281,3 +283,97 @@ logged and noted in the run's warnings; it does not stop the run.
 | Gate | platform-sensor refusal for program entries; act scope for program members; program assignment pass |
 | Snapshot | snapshot per run + route |
 | Web | Programs area (list, import with preview and attestation, detail with scope, rules, snapshots) |
+
+## 12. Rules enforcement (P1)
+
+The program's rules are applied where every job leaves the platform: command
+delivery (`command.Service.Poll` / `Claim`), next to the organization's tool
+HTTP layer (RFC-060 §4.1). Every path that makes a scan command (single
+scans, workflow steps, retests, validation, coverage) passes there, and the
+rules in force at delivery apply, not the ones at creation.
+
+For each scan command the platform finds the programs whose in-effect
+entries cover the command's targets (program exclusions applied, the same
+answer as `scopeauth`). Targets no program covers add no rule. Then:
+
+| Rule | Effect on the delivered command |
+|---|---|
+| `required_headers` | added to `http_policy.headers` (sdk-go `core.OrgHTTPPolicy.Headers`); the tool host sends them on every request and they replace a `tool.yaml` header of the same name |
+| `user_agent` | `http_policy.user_agent` (the program's wins over the organization's; a User-Agent forced by the sensor-local policy still wins) |
+| `rate_limit_rps` | the command's `config.rate_limit` becomes the smallest of its own value and the programs' (the scanner reads it through `ScanOptions.RateLimit` and caps it at the sensor ceiling) |
+| `testing_windows` | outside every window of a program, the command is not delivered; it stays queued and leaves when a window opens |
+
+**Conflicts.** Two programs covering one command with different values for
+the same header name, or different User-Agents, cannot both be honoured: the
+command is not delivered and fails with `PROGRAM_RULES_CONFLICT` naming the
+programs. The trigger refuses such a run up front (`PROGRAM_RULES_CONFLICT`,
+400), so a person scans one program at a time; the delivery check is the
+backstop for paths that do not go through the trigger.
+
+**Testing windows** (`rules.testing_windows`): `[{"days": ["mon", …],
+"start": "09:00", "end": "17:00", "timezone": "Europe/Paris"}]`, at most 14,
+`end` after `start` (no overnight window; add two), IANA time zones only. No
+window means any time. The trigger refuses a manual run outside the windows
+(`PROGRAM_OUTSIDE_WINDOW`) and a scheduled run is skipped with that reason.
+
+Headers and User-Agent need sdk-go `core.OrgHTTPPolicy.Headers` (sdk-go
+#228); a sensor without it ignores the field, so the delivery adds headers
+only for sensors whose version supports them and otherwise does not deliver
+a command that needs them (the sensor is reported as unable to honour the
+program's rules).
+
+## 13. Authorization letters (P1)
+
+A letter of authorization (a pentest engagement, a client's written
+permission) is uploaded once and named by the entries it authorizes.
+
+- `authorization_letters (tenant_id, id, title, issuer, reference,
+  valid_from, valid_until, attachment_id, file_sha256, uploaded_by,
+  created_at, revoked_at, revoked_by)`; the file is stored through the
+  attachment storage (PDF, PNG or JPEG, the attachment size limit) with
+  context `authorization_letter`. `valid_until` is required, in the future
+  and at most 2 years after `valid_from`.
+- `POST /api/v1/scope/letters` (multipart, `attack_surface:scope:write`),
+  `GET /api/v1/scope/letters`, `GET /api/v1/scope/letters/{id}/file`
+  (`scope:read`), `POST /api/v1/scope/letters/{id}/revoke`
+  (`scope:approve`, audited, administrators notified).
+- An entry with `authorization_source: authorization_letter` names its
+  `letter_id` (`scope_targets.letter_id`, tenant-composite key; the
+  authorization source requires it and no other source has one). It goes
+  through the tenant's approval policy like an ownership entry (B2).
+- The entry authorizes only while its letter is valid (`valid_from` ≤ now <
+  `valid_until`, not revoked): the read of in-effect entries joins the
+  letter, so expiry and revocation stop scanning at once without a sweep.
+- Intrusive (T2) probes still need proof (RFC-054 §8.1); a platform-reviewed
+  letter as a proof kind is RFC-054 P1 and not part of this RFC.
+
+## 14. Program sync (P1)
+
+A program can keep its scope in sync with a source the program controls:
+
+| `scope_source` | Where the scope comes from |
+|---|---|
+| `paste` | the person (P0) |
+| `program_api` | the researcher scope API of the platform that runs the program (HackerOne's Hacker API: `GET /v1/hackers/programs/{handle}/structured_scopes`, in scope when `eligible_for_submission`, out of scope otherwise), with the researcher's own API token |
+| `program_file` | a scope file the program publishes at an `https` URL on the program's own registrable domain (the text or CSV format of §5.2) |
+
+- The API token is stored encrypted (`APP_ENCRYPTION_KEY`, fail closed when
+  it cannot be decrypted), per program, never returned.
+- Fetches go through the platform's outbound guard (`pkg/httpsec`: no
+  private, loopback or metadata address), with a 256 KiB body limit and a
+  30 s timeout. A failed fetch keeps the current scope and records the error.
+- `POST /api/v1/programs/{id}/sync` (members or full-data callers,
+  `programs:write`) and a controller every 6 h.
+- **Narrowing applies at once:** an item that left the source loses its
+  entry; a new out-of-scope item becomes a program exclusion; both audited
+  (`bounty_program.synced`).
+- **Widening waits for a person:** new in-scope items and changed rules
+  make the program `needs_acceptance`: the new terms and their hash are kept
+  as pending, members are notified, and nothing is added until a member
+  accepts them (`POST /api/v1/programs/{id}/accept`, step-up, the pending
+  terms hash) — the same attestation as an import.
+- A program whose source says it is closed (the API's
+  `submission_state` other than `open`, or the file gone for 7 days) is
+  suspended automatically.
+- `authoritative` stays false in P1: a synced scope still never reaches
+  platform sensors (§8); P2 decides with quotas and the abuse workflow.
