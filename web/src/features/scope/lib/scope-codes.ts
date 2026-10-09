@@ -121,6 +121,15 @@ export const SCOPE_ERROR_TEXT = {
   INTRUSIVE_NEEDS_EXPIRY: 'Intrusive (T2) entries must expire and need an approval.',
   WIDENING_NEEDS_APPROVER: 'Only a scope approver can widen what may be probed.',
   ENTRY_SELF_APPROVAL: 'You requested this change, so another approver must approve it.',
+  SELF_APPROVAL_NOT_ALLOWED:
+    'You can approve your own entry only as an owner, and only when nobody else can approve it. Ask one of the approvers listed on the entry.',
+  SELF_APPROVAL_REASON_REQUIRED:
+    'Say why this entry may take effect without a second person. The reason is kept in the audit log.',
+  SELF_APPROVAL_NEEDS_TOTP:
+    'Approving your own entry needs a code from your authenticator app. Turn on two-factor authentication in your account first.',
+  SELF_APPROVAL_INVALID_CODE:
+    'That code is wrong or was already used. Wait for your authenticator to show a new one.',
+  REMINDER_TOO_SOON: 'The approvers were reminded less than an hour ago.',
   ENTRY_ALREADY_APPROVED: 'You already approved this entry.',
   ENTRY_NOT_PENDING: 'This entry is not waiting for approval any more.',
   ENTRY_EXPIRED: 'This entry expired. Renew it with a new expiry instead.',

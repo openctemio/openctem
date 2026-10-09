@@ -155,7 +155,7 @@ func (s *Service) commitEntry(ctx context.Context, before *jobsign.LedgerEntry, 
 		ch.RequiredApprovals = min(max(t.ApprovalsRequired(), 0), jobsign.MaxPolicyApprovals)
 		for _, a := range t.Approvals() {
 			if id := userRef(a.UserID); id != "" {
-				ch.Approvals = append(ch.Approvals, jobsign.LedgerApproval{UserID: id, ApprovedAt: a.ApprovedAt.UTC()})
+				ch.Approvals = append(ch.Approvals, jobsign.LedgerApproval{UserID: id, ApprovedAt: a.ApprovedAt.UTC(), SelfApproved: a.Self})
 			}
 		}
 	}

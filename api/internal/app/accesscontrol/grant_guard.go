@@ -130,10 +130,23 @@ var ErrExternalRoleCeiling = fmt.Errorf("%w: someone outside your organization c
 // actor, system paths included; the owner role is also refused by a
 // database trigger. No-op when no membership reader is wired.
 func (s *RoleService) capExternalTarget(ctx context.Context, tid, uid roledom.ID, r *roledom.Role) error {
-	if s.membershipReader == nil || r == nil {
+	if r == nil {
 		return nil
 	}
 	privileged := r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID || r.HasFullDataAccess()
+	// A service account is held to the same ceiling as an external member.
+	if privileged && s.serviceAccounts != nil {
+		svc, err := s.serviceAccounts.IsServiceAccount(ctx, asSharedID(uid))
+		if err != nil {
+			return fmt.Errorf("check service account: %w", err)
+		}
+		if svc {
+			return ErrServiceAccountRoleCeiling
+		}
+	}
+	if s.membershipReader == nil {
+		return nil
+	}
 	if !privileged && (s.externalCeiling == nil || r.ID() == roledom.ViewerRoleID) {
 		return nil
 	}
@@ -169,6 +182,18 @@ func (s *RoleService) capExternalTarget(ctx context.Context, tid, uid roledom.ID
 		}
 	}
 	return nil
+}
+
+// ErrServiceAccountRoleCeiling refuses the owner or administrator role, or a
+// role with full data access, for a service account.
+var ErrServiceAccountRoleCeiling = fmt.Errorf("%w: a service account cannot be an owner or administrator or have full data access", ErrGrantForbidden)
+
+// SetServiceAccountReader wires the check that applies the service-account
+// role ceiling.
+func (s *RoleService) SetServiceAccountReader(r serviceAccountReader) { s.serviceAccounts = r }
+
+type serviceAccountReader interface {
+	IsServiceAccount(ctx context.Context, userID shared.ID) (bool, error)
 }
 
 // ErrExternalViewerCeiling refuses more than viewer for an external member

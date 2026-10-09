@@ -147,6 +147,7 @@
     - /api/v1/programs
   jobs:
     - ProgramAssignmentController
+    - ProgramSyncController
 - id: business_services
   const: ModuleBusinessServices
   slug: "business-services"

@@ -138,7 +138,8 @@ func (r *GroupRoleBindingRepository) ListActiveMemberIDs(ctx context.Context, te
 }
 
 // HasExternalMembers reports whether any member of the team is an external
-// member of the organization (RFC-058).
+// member of the organization (RFC-058) or a service account: neither may hold
+// full data access.
 func (r *GroupRoleBindingRepository) HasExternalMembers(ctx context.Context, tenantID, groupID shared.ID) (bool, error) {
 	var ok bool
 	err := r.db.QueryRowContext(ctx, `
@@ -146,7 +147,8 @@ func (r *GroupRoleBindingRepository) HasExternalMembers(ctx context.Context, ten
 			SELECT 1 FROM group_members gm
 			JOIN groups g ON g.id = gm.group_id AND g.tenant_id = $1
 			JOIN tenant_members tm ON tm.user_id = gm.user_id AND tm.tenant_id = $1
-			WHERE gm.group_id = $2 AND tm.kind = 'external')`,
+			JOIN users u ON u.id = gm.user_id
+			WHERE gm.group_id = $2 AND (tm.kind = 'external' OR u.kind = 'service'))`,
 		tenantID.String(), groupID.String()).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check external team members: %w", err)
@@ -155,11 +157,12 @@ func (r *GroupRoleBindingRepository) HasExternalMembers(ctx context.Context, ten
 }
 
 // IsExternalMember reports whether the user is an external member of the
-// organization.
+// organization or a service account (the full-data ceiling applies to both).
 func (r *GroupRoleBindingRepository) IsExternalMember(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
 	var ok bool
 	err := r.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM tenant_members WHERE tenant_id = $1 AND user_id = $2 AND kind = 'external')`,
+		`SELECT EXISTS (SELECT 1 FROM tenant_members WHERE tenant_id = $1 AND user_id = $2 AND kind = 'external')
+		     OR EXISTS (SELECT 1 FROM users WHERE id = $2 AND kind = 'service')`,
 		tenantID.String(), userID.String()).Scan(&ok)
 	if err != nil {
 		return false, fmt.Errorf("check external member: %w", err)

@@ -72,12 +72,19 @@ type Rules struct {
 	UserAgent       string   `json:"user_agent,omitempty"`
 	Forbidden       []string `json:"forbidden,omitempty"`
 	Notes           string   `json:"notes,omitempty"`
+	// TestingWindows: when the program allows testing (none: any time).
+	TestingWindows []TestingWindow `json:"testing_windows,omitempty"`
 }
 
 // Normalize trims the rules and sorts the forbidden list (the terms hash
 // must not depend on the order a person typed them).
 func (r Rules) Normalize() Rules {
 	out := Rules{RateLimitRPS: r.RateLimitRPS, UserAgent: strings.TrimSpace(r.UserAgent), Notes: strings.TrimSpace(r.Notes)}
+	for _, w := range r.TestingWindows {
+		w.Timezone = strings.TrimSpace(w.Timezone)
+		w.Days = lower(w.Days)
+		out.TestingWindows = append(out.TestingWindows, w)
+	}
 	for _, h := range r.RequiredHeaders {
 		out.RequiredHeaders = append(out.RequiredHeaders, Header{Name: strings.TrimSpace(h.Name), Value: strings.TrimSpace(h.Value)})
 	}
@@ -110,8 +117,19 @@ func (r Rules) Validate() error {
 		if h.Name == "" || len(h.Name) > MaxHeaderName || !isToken(h.Name) {
 			return fmt.Errorf("%w: header name %q is not a valid HTTP header name", shared.ErrValidation, clip(h.Name))
 		}
+		if refusedHeader(h.Name) {
+			return fmt.Errorf("%w: header %s cannot be required (credentials and connection headers are refused)", shared.ErrValidation, h.Name)
+		}
 		if len(h.Value) > MaxHeaderValue || hasControl(h.Value) {
 			return fmt.Errorf("%w: header %s: the value must be at most %d printable characters", shared.ErrValidation, h.Name, MaxHeaderValue)
+		}
+	}
+	if len(r.TestingWindows) > MaxTestingWindows {
+		return fmt.Errorf("%w: at most %d testing windows", shared.ErrValidation, MaxTestingWindows)
+	}
+	for _, w := range r.TestingWindows {
+		if err := w.Validate(); err != nil {
+			return err
 		}
 	}
 	for _, f := range r.Forbidden {
@@ -168,6 +186,11 @@ type Program struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	Authoritative bool
+	// Sync is the scope source settings and state (program_api,
+	// program_file; RFC-065 §14).
+	Sync Sync
+	// Pending is a widening a sync found, waiting for a member.
+	Pending *PendingTerms
 }
 
 // Program errors.
@@ -193,7 +216,7 @@ func ValidateDetails(name, platform, handle, programURL string) error {
 		return fmt.Errorf("%w: program_url must be at most %d characters", shared.ErrValidation, MaxURLLength)
 	}
 	u, err := url.Parse(strings.TrimSpace(programURL))
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+	if err != nil || u.Scheme != schemeHTTPS || u.Host == "" || u.User != nil {
 		return fmt.Errorf("%w: program_url must be an https:// link to the program's policy", shared.ErrValidation)
 	}
 	return nil
@@ -296,4 +319,15 @@ func PlanScope(items []Item) Plan {
 		}
 	}
 	return p
+}
+
+// refusedHeaders cannot be required by a program: credentials and the
+// headers the HTTP client and the forwarder own (the sensor refuses them
+// too).
+var refusedHeaders = map[string]bool{"authorization": true, "cookie": true, "host": true, "content-length": true,
+	"transfer-encoding": true, "connection": true, "upgrade": true, "te": true, "trailer": true, "keep-alive": true}
+
+func refusedHeader(name string) bool {
+	n := strings.ToLower(name)
+	return refusedHeaders[n] || strings.HasPrefix(n, "proxy-")
 }
