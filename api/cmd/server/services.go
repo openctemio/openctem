@@ -706,6 +706,7 @@ type Services struct {
 	// Access Control
 	Group          *accesscontrol.GroupService
 	Role           *accesscontrol.RoleService
+	ServiceAccount *accesscontrol.ServiceAccountService
 	AssignmentRule *assignment.RuleService
 	ScopeRule      *scope.RuleService
 
@@ -2262,6 +2263,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.Group != nil {
 		s.Group.SetRoleBindings(repos.GroupRoleBinding, s.Role)
 	}
+	// Service accounts: organization-owned identities that act only through
+	// API keys, held to the external-member role ceiling.
+	s.ServiceAccount = accesscontrol.NewServiceAccountService(repos.ServiceAccount, s.Audit, log)
+	s.Role.SetServiceAccountReader(repos.ServiceAccount)
 
 	// Bound every oct_ key by what its user holds now, not at mint time.
 	if s.APIKey != nil {
