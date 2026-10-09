@@ -6,7 +6,7 @@
   - points the `stable` or `canary` channel of a name at a pack.
 
   Any admin reads. Writes are audited.
-- Platform packs are signed with the platform content key, kept apart from organization packs (migration 001444), and readable by every organization at `/api/v1/platform-content-packs` (`scans:content:read`).
+- Platform packs are signed with the platform content key, kept apart from organization packs (migration 001452), and readable by every organization at `/api/v1/platform-content-packs` (`scans:content:read`).
 - Upstream lint leaves out the files that fail it instead of refusing the release:
   - refused template protocols, self-contained templates, unsafe regexes and non-template YAML are left out;
   - templates with attack payloads in their requests are kept as T2.
