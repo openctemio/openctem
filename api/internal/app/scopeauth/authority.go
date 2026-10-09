@@ -291,25 +291,5 @@ func Host(s string) string {
 }
 
 // MatchForms is the target as typed, lower-cased, and the host of a URL or
-// host:port.
-func MatchForms(target string) []string {
-	v := strings.TrimSpace(target)
-	out := []string{v}
-	add := func(s string) {
-		s = strings.Trim(strings.TrimSpace(s), "[]")
-		if s == "" {
-			return
-		}
-		for _, have := range out {
-			if have == s {
-				return
-			}
-		}
-		out = append(out, s)
-	}
-	add(strings.ToLower(v))
-	if h := asset.HostOf(v); !strings.EqualFold(h, v) {
-		add(h)
-	}
-	return out
-}
+// host:port (scopedom.AuthorityForms, which the job signer's ledger uses too).
+func MatchForms(target string) []string { return scopedom.AuthorityForms(target) }
