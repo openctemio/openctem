@@ -58,11 +58,16 @@ func NewScanHandler(service *scansvc.Service, userRepo user.Repository, coverage
 // CreateScanRequest represents the request body for creating a scan.
 // Either asset_group_id OR asset_group_ids OR targets must be provided (can have all).
 type CreateScanRequest struct {
-	Name           string         `json:"name" validate:"required,min=1,max=200"`
-	Description    string         `json:"description" validate:"max=1000"`
-	AssetGroupID   string         `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
-	AssetGroupIDs  []string       `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
-	Targets        []string       `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	Name          string   `json:"name" validate:"required,min=1,max=200"`
+	Description   string   `json:"description" validate:"max=1000"`
+	AssetGroupID  string   `json:"asset_group_id" validate:"omitempty,uuid"`       // Single asset group (legacy)
+	AssetGroupIDs []string `json:"asset_group_ids" validate:"omitempty,dive,uuid"` // Multiple asset groups (NEW)
+	Targets       []string `json:"targets" validate:"omitempty,max=1000"`          // Direct targets
+	// AssetIDs are inventory assets to scan, each by its name as the server
+	// resolves it (at most 1000 targets and assets together). An id that is
+	// not the organization's or outside the caller's scope refuses the whole
+	// request, without saying which.
+	AssetIDs       []string       `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
 	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
 	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
 	ScannerName    string         `json:"scanner_name" validate:"max=100"`
@@ -343,6 +348,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		AssetGroupID:        primaryAssetGroupID, // Primary for backward compat
 		AssetGroupIDs:       assetGroupIDs,       // Full list for new scans
 		Targets:             req.Targets,
+		AssetIDs:            req.AssetIDs,
 		ScanType:            req.ScanType,
 		ScanWorkflowID:      req.ScanWorkflowID,
 		ScannerName:         req.ScannerName,

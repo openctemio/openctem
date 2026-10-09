@@ -134,7 +134,7 @@ the queue (no required check; the PR and the push scan the change).
 ### Toolchain versions
 
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
-  reads the `toolchain` directive (currently `go1.26.8`). setup-go sets
+  reads the `toolchain` directive (currently `go1.26.9`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
   and the release binaries use. `api/Dockerfile` and `api/Dockerfile.admin-cli`
   pin their `golang:` base image separately: bump them with `go.mod`.
