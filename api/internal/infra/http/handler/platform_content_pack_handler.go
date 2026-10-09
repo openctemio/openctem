@@ -58,8 +58,8 @@ func NewPlatformContentPackHandler(svc *contentpackapp.PlatformService, stepUp S
 	return &PlatformContentPackHandler{service: svc, stepUp: stepUp, adminAudit: adminAudit, packs: &ContentPackHandler{logger: l}, logger: l}
 }
 
-// validReason trims a write's reason and refuses an empty or long one.
-func validReason(w http.ResponseWriter, reason string) (string, bool) {
+// contentPackReason trims a write's reason and refuses an empty or long one.
+func contentPackReason(w http.ResponseWriter, reason string) (string, bool) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" || len(reason) > maxContentPackReason {
 		apierror.BadRequest(fmt.Sprintf("a reason of 1 to %d characters is required", maxContentPackReason)).WriteJSON(w)
@@ -369,7 +369,7 @@ func (h *PlatformContentPackHandler) Upload(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("archive is required").WriteJSON(w)
 		return
 	}
-	reason, ok := validReason(w, reason)
+	reason, ok := contentPackReason(w, reason)
 	if !ok {
 		return
 	}
@@ -421,7 +421,7 @@ func (h *PlatformContentPackHandler) Import(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	reason, ok := validReason(w, req.Reason)
+	reason, ok := contentPackReason(w, req.Reason)
 	if !ok {
 		return
 	}
@@ -465,7 +465,7 @@ func (h *PlatformContentPackHandler) Revoke(w http.ResponseWriter, r *http.Reque
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	reason, ok := validReason(w, req.Reason)
+	reason, ok := contentPackReason(w, req.Reason)
 	if !ok {
 		return
 	}
@@ -506,7 +506,7 @@ func (h *PlatformContentPackHandler) SetChannel(w http.ResponseWriter, r *http.R
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	reason, ok := validReason(w, req.Reason)
+	reason, ok := contentPackReason(w, req.Reason)
 	if !ok {
 		return
 	}
