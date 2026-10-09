@@ -31,6 +31,11 @@ or session), never from the payload.
 | `discovery_tool`, `discovered_at` | the tool and time of that discovery |
 | `first_seen`, `last_seen` | first and latest observation; only ingest and integrations move `last_seen` forward (`Asset.MarkSeen`) |
 
+Which source decides an asset's criticality, owner, exposure and data
+classification, when several report them, is recorded per source in
+`asset_attribute_sources` ([asset-attribute-reconciliation.md](./asset-attribute-reconciliation.md),
+RFC-069).
+
 The asset lifecycle worker uses `last_seen` as its clock and
 `discovery_source` as provenance when it decides which assets went stale
 (`internal/app/asset/lifecycle_worker.go`).
