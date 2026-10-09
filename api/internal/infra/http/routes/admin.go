@@ -40,7 +40,8 @@ import (
 //	/admin/tenants/{id}/audit-chain
 //	                          any admin         rebaseline: super_admin + fresh
 //	                                            TOTP code (audited, both logs)
-//	/admin/content-packs      any admin         super_admin (+ audited)
+//	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
+//	                                            code (audited with the reason)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
@@ -162,14 +163,10 @@ func registerAdminRoutes(
 	// a channel need super_admin and are audited. A platform pack reaches the
 	// platform's sensors of every organization.
 	if h.PlatformContentPack != nil {
+		// Writes: super_admin here; the handler adds the reason, a fresh
+		// console authenticator code (confirmAdminStepUp) and its own admin
+		// audit row carrying the reason.
 		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
-		write := func(action string) []Middleware {
-			mws := []Middleware{requireSuper}
-			if h.AdminAuditMiddleware != nil {
-				mws = append(mws, h.AdminAuditMiddleware.AuditLog(action, "platform_content_pack", "id"))
-			}
-			return mws
-		}
 		p := h.PlatformContentPack
 		router.Group("/api/v1/admin/content-packs", func(r Router) {
 			r.GET("/", p.List)
@@ -177,10 +174,10 @@ func registerAdminRoutes(
 			r.GET("/signing-key", p.SigningKey)
 			r.GET("/{id}", p.Get)
 			r.GET("/{id}/download", p.Download)
-			r.POST("/", p.Upload, write("platform_content_pack.upload")...)
-			r.POST("/import", p.Import, write("platform_content_pack.import")...)
-			r.POST("/{id}/revoke", p.Revoke, write("platform_content_pack.revoke")...)
-			r.PUT("/channels/{channel}", p.SetChannel, write("platform_content_pack.set_channel")...)
+			r.POST("/", p.Upload, requireSuper)
+			r.POST("/import", p.Import, requireSuper)
+			r.POST("/{id}/revoke", p.Revoke, requireSuper)
+			r.PUT("/channels/{channel}", p.SetChannel, requireSuper)
 		}, adminMiddlewares...)
 	}
 
