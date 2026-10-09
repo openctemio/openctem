@@ -1,7 +1,7 @@
 # External Attack Surface Management (EASM)
 
-> **Status: design (RFC-036 Accepted 2026-10-02, owner decisions O1–O10 as
-> recommended; implementation in progress in the monorepo, P0 first).**
+> **Status: RFC-036 accepted (decisions O1–O10); implementation in progress,
+> P0 first.**
 > This document describes how EASM works in OpenCTEM today and the
 > architecture RFC-036 builds towards. Each section marks what is **built**, what is **partial** and what is
 > **planned**. The reasoning, the source survey, the ranked gap list and the
@@ -23,10 +23,10 @@ the P0–P3 priority engine. EASM adds no new score.
 **Scope.** Only the customer's own attack surface, scanned under the customer's
 authorization. Active scanning follows RFC-030 politeness and RFC-034 rules: the
 scanner backs off when a target throttles or blocks it and never evades. A
-third-party / vendor-risk mode is a separate owner decision (RFC-036 §7). If it
+third-party / vendor-risk mode would be a separate decision (RFC-036 §7). If it
 is ever built, it uses only passive public data.
 
-## 1. Pipeline
+## 1. Flow
 
 ```
  Scoping › Boundaries › scope entries (discovery on)  (tenant-entered, verified where possible)
@@ -51,7 +51,7 @@ is ever built, it uses only passive public data.
  │   resolve (wildcard-aware) → light ports → HTTP/TLS probe (+ certs, CDN, favicon,    │
  │   tech/CPE) → optional screenshot → nuclei, intrusiveness tier T1 by default         │
  │ Runs on a tenant sensor in the default (public) zone; optional shared platform       │
- │ sensors with published egress IPs (owner decision)                                   │
+ │ sensors with published egress IPs (operator choice)                                  │
  └──────────────────────────────────────┬───────────────────────────────────────────────┘
                                         ▼
             CTIS ingest (RFC-026) → assets, relationships, findings, exposure events
@@ -75,7 +75,7 @@ API connector already uses (`pkg/httpsec`).
 | Discovery provenance on assets (`discovery_source`, `discovery_tool`, `discovered_at`, `first_seen`, `last_seen`) | Built | `pkg/domain/asset/entity.go` |
 | Exposure fields (`exposure`, `is_internet_accessible`, exposure change timestamps) | Built | ingest `applyCTEMSignals`, `inferAssetExposure` |
 | Relationships `contains` (root → subdomain), `resolves_to` (domain → IP); inferred `exposes`, `runs_on` | Built | `internal/app/ingest/processor_assets.go`, `internal/app/asset/relationship_inference.go` |
-| HTTP probe server fields (research/22 E5): the TLS leaf certificate becomes a `certificate` asset named by its SHA-256 fingerprint (tenant-scoped, deduplicated by name and fingerprint) linked from the service with `serves_certificate` (migration `001026`); the service keeps `favicon_mmh3`, `jarm`, `cdn`, `cdn_type`, `waf`, `hosted_by` and, when the sensor asks httpx for it, `asn`/`asn_org`/`asn_country`. Certificate text is capped on every ingest path (`text_caps.go`); a `related_assets` link becomes an edge only for a known type pair and only when the report may change the source asset (RFC-040 §5.3) | Built (api); sensor + sdk-go + ctis PRs open | `internal/app/ingest/related_assets.go`, `internal/app/ingest/text_caps.go`; ctis `ConvertReconToCTIS`, sensor `internal/recon/httpx` |
+| HTTP probe server fields: the TLS leaf certificate becomes a `certificate` asset named by its SHA-256 fingerprint (tenant-scoped, deduplicated by name and fingerprint) linked from the service with `serves_certificate` (migration `001026`); the service keeps `favicon_mmh3`, `jarm`, `cdn`, `cdn_type`, `waf`, `hosted_by` and, when the sensor asks httpx for it, `asn`/`asn_org`/`asn_country`. Certificate text is capped on every ingest path (`text_caps.go`); a `related_assets` link becomes an edge only for a known type pair and only when the report may change the source asset (RFC-040 §5.3) | Built (api); sensor + sdk-go + ctis PRs open | `internal/app/ingest/related_assets.go`, `internal/app/ingest/text_caps.go`; ctis `ConvertReconToCTIS`, sensor `internal/recon/httpx` |
 | Identity resolution (strong identifiers, 7-day IP window, conflicts to dedup review) | Built | RFC-001, RFC-028, [asset-identity-resolution.md](asset-identity-resolution.md) |
 | CT monitoring: crt.sh, `subdomain_discovered` + `certificate_expiring` exposures | Built, with two limits (§6) | `internal/app/certmonitor`, [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md) |
 | Certificate assets → `certificate_expiring` / `certificate_expired` / `ssl_issue` exposures; service assets → `port_open` / `service_detected` | Built | `internal/app/exposurebridge/asset_bridge.go` |
@@ -91,7 +91,7 @@ API connector already uses (`pkg/httpsec`).
 | Passive sources other than crt.sh; cloud connectors | **Missing** (providers declared, no clients) | `pkg/domain/integration/entity.go` |
 | Subdomain takeover (DNS part), email security (SPF/DMARC/MTA-STS/TLS-RPT) | **Built** (RFC-036 P1): daily DNS-only checks, [easm-dns-checks.md](easm-dns-checks.md) | `internal/app/easmdns` |
 | Takeover confirmation on sensors, open buckets, lookalike domains | **Missing** | — |
-| Chained discovery pipeline (step output → next step input) | **Missing** (steps share one context) | `internal/app/pipeline/run.go` |
+| Chained discovery steps (step output → next step input) | **Planned** (steps share one context) | `internal/app/scanrun/run.go` |
 | Change facets beyond appear/disappear/exposure (DNS, ports, certs) | **Missing**: `dns_change`, `port_closed`, `service_changed`, `subdomain_removed` have no producer | `pkg/domain/exposure/value_objects.go` |
 | Hosted scanning from published IP ranges | **Missing**: `CanUsePlatformSensors` is false in OSS | `internal/app/adapters.go` |
 
@@ -127,7 +127,7 @@ Exclusions always win, as today. An asset is actively scanned only when it is
 attributed `confirmed` and inside a scope entry.
 Candidates and dependencies get passive (T0) checks only.
 
-**Seeds are scope entries (migration 001262, research/53 SC1, SC2).** The
+**Seeds are scope entries (migration 001262, RFC-054).** The
 separate `easm_seeds` table and `/api/v1/easm/seeds` are gone. A root domain
 to discover from is the permanent scope entry `*.example.com` with
 `discovery` on (`POST /api/v1/scope/targets`: approvers, step-up, approvals,
@@ -157,10 +157,10 @@ the inventory changed meaning.
 | Rules, noisy-OR, O4 decision, `Merge` (automation only raises; a human decision stands) | `pkg/domain/attribution` |
 | Storage, tenant-scoped writes (a foreign asset id writes nothing) | `internal/infra/postgres/attribution_repository.go` |
 | First producer: CT promotion (`fqdn_under_verified_root` 0.99 → confirmed; `fqdn_under_asserted_root` 0.85 → needs_review) | `internal/app/certmonitor/promote.go` |
-| Second producer: sensor reports (owner decision O8 as narrowed by research/22 E7). A report bound to a command the tenant's own sensor ran: an asset that **is** one of the command's targets (same host or repository path, or an address inside a listed range) gets `tenant_scanned` (0.95, strong) with sensor, command, step run, pipeline run, scan, tool, report id and time; an automatic record is re-evaluated unless it is `needs_review` or `rejected` (a scan never takes a name past review). A name the scan **found** under a target (subfinder child, resolved address, auto-created root domain) gets `tenant_scan_discovered` (0.60, medium, never confirms alone); a new internet-facing one gets a `needs_review` record, or `confirmed` with `fqdn_under_verified_root` evidence when it is at/under a verified domain. An unsolicited sensor report gives a new internet-facing asset a `candidate` record and no evidence. A person's decision is never touched; an existing asset without a record keeps none. Server-side ingests (CT promotion, uploads) never come here. `root_domain` in a report must be a registrable strict parent of the reported name (`publicsuffix`), otherwise no domain is created | `internal/app/ingest/scan_attribution.go`, `internal/app/easm/scanned.go`, `internal/infra/postgres/easm_scan_evidence_repository.go` |
+| Second producer: sensor reports (decision O8, narrowed by decision E7). A report bound to a command the tenant's own sensor ran: an asset that **is** one of the command's targets (same host or repository path, or an address inside a listed range) gets `tenant_scanned` (0.95, strong) with sensor, command, step run, pipeline run, scan, tool, report id and time; an automatic record is re-evaluated unless it is `needs_review` or `rejected` (a scan never takes a name past review). A name the scan **found** under a target (subfinder child, resolved address, auto-created root domain) gets `tenant_scan_discovered` (0.60, medium, never confirms alone); a new internet-facing one gets a `needs_review` record, or `confirmed` with `fqdn_under_verified_root` evidence when it is at/under a verified domain. An unsolicited sensor report gives a new internet-facing asset a `candidate` record and no evidence. A person's decision is never touched; an existing asset without a record keeps none. Server-side ingests (CT promotion, uploads) never come here. `root_domain` in a report must be a registrable strict parent of the reported name (`publicsuffix`), otherwise no domain is created | `internal/app/ingest/scan_attribution.go`, `internal/app/easm/scanned.go`, `internal/infra/postgres/easm_scan_evidence_repository.go` |
 | CT roots from domain assets: only approved ones (not `needs_review`, `candidate` or `rejected`), so a sensor-created domain cannot widen the CT watch list | `internal/app/certmonitor/service.go` (`gatherRoots`) |
 | Active-scan ownership gate on every active-scan path (typed targets and group members alike): refused when the asset's record is not `confirmed`, when the name or a parent of it was rejected (record or live tombstone), and when an internet-facing asset has **no record** and is neither inside an active scope target nor at/under a root-domain seed or verified domain (`unattributed`). Create, clone, import, quick scan and `POST /commands` refuse the request; a run skips the target with a warning; the dispatch gate refuses it. Generic reason to the caller, specific state in the log. Details: [active-probe-gate.md](active-probe-gate.md) | `internal/app/easm/active_gate.go`, `internal/app/scan/ownership.go` |
-| **Scope join** (RFC-054 §4.3, owner decision S4). A declared, permanent scope entry is an ownership claim: a name an active, non-expiring domain scope target covers (`x`, `*.x`) gets `matches_scope_target` (0.99, strong) and is confirmed without review; an IP address only when an IP, range or CIDR entry contains it (a name lends its address nothing). Exclusions, tombstones and rejected parent names win; a person's decision is never touched; confirmation is not proof (platform sensors still need a verified domain). Applied to CT promotion and to new names a tenant scan found. The `scope-join` controller re-evaluates every tenant's automatic `needs_review`/`candidate` records at start-up (the backfill) and every 6 h; the scope service asks for a run of the tenant after every committed change that can confirm a name (an entry created in effect, approved, activated or updated; an exclusion deleted, deactivated or shortened), debounced and serialized per tenant (`easm.JoinScheduler`). An apply response carries `join.confirmed_count` and `assets_filter.covered_by` (data-scoped); `POST /scope/targets/preview` gives `would_confirm`; `GET /assets?covered_by=<entry id>` lists them. Each run that confirms names writes one system audit event `asset.attribution_auto_confirmed` (count and up to 50 names). Removing the entry keeps the asset, its record and findings; active checks stop at once (`out_of_scope`) | `internal/app/easm/scope_join.go`, `internal/app/easm/join_scheduler.go`, `internal/app/scope/join.go`, `internal/infra/postgres/attribution_scope_join.go`, `internal/infra/controller/scope_join.go` |
+| **Scope join** (RFC-054 §4.3, decision S4). A declared, permanent scope entry is an ownership claim: a name an active, non-expiring domain scope target covers (`x`, `*.x`) gets `matches_scope_target` (0.99, strong) and is confirmed without review; an IP address only when an IP, range or CIDR entry contains it (a name lends its address nothing). Exclusions, tombstones and rejected parent names win; a person's decision is never touched; confirmation is not proof (platform sensors still need a verified domain). Applied to CT promotion and to new names a tenant scan found. The `scope-join` controller re-evaluates every tenant's automatic `needs_review`/`candidate` records at start-up (the backfill) and every 6 h; the scope service asks for a run of the tenant after every committed change that can confirm a name (an entry created in effect, approved, activated or updated; an exclusion deleted, deactivated or shortened), debounced and serialized per tenant (`easm.JoinScheduler`). An apply response carries `join.confirmed_count` and `assets_filter.covered_by` (data-scoped); `POST /scope/targets/preview` gives `would_confirm`; `GET /assets?covered_by=<entry id>` lists them. Each run that confirms names writes one system audit event `asset.attribution_auto_confirmed` (count and up to 50 names). Removing the entry keeps the asset, its record and findings; active checks stop at once (`out_of_scope`) | `internal/app/easm/scope_join.go`, `internal/app/easm/join_scheduler.go`, `internal/app/scope/join.go`, `internal/infra/postgres/attribution_scope_join.go`, `internal/infra/controller/scope_join.go` |
 | `GET /api/v1/assets/{id}/attribution` (assets:read) and `PUT` (assets:write, audited `asset.attribution_decided`) | `internal/infra/http/handler/asset_attribution_handler.go` |
 
 **Rejection tombstones (P2, migration 000775).** When a person marks a
@@ -181,8 +181,8 @@ automatic records are dropped, never demoting a legacy asset. Evidence moves to
 the kept asset, one row per (rule, source) with the earliest first sighting
 (`mergeAttribution` in `internal/infra/postgres/asset_merge_plan.go`).
 
-Deviation from the plan below, on the owner's instruction for P0 (feed CT
-names into the asset pipeline, marked unconfirmed): names found under a domain
+Deviation from the plan below, decided for P0 (feed CT names into the asset
+inventory, marked unconfirmed): names found under a domain
 the tenant did not verify enter the inventory as `needs_review` assets rather
 than as candidates outside it. The scan gate keeps them passive. P2's
 `easm_candidates` is still where weak (< 50) names will live.
@@ -274,8 +274,7 @@ covered items rejected). Code: `internal/app/easm/review_rules.go`.
 
 ## 4c. Alerts (built, P0-7)
 
-EASM exposures reach the notification outbox (research/22 P0-7, owner
-decision E4). The CT monitor, the DNS checks and takeover confirmation write
+EASM exposures reach the notification outbox (decision E4). The CT monitor, the DNS checks and takeover confirmation write
 exposures through `postgres.EASMExposureWriter`; the DNS checks' reopen goes
 through `EASMDNSRepository.ReopenAuto`. Both enqueue in **the same
 transaction** as the exposure write, and only for rows that were **inserted**
@@ -313,7 +312,7 @@ Policy: `pkg/domain/easmalert`; tests: `internal/infra/postgres/easm_alert_db_te
 A tenant member with `scope:write` verifies a domain with the DNS TXT flow
 (`/api/v1/easm/verified-domains`; how-to:
 [verify-a-domain-for-easm.md](../how-to/verify-a-domain-for-easm.md)). Each
-`verified_domains` row has a `purpose` (migration `001081`, owner decision
+`verified_domains` row has a `purpose` (migration `001081`, decision
 E6):
 
 | Purpose | Set up by | EASM (verified root, gate, CT) | SSO JIT and SCIM admission |
@@ -333,6 +332,10 @@ The 12-hour re-check marks a lost record `failed`, and names under it stop
 auto-confirming.
 ## 4e. Settings and run-now (built, P0-11)
 
+These are their own route groups (`/api/v1/easm/settings`,
+`/api/v1/easm/sweeps`), registered beside `/api/v1/easm` and gated by the
+`attack_surface` module with their own permissions:
+
 | Route | Permission | What |
 |---|---|---|
 | `GET /api/v1/easm/settings` | `settings:read` | switches, intervals (effective, floor 6 h, max 168 h), what the platform runs, last CT run, last DNS check, when run-now is allowed again |
@@ -343,7 +346,7 @@ The settings live in the tenant settings section `easm` (`tenant.EASMSettings`,
 written with the section compare-and-swap). The zero value is the default:
 CT and DNS checks on at the platform cadence (decisions E3, E8). Turning CT off
 is the per-tenant opt-out from sending domain names to crt.sh and Cert
-Spotter (22b S6).
+Spotter.
 
 Enforcement sits in the services, so every path honors it: the CT and DNS
 controllers, the CT follow-up, run-now and seed sweeps. `certmonitor` and
@@ -459,11 +462,11 @@ or `PUT /assets/{id}/attribution`) is followed by
 `easm.DecisionEffects.AfterDecision`, best effort and only for the assets the
 decision stored (tenant and data scope already checked):
 
-- **Reclassify now** (22c B4): an asset-scoped request on the priority
+- **Reclassify now**: an asset-scoped request on the priority
   reclassify queue, which is drained every minute, so the P2 cap on findings
   of unconfirmed assets lifts (or applies) within two minutes instead of the
   12-hour sweep.
-- **Rejection hygiene** (22c B2): on `rejected`, the name's open CT and
+- **Rejection hygiene**: on `rejected`, the name's open CT and
   DNS-check exposures, and those of every name under it, are resolved with
   state history; the CT monitor stops writing exposures for rejected and
   tombstoned names. See
@@ -479,8 +482,8 @@ decision stored (tenant and data scope already checked):
 - ~~CT discoveries stay exposure events.~~ Fixed in RFC-036 P0: CT names
   become `subdomain` assets with attribution (§4).
 - Sensor images ship no recon binaries. The recon executor is off by default
-  but advertises recon capabilities when it is turned on. Pipeline steps do not
-  feed one step's output into the next.
+  but advertises recon capabilities when it is turned on. Scan workflow steps do
+  not feed one step's output into the next.
 - httpx's favicon, JARM, ASN and certificate fields are parsed and dropped
   (`core.LiveHost` has no fields for them). No certificate asset comes from a
   live TLS handshake.

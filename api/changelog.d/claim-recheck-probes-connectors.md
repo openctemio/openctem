@@ -1,0 +1,5 @@
+### Security: validate, retest and connector scan jobs are re-checked against the current scope at claim
+
+- The claim-time scope re-check now covers validate commands (finding re-checks, proof-of-fix, attack-simulation safe-checks), tool retests and `connector_scan` jobs (scan runs and coverage batches), not only scans. Each records the gate it passed at dispatch (`commands.dispatch_gate`, no new migration) and is re-checked with it when a sensor claims it.
+- A job whose target is now refused fails with `SCOPE_CHANGED`, and what waits on it is settled as on a sensor failure: its validation run finishes as failed, its retest is settled, its scan step fails.
+- Jobs of these types queued before the upgrade have no record: they are re-checked with their type's strict defaults (the full gate at t1, no act scope, no zone routing for a connector scan). One whose targets cannot be read is refused with `GATE_RECORD_MISSING` (its validation run, retest or step is settled) and has to be created again. Nothing queued before the upgrade goes out unchecked.

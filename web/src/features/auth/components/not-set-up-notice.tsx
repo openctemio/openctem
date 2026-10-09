@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
+import { useAuthProviders } from '../api/use-auth-providers'
 
 /**
  * The one page every refused sign-up lands on (email sign-up, Google,
@@ -13,6 +14,7 @@ import { useTranslation } from '@/context/i18n-provider'
  */
 export function NotSetUpNotice() {
   const { t } = useTranslation()
+  const { data: providers } = useAuthProviders()
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 text-center">
       <div className="flex size-12 items-center justify-center rounded-full bg-muted">
@@ -27,9 +29,16 @@ export function NotSetUpNotice() {
           'Ask your administrator to invite you. If you received an invitation email, open its link to join.'
         )}
       </p>
-      <Button asChild variant="outline">
-        <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
-      </Button>
+      <div className="flex flex-wrap justify-center gap-2">
+        {providers?.request_access && (
+          <Button asChild>
+            <Link href="/request-access">{t('auth.requestAccess.cta', 'Request access')}</Link>
+          </Button>
+        )}
+        <Button asChild variant="outline">
+          <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
+        </Button>
+      </div>
     </div>
   )
 }

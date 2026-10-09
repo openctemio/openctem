@@ -14,6 +14,7 @@ import * as React from 'react'
 // useRouter removed — cache.clear() handles revalidation without router.refresh()
 import { useSWRConfig } from 'swr'
 import { devLog } from '@/lib/logger'
+import { clearSwrCache } from '@/lib/swr-config'
 import { useMyTenants, invalidateMyTenantsCache } from '@/lib/api/user-tenant-hooks'
 import type { TenantMembership, TenantRole } from '@/lib/api/user-tenant-types'
 import { getCookie, setCookie, removeCookie } from '@/lib/cookies'
@@ -231,28 +232,12 @@ export function TenantProvider({ children }: TenantProviderProps) {
           { path: '/', maxAge: 7 * 24 * 60 * 60 }
         )
 
-        // Invalidate SWR cache for the new tenant.
-        //
-        // Why selective revalidation? globalMutate with revalidate:true causes
-        // DOUBLE API calls for hooks that include tenantId in their SWR key:
-        //   1. globalMutate revalidates the OLD key (wasted fetch for old tenant)
-        //   2. React re-render creates NEW key → SWR auto-fetches (correct fetch)
-        //
-        // Fix: Skip keys containing the old tenantId (they'll get new keys after
-        // re-render and fetch automatically). Only revalidate keys WITHOUT tenantId
-        // (notifications, platform/stats, etc.) that won't change on re-render.
-        const oldTenantId = currentTenant?.id
-        globalMutate(
-          (key: unknown) => {
-            if (oldTenantId) {
-              const keyStr = Array.isArray(key) ? JSON.stringify(key) : String(key)
-              if (keyStr.includes(oldTenantId)) return false
-            }
-            return true
-          },
-          undefined,
-          { revalidate: true }
-        )
+        // Every SWR key is the endpoint URL alone (one key per endpoint, shared
+        // by every page that reads it), and the tenant comes from the session
+        // cookie, not the URL. So the switch first DROPS every cached answer
+        // (none of the old organization's data stays on screen or in memory),
+        // then refetches what is mounted under the new session.
+        await clearSwrCache(globalMutate)
 
         devLog.log('[TenantProvider] Switched to team:', newTenant.name)
       } catch (error) {

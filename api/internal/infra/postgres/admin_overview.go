@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // The platform admin console's attention queue (Console > Overview).
@@ -45,9 +47,12 @@ func ReadAdminOverview(ctx context.Context, db opsQuerier, now time.Time) (Admin
 	const noOwner = `NOT EXISTS (SELECT 1 FROM tenant_members m
 		WHERE m.tenant_id = t.id AND m.role = 'owner' AND m.status = 'active')`
 
+	// The platform system tenant is internal (seeded, never has an owner):
+	// it is neither an organization to count nor one that needs an owner.
 	if err := db.QueryRowContext(ctx, `
 		SELECT count(*), count(*) FILTER (WHERE `+noOwner+`)
-		FROM tenants t`,
+		FROM tenants t
+		WHERE t.id <> $1`, tenant.SystemTenantID,
 	).Scan(&c.Organizations, &c.OrganizationsWithoutOwner); err != nil {
 		return c, fmt.Errorf("organizations: %w", err)
 	}
@@ -55,9 +60,9 @@ func ReadAdminOverview(ctx context.Context, db opsQuerier, now time.Time) (Admin
 	if c.OrganizationsWithoutOwner > 0 {
 		rows, err := db.QueryContext(ctx, `
 			SELECT t.id::text, t.name FROM tenants t
-			WHERE `+noOwner+`
+			WHERE t.id <> $2 AND `+noOwner+`
 			ORDER BY t.created_at DESC, t.id
-			LIMIT $1`, adminOverviewSample)
+			LIMIT $1`, adminOverviewSample, tenant.SystemTenantID)
 		if err != nil {
 			return c, fmt.Errorf("organizations without owner: %w", err)
 		}

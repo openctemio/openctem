@@ -326,7 +326,10 @@ func (s *SyncService) SyncFindingStatus(ctx context.Context, tenantID, findingID
 // a retest or a scan found the issue fixed, or saw it again). Outbound writes
 // are opt-in per integration, exactly like status sync: a no-op unless the
 // tenant's mapping has SyncEnabled, and when the finding has no linked issue.
-// The body is platform-written text; it never carries scanner evidence.
+// The body is platform-written text around values a sensor controls (the
+// finding title, a retest reason, the tool name), so it is encoded here for
+// every caller: each paragraph is one line of escaped wiki markup with its
+// URLs defanged (jiraCommentBody).
 func (s *SyncService) CommentOnFinding(ctx context.Context, tenantID, findingID shared.ID, body string) error {
 	if s.mappingResolver == nil {
 		return nil
@@ -353,7 +356,7 @@ func (s *SyncService) CommentOnFinding(ctx context.Context, tenantID, findingID 
 	if err != nil {
 		return err
 	}
-	if err := client.AddComment(ctx, issueKey, body); err != nil {
+	if err := client.AddComment(ctx, issueKey, jiraCommentBody(body)); err != nil {
 		return fmt.Errorf("comment on jira issue: %w", err)
 	}
 	return nil
@@ -863,4 +866,19 @@ type TicketInfo struct {
 	TicketKey string    `json:"ticket_key"`
 	TicketURL string    `json:"ticket_url"`
 	LinkedAt  time.Time `json:"linked_at"`
+}
+
+// jiraCommentBody encodes a comment for Jira wiki markup: paragraphs (split on
+// blank lines) stay paragraphs, each folded to one line, escaped and with its
+// URLs defanged, so a finding title such as "[x|https://evil.test] !img! [~admin]"
+// renders as text: no link, no image beacon, no mention.
+func jiraCommentBody(body string) string {
+	paras := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n\n")
+	out := make([]string, 0, len(paras))
+	for _, p := range paras {
+		if e := safetext.JiraWikiInline(p, safetext.MaxInlineRunes); e != "" {
+			out = append(out, e)
+		}
+	}
+	return strings.Join(out, "\n\n")
 }

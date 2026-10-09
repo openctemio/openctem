@@ -768,6 +768,8 @@ Authorization is enforced at the **route layer** in
 | `POST /api/v1/admin/users/{id}/break-glass-test` | **super_admin** (audited; not the break-glass account itself) |
 | `DELETE /api/v1/admin/users/{id}/idp-binding` | **super_admin** (audited high) |
 | `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
+| `GET /api/v1/admin/access-requests` | any admin |
+| `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner |
 | `GET /api/v1/admin/settings/plans` | any admin |
 | `PUT /api/v1/admin/settings/plans` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/tenants/{tenantId}/plan` | any admin (limits, usage, over-limit flag) |
@@ -1275,7 +1277,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /findings/bulk/status` on a pentest finding | **bypass (write)**: changed it, for any holder of `findings:bulk_update` whose scope covers the asset, campaign member or not (the single-finding path refuses) | refused like the single-finding path (`failed`, "managed via the pentest module"); other ids in the call unaffected |
 | `POST /remediation/campaigns/{id}/resolve` (filter campaign) | ids counted tenant-wide against the abuse guard and its 2000 cap, then out-of-scope ones skipped by the bulk path; a campaign filtered to pentest findings changed them | ids taken from the caller's scope and pentest rule (`ListFindingIDs`), pentest findings refused by the bulk path; the keyed (solution-family) path goes through the remediation-group resolve above |
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
-| `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list filtered per page |
+| `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered |
@@ -1404,7 +1406,6 @@ that aggregates follow the viewer's scope, with org-wide totals only through
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
-| `GET /approvals` `total` | the page is filtered; the total is the tenant's pending count |
 
 **Not covered by data scope** (separate access models): pentest findings and
 attachments (campaign membership), remediation campaigns,
@@ -1597,6 +1598,28 @@ viewer (1) ┴─ Can only view resources
 5. **Owner Protection**: Team owners cannot be demoted or removed. Only team deletion removes the owner.
 
 6. **Invitation Security**: Invitations are validated against the accepting user's email address.
+
+7. **CSRF**: a write authenticated by a cookie needs the double-submit pair
+   (`csrf_token` cookie + `X-CSRF-Token` header; `admin_csrf` for the
+   console): `UnifiedAuth` and `CSRFOptional` for the session, `CheckDoubleSubmit`
+   for routes that read the refresh-token cookie. A write authenticated by a
+   header (Bearer JWT, `oct_` key) needs none: a page on another site cannot
+   set that header. The routes that run before a session exists and set
+   session cookies (`/auth/register`, `/login`, `/mfa/*`, `/token`,
+   `/refresh`, `/verify-email`, `/forgot-password`, `/reset-password`,
+   `/create-first-team`, `/discover`, the OAuth and SSO callbacks, and the
+   console's `/admin/auth/session`, `/mfa`, `/logout`, `/idp/start`,
+   `/idp/callback`) refuse a write a browser sent for another site
+   (`RejectCrossSiteBrowser`: an `Origin` that is neither the request's host
+   nor in `CORS_ALLOWED_ORIGINS`, `Origin: null`, or no `Origin` with
+   `Sec-Fetch-Site` other than `same-origin`/`none`), so a page on another
+   site cannot sign a visitor into the attacker's account (login CSRF) when
+   the API is reachable from browsers directly. Calls without either header
+   (the web console's server, scripts) are not affected. Browsers normally
+   reach these routes through the web console, which checks the
+   same-origin rule and the double-submit pair on every write itself
+   (`web/docs/security-architecture.md`, section 6). The IdP's own cross-site posts (SAML ACS,
+   back-channel logout) are authenticated by their signed payload instead.
 
 ## API Routes Summary
 

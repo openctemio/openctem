@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // AdminOrganizationRepository is the platform admin's cross-tenant read model
@@ -91,6 +92,10 @@ func (r *AdminOrganizationRepository) ListOrganizations(ctx context.Context, f a
 	if f.Plan != "" {
 		args = append(args, f.Plan)
 		conds = append(conds, fmt.Sprintf("%s = $%d", adminOrganizationPlanExpr, len(args)))
+	}
+	if !f.IncludeSystem {
+		args = append(args, tenant.SystemTenantID)
+		conds = append(conds, fmt.Sprintf("t.id <> $%d", len(args)))
 	}
 	where := ""
 	if len(conds) > 0 {

@@ -61,7 +61,7 @@ func TestAssetMerge_VersionTwoIdentityFollowsTheKeptAsset(t *testing.T) {
 
 	// The same vulnerability on both assets: the merged asset's copy is older
 	// and triaged, the kept asset's copy is newer.
-	triaged := f.v2(f.away, scaKey(t, f.away, purl, cve), "accepted_risk", time.Now().Add(-72*time.Hour))
+	triaged := f.v2(f.away, scaKey(t, f.away, purl, cve), "accepted", time.Now().Add(-72*time.Hour))
 	if _, err := f.db.Exec(`UPDATE findings SET work_item_uris = ARRAY['JIRA-7'] WHERE id = $1`, triaged.String()); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestAssetMerge_VersionTwoIdentityFollowsTheKeptAsset(t *testing.T) {
 
 	// Another tenant holds a finding under the key the merged copy will get.
 	other := newMergeFixture(t, "merge-v2-other")
-	foreign := other.v2(other.keep, scaKey(t, f.keep, purl, "CVE-2020-8203"), "accepted_risk", time.Now().Add(-96*time.Hour))
+	foreign := other.v2(other.keep, scaKey(t, f.keep, purl, "CVE-2020-8203"), "accepted", time.Now().Add(-96*time.Hour))
 
 	f.merge()
 
@@ -89,7 +89,7 @@ func TestAssetMerge_VersionTwoIdentityFollowsTheKeptAsset(t *testing.T) {
 	}
 	want := scaKey(t, f.keep, purl, cve)
 	s := f.state(triaged)
-	if s.asset != f.keep.String() || s.fingerprint != want.Fingerprint() || s.status != "accepted_risk" || len(s.tickets) != 1 {
+	if s.asset != f.keep.String() || s.fingerprint != want.Fingerprint() || s.status != "accepted" || len(s.tickets) != 1 {
 		t.Fatalf("older triaged finding did not survive on the kept asset with its state: %+v", s)
 	}
 	if got := f.identityOf(triaged); got.Field(vulnerability.IdentityFieldAsset) != f.keep.String() || got.Fingerprint() != s.fingerprint {
@@ -117,7 +117,7 @@ func TestAssetMerge_VersionTwoIdentityFollowsTheKeptAsset(t *testing.T) {
 
 	// Tenant isolation: the other tenant's finding under the same key is a
 	// different finding and stays as it was.
-	if fs := other.state(foreign); fs.status != "accepted_risk" || fs.duplicateOf.Valid {
+	if fs := other.state(foreign); fs.status != "accepted" || fs.duplicateOf.Valid {
 		t.Fatalf("another tenant's finding changed: %+v", fs)
 	}
 	if u.duplicateOf.Valid {

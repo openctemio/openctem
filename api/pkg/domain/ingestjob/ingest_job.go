@@ -86,9 +86,13 @@ func (s *V2Segment) IsCommit() bool { return s != nil && s.Seq == nil }
 
 // NewV2Job builds a pending protocol v2 job: one segment (payload = the
 // decoded, validated CTIS document) or, with seg.Seq nil, the commit step
-// (empty payload). reportUUID is the sensor-chosen report id; the job's
-// report_id column gets "<uuid>/<seq>" or "<uuid>/commit", so the v1
-// idempotency index can never match two different segments.
+// (empty payload). The job's report_id column gets "<report>/<seq>" or
+// "<report>/commit", so the v1 idempotency index can never match two
+// different segments. <report> is the stored report's own id
+// (seg.ReportRef), unique across sensors; reportUUID, the id the sensor
+// chose, is used only when no report is named. Two sensors of a tenant
+// that pick the same report id (or one that copies another's) therefore
+// never collide on the tenant-wide idempotency index.
 func NewV2Job(tenantID shared.ID, sensorID *shared.ID, reportUUID string, seg V2Segment, payload []byte) *Job {
 	suffix := "commit"
 	if seg.Seq != nil {
@@ -97,7 +101,11 @@ func NewV2Job(tenantID shared.ID, sensorID *shared.ID, reportUUID string, seg V2
 	if payload == nil {
 		payload = []byte{} // the commit step carries no payload; the column is NOT NULL
 	}
-	j := NewJob(tenantID, sensorID, reportUUID+"/"+suffix, "", payload)
+	prefix := reportUUID
+	if !seg.ReportRef.IsZero() {
+		prefix = seg.ReportRef.String()
+	}
+	j := NewJob(tenantID, sensorID, prefix+"/"+suffix, "", payload)
 	j.v2 = &seg
 	return j
 }

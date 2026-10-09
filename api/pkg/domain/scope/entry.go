@@ -118,7 +118,10 @@ func NewEntry(tenantID shared.ID, targetType TargetType, pattern, description, c
 		t.status = StatusActive
 		t.approvedAt = &now
 	} else {
+		// Pending: not approved yet (NewTarget stamps a plain target as
+		// approved at creation).
 		t.status = StatusPending
+		t.approvedAt = nil
 	}
 	return t, nil
 }

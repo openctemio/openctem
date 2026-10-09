@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // The console's organization list filters by owner (none / present) and by
@@ -106,5 +108,77 @@ func TestAdminOrganizationListFilters_DB(t *testing.T) {
 	both := list(admin.OrganizationFilter{Owner: admin.OrganizationOwnerNone, Plan: "pro"})
 	if len(both) != 1 || both[suspended] == "" {
 		t.Fatalf("owner=none&plan=pro = %v", both)
+	}
+}
+
+// The platform system tenant is internal: the console list and its total
+// leave it out unless IncludeSystem asks for it, and the overview neither
+// counts it nor names it as an organization without an owner.
+func TestAdminOrganizationListHidesSystemTenant_DB(t *testing.T) {
+	dbURL := testdb.URL()
+	if dbURL == "" {
+		t.Skip("DATABASE_URL not set")
+	}
+	raw, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	if err := raw.Ping(); err != nil {
+		testdb.Skipf(t, "cannot reach DATABASE_URL: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := raw.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, 'System', 'system') ON CONFLICT (id) DO NOTHING`, tenant.SystemTenantID); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewAdminOrganizationRepository(&DB{DB: raw})
+
+	listed := func(f admin.OrganizationFilter) (bool, int) {
+		t.Helper()
+		f.Search, f.Limit = "system", 200
+		orgs, total, err := repo.ListOrganizations(ctx, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, o := range orgs {
+			if o.ID.String() == tenant.SystemTenantID {
+				return true, total
+			}
+		}
+		return false, total
+	}
+	hidden, totalHidden := listed(admin.OrganizationFilter{})
+	if hidden {
+		t.Fatal("the system tenant is listed by default")
+	}
+	shown, totalShown := listed(admin.OrganizationFilter{IncludeSystem: true})
+	if !shown || totalShown != totalHidden+1 {
+		t.Fatalf("include_system: listed=%v total %d, want listed and %d", shown, totalShown, totalHidden+1)
+	}
+
+	// One snapshot, so organizations other tests add meanwhile do not count.
+	tx, err := raw.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var orgs, withoutOwner int64
+	if err := tx.QueryRowContext(ctx, `SELECT count(*), count(*) FILTER (WHERE NOT EXISTS (
+		SELECT 1 FROM tenant_members m WHERE m.tenant_id = t.id AND m.role = 'owner' AND m.status = 'active'))
+		FROM tenants t`).Scan(&orgs, &withoutOwner); err != nil {
+		t.Fatal(err)
+	}
+	c, err := ReadAdminOverview(ctx, tx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Organizations != orgs-1 || c.OrganizationsWithoutOwner != withoutOwner-1 {
+		t.Fatalf("overview counts %d organizations, %d without owner; want %d and %d (all but the system tenant)",
+			c.Organizations, c.OrganizationsWithoutOwner, orgs-1, withoutOwner-1)
+	}
+	for _, o := range c.OrganizationsWithoutOwnerSample {
+		if o.ID == tenant.SystemTenantID {
+			t.Fatal("overview names the system tenant as an organization without an owner")
+		}
 	}
 }

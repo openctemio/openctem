@@ -156,6 +156,16 @@ func (h *CommandHandler) settleValidationRun(cmd *commanddom.Command, succeeded 
 	}()
 }
 
+// OnCommandFailed settles what waits on a failed command: its scan step,
+// its retest (now, as unknown, instead of at the next sweep) and its
+// validation run. The v2 fail transition and the claim-time scope re-check
+// (command.FailureObserver) both call it.
+func (h *CommandHandler) OnCommandFailed(ctx context.Context, cmd *commanddom.Command, message, code string) {
+	h.triggerScanRunFailed(ctx, cmd, message, code)
+	h.triggerRetestSettle(cmd)
+	h.settleValidationRun(cmd, false, sensordom.RedactPlatformText(message), code)
+}
+
 // retestSettler settles a pending retest when one of its commands finishes.
 type retestSettler interface {
 	OnCommandFinished(ctx context.Context, tenantID, commandID shared.ID)
@@ -354,8 +364,8 @@ func (h *CommandHandler) Create(w http.ResponseWriter, r *http.Request) {
 		input.Payload = gated.Payload
 		input.ScanZoneID = gated.ScanZoneID
 		// The claim re-checks the targets as GateCommandPayload checked
-		// them: the caller's act scope, no tier ceiling.
-		input.DispatchGate = &commanddom.DispatchGate{ActScope: true, Actor: requestUserID(r.Context())}
+		// them: the scanner's tier ceiling and the caller's act scope.
+		input.DispatchGate = &commanddom.DispatchGate{Tier: int(gated.Tier), ActScope: true, Actor: requestUserID(r.Context())}
 		targets = gated.Targets
 	}
 

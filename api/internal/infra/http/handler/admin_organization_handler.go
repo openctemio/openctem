@@ -215,6 +215,7 @@ func orgIDParam(r *http.Request) (shared.ID, bool) {
 // @Param search query string false "Match name or slug"
 // @Param owner query string false "none: no active owner; present: has one" Enums(none, present)
 // @Param plan query string false "Plan" Enums(free, pro, enterprise)
+// @Param include_system query bool false "Also list the internal platform system organization (left out by default)"
 // @Param page query int false "Page (default 1)"
 // @Param per_page query int false "Page size (default 50, max 100)"
 // @Success 200 {object} AdminOrganizationListResponse
@@ -236,6 +237,14 @@ func (h *AdminOrganizationHandler) List(w http.ResponseWriter, r *http.Request) 
 		f.Owner = owner
 	default:
 		apierror.BadRequest("owner must be none or present").WriteJSON(w)
+		return
+	}
+	switch q.Get("include_system") {
+	case "", queryParamFalse:
+	case queryParamTrue:
+		f.IncludeSystem = true
+	default:
+		apierror.BadRequest("include_system must be true or false").WriteJSON(w)
 		return
 	}
 	if p := q.Get("plan"); p != "" {

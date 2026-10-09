@@ -1,117 +1,94 @@
-# Documentation
+# OpenCTEM Engineering Documentation
 
-## Quick Links
+Documentation for people who develop OpenCTEM. To install, configure, operate
+or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
+([install](https://docs.openctem.io/install/),
+[configuration](https://docs.openctem.io/configuration/),
+[operations](https://docs.openctem.io/operations/)).
 
-- [Getting Started](getting-started.md) - Start here!
-- [**User Guide**](https://docs.openctem.io/user-guide/) — end-user product guide on docs.openctem.io (analysts/operators): the CTEM loop, sign-in, scoping → discovery → prioritization → validation → mobilization, insights, settings
-- [Architecture Overview](architecture/overview.md)
-- [Development Setup](development/setup.md)
+## Start here
 
----
+- [Getting started (development)](getting-started.md)
+- [Development setup](development/setup.md)
+- [Repositories and how the platform fits together](development/repositories.md)
+- [Architecture overview](architecture/overview.md)
+- [RFCs](rfcs/README.md): design documents and decisions
+- [User guide](https://docs.openctem.io/user-guide/): the product from a user's point of view
+- Web console: [`web/docs/`](../../web/docs/README.md)
 
-## Contents
+## Development
 
-### Getting Started
-- [Getting Started Guide](getting-started.md) - Prerequisites, installation, quick start
+- [Setup](development/setup.md), [coding style](development/coding-style.md), [testing](development/testing.md), [logging](development/logging.md)
+- [Migrations](development/migrations.md)
+- [CI/CD and releases](development/ci-cd.md), [versioning and releases](architecture/versioning-and-releases.md)
+- [Pre-commit and security tooling](development/pre-commit-security.md)
+- [Asset type registry](development/asset-type-registry.md), [relationship types](development/relationship-types.md)
+- [Makefile reference](MAKEFILE.md), [Swagger annotations](SWAGGER_GUIDE.md)
 
-### Architecture
-- [Overview](architecture/overview.md) - Tech stack, system diagram, design principles
-- [Clean Architecture](architecture/clean-arch.md) - Layer details & dependencies
-- [Project Structure](architecture/project-structure.md) - Complete file structure
-- [Notification System](architecture/notification-system.md) - Real-time alerts, providers, async patterns
-- [External Attack Surface Management](architecture/easm.md) - EASM pipeline (seeds → passive collectors on the API → attribution with evidence and confidence → active steps on sensors → observations and diffs), what is built vs planned, known limits (RFC-036)
-- [Automations](architecture/automations.md) - How automation runs start: one run per subject, idempotency, hourly quotas, execution slots, loop guard, stuck-run reaper, pause on repeated failures
-- [Change Detection](architecture/change-detection.md) - What changed in the attack surface: state history views, `asset_discovered` / `scan_completed` triggers, throttled new-internet-facing-asset notification
-- [Scan Orchestration](architecture/scan-orchestration.md) - Pipeline execution, agent coordination
-- [CTEM Program Metrics](architecture/program-metrics.md) - MTTD for new internet-facing assets, MTTR for validated exposures, owner acceptance rate: exact definitions, tenant scoping, "—" for not measurable, and why time-to-break attack paths is not computed
-- [Scoping Overview](architecture/scoping-overview.md) - `GET /scoping/summary` readiness counts (exact definitions, tenant-wide like Program Health) and the cycle attacker-profile list/link/unlink endpoints
-- [Scan Coverage (Tenable)](architecture/scan-coverage.md) - License-aware rolling coverage, Nessus Pro + Tenable.sc, .nessus→CTIS converter
-- [Sensors](architecture/sensors.md) - Sensor vocabulary (scanner/agent/collector roles), code layout, protocol v2 (RFC-026 results, [RFC-029](rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) whole surface) and the deprecated protocol v1 legacy package (RFC-023)
-- [Sensor ↔ Platform Trust](architecture/sensor-platform-trust.md) - Mutual-distrust gap analysis: every control (gateway split, per-sensor identity, object authorization, hostile results, signed jobs, local policy, credentials by reference, host hardening, audit, detections) with status, file:line evidence and the attack each gap allows today ([RFC-040](rfcs/RFC-040-platform-sensor-mutual-distrust.md))
-- [Scan Zones](architecture/scan-zones.md) - Tenant address ranges → zone sensors: narrowest-zone routing and batching at trigger time, the zone claim predicate, run completion over batches, coverage view, UI contract (RFC-023 Phase 1)
-- [Sensor Result Binding](architecture/sensor-result-binding.md) - Which sensor reports may change existing assets and findings: bound to an assigned command (v2 path, v1 `X-OpenCTEM-Command-ID`), unsolicited limits, collector/CI roles, tenant mode warn/quarantine, the results quarantine and its review API (RFC-040 group C, Q6 (a))
-- [Idle Free Workspaces](architecture/idle-workspaces.md) - Free organizations nobody signs in to: reminder at 60 days, read-only at 90, final warning at 113, deletion due at 120 (no automatic deletion), exemption, audit
-- [Plans and Limits](architecture/plans-and-limits.md) - Free/Pro/Enterprise limits, console defaults and per-organization overrides, over-limit without removal, the fail-closed check and 403 PLAN_LIMIT
-- [Step-up Re-authentication](architecture/step-up-reauth.md) - Sensitive routes need a sign-in or step-up (TOTP, else password) in the same session within 10 minutes: sessions.step_up_at, RequireRecentAuth, STEP_UP_REQUIRED, the protected routes and the threat model
-- [Organization Settings](architecture/organization-settings.md) - How tenants.settings is stored and written: one section per write with a compare-and-swap, ETag/If-Match and 409 SETTINGS_CONFLICT, a corrupt section fails closed
-- [Audit Hash Chain](architecture/audit-hash-chain.md) - Tamper-evident per-tenant SHA-256 chain over audit_logs: append, verify, the hourly verifier, and rebaselining (when it is allowed, what is archived in the same transaction, how to review overwritten hashes)
-- [Shift-Left CI Scanning](architecture/shift-left-ci-scanning.md) - Agent-first SAST/SCA/secrets in CI: structure + dataflow diagrams, branch-aware findings, risk-aware gate, PR decoration (RFC-008)
-- [Ticketing Integration (Jira)](architecture/ticketing-integration.md) - Per-tenant client resolver, create/link/webhook, Mobilization
-- [Tenable.sc sensor connector](architecture/tenable-sc-connector.md) - RFC-047 pull path: connector_sync commands, sensor-held keys, cursor, source-asserted resolve
-- [Tenable — User & Data Flow](architecture/tenable-user-and-data-flow.md) - How operators interact with Tenable on the UI + end-to-end data flow (agent/direct/upload)
-- [Data provenance](architecture/data-sources.md) - where assets and findings come from (sensors, integrations, imports)
-- [Global Catalog Trust](architecture/global-catalog-trust.md) - Who may write the CVE, component and license catalogs every tenant shares: trusted feeds only, tenant input creates but never changes, tenant views read the tenant's own observation first
-- [Asset Schema](architecture/asset-schema.md) - Standard JSON schema for asset ingestion
-- [Asset Properties Schema](asset-properties-schema.md) - JSONB properties schema per asset type
-- [Database Notes](architecture/database-notes.md) - Important DB implementation details (finding_count, provider detection)
-- [SSO Authentication](architecture/sso-authentication.md) - Per-tenant + env-fallback Entra/OIDC design, id_token verification, nOAuth/`xms_edov`, PKCE, verified-domain JIT gate (see also the operator [how-to](how-to/configure-entraid.md))
-- [Multi-Tenant EntraID Model](architecture/multi-tenant-entraid-model.md) - "One platform, many tenants — each brings its own EntraID": per-tenant Azure apps, `?org=` login routing, and the `tid`-pin isolation wall (conceptual model)
+## API
 
-### Authorization & Access Control
-- [Authorization Matrix](architecture/authorization-matrix.md) - **Canonical "how we do authz"**: the layered model (permission / team-role / module-gate / data-scope / RLS), routes-by-auth-type, the settled rules we lock going forward (allow-only, no deny-gate, no expiring grants), the two CI invariants that stop drift, and how-to recipes (add a permission, gate a route, object-level authz)
-- [Asset Deletion](architecture/asset-deletion.md) - A delete never destroys findings: refused with 409 while the asset has findings (archive instead), otherwise a soft delete that detaches the asset, frees its name and is purged after 30 days; findings FK is NO ACTION
-- [Asset Ownership](architecture/asset-ownership.md) - The one owner model (`asset_owners` RACI): primary user owner and responsible owner definitions, the `owner_ref` email match, the 2026-10 migration from `assets.owner_id`, and why an owner is not an access grant (explicit `asset_access_grants`)
-- [Access Control Rules](architecture/access-control-rules.md) - Scope rules + assignment rules (who sees which data, how roles are assigned)
-- [User Two-Factor Authentication](architecture/user-two-factor-authentication.md) - TOTP 2FA for organization users (RFC-024): login challenge → `/auth/mfa/verify`, forced enrollment under "Require MFA", token-mint policy gate, recovery codes, immediate session revocation, My account API
-- [Permission Real-time Sync](architecture/permission-realtime-sync.md) - Effective-permission cache, per-user version bump, 0-second revocation, 409-on-stale-write
-- [Tenant API Keys (`oct_`)](architecture/api-keys.md) - What a key carries, read-only REST access next to MCP, scopes narrowed to what the key's user holds now, refused routes, CSRF, rate limit, audit attribution, and the open write-access decision
+- [REST API overview](api/README.md) and [reference notes](api/endpoints.md) (the full spec is served at `/docs` and `/openapi.yaml`)
+- [API conventions](architecture/api-conventions.md), [list query contract](architecture/list-query-contract.md)
+- [Tenant API keys](architecture/api-keys.md), [MCP server](architecture/mcp-server.md)
+- [Credential import](api/credential-import.md), [suppressions](api/suppressions.md)
 
-### Architecture Decision Records (ADR)
-- [ADR-001: Use Standard net/http](architecture/decisions/001-use-stdlib-http.md)
-- [ADR-002: Multi-Protocol API](architecture/decisions/002-multi-protocol.md)
-- [ADR-003: Connector Pattern](architecture/decisions/003-connector-pattern.md)
+## Architecture
 
-### API
-- [API Reference](api/README.md) - Quick reference
-- [Endpoints](api/endpoints.md) - REST API details
+**Foundations**
+- [Overview](architecture/overview.md), [clean architecture](architecture/clean-arch.md), [project structure](architecture/project-structure.md)
+- [Module coupling](architecture/module-coupling-and-decoupling.md), [plans and limits](architecture/plans-and-limits.md), [idle Free workspaces](architecture/idle-workspaces.md)
+- [Organization settings](architecture/organization-settings.md), [database notes](architecture/database-notes.md), [row-level security rollout](architecture/rls-rollout.md)
+- Decisions: [ADR-001 standard net/http](architecture/decisions/001-use-stdlib-http.md), [ADR-002 protocols](architecture/decisions/002-multi-protocol.md), [ADR-003 connectors](architecture/decisions/003-connector-pattern.md), [ADR-004 finding provenance](architecture/decisions/004-finding-provenance.md)
 
-### How-To (Operator Guides)
-- [Configure Jira ticketing](how-to/configure-jira-ticketing.md) - Connect Jira Cloud, severity/status mapping, bidirectional sync, the inbound-HMAC gotcha
-- [Configure SCIM provisioning](how-to/configure-scim-provisioning.md) - IdP user provisioning/deprovisioning, tokens, group→role mapping (API-only)
-- [Configure SIEM (outbound & inbound)](how-to/configure-siem.md) - Splunk HEC forwarding + SIEM-detection ingest → IOC correlation / auto-reopen
-- [Fix a sensor's setup checklist](how-to/fix-sensor-setup-checklist.md) - Read the sensor's Setup & health checks, apply the fix snippet for your install type (env, Compose, Helm), confirm the check passes
-- [Enable Restricted Data Scope (fail-closed)](how-to/restrict-data-scope.md) - Scope non-admins to only their assigned assets/findings (Tenable "No Access" default); rollout order + how to enable
-- [Configure Microsoft Entra ID (Azure AD) SSO](how-to/configure-entraid.md) - Both Microsoft login paths, Azure app registration, env vars/admin UI, `xms_edov` claim, verified domains, redirect allow-list, troubleshooting (incl. the login-button 404)
+**Identity and access**
+- [Authorization matrix](architecture/authorization-matrix.md) (the canonical authorization model), [access control rules](architecture/access-control-rules.md)
+- [User onboarding](architecture/user-onboarding.md), [two-factor authentication](architecture/user-two-factor-authentication.md), [step-up re-authentication](architecture/step-up-reauth.md)
+- [SSO authentication](architecture/sso-authentication.md), [multi-tenant Entra ID model](architecture/multi-tenant-entraid-model.md), [SAML SSO](architecture/saml-sso.md), [SCIM provisioning](architecture/scim-provisioning.md)
+- [Audit hash chain](architecture/audit-hash-chain.md)
 
-### Development
-- [**Repositories & how the platform fits together**](development/repositories.md) — **new devs start here**: the six `openctemio` repos (api/ui/agent/sdk-go/ctis/helm-charts), how they talk, where to do what, and cross-repo gotchas
-- [Development Setup](development/setup.md) - Full environment setup
-- [Coding Style](development/coding-style.md) - Conventions
-- [Migrations](development/migrations.md) - Database migrations guide
-- [CI/CD](development/ci-cd.md) - GitHub Actions workflows
+**Assets and scope**
+- [Asset inventory v2](architecture/asset-inventory-v2.md), [asset schema](architecture/asset-schema.md), [asset properties schema](asset-properties-schema.md)
+- [Asset identity resolution](architecture/asset-identity-resolution.md), [IP/hostname correlation](architecture/asset-ip-hostname-correlation.md), [deduplication](architecture/deduplication.md), [source priority](architecture/asset-source-priority.md)
+- [Asset ownership](architecture/asset-ownership.md), [asset deletion](architecture/asset-deletion.md), [asset group recalculation](architecture/asset-group-recalculation.md), [criticality propagation](architecture/criticality-propagation.md)
+- [Data provenance](architecture/data-sources.md), [component relationships](architecture/component-relationship-best-practices.md), [web surface](architecture/web-surface.md)
+- [Scoping overview](architecture/scoping-overview.md), [active-probe gate](architecture/active-probe-gate.md)
+- [EASM](architecture/easm.md), [EASM DNS checks](architecture/easm-dns-checks.md), [certificate transparency monitoring](architecture/certificate-transparency-monitoring.md), [change detection](architecture/change-detection.md)
 
-### Deployment
-- [**Upgrading from v0.8.0 to v0.9.0**](operations/upgrade-v0.8-to-v0.9.md) - The full upgrade for a v0.8.0 production installation: pre-flight checks and inventory queries, image/Compose/Helm/env changes, the two-hop database path through `pre-baseline-001146`, data migrations users notice, removed routes and permissions, sensor order and compatibility, SSO/IdP changes, verification, rollback
-- [Monitoring and alerting](operations/monitoring.md) - Operator monitoring of the running platform (`deploy/observability`): API metrics, exporters, alert rules routed to Telegram/Slack, what an alert may contain, and a runbook per alert
-- [Safe Deploy & Migrations](deployment/safe-deploy-and-migrations.md) - Canonical safe-deploy sequence, expand-contract rules, schema-check semantics, dirty-migration recovery, rollback
-- [Least-privilege database roles](deployment/database-roles.md) - The API connects as `openctem_app` (DML only), migrations as `openctem_migrator` (schema owner); the bootstrap script, what the API needs at run time, compose/helm variables, and the upgrade runbook
-- [Rotating APP_ENCRYPTION_KEY](deployment/encryption-key-rotation.md) - What the key protects, `cmd/rekey` (dry run, apply, sweep), `APP_ENCRYPTION_KEY_PREVIOUS`, and the zero-downtime runbook
-- [Docker](deployment/docker.md) - Docker & Docker Compose (dev/prod)
-- [Kubernetes](deployment/kubernetes.md) - K8s manifests
+**Sensors and scanning**
+- [Sensors](architecture/sensors.md), [sensor identity](architecture/agent-identity.md), [sensor pairing](architecture/sensor-pairing.md), [sensor ↔ platform trust](architecture/sensor-platform-trust.md), [result binding](architecture/sensor-result-binding.md)
+- [Scan lifecycle](architecture/scan-lifecycle.md), [scan orchestration](architecture/scan-orchestration.md), [scan stages](architecture/scan-stages.md), [scan zones](architecture/scan-zones.md), [scan naming](architecture/scan-naming.md)
+- [Tool contract](architecture/tool-contract.md), [tool availability](architecture/tool-availability.md), [secret scanning](architecture/secret-scanning.md)
+- [CI runner identity and gate](architecture/ci-runner-identity.md), [shift-left CI scanning](architecture/shift-left-ci-scanning.md), [branch-only findings](architecture/branch-only-findings.md)
+- [Scan coverage (Tenable)](architecture/scan-coverage.md), [Tenable.sc connector](architecture/tenable-sc-connector.md)
 
----
+**Findings and prioritization**
+- [Vulnerability model](architecture/vulnerability-model.md), [finding import](architecture/finding-import.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [`not_observed` status](architecture/finding-status-not-observed.md)
+- [Global catalog trust](architecture/global-catalog-trust.md), [priority explainability](architecture/priority-explainability.md), [CTEM-ID catalog](architecture/ctem-id-catalog.md)
+- [Validation engine](architecture/validation-engine.md), [continuous retest](architecture/continuous-retest.md)
 
-## Project at a Glance
+**Mobilization, automation and reporting**
+- [Remediation campaigns](architecture/remediation-campaigns.md), [campaign Jira sync](architecture/remediation-campaign-jira-sync.md), [ticketing (Jira)](architecture/ticketing-integration.md), [GitHub Issues ticketing](architecture/github-issue-ticketing.md)
+- [Automations](architecture/automations.md), [notification system](architecture/notification-system.md), [SIEM ingest](architecture/siem-ingest.md)
+- [CTEM program metrics](architecture/program-metrics.md), [CTEM definition of done](architecture/ctem-dod-checklist.md), [report PDF export](architecture/report-pdf-export.md)
+- [API ↔ CTIS decoupling](architecture/api-ctis-decoupling.md)
 
-| Component | Technology |
-|-----------|------------|
-| Language | Go 1.26+ |
-| HTTP | Standard `net/http` |
-| Database | PostgreSQL 17 |
-| Cache | Redis 7 |
+## How-to (integrations and features)
 
-## Quick Commands
+- [Pair a sensor](how-to/pair-a-sensor.md), [fix a sensor's setup checklist](how-to/fix-sensor-setup-checklist.md)
+- [Connect CI pipelines](how-to/connect-ci-pipelines.md), [GitLab CI](how-to/gitlab-ci.md)
+- [Verify a domain for EASM](how-to/verify-a-domain-for-easm.md), [EASM monitoring settings](how-to/easm-monitoring-settings.md)
+- [Configure Microsoft Entra ID](how-to/configure-entraid.md), [SCIM provisioning](how-to/configure-scim-provisioning.md)
+- [Configure Jira ticketing](how-to/configure-jira-ticketing.md), [SIEM forwarding](how-to/configure-siem.md)
 
-```bash
-# Development (Docker with hot reload)
-make docker-dev
+## Deployment and operations (repository runbooks)
 
-# Production
-make docker-prod
+Install and day-to-day operation are documented at
+[docs.openctem.io](https://docs.openctem.io). These runbooks stay with the code
+because they change with it:
 
-# Local development
-make dev
-
-# Run tests
-make test
-```
+- [Upgrading from v0.8 to v0.9](operations/upgrade-v0.8-to-v0.9.md)
+- [Monitoring and alerting](operations/monitoring.md)
+- [Safe deploy and migrations](deployment/safe-deploy-and-migrations.md)
+- [Least-privilege database roles](deployment/database-roles.md)
+- [Rotating `APP_ENCRYPTION_KEY`](deployment/encryption-key-rotation.md)
+- [Docker (development)](deployment/docker.md), [Kubernetes requirements](deployment/kubernetes.md), [Redis](redis-production-guide.md)

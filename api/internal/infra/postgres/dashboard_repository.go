@@ -382,7 +382,7 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 // GetMTTRMetrics returns Mean Time To Remediate metrics by severity.
 // MTTR = average time between first detection and resolution, over the last
 // `days` days. Only genuinely-remediated findings (resolved/verified) count;
-// false_positive/accepted_risk are excluded as they are not remediations.
+// false_positive/accepted are excluded as they are not remediations.
 func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error) {
 	if days <= 0 || days > 365 {
 		days = 90
@@ -397,7 +397,7 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 		FROM findings
 		WHERE tenant_id = $1
 		AND NOT branch_only
-		AND status IN ('resolved', 'verified')
+		AND status = 'resolved'
 		AND resolved_at IS NOT NULL AND first_detected_at IS NOT NULL
 		AND resolved_at >= first_detected_at
 		AND resolved_at >= NOW() - ($2::int || ' days')::interval
@@ -442,7 +442,7 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 		w.week_start,
 		COALESCE(SUM(CASE WHEN f.created_at >= w.week_start AND f.created_at < w.week_start + '1 week'::interval THEN 1 ELSE 0 END), 0) as new_count,
 		COALESCE(SUM(CASE WHEN f.updated_at >= w.week_start AND f.updated_at < w.week_start + '1 week'::interval
-			AND f.status IN ('resolved', 'verified') THEN 1 ELSE 0 END), 0) as resolved_count
+			AND f.status = 'resolved' THEN 1 ELSE 0 END), 0) as resolved_count
 	FROM weeks w
 	LEFT JOIN findings f ON f.tenant_id = $1 AND NOT f.branch_only
 	GROUP BY w.week_start
@@ -627,18 +627,18 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 				COUNT(*) FILTER (WHERE priority_class = 'P1') AS p1,
 				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached
 			FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
+			WHERE tenant_id = $1 AND NOT branch_only AND status NOT IN ('resolved','false_positive','accepted','duplicate')
 		),
 		resolved_in_period AS (
 			SELECT severity, priority_class, resolved_at, first_detected_at
 			FROM findings
 			WHERE tenant_id = $1 AND NOT branch_only
-				AND status IN ('resolved', 'verified')
+				AND status = 'resolved'
 				AND resolved_at >= NOW() - ($2::int || ' days')::interval
 		),
 		total_resolved AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only AND status IN ('resolved', 'verified')
+			WHERE tenant_id = $1 AND NOT branch_only AND status = 'resolved'
 		),
 		regressions AS (
 			SELECT COUNT(*) AS cnt FROM findings
@@ -670,7 +670,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			SELECT COUNT(DISTINCT a.id) AS cnt
 			FROM assets a
 			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only
-				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
+				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate')
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
 		mttr_critical AS (
@@ -746,7 +746,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
-		WHERE f.tenant_id = $1 AND NOT f.branch_only AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
+		WHERE f.tenant_id = $1 AND NOT f.branch_only AND f.status NOT IN ('resolved','false_positive','accepted','duplicate')
 		ORDER BY f.priority_class ASC NULLS LAST, f.epss_score DESC NULLS LAST
 		LIMIT 5
 	`
@@ -809,7 +809,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 		FROM findings
 		WHERE tenant_id = $1
 			AND NOT branch_only
-			AND status IN ('resolved', 'verified')
+			AND status = 'resolved'
 			AND resolved_at >= NOW() - ($2::int || ' days')::interval
 			AND resolved_at IS NOT NULL
 			AND first_detected_at IS NOT NULL
@@ -876,7 +876,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 		),
 		assign_stats AS (
 			SELECT
-				COUNT(*) FILTER(WHERE assigned_to IS NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS unassigned,
+				COUNT(*) FILTER(WHERE assigned_to IS NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS unassigned,
 				COALESCE(AVG(EXTRACT(epoch FROM assigned_at - created_at) / 3600) FILTER(WHERE assigned_at IS NOT NULL), 0) AS avg_assign_hours
 			FROM findings WHERE tenant_id = $1 AND NOT branch_only
 			AND created_at >= NOW() - ($2 || ' days')::interval
