@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/api/pkg/dpop"
 )
 
 // MCPResourceMetadataHandler serves the OAuth 2.0 Protected Resource Metadata
@@ -27,6 +28,10 @@ type protectedResourceMetadata struct {
 	ScopesSupported        []string `json:"scopes_supported"`
 	BearerMethodsSupported []string `json:"bearer_methods_supported"`
 	ResourceName           string   `json:"resource_name"`
+	// DPoP (RFC 9449 §5.1): proofs accepted; bound tokens optional unless an
+	// organization requires them.
+	DPoPSigningAlgValuesSupported []string `json:"dpop_signing_alg_values_supported"`
+	DPoPBoundAccessTokensRequired bool     `json:"dpop_bound_access_tokens_required"`
 }
 
 // Serve answers GET on both well-known locations: the one with the MCP path
@@ -43,11 +48,12 @@ func (h *MCPResourceMetadataHandler) Serve(w http.ResponseWriter, _ *http.Reques
 		names[i] = string(s)
 	}
 	doc := protectedResourceMetadata{
-		Resource:               h.endpoints.Resource,
-		AuthorizationServers:   []string{h.endpoints.Issuer},
-		ScopesSupported:        names,
-		BearerMethodsSupported: []string{"header"},
-		ResourceName:           "OpenCTEM",
+		Resource:                      h.endpoints.Resource,
+		AuthorizationServers:          []string{h.endpoints.Issuer},
+		ScopesSupported:               names,
+		BearerMethodsSupported:        []string{"header"},
+		ResourceName:                  "OpenCTEM",
+		DPoPSigningAlgValuesSupported: dpop.Algorithms,
 	}
 	writePublicMetadata(w, doc)
 }

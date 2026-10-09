@@ -1940,6 +1940,12 @@ re-score it.
 
 ## CI invariants that keep this from drifting
 
+The generated [authorization reference](authorization-reference.md) (role and
+permission matrix, personas, one page per feature) is built from the same
+sources; `TestEveryRouteIsClassified` fails on a route that belongs to no
+feature or says nothing about its authorization. Refused permission and team
+role gates name what was missing in the 403 `details`.
+
 These tests fail the build if the model erodes. Treat them as executable spec:
 
 | Invariant | Test | What it guarantees |
