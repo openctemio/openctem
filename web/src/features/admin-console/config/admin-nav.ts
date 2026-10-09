@@ -1,6 +1,7 @@
 import {
   Bot,
   Building2,
+  Activity,
   Gauge,
   History,
   Inbox,
@@ -162,6 +163,19 @@ export const adminNav: AdminNavSection[] = [
         url: '/admin/system/ai-applications',
         icon: Bot,
         keywords: ['mcp', 'oauth', 'clients', 'connected apps'],
+      },
+    ],
+  },
+  {
+    title: 'Operations',
+    i18nKey: 'admin.nav.group.operations',
+    items: [
+      {
+        title: 'Health',
+        i18nKey: 'admin.nav.operations',
+        url: '/admin/operations',
+        icon: Activity,
+        keywords: ['status', 'database', 'redis', 'queues', 'version', 'migrations', 'jobs'],
       },
     ],
   },

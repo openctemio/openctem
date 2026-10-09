@@ -95,6 +95,14 @@ const (
 	FindingsApprove    Permission = "findings:approve"
 	FindingsFixApply   Permission = "findings:fix_apply" // in_progress → fix_applied (dev/owner action)
 	FindingsVerify     Permission = "findings:verify"    // fix_applied → resolved (security/scanner action)
+	// FindingsComment: comment on a finding and react to comments. Split
+	// from findings:write so a person can discuss a finding without the
+	// other writes (migration 001534).
+	FindingsComment Permission = "findings:comment"
+	// FindingsSeverity: change a finding's severity or classification. Split
+	// from findings:write so whoever fixes a finding need not be able to
+	// re-score it (migration 001534).
+	FindingsSeverity Permission = "findings:severity"
 
 	// Exposure permissions (findings:exposures:*)
 	ExposuresRead   Permission = "findings:exposures:read"
@@ -315,6 +323,12 @@ const (
 	// scope requests and widenings (RFC-054). Without it, scope:write only
 	// requests a one-off entry; owners and admins hold it by default.
 	ScopeApprove Permission = "attack_surface:scope:approve"
+
+	// ProgramsRead views bug-bounty programs; ProgramsWrite imports,
+	// re-imports, pauses, resumes and ends them and attests to their terms
+	// (RFC-065). Neither widens the organization's own scope.
+	ProgramsRead  Permission = "attack_surface:programs:read"
+	ProgramsWrite Permission = "attack_surface:programs:write"
 )
 
 // =============================================================================
@@ -431,7 +445,7 @@ func AllPermissions() []Permission {
 		// Findings module
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
-		FindingsFixApply, FindingsVerify,
+		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		VulnerabilitiesRead,
@@ -476,6 +490,7 @@ func AllPermissions() []Permission {
 
 		// Attack Surface module
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
+		ProgramsRead, ProgramsWrite,
 
 		// Validation module (legacy)
 		PentestRead, PentestWrite,
