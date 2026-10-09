@@ -136,46 +136,77 @@ func (id SensorIdentity) KeyThumbprint() string { return id.keyThumbprint }
 
 // localNonces is the per-replica nonce store, created on first use.
 func (s *SensorService) localNonces() *memoryNonceStore {
-	s.nonceOnce.Do(func() { s.memNonces = newMemoryNonceStore(100_000) })
+	s.nonceOnce.Do(func() { s.memNonces = newMemoryNonceStore(maxNoncesPerKey) })
 	return s.memNonces
 }
 
-// memoryNonceStore remembers nonces in memory, bounded: when full, expired
-// entries are swept, and if it is still full the request is refused (fail
-// closed rather than forget a nonce inside its window).
+// maxNoncesPerKey bounds the nonces one signing key may have in the
+// per-replica store inside NonceTTL. A sensor within its request budgets
+// spends a few thousand in that window; one flooding key fills only its own
+// share and is refused, every other key keeps working.
+const maxNoncesPerKey = 20_000
+
+// nonceSweepEvery is how many calls pass between full sweeps of expired
+// entries (keys that stopped signing are dropped then).
+const nonceSweepEvery = 4096
+
+// memoryNonceStore remembers nonces in memory, per signing key, bounded per
+// key: when a key's share is full, its expired entries are swept, and if it
+// is still full that key's request is refused (fail closed rather than
+// forget a nonce inside its window). A full sweep of every key runs every
+// nonceSweepEvery calls.
 type memoryNonceStore struct {
-	mu   sync.Mutex
-	max  int
-	seen map[string]time.Time
-	now  func() time.Time
+	mu     sync.Mutex
+	perKey int
+	keys   map[string]map[string]time.Time
+	calls  int
+	now    func() time.Time
 }
 
-func newMemoryNonceStore(maxEntries int) *memoryNonceStore {
-	return &memoryNonceStore{max: maxEntries, seen: map[string]time.Time{}, now: time.Now}
+func newMemoryNonceStore(perKey int) *memoryNonceStore {
+	return &memoryNonceStore{perKey: perKey, keys: map[string]map[string]time.Time{}, now: time.Now}
 }
 
-var errNonceStoreFull = errors.New("nonce store full")
+var errNonceStoreFull = errors.New("nonce store full for this key")
 
 func (m *memoryNonceStore) Use(_ context.Context, keyID, nonce string, ttl time.Duration) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := m.now()
-	k := keyID + "\x00" + nonce
-	if exp, ok := m.seen[k]; ok && now.Before(exp) {
-		return false, nil
-	}
-	if len(m.seen) >= m.max {
-		for key, exp := range m.seen {
-			if !now.Before(exp) {
-				delete(m.seen, key)
+	m.calls++
+	if m.calls%nonceSweepEvery == 0 {
+		for k, seen := range m.keys {
+			sweepNonces(seen, now)
+			if len(seen) == 0 {
+				delete(m.keys, k)
 			}
 		}
-		if len(m.seen) >= m.max {
+	}
+	seen := m.keys[keyID]
+	if seen == nil {
+		seen = map[string]time.Time{}
+		m.keys[keyID] = seen
+	}
+	if exp, ok := seen[nonce]; ok && now.Before(exp) {
+		return false, nil
+	}
+	if len(seen) >= m.perKey {
+		sweepNonces(seen, now)
+		if len(seen) >= m.perKey {
 			return false, errNonceStoreFull
 		}
 	}
-	m.seen[k] = now.Add(ttl)
+	seen[nonce] = now.Add(ttl)
 	return true, nil
+}
+
+// sweepNonces drops the expired entries of one key.
+func sweepNonces(seen map[string]time.Time, now time.Time) {
+	for n, exp := range seen {
+		if !now.Before(exp) {
+			delete(seen, n)
+		}
+	}
 }
 
 // RecordEvents writes events to the sensors' timelines (best effort), for

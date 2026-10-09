@@ -30,6 +30,27 @@ type memHops struct {
 	targets   []scanrun.RunTarget
 	cmdRun    map[shared.ID]shared.ID
 	saveCalls int
+	previous  shared.ID                 // PreviousRun
+	deltas    []scanrun.StepOutputDelta // CompareStepOutputs
+	preview   []scanrun.StepOutput      // PreviewStepOutputs
+}
+
+func (m *memHops) PreviousRun(context.Context, shared.ID, shared.ID) (shared.ID, error) {
+	return m.previous, nil
+}
+
+func (m *memHops) CompareStepOutputs(_ context.Context, _, _, prev shared.ID, _ *shared.DataScope) ([]scanrun.StepOutputDelta, error) {
+	if prev.IsZero() {
+		return nil, nil
+	}
+	return m.deltas, nil
+}
+
+func (m *memHops) PreviewStepOutputs(_ context.Context, _, _, _ shared.ID, _ string, _ *shared.DataScope, limit int) ([]scanrun.StepOutput, int, error) {
+	if len(m.preview) > limit {
+		return m.preview[:limit], len(m.preview), nil
+	}
+	return m.preview, len(m.preview), nil
 }
 
 func newMemHops() *memHops {

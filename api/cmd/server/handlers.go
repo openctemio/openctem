@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -304,15 +305,41 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpHandler.SetAuditService(svc.Audit)
 		mcpAuth = apiKeyAuth.Handler
 	}
+	// The organization MCP policy applies to oct_ keys on the MCP endpoint
+	// (access tokens are checked by the authorization server).
+	var mcpPolicies middleware.MCPPolicyReader
+	var mcpSettings *handler.MCPSettingsHandler
+	if svc.Tenant != nil {
+		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
+		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
+	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
+	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
+	// endpoint also accepts its access tokens, and a refused call that
+	// another scope would allow gets a step-up challenge.
+	var mcpOAuthHandler *handler.MCPOAuthHandler
+	var mcpConnections *handler.MCPConnectionsHandler
+	if mcpOAuth := newMCPOAuthService(mcpDiscovery, deps, log); mcpOAuth != nil && mcpHandler != nil {
+		mcpOAuthHandler = handler.NewMCPOAuthHandler(mcpOAuth, log)
+		mcpConnections = handler.NewMCPConnectionsHandler(mcpOAuth, log)
+		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
+		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
+	}
+	if mcpAuth != nil && mcpPolicies != nil {
+		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)
+		mcpAuth = func(next http.Handler) http.Handler { return auth(gate(next)) }
+	}
 
 	handlers := routes.Handlers{
-		ModuleGate:   moduleGate,
-		DataScope:    svc.DataScope,
-		MCP:          mcpHandler,
-		MCPAuth:      mcpAuth,
-		MCPDiscovery: mcpDiscovery,
-		APIKeyAuth:   apiKeyAuth,
+		ModuleGate:     moduleGate,
+		DataScope:      svc.DataScope,
+		MCP:            mcpHandler,
+		MCPAuth:        mcpAuth,
+		MCPDiscovery:   mcpDiscovery,
+		MCPOAuth:       mcpOAuthHandler,
+		MCPSettings:    mcpSettings,
+		MCPConnections: mcpConnections,
+		APIKeyAuth:     apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),
@@ -418,6 +445,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
 		ScannerTemplate: handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
 		TemplateSource:  handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
+		ContentPack:     handler.NewContentPackHandler(svc.ContentPacks, log),
 		SecretStore:     handler.NewSecretStoreHandler(svc.SecretStore, v, log),
 		Tool:            handler.NewToolHandler(svc.Tool, v, log),
 		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
@@ -644,6 +672,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.CredentialImport.SetAuditService(svc.Audit)
 	}
 
+	if svc.AccessRequest != nil {
+		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
+	}
 	if svc.Entitlement != nil {
 		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
 		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})

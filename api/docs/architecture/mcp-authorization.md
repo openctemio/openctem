@@ -57,9 +57,157 @@ and is neither the public origin nor one of `CORS_ALLOWED_ORIGINS`
 
 A test fails when an MCP tool or prompt needs a permission no scope covers.
 
+## Authorization server (shipped)
+
+| Endpoint | What it does |
+|---|---|
+| `GET /.well-known/oauth-authorization-server` | RFC 8414 metadata: endpoints, `code` + S256 only, grants `authorization_code` and `refresh_token`, `token_endpoint_auth_methods_supported: ["none"]` (public clients), `client_id_metadata_document_supported`, `authorization_response_iss_parameter_supported` |
+| `GET /oauth/authorize` | Validates the request and stores it for 10 minutes, then redirects to the web page `/oauth/consent?request=<id>` |
+| `POST /api/v1/oauth/requests/{id}` (`GET`), `/approve`, `/deny` | Consent API for the web page: signed-in session in its current organization, CSRF; API keys refused |
+| `POST /oauth/token` | `authorization_code` (with `code_verifier`, `redirect_uri`, `client_id`, `resource`) and `refresh_token` |
+| `POST /oauth/revoke` | RFC 7009; a token of the presenting client revokes its whole grant; always `200` |
+
+The gateway sends these paths to the API (plane `mcp`); the consent page
+`/oauth/consent` is the web app's.
+
+### Authorization request
+
+Checked in this order (`mcpoauth.Service.StartAuthorization`):
+
+1. No parameter repeated. The client is resolved (below) and the
+   `redirect_uri` must match one of its registered URIs exactly; a loopback
+   `http` URI may differ only in port (RFC 8252 §7.3). Any failure here is an
+   error page: the browser is never sent to an untrusted address.
+2. Then, with the error sent back to the redirect URI (with `state` and
+   `iss`): `response_type=code`; `code_challenge_method=S256` and a 43
+   character challenge (`plain` refused); `resource` equal to
+   `${APP_URL}/api/v1/mcp` (scheme and host case-insensitive, trailing slash
+   ignored; else `invalid_target`); `prompt=none` is `consent_required`;
+   unknown scopes are `invalid_scope`; no scope means the four read scopes.
+
+### Clients (shipped part)
+
+- **Client ID Metadata Document**: a `client_id` that is an `https` URL with
+  a path (no user info, query, fragment or dot segments). The document is
+  fetched through `pkg/httpsec` (special-use addresses refused before the
+  lookup and again at connection time), without following redirects, 5 KB
+  and 5 seconds at most, cached for `max-age` bounded to 5 minutes..24 hours
+  (default 1 hour), errors never cached. It must repeat the URL as
+  `client_id`, name the client, list 1..20 redirect URIs (`https`, or `http`
+  on loopback) and be a public client (no secret, `token_endpoint_auth_method`
+  absent or `none`). The name is cleaned of control and bidirectional
+  characters. The stored copy is in `mcp_oauth_clients`.
+- Any other `client_id` must exist in `mcp_oauth_clients` (organization
+  clients and dynamic registration: next PRs). A client with `blocked_at` set
+  is refused everywhere, including its existing grants.
+
+### Consent
+
+The person opens `/oauth/consent?request=<id>` (signing in first if needed).
+The first signed-in user who opens it claims it; nobody else can read or
+answer it. The page works in the session's current organization and offers
+the organization switcher, which applies that organization's SSO and MFA
+rules. It shows the client name, where it is published (metadata host) or
+that the organization registered it or that it is unverified, the redirect
+host, a warning for loopback-only clients, and each scope in plain words;
+a scope the person holds none of the permissions for is shown as not
+granted. Approve stores a 60-second single-use code (hashed) and returns the
+redirect with `code`, `state` and `iss`; deny returns `access_denied`.
+
+### Tokens
+
+| | Form | Life |
+|---|---|---|
+| Access token | `octm_at_` + 256 random bits | 10 minutes |
+| Refresh token | `octm_rt_` + 256 random bits | 14 days unused, never past the grant |
+| Grant | user + organization + client + resource + scopes | 90 days |
+
+Codes and tokens are stored only as HMAC-SHA256 with `APP_ENCRYPTION_KEY`
+(previous keys still match during a rotation). The token endpoint:
+
+- burns the code on any mismatch (client, redirect URI, PKCE verifier) and
+  checks the membership is still active before issuing;
+- treats a second redemption of a code as theft: the grant the first one
+  created is revoked (`mcp_grant.code_reused`, high);
+- rotates the refresh token on every use; presenting a rotated one revokes
+  the grant and all its tokens (`mcp_grant.refresh_reused`, high); a refresh
+  may narrow the scopes, never widen them;
+- answers with `Cache-Control: no-store`; parameters only in the form body;
+  any `Authorization` header is `invalid_client` (no client secrets).
+
+### MCP requests with an access token
+
+`middleware.MCPCredentialAuth` sends `Bearer octm_at_…` to
+`Service.AuthenticateAccessToken` and anything else to the `oct_` key
+authenticator; both together are refused. For a token it checks, on every
+request: token unexpired, grant not revoked or expired, client not blocked,
+resource is this endpoint, the user still an active member with an active
+account. The request then carries the grant's tenant and user, permissions
+`scope permissions ∩ what the user holds now` (owners and administrators hold
+everything), never the owner/admin bypass, auth provider `mcp_oauth`, and
+keeps the user's own data scope including full data access (unlike `oct_`
+keys). Each grant has a budget of 3600 requests per hour. Last use (time,
+IP) is recorded at most once a minute.
+
+A call the user could make with a scope the token lacks answers `403` with
+`WWW-Authenticate: Bearer error="insufficient_scope", scope="…",
+resource_metadata="…"` (step-up); a call no scope would allow is an ordinary
+tool error.
+
+### Audit
+
+`mcp_grant.authorized`, `mcp_grant.denied`, `mcp_grant.token_issued`,
+`mcp_grant.code_reused`, `mcp_grant.refresh_reused`, `mcp_grant.revoked`, and
+every `mcp.tool_called` carries `auth_method`, `grant_id`, `client_id` and
+`client_name` for token requests.
+
+### Storage
+
+Migration `001381_mcp_oauth`: `mcp_oauth_clients`, `mcp_oauth_requests`,
+`mcp_oauth_grants`, `mcp_oauth_tokens`; grants and requests cascade on
+organization and user deletion.
+
+## Organization policy (shipped)
+
+`GET /api/v1/mcp-access/settings` (`settings:read`) and `PUT` (`settings:write`
+and a recent sign-in); API keys refused. Stored as the `mcp` section of the
+organization settings (`tenant.MCPSettings`), audited as
+`mcp_settings.updated` (high).
+
+| Field | Default | Effect |
+|---|---|---|
+| `enabled` | on | off: every MCP request of the organization (tokens and `oct_` keys) and every consent is refused |
+| `any_client` | off | off: only verified applications. Verified = registered by this organization (or by the platform operator), or a metadata document whose host is in `client_hosts` or in `MCP_OAUTH_TRUSTED_CLIENT_HOSTS`. On: any application, unverified ones marked |
+| `client_hosts` | none | host names (no scheme, path or wildcard), at most 50 |
+| `scopes` | all read scopes | the scopes members may grant |
+| `api_keys_allowed` | on | off: `oct_` keys are `403` on the MCP endpoint (`middleware.MCPKeyPolicyGate`); still valid on the REST API |
+| `refresh_days` | 90 | a connection ends this many days after the person approved it |
+
+The policy is read on every use: at consent (the page shows why an
+application is blocked), at code redemption, at refresh (a connection older
+than `refresh_days` or now outside the policy is revoked) and on every MCP
+request (a token of a blocked application stops working; scopes the policy no
+longer allows stop counting). Another organization's registered application
+is never usable. A policy that cannot be read refuses the request.
+
+## Connected applications (shipped)
+
+| Who | Where | API |
+|---|---|---|
+| Everyone | My account, Connected applications (`/account/connected-apps`) | `GET /api/v1/mcp-access/my-connections`, `DELETE /api/v1/mcp-access/my-connections/{id}` |
+| Owners and administrators | Settings, AI access (MCP) (`/settings/mcp`): policy and every connection of the organization, with the person | `GET /api/v1/mcp-access/connections`, `DELETE /api/v1/mcp-access/connections/{id}` (`RequireAdmin`) |
+| Platform administrators | Console, System, AI applications (`/admin/system/ai-applications`): every client with active connections and organization counts (no tenant data); block or unblock (ops_admin+, audited `mcp_client.blocked` / `mcp_client.unblocked`) | `GET /api/v1/admin/mcp-clients`, `POST /api/v1/admin/mcp-clients/{id}/block`, `…/unblock` |
+
+A row shows the application, where it is published (or that the
+organization registered it, or that it is unverified), the access, when it
+was connected, when and from where it was last used, and when it ends.
+Disconnecting revokes the grant and deletes its tokens at once (audited
+`mcp_grant.revoked` with reason `user` or `admin`). Someone else's
+connection, or another organization's, answers 404. A blocked client cannot
+be authorized and its tokens stop working everywhere until it is unblocked.
+API keys are refused on all of `/api/v1/mcp-access`.
+
 ## Planned
 
-Authorization server endpoints and consent, organization policy, connected
-applications, client registration (Client ID Metadata Documents, organization
-clients, optional dynamic registration), DPoP, write-tool confirmation: see
-RFC-062 §14.
+Organization-registered clients and optional dynamic registration, DPoP,
+write-tool confirmation: see RFC-062 §14.

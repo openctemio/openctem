@@ -15,8 +15,23 @@ vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }))
 // Render permission gates open so the generate button is present.
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
-  Permission: { ApiKeysWrite: 'integrations:api_keys:write' },
+  Permission: {
+    ApiKeysWrite: 'integrations:api_keys:write',
+    SettingsRead: 'settings:read',
+    SettingsWrite: 'settings:write',
+  },
   useHasPermission: () => true,
+}))
+
+// A member: the organization-wide sections stay hidden. The OAuth cards have
+// their own tests (features/mcp-oauth).
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 't1', name: 'Acme', slug: 'acme', role: 'member' } }),
+}))
+vi.mock('@/features/mcp-oauth/components/mcp-policy-card', () => ({ McpPolicyCard: () => null }))
+vi.mock('@/features/mcp-oauth/api/connections', () => ({
+  useOrgConnections: () => ({ data: undefined, isLoading: false }),
+  revokeOrgConnection: vi.fn(),
 }))
 
 describe('MCPConnectPage', () => {

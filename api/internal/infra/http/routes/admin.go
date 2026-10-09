@@ -36,6 +36,7 @@ import (
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         ops_admin+ (+ audited)
 //	/admin/platform-idp       super_admin       super_admin (audited)
+//	/admin/access-requests    any admin         ops_admin+ (approve/reject, audited)
 //	/admin/settings/plans     any admin         super_admin + fresh TOTP code
 //	/admin/tenants/{id}/plan  any admin         ops_admin+ (plan, overrides; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
@@ -161,6 +162,24 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/signup", func(r Router) {
 			r.GET("/", h.AdminSignup.Get)
 			r.PUT("/", h.AdminSignup.Update, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// The request-access queue: any admin reads; approving (creates the
+	// organization, requester as owner) or rejecting needs ops_admin+, audited.
+	if h.AccessRequest != nil {
+		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
+		decide := func(action string) []Middleware {
+			mws := []Middleware{requireOps}
+			if h.AdminAuditMiddleware != nil {
+				mws = append(mws, h.AdminAuditMiddleware.AuditLog(action, "access_request", "id"))
+			}
+			return mws
+		}
+		router.Group("/api/v1/admin/access-requests", func(r Router) {
+			r.GET("/", h.AccessRequest.List)
+			r.POST("/{id}/approve", h.AccessRequest.Approve, decide("access_request.approve")...)
+			r.POST("/{id}/reject", h.AccessRequest.Reject, decide("access_request.reject")...)
 		}, adminMiddlewares...)
 	}
 
@@ -373,6 +392,22 @@ func registerAdminRoutes(
 			}
 			r.POST("/sync", h.ThreatIntel.TriggerSync, syncMW...)
 			r.PATCH("/sync/{source}", h.ThreatIntel.SetSyncEnabled, toggleMW...)
+		}, adminMiddlewares...)
+	}
+
+	// AI applications (MCP clients, RFC-062 §12). Reads: any admin, counts
+	// only. Block / unblock: ops_admin+, audited.
+	if h.MCPConnections != nil {
+		router.Group("/api/v1/admin/mcp-clients", func(r Router) {
+			r.GET("/", h.MCPConnections.AdminListClients)
+			write := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+			block, unblock := cloneMW(write), cloneMW(write)
+			if h.AdminAuditMiddleware != nil {
+				block = append(block, h.AdminAuditMiddleware.AuditLog("mcp_client.blocked", "mcp_client", "id"))
+				unblock = append(unblock, h.AdminAuditMiddleware.AuditLog("mcp_client.unblocked", "mcp_client", "id"))
+			}
+			r.POST("/{id}/block", h.MCPConnections.AdminBlockClient, block...)
+			r.POST("/{id}/unblock", h.MCPConnections.AdminUnblockClient, unblock...)
 		}, adminMiddlewares...)
 	}
 

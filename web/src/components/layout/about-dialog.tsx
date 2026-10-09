@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { DOCS_URL } from '@/config/help-links'
+import { DOCS_URL } from '@/lib/docs-links'
 import type { ShortcutShell } from '@/config/keyboard-shortcuts'
 import { useBuildVersions } from '@/hooks/use-build-versions'
 import { UNKNOWN_COMMIT, type BuildInfo } from '@/lib/app-version'
