@@ -611,7 +611,8 @@ func Register(
 
 	// AI Triage routes (tenant from JWT token)
 	// Always registered - handler handles nil service gracefully (returns 503)
-	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter)
+	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter,
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
@@ -630,7 +631,7 @@ func Register(
 
 	// SLA Policy routes (tenant from JWT token)
 	if h.SLA != nil {
-		registerSLARoutes(router, h.SLA, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleSLA))
+		registerSLARoutes(router, h.SLA, authMiddleware, userSync)
 	}
 
 	// Pentest Campaign Management routes (tenant from JWT token)
