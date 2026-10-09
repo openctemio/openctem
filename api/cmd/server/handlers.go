@@ -560,6 +560,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			newPlatformUserService(repos, svc, cfg, deps.DB),
 			log),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
+		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
