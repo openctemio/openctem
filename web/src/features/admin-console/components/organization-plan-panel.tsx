@@ -13,6 +13,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -254,42 +255,44 @@ function OverrideDialog({
             admin audit log.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-v`}>Limit</Label>
-            <Input
-              id={`${id}-v`}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="Unlimited"
-              inputMode="numeric"
-              aria-invalid={parsed === null}
-            />
-            <p className="text-xs text-muted-foreground">Leave empty for no limit.</p>
+        <DialogBody>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-v`}>Limit</Label>
+              <Input
+                id={`${id}-v`}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="Unlimited"
+                inputMode="numeric"
+                aria-invalid={parsed === null}
+              />
+              <p className="text-xs text-muted-foreground">Leave empty for no limit.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-r`}>Reason</Label>
+              <Textarea
+                id={`${id}-r`}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                maxLength={MAX_REASON}
+                rows={2}
+                aria-invalid={reasonBad && reason !== ''}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-e`}>Expires (optional)</Label>
+              <Input
+                id={`${id}-e`}
+                type="date"
+                value={expires}
+                onChange={(e) => setExpires(e.target.value)}
+                aria-invalid={expiryBad}
+              />
+              {expiryBad && <p className="text-sm text-destructive">Pick a date in the future.</p>}
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-r`}>Reason</Label>
-            <Textarea
-              id={`${id}-r`}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              maxLength={MAX_REASON}
-              rows={2}
-              aria-invalid={reasonBad && reason !== ''}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-e`}>Expires (optional)</Label>
-            <Input
-              id={`${id}-e`}
-              type="date"
-              value={expires}
-              onChange={(e) => setExpires(e.target.value)}
-              aria-invalid={expiryBad}
-            />
-            {expiryBad && <p className="text-sm text-destructive">Pick a date in the future.</p>}
-          </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>
             Cancel
