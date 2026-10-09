@@ -50,6 +50,8 @@ var (
 		"Active sensors by kind (platform, tenant) and health", []string{"kind", "health"}, nil)
 	descSensorConfig = prometheus.NewDesc("openctem_sensors_config_health",
 		"Active sensors by kind and reported configuration health (ok, attention, impaired, blocked)", []string{"kind", "config_health"}, nil)
+	descSensorUnhardened = prometheus.NewDesc("openctem_sensors_unhardened",
+		"Active tenant sensors by unhardened reason: no local policy (policy_none), platform CA not pinned (pin_none), tools without network confinement (network_unenforced), bearer key instead of a key-bound identity (bearer_key)", []string{"kind"}, nil)
 	descSensorSDK = prometheus.NewDesc("openctem_sensors_sdk",
 		"Active sensors by kind and SDK status against the SDK policy (current, outdated, unsupported, unknown)", []string{"kind", "status"}, nil)
 	descCommands = prometheus.NewDesc("openctem_commands",
@@ -94,7 +96,7 @@ func New(source Source, cfg Config, log *logger.Logger) *Collector {
 // Describe implements prometheus.Collector.
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, d := range []*prometheus.Desc{
-		descUp, descBuild, descSchema, descSchemaDirty, descSensors, descSensorConfig, descSensorSDK,
+		descUp, descBuild, descSchema, descSchemaDirty, descSensors, descSensorConfig, descSensorUnhardened, descSensorSDK,
 		descCommands, descCommandOldest, descScanRunsOpen, descScanRunsStuck, descOutbox, descOutboxOldest,
 	} {
 		ch <- d
@@ -122,6 +124,11 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	c.collectSensors(ch, snap.Sensors)
+	// Closed-set labels only: a reason outside sensor.UnhardenedKinds is
+	// never emitted.
+	for _, kind := range sensor.UnhardenedKinds() {
+		ch <- prometheus.MustNewConstMetric(descSensorUnhardened, prometheus.GaugeValue, float64(snap.SensorsUnhardened[kind]), kind)
+	}
 
 	ch <- prometheus.MustNewConstMetric(descCommands, prometheus.GaugeValue, float64(snap.CommandsPending), "pending")
 	ch <- prometheus.MustNewConstMetric(descCommands, prometheus.GaugeValue, float64(snap.CommandsRunning), "running")

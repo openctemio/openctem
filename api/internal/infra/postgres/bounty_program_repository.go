@@ -294,6 +294,24 @@ func (r *BountyProgramRepository) Entries(ctx context.Context, tenantID, program
 	return out, rows.Err()
 }
 
+// TenantEntries lists every scope entry of the tenant (bounded).
+func (r *BountyProgramRepository) TenantEntries(ctx context.Context, tenantID shared.ID) ([]*scope.Target, error) {
+	rows, err := r.db.QueryContext(ctx, scopeTargetSelectQuery+` WHERE tenant_id = $1 ORDER BY created_at LIMIT 20000`, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list scope entries: %w", err)
+	}
+	defer rows.Close()
+	var out []*scope.Target
+	for rows.Next() {
+		t, err := r.targets.scanTarget(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // Exclusions lists program exclusions (one program, or all of the tenant).
 func (r *BountyProgramRepository) Exclusions(ctx context.Context, tenantID shared.ID, programID *shared.ID) ([]bountyprogram.Exclusion, error) {
 	q := `SELECT id, tenant_id, program_id, target_type, pattern, reason, created_at

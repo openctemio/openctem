@@ -330,12 +330,18 @@ func (s *Service) ApproveTarget(ctx context.Context, targetID, tenantID string, 
 		return nil, false, ErrWideningNeedsApprove
 	}
 	now := time.Now().UTC()
+	before := ledgerEntryOf(t, now)
 	effective, err := t.Approve(actor.UserID, now)
 	if err != nil {
 		return nil, false, err
 	}
-	if err := s.targetRepo.Update(ctx, t); err != nil {
-		return nil, false, fmt.Errorf("failed to approve scope target: %w", err)
+	if err := s.commitEntry(ctx, before, t, false, func() error {
+		if err := s.targetRepo.Update(ctx, t); err != nil {
+			return fmt.Errorf("failed to approve scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, false, err
 	}
 	if effective {
 		s.notifyWidened(ctx, t, "Scope entry approved and in effect")

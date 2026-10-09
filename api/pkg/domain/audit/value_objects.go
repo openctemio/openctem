@@ -63,6 +63,17 @@ const (
 	// scope entry (RFC-054 §6.1).
 	ActionScopeTargetApproved Action = "scope_target.approved"
 	ActionScopeTargetRejected Action = "scope_target.rejected"
+	// Bug-bounty programs (RFC-065). TermsAccepted is the attestation that
+	// puts a program's entries into effect instead of approvals.
+	ActionBountyProgramImported      Action = "bounty_program.imported"
+	ActionBountyProgramTermsAccepted Action = "bounty_program.terms_accepted"
+	ActionBountyProgramScopeReplaced Action = "bounty_program.scope_replaced"
+	ActionBountyProgramPaused        Action = "bounty_program.paused"
+	ActionBountyProgramResumed       Action = "bounty_program.resumed"
+	ActionBountyProgramEnded         Action = "bounty_program.ended"
+	// Authorization letters (RFC-065 §13).
+	ActionScopeLetterUploaded Action = "scope_letter.uploaded"
+	ActionScopeLetterRevoked  Action = "scope_letter.revoked"
 	// ActionScopeTargetSelfApproved: an owner approved their own pending
 	// scope entry because no other approver existed, with a fresh
 	// authenticator code and a reason (RFC-054 §7). High severity.
@@ -408,6 +419,9 @@ const (
 	ActionScannerTemplateUpdated    Action = "scanner_template.updated"
 	ActionScannerTemplateDeprecated Action = "scanner_template.deprecated"
 	ActionScannerTemplateDeleted    Action = "scanner_template.deleted"
+	// ActionScannerTemplateApproved: a person approved a template version
+	// for sensors (RFC-040 §11.5).
+	ActionScannerTemplateApproved Action = "scanner_template.approved"
 
 	// Asset Ownership actions
 	ActionAssetAssigned         Action = "asset.assigned"
@@ -583,6 +597,9 @@ func (a Action) IsValid() bool {
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionScopeSettingsUpdated,
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
+		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
+		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
+		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionAssetCreateMerged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
@@ -645,7 +662,7 @@ func (a Action) IsValid() bool {
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
-		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved,
 		ActionAssetAssigned, ActionAssetUnassigned, ActionAssetOwnershipUpdated,
 		ActionAssetAccessGranted, ActionAssetAccessRevoked,
 		ActionPermissionSetCreated, ActionPermissionSetUpdated, ActionPermissionSetDeleted,
@@ -767,7 +784,7 @@ func (a Action) Category() string {
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
 		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
-		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted:
+		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted, ActionScannerTemplateApproved:
 		return "scanner_template"
 	case ActionRuleSourceCreated, ActionRuleSourceUpdated, ActionRuleSourceDeleted,
 		ActionRuleOverrideCreated, ActionRuleOverrideUpdated, ActionRuleOverrideDeleted:
@@ -869,6 +886,10 @@ const (
 	ResourceTypeTemplateSource ResourceType = "template_source"
 	ResourceTypeScopeTarget    ResourceType = "scope_target"
 	ResourceTypeScopeExclusion ResourceType = "scope_exclusion"
+	// ResourceTypeBountyProgram is a bug-bounty program (RFC-065).
+	ResourceTypeBountyProgram ResourceType = "bounty_program"
+	// ResourceTypeAuthorizationLetter is a letter of authorization (RFC-065 §13).
+	ResourceTypeAuthorizationLetter ResourceType = "authorization_letter"
 	// ResourceTypeSuppressionRule is a finding suppression rule.
 	ResourceTypeSuppressionRule ResourceType = "suppression_rule"
 	ResourceTypeScannerTemplate ResourceType = "scanner_template"
@@ -899,7 +920,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeSSOChange,
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
-		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
+		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
 		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
 	}
@@ -985,8 +1006,10 @@ func SeverityForAction(a Action) Severity {
 		// Widening what sensors scan, and the code they run.
 		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
 		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved,
+		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
+		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeExclusionDeleted, ActionScopeExclusionDeactivated,
-		ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
+		ActionScannerTemplateCreated, ActionScannerTemplateUpdated, ActionScannerTemplateApproved,
 		// Deleting an asset also deletes its findings.
 		ActionAssetDeleted:
 		return SeverityHigh

@@ -40,6 +40,13 @@ type Config struct {
 	SensorRate  float64
 	SensorBurst int
 	Logger      *slog.Logger
+	// LedgerMode is SIGNER_LEDGER: enforce, audit or off ("": the default
+	// recorded when the ledger was created, enforce on a signer that had
+	// never signed, audit on one upgraded to the ledger).
+	LedgerMode string
+	// LedgerMinApprovals is SIGNER_LEDGER_MIN_APPROVALS: the operator's
+	// floor under every widening's approval count (0..2).
+	LedgerMinApprovals int
 	// Now is the clock (tests replace it); nil: time.Now.
 	Now func() time.Time
 }
@@ -59,10 +66,12 @@ type Service struct {
 	keyID  string
 	seq    *SeqStore
 	log    *SigningLog
+	ledger *Ledger
 	tenant *limiters
 	sensor *limiters
 	logger *slog.Logger
 	now    func() time.Time
+	keyset keySet
 }
 
 // New opens the state directory and returns the service.
@@ -81,9 +90,21 @@ func New(cfg Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
+	ledger, err := OpenLedger(LedgerConfig{
+		Path: filepath.Join(cfg.StateDir, LedgerLogFile), LockPath: filepath.Join(cfg.StateDir, LedgerLockFile),
+		Fresh: lg.entries == 0, Mode: cfg.LedgerMode, MinApprovals: cfg.LedgerMinApprovals, Logger: cfg.Logger,
+	}, now())
+	if err != nil {
+		_ = lg.Close()
+		return nil, err
+	}
 	pub, _ := cfg.Key.Public().(ed25519.PublicKey)
 	s := &Service{
-		key: cfg.Key, keyID: jobsign.KeyID(pub), seq: seq, log: lg,
+		key: cfg.Key, keyID: jobsign.KeyID(pub), seq: seq, log: lg, ledger: ledger,
 		tenant: newLimiters(orDefault(cfg.TenantRate, DefaultTenantRate), orDefaultInt(cfg.TenantBurst, DefaultTenantBurst)),
 		sensor: newLimiters(orDefault(cfg.SensorRate, DefaultSensorRate), orDefaultInt(cfg.SensorBurst, DefaultSensorBurst)),
 		logger: cfg.Logger, now: cfg.Now,
@@ -97,8 +118,13 @@ func New(cfg Config) (*Service, error) {
 	return s, nil
 }
 
-// Close closes the signing log.
-func (s *Service) Close() error { return s.log.Close() }
+// Close closes the signing log and the ledger.
+func (s *Service) Close() error {
+	return errors.Join(s.log.Close(), s.ledger.Close())
+}
+
+// Ledger is the signer's scope ledger.
+func (s *Service) Ledger() *Ledger { return s.ledger }
 
 // KeyID is the id of the signing key.
 func (s *Service) KeyID() string { return s.keyID }
@@ -123,6 +149,10 @@ func (s *Service) Sign(raw []byte) ([]byte, *refusal) {
 			ref = refuse(http.StatusTooManyRequests, ReasonSensorRate, "sensor signing ceiling reached")
 		}
 	}
+	var audit *refusal
+	if ref == nil {
+		ref, audit = s.checkLedger(st, now)
+	}
 	// Only well-formed ids reach the signing log and the process log.
 	entry := LogEntry{
 		Time: now, TenantID: canonicalID(st.TenantID), SensorID: canonicalID(st.SensorID), CommandID: canonicalID(st.CommandID),
@@ -130,6 +160,9 @@ func (s *Service) Sign(raw []byte) ([]byte, *refusal) {
 		// must stay under maxLogLine or the log would not verify on restart.
 		CommandType: clip(st.CommandType, maxCommandTypeLength), Tool: clip(st.Tool, maxToolLength),
 		PayloadSHA256: clip(st.PayloadSHA256, len(jobsign.PayloadDigest(nil))), Targets: len(st.Targets),
+	}
+	if audit != nil {
+		entry.LedgerAudit = audit.reason
 	}
 	if ref != nil {
 		s.refused(entry, ref)
@@ -176,6 +209,23 @@ func (s *Service) Sign(raw []byte) ([]byte, *refusal) {
 	return env, nil
 }
 
+// checkLedger checks st against the ledger: in enforce mode a miss is the
+// refusal; in audit mode it comes back as audit (signed anyway, and logged);
+// off checks nothing.
+func (s *Service) checkLedger(st *jobsign.Statement, now time.Time) (ref, audit *refusal) {
+	mode := s.ledger.Mode()
+	if mode == jobsign.LedgerOff {
+		return nil, nil
+	}
+	r := s.ledger.Check(st, now)
+	if r == nil || mode == jobsign.LedgerEnforce {
+		return r, nil
+	}
+	s.logger.Warn("job outside the ledger signed (SIGNER_LEDGER=audit)", "reason", r.reason,
+		"tenant_id", canonicalID(st.TenantID), "command_id", canonicalID(st.CommandID), "detail", oneLine(r.detail))
+	return nil, r
+}
+
 func (s *Service) refused(e LogEntry, r *refusal) {
 	e.Decision, e.Reason = DecisionRefused, r.reason
 	if err := s.log.Append(e); err != nil {
@@ -190,6 +240,10 @@ func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(SignPath, s.handleSign)
 	mux.HandleFunc(KeysPath, s.handleKeys)
+	mux.HandleFunc(KeySetPath, s.handleKeySet)
+	mux.HandleFunc(jobsign.LedgerPath, s.handleLedgerStatus)
+	mux.HandleFunc(jobsign.LedgerApplyPath, s.handleLedgerApply)
+	mux.HandleFunc(jobsign.LedgerSyncPath, s.handleLedgerSync)
 	return mux
 }
 

@@ -35,6 +35,10 @@ type Service struct {
 	webBaseURL string
 	// guardrails are the platform's scope guardrails (nil: the defaults).
 	guardrails *scopedom.Guardrails
+	// programExcl lists program exclusions for the authority check (RFC-065).
+	programExcl ProgramExclusionReader
+	// letters are the authorization letters letter entries name (letters.go).
+	letters scopedom.LetterRepository
 	// Coverage of the inventory (GetStats): counted in SQL over the
 	// caller's data scope.
 	coverage  CoverageCounter
@@ -42,6 +46,10 @@ type Service struct {
 	// The scope join after a committed change (join.go).
 	joiner  ScopeJoiner
 	visible VisibleAssetCounter
+	// ledger is the job signer's scope ledger (ledger.go); nil: none.
+	ledger LedgerFeed
+	// ledgerTemplates lists the approved template versions for snapshots.
+	ledgerTemplates LedgerTemplateSource
 }
 
 // NewService creates a new Service.
@@ -86,6 +94,13 @@ type CreateTargetInput struct {
 	// Discovery: discovery from the entry (nil: on). It runs only for a
 	// permanent domain entry (research/53 SC1).
 	Discovery *bool
+	// AuthorizationSource: ownership (default), self_attestation or
+	// authorization_letter; all follow the organization's approval policy.
+	// Program entries are created only by the programs service (RFC-065).
+	AuthorizationSource string
+	// LetterID names the letter of an authorization_letter entry: the
+	// tenant's, valid now (RFC-065 §13).
+	LetterID string
 }
 
 // CreateTarget creates a scope entry: effective at once, pending approval,
@@ -101,6 +116,10 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	targetType, err := scopedom.ParseTargetType(input.TargetType)
 	if err != nil {
 		return nil, err // wraps shared.ErrValidation
+	}
+	source, err := scopedom.ParseGeneralSource(input.AuthorizationSource)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if pattern already exists
@@ -143,12 +162,26 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		target.UpdateTags(input.Tags)
 	}
 	target.SetOrigin(entryOrigin(input.Origin, input.Actor, d.request))
+	var ref *shared.ID
+	if source == scopedom.AuthLetter {
+		if ref, err = s.letterRef(ctx, tenantID, input.LetterID); err != nil {
+			return nil, err
+		}
+	}
+	if err := target.SetAuthorization(source, ref); err != nil {
+		return nil, err
+	}
 	if input.Discovery != nil {
 		target.SetDiscovery(*input.Discovery)
 	}
 
-	if err := s.targetRepo.Create(ctx, target); err != nil {
-		return nil, fmt.Errorf("failed to create scope target: %w", err)
+	if err := s.commitEntry(ctx, nil, target, false, func() error {
+		if err := s.targetRepo.Create(ctx, target); err != nil {
+			return fmt.Errorf("failed to create scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	switch {
@@ -199,6 +232,13 @@ type UpdateTargetInput struct {
 	Actor     Actor
 }
 
+// changesEntry reports whether the update touches the entry fields (expiry,
+// tier, reason, discovery): a program entry takes those from its program.
+func (in UpdateTargetInput) changesEntry() bool {
+	return in.Reason != nil || in.ExpiresAt != nil || in.ExpiresInDays != nil || in.ClearExpiry ||
+		in.MaxTier != nil || in.Discovery != nil
+}
+
 // UpdateTarget updates an existing scope target.
 func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID string, input UpdateTargetInput) (*scopedom.Target, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
@@ -214,6 +254,10 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 	if err != nil {
 		return nil, err
 	}
+	if target.IsProgramEntry() && input.changesEntry() {
+		return nil, scopedom.ErrProgramManaged
+	}
+	before := ledgerEntryOf(target, time.Now())
 
 	if input.Description != nil {
 		target.UpdateDescription(*input.Description)
@@ -235,8 +279,13 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 		return nil, err
 	}
 
-	if err := s.targetRepo.Update(ctx, target); err != nil {
-		return nil, fmt.Errorf("failed to update scope target: %w", err)
+	if err := s.commitEntry(ctx, before, target, false, func() error {
+		if err := s.targetRepo.Update(ctx, target); err != nil {
+			return fmt.Errorf("failed to update scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	if widened {
 		if target.IsPending() {
@@ -374,7 +423,13 @@ func (s *Service) DeleteTarget(ctx context.Context, targetID string, tenantID st
 		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	if err := s.targetRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
+	target, err := s.targetRepo.GetByID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return err
+	}
+	if err := s.commitEntry(ctx, ledgerEntryOf(target, time.Now()), target, true, func() error {
+		return s.targetRepo.Delete(ctx, parsedTenantID, parsedID)
+	}); err != nil {
 		return err
 	}
 
@@ -481,13 +536,21 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 		return nil, scopedom.ErrEntryExpired
 	case target.Status() == scopedom.StatusActive || target.IsPending():
 		return target, nil // nothing to widen
+	case target.IsProgramEntry():
+		return nil, scopedom.ErrProgramManaged
 	}
+	before := ledgerEntryOf(target, now)
 	if err := s.widenEntry(ctx, target, actor, now); err != nil {
 		return nil, err
 	}
 
-	if err := s.targetRepo.Update(ctx, target); err != nil {
-		return nil, fmt.Errorf("failed to activate scope target: %w", err)
+	if err := s.commitEntry(ctx, before, target, false, func() error {
+		if err := s.targetRepo.Update(ctx, target); err != nil {
+			return fmt.Errorf("failed to activate scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	if target.IsPending() {
 		s.notifyRequested(ctx, target)
@@ -518,10 +581,16 @@ func (s *Service) DeactivateTarget(ctx context.Context, targetID string, tenantI
 		return nil, err
 	}
 
+	before := ledgerEntryOf(target, time.Now())
 	target.Deactivate()
 
-	if err := s.targetRepo.Update(ctx, target); err != nil {
-		return nil, fmt.Errorf("failed to deactivate scope target: %w", err)
+	if err := s.commitEntry(ctx, before, target, false, func() error {
+		if err := s.targetRepo.Update(ctx, target); err != nil {
+			return fmt.Errorf("failed to deactivate scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("scope target deactivated", "id", targetID)
@@ -636,6 +705,7 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 	if err != nil {
 		return nil, err
 	}
+	before := ledgerExclusionOf(exclusion, time.Now())
 
 	if input.ExpiresAt != nil && exclusion.ShortensWindow(input.ExpiresAt) {
 		if err := exclusion.AuthorizeReduction(input.Reviewer); err != nil {
@@ -655,8 +725,13 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 		exclusion.UpdateExpiresAt(input.ExpiresAt)
 	}
 
-	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to update scope exclusion: %w", err)
+	if err := s.commitExclusion(ctx, before, exclusion, false, input.Reviewer.UserID, func() error {
+		if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to update scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	s.scheduleJoin(parsedTenantID) // a shorter exclusion may let a name join
@@ -686,7 +761,9 @@ func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenan
 		return err
 	}
 
-	if err := s.exclusionRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
+	if err := s.commitExclusion(ctx, ledgerExclusionOf(exclusion, time.Now()), exclusion, true, reviewer.UserID, func() error {
+		return s.exclusionRepo.Delete(ctx, parsedTenantID, parsedID)
+	}); err != nil {
 		return err
 	}
 
@@ -771,12 +848,18 @@ func (s *Service) ApproveExclusion(ctx context.Context, exclusionID string, tena
 		return nil, err
 	}
 
+	before := ledgerExclusionOf(exclusion, time.Now())
 	if err := exclusion.Approve(approvedBy); err != nil {
 		return nil, err
 	}
 
-	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to approve scope exclusion: %w", err)
+	if err := s.commitExclusion(ctx, before, exclusion, false, approvedBy, func() error {
+		if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to approve scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("scope exclusion approved", "id", logSafe(exclusionID), "approvedBy", logSafe(approvedBy))
@@ -828,12 +911,18 @@ func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, ten
 		return nil, err
 	}
 
+	before := ledgerExclusionOf(exclusion, time.Now())
 	if err := exclusion.Activate(); err != nil {
 		return nil, err
 	}
 
-	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to activate scope exclusion: %w", err)
+	if err := s.commitExclusion(ctx, before, exclusion, false, "", func() error {
+		if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to activate scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("scope exclusion activated", "id", logSafe(exclusionID))
@@ -861,12 +950,18 @@ func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, t
 	if err := exclusion.AuthorizeReduction(reviewer); err != nil {
 		return nil, err
 	}
+	before := ledgerExclusionOf(exclusion, time.Now())
 	if err := exclusion.Deactivate(); err != nil {
 		return nil, err
 	}
 
-	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to deactivate scope exclusion: %w", err)
+	if err := s.commitExclusion(ctx, before, exclusion, false, reviewer.UserID, func() error {
+		if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to deactivate scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	s.scheduleJoin(parsedTenantID)
@@ -1048,15 +1143,7 @@ func (s *Service) isAssetExcluded(assetValues []string, exclusions []*scopedom.E
 // host; without this a scan target written as a URL or with a port slipped past
 // a domain/IP/CIDR exclusion of that same host. Matching more forms can only
 // exclude more, never less (fail closed).
-func exclusionMatchForms(value string) []string {
-	v := strings.TrimSpace(value)
-	forms := []string{v}
-	host := asset.HostOf(v)
-	if host != "" && !strings.EqualFold(host, v) {
-		forms = append(forms, strings.ToLower(host))
-	}
-	return forms
-}
+func exclusionMatchForms(value string) []string { return scopedom.ExclusionForms(value) }
 
 // ExclusionCandidate is a minimal asset projection used to test scope
 // exclusions from the scan target-selection path without importing the full
