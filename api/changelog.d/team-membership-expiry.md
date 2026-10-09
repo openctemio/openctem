@@ -2,7 +2,7 @@
 
 - A team (access group) membership can end on a date (`expires_at` and
   `expiry_reason` on `POST /api/v1/groups/{groupId}/members`, and
-  `PATCH /api/v1/groups/{groupId}/members/{userId}/access` to set, move or
+  `PATCH /api/v1/groups/{groupId}/members/{userId}` to set, move or
   clear it; at most 365 days ahead; `team:groups:members` with the usual
   delegation cap). Teams of type `external` (engagements, audits) require an
   end date for every member but their creator.

@@ -126,7 +126,7 @@ Migration `001044_member_lifecycle`.
 
 **W22, team slice: implemented** (migration `001459`). A team membership may carry an end date
 (`expires_at`, `expiry_reason`; at most 365 days ahead). Teams of type `external` (engagements,
-audits) require one. `PATCH /api/v1/groups/{groupId}/members/{userId}/access`
+audits) require one. `PATCH /api/v1/groups/{groupId}/members/{userId}`
 (`team:groups:members`, same delegation cap as adding a member) sets, moves or clears it. The
 team-membership-expiry controller removes an expired membership within a minute, which recomputes
 the member's data scope. The removal is audited (`member.removed`, reason `expired`) and the member is
