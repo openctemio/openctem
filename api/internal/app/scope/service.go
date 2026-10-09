@@ -30,6 +30,8 @@ type Service struct {
 	guardrails *scopedom.Guardrails
 	// programExcl lists program exclusions for the authority check (RFC-065).
 	programExcl ProgramExclusionReader
+	// programs names the programs of a scope snapshot (snapshot.go).
+	programs ProgramLister
 	// Coverage of the inventory (GetStats): counted in SQL over the
 	// caller's data scope.
 	coverage  CoverageCounter

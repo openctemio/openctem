@@ -29,9 +29,11 @@ import (
 
 // ScanWorkflowHandler handles HTTP requests for scan workflows.
 type ScanWorkflowHandler struct {
-	service   *scanrun.Service
-	validator *validator.Validator
-	logger    *logger.Logger
+	// scopeSnapshots reads a run's scope snapshot (RFC-065 §9).
+	scopeSnapshots RunScopeSnapshots
+	service        *scanrun.Service
+	validator      *validator.Validator
+	logger         *logger.Logger
 	// taskLogs reads a run task's logs (nil: GET .../tasks/{task_id}/logs
 	// answers an empty log).
 	taskLogs taskLogReader
