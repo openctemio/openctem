@@ -65,12 +65,14 @@ import type { EntityActivityHandle } from '@/features/activity/components/entity
 import { requestSensorContentRefresh, SensorContentSection } from './sensor-content-section'
 import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-section'
 import { SensorLocalPolicySection } from './sensor-local-policy-section'
+import { SensorPostureSection } from './sensor-posture'
 import { SensorGrantSection } from './sensor-grant-section'
 import { SensorManifestTab } from './sensor-manifest-tab'
 import { SensorSetupTab } from './config-check-list'
 import { SensorStateBadge } from './sensor-state-badge'
 import {
   ConfigHealthTag,
+  SensorPostureTag,
   distinctHostname,
   LEGACY_KEY_EXPLANATION,
   ProtocolTag,
@@ -912,6 +914,7 @@ export function SensorDetailSheet({
               <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
               <ProtocolTag sensor={sensor} />
               <ConfigHealthTag health={sensor.config_health} />
+              <SensorPostureTag sensor={sensor} />
             </>
           }
           meta={subline}
@@ -964,6 +967,7 @@ export function SensorDetailSheet({
             {(sensor.control || hasHeartbeatHistory(heartbeatHistory)) && (
               <SensorControlSection sensor={sensor} now={now} history={heartbeatHistory} />
             )}
+            {sensor.posture && <SensorPostureSection sensor={sensor} />}
             {sensor.local_policy && <SensorLocalPolicySection sensor={sensor} />}
             <SensorGrantSection sensorId={sensor.id} />
             <SensorRecentActivity ref={activityRef} sensorId={sensor.id} sensorName={sensor.name} />

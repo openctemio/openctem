@@ -29,6 +29,14 @@ export function localPolicyView(p?: SensorLocalPolicy | null): LocalPolicyView {
           'The sensor owner engaged the local kill switch: the sensor runs no job until it is released.',
       }
     case 'absent':
+      if (p?.required) {
+        return {
+          label: 'Absent (network jobs refused)',
+          tone: 'danger',
+          description:
+            'This sensor requires a local policy and has none: it refuses every job with a network target until the network owner installs one.',
+        }
+      }
       return {
         label: 'Absent',
         tone: 'warn',
