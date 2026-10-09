@@ -457,10 +457,22 @@ activate, update, deactivate and delete of exclusions. Writes made outside
 it go through `scope.Service.CommitEntries`, the same rule in batch form:
 bounty programs (RFC-065) send import, re-import and resume as widenings
 (requester the importer, no approval, `platform_policy:
-program_attestation`) and pause, end and dropped entries as narrowings. Any
-further path that puts an entry into effect (authorization letters) must use
-one of them. Program exclusions and the rule that program targets never go
-to platform sensors stay API-side checks; the ledger does not hold them.
+program_attestation`) and pause, end and dropped entries as narrowings.
+Authorization-letter entries (RFC-065 §13) go through `commitEntry` like
+any entry, and the ledger holds them with the letter's `valid_until` as
+their latest expiry, so they leave it with the letter without a sync; a
+revoked letter narrows the organization's ledger at once
+(`Service.NarrowLetter`, a sync of that organization). Program exclusions
+and the rule that program targets never go to platform sensors stay
+API-side checks; the ledger does not hold them.
+
+No other path may write scope: `internal/app/scope/ledger_guard_test.go`
+fails the build when SQL writing `scope_targets` or `scope_exclusions`
+appears outside the known repository methods, when the scope or programs
+service calls a repository write outside the hook (unless allowlisted with
+the reason it cannot change the ledger: declining a pending entry or
+exclusion, creating a pending exclusion, the time-based expiry sweeps), or
+when a scope repository is constructed or handed out at a new site.
 
 - A **widening is sent before it is saved**. Refused, the request fails with
   `409 SCOPE_LEDGER_REFUSED`; signer down, `409 SCOPE_LEDGER_UNAVAILABLE`.
