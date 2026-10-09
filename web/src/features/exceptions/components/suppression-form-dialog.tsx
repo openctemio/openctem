@@ -11,6 +11,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -129,7 +130,7 @@ export function SuppressionFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Edit Suppression Rule' : 'New Suppression Rule'}</DialogTitle>
           <DialogDescription>
@@ -139,112 +140,114 @@ export function SuppressionFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-2">
-            <Label htmlFor="suppression-name">
-              Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="suppression-name"
-              placeholder="e.g. Ignore test-fixture secrets"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={200}
-            />
-          </div>
-
-          {!isEdit && (
+        <DialogBody>
+          <div className="grid gap-4 py-2">
             <div className="grid gap-2">
-              <Label htmlFor="suppression-type">
-                Type <span className="text-destructive">*</span>
+              <Label htmlFor="suppression-name">
+                Name <span className="text-destructive">*</span>
               </Label>
-              <Select
-                value={suppressionType}
-                onValueChange={(v) => setSuppressionType(v as SuppressionType)}
-              >
-                <SelectTrigger id="suppression-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TYPE_OPTIONS.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {SUPPRESSION_TYPE_LABELS[t]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="grid gap-2">
-            <Label htmlFor="suppression-desc">Description</Label>
-            <Textarea
-              id="suppression-desc"
-              placeholder="Why is this finding being suppressed?"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              maxLength={2000}
-            />
-          </div>
-
-          <div className="rounded-lg border p-3 space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Matching criteria — provide a rule ID or a path pattern (at least one is required).
-              Tool name further narrows the match.
-            </p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="suppression-tool">Tool name</Label>
-                <Input
-                  id="suppression-tool"
-                  placeholder="semgrep"
-                  value={toolName}
-                  onChange={(e) => setToolName(e.target.value)}
-                  maxLength={100}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="suppression-rule-id">Rule ID</Label>
-                <Input
-                  id="suppression-rule-id"
-                  placeholder="semgrep.sql-injection"
-                  value={ruleId}
-                  onChange={(e) => setRuleId(e.target.value)}
-                  maxLength={200}
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="suppression-path">Path pattern</Label>
               <Input
-                id="suppression-path"
-                placeholder="tests/**"
-                value={pathPattern}
-                onChange={(e) => setPathPattern(e.target.value)}
-                maxLength={500}
+                id="suppression-name"
+                placeholder="e.g. Ignore test-fixture secrets"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={200}
               />
             </div>
-            {!hasCriteria && (name.trim() !== '' || toolName.trim() !== '') && (
-              <p className="text-xs text-destructive">
-                Provide a rule ID or a path pattern so the rule can match findings.
-              </p>
-            )}
-          </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="suppression-expires">Expires (optional)</Label>
-            <Input
-              id="suppression-expires"
-              type="datetime-local"
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Leave blank for a rule that never expires.
-            </p>
+            {!isEdit && (
+              <div className="grid gap-2">
+                <Label htmlFor="suppression-type">
+                  Type <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={suppressionType}
+                  onValueChange={(v) => setSuppressionType(v as SuppressionType)}
+                >
+                  <SelectTrigger id="suppression-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TYPE_OPTIONS.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {SUPPRESSION_TYPE_LABELS[t]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="suppression-desc">Description</Label>
+              <Textarea
+                id="suppression-desc"
+                placeholder="Why is this finding being suppressed?"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+                maxLength={2000}
+              />
+            </div>
+
+            <div className="rounded-lg border p-3 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Matching criteria — provide a rule ID or a path pattern (at least one is required).
+                Tool name further narrows the match.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="suppression-tool">Tool name</Label>
+                  <Input
+                    id="suppression-tool"
+                    placeholder="semgrep"
+                    value={toolName}
+                    onChange={(e) => setToolName(e.target.value)}
+                    maxLength={100}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="suppression-rule-id">Rule ID</Label>
+                  <Input
+                    id="suppression-rule-id"
+                    placeholder="semgrep.sql-injection"
+                    value={ruleId}
+                    onChange={(e) => setRuleId(e.target.value)}
+                    maxLength={200}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="suppression-path">Path pattern</Label>
+                <Input
+                  id="suppression-path"
+                  placeholder="tests/**"
+                  value={pathPattern}
+                  onChange={(e) => setPathPattern(e.target.value)}
+                  maxLength={500}
+                />
+              </div>
+              {!hasCriteria && (name.trim() !== '' || toolName.trim() !== '') && (
+                <p className="text-xs text-destructive">
+                  Provide a rule ID or a path pattern so the rule can match findings.
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="suppression-expires">Expires (optional)</Label>
+              <Input
+                id="suppression-expires"
+                type="datetime-local"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank for a rule that never expires.
+              </p>
+            </div>
           </div>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

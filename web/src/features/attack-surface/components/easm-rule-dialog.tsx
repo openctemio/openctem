@@ -27,6 +27,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -193,7 +194,7 @@ export function EASMRuleDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{accept ? 'Accept as rule' : 'Reject as rule'}</DialogTitle>
           <DialogDescription>
@@ -212,52 +213,54 @@ export function EASMRuleDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4" aria-busy={loading}>
-          {previewError && (
-            <p role="alert" className="text-sm text-destructive">
-              {previewError}
-            </p>
-          )}
-          {loading && !preview ? (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Working out what changes…
-            </p>
-          ) : (
-            preview && (
-              <ScopeChangePreview
-                lines={lines}
-                loading={loading}
-                consequence={
-                  refusal
-                    ? undefined
-                    : {
-                        approvalsRequired:
-                          entry?.status === 'active' ? 0 : (entry?.approvals_required ?? 0),
-                        isRequest: accept && !canApprove,
-                        stepUp: preview.step_up_required,
-                      }
-                }
-              />
-            )
-          )}
+        <DialogBody>
+          <div className="space-y-4" aria-busy={loading}>
+            {previewError && (
+              <p role="alert" className="text-sm text-destructive">
+                {previewError}
+              </p>
+            )}
+            {loading && !preview ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Working out what changes…
+              </p>
+            ) : (
+              preview && (
+                <ScopeChangePreview
+                  lines={lines}
+                  loading={loading}
+                  consequence={
+                    refusal
+                      ? undefined
+                      : {
+                          approvalsRequired:
+                            entry?.status === 'active' ? 0 : (entry?.approvals_required ?? 0),
+                          isRequest: accept && !canApprove,
+                          stepUp: preview.step_up_required,
+                        }
+                  }
+                />
+              )
+            )}
 
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-reason`}>Reason</Label>
-            <Textarea
-              id={`${id}-reason`}
-              rows={2}
-              maxLength={1000}
-              value={reason}
-              placeholder={
-                accept
-                  ? 'Why is this yours? For example: our dev environment, ticket OPS-12.'
-                  : 'Why is this not yours? For example: a reseller domain.'
-              }
-              onChange={(e) => setReason(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">Required. Kept in the audit log.</p>
+            <div className="space-y-2">
+              <Label htmlFor={`${id}-reason`}>Reason</Label>
+              <Textarea
+                id={`${id}-reason`}
+                rows={2}
+                maxLength={1000}
+                value={reason}
+                placeholder={
+                  accept
+                    ? 'Why is this yours? For example: our dev environment, ticket OPS-12.'
+                    : 'Why is this not yours? For example: a reseller domain.'
+                }
+                onChange={(e) => setReason(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Required. Kept in the audit log.</p>
+            </div>
           </div>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
