@@ -81,7 +81,7 @@ func newChangeAuditHarness(t *testing.T) *authzPolicyHarness {
 		app.NewScannerTemplateService(postgres.NewScannerTemplateRepository(db), "change-audit-template-signing-key-0123456789", log), v, log)
 	templates.SetAuditService(auditSvc)
 	tools := handler.NewToolHandler(toolapp.NewService(postgres.NewToolRepository(db),
-		postgres.NewTenantToolConfigRepository(db), postgres.NewToolExecutionRepository(db), log), v, log)
+		postgres.NewTenantToolConfigRepository(db), log), v, log)
 	tools.SetAuditService(auditSvc)
 
 	router := infrahttp.NewChiRouter()
