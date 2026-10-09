@@ -191,6 +191,14 @@ export type PlanEffectiveLimit =
   Schemas['github_com_openctemio_openctem_api_pkg_domain_plan.Effective']
 export type SetTenantPlanRequest = Schemas['internal_infra_http_handler.SetTenantPlanRequest']
 export type SetPlanOverrideRequest = Schemas['internal_infra_http_handler.SetPlanOverrideRequest']
+// Module entitlements (console System > Plans and an organization's modules)
+export type PlanModulesResponse = Schemas['internal_infra_http_handler.PlanModulesResponse']
+export type UpdatePlanModulesRequest =
+  Schemas['internal_infra_http_handler.UpdatePlanModulesRequest']
+export type AdminTenantModulesResponse =
+  Schemas['internal_infra_http_handler.AdminTenantModulesResponse']
+export type ModuleEntitlement = Schemas['internal_app_entitlement.ModuleEntitlement']
+export type SetModuleGrantRequest = Schemas['internal_infra_http_handler.SetModuleGrantRequest']
 // Admin console: the sign-up policy (System > Sign-up)
 export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']
 export type UpdateSignupPolicyRequest =

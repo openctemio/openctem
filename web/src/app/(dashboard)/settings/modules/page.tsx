@@ -50,7 +50,6 @@ import type {
   ModuleToggle,
   ToggleIssue,
 } from '@/features/organization/api/use-tenant-modules'
-import { BundleSubscriptionCard } from '@/features/organization/components/bundle-subscription-card'
 
 // Details payload nested under ApiClientError.details when the backend
 // rejects a toggle because of the dependency graph. Shape mirrors
@@ -410,21 +409,6 @@ export default function ModuleManagementPage() {
         />
       )}
 
-      {/* Products — the single control for module packaging. Pick the large
-          products this team runs; the enabled set resolves live from that
-          selection. This replaces the old one-shot "apply a preset" flow,
-          which overwrote the config and duplicated this exact catalog. The
-          manual toggles below layer on top as non-destructive overrides. */}
-      <Can route="POST /api/v1/tenants/{tenant}/settings/modules/bundles">
-        <BundleSubscriptionCard
-          tenantId={tenantId}
-          onChanged={() => {
-            void mutate()
-            void refreshModules()
-          }}
-        />
-      </Can>
-
       <div className="mt-5 space-y-5">
         {/* Core Modules - Collapsed by default */}
         {coreModules.length > 0 && (
@@ -649,7 +633,7 @@ export default function ModuleManagementPage() {
         open={showResetDialog}
         onOpenChange={setShowResetDialog}
         title="Remove your module changes"
-        desc="This removes every module you turned on or off by hand. Modules then follow your product bundles: a module outside them turns off, even if you had turned it on. Without a bundle subscription, every module is on. Your changes cannot be restored."
+        desc="This removes every module you turned on or off by hand: every module your plan includes is on again. Your changes cannot be restored."
         confirmText="Remove changes"
         isLoading={isResetting}
         handleConfirm={() => void handleReset()}
@@ -695,6 +679,9 @@ function ModuleRow({
   // surfaced as warnings post-save, they're noisy in the row header.
   const hardRequires = requires.filter((e) => e.type === 'hard')
   const hardRequiredBy = requiredBy.filter((e) => e.type === 'hard')
+  // Not in the organization's plan (and no platform grant): it cannot be
+  // switched on here, only by a plan change or a grant.
+  const notEntitled = !mod.is_core && mod.entitled === false
 
   return (
     <div>
@@ -714,6 +701,16 @@ function ModuleRow({
             {mod.release_status === 'beta' && (
               <Badge variant="outline" className="text-xs">
                 Beta
+              </Badge>
+            )}
+            {notEntitled && (
+              <Badge
+                variant="outline"
+                className="gap-1 text-xs text-muted-foreground"
+                title="Your plan does not include this module. Contact your platform administrator."
+              >
+                <Lock className="h-3 w-3" />
+                Not in your plan
               </Badge>
             )}
             {hasPendingChange && (
@@ -759,7 +756,7 @@ function ModuleRow({
           <Switch
             checked={isEnabled}
             onCheckedChange={() => onToggle(mod.id, isEnabled)}
-            disabled={mod.is_core || isUpdating}
+            disabled={mod.is_core || notEntitled || isUpdating}
             aria-label={`Toggle ${mod.name}`}
           />
         </div>

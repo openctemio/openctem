@@ -19,6 +19,7 @@ import { useOrganization } from '@/features/admin-console/api/use-admin-organiza
 import { useAdmin } from '@/features/admin-console/components/admin-console-shell'
 import { OrganizationAuditChainPanel } from '@/features/admin-console/components/organization-audit-chain-panel'
 import { OrganizationPlanPanel } from '@/features/admin-console/components/organization-plan-panel'
+import { OrganizationModulesPanel } from '@/features/admin-console/components/organization-modules-panel'
 import { OrganizationUsersSection } from '@/features/admin-console/components/organization-users-section'
 import { SSOEnforcementCard } from '@/features/admin-console/components/sso-enforcement-card'
 import { adminCan } from '@/features/admin-console/types'
@@ -158,8 +159,9 @@ export default function AdminOrganizationPage({
               />
             </TabsContent>
 
-            <TabsContent value="plan" className="mt-4">
+            <TabsContent value="plan" className="mt-4 space-y-5">
               <OrganizationPlanPanel tenantId={org.id} canManage={canManageUsers} />
+              <OrganizationModulesPanel tenantId={org.id} canManage={canManageUsers} />
             </TabsContent>
 
             <TabsContent value="sso" className="mt-4 space-y-5">

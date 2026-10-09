@@ -36,13 +36,6 @@ type Settings struct {
 	Scope ScopeSettings `json:"scope,omitempty"`
 	// MCP is the policy for AI applications on the MCP server (RFC-062 §8).
 	MCP MCPSettings `json:"mcp,omitempty"`
-
-	// SubscribedBundles is the set of product-bundle IDs the tenant runs
-	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the
-	// backward-compatible default). When non-empty, the module service
-	// resolves the enabled set live as the union of these bundles (+core+
-	// mandatory+deps), with per-module tenant_modules overrides layered on top.
-	SubscribedBundles []string `json:"subscribed_bundles,omitempty"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.

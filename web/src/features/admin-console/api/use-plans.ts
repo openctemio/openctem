@@ -2,6 +2,10 @@
 
 import useSWR from 'swr'
 import type {
+  AdminTenantModulesResponse,
+  PlanModulesResponse,
+  SetModuleGrantRequest,
+  UpdatePlanModulesRequest,
   PlanDefaultsResponse,
   PlanSummaryResponse,
   SetPlanOverrideRequest,
@@ -51,6 +55,47 @@ export function putPlanOverride(tenantId: string, key: string, input: SetPlanOve
 export function deletePlanOverride(tenantId: string, key: string) {
   return adminFetch<PlanSummaryResponse>(
     `${tenantPlanKey(tenantId)}/overrides/${encodeURIComponent(key)}`,
+    { method: 'DELETE' }
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Module entitlements (RFC-064)
+// ---------------------------------------------------------------------------
+
+const PLAN_MODULES_KEY = '/settings/plan-modules'
+const tenantModulesKey = (tenantId: string) => `/tenants/${encodeURIComponent(tenantId)}/modules`
+
+/** The modules of each plan (System > Plans). Any administrator reads them. */
+export function usePlanModules() {
+  return useSWR<PlanModulesResponse>(PLAN_MODULES_KEY, adminFetcher)
+}
+
+/** Saves the modules of each plan (super admin, fresh authenticator code). */
+export function savePlanModules(input: UpdatePlanModulesRequest) {
+  return adminFetch<PlanModulesResponse>(PLAN_MODULES_KEY, { method: 'PUT', body: input })
+}
+
+/** One organization's module entitlements: plan, grants and denies. */
+export function useTenantModuleEntitlements(tenantId: string) {
+  return useSWR<AdminTenantModulesResponse>(
+    tenantId ? tenantModulesKey(tenantId) : null,
+    adminFetcher
+  )
+}
+
+/** Grants a module beyond the plan, or denies one (ops admin and up; reason required). */
+export function putModuleGrant(tenantId: string, moduleId: string, input: SetModuleGrantRequest) {
+  return adminFetch<AdminTenantModulesResponse>(
+    `${tenantModulesKey(tenantId)}/${encodeURIComponent(moduleId)}/grant`,
+    { method: 'PUT', body: input }
+  )
+}
+
+/** Removes an organization's grant or deny: the plan decides again. */
+export function deleteModuleGrant(tenantId: string, moduleId: string) {
+  return adminFetch<AdminTenantModulesResponse>(
+    `${tenantModulesKey(tenantId)}/${encodeURIComponent(moduleId)}/grant`,
     { method: 'DELETE' }
   )
 }

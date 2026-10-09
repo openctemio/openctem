@@ -32,6 +32,8 @@ export interface TenantModule {
   category: string
   display_order: number
   is_core: boolean
+  /** The organization's plan (or a platform grant) includes it; otherwise it cannot be switched on. */
+  entitled?: boolean
   is_enabled: boolean
   release_status: string
   sub_modules?: TenantSubModule[]
@@ -377,71 +379,20 @@ export function useApplyPreset(tenantIdOrSlug: string | undefined, presetId: str
 }
 
 // ============================================
-// PRODUCT-BUNDLE SUBSCRIPTION
+// PRESET AT ONBOARDING
 // ============================================
-//
-// A tenant subscribes to one or more product bundles (ASM, ASPM, VM, …).
-// The enabled-module set is resolved LIVE as the union of the subscribed
-// bundles (+core+deps), with per-module toggles layered on top. An empty
-// subscription = every module on (the default). Source of truth for the
-// catalog is the same static Go presets.
-
-export interface ModuleBundlesResponse {
-  /** Currently-subscribed bundle IDs (empty = every module on). */
-  subscribed: string[]
-  /** The bundle catalog (same shape as presets). */
-  available: ModulePreset[]
-}
-
-/** Fetches the tenant's current bundle subscription + the bundle catalog. */
-export function useModuleBundles(tenantIdOrSlug: string | undefined) {
-  const { data, error, isLoading, mutate } = useSWR<ModuleBundlesResponse>(
-    tenantIdOrSlug ? tenantEndpoints.modulesBundles(tenantIdOrSlug) : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  )
-  return {
-    subscribed: data?.subscribed ?? [],
-    available: data?.available ?? [],
-    isLoading,
-    isError: !!error,
-    mutate,
-  }
-}
-
-function postBundleSubscription(url: string, bundleIds: string[]) {
-  return fetcherWithOptions<TenantModuleListResponse>(url, {
-    method: 'POST',
-    body: JSON.stringify({ bundle_ids: bundleIds }),
-  })
-}
-
-async function subscribeBundles(url: string, { arg }: { arg: { bundle_ids: string[] } }) {
-  return postBundleSubscription(url, arg.bundle_ids)
-}
 
 /**
- * Imperative bundle subscription — the same POST the {@link useSubscribeBundles}
- * mutation performs, but callable outside a hook binding. Onboarding needs this:
- * the tenant doesn't exist at render time, so the SWR-mutation key can't be
- * bound to its id until after creation. Both paths hit the same endpoint through
- * the same shared client (CSRF handled), so the catalog + write path stay a
- * single source of truth.
+ * Applies a preset to an organization right after it is created (onboarding):
+ * the same POST as {@link useApplyPreset}, callable outside a hook binding
+ * because the organization does not exist at render time. A preset switches
+ * modules on or off once, within what the organization's plan includes.
  */
-export function subscribeBundlesRequest(tenantIdOrSlug: string, bundleIds: string[]) {
-  return postBundleSubscription(tenantEndpoints.modulesBundles(tenantIdOrSlug), bundleIds)
-}
-
-/**
- * Replaces the tenant's bundle subscription. Passing [] clears it (every
- * module on). Returns the fresh module config so the caller can refresh.
- */
-export function useSubscribeBundles(tenantIdOrSlug: string | undefined) {
-  const { trigger, isMutating, error } = useSWRMutation(
-    tenantIdOrSlug ? tenantEndpoints.modulesBundles(tenantIdOrSlug) : null,
-    subscribeBundles
+export function applyPresetRequest(tenantIdOrSlug: string, presetId: string) {
+  return fetcherWithOptions<TenantModuleListResponse>(
+    tenantEndpoints.modulesPresetApply(tenantIdOrSlug, presetId),
+    { method: 'POST' }
   )
-  return { subscribeBundles: trigger, isSubscribing: isMutating, error }
 }
 
 // ============================================
