@@ -57,6 +57,7 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
       scopes: data.scopes,
       api_keys_allowed: data.api_keys_allowed,
       refresh_days: data.refresh_days,
+      require_dpop: data.require_dpop,
     })
     setHostsText(data.client_hosts.join('\n'))
   }, [data])
@@ -195,6 +196,22 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
             id="mcp-keys"
             checked={draft.api_keys_allowed}
             onCheckedChange={(v) => set({ api_keys_allowed: v })}
+            disabled={disabled}
+          />
+        </div>
+
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Label htmlFor="mcp-dpop">Require proof of possession (DPoP)</Label>
+            <p className="text-muted-foreground text-sm">
+              Applications must sign every request with their own key, so a copied token is useless.
+              Applications without DPoP support can no longer connect.
+            </p>
+          </div>
+          <Switch
+            id="mcp-dpop"
+            checked={draft.require_dpop}
+            onCheckedChange={(v) => set({ require_dpop: v })}
             disabled={disabled}
           />
         </div>

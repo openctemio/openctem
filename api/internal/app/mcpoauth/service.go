@@ -23,6 +23,7 @@ import (
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/dpop"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -55,6 +56,9 @@ type Service struct {
 	permissions  HolderPermissions
 	policies     PolicyReader
 	connections  mcpoauth.ConnectionRepository
+	clients      mcpoauth.ClientRepository
+	replay       ReplayCache
+	dcrEnabled   bool
 	trustedHosts []string
 	audit        AuditLogger
 	log          *logger.Logger
@@ -72,6 +76,13 @@ type Config struct {
 	Permissions HolderPermissions
 	// Connections lists and manages connections (RFC-062 §12); optional.
 	Connections mcpoauth.ConnectionRepository
+	// Clients manages registered clients and the purge (RFC-062 §5).
+	Clients mcpoauth.ClientRepository
+	// Replay remembers DPoP proof ids; without it DPoP proofs are refused.
+	Replay ReplayCache
+	// DynamicRegistration turns POST /oauth/register on
+	// (MCP_OAUTH_DCR_ENABLED). Deprecated by MCP; off by default.
+	DynamicRegistration bool
 	// Policies reads the organization MCP policy (RFC-062 §8); nil applies
 	// the defaults.
 	Policies PolicyReader
@@ -93,6 +104,7 @@ func NewService(c Config) (*Service, error) {
 		repo: c.Repository, endpoints: c.Endpoints, pepper: c.Pepper, oldPeppers: c.OldPeppers,
 		fetcher: c.Fetcher, members: c.Members, permissions: c.Permissions, audit: c.Audit,
 		policies: c.Policies, trustedHosts: NormalizeTrustedHosts(c.TrustedClientHosts), connections: c.Connections,
+		clients: c.Clients, dcrEnabled: c.DynamicRegistration, replay: c.Replay,
 		log: c.Logger.With("service", "mcp-oauth"), now: time.Now,
 	}, nil
 }
@@ -408,7 +420,7 @@ type TokenResponse struct {
 }
 
 // Token handles POST /oauth/token for the two supported grant types.
-func (s *Service) Token(ctx context.Context, form url.Values, actor Actor) (*TokenResponse, *OAuthError) {
+func (s *Service) Token(ctx context.Context, form url.Values, dpopProof string, actor Actor) (*TokenResponse, *OAuthError) {
 	for k, v := range form {
 		if len(v) > 1 {
 			return nil, oauthErr("invalid_request", "parameter "+k+" repeated")
@@ -416,9 +428,9 @@ func (s *Service) Token(ctx context.Context, form url.Values, actor Actor) (*Tok
 	}
 	switch form.Get("grant_type") {
 	case "authorization_code":
-		return s.exchangeCode(ctx, form, actor)
+		return s.exchangeCode(ctx, form, dpopProof, actor)
 	case "refresh_token":
-		return s.refresh(ctx, form, actor)
+		return s.refresh(ctx, form, dpopProof, actor)
 	case "":
 		return nil, oauthErr("invalid_request", "grant_type is required")
 	default:
@@ -426,7 +438,7 @@ func (s *Service) Token(ctx context.Context, form url.Values, actor Actor) (*Tok
 	}
 }
 
-func (s *Service) exchangeCode(ctx context.Context, form url.Values, actor Actor) (*TokenResponse, *OAuthError) {
+func (s *Service) exchangeCode(ctx context.Context, form url.Values, dpopProof string, actor Actor) (*TokenResponse, *OAuthError) {
 	invalid := oauthErr("invalid_grant", "the authorization code is invalid, expired or was already used")
 	code, verifier, clientID := form.Get("code"), form.Get("code_verifier"), form.Get("client_id")
 	if code == "" || clientID == "" || !pkceVerifierRe.MatchString(verifier) {
@@ -434,6 +446,12 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, actor Actor
 	}
 	if !s.isResource(form.Get("resource")) {
 		return nil, oauthErr("invalid_target", "resource must be "+s.endpoints.Resource)
+	}
+	// A proof is checked before the code is touched: a client mistake must
+	// not burn the code.
+	jkt, perr := s.tokenProof(ctx, dpopProof)
+	if perr != nil {
+		return nil, perr
 	}
 	now := s.now()
 	req, err := s.repo.RedeemCode(ctx, s.hash(code), now)
@@ -471,6 +489,9 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, actor Actor
 	if len(scopes) == 0 {
 		return nil, invalid
 	}
+	if pol.RequireDPoP && jkt == "" {
+		return nil, oauthErr("invalid_dpop_proof", "this organization requires DPoP-bound tokens")
+	}
 	grant := &mcpoauth.Grant{
 		ID:        shared.NewID(),
 		TenantID:  *req.TenantID,
@@ -480,6 +501,7 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, actor Actor
 		Scopes:    scopes,
 		CreatedAt: now,
 		ExpiresAt: now.Add(min(mcpoauth.GrantMaxTTL, grantLifetime(pol))),
+		DPoPJKT:   jkt,
 	}
 	resp, tokens, err := s.newTokens(grant, now)
 	if err != nil {
@@ -498,7 +520,7 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, actor Actor
 	return resp, nil
 }
 
-func (s *Service) refresh(ctx context.Context, form url.Values, actor Actor) (*TokenResponse, *OAuthError) {
+func (s *Service) refresh(ctx context.Context, form url.Values, dpopProof string, actor Actor) (*TokenResponse, *OAuthError) {
 	invalid := oauthErr("invalid_grant", "the refresh token is invalid or expired")
 	raw, clientID := form.Get("refresh_token"), form.Get("client_id")
 	if !strings.HasPrefix(raw, mcpoauth.RefreshTokenPrefix) || clientID == "" {
@@ -506,6 +528,10 @@ func (s *Service) refresh(ctx context.Context, form url.Values, actor Actor) (*T
 	}
 	if r := form.Get("resource"); r != "" && !s.isResource(r) {
 		return nil, oauthErr("invalid_target", "resource must be "+s.endpoints.Resource)
+	}
+	jkt, perr := s.tokenProof(ctx, dpopProof)
+	if perr != nil {
+		return nil, perr
 	}
 	now := s.now()
 	grant, hash, err := s.grantByToken(ctx, raw, mcpoauth.TokenRefresh, now)
@@ -526,7 +552,13 @@ func (s *Service) refresh(ctx context.Context, form url.Values, actor Actor) (*T
 	if err != nil {
 		return nil, oauthErr("server_error", "try again")
 	}
-	if s.blockedReason(pol, grant.Client, grant.TenantID) != "" || !now.Before(grant.CreatedAt.Add(grantLifetime(pol))) {
+	// A bound grant refreshes only with a proof of its key (RFC 9449 §5);
+	// a bearer grant is refused once the organization requires DPoP.
+	if grant.DPoPJKT != "" && jkt != grant.DPoPJKT {
+		return nil, oauthErr("invalid_dpop_proof", "a proof signed by the key this grant is bound to is required")
+	}
+	if s.blockedReason(pol, grant.Client, grant.TenantID) != "" || !now.Before(grant.CreatedAt.Add(grantLifetime(pol))) ||
+		(pol.RequireDPoP && grant.DPoPJKT == "") {
 		_ = s.repo.RevokeGrant(ctx, grant.TenantID, grant.ID, mcpoauth.RevokedByPolicy, now)
 		return nil, invalid
 	}
@@ -585,9 +617,13 @@ func (s *Service) newTokens(g *mcpoauth.Grant, now time.Time) (*TokenResponse, [
 		{Hash: s.hash(access), GrantID: g.ID, Kind: mcpoauth.TokenAccess, ExpiresAt: now.Add(mcpoauth.AccessTokenTTL)},
 		{Hash: s.hash(refresh), GrantID: g.ID, Kind: mcpoauth.TokenRefresh, ExpiresAt: refreshExp},
 	}
+	tokenType := "Bearer"
+	if g.DPoPJKT != "" {
+		tokenType = "DPoP"
+	}
 	return &TokenResponse{
 		AccessToken:  access,
-		TokenType:    "Bearer",
+		TokenType:    tokenType,
 		ExpiresIn:    int(mcpoauth.AccessTokenTTL.Seconds()),
 		RefreshToken: refresh,
 		Scope:        mcpoauth.Join(g.Scopes),
@@ -653,7 +689,7 @@ var ErrInvalidToken = errors.New("invalid access token")
 // AuthenticateAccessToken checks an MCP request's bearer token and returns
 // its principal, with the permissions recomputed from the user's current
 // access.
-func (s *Service) AuthenticateAccessToken(ctx context.Context, raw, ip string) (*Principal, error) {
+func (s *Service) AuthenticateAccessToken(ctx context.Context, raw, ip string, dp DPoPRequest) (*Principal, error) {
 	if !strings.HasPrefix(raw, mcpoauth.AccessTokenPrefix) {
 		return nil, ErrInvalidToken
 	}
@@ -665,6 +701,19 @@ func (s *Service) AuthenticateAccessToken(ctx context.Context, raw, ip string) (
 	if !grant.Active(now) || grant.Resource != s.endpoints.Resource {
 		return nil, ErrInvalidToken
 	}
+	// A bound token needs the DPoP scheme and a fresh proof of its key
+	// covering this token; a bearer token must not claim the DPoP scheme.
+	if grant.DPoPJKT != "" {
+		if !strings.EqualFold(dp.Scheme, "DPoP") {
+			return nil, ErrDPoP
+		}
+		p, err := s.verifyDPoP(ctx, dp.Proof, dpop.Expect{Method: dp.Method, URL: s.endpoints.Resource, AccessToken: raw, Now: now})
+		if err != nil || p.JKT != grant.DPoPJKT {
+			return nil, ErrDPoP
+		}
+	} else if strings.EqualFold(dp.Scheme, "DPoP") {
+		return nil, ErrDPoP
+	}
 	ok, err := s.members.IsActiveMember(ctx, grant.TenantID, grant.UserID)
 	if err != nil || !ok {
 		s.log.Debug("mcp oauth: token of an inactive membership", "grant_id", grant.ID.String())
@@ -675,7 +724,7 @@ func (s *Service) AuthenticateAccessToken(ctx context.Context, raw, ip string) (
 		return nil, ErrInvalidToken
 	}
 	pol, err := s.policy(ctx, grant.TenantID)
-	if err != nil || s.blockedReason(pol, grant.Client, grant.TenantID) != "" {
+	if err != nil || s.blockedReason(pol, grant.Client, grant.TenantID) != "" || (pol.RequireDPoP && grant.DPoPJKT == "") {
 		return nil, ErrInvalidToken
 	}
 	scopePerms := mcpoauth.Permissions(allowedScopes(pol, grant.Scopes))
