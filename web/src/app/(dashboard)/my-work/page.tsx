@@ -2,7 +2,7 @@
 
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ArrowRight } from 'lucide-react'

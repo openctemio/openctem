@@ -49,6 +49,9 @@ type MCPSettings struct {
 	// RefreshDays bounds how long a connection lasts without the person
 	// approving it again; 0 means 90.
 	RefreshDays int `json:"refresh_days,omitempty"`
+	// RequireDPoP accepts only DPoP-bound tokens (RFC 9449): a stolen token
+	// is useless without the client's private key.
+	RequireDPoP bool `json:"require_dpop,omitempty"`
 }
 
 // Validate checks the policy and normalizes host names to lower case.

@@ -8,7 +8,7 @@
  */
 
 import type { ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { LucideIcon } from 'lucide-react'
 import { BarChart3 } from 'lucide-react'
 import {

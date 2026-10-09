@@ -55,6 +55,7 @@ export const Module = {
   // mirror that let the toggle 403 the API while leaving the nav visible.
   Exposures: 'exposures',
   Remediation: 'remediation',
+  Suppressions: 'suppressions',
   ThreatIntel: 'threat_intel',
   // IOC catalogue — its own backend module (`iocs`, migration 000156)
   // that gates /api/v1/iocs. Distinct from `threat_intel` so an operator
@@ -432,11 +433,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/exceptions': {
     permission: Permission.SuppressionsRead,
-    module: Module.Findings,
+    module: Module.Suppressions,
   },
   '/exceptions/**': {
     permission: Permission.SuppressionsRead,
-    module: Module.Findings,
+    module: Module.Suppressions,
   },
 
   // ========================================
