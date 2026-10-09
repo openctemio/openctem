@@ -9,7 +9,9 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
+  DialogForm,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -177,8 +179,8 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
           setOpen(next)
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
-          <form onSubmit={submit} className="space-y-4">
+        <DialogContent size="lg">
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>{t('admin.cp.addTitle', 'Add a content pack')}</DialogTitle>
               <DialogDescription>
@@ -188,134 +190,136 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
                 )}
               </DialogDescription>
             </DialogHeader>
-            <Tabs value={mode} onValueChange={(v) => setMode(v as 'upload' | 'import')}>
-              <TabsList>
-                <TabsTrigger value="upload">
-                  {t('admin.cp.modeUpload', 'Upload an archive')}
-                </TabsTrigger>
-                <TabsTrigger value="import">
-                  {t('admin.cp.modeImport', 'Import from a URL')}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label htmlFor={id.name}>{t('admin.cp.name', 'Name')}</Label>
-                <Input
-                  id={id.name}
-                  value={name}
-                  onChange={(e) => setName(e.target.value.trim())}
-                  placeholder="nuclei-core"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor={id.version}>{t('admin.cp.version', 'Version')}</Label>
-                <Input
-                  id={id.version}
-                  value={version}
-                  onChange={(e) => setVersion(e.target.value.trim())}
-                  placeholder="10.2.4"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor={id.kind}>{t('admin.cp.kind', 'Kind')}</Label>
-                <Input
-                  id={id.kind}
-                  list={`${id.kind}-list`}
-                  value={kind}
-                  onChange={(e) => setKind(e.target.value.trim())}
-                />
-                <datalist id={`${id.kind}-list`}>
-                  {KNOWN_KINDS.map((k) => (
-                    <option key={k} value={k} />
-                  ))}
-                </datalist>
-              </div>
-            </div>
-            {mode === 'upload' ? (
-              <div className="space-y-1.5">
-                <Label htmlFor={id.file}>
-                  {t('admin.cp.archive', 'Archive (tar or tar.gz, up to 128 MiB)')}
-                </Label>
-                <Input
-                  id={id.file}
-                  type="file"
-                  accept=".tar,.tgz,.tar.gz,application/gzip,application/x-tar"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                />
-              </div>
-            ) : (
-              <div className="grid gap-3">
+            <DialogBody className="space-y-4">
+              <Tabs value={mode} onValueChange={(v) => setMode(v as 'upload' | 'import')}>
+                <TabsList>
+                  <TabsTrigger value="upload">
+                    {t('admin.cp.modeUpload', 'Upload an archive')}
+                  </TabsTrigger>
+                  <TabsTrigger value="import">
+                    {t('admin.cp.modeImport', 'Import from a URL')}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor={id.url}>{t('admin.cp.url', 'Release URL (https)')}</Label>
+                  <Label htmlFor={id.name}>{t('admin.cp.name', 'Name')}</Label>
                   <Input
-                    id={id.url}
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value.trim())}
-                    placeholder="https://"
+                    id={id.name}
+                    value={name}
+                    onChange={(e) => setName(e.target.value.trim())}
+                    placeholder="nuclei-core"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor={id.digest}>{t('admin.cp.digest', 'Expected digest')}</Label>
+                  <Label htmlFor={id.version}>{t('admin.cp.version', 'Version')}</Label>
                   <Input
-                    id={id.digest}
-                    value={digest}
-                    onChange={(e) => setDigest(e.target.value.trim().toLowerCase())}
-                    placeholder="sha256:"
-                    className="font-mono text-xs"
+                    id={id.version}
+                    value={version}
+                    onChange={(e) => setVersion(e.target.value.trim())}
+                    placeholder="10.2.4"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={id.kind}>{t('admin.cp.kind', 'Kind')}</Label>
+                  <Input
+                    id={id.kind}
+                    list={`${id.kind}-list`}
+                    value={kind}
+                    onChange={(e) => setKind(e.target.value.trim())}
+                  />
+                  <datalist id={`${id.kind}-list`}>
+                    {KNOWN_KINDS.map((k) => (
+                      <option key={k} value={k} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+              {mode === 'upload' ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor={id.file}>
+                    {t('admin.cp.archive', 'Archive (tar or tar.gz, up to 128 MiB)')}
+                  </Label>
+                  <Input
+                    id={id.file}
+                    type="file"
+                    accept=".tar,.tgz,.tar.gz,application/gzip,application/x-tar"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor={id.url}>{t('admin.cp.url', 'Release URL (https)')}</Label>
+                    <Input
+                      id={id.url}
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value.trim())}
+                      placeholder="https://"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={id.digest}>{t('admin.cp.digest', 'Expected digest')}</Label>
+                    <Input
+                      id={id.digest}
+                      value={digest}
+                      onChange={(e) => setDigest(e.target.value.trim().toLowerCase())}
+                      placeholder="sha256:"
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                <div className="space-y-1.5">
+                  <Label htmlFor={id.reason}>{t('admin.confirm.reason', 'Reason')}</Label>
+                  <Textarea
+                    id={id.reason}
+                    rows={2}
+                    maxLength={REASON_MAX}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder={t(
+                      'admin.cp.reasonPlaceholder',
+                      'Why, e.g. "monthly template refresh, change 912"'
+                    )}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={id.code}>
+                    {t('admin.confirm.code', 'Code from your authenticator')}
+                  </Label>
+                  <Input
+                    id={id.code}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    className="w-36 font-mono tracking-widest"
                   />
                 </div>
               </div>
-            )}
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-              <div className="space-y-1.5">
-                <Label htmlFor={id.reason}>{t('admin.confirm.reason', 'Reason')}</Label>
-                <Textarea
-                  id={id.reason}
-                  rows={2}
-                  maxLength={REASON_MAX}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder={t(
-                    'admin.cp.reasonPlaceholder',
-                    'Why, e.g. "monthly template refresh, change 912"'
-                  )}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor={id.code}>
-                  {t('admin.confirm.code', 'Code from your authenticator')}
-                </Label>
-                <Input
-                  id={id.code}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  className="w-36 font-mono tracking-widest"
-                />
-              </div>
-            </div>
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            {report && <ContentLintReportView report={report} />}
-            {secretsFound && (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/40 p-3">
-                <Checkbox id={id.ack} checked={ack} onCheckedChange={(v) => setAck(v === true)} />
-                <Label htmlFor={id.ack} className="text-sm leading-snug font-normal">
-                  {t(
-                    'admin.cp.ackSecrets',
-                    'I checked every file listed above: these are not real credentials (or must ship as is). Store the pack anyway.'
-                  )}
-                </Label>
-              </div>
-            )}
-            {problem && (name || version || file || url) && (
-              <p className="text-sm text-muted-foreground">{problem}</p>
-            )}
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              {report && <ContentLintReportView report={report} />}
+              {secretsFound && (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/40 p-3">
+                  <Checkbox id={id.ack} checked={ack} onCheckedChange={(v) => setAck(v === true)} />
+                  <Label htmlFor={id.ack} className="text-sm leading-snug font-normal">
+                    {t(
+                      'admin.cp.ackSecrets',
+                      'I checked every file listed above: these are not real credentials (or must ship as is). Store the pack anyway.'
+                    )}
+                  </Label>
+                </div>
+              )}
+              {problem && (name || version || file || url) && (
+                <p className="text-sm text-muted-foreground">{problem}</p>
+              )}
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 {t('common.cancel', 'Cancel')}
@@ -332,7 +336,7 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
                     : t('admin.cp.import', 'Import and sign')}
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </DialogContent>
       </Dialog>
     </>
