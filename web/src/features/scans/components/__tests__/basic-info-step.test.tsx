@@ -97,6 +97,11 @@ vi.mock('@/lib/api/scan-workflow-hooks', () => ({
     }
   },
 }))
+let workflowsModuleOn = true
+vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
+  useModuleEnabled: (id: string) => (id === 'scan_workflows' ? workflowsModuleOn : true),
+}))
+
 vi.mock('@/lib/api/tool-hooks', () => ({
   useTools: () => ({
     data: { items: [{ id: 't1', name: 'trivy', display_name: 'Trivy', is_active: true }] },
@@ -125,6 +130,29 @@ Element.prototype.scrollIntoView ??= () => {}
 describe('BasicInfoStep', () => {
   beforeEach(() => {
     workflowCalls.length = 0
+    workflowsModuleOn = true
+  })
+
+  it('offers no workflow when the scan workflows module is off (the API refuses one)', () => {
+    workflowsModuleOn = false
+    render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={vi.fn()} />)
+    expect(screen.queryByRole('radio', { name: 'Discover' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'Another workflow' })).toBeNull()
+    expect(screen.queryByText('What to run')).toBeNull()
+    expect(screen.getByLabelText('Scanner')).toBeInTheDocument()
+    expect(workflowCalls.every((f) => f === undefined)).toBe(true)
+  })
+
+  it('still shows the workflow of a workflow scan being edited when the module is off', () => {
+    workflowsModuleOn = false
+    render(
+      <BasicInfoStep
+        data={{ ...DEFAULT_NEW_SCAN, mode: 'workflow', workflowId: 'starter-discover' }}
+        onChange={vi.fn()}
+        lockMode
+      />
+    )
+    expect(workflowCalls.some((f) => f !== undefined)).toBe(true)
   })
 
   it('single mode asks for a scanner from the tool registry (no fake scan types)', () => {
