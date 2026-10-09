@@ -63,6 +63,15 @@ func (c *ceilingRepo) GetUserPermissions(_ context.Context, _, uid role.ID) ([]s
 	return out, nil
 }
 
+func (c *ceilingRepo) HasFullDataAccess(_ context.Context, _, uid role.ID) (bool, error) {
+	for _, id := range c.sets[uid.String()] {
+		if c.roles[id.String()].HasFullDataAccess() {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (c *ceilingRepo) AssignRole(_ context.Context, _, uid, rid role.ID, _ *role.ID) error {
 	c.sets[uid.String()] = append(c.sets[uid.String()], rid)
 	return nil

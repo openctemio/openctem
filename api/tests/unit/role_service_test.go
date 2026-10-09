@@ -247,6 +247,19 @@ func (m *mockRoleRepo) ListRoleMembers(_ context.Context, _ role.ID, _ role.ID) 
 	return m.roleMembers, nil
 }
 
+// ListRoleHolderIDs mirrors ListRoleMembers: the mock has no team bindings.
+func (m *mockRoleRepo) ListRoleHolderIDs(_ context.Context, _ role.ID, _ role.ID) ([]role.ID, error) {
+	m.listMembersCalls++
+	if m.listMembersErr != nil {
+		return nil, m.listMembersErr
+	}
+	out := make([]role.ID, 0, len(m.roleMembers))
+	for _, ur := range m.roleMembers {
+		out = append(out, ur.UserID)
+	}
+	return out, nil
+}
+
 func (m *mockRoleRepo) CountUsersWithRole(_ context.Context, _ role.ID) (int, error) {
 	m.countUsersCalls++
 	if m.countUsersErr != nil {

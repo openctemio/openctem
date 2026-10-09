@@ -405,7 +405,8 @@ func (r *RoleRepository) Delete(ctx context.Context, tenantID, id role.ID) error
 		WHERE id = $1
 		  AND tenant_id = $2
 		  AND is_system = false
-		  AND NOT EXISTS (SELECT 1 FROM user_roles WHERE role_id = $1)`
+		  AND NOT EXISTS (SELECT 1 FROM user_roles WHERE role_id = $1)
+		  AND NOT EXISTS (SELECT 1 FROM group_role_bindings WHERE role_id = $1)`
 
 	res, err := r.db.ExecContext(ctx, deleteQuery, id.String(), tenantID.String())
 	if err != nil {
@@ -626,7 +627,7 @@ func (r *RoleRepository) GetUserPermissions(ctx context.Context, tenantID, userI
 	// silently keep granting via the enforcement path.
 	query := `
 		SELECT DISTINCT rp.permission_id
-		FROM user_roles ur
+		FROM v_user_role_grants ur
 		JOIN role_permissions rp ON rp.role_id = ur.role_id
 		JOIN permissions p ON p.id = rp.permission_id AND p.is_active = TRUE
 		WHERE ur.tenant_id = $1 AND ur.user_id = $2
@@ -655,7 +656,7 @@ func (r *RoleRepository) HasFullDataAccess(ctx context.Context, tenantID, userID
 	query := `
 		SELECT EXISTS (
 			SELECT 1
-			FROM user_roles ur
+			FROM v_user_role_grants ur
 			JOIN roles r ON r.id = ur.role_id
 			WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND r.has_full_data_access = TRUE
 		)
@@ -786,6 +787,32 @@ func (r *RoleRepository) BulkAssignRoleToUsers(ctx context.Context, tenantID, ro
 	}
 
 	return tx.Commit()
+}
+
+// ListRoleHolderIDs returns every user who holds the role in the tenant,
+// directly or through a team (v_user_role_grants): the users whose cached
+// permissions a change to the role must invalidate.
+func (r *RoleRepository) ListRoleHolderIDs(ctx context.Context, tenantID, roleID role.ID) ([]role.ID, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT DISTINCT user_id FROM v_user_role_grants WHERE tenant_id = $1 AND role_id = $2`,
+		tenantID.String(), roleID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list role holders: %w", err)
+	}
+	defer rows.Close()
+	var out []role.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("failed to scan role holder: %w", err)
+		}
+		id, err := role.ParseID(s)
+		if err != nil {
+			return nil, fmt.Errorf("role holder id: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // ListRoleMembers returns all users who have a specific role.

@@ -503,7 +503,7 @@ func (r *SuppressionRepository) CountEligibleApprovers(ctx context.Context, tena
 		  AND (
 		      tm.role IN ('owner', 'admin')
 		      OR EXISTS (
-		          SELECT 1 FROM user_roles ur
+		          SELECT 1 FROM v_user_role_grants ur
 		          JOIN role_permissions rp ON rp.role_id = ur.role_id
 		          WHERE ur.tenant_id = tm.tenant_id AND ur.user_id = tm.user_id
 		            AND rp.permission_id = $2

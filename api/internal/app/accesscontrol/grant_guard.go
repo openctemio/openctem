@@ -68,9 +68,10 @@ func (s *RoleService) loadGrantActor(ctx context.Context, tid roledom.ID, actorI
 		if r.ID() == roledom.OwnerRoleID {
 			a.owner = true
 		}
-		if r.HasFullDataAccess() {
-			a.fullData = true
-		}
+	}
+	// Full data access may also come through a team's role binding.
+	if a.fullData, err = s.roleRepo.HasFullDataAccess(ctx, tid, uid); err != nil {
+		return grantActor{}, fmt.Errorf("load actor full data access: %w", err)
 	}
 	perms, err := s.roleRepo.GetUserPermissions(ctx, tid, uid)
 	if err != nil {

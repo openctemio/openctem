@@ -41,7 +41,10 @@ type GroupService struct {
 	// expiredLister finds memberships past their end date (the expiry
 	// controller). Nil: ExpireMemberships does nothing.
 	expiredLister groupdom.ExpiredMemberLister
-	logger        *logger.Logger
+	// bindings and roles enable team role bindings (group_role.go).
+	bindings groupdom.RoleBindingRepository
+	roles    *RoleService
+	logger   *logger.Logger
 }
 
 // NewGroupService creates a new GroupService.
@@ -561,6 +564,14 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 	if err := s.checkMembershipDelegation(ctx, g, input.UserID, actx.ActorID); err != nil {
 		return nil, err
 	}
+	// The team's roles go with the membership (decisions G1-G12 R3-R5). The
+	// creator joining their new team carries no roles yet.
+	carriesRoles := false
+	if !input.creator {
+		if carriesRoles, err = s.checkMembershipGrant(ctx, g, input.UserID, actx.ActorID, true); err != nil {
+			return nil, err
+		}
+	}
 
 	// Check if user is already a member
 	_, err = s.repo.GetMember(ctx, groupID, input.UserID)
@@ -590,6 +601,9 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 		if err := s.accessControlRepo.RefreshAccessForMemberAdd(ctx, groupID, input.UserID); err != nil {
 			s.logger.Error("failed to incrementally refresh access for member add", "error", err)
 		}
+	}
+	if carriesRoles {
+		s.invalidateMembers(ctx, g.TenantID(), []shared.ID{input.UserID})
 	}
 
 	s.logger.Info("member added to group", "group_id", input.GroupID, "user_id", input.UserID.String(), "role", role)
@@ -719,10 +733,21 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 	}
 	// Leaving a group oneself only narrows one's own scope; removing someone
 	// else is capped to groups wholly inside the caller's scope.
+	carriesRoles := false
 	if actx.ActorID != userID.String() {
 		if err := s.requireWholeGroupInScope(ctx, g); err != nil {
 			return err
 		}
+		// Taking someone's team roles away is a revocation (decisions G1-G12 R3).
+		if carriesRoles, err = s.checkMembershipGrant(ctx, g, userID, actx.ActorID, false); err != nil {
+			return err
+		}
+	} else if s.bindings != nil {
+		roles, berr := s.boundRoles(ctx, g)
+		if berr != nil {
+			return berr
+		}
+		carriesRoles = len(roles) > 0
 	}
 
 	// Check if this would remove the last owner
@@ -757,6 +782,9 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 		if err := s.accessControlRepo.RefreshAccessForMemberRemove(ctx, gid, userID); err != nil {
 			s.logger.Error("failed to incrementally refresh access for member remove", "error", err)
 		}
+	}
+	if carriesRoles {
+		s.invalidateMembers(ctx, g.TenantID(), []shared.ID{userID})
 	}
 
 	s.logger.Info("member removed from group", "group_id", groupID, "user_id", userID.String())

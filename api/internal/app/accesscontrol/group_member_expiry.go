@@ -63,6 +63,11 @@ func (s *GroupService) SetMemberAccess(ctx context.Context, input SetGroupMember
 	if err := s.checkMembershipDelegation(ctx, g, input.UserID, actx.ActorID); err != nil {
 		return nil, err
 	}
+	// Moving the end date keeps (or ends) the team's roles: a grant.
+	carriesRoles, err := s.checkMembershipGrant(ctx, g, input.UserID, actx.ActorID, true)
+	if err != nil {
+		return nil, err
+	}
 	member, err := s.repo.GetMember(ctx, groupID, input.UserID)
 	if err != nil {
 		return nil, err
@@ -73,6 +78,9 @@ func (s *GroupService) SetMemberAccess(ctx context.Context, input SetGroupMember
 	}
 	if err := s.repo.UpdateMember(ctx, member); err != nil {
 		return nil, fmt.Errorf("failed to update member access: %w", err)
+	}
+	if carriesRoles {
+		s.invalidateMembers(ctx, g.TenantID(), []shared.ID{input.UserID})
 	}
 
 	actx.TenantID = g.TenantID().String()
@@ -117,6 +125,8 @@ func (s *GroupService) ExpireMemberships(ctx context.Context, now time.Time, bat
 			continue
 		}
 		removed++
+		// The expired member also loses the team's roles.
+		s.invalidateMembers(ctx, e.TenantID, []shared.ID{e.UserID})
 		if s.accessControlRepo != nil {
 			if err := s.accessControlRepo.RefreshAccessForMemberRemove(ctx, e.GroupID, e.UserID); err != nil {
 				s.logger.Error("failed to refresh access for an expired membership", "error", err)
