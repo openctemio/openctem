@@ -5,6 +5,18 @@ import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog'
 
 import { cn } from '@/lib/utils'
 import { buttonVariants } from '@/components/ui/button'
+import {
+  MODAL_SIZE,
+  ModalBody,
+  ModalLayoutContext,
+  type ModalSize,
+  footerSectionClass,
+  headerSectionClass,
+  modalSurfaceClassName,
+  useKeyboardInset,
+  useModalLayout,
+  useModalLayoutState,
+} from '@/components/ui/modal-layout'
 
 function AlertDialog({ ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
   return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />
@@ -28,7 +40,7 @@ function AlertDialogOverlay({
     <AlertDialogPrimitive.Overlay
       data-slot="alert-dialog-overlay"
       className={cn(
-        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50',
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 motion-reduce:animate-none fixed inset-0 z-50 bg-black/50',
         className
       )}
       {...props}
@@ -36,40 +48,85 @@ function AlertDialogOverlay({
   )
 }
 
+/**
+ * A confirmation: the same frame as a dialog (fixed header, a body that is
+ * the only part that scrolls, fixed footer; a bottom sheet on phones) with no
+ * close button: the user answers with a footer action or Esc. Put anything
+ * beyond the title and description (a list, a field) in AlertDialogBody.
+ */
 function AlertDialogContent({
   className,
+  children,
+  size = 'md',
+  ref,
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Content>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Content> & { size?: ModalSize }) {
+  const [node, setNode] = React.useState<HTMLDivElement | null>(null)
+  const setRefs = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      setNode(el)
+      if (typeof ref === 'function') ref(el)
+      else if (ref) ref.current = el
+    },
+    [ref]
+  )
+  const layout = useModalLayoutState(null)
+  useKeyboardInset(node)
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay />
       <AlertDialogPrimitive.Content
+        ref={setRefs}
         data-slot="alert-dialog-content"
+        data-layout={layout.sections ? 'sections' : 'block'}
         className={cn(
-          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg',
+          modalSurfaceClassName,
+          MODAL_SIZE[size],
+          layout.sections
+            ? 'flex flex-col gap-0 overflow-hidden p-0'
+            : 'grid gap-4 overflow-x-hidden overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-6',
           className
         )}
         {...props}
-      />
+      >
+        <ModalLayoutContext.Provider value={layout}>{children}</ModalLayoutContext.Provider>
+      </AlertDialogPrimitive.Content>
     </AlertDialogPortal>
   )
 }
 
 function AlertDialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
+  const layout = useModalLayout()
   return (
     <div
       data-slot="alert-dialog-header"
-      className={cn('flex flex-col gap-2 text-center sm:text-start', className)}
+      className={cn(
+        layout?.sections
+          ? cn(headerSectionClass, 'flex-col gap-1.5 pe-4 sm:pe-6')
+          : 'flex flex-col gap-2 text-center sm:text-start',
+        className
+      )}
       {...props}
     />
   )
 }
 
+/** The scrolling middle of a confirmation (a list of what is affected, a field). */
+function AlertDialogBody(props: React.ComponentProps<'div'>) {
+  return <ModalBody slot="alert-dialog-body" {...props} />
+}
+
 function AlertDialogFooter({ className, ...props }: React.ComponentProps<'div'>) {
+  const layout = useModalLayout()
   return (
     <div
       data-slot="alert-dialog-footer"
-      className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
+      className={cn(
+        layout?.sections
+          ? footerSectionClass
+          : 'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
+        className
+      )}
       {...props}
     />
   )
@@ -126,6 +183,7 @@ export {
   AlertDialogOverlay,
   AlertDialogTrigger,
   AlertDialogContent,
+  AlertDialogBody,
   AlertDialogHeader,
   AlertDialogFooter,
   AlertDialogTitle,

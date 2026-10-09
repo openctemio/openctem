@@ -7,8 +7,9 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogHeaderBar,
   DialogTitle,
+  DialogHeader,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { EmptyState, TonePill, type PillTone } from '@/features/shared'
 import { get } from '@/lib/api/client'
@@ -138,17 +139,14 @@ export function RunTaskLogsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="flex max-h-[92svh] flex-col gap-0 overflow-hidden p-0 sm:p-0 sm:max-w-3xl"
-      >
-        <DialogHeaderBar>
+      <DialogContent size="xl">
+        <DialogHeader>
           <DialogTitle>Task logs{tool ? `: ${toDisplayText(tool, 64)}` : ''}</DialogTitle>
           <DialogDescription>
             What the sensor logged while it ran this task. Kept 14 days.
           </DialogDescription>
-        </DialogHeaderBar>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        </DialogHeader>
+        <DialogBody className="p-0">
           {isLoading && (
             <div
               className="flex items-center gap-2 p-6 text-sm text-muted-foreground"
@@ -182,7 +180,7 @@ export function RunTaskLogsDialog({
               lines.
             </p>
           )}
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   )

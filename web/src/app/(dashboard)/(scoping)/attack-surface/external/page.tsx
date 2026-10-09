@@ -40,6 +40,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -699,12 +700,12 @@ export default function ExternalSurfacePage() {
       </Main>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Add external asset</DialogTitle>
             <DialogDescription>Add an internet-facing asset to monitor.</DialogDescription>
           </DialogHeader>
-          {formFields}
+          <DialogBody>{formFields}</DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancel
@@ -715,12 +716,12 @@ export default function ExternalSurfacePage() {
       </Dialog>
 
       <Dialog open={!!editAsset} onOpenChange={(open) => !open && setEditAsset(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit external asset</DialogTitle>
             <DialogDescription>Update the asset&apos;s name, address and notes.</DialogDescription>
           </DialogHeader>
-          {formFields}
+          <DialogBody>{formFields}</DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditAsset(null)}>
               Cancel

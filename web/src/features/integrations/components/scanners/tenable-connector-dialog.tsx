@@ -19,6 +19,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -122,7 +123,7 @@ export function TenableConnectorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{editing ? 'Edit Tenable.sc connector' : 'Connect Tenable.sc'}</DialogTitle>
           <DialogDescription>
@@ -131,161 +132,164 @@ export function TenableConnectorDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="tsc-name">Name</Label>
-            <Input id="tsc-name" value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="tsc-sensor">
-              Sensor <span className="text-destructive">*</span>
-            </Label>
-            <Select
-              value={settings.sensorId || undefined}
-              onValueChange={(v) => set({ sensorId: v })}
-            >
-              <SelectTrigger id="tsc-sensor" aria-label="Sensor">
-                <SelectValue
-                  placeholder={
-                    sensorsLoading
-                      ? 'Loading sensors…'
-                      : options.length === 0
-                        ? 'No active sensor of your own'
-                        : 'Choose a sensor'
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map(({ sensor, runsConnector }) => (
-                  <SelectItem key={sensor.id} value={sensor.id}>
-                    {sensor.name}
-                    {runsConnector ? ' (runs the connector)' : ' (connector not configured)'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selected && !selected.runsConnector && (
-              <p className="text-xs text-warning">
-                This sensor does not report the Tenable.sc connector yet. Configure it on the sensor
-                (docs/TENABLE_SC.md in the sensor repository); syncs are refused until it does.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="tsc-instance">Instance name</Label>
-            <Input
-              id="tsc-instance"
-              value={settings.instance}
-              onChange={(e) => set({ instance: e.target.value.trim().toLowerCase() })}
-            />
-            <p className="text-muted-foreground text-xs">
-              The name of the Tenable.sc instance in the sensor&apos;s connector config (default for
-              the environment-variable setup).
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
+        <DialogBody>
+          <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="tsc-severity">Pull findings</Label>
+              <Label htmlFor="tsc-name">Name</Label>
+              <Input id="tsc-name" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="tsc-sensor">
+                Sensor <span className="text-destructive">*</span>
+              </Label>
               <Select
-                value={String(settings.minSeverity)}
-                onValueChange={(v) => set({ minSeverity: Number(v) })}
+                value={settings.sensorId || undefined}
+                onValueChange={(v) => set({ sensorId: v })}
               >
-                <SelectTrigger id="tsc-severity" aria-label="Minimum severity">
-                  <SelectValue />
+                <SelectTrigger id="tsc-sensor" aria-label="Sensor">
+                  <SelectValue
+                    placeholder={
+                      sensorsLoading
+                        ? 'Loading sensors…'
+                        : options.length === 0
+                          ? 'No active sensor of your own'
+                          : 'Choose a sensor'
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {SEVERITIES.map((s) => (
-                    <SelectItem key={s.value} value={String(s.value)}>
-                      {s.label}
+                  {options.map(({ sensor, runsConnector }) => (
+                    <SelectItem key={sensor.id} value={sensor.id}>
+                      {sensor.name}
+                      {runsConnector ? ' (runs the connector)' : ' (connector not configured)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="tsc-full">Full sync every (days)</Label>
-              <Input
-                id="tsc-full"
-                type="number"
-                min={1}
-                max={90}
-                value={settings.fullSyncDays}
-                onChange={(e) => set({ fullSyncDays: Number(e.target.value) || 0 })}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-3 rounded-lg border p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <Label htmlFor="tsc-coverage">Rolling coverage</Label>
-                <p className="text-muted-foreground text-xs">
-                  Scan the inventory in license-sized batches through this connector.
+              {selected && !selected.runsConnector && (
+                <p className="text-xs text-warning">
+                  This sensor does not report the Tenable.sc connector yet. Configure it on the
+                  sensor (docs/TENABLE_SC.md in the sensor repository); syncs are refused until it
+                  does.
                 </p>
-              </div>
-              <Switch
-                id="tsc-coverage"
-                checked={settings.coverageEnabled}
-                onCheckedChange={(v) => set({ coverageEnabled: v })}
-              />
+              )}
             </div>
-            {settings.coverageEnabled && (
-              <div className="space-y-3">
-                <CatalogSelect
-                  id="tsc-cov-policy"
-                  label="Scan policy"
-                  items={catalog?.policies}
-                  value={settings.coveragePolicyId}
-                  onChange={(v) => set({ coveragePolicyId: v })}
-                  required
+
+            <div className="space-y-2">
+              <Label htmlFor="tsc-instance">Instance name</Label>
+              <Input
+                id="tsc-instance"
+                value={settings.instance}
+                onChange={(e) => set({ instance: e.target.value.trim().toLowerCase() })}
+              />
+              <p className="text-muted-foreground text-xs">
+                The name of the Tenable.sc instance in the sensor&apos;s connector config (default
+                for the environment-variable setup).
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="tsc-severity">Pull findings</Label>
+                <Select
+                  value={String(settings.minSeverity)}
+                  onValueChange={(v) => set({ minSeverity: Number(v) })}
+                >
+                  <SelectTrigger id="tsc-severity" aria-label="Minimum severity">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SEVERITIES.map((s) => (
+                      <SelectItem key={s.value} value={String(s.value)}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tsc-full">Full sync every (days)</Label>
+                <Input
+                  id="tsc-full"
+                  type="number"
+                  min={1}
+                  max={90}
+                  value={settings.fullSyncDays}
+                  onChange={(e) => set({ fullSyncDays: Number(e.target.value) || 0 })}
                 />
-                <CatalogSelect
-                  id="tsc-cov-repo"
-                  label="Scan repository"
-                  items={catalog?.scanRepositories}
-                  value={settings.coverageRepositoryId}
-                  onChange={(v) => set({ coverageRepositoryId: v })}
-                  required
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-lg border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label htmlFor="tsc-coverage">Rolling coverage</Label>
+                  <p className="text-muted-foreground text-xs">
+                    Scan the inventory in license-sized batches through this connector.
+                  </p>
+                </div>
+                <Switch
+                  id="tsc-coverage"
+                  checked={settings.coverageEnabled}
+                  onCheckedChange={(v) => set({ coverageEnabled: v })}
                 />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="tsc-cap">License cap (optional)</Label>
-                    <Input
-                      id="tsc-cap"
-                      type="number"
-                      min={0}
-                      value={settings.licenseCap || ''}
-                      placeholder="Tenable.sc license"
-                      onChange={(e) => set({ licenseCap: Number(e.target.value) || 0 })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="tsc-margin">Safety margin (IPs)</Label>
-                    <Input
-                      id="tsc-margin"
-                      type="number"
-                      min={0}
-                      value={settings.safetyMargin || ''}
-                      placeholder="0"
-                      onChange={(e) => set({ safetyMargin: Number(e.target.value) || 0 })}
-                    />
+              </div>
+              {settings.coverageEnabled && (
+                <div className="space-y-3">
+                  <CatalogSelect
+                    id="tsc-cov-policy"
+                    label="Scan policy"
+                    items={catalog?.policies}
+                    value={settings.coveragePolicyId}
+                    onChange={(v) => set({ coveragePolicyId: v })}
+                    required
+                  />
+                  <CatalogSelect
+                    id="tsc-cov-repo"
+                    label="Scan repository"
+                    items={catalog?.scanRepositories}
+                    value={settings.coverageRepositoryId}
+                    onChange={(v) => set({ coverageRepositoryId: v })}
+                    required
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="tsc-cap">License cap (optional)</Label>
+                      <Input
+                        id="tsc-cap"
+                        type="number"
+                        min={0}
+                        value={settings.licenseCap || ''}
+                        placeholder="Tenable.sc license"
+                        onChange={(e) => set({ licenseCap: Number(e.target.value) || 0 })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tsc-margin">Safety margin (IPs)</Label>
+                      <Input
+                        id="tsc-margin"
+                        type="number"
+                        min={0}
+                        value={settings.safetyMargin || ''}
+                        placeholder="0"
+                        onChange={(e) => set({ safetyMargin: Number(e.target.value) || 0 })}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          <div className="bg-muted/50 flex gap-2 rounded-lg border p-3">
-            <ServerCog className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
-            <p className="text-muted-foreground text-xs">
-              What the connector may read and which policies and repositories scans may use are set
-              by the sensor&apos;s owner in its config; OpenCTEM can only ask within them.
-            </p>
+            <div className="bg-muted/50 flex gap-2 rounded-lg border p-3">
+              <ServerCog className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
+              <p className="text-muted-foreground text-xs">
+                What the connector may read and which policies and repositories scans may use are
+                set by the sensor&apos;s owner in its config; OpenCTEM can only ask within them.
+              </p>
+            </div>
           </div>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

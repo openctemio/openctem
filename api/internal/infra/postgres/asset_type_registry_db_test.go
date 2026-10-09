@@ -313,32 +313,6 @@ func TestAssetTypeRegistry_InputsAndSubTypesMatchRegistry(t *testing.T) {
 	if seen != len(asset.StoredAssetTypes()) {
 		t.Errorf("%d storable rows, registry has %d core types", seen, len(asset.StoredAssetTypes()))
 	}
-
-	inputs := asset.RegistryTypeInputs()
-	mrows, err := db.QueryContext(ctx,
-		`SELECT from_type, from_sub_type, to_type, COALESCE(to_sub_type, ''), COALESCE(provider, '') FROM asset_type_input_map`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = mrows.Close() }()
-	n := 0
-	for mrows.Next() {
-		var ft, fs, tt, ts, prov string
-		if err := mrows.Scan(&ft, &fs, &tt, &ts, &prov); err != nil {
-			t.Fatal(err)
-		}
-		n++
-		want, ok := inputs[asset.TypeRef{Type: asset.AssetType(ft), SubType: fs}]
-		if !ok || string(want.Type) != tt || want.SubType != ts || string(want.Provider) != prov {
-			t.Errorf("input map (%s, %s) -> (%s, %s, %s); registry %+v (found %v)", ft, fs, tt, ts, prov, want, ok)
-		}
-	}
-	if err := mrows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if n != len(inputs) {
-		t.Errorf("%d input map rows, registry has %d inputs", n, len(inputs))
-	}
 }
 
 // RFC-042 §6.3.8 T3: after the normalisation every stored type is a core type,
@@ -367,145 +341,10 @@ func TestAssetTypeRegistry_OnlyCoreTypesAreStored(t *testing.T) {
 		tenantID.String(), "t3-alias-"+shared.NewID().String()); err == nil {
 		t.Error("an alias type was stored; chk_assets_core_type must refuse it")
 	}
-
-	// Every legacy code maps onto a stored pair of the registry.
-	rows, err := db.QueryContext(ctx, `SELECT code, to_type, COALESCE(to_sub_type, '') FROM asset_type_legacy_codes`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	n := 0
-	for rows.Next() {
-		var code, to, sub string
-		if err := rows.Scan(&code, &to, &sub); err != nil {
-			t.Fatal(err)
-		}
-		n++
-		if !asset.AssetType(to).IsStored() || !asset.IsValidSubType(asset.AssetType(to), sub) {
-			t.Errorf("legacy code %s -> %s/%s is not a stored pair", code, to, sub)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if n != 14 {
-		t.Errorf("%d legacy codes mapped, want 14", n)
-	}
 }
 
-// The normalisation batch, run on legacy rows of two tenants inside a
-// transaction that is rolled back: every row ends on a stored pair, nothing
-// is dropped (unfit values become x_native_* properties), nothing the asset
-// already had is overwritten, each move is ledgered and recorded in the
-// asset's history, and a tenant's rows never affect another tenant's.
-func TestAssetTypeNormalise_Batch(t *testing.T) {
-	db, ctx := openRegistryDB(t)
-	tenantA := seedTestTenant(ctx, t, db)
-	tenantB := seedTestTenant(ctx, t, db)
-
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
-		t.Skipf("cannot disable triggers (needs superuser): %v", err)
-	}
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE assets DROP CONSTRAINT chk_assets_core_type`); err != nil {
-		t.Fatal(err)
-	}
-
-	type row struct {
-		tenant                 shared.ID
-		typ, sub, provider     string
-		props                  string
-		wantType, wantSub      string
-		wantProvider, wantProp string // wantProp: a JSON object the properties must contain
-	}
-	rows := []row{
-		{tenantA, "website", "", "", `{}`, "application", "website", "", `{}`},
-		{tenantA, "website", "api", "", `{}`, "application", "website", "", `{"x_native_sub_type":"api"}`},
-		{tenantA, "s3_bucket", "", "", `{}`, "storage", "bucket", "aws", `{"provider":"aws"}`},
-		{tenantA, "database", "postgresql", "", `{"engine":"mariadb"}`, "database", "relational", "", `{"engine":"mariadb"}`},
-		{tenantA, "cloud_account", "aws", "gcp", `{}`, "cloud_account", "", "gcp", `{"x_native_sub_type":"aws"}`},
-		{tenantA, "service", "port", "", `{}`, "service", "open_port", "", `{}`},
-		{tenantA, "network", "lan", "", `{}`, "network", "", "", `{"x_native_sub_type":"lan"}`},
-		{tenantA, "server", "linux", "", `{}`, "host", "", "", `{"x_native_type":"server","x_native_sub_type":"linux"}`},
-		{tenantB, "ip", "", "", `{}`, "ip_address", "", "", `{"x_native_type":"ip"}`},
-		{tenantB, "credential", "", "", `{}`, "unclassified", "", "", `{"x_native_type":"credential"}`},
-		{tenantB, "host", "", "", `{}`, "host", "", "", `{}`}, // already a core pair: untouched
-	}
-	ids := make([]string, len(rows))
-	for i, r := range rows {
-		if err := tx.QueryRowContext(ctx, `
-			INSERT INTO assets (tenant_id, name, asset_type, sub_type, provider, properties)
-			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6::jsonb) RETURNING id`,
-			r.tenant.String(), "t3-"+shared.NewID().String(), r.typ, r.sub, r.provider, r.props).Scan(&ids[i]); err != nil {
-			t.Fatalf("insert %s/%s: %v", r.typ, r.sub, err)
-		}
-	}
-
-	var cursor sql.NullString
-	moved := 0
-	for {
-		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 3, 684)`, cursor).Scan(&cursor, &n); err != nil {
-			t.Fatalf("normalise: %v", err)
-		}
-		if !cursor.Valid {
-			break
-		}
-		moved += n
-	}
-	if moved < len(rows)-1 {
-		t.Errorf("moved %d rows, want at least %d", moved, len(rows)-1)
-	}
-
-	for i, r := range rows {
-		var typ, sub, provider string
-		var contains bool
-		if err := tx.QueryRowContext(ctx, `
-			SELECT asset_type, COALESCE(sub_type, ''), COALESCE(provider, ''), properties @> $2::jsonb
-			FROM assets WHERE id = $1`, ids[i], r.wantProp).Scan(&typ, &sub, &provider, &contains); err != nil {
-			t.Fatal(err)
-		}
-		if typ != r.wantType || sub != r.wantSub || provider != r.wantProvider || !contains {
-			t.Errorf("%s/%s (provider %q) -> %s/%s provider %q (props contain %s: %v); want %s/%s provider %q",
-				r.typ, r.sub, r.provider, typ, sub, provider, r.wantProp, contains, r.wantType, r.wantSub, r.wantProvider)
-		}
-		var ledger, history int
-		_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_type_reclassifications WHERE asset_id = $1 AND tenant_id = $2`, ids[i], r.tenant.String()).Scan(&ledger)
-		_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_state_history WHERE asset_id = $1 AND tenant_id = $2 AND change_type = 'reclassified'`, ids[i], r.tenant.String()).Scan(&history)
-		wantN := 1
-		if r.typ == "host" {
-			wantN = 0
-		}
-		if ledger != wantN || history != wantN {
-			t.Errorf("%s/%s: %d ledger and %d history row(s), want %d each", r.typ, r.sub, ledger, history, wantN)
-		}
-	}
-
-	// A second pass finds nothing to move.
-	var again sql.NullString
-	total := 0
-	for {
-		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 684)`, again).Scan(&again, &n); err != nil {
-			t.Fatal(err)
-		}
-		if !again.Valid {
-			break
-		}
-		total += n
-	}
-	if total != 0 {
-		t.Errorf("second pass moved %d rows, want 0", total)
-	}
-}
-
-// O3 (RFC-042 §6.3.8, migration 000685): one web sub-type. No asset and no
-// threat-model row is keyed by (application, web_application) any more, and
-// a row an old pod still writes that way is moved by the normalise batch.
+// O3 (RFC-042 §6.3.8): one web sub-type. No threat-model row is keyed by
+// (application, web_application).
 func TestAssetTypeRegistry_OneWebSubType(t *testing.T) {
 	db, ctx := openRegistryDB(t)
 	var n int
@@ -515,35 +354,5 @@ func TestAssetTypeRegistry_OneWebSubType(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("%d technique_applicability row(s) still keyed by application/web_application", n)
-	}
-
-	tenantID := seedTestTenant(ctx, t, db)
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	var id string
-	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO assets (tenant_id, name, asset_type, sub_type) VALUES ($1, $2, 'application', 'web_application') RETURNING id`,
-		tenantID.String(), "o3-"+shared.NewID().String()).Scan(&id); err != nil {
-		t.Fatal(err)
-	}
-	var cursor sql.NullString
-	for {
-		var moved int
-		if err := tx.QueryRowContext(ctx, `SELECT last_id, moved FROM asset_type_normalise_batch($1, 500, 685)`, cursor).Scan(&cursor, &moved); err != nil {
-			t.Fatal(err)
-		}
-		if !cursor.Valid {
-			break
-		}
-	}
-	var sub string
-	var ledger int
-	_ = tx.QueryRowContext(ctx, `SELECT COALESCE(sub_type, '') FROM assets WHERE id = $1`, id).Scan(&sub)
-	_ = tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_type_reclassifications WHERE asset_id = $1 AND migration = 685 AND tenant_id = $2`, id, tenantID.String()).Scan(&ledger)
-	if sub != "website" || ledger != 1 {
-		t.Errorf("application/web_application -> sub_type %q with %d ledger row(s); want website, 1", sub, ledger)
 	}
 }

@@ -26,6 +26,7 @@ export function OrganizationPlanUsage() {
       limitColumn: t('plan.col.limit', 'Allowed'),
       usedColumn: t('plan.col.used', 'Used'),
       unlimited: t('plan.unlimited', 'Unlimited'),
+      notCounted: t('plan.notCounted', 'Counted while a limit is set'),
       overLimit: t('plan.overLimit', 'Over limit'),
       override: t('plan.override', 'Set for this organization'),
       until: (date) =>
