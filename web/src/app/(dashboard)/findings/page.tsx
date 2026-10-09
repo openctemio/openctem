@@ -5,7 +5,7 @@ import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/b
 import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
 import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import {
   DEFAULT_FINDING_LENS,
