@@ -1693,7 +1693,7 @@ deliberately.
    plus a reason on direct grants, group memberships and engagements, and expiry
    on role assignments and guest memberships, checked at read time
    (RFC-050 W22/W23). Built so far: external members' memberships (RFC-058)
-   and **team memberships** (`group_members.expires_at`, migration 001459;
+   and **team memberships** (`group_members.expires_at`, migration 001502;
    required on `external` teams; removed within a minute of the end date,
    which recomputes the data scope). Role assignments and direct grants have
    no `expires_at` yet; revocation is immediate: disable or offboard the
