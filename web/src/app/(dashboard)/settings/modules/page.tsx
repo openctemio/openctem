@@ -19,6 +19,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogBody,
 } from '@/components/ui/alert-dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
@@ -556,7 +557,7 @@ export default function ModuleManagementPage() {
           a save because of the module graph. Lists the concrete modules
           the admin needs to flip before the proposed toggle will take. */}
       <AlertDialog open={!!depConflict} onOpenChange={(open) => !open && setDepConflict(null)}>
-        <AlertDialogContent className="max-w-lg">
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-muted-foreground" />
@@ -573,50 +574,52 @@ export default function ModuleManagementPage() {
                 : `${depConflict?.required?.length ?? 0} module(s) must be enabled before ${depConflict?.module_name ?? ''}`}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="space-y-3 text-sm">
-            {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
-              <div>
-                <div className="text-muted-foreground">
-                  The following{' '}
-                  <span className="font-semibold">{depConflict.blockers?.length}</span> module(s)
-                  depend on <span className="font-medium">{depConflict.module_name}</span>. You can
-                  disable them all together, or cancel and handle them manually:
+          <AlertDialogBody>
+            <div className="space-y-3 text-sm">
+              {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-muted-foreground">
+                    The following{' '}
+                    <span className="font-semibold">{depConflict.blockers?.length}</span> module(s)
+                    depend on <span className="font-medium">{depConflict.module_name}</span>. You
+                    can disable them all together, or cancel and handle them manually:
+                  </div>
+                  <ul className="mt-2 space-y-1.5">
+                    {depConflict.blockers?.map((b) => (
+                      <li key={b.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium">{b.name}</div>
+                          <code className="text-xs text-muted-foreground">{b.module_id}</code>
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{b.reason}</div>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="mt-2 space-y-1.5">
-                  {depConflict.blockers?.map((b) => (
-                    <li key={b.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium">{b.name}</div>
-                        <code className="text-xs text-muted-foreground">{b.module_id}</code>
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">{b.reason}</div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
-              <div>
-                <div className="text-muted-foreground">
-                  <span className="font-medium">{depConflict.module_name}</span> requires{' '}
-                  <span className="font-semibold">{depConflict.required?.length}</span> other
-                  module(s) that are currently disabled. You can enable them all together, or cancel
-                  and handle them manually:
+              )}
+              {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
+                <div>
+                  <div className="text-muted-foreground">
+                    <span className="font-medium">{depConflict.module_name}</span> requires{' '}
+                    <span className="font-semibold">{depConflict.required?.length}</span> other
+                    module(s) that are currently disabled. You can enable them all together, or
+                    cancel and handle them manually:
+                  </div>
+                  <ul className="mt-2 space-y-1.5">
+                    {depConflict.required?.map((r) => (
+                      <li key={r.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium">{r.name}</div>
+                          <code className="text-xs text-muted-foreground">{r.module_id}</code>
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{r.reason}</div>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="mt-2 space-y-1.5">
-                  {depConflict.required?.map((r) => (
-                    <li key={r.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium">{r.name}</div>
-                        <code className="text-xs text-muted-foreground">{r.module_id}</code>
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">{r.reason}</div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </AlertDialogBody>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDepConflict(null)}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleCascadeResolve} disabled={isUpdating}>
