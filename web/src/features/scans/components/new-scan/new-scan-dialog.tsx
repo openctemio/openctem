@@ -29,7 +29,12 @@ import { TargetsStep } from './targets-step'
 import { OptionsStep } from './options-step'
 import { ScheduleStep } from './schedule-step'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
-import { basicInfoError, formDataToCreateRequest } from '../../lib/scan-form'
+import {
+  basicInfoError,
+  directTargets,
+  formDataToCreateRequest,
+  targetsError,
+} from '../../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../../lib/scanner-config-warnings'
 import { useCreateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
@@ -68,8 +73,13 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const { data: zonesData } = useScanZones(canReadZones && open)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
+  // The previews take names: the picked assets by name, with the typed ones.
   const previewRequest = useMemo(
-    () => toZonePreviewRequest(formDataToCreateRequest(formData), formData.scanZoneId),
+    () =>
+      toZonePreviewRequest(
+        { ...formDataToCreateRequest(formData), targets: directTargets(formData) },
+        formData.scanZoneId
+      ),
     [formData]
   )
 
@@ -92,20 +102,14 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         }
         return true
       }
-      case 'targets':
-        // NEW: Check if at least ONE target source has data (can have all)
-        const { targets } = formData
-        const hasAssetGroups = targets.assetGroupIds.length > 0
-        const hasIndividualAssets = targets.assetIds.length > 0
-        const hasCustomTargets = targets.customTargets.length > 0
-
-        if (!hasAssetGroups && !hasIndividualAssets && !hasCustomTargets) {
-          toast.error(
-            'Please select at least one target (asset group, individual asset, or custom target)'
-          )
+      case 'targets': {
+        const problem = targetsError(formData)
+        if (problem) {
+          toast.error(problem)
           return false
         }
         return true
+      }
       case 'options':
         return true
       case 'schedule':
@@ -139,14 +143,10 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const handleSubmit = async () => {
     if (!validateCurrentStep()) return
 
-    // Additional validation: ensure we have at least one target source
-    const { targets } = formData
-    const hasAssetGroups = targets.assetGroupIds.length > 0
-    const hasIndividualAssets = targets.assetIds.length > 0
-    const hasCustomTargets = targets.customTargets.length > 0
-
-    if (!hasAssetGroups && !hasIndividualAssets && !hasCustomTargets) {
-      toast.error('Please select at least one target')
+    const targetProblem = targetsError(formData)
+    if (targetProblem) {
+      toast.error(targetProblem)
+      setCurrentStep('targets')
       return
     }
 
@@ -154,15 +154,6 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     try {
       // Map form data to API request format
       const request = formDataToCreateRequest(formData)
-
-      // Validate the mapped request has targets
-      // This can happen if asset IDs couldn't be resolved to names
-      const requestHasAssetGroups = request.asset_group_ids && request.asset_group_ids.length > 0
-      const requestHasTargets = request.targets && request.targets.length > 0
-      if (!requestHasAssetGroups && !requestHasTargets) {
-        toast.error('Unable to resolve selected assets. Please try selecting them again.')
-        return
-      }
 
       // Create the scan configuration
       const scanConfig = await createScanConfig(request)

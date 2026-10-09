@@ -73,6 +73,7 @@ func (r *MCPOAuthRepository) PurgeForPlatform(ctx context.Context, now time.Time
 		arg time.Time
 	}{
 		{`DELETE FROM mcp_oauth_requests WHERE expires_at < $1`, now.Add(-24 * time.Hour)},
+		{`DELETE FROM mcp_action_confirmations WHERE expires_at < $1`, now.Add(-24 * time.Hour)},
 		{`DELETE FROM mcp_oauth_tokens WHERE expires_at < $1`, now},
 		{`DELETE FROM mcp_oauth_grants WHERE COALESCE(revoked_at, expires_at) < $1`, now.Add(-30 * 24 * time.Hour)},
 		{`DELETE FROM mcp_oauth_clients c WHERE c.kind = 'dynamic' AND c.blocked_at IS NULL AND c.created_at < $1

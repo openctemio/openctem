@@ -19,12 +19,12 @@ func TestOutboundWebhooks_StayRemoved(t *testing.T) {
 			t.Errorf("permission %q is back; outbound webhooks have no sender", p)
 		}
 	}
-	if _, ok := module.ModulePermissionMapping[module.ModuleWebhooks]; ok {
-		t.Errorf("module %q still maps to a permission", module.ModuleWebhooks)
+	if _, ok := module.ModulePermissionMapping["webhooks"]; ok {
+		t.Errorf("module %q still maps to a permission", "webhooks")
 	}
 	for _, p := range module.ModulePresets {
 		for _, m := range p.EnabledModules {
-			if m == module.ModuleIntegrationsWebhooks {
+			if m == "integrations.webhooks" {
 				t.Errorf("preset %q enables %q, which turns on nothing", p.ID, m)
 			}
 		}

@@ -207,6 +207,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Gated actions (rotate_key) ring only when the sensor's grant lists
 	// them (RFC-052 §5.3).
 	doorbell.SetGrants(repos.SensorGrant)
+	// A new job-signing key set changes config_version, so sensors re-read
+	// hello and pick it up (RFC-040 §5.6).
+	if svc.JobSigner != nil {
+		doorbell.SetKeySetVersion(svc.JobSigner.KeySetVersion)
+	}
 	ingestHandler.SetDoorbell(doorbell)
 	// Heartbeat latency feeds the health controller's platform-health guard
 	// (RFC-035 D3): no offline conviction while heartbeats are slow.
@@ -334,6 +339,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpClients = handler.NewMCPClientsHandler(mcpOAuth, log)
 		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
 		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
+		// Write tools run only after the person confirms the action in the
+		// web UI (RFC-062 §10).
+		mcpHandler.SetWriteTools(mcpOAuth, svc.Vulnerability)
 	}
 	if mcpAuth != nil && mcpPolicies != nil {
 		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)
@@ -372,6 +380,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
 		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
 		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
+		BountyProgram: handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
+		ScopeLetter:   handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
 		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:          newEASMHandler(repos, svc, log),
 		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
@@ -453,19 +463,20 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
 
 		// Scanning & ScanRuns
-		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
-		ScannerTemplate: handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
-		TemplateSource:  handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
-		ContentPack:     handler.NewContentPackHandler(svc.ContentPacks, log),
-		SecretStore:     handler.NewSecretStoreHandler(svc.SecretStore, v, log),
-		Tool:            handler.NewToolHandler(svc.Tool, v, log),
-		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
-		Capability:      handler.NewCapabilityHandler(svc.Capability, v, log),
-		Scan:            handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
-		CI:              handler.NewCIHandler(svc.Scan, log),
-		CIAdmin:         ciAdmin,
-		CIRunner:        ciRunner,
-		ScanWorkflow:    withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan),
+		ScanProfile:         handler.NewScanProfileHandler(svc.ScanProfile, v, log),
+		ScannerTemplate:     handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
+		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
+		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
+		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		SecretStore:         handler.NewSecretStoreHandler(svc.SecretStore, v, log),
+		Tool:                handler.NewToolHandler(svc.Tool, v, log),
+		ToolCategory:        handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
+		Capability:          handler.NewCapabilityHandler(svc.Capability, v, log),
+		Scan:                handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
+		CI:                  handler.NewCIHandler(svc.Scan, log),
+		CIAdmin:             ciAdmin,
+		CIRunner:            ciRunner,
+		ScanWorkflow:        withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
@@ -550,6 +561,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			postgres.NewPlatformUserDirectory(deps.DB),
 			newPlatformUserService(repos, svc, cfg, deps.DB),
 			log),
+		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
+		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),

@@ -371,7 +371,8 @@ func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModu
 // server-side from the static preset catalog, so it is bounded by the
 // module catalog, and it must be applied as one set for the dependency
 // check to see the preset's target state.
-const maxModuleUpdatesPerRequest = 50
+// A variable so a test can lower it.
+var maxModuleUpdatesPerRequest = 50
 
 // UpdateTenantModules toggles modules for a tenant on behalf of an API caller.
 func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string, updates []moduledom.TenantModuleUpdate, actx auditapp.AuditContext) (*TenantModuleConfigOutput, error) {
@@ -438,14 +439,6 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 
 		if !u.IsEnabled && m.IsCore() {
 			return nil, fmt.Errorf("%w: '%s' is a core module and cannot be disabled", moduledom.ErrCoreModuleCannotBeDisabled, m.Name())
-		}
-		// Mandatory modules (operational essentials like `sensors` for
-		// data ingestion) — disabling them silently breaks the platform.
-		// Reject so an admin doesn't accidentally DoS the tenant via
-		// the toggle UI. Distinct error from core so UI can render a
-		// targeted message.
-		if !u.IsEnabled && moduledom.MandatoryModuleIDs[u.ModuleID] {
-			return nil, fmt.Errorf("%w: '%s' is a mandatory module — disabling would break platform functionality (data ingestion, alerts, RBAC)", shared.ErrValidation, m.Name())
 		}
 
 		// Dependency check — platform-wide static graph in
@@ -759,7 +752,7 @@ func (s *ModuleService) getTenantDisabledModules(ctx context.Context, tenantID s
 	}
 
 	// Bundle subsetting: when the tenant subscribes to one or more bundles, the
-	// enabled baseline is the union of those bundles (+core+mandatory+deps);
+	// enabled baseline is the union of those bundles (+core+deps);
 	// every non-core module NOT in the baseline is disabled. When there is no
 	// subscription (or no bundle store wired), we skip this entirely and fall
 	// through to the legacy "only explicit-off overrides are disabled" behavior
@@ -1113,7 +1106,7 @@ func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.Audi
 
 // SubscribeBundles replaces the tenant's product-bundle subscription. Once set,
 // the enabled module set is resolved live as the union of these bundles
-// (+core+mandatory+deps) on every read, with per-module overrides layered on
+// (+core+deps) on every read, with per-module overrides layered on
 // top. An empty slice clears the subscription (every module on). Invalidates the
 // gate cache + bumps the config version + audits, so it takes effect immediately.
 func (s *ModuleService) SubscribeBundles(ctx context.Context, tenantID string, bundleIDs []string, actx auditapp.AuditContext) error {
