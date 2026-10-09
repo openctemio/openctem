@@ -18,7 +18,6 @@ asset_state_history
 assets
 assignment_rules
 attachments
-attack_paths
 attack_simulation_runs
 attack_simulations
 attacker_profiles
@@ -90,6 +89,7 @@ ingest_reports
 integrations
 ioc_matches
 iocs
+mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
 mcp_oauth_requests
@@ -162,7 +162,6 @@ threat_actors
 threat_model_threats
 threat_models
 tool_categories
-tool_executions
 tools
 user_accessible_assets
 user_dashboards
