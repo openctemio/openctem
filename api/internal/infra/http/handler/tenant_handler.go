@@ -1881,6 +1881,12 @@ type SecuritySettingsResponse struct {
 	// on (research/25 D3; off by default).
 	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates"`
+	// ToolHTTPUserAgent / ForbidToolInsecureTLS: the organization's layer of
+	// its tools' HTTP settings, sent with every scan job (RFC-060 §4.1): a
+	// User-Agent unless a sensor's local policy forces one, and a refusal of
+	// tools that skip TLS verification.
+	ToolHTTPUserAgent     string `json:"tool_http_user_agent"`
+	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
 	PersonalAccounts string `json:"personal_accounts"`
 	// SSOExceptions: members who may sign in without SSO while it is enforced.
@@ -1920,6 +1926,8 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			RequireSensorLocalPolicyForPrivateTargets: s.Security.RequireSensorLocalPolicyForPrivateTargets,
 			AllowSensorInteractsh:                     s.Security.AllowSensorInteractsh,
 			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
+			ToolHTTPUserAgent:                         s.Security.ToolHTTPUserAgent,
+			ForbidToolInsecureTLS:                     s.Security.ForbidToolInsecureTLS,
 			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
 			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 			JITRequiresApproval:                       s.Security.JITRequiresApproval,
@@ -2044,6 +2052,10 @@ type UpdateSecuritySettingsRequest struct {
 	// alerted.
 	AllowSensorInteractsh      *bool `json:"allow_sensor_interactsh"`
 	AllowSensorCustomTemplates *bool `json:"allow_sensor_custom_templates"`
+	// ToolHTTPUserAgent / ForbidToolInsecureTLS: see SecuritySettingsResponse.
+	// Allowing insecure TLS again is audited at high severity.
+	ToolHTTPUserAgent     *string `json:"tool_http_user_agent" validate:"omitempty,max=256"`
+	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked (RFC-058).
 	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
 	// SSOExceptions replaces the list of members who may sign in without SSO
@@ -2088,6 +2100,8 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		RequireSensorLocalPolicyForPrivateTargets: req.RequireSensorLocalPolicyForPrivateTargets,
 		AllowSensorInteractsh:                     req.AllowSensorInteractsh,
 		AllowSensorCustomTemplates:                req.AllowSensorCustomTemplates,
+		ToolHTTPUserAgent:                         req.ToolHTTPUserAgent,
+		ForbidToolInsecureTLS:                     req.ForbidToolInsecureTLS,
 		PersonalAccounts:                          req.PersonalAccounts,
 		SSOExceptions:                             req.SSOExceptions,
 		JITRequiresApproval:                       req.JITRequiresApproval,
