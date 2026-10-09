@@ -48,6 +48,16 @@ type LedgerFeed interface {
 // saved as before.
 func (s *Service) SetLedger(l LedgerFeed) { s.ledger = l }
 
+// LedgerTemplateSource lists a tenant's custom template versions approved
+// for sensors (*app.ScannerTemplateService).
+type LedgerTemplateSource interface {
+	LedgerTemplates(ctx context.Context, tenantID string) ([]jobsign.LedgerTemplate, error)
+}
+
+// SetLedgerTemplates adds the approved template versions to the ledger's
+// sync and export snapshots.
+func (s *Service) SetLedgerTemplates(t LedgerTemplateSource) { s.ledgerTemplates = t }
+
 // Ledger errors (the handler answers them with their code).
 var (
 	ErrLedgerRefused = shared.NewDomainError("SCOPE_LEDGER_REFUSED",
@@ -120,7 +130,10 @@ func (s *Service) commitEntry(ctx context.Context, before *jobsign.LedgerEntry, 
 	now := time.Now().UTC()
 	var after *jobsign.LedgerEntry
 	if !deleted {
-		after = ledgerEntryOf(t, now)
+		var err error
+		if after, err = s.letterBound(ctx, ledgerEntryOf(t, now), t, now); err != nil {
+			return err
+		}
 	}
 	var op jobsign.LedgerOp
 	widens := false
@@ -232,7 +245,11 @@ func (s *Service) CommitEntries(ctx context.Context, tenantID shared.ID, request
 	widen := jobsign.LedgerChange{TenantID: tenantID.String(), ChangeID: uuid.NewString(), Requester: userRef(requester),
 		Approvals: []jobsign.LedgerApproval{}, PlatformPolicy: platformPolicy}
 	for _, t := range put {
-		if e := ledgerEntryOf(t, now); e != nil {
+		e, err := s.letterBound(ctx, ledgerEntryOf(t, now), t, now)
+		if err != nil {
+			return err
+		}
+		if e != nil {
 			widen.Ops = append(widen.Ops, jobsign.LedgerOp{Op: jobsign.OpPutEntry, Entry: e})
 		}
 	}
@@ -314,13 +331,22 @@ func (s *Service) LedgerSnapshot(ctx context.Context, tenantID string) (jobsign.
 	}
 	now := time.Now().UTC()
 	for _, t := range targets {
-		if e := ledgerEntryOf(t, now); e != nil && scopedom.ValidatePattern(t.TargetType(), t.Pattern()) == nil {
+		e, err := s.letterBound(ctx, ledgerEntryOf(t, now), t, now)
+		if err != nil {
+			return snap, err
+		}
+		if e != nil && scopedom.ValidatePattern(t.TargetType(), t.Pattern()) == nil {
 			snap.Entries = append(snap.Entries, *e)
 		}
 	}
 	for _, x := range exclusions {
 		if e := ledgerExclusionOf(x, now); e != nil {
 			snap.Exclusions = append(snap.Exclusions, *e)
+		}
+	}
+	if s.ledgerTemplates != nil {
+		if snap.Templates, err = s.ledgerTemplates.LedgerTemplates(ctx, tenantID); err != nil {
+			return snap, err
 		}
 	}
 	return snap, nil
@@ -361,4 +387,54 @@ func (s *Service) SyncLedger(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// letterBound bounds e (t's ledger form) by the letter t names, if any
+// (RFC-065 §13: a letter entry authorizes only while its letter does). The
+// ledger then expires the entry with the letter, without a sync: its
+// expiry is the earlier of the entry's and the letter's valid_until. A
+// letter not in effect (revoked, not yet valid, expired) or missing leaves
+// nothing; a letter that cannot be read fails the change (fail closed).
+func (s *Service) letterBound(ctx context.Context, e *jobsign.LedgerEntry, t *scopedom.Target, now time.Time) (*jobsign.LedgerEntry, error) {
+	if e == nil || t.LetterID() == nil {
+		return e, nil
+	}
+	if s.letters == nil {
+		return nil, nil
+	}
+	l, err := s.letters.GetByID(ctx, t.TenantID(), *t.LetterID())
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !l.InEffect(now) {
+		return nil, nil
+	}
+	if until := l.ValidUntil.UTC(); e.ExpiresAt == nil || until.Before(*e.ExpiresAt) {
+		e.ExpiresAt = &until
+	}
+	return e, nil
+}
+
+// NarrowLetter takes the entries of a letter that is no longer in effect
+// (revoked) out of the tenant's ledger now, instead of at the next periodic
+// sync: a sync of the tenant to the database, whose in-effect read leaves
+// them out. Best effort, like every narrowing; a sync never widens.
+func (s *Service) NarrowLetter(ctx context.Context, tenantID shared.ID) {
+	if s.ledger == nil {
+		return
+	}
+	snap, err := s.LedgerSnapshot(ctx, tenantID.String())
+	if err == nil {
+		_, err = s.ledger.SyncLedger(ctx, snap)
+	}
+	if err != nil {
+		metrics.SignerLedgerFeedTotal.WithLabelValues("sync", "unavailable").Inc()
+		s.logger.Warn("revoked letter not yet narrowed in the job signer's ledger; the next ledger sync narrows it",
+			"tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	metrics.SignerLedgerFeedTotal.WithLabelValues("sync", "applied").Inc()
 }
