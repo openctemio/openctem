@@ -37,7 +37,9 @@ export async function adminFetch<T>(
 ): Promise<T> {
   const method = init.method ?? 'GET'
   const headers: Record<string, string> = { Accept: 'application/json' }
-  if (init.body !== undefined) headers['Content-Type'] = 'application/json'
+  // A FormData body (a file upload) sets its own multipart content type.
+  const isForm = typeof FormData !== 'undefined' && init.body instanceof FormData
+  if (init.body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
   if (method !== 'GET' && method !== 'HEAD') {
     const csrf = readCookie(ADMIN_CSRF_COOKIE)
     if (csrf) headers['X-CSRF-Token'] = csrf
@@ -46,7 +48,12 @@ export async function adminFetch<T>(
   const res = await fetch(`${ADMIN_API}${path}`, {
     method,
     headers,
-    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    body:
+      init.body === undefined
+        ? undefined
+        : isForm
+          ? (init.body as FormData)
+          : JSON.stringify(init.body),
     credentials: 'same-origin',
     cache: 'no-store',
   })
