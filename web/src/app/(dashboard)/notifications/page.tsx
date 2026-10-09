@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { formatRelative } from '@/lib/format-date'
 import {
   AlertTriangle,

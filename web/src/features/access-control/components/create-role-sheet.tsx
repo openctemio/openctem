@@ -18,6 +18,13 @@ import {
   SheetFooter,
 } from '@/components/ui/sheet'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import {
@@ -42,6 +49,7 @@ import {
   generateSlug,
   type PermissionModule,
 } from '@/features/access-control'
+import { roleTemplates, useAuthzReference } from '../lib/authz-reference'
 
 interface CreateRoleSheetProps {
   open: boolean
@@ -101,6 +109,11 @@ export function CreateRoleSheet({ open, onOpenChange, onSuccess }: CreateRoleShe
     permissions: [] as string[],
   })
 
+  // Role templates (from the generated authorization reference)
+  const { reference } = useAuthzReference(open)
+  const templates = useMemo(() => (reference ? roleTemplates(reference) : []), [reference])
+  const [templateId, setTemplateId] = useState('')
+
   // UI state
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set())
@@ -109,6 +122,7 @@ export function CreateRoleSheet({ open, onOpenChange, onSuccess }: CreateRoleShe
   const handleOpenChange = (open: boolean) => {
     if (!open) {
       setForm({ name: '', description: '', hasFullDataAccess: false, permissions: [] })
+      setTemplateId('')
       setSearchQuery('')
       setExpandedModules(new Set())
     }
@@ -168,6 +182,26 @@ export function CreateRoleSheet({ open, onOpenChange, onSuccess }: CreateRoleShe
         : prev.permissions.filter((p) => !modulePermissionIds.includes(p)),
     }))
   }, [])
+
+  // Start from a template: fill the form with its description, data access
+  // and the permissions this organization offers for custom roles. The role
+  // is still created with POST /roles, so the API refuses any permission the
+  // creator does not hold.
+  const applyTemplate = useCallback(
+    (id: string) => {
+      const tpl = templates.find((t) => t.id === id)
+      if (!tpl) return
+      const offered = new Set(permissionModules.flatMap((m) => m.permissions.map((p) => p.id)))
+      setTemplateId(id)
+      setForm((prev) => ({
+        name: prev.name.trim() ? prev.name : tpl.name,
+        description: tpl.description,
+        hasFullDataAccess: tpl.has_full_data_access,
+        permissions: tpl.permissions.filter((p) => offered.has(p)),
+      }))
+    },
+    [templates, permissionModules]
+  )
 
   // Quick actions
   const selectAllRead = useCallback(() => {
@@ -272,6 +306,30 @@ export function CreateRoleSheet({ open, onOpenChange, onSuccess }: CreateRoleShe
               <div className="p-6 space-y-6">
                 {/* Basic Info */}
                 <div className="space-y-4">
+                  {templates.length > 0 && (
+                    <div className="space-y-2">
+                      <Label htmlFor="role-template">Start from a template (optional)</Label>
+                      <Select value={templateId} onValueChange={applyTemplate}>
+                        <SelectTrigger id="role-template" aria-label="Role template">
+                          <SelectValue placeholder="Choose a template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.name}
+                              {t.has_full_data_access ? ' (full data access)' : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {templateId
+                          ? (templates.find((t) => t.id === templateId)?.personas ?? []).join(', ')
+                          : 'Least-privilege starting points for the people in a CTEM program. You can only save permissions you hold yourself.'}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label htmlFor="role-name">Role Name</Label>
                     <Input
