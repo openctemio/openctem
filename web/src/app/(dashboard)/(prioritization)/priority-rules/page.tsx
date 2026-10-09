@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Scale } from 'lucide-react'
 import { useHasPermission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
