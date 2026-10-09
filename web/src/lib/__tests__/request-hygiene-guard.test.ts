@@ -229,4 +229,23 @@ describe('request hygiene guard', () => {
   it('no unreviewed polling (refreshInterval)', () => {
     expect(ratchet('POLLING', counts.polling, POLLING_BASELINE)).toEqual([])
   })
+
+  // Links come from @/components/link, which prefetches on intent: a
+  // next/link Link prefetches as soon as it is in view (two route requests
+  // each).
+  it('links prefetch on intent (no Link from next/link outside @/components/link)', () => {
+    const allowed = new Set([
+      'components/link.tsx',
+      // The rail's own intent link, and useLinkStatus.
+      'components/layout/sidebar-link.tsx',
+    ])
+    const offenders: string[] = []
+    for (const file of walk(SRC_ROOT)) {
+      const rel = path.relative(SRC_ROOT, file).split(path.sep).join('/')
+      if (allowed.has(rel)) continue
+      const text = fs.readFileSync(file, 'utf8')
+      if (/^import\s+Link\b[^;]*from\s+['"]next\/link['"]/m.test(text)) offenders.push(rel)
+    }
+    expect(offenders).toEqual([])
+  })
 })

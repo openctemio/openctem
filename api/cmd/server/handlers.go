@@ -281,7 +281,14 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// only an explicitly-disabled non-core module is blocked. Wired back into the
 	// module service so a toggle invalidates the gate cache immediately.
 	moduleGate := middleware.NewModuleGate(svc.Module, time.Minute)
-	svc.Module.SetModuleCacheInvalidator(moduleGate)
+	if deps.RedisClient != nil {
+		// Every replica caches module state: a toggle drops the cache here and,
+		// through Redis, on the other replicas at once.
+		svc.ModuleChangeBus = redis.NewModuleChangeBus(deps.RedisClient, moduleGate, log)
+		svc.Module.SetModuleCacheInvalidator(svc.ModuleChangeBus)
+	} else {
+		svc.Module.SetModuleCacheInvalidator(moduleGate)
+	}
 
 	// Read-only MCP server: exposes this tenant's CTEM data to an AI client over
 	// JSON-RPC, authenticated by a tenant-scoped `oct_` API key (not the browser
@@ -303,6 +310,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
 		mcpHandler.SetAuditService(svc.Audit)
+		mcpHandler.SetModuleGate(moduleGate)
 		mcpAuth = apiKeyAuth.Handler
 	}
 	// The organization MCP policy applies to oct_ keys on the MCP endpoint
@@ -319,9 +327,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// another scope would allow gets a step-up challenge.
 	var mcpOAuthHandler *handler.MCPOAuthHandler
 	var mcpConnections *handler.MCPConnectionsHandler
+	var mcpClients *handler.MCPClientsHandler
 	if mcpOAuth := newMCPOAuthService(mcpDiscovery, deps, log); mcpOAuth != nil && mcpHandler != nil {
 		mcpOAuthHandler = handler.NewMCPOAuthHandler(mcpOAuth, log)
 		mcpConnections = handler.NewMCPConnectionsHandler(mcpOAuth, log)
+		mcpClients = handler.NewMCPClientsHandler(mcpOAuth, log)
 		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
 		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
 	}
@@ -339,6 +349,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		MCPOAuth:       mcpOAuthHandler,
 		MCPSettings:    mcpSettings,
 		MCPConnections: mcpConnections,
+		MCPClients:     mcpClients,
 		APIKeyAuth:     apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(

@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react'
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { formatRelative } from '@/lib/format-date'
 import {
   AlertTriangle,
