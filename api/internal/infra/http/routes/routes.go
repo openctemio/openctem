@@ -60,6 +60,8 @@ type Handlers struct {
 	// MCPConnections is the connected applications (RFC-062 §12), tenant
 	// and platform console; nil without the authorization server.
 	MCPConnections *handler.MCPConnectionsHandler
+	// MCPClients is client registration (RFC-062 §5).
+	MCPClients *handler.MCPClientsHandler
 	// APIKeyAuth authenticates `oct_` API keys on the tenant REST routes (the
 	// token-tenant chains), read-only. Share the instance behind MCPAuth so a
 	// key has one rate-limit budget. nil leaves the REST API JWT-only.
@@ -615,7 +617,8 @@ func Register(
 
 	// AI Triage routes (tenant from JWT token)
 	// Always registered - handler handles nil service gracefully (returns 503)
-	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter)
+	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter,
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
@@ -634,7 +637,7 @@ func Register(
 
 	// SLA Policy routes (tenant from JWT token)
 	if h.SLA != nil {
-		registerSLARoutes(router, h.SLA, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleSLA))
+		registerSLARoutes(router, h.SLA, authMiddleware, userSync)
 	}
 
 	// Pentest Campaign Management routes (tenant from JWT token)
@@ -674,6 +677,10 @@ func Register(
 	// Connected AI applications (RFC-062 §12).
 	if h.MCPConnections != nil {
 		registerMCPConnectionRoutes(router, h.MCPConnections, authMiddleware, userSync)
+	}
+	// AI application registration (RFC-062 §5).
+	if h.MCPClients != nil {
+		registerMCPClientRoutes(router, h.MCPClients, authMiddleware, userSync)
 	}
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.

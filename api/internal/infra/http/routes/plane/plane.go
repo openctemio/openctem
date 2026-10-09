@@ -78,6 +78,7 @@ var Rules = []Rule{
 	{Plane: MCP, Prefix: "/oauth/authorize"},
 	{Plane: MCP, Prefix: "/oauth/token"},
 	{Plane: MCP, Prefix: "/oauth/revoke"},
+	{Plane: MCP, Prefix: "/oauth/register"},
 
 	{Plane: Auth, Prefix: "/api/v1/auth"},
 	{Plane: Auth, Prefix: "/api/v1/invitations"},

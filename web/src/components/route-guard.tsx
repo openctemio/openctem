@@ -26,9 +26,11 @@
 'use client'
 
 import * as React from 'react'
+import Link from '@/components/link'
 import { usePathname } from 'next/navigation'
-import { ShieldX, ArrowLeft, Home, Package } from 'lucide-react'
+import { ShieldX, ArrowLeft, Home, Package, Settings } from 'lucide-react'
 import { usePermissions } from '@/lib/permissions/hooks'
+import { Permission } from '@/lib/permissions/constants'
 import { useBootstrapModules, useBootstrapContextSafe } from '@/context/bootstrap-provider'
 import { matchRoutePermission } from '@/config/route-permissions'
 import { Button } from '@/components/ui/button'
@@ -130,6 +132,7 @@ export function RouteGuard({ children }: RouteGuardProps) {
         permission={routeConfig.permission}
         module={routeConfig.module}
         message={routeConfig.message}
+        canManageModules={can(Permission.TeamUpdate)}
       />
     )
   }
@@ -149,9 +152,17 @@ interface AccessDeniedProps {
   permission: string
   module?: string
   message?: string
+  /** Whether the user may switch modules on (Settings > Modules). */
+  canManageModules?: boolean
 }
 
-function AccessDenied({ reason, permission, module, message }: AccessDeniedProps) {
+function AccessDenied({
+  reason,
+  permission,
+  module,
+  message,
+  canManageModules = false,
+}: AccessDeniedProps) {
   const handleGoBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
       window.history.back()
@@ -167,9 +178,12 @@ function AccessDenied({ reason, permission, module, message }: AccessDeniedProps
   // Determine icon and title based on reason
   const isModuleDenied = reason === 'module'
   const Icon = isModuleDenied ? Package : ShieldX
-  const title = isModuleDenied ? 'Feature Not Available' : 'Access Denied'
+  // A module missing for a user who holds the route's permission is switched
+  // off for the organization (by an administrator or its products), not a
+  // plan matter: plans do not gate modules.
+  const title = isModuleDenied ? 'Turned off for your organization' : 'Access Denied'
   const defaultMessage = isModuleDenied
-    ? 'This feature is not included in your current plan.'
+    ? 'This feature is switched off for your organization.'
     : "You don't have permission to access this page."
 
   // This view replaces the page header and the layout's <main>, so it is the
@@ -204,7 +218,9 @@ function AccessDenied({ reason, permission, module, message }: AccessDeniedProps
           {/* Help text */}
           <p className="text-center text-sm text-muted-foreground">
             {isModuleDenied
-              ? 'Please contact your administrator to upgrade your plan.'
+              ? canManageModules
+                ? 'You can turn it on in Settings > Modules.'
+                : 'Ask an administrator of your organization to turn it on.'
               : 'If you believe you should have access, please contact your administrator.'}
           </p>
 
@@ -214,10 +230,19 @@ function AccessDenied({ reason, permission, module, message }: AccessDeniedProps
               <ArrowLeft className="me-2 h-4 w-4" />
               Go Back
             </Button>
-            <Button onClick={handleGoHome}>
-              <Home className="me-2 h-4 w-4" />
-              Dashboard
-            </Button>
+            {isModuleDenied && canManageModules ? (
+              <Button asChild>
+                <Link href="/settings/modules">
+                  <Settings className="me-2 h-4 w-4" />
+                  Manage modules
+                </Link>
+              </Button>
+            ) : (
+              <Button onClick={handleGoHome}>
+                <Home className="me-2 h-4 w-4" />
+                Dashboard
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
