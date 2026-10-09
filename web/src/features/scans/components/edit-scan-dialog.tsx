@@ -28,7 +28,12 @@ import { TargetsStep } from './new-scan/targets-step'
 import { OptionsStep } from './new-scan/options-step'
 import { ScheduleStep } from './new-scan/schedule-step'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../types'
-import { basicInfoError, formDataToUpdateRequest, scanConfigToFormData } from '../lib/scan-form'
+import {
+  basicInfoError,
+  formDataToUpdateRequest,
+  scanConfigToFormData,
+  targetsError,
+} from '../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
 import { useUpdateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
@@ -103,12 +108,9 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
         return true
       }
       case 'targets': {
-        const { targets } = formData
-        const hasAssetGroups = targets.assetGroupIds.length > 0
-        const hasIndividualAssets = targets.assetIds.length > 0
-        const hasCustomTargets = targets.customTargets.length > 0
-        if (!hasAssetGroups && !hasIndividualAssets && !hasCustomTargets) {
-          toast.error('Please select at least one target')
+        const problem = targetsError(formData)
+        if (problem) {
+          toast.error(problem)
           return false
         }
         return true
