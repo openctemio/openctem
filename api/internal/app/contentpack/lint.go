@@ -28,25 +28,58 @@ const (
 // callbacks or races requests is T2. Lint parses only; it never executes
 // anything and never writes the files anywhere.
 func Lint(ctx context.Context, kind string, files []dom.File) dom.LintReport {
+	rep, _ := lint(ctx, kind, files, false)
+	return rep
+}
+
+// LintExcluding is Lint for an upstream release: a file that fails lint
+// (a template using a refused protocol, a YAML file that is not a template)
+// is left out of the pack and reported as a warning instead of refusing
+// the whole release. It returns the files to leave out; the caller builds
+// the pack without them, so sensors never receive them.
+func LintExcluding(ctx context.Context, kind string, files []dom.File) (dom.LintReport, map[string]bool) {
+	return lint(ctx, kind, files, true)
+}
+
+func lint(ctx context.Context, kind string, files []dom.File, exclude bool) (dom.LintReport, map[string]bool) {
 	rep := dom.LintReport{Tier: dom.TierT0, Files: len(files)}
+	excluded := map[string]bool{}
 	for _, f := range files {
 		if ctx.Err() != nil {
 			rep.Error("", "LINT_TIMEOUT", "lint did not finish in time")
-			return rep
+			return rep, excluded
 		}
+		fr := dom.LintReport{Tier: dom.TierT0}
+		switch kind {
+		case dom.KindNucleiTemplates:
+			lintNuclei(&fr, f, exclude)
+		case dom.KindSemgrepRules:
+			lintSemgrep(&fr, f)
+		case dom.KindWordlist:
+			lintWordlist(&fr, f)
+		}
+		if exclude && len(fr.Errors) > 0 {
+			excluded[f.Path] = true
+			rep.Excluded++
+			rep.Warn(f.Path, "EXCLUDED_"+fr.Errors[0].Code, fr.Errors[0].Message)
+			continue
+		}
+		for _, e := range fr.Errors {
+			rep.Error(e.Path, e.Code, e.Message)
+		}
+		for _, w := range fr.Warnings {
+			rep.Warn(w.Path, w.Code, w.Message)
+		}
+		rep.Items += fr.Items
+		rep.Tier = rep.Tier.Max(fr.Tier)
 		if utf8.Valid(f.Data) {
 			for _, k := range evidence.CredentialShapes(string(f.Data)) {
 				rep.Secret(f.Path, k)
 			}
 		}
-		switch kind {
-		case dom.KindNucleiTemplates:
-			lintNuclei(&rep, f)
-		case dom.KindSemgrepRules:
-			lintSemgrep(&rep, f)
-		case dom.KindWordlist:
-			lintWordlist(&rep, f)
-		}
+	}
+	if kind == dom.KindWordlist && rep.Items > maxWordlistLines {
+		rep.Error("", "TOO_MANY_LINES", fmt.Sprintf("the pack holds more than %d lines", maxWordlistLines))
 	}
 	switch {
 	case dom.IsNamespacedKind(kind):
@@ -55,7 +88,7 @@ func Lint(ctx context.Context, kind string, files []dom.File) dom.LintReport {
 	case rep.Items == 0 && len(rep.Errors) == 0:
 		rep.Error("", "EMPTY_PACK", fmt.Sprintf("the pack holds no %s", kind))
 	}
-	return rep
+	return rep, excluded
 }
 
 func isYAML(p string) bool {
@@ -67,15 +100,28 @@ func isYAML(p string) bool {
 // validator: no code, javascript, headless or file protocols, no
 // self-contained templates, safe regexes) and classifies it. Other files
 // (payload lists, README) are data the templates may reference.
-func lintNuclei(rep *dom.LintReport, f dom.File) {
+//
+// upstream (a platform-managed release): attack payloads in a template's
+// requests (shell fragments, file paths such as /etc/passwd: the text
+// check the custom-template validator applies to the whole document) are
+// what detection templates send to their targets, so they make the template
+// T2 instead of refusing it. Protocols that run code on the scanner, read
+// its files or drive a browser, self-contained templates and unsafe regexes
+// are refused either way (structural checks on the parsed document).
+func lintNuclei(rep *dom.LintReport, f dom.File, upstream bool) {
 	if !isYAML(f.Path) {
 		return
 	}
 	res := template.ValidateTemplate(scannertemplate.TemplateTypeNuclei, f.Data)
+	payloads := false
 	for _, e := range res.Errors {
+		if upstream && e.Code == "DANGEROUS_PATTERN" && e.Field == "content" {
+			payloads = true
+			continue
+		}
 		rep.Error(f.Path, e.Code, e.Field+": "+e.Message)
 	}
-	if res.HasErrors() {
+	if len(rep.Errors) > 0 {
 		return
 	}
 	rep.Items++
@@ -84,6 +130,9 @@ func lintNuclei(rep *dom.LintReport, f dom.File) {
 		return // the validator parsed it already
 	}
 	tier, why := classifyNuclei(tpl, f.Data)
+	if payloads {
+		tier, why = dom.TierT2, "attack payloads in its requests (shell fragments or system file paths)"
+	}
 	if tier != dom.TierT0 {
 		rep.Warn(f.Path, "TIER_"+string(tier), why)
 	}
@@ -198,8 +247,5 @@ func lintWordlist(rep *dom.LintReport, f dom.File) {
 		if strings.TrimSpace(line) != "" {
 			rep.Items++
 		}
-	}
-	if rep.Items > maxWordlistLines {
-		rep.Error(f.Path, "TOO_MANY_LINES", fmt.Sprintf("the pack holds more than %d lines", maxWordlistLines))
 	}
 }

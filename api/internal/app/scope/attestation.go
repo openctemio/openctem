@@ -14,6 +14,7 @@ package scope
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"time"
@@ -81,11 +82,20 @@ func (s *Service) AttestTarget(ctx context.Context, targetID, tenantID string, a
 	if actor.system() || !actor.CanApprove {
 		return nil, ErrWideningNeedsApprove
 	}
-	if err := t.Attest(actor.UserID, time.Now().UTC()); err != nil {
+	now := time.Now().UTC()
+	before := ledgerEntryOf(t, now)
+	if err := t.Attest(actor.UserID, now); err != nil {
 		return nil, err
 	}
-	if err := s.targetRepo.Update(ctx, t); err != nil {
-		return nil, fmt.Errorf("failed to attest scope target: %w", err)
+	// Attesting changes nothing the ledger holds (same pattern, tier and
+	// expiry); it goes through the hook like every scope write.
+	if err := s.commitEntry(ctx, before, t, false, func() error {
+		if err := s.targetRepo.Update(ctx, t); err != nil {
+			return fmt.Errorf("failed to attest scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return t, nil
 }
@@ -139,7 +149,7 @@ func (s *Service) reconcileTenantAttestations(ctx context.Context, store attesta
 			if now.Before(req.Add(scopedom.AttestationGrace)) {
 				continue
 			}
-			done, err := store.DowngradeUnattested(ctx, tid, t.ID(), *req, now)
+			done, err := s.downgradeUnattested(ctx, store, t, *req, now)
 			if err != nil {
 				return res, err
 			}
@@ -163,6 +173,33 @@ func (s *Service) reconcileTenantAttestations(ctx context.Context, store attesta
 		}
 	}
 	return res, nil
+}
+
+// errAttestedMeanwhile: the conditional downgrade found the request closed
+// (confirmed meanwhile, or another run did it); nothing was saved.
+var errAttestedMeanwhile = errors.New("attestation request no longer open")
+
+// downgradeUnattested sets t to t1 through the ledger hook (a narrowing:
+// saved first with the conditional update, then sent to the signer). It
+// reports false when the request was closed meanwhile.
+func (s *Service) downgradeUnattested(ctx context.Context, store attestationStore, t *scopedom.Target, req, now time.Time) (bool, error) {
+	before := ledgerEntryOf(t, now)
+	t.SetMaxTier(scopedom.TierActive, now)
+	t.RestoreAttestation(scopedom.AttestationState{AttestedAt: t.AttestedAt(), AttestedBy: t.AttestedBy()})
+	err := s.commitEntry(ctx, before, t, false, func() error {
+		done, err := store.DowngradeUnattested(ctx, t.TenantID(), t.ID(), req, now)
+		if err != nil {
+			return err
+		}
+		if !done {
+			return errAttestedMeanwhile
+		}
+		return nil
+	})
+	if errors.Is(err, errAttestedMeanwhile) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // requestAttestation asks the owners, administrators and approvers to keep

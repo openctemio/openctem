@@ -44,6 +44,7 @@ import {
 import { AssigneeSelect } from './assignee-select'
 import { CreateTicketDialog } from './create-ticket-dialog'
 import { SeveritySelect } from './severity-select'
+import { useCanMutate } from '@/lib/permissions'
 import { StatusSelect } from './status-select'
 import { FindingWhyItMatters } from './detail/finding-why-it-matters'
 import { FindingFixCard } from './detail/finding-fix-card'
@@ -101,6 +102,8 @@ export function FindingDetailDrawer({
         ? { ...finding, activities: [] }
         : null
 
+  // Re-scoring needs findings:severity, which a remediation owner may lack.
+  const canRescore = useCanMutate('PATCH /api/v1/findings/{id}/severity')
   const triage = useFindingTriage(
     detail ?? { id: '', status: 'new', severity: 'medium', assignee: undefined },
     {
@@ -194,6 +197,7 @@ export function FindingDetailDrawer({
                   value={triage.severity}
                   onChange={triage.changeSeverity}
                   loading={triage.severityBusy}
+                  disabled={!canRescore}
                   cvss={detail.cvss}
                   showCheck
                 />

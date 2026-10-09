@@ -323,7 +323,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	},
 	// A program entry needs its program; an ownership entry has none.
 	"scope_targets": func(*schemaSeeder) map[string]any {
-		return map[string]any{"authorization_source": "program"}
+		return map[string]any{"authorization_source": "program", "letter_id": nil}
+	},
+	// A letter has a hex file hash and a window of at most 2 years.
+	"authorization_letters": func(*schemaSeeder) map[string]any {
+		return map[string]any{"file_sha256": strings.Repeat("ab", 32), "valid_from": "2026-01-01T00:00:00Z",
+			"valid_until": "2026-06-01T00:00:00Z", "title": "seed"}
 	},
 	"scope_snapshots": func(*schemaSeeder) map[string]any {
 		return map[string]any{"sha256": strings.Repeat("ab", 32), "body": "{}"}

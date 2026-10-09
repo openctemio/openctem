@@ -24,9 +24,7 @@ import (
 // reservedPermissions are in the catalog on purpose before anything checks
 // them, each with its decision.
 var reservedPermissions = map[string]string{
-	"assets:export":                 "server-side asset export (owner decision R14; kept by migration 000772 for it)",
-	"attack_surface:programs:read":  "RFC-065: the programs routes gate on it (next P0 pull request)",
-	"attack_surface:programs:write": "RFC-065: the programs routes gate on it (next P0 pull request)",
+	"assets:export": "server-side asset export (owner decision R14; kept by migration 000772 for it)",
 }
 
 const permissionImportPath = "github.com/openctemio/openctem/api/pkg/domain/permission"
