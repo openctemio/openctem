@@ -84,7 +84,7 @@ export function ScanStepper({
             {index < STEPS.length - 1 && (
               <div
                 className={cn(
-                  'flex-1 mx-2 h-0.5 min-w-[12px]',
+                  'mx-1 h-0.5 min-w-[8px] flex-1 sm:mx-2 sm:min-w-[12px]',
                   index < currentIndex ? 'bg-primary' : 'bg-muted'
                 )}
               />
