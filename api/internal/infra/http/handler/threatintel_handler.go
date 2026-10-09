@@ -159,7 +159,7 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 // @Tags         Admin Threat Intelligence
 // @Accept       json
 // @Produce      json
-// @Param        source   path      string                 true  "Feed (epss, kev)"
+// @Param        source   path      string                 true  "Feed (epss, kev, vulnfeed)"
 // @Param        request  body      SetSyncEnabledRequest  true  "Enabled"
 // @Success      200  {object}  SyncStatusResponse
 // @Failure      404  {object}  apierror.Error
