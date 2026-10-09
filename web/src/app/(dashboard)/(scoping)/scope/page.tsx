@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useEffectEvent, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Plus, Settings2, ShieldOff } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
