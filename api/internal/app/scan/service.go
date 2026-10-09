@@ -185,7 +185,9 @@ type TemplateSyncResult struct {
 type Service struct {
 	// programRules refuses runs a bug-bounty program's rules forbid
 	// (program_rules.go); nil: not checked.
-	programRules        ProgramRuleChecker
+	programRules ProgramRuleChecker
+	// scopeSnapshots records the scope each run relied on (RFC-065 §9).
+	scopeSnapshots      ScopeSnapshotRecorder
 	scanRepo            scan.Repository
 	ownerActivity       OwnerActivity
 	templateRepo        scanworkflow.Repository
