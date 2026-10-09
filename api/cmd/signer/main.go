@@ -70,7 +70,7 @@ func run(args []string) error {
 		return rootKeygen(args[1:])
 	case "keyset":
 		if len(args) == 0 {
-			return errors.New("usage: keyset sign|show ...")
+			return errors.New("usage: keyset sign or keyset show")
 		}
 		switch args[0] {
 		case "sign":
