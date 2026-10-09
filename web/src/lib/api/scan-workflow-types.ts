@@ -65,7 +65,7 @@ export const SCAN_RUN_STATUSES = [
   'completed',
   'partial',
   'failed',
-  // Spelled as the API stores it (workflow.RunStatusCanceled).
+  // Spelled as the API stores it (scanrun.RunStatusCanceled).
   'canceled',
   'timeout',
   // A trigger refused before anything was dispatched; refusal_code says why.

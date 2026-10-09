@@ -22,6 +22,7 @@ type Repositories struct {
 	ScopeExcl              *postgres.ScopeExclusionRepository
 	AssetService           *postgres.AssetServiceRepository           // CTEM: Network services on assets
 	WebEndpoint            *postgres.WebEndpointRepository            // Web surface: endpoints under origin assets (RFC-056)
+	Software               *postgres.SoftwareRepository               // Software catalog and asset links (RFC-066)
 	APISpec                *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *postgres.AssetStateHistoryRepository      // CTEM: State change audit log
 	AssetRelationship      *postgres.AssetRelationshipRepository      // CTEM: Asset topology graph
@@ -55,7 +56,6 @@ type Repositories struct {
 	// Pentest
 	PentestCampaign       *postgres.PentestCampaignRepository
 	PentestCampaignMember *postgres.PentestCampaignMemberRepository
-	PentestFinding        *postgres.PentestFindingRepository
 	PentestRetest         *postgres.PentestRetestRepository
 	PentestTemplate       *postgres.PentestTemplateRepository
 	PentestReport         *postgres.PentestReportRepository
@@ -156,11 +156,11 @@ type Repositories struct {
 	StepRun          *postgres.StepRunRepository
 
 	// Workflows
-	Workflow        *postgres.WorkflowRepository
-	WorkflowNode    *postgres.WorkflowNodeRepository
-	WorkflowEdge    *postgres.WorkflowEdgeRepository
-	WorkflowRun     *postgres.WorkflowRunRepository
-	WorkflowNodeRun *postgres.WorkflowNodeRunRepository
+	Workflow        *postgres.AutomationRepository
+	WorkflowNode    *postgres.AutomationNodeRepository
+	WorkflowEdge    *postgres.AutomationEdgeRepository
+	WorkflowRun     *postgres.AutomationRunRepository
+	WorkflowNodeRun *postgres.AutomationRunStepRepository
 
 	// Suppressions
 	Suppression *postgres.SuppressionRepository
@@ -300,6 +300,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		ScopeExcl:              postgres.NewScopeExclusionRepository(db),
 		AssetService:           postgres.NewAssetServiceRepository(db), // CTEM: Network services
 		WebEndpoint:            postgres.NewWebEndpointRepository(db),
+		Software:               postgres.NewSoftwareRepository(db),
 		APISpec:                postgres.NewAPISpecRepository(db),
 		AssetStateHistory:      postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:      postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
@@ -334,7 +335,6 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Pentest
 		PentestCampaign:       postgres.NewPentestCampaignRepository(db),
 		PentestCampaignMember: postgres.NewPentestCampaignMemberRepository(db),
-		PentestFinding:        postgres.NewPentestFindingRepository(db),
 		PentestRetest:         postgres.NewPentestRetestRepository(db),
 		PentestTemplate:       postgres.NewPentestTemplateRepository(db),
 		PentestReport:         postgres.NewPentestReportRepository(db),
@@ -417,11 +417,11 @@ func newRepositories(db *postgres.DB) *Repositories {
 		StepRun:          postgres.NewStepRunRepository(db),
 
 		// Workflows
-		Workflow:        postgres.NewWorkflowRepository(db),
-		WorkflowNode:    postgres.NewWorkflowNodeRepository(db),
-		WorkflowEdge:    postgres.NewWorkflowEdgeRepository(db),
-		WorkflowRun:     postgres.NewWorkflowRunRepository(db),
-		WorkflowNodeRun: postgres.NewWorkflowNodeRunRepository(db),
+		Workflow:        postgres.NewAutomationRepository(db),
+		WorkflowNode:    postgres.NewAutomationNodeRepository(db),
+		WorkflowEdge:    postgres.NewAutomationEdgeRepository(db),
+		WorkflowRun:     postgres.NewAutomationRunRepository(db),
+		WorkflowNodeRun: postgres.NewAutomationRunStepRepository(db),
 
 		// Suppressions
 		Suppression: postgres.NewSuppressionRepository(db),
