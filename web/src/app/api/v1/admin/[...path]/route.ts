@@ -35,6 +35,25 @@ export const dynamic = 'force-dynamic'
 const ADMIN_COOKIES = ['admin_session', 'admin_mfa', 'admin_csrf', 'admin_idp'] as const
 const FORWARD_HEADERS = ['x-csrf-token', 'x-request-id', 'user-agent'] as const
 const MAX_BODY_BYTES = 1024 * 1024
+/**
+ * A platform content pack upload (POST /content-packs, multipart): the API
+ * accepts an archive of up to 128 MiB, plus room for the form fields.
+ */
+const MAX_UPLOAD_BODY_BYTES = 129 * 1024 * 1024
+
+function bodyLimit(method: string, path: string[]): number {
+  return method === 'POST' && path.length === 1 && path[0] === 'content-packs'
+    ? MAX_UPLOAD_BODY_BYTES
+    : MAX_BODY_BYTES
+}
+
+/** Response headers passed through from the API (a download names its file). */
+const PASS_RESPONSE_HEADERS = [
+  'content-type',
+  'content-disposition',
+  'content-length',
+  'etag',
+] as const
 
 async function proxy(request: NextRequest, path: string[]): Promise<NextResponse> {
   // Same origin and a double-submit pair on every write, the console's sign-in
@@ -79,11 +98,18 @@ async function proxy(request: NextRequest, path: string[]): Promise<NextResponse
 
   let body: BodyInit | undefined
   if (request.method !== 'GET' && request.method !== 'HEAD') {
+    const limit = bodyLimit(request.method, path)
     const length = Number(request.headers.get('content-length') ?? '0')
-    if (length > MAX_BODY_BYTES) {
+    if (length > limit) {
       return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
     }
-    body = await request.text()
+    // Bytes, not text: a multipart upload carries a binary archive, which a
+    // text round trip would corrupt.
+    const bytes = await request.arrayBuffer()
+    if (bytes.byteLength > limit) {
+      return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
+    }
+    body = bytes
   }
 
   let upstream: Response
@@ -103,12 +129,19 @@ async function proxy(request: NextRequest, path: string[]): Promise<NextResponse
     )
   }
 
+  // The body is passed through as bytes (a pack download is a binary archive).
+  const passHeaders = new Headers()
+  for (const name of PASS_RESPONSE_HEADERS) {
+    const value = upstream.headers.get(name)
+    if (value) passHeaders.set(name, value)
+  }
+  if (!passHeaders.has('content-type')) passHeaders.set('content-type', 'application/json')
   const response =
     upstream.status === 204
       ? new NextResponse(null, { status: 204 })
-      : new NextResponse(await upstream.text(), {
+      : new NextResponse(await upstream.arrayBuffer(), {
           status: upstream.status,
-          headers: { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json' },
+          headers: passHeaders,
         })
 
   // Pass session/CSRF cookies through unchanged (paths, flags and expiry are
