@@ -1,6 +1,6 @@
 # Bug-bounty programs
 
-Design: [RFC-064](../rfcs/RFC-064-bug-bounty-programs.md). Scope model:
+Design: [RFC-065](../rfcs/RFC-065-bug-bounty-programs.md). Scope model:
 [RFC-054](../rfcs/RFC-054-scope-model.md), [active-probe-gate.md](active-probe-gate.md).
 
 A **program** is a bug-bounty or disclosure program a person in the
@@ -17,7 +17,7 @@ paste / CSV ──► bountyprogram.ParseScope ──► items (in / out / not s
                                    │
        preview ──► terms_sha256 ◄── import / re-import / resume (step-up + attestation)
                                    │
-          scope_targets (program)  +  scope_exclusions (program)  +  bounty_programs
+          scope_targets (program)  +  bounty_program_exclusions  +  bounty_programs
                                    │
    scan trigger ──► one authority check (scopeauth, unchanged) ──► platform sensors?
                                                                    └─ never for program-only targets
@@ -41,8 +41,12 @@ paste / CSV ──► bountyprogram.ParseScope ──► items (in / out / not s
   entries cover to platform sensors, in any `SCOPE_ACTIVE_PROOF` mode.
 - **Tier.** Program entries allow at most T1, T0 when the program forbids
   automated scanning.
-- **Exclusions are the organization's.** An out-of-scope item excludes the
-  name for every scan of the organization (fail-safe).
+- **Program exclusions bind program entries only.** An out-of-scope item (and
+  the unlisted apex of a program wildcard) is a program exclusion: no
+  `program` entry of the organization covers that name, for any program or
+  researcher. The organization's own entries (ownership, self-attestation,
+  letters) and the RFC-054 exclusions are untouched; the program detail shows
+  where a program exclusion overlaps the organization's own scope.
 
 ## Researcher role and data scope
 

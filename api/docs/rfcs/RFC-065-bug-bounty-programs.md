@@ -1,4 +1,4 @@
-# RFC-064: Bug-bounty programs, authorization sources and the Researcher role
+# RFC-065: Bug-bounty programs, authorization sources and the Researcher role
 
 | | |
 |---|---|
@@ -23,8 +23,8 @@ This RFC keeps the single authority check of RFC-054 and adds:
    and where its traffic may come from.
 2. **Programs**: a bug-bounty or disclosure program a person follows. One
    import (paste the program's scope list or its CSV export) creates the
-   in-scope entries, the exclusions for out-of-scope items and the program's
-   rules. The program's entries take effect on the importer's **audited
+   in-scope entries, the program exclusions for out-of-scope items and the
+   program's rules. The program's entries take effect on the importer's **audited
    attestation**, bound to a hash of exactly what they accepted; no second
    approver.
 3. **A built-in Researcher role**: works with programs and their targets,
@@ -45,6 +45,7 @@ This RFC keeps the single authority check of RFC-054 and adds:
 
 | Actor | Goal | Control |
 |---|---|---|
+| Overlapping program | a program lists as out of scope a name the organization owns, and its import silently stops the organization's own scans | program exclusions bind only `program` entries; the overlap is shown (B7) |
 | Malicious tenant | pastes a "program" for a victim's domain and scans it | own sensors only (traffic leaves the tenant's infrastructure, not the operator's); platform deny list, public-suffix refusal, CIDR caps (RFC-054 §8); attestation with program URL in the audit log; T2 unreachable (needs proof of ownership) |
 | Researcher member | widens the organization's own scope or approves an entry | the Researcher role has no `scope:write` / `scope:approve`; program routes create only `program` entries; general routes refuse widening changes to a program entry |
 | Researcher member | sees the organization's inventory or another program's findings | data scope: program group membership only (RFC-050 Layer 2); program lists, details and covers are filtered by membership; cross-program isolation tests |
@@ -67,15 +68,15 @@ every lookup error refuses.
 | B4 | A researcher sees only the assets and findings of the programs they belong to (program group); full-data roles see everything |
 | B5 | Program entries are never routed to platform sensors until a program's scope comes from an authoritative source (P2) |
 | B6 | Program entries authorize at most T1; T0 only when the program forbids automated scanning |
-| B7 | Out-of-scope items become exclusions of the tenant (fail-safe; a name out of scope in one program is not scanned for another); program-scoped exclusions are P1 |
-| B8 | A wildcard `*.x` whose apex `x` the program does not list in scope gets an exclusion of exactly `x` (the strict reading of a program's wildcard; RFC-054 S1 reads `*.x` as including `x`) |
+| B7 | Out-of-scope items become **program exclusions**: they stop every `program` entry of the tenant (all programs, all researchers) from covering the name, and so act scope for program members; `ownership`, `self_attestation` and `authorization_letter` entries are not affected. An overlap (a name out of scope for a program but in scope by ownership) is shown to administrators |
+| B8 | A wildcard `*.x` whose apex `x` the program does not list in scope gets a program exclusion of exactly `x` (the strict reading of a program's wildcard; RFC-054 S1 reads `*.x` as including `x`) |
 
 ## 4. Authorization source
 
 `scope_targets.authorization_source` (text, not null, default `ownership`)
 and `scope_targets.program_id` (uuid, null; tenant-composite foreign key to
 `bounty_programs`). A `program` entry has a `program_id`; no other source has
-one. `scope_exclusions.program_id` marks exclusions a program created.
+one.
 
 | Source | Created by | Comes into effect | Platform sensors | Max tier |
 |---|---|---|---|---|
@@ -119,6 +120,10 @@ inventory of that program.
 | `group_id` | uuid | the program's group (data scope, §7) |
 | `created_by`, `created_at`, `updated_at` | | |
 
+`bounty_program_exclusions (tenant_id, id, program_id, target_type, pattern,
+reason, created_at)`: the program exclusions (§5.2), tenant-composite keys,
+deleted with their program.
+
 ### 5.2 Scope import
 
 The person pastes the program's scope as text or as the program's CSV/TSV
@@ -130,19 +135,24 @@ At most 256 KiB and 2 000 items.
 
 Each item becomes:
 
-| Item | Entry or exclusion |
+| Item | Entry or program exclusion |
 |---|---|
-| `*.example.com` | domain `*.example.com`; plus an exclusion of `example.com` unless it is listed in scope (B8) |
+| `*.example.com` | domain `*.example.com`; plus a program exclusion of `example.com` unless it is listed in scope (B8) |
 | `example.com`, `https://example.com/` | domain `example.com` |
 | `https://example.com/api/*` | url `https://example.com/api*` (path-limited) |
 | `192.0.2.10`, `192.0.2.0/24`, `a-b` | ip_address, cidr, ip_range |
 | app ids, source code, hardware, executables, free text, `api-*.example.com` | not scannable: kept on the program and shown, never an entry |
 
-Out-of-scope items become exclusions of the same type, active at once (they
-narrow). Every candidate passes the RFC-054 guardrails (public suffix, deny
-list, CIDR caps); a refused item is listed with its code and not created. An
-item whose pattern already exists as an entry is listed as `already_covered`
-and not duplicated.
+Out-of-scope items become **program exclusions**
+(`bounty_program_exclusions`: program, type, pattern), in effect while the
+program exists. They are not RFC-054 exclusions: the dispatch gate and the
+organization's own entries never see them. The authority check reads them
+when it weighs `program` entries: a name a program exclusion matches is not
+covered by any `program` entry of the tenant (all programs, all researchers;
+fail-safe), while an `ownership`, `self_attestation` or `authorization_letter`
+entry still covers it. The program detail lists each program exclusion with
+the organization's own entry that covers it, if any ("in scope by
+ownership"), so an administrator sees the overlap.
 
 ### 5.3 Rules
 
@@ -174,10 +184,10 @@ replaces the second approver for program entries (B2).
 
 ### 5.5 Lifecycle
 
-- **Import** (`POST /programs`): program + group + entries + exclusions in one
+- **Import** (`POST /programs`): program + group + entries + program exclusions in one
   transaction; the importer joins the group.
 - **Re-import / sync** (`PUT /programs/{id}/scope`): the new paste replaces
-  the old; entries and exclusions of items no longer listed are deleted at
+  the old; entries and program exclusions of items no longer listed are deleted at
   once; new ones are created; a new attestation is required.
 - **Pause** (`POST /programs/{id}/pause`): every entry of the program becomes
   `inactive` (narrowing, no step-up). **Resume** re-activates them with a new
@@ -191,7 +201,7 @@ replaces the second approver for program entries (B2).
 | `GET /` | `attack_surface:programs:read` | members see their programs; full-data callers see all |
 | `POST /preview` | `attack_surface:programs:write` | parse + guardrails + `terms_sha256`; writes nothing |
 | `POST /` | `attack_surface:programs:write` + step-up | `{name, platform, handle, program_url, scope_text, rules, accept_terms_sha256}` |
-| `GET /{id}` | `programs:read` + member or full data | program, items, entries, exclusions, attestation |
+| `GET /{id}` | `programs:read` + member or full data | program, items, entries, program exclusions with their ownership overlaps, attestation |
 | `PUT /{id}/scope` | `programs:write` + member or full data + step-up | re-import |
 | `POST /{id}/pause`, `/end` | `programs:write` + member or full data | narrowing |
 | `POST /{id}/resume` | `programs:write` + member or full data + step-up | `{accept_terms_sha256}` |
@@ -239,7 +249,7 @@ program and target, and researcher terms of use.
 ## 9. Scope snapshot per run
 
 When a scan run is created, the scope in force (in-effect entries with their
-source, program and tier; in-effect exclusions; active programs with
+source, program and tier; in-effect exclusions; program exclusions; active programs with
 `terms_sha256`, `accepted_by`, `accepted_at`) is serialized canonically and
 hashed. `scope_snapshots (tenant_id, sha256, body)` stores each distinct
 body once; `scan_run_scope_snapshots (tenant_id, run_id, sha256, taken_at)`
@@ -251,8 +261,8 @@ the run; it does not stop the run.
 
 | Phase | Items |
 |---|---|
-| P0 | authorization source; programs with paste/CSV import, preview, attestation, auto exclusions, re-import, pause/resume/end; Researcher role; program data scope and act scope; platform sensors refused for program entries; scope snapshot per run; web Programs area |
-| P1 | sync from program APIs with the researcher's own tokens (per-tenant encrypted credentials) and scope files a program publishes; rules enforced by the engine (rate cap, headers, User-Agent, testing windows); `authorization_letter` with uploaded letter; program-scoped exclusions; one entry shared by several programs |
+| P0 | authorization source; programs with paste/CSV import, preview, attestation, program exclusions, re-import, pause/resume/end; Researcher role; program data scope and act scope; platform sensors refused for program entries; scope snapshot per run; web Programs area |
+| P1 | sync from program APIs with the researcher's own tokens (per-tenant encrypted credentials) and scope files a program publishes; rules enforced by the engine (rate cap, headers, User-Agent, testing windows); `authorization_letter` with uploaded letter; one entry shared by several programs |
 | P2 | platform sensors for authoritative programs with quotas; abuse workflow (contact page, per-program and per-target kill switch, opt-out registry); researcher terms of use |
 
 ## 11. Implementation (P0)
