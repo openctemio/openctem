@@ -330,6 +330,11 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
+	// Program rules (RFC-065 §12): conflicting programs, or outside a
+	// program's testing windows, refuse the run.
+	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
+		return nil, err
+	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
 	targets := resolved.Targets
 	zones, err := s.loadZones(ctx, sc.TenantID)
@@ -460,6 +465,11 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		return nil, err
 	}
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
+		return nil, err
+	}
+	// Program rules (RFC-065 §12): conflicting programs, or outside a
+	// program's testing windows, refuse the run.
+	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
 		return nil, err
 	}
 	// Proof can be lost after the scan was saved: re-check at every run.

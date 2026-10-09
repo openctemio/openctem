@@ -183,6 +183,9 @@ type TemplateSyncResult struct {
 
 // Service handles scan business operations.
 type Service struct {
+	// programRules refuses runs a bug-bounty program's rules forbid
+	// (program_rules.go); nil: not checked.
+	programRules        ProgramRuleChecker
 	scanRepo            scan.Repository
 	ownerActivity       OwnerActivity
 	templateRepo        scanworkflow.Repository
