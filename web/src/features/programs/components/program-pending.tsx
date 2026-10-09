@@ -51,7 +51,7 @@ export function ProgramPendingTerms({ program: p, canWrite, onChanged }: Program
   }
 
   return (
-    <section className="space-y-3 rounded-md border border-amber-500/50 p-4">
+    <section className="space-y-3 rounded-md border border-warning/50 p-4">
       <h3 className="text-base font-semibold">
         {t('programs.pending.title', 'New scope found by the last sync')}
       </h3>
