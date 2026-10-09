@@ -31,6 +31,7 @@ func securityChangeSeverity(before, after tenantdom.SecuritySettings) audit.Seve
 		len(before.AllowedDomains) > 0 && (len(after.AllowedDomains) == 0 || addsEntries(before.AllowedDomains, after.AllowedDomains)),
 		before.EmailVerificationMode != tenantdom.EmailVerificationNever && after.EmailVerificationMode == tenantdom.EmailVerificationNever,
 		before.RequireSensorLocalPolicyForPrivateTargets && !after.RequireSensorLocalPolicyForPrivateTargets,
+		before.ForbidToolInsecureTLS && !after.ForbidToolInsecureTLS,
 		after.SessionTimeoutMin > before.SessionTimeoutMin && before.SessionTimeoutMin > 0:
 		return audit.SeverityHigh
 	default:
