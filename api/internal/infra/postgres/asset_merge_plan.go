@@ -52,7 +52,6 @@ var assetMergeRefs = []mergeRef{
 	{table: "scan_runs", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "exposure_events", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "runtime_telemetry_events", column: "endpoint_asset_id", tenantCol: "tenant_id"},
-	{table: "attack_path_nodes", column: "asset_id"},
 	{table: "threat_model_threats", column: "entry_point_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "hop_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "target_asset_id", tenantCol: "tenant_id"},
