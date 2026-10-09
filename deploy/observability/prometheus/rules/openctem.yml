@@ -203,6 +203,15 @@ groups:
           description: A sensor runs with a configuration problem (missing tools, ignored capabilities, policy refusals).
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorconfigimpaired
 
+      - alert: SensorsUnhardened
+        expr: sum by (kind) (openctem_sensors_unhardened) > 0
+        for: 24h
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: '{{ $value | humanize }} sensor(s) are unhardened: {{ $labels.kind }}'
+          description: Sensors run without a local policy (policy_none), without a pinned platform CA (pin_none), with tools outside network confinement (network_unenforced) or with a bearer key instead of a key-bound identity (bearer_key). They keep working; the Sensors page flags them.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsunhardened
+
       - alert: SensorSdkUnsupported
         expr: sum by (kind) (openctem_sensors_sdk{status="unsupported"}) > 0
         for: 1h

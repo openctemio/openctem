@@ -757,6 +757,9 @@ Authorization is enforced at the **route layer** in
 | `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions`, `/unlock`, `/password-reset`, `/verification-emails` | **ops_admin+**, `reason` required (10-500), 20/min per administrator, audited `platform_user.<action>`; 409 for a platform administrator's or an erased account; links are emailed, never returned |
 | `GET /api/v1/admin/console-sessions` | **super_admin** (every administrator's open console session) |
 | `DELETE /api/v1/admin/console-sessions/{console_session_id}` | **super_admin** + `reason` (10-500) + a fresh authenticator code; audited high `console.session_ended`; the caller's own current session is refused |
+| `GET /api/v1/admin/operations` | any admin (build, schema, database, Redis, queues, sensor versions, controllers; no tenant content) |
+| `GET /api/v1/admin/announcements` | any admin |
+| `POST /api/v1/admin/announcements`, `POST /api/v1/admin/announcements/{announcement_id}/cancel` | **ops_admin+**, `reason` (10-500), audited `announcement.create` / `announcement.cancel` |
 | `GET /api/v1/admin/overview` | any admin (counts and organization names only; no tenant content, no administrator emails) |
 | `POST /api/v1/admin/auth/session`, `/mfa` | public (rate-limited; needs the `/login` refresh cookie, then TOTP) |
 | `POST /api/v1/admin/auth/logout` | public (ends the caller's own console and `/login` session) |
@@ -1921,6 +1924,16 @@ permission held in another tenant never counts. Every member could read the
 organization, its members and its settings, so 000771 also grants
 `team:read`, `team:members:read` and `settings:read` to every existing custom
 role. A custom role created later needs them explicitly for those reads.
+
+**Split from `findings:write` (migration 001534).** `findings:severity` gates
+`PATCH /findings/{id}/severity` and `/classify`; `findings:comment` gates
+finding comments (`POST/PUT/DELETE /findings/{id}/comments*`) and comment
+reactions (`/comments/{comment_id}/reactions*`). The migration granted both to
+every role that held `findings:write`, except that the built-in Researcher role
+gets `findings:comment` only (researchers report and discuss; triage owns
+severity). A custom role without `findings:severity`
+(the remediation-owner template) can fix and discuss a finding but not
+re-score it.
 
 `findings:export` gates the server-side findings export (RFC-048, #1058); `assets:export` is kept for the planned asset export of the same RFC and is not removed.
 

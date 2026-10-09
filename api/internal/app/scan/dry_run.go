@@ -162,6 +162,28 @@ func (s *Service) DryRunTargets(ctx context.Context, in DryRunInput) ([]DryRunRe
 		}
 		allowed = kept
 	}
+	// 5. Bug-bounty program targets never go to platform sensors (RFC-065 §8).
+	if in.SensorPreference == "platform" && len(allowed) > 0 {
+		programOnly, err := s.programOnly(ctx, in.TenantID, allowed)
+		if err != nil {
+			return nil, fmt.Errorf("program target check failed: %w", err)
+		}
+		refused := make(map[string]bool, len(programOnly))
+		for _, t := range programOnly {
+			refused[t] = true
+		}
+		kept := allowed[:0:0]
+		for _, t := range allowed {
+			if refused[t] {
+				set(t, func(r *DryRunResult) {
+					r.Code, r.Reason = scopedom.RefusalProgramPlatform, scopedom.RefusalMessages[scopedom.RefusalProgramPlatform]
+				})
+				continue
+			}
+			kept = append(kept, t)
+		}
+		allowed = kept
+	}
 	for _, t := range allowed {
 		z := res.Zone(t)
 		set(t, func(r *DryRunResult) {
