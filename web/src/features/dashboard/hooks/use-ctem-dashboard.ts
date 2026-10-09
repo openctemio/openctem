@@ -12,6 +12,7 @@
 import useSWR, { type SWRConfiguration } from 'swr'
 import { get } from '@/lib/api/client'
 import { usePermissions, Permission } from '@/lib/permissions'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
 import type { ApiResponse } from '@/lib/api/generated'
 
@@ -244,17 +245,21 @@ export function useThreatIntelStats(tenantId: string | null) {
   )
 }
 
+// Exposure chains and attack paths are attack-surface data: with the module
+// off they are not asked for (the API would answer MODULE_NOT_ENABLED).
 export function useExposureChains(tenantId: string | null) {
+  const on = useModuleEnabled('attack_surface')
   return useSWR<ExposureChainsResponse>(
-    useKey('/api/v1/attack-surface/exposure-chains', tenantId),
+    useKey('/api/v1/attack-surface/exposure-chains', on ? tenantId : null),
     (url: string) => get<ExposureChainsResponse>(url),
     config
   )
 }
 
 export function useAttackPaths(tenantId: string | null) {
+  const on = useModuleEnabled('attack_surface')
   return useSWR<AttackPathsResponse>(
-    useKey('/api/v1/attack-surface/attack-paths', tenantId),
+    useKey('/api/v1/attack-surface/attack-paths', on ? tenantId : null),
     (url: string) => get<AttackPathsResponse>(url),
     config
   )
