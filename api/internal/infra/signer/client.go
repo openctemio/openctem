@@ -6,6 +6,8 @@ package signer
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,8 +24,9 @@ import (
 
 // Paths of the signer API (internal/signer).
 const (
-	signPath = "/v1/jobs/sign"
-	keysPath = "/v1/keys"
+	signPath   = "/v1/jobs/sign"
+	keysPath   = "/v1/keys"
+	keysetPath = "/v1/keyset"
 )
 
 // DefaultTimeout bounds one call to the signer.
@@ -33,8 +36,8 @@ const DefaultTimeout = 2 * time.Second
 // its envelope base64 of it plus a signature.
 const maxEnvelopeBytes = 2 << 20
 
-// keysTTL is how long the key list is cached; keysRetry how often a failed
-// fetch is retried.
+// keysTTL is how long the key list and the key set are cached; keysRetry
+// how often a failed fetch is retried.
 const (
 	keysTTL   = 5 * time.Minute
 	keysRetry = 30 * time.Second
@@ -47,8 +50,10 @@ type Client struct {
 
 	mu        sync.Mutex
 	keys      []jobsign.PublicKey
+	keyset    json.RawMessage
 	keysAt    time.Time
 	keysTried time.Time
+	fetching  bool
 	now       func() time.Time
 	baseURL   string
 }
@@ -95,12 +100,10 @@ func (c *Client) SignJob(ctx context.Context, st jobsign.Statement) (json.RawMes
 		return nil, fmt.Errorf("job signer: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		var r jobsign.Refusal
-		_ = json.Unmarshal(raw, &r)
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-			return nil, fmt.Errorf("%w: %d %s", command.ErrJobRefused, resp.StatusCode, r.Reason)
+		if rf := refusalOf(resp.StatusCode, raw); rf != nil {
+			return nil, fmt.Errorf("%w: %w", command.ErrJobRefused, rf)
 		}
-		return nil, fmt.Errorf("job signer: status %d %s", resp.StatusCode, r.Reason)
+		return nil, fmt.Errorf("job signer: status %d", resp.StatusCode)
 	}
 	if len(raw) > maxEnvelopeBytes {
 		return nil, errors.New("job signer: answer too large")
@@ -123,23 +126,92 @@ func (c *Client) SignJob(ctx context.Context, st jobsign.Statement) (json.RawMes
 // does not hold up hellos; on a failed refresh the last list is kept (nil
 // when it was never fetched).
 func (c *Client) Keys(ctx context.Context) []jobsign.PublicKey {
+	keys, _ := c.snapshot(ctx, true)
+	return keys
+}
+
+// KeySetVersion is a short digest of the cached key set ("" when the
+// signer serves none), for the doorbell's config_version: a sensor
+// re-reads hello when it changes. It never waits for the signer: a stale
+// cache is refreshed in the background.
+func (c *Client) KeySetVersion() string {
+	_, ks := c.snapshot(context.Background(), false)
+	if len(ks) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(ks)
+	return hex.EncodeToString(sum[:8])
+}
+
+// snapshot returns the cached keys and key set, refreshing them when stale:
+// in line when wait, else in the background.
+func (c *Client) snapshot(ctx context.Context, wait bool) ([]jobsign.PublicKey, json.RawMessage) {
 	c.mu.Lock()
 	now := c.now()
-	if (c.keys != nil && now.Sub(c.keysAt) < keysTTL) || now.Sub(c.keysTried) < keysRetry {
-		keys := c.keys
+	keys, ks := c.keys, c.keyset
+	if c.fetching || (c.keys != nil && now.Sub(c.keysAt) < keysTTL) || now.Sub(c.keysTried) < keysRetry {
 		c.mu.Unlock()
-		return keys
+		return keys, ks
 	}
-	c.keysTried = now
+	c.keysTried, c.fetching = now, true
 	c.mu.Unlock()
 
-	keys, err := c.fetchKeys(ctx)
+	if !wait {
+		go c.refresh(context.WithoutCancel(ctx), now)
+		return keys, ks
+	}
+	c.refresh(ctx, now)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.keys, c.keyset
+}
+
+// refresh fetches the key list and the key set. A key set the signer does
+// not serve (404) clears the cached one; any other failure keeps it.
+func (c *Client) refresh(ctx context.Context, at time.Time) {
+	keys, err := c.fetchKeys(ctx)
+	ks, ksErr := c.fetchKeySet(ctx)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.fetching = false
 	if err == nil {
-		c.keys, c.keysAt = keys, now
+		c.keys, c.keysAt = keys, at
 	}
-	return c.keys
+	if ksErr == nil {
+		c.keyset = ks
+	}
+}
+
+// fetchKeySet returns the signer's key set envelope, nil when it serves
+// none. Only an envelope signed by the root it names is passed on; the
+// sensor checks the root against its pin, the version and the expiry.
+func (c *Client) fetchKeySet(ctx context.Context) (json.RawMessage, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+keysetPath, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("job signer key set: status %d", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, jobsign.MaxKeySetBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	raw = bytes.TrimSpace(raw)
+	if _, _, err := jobsign.ParseKeySet(raw); err != nil {
+		return nil, err
+	}
+	return json.RawMessage(raw), nil
 }
 
 func (c *Client) fetchKeys(ctx context.Context) ([]jobsign.PublicKey, error) {
@@ -175,8 +247,9 @@ func (c *Client) fetchKeys(ctx context.Context) ([]jobsign.PublicKey, error) {
 
 // Hello is the hello's signed_jobs block.
 func (c *Client) Hello(ctx context.Context) *protov2.SignedJobs {
-	out := &protov2.SignedJobs{PayloadType: jobsign.PayloadType, Keys: []protov2.SignedJobKey{}}
-	for _, k := range c.Keys(ctx) {
+	keys, ks := c.snapshot(ctx, true)
+	out := &protov2.SignedJobs{PayloadType: jobsign.PayloadType, Keys: []protov2.SignedJobKey{}, KeySet: ks}
+	for _, k := range keys {
 		out.Keys = append(out.Keys, protov2.SignedJobKey{KeyID: k.KeyID, Algorithm: k.Algorithm, PublicKey: k.PublicKey})
 	}
 	return out

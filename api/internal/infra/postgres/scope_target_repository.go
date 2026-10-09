@@ -29,7 +29,7 @@ const scopeTargetSelectQuery = `
 	SELECT id, tenant_id, target_type, pattern, description, priority, status, tags,
 	       created_by, created_at, updated_at,
 	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at, origin, discovery,
-	       authorization_source, program_id,
+	       authorization_source, program_id, letter_id,
 	       approval_reminded_at, attested_at, attested_by, attestation_requested_at
 	FROM scope_targets
 `
@@ -58,6 +58,7 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		discovery   bool
 		authSource  string
 		programID   sql.NullString
+		letterID    sql.NullString
 		remindedAt  sql.NullTime
 		attestedAt  sql.NullTime
 		attestedBy  sql.NullString
@@ -68,7 +69,7 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		&id, &tenantID, &targetType, &pattern, &description, &priority, &status, &tags,
 		&createdBy, &createdAt, &updatedAt,
 		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt, &origin, &discovery,
-		&authSource, &programID,
+		&authSource, &programID, &letterID,
 		&remindedAt, &attestedAt, &attestedBy, &attestReqAt,
 	)
 	if err != nil {
@@ -98,9 +99,13 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 	})
 	t.SetOrigin(scope.Origin(origin))
 	t.SetDiscovery(discovery)
+	ref := programID
+	if scope.AuthorizationSource(authSource) == scope.AuthLetter {
+		ref = letterID
+	}
 	var pid *shared.ID
-	if programID.Valid {
-		if id, err := shared.IDFromString(programID.String); err == nil {
+	if ref.Valid {
+		if id, err := shared.IDFromString(ref.String); err == nil {
 			pid = &id
 		}
 	}
@@ -198,12 +203,15 @@ func insertScopeTarget(ctx context.Context, exec sqlExecer, target *scope.Target
 			id, tenant_id, target_type, pattern, description, priority, status, tags,
 			created_by, created_at, updated_at,
 			expires_at, reason, max_tier, approvals_required, approved_at, origin, discovery,
-			authorization_source, program_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+			authorization_source, program_id, letter_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 	`
-	var programID any
+	var programID, letterID any
 	if pid := target.ProgramID(); pid != nil {
 		programID = pid.String()
+	}
+	if lid := target.LetterID(); lid != nil {
+		letterID = lid.String()
 	}
 	_, err := exec.ExecContext(ctx, query,
 		target.ID().String(),
@@ -226,6 +234,7 @@ func insertScopeTarget(ctx context.Context, exec sqlExecer, target *scope.Target
 		target.DiscoverySetting(),
 		string(target.AuthorizationSource()),
 		programID,
+		letterID,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -466,7 +475,11 @@ func (r *ScopeTargetRepository) List(ctx context.Context, filter scope.TargetFil
 // past their expiry. An expired entry stops authorizing at once, before the
 // sweep marks it (RFC-054 §6.1).
 func (r *ScopeTargetRepository) ListActive(ctx context.Context, tenantID shared.ID) ([]*scope.Target, error) {
-	query := scopeTargetSelectQuery + " WHERE tenant_id = $1 AND status = 'active' AND (expires_at IS NULL OR expires_at > now()) ORDER BY priority DESC"
+	query := scopeTargetSelectQuery + " WHERE tenant_id = $1 AND status = 'active' AND (expires_at IS NULL OR expires_at > now())" +
+		// A letter entry authorizes only while its letter does (RFC-065 §13).
+		" AND (letter_id IS NULL OR EXISTS (SELECT 1 FROM authorization_letters l WHERE l.tenant_id = scope_targets.tenant_id" +
+		" AND l.id = scope_targets.letter_id AND l.revoked_at IS NULL AND l.valid_from <= now() AND l.valid_until > now()))" +
+		" ORDER BY priority DESC"
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {

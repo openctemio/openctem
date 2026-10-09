@@ -49,9 +49,6 @@ func fullCatalogue() []*moduledom.Module {
 	for id := range moduledom.CoreModuleIDs {
 		ids[id] = true
 	}
-	for id := range moduledom.MandatoryModuleIDs {
-		ids[id] = true
-	}
 	for i := range moduledom.ModulePresets {
 		for _, id := range moduledom.ModulePresets[i].EnabledModules {
 			ids[id] = true
@@ -139,8 +136,13 @@ func TestApplyPreset_EveryPresetToEveryPreset(t *testing.T) {
 	}
 }
 
-// The minimal preset disables more modules than one API request may toggle.
-func TestApplyPreset_MinimalExceedsRequestCap(t *testing.T) {
+// Applying a preset is not subject to the per-request toggle cap. The cap is
+// lowered below the minimal preset's diff so the test does not depend on the
+// size of the catalog.
+func TestApplyPreset_NotSubjectToRequestCap(t *testing.T) {
+	saved := maxModuleUpdatesPerRequest
+	maxModuleUpdatesPerRequest = 10
+	t.Cleanup(func() { maxModuleUpdatesPerRequest = saved })
 	s, _ := newPresetService()
 	diff, err := s.PreviewPreset(context.Background(), tid, "minimal")
 	if err != nil {

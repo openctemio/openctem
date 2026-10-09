@@ -164,6 +164,24 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 	}
 }
 
+// signerLedgerSyncInterval is how often the job signer's ledger is narrowed
+// to the database (RFC-040 P2).
+const signerLedgerSyncInterval = 10 * time.Minute
+
+// registerSignerLedgerSync narrows the job signer's scope ledger to the
+// database on a schedule: a narrowing that did not reach the signer, or a
+// change written outside the scope service, is caught here. The signer
+// never widens from it. Only with a job signer (SIGNER_SOCKET).
+func registerSignerLedgerSync(m *controller.Manager, svc *Services, log *logger.Logger) {
+	if svc.JobSigner == nil || svc.Scope == nil {
+		return
+	}
+	scopeSvc := svc.Scope
+	m.Register(controller.NewPurgeController("signer-ledger-sync", signerLedgerSyncInterval,
+		func(ctx context.Context) (int64, error) { return 0, scopeSvc.SyncLedger(ctx) },
+		log.With("controller", "signer-ledger-sync")))
+}
+
 // NewWorkers initializes all background workers.
 func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	cfg := deps.Config
@@ -472,6 +490,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "member-access-expiry")))
 	}
 
+	// Team memberships with an end date (RFC-050 W22): removed within a minute.
+	if svc.Group != nil {
+		w.ControllerManager.Register(controller.NewTeamMembershipExpiryController(svc.Group, time.Minute, 200,
+			log.With("controller", "team-membership-expiry")))
+	}
+
 	// Idle Free workspaces: reminder, read-only, warnings, deletion due.
 	if svc.IdleWorkspaces != nil {
 		w.ControllerManager.Register(controller.NewIdleWorkspaceController(svc.IdleWorkspaces, 6*time.Hour,
@@ -479,6 +503,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
+	registerSignerLedgerSync(w.ControllerManager, svc, log)
 
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(
 		repos.FindingApproval,
@@ -546,6 +571,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
 	if svc.ScopeJoin != nil {
 		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
+		// Program data scope: assets a program covers stay assigned to its
+		// group (RFC-065 §7), also those that arrived by discovery.
+		if svc.ProgramAssigner != nil {
+			w.ControllerManager.Register(controller.NewProgramAssignmentController(svc.ProgramAssigner, 0))
+		}
 	}
 	// Long intrusive (t2) scope entries are re-attested or fall back to t1
 	// (RFC-054 §12.5).
