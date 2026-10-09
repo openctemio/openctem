@@ -32,6 +32,8 @@ interface ScheduleStepProps {
   onChange: (data: Partial<NewScanFormData>) => void
   /** A new one-off run must be ahead; an edit may keep one that has run. */
   requireFutureRun?: boolean
+  /** Offer "Save without running" (a new scan). */
+  offerSaveOnly?: boolean
 }
 
 const DAY_OF_MONTH_OPTIONS = Array.from({ length: 31 }, (_, i) => i + 1)
@@ -44,20 +46,28 @@ function todayIn(timeZone: string): string {
   }
 }
 
-export function ScheduleStep({ data, onChange, requireFutureRun = true }: ScheduleStepProps) {
+export function ScheduleStep({
+  data,
+  onChange,
+  requireFutureRun = true,
+  offerSaveOnly = false,
+}: ScheduleStepProps) {
   const schedule = data.schedule
   const timezone = schedule.timezone || viewerTimeZone()
   const set = (patch: Partial<ScanSchedule>) => onChange({ schedule: { ...schedule, ...patch } })
   const frequency = schedule.frequency ?? 'weekly'
   const problem = scheduleError(data, { requireFuture: requireFutureRun })
+  const later = !schedule.runImmediately && !schedule.saveOnly
 
   return (
     <div className="space-y-6 p-4">
       <div className="space-y-3">
         <Label>When to run?</Label>
         <RadioGroup
-          value={schedule.runImmediately ? 'now' : 'later'}
-          onValueChange={(value) => set({ runImmediately: value === 'now' })}
+          value={schedule.runImmediately ? 'now' : schedule.saveOnly ? 'save' : 'later'}
+          onValueChange={(value) =>
+            set({ runImmediately: value === 'now', saveOnly: value === 'save' })
+          }
           className="space-y-3"
         >
           <label
@@ -76,7 +86,7 @@ export function ScheduleStep({ data, onChange, requireFutureRun = true }: Schedu
           <div
             className={cn(
               'space-y-4 rounded-lg border p-4 transition-colors',
-              !schedule.runImmediately
+              !schedule.runImmediately && !schedule.saveOnly
                 ? 'border-primary bg-primary/5'
                 : 'border-border hover:border-primary/50'
             )}
@@ -86,7 +96,7 @@ export function ScheduleStep({ data, onChange, requireFutureRun = true }: Schedu
               <span className="font-medium">Schedule for later</span>
             </label>
 
-            {!schedule.runImmediately && (
+            {later && (
               <div className="ms-6 grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="frequency" className="text-sm">
@@ -218,14 +228,33 @@ export function ScheduleStep({ data, onChange, requireFutureRun = true }: Schedu
               </div>
             )}
 
-            {!schedule.runImmediately && problem && (
+            {later && problem && (
               <p role="alert" className="ms-6 text-sm text-destructive">
                 {problem}
               </p>
             )}
           </div>
+          {offerSaveOnly && (
+            <label
+              htmlFor="run-save"
+              className={cn(
+                'flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors',
+                schedule.saveOnly
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/50'
+              )}
+            >
+              <RadioGroupItem value="save" id="run-save" className="mt-0.5" />
+              <span>
+                <span className="block font-medium">Save without running</span>
+                <span className="text-muted-foreground block text-xs">
+                  Start it later from the scan page, or add a schedule then.
+                </span>
+              </span>
+            </label>
+          )}
         </RadioGroup>
-        {!schedule.runImmediately && !problem && (
+        {later && !problem && (
           <div className="mt-4 rounded-lg border p-4">
             <SchedulePreview
               request={schedulePreviewRequestFromForm(data)}

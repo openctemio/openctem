@@ -7,21 +7,27 @@
 import { cn } from '@/lib/utils'
 import { Check } from 'lucide-react'
 
-export type ScanWizardStep = 'basic' | 'targets' | 'options' | 'schedule'
+export type ScanWizardStep = 'basic' | 'targets' | 'options' | 'schedule' | 'review'
 
 interface ScanStepperProps {
   currentStep: ScanWizardStep
   onStepClick?: (step: ScanWizardStep) => void
+  /** The steps shown, in order (New adds Review). */
+  steps?: ScanWizardStep[]
 }
 
-const STEPS: { id: ScanWizardStep; label: string }[] = [
-  { id: 'basic', label: 'Basic Info' },
-  { id: 'targets', label: 'Targets' },
-  { id: 'options', label: 'Options' },
-  { id: 'schedule', label: 'Schedule' },
-]
+const LABELS: Record<ScanWizardStep, string> = {
+  basic: 'What',
+  targets: 'Targets',
+  options: 'Options',
+  schedule: 'Schedule',
+  review: 'Review',
+}
 
-export function ScanStepper({ currentStep, onStepClick }: ScanStepperProps) {
+const DEFAULT_STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
+
+export function ScanStepper({ currentStep, onStepClick, steps = DEFAULT_STEPS }: ScanStepperProps) {
+  const STEPS = steps.map((id) => ({ id, label: LABELS[id] }))
   const currentIndex = STEPS.findIndex((s) => s.id === currentStep)
 
   return (
